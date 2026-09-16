@@ -136,6 +136,19 @@ User message arrives
 4. **If NOT tracked but architecture exists** (design doc defines it, proto exists) → the agent MUST self-amend the plan (add workstream entry) THEN execute. No user confirmation needed for mechanical amendments.
 5. **If architecture is missing** → `EXECUTION_BLOCKED_BY_DESIGN` → stop and tell user.
 
+Before running Acceptance, resolve the same formal plan and current closure:
+
+```bash
+python3 tooling/scripts/execution-plan.py
+python3 tooling/scripts/acceptance-plan.py --active-plan
+```
+
+Report the exact Gate list, environment, and timeout budget before execution.
+Plain `acceptance run` means the current closure of the current worktree's
+formal plan. Never infer a second iteration or use the latest Acceptance
+artifact as task state. `--full` is allowed only when the user explicitly asks
+for release or full Acceptance.
+
 **This gate is non-negotiable while pt-ew is active.** The only way to bypass it is for the user to explicitly say "skip the plan" / "不用走规划" / "just code it directly."
 
 The agent must never interpret "do it fast" / "不要打扰我" / "直接做" as permission to skip the skill chain. Speed means "execute the chain faster," not "skip the chain."

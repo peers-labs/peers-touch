@@ -214,6 +214,35 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertEqual(report["proofState"], "PROVEN")
         self.assertEqual(report["gaps"], [])
 
+    def test_completion_projection_may_defer_declared_candidate_gates(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Plan is ready for PR review",
+            paths=["src/example.py"],
+            plan={
+                "changed_paths": ["src/example.py"],
+                "candidate_gates": ["cheap-gate", "runtime-gate"],
+                "execution": {"mode": "completion"},
+                "selected_gates": [
+                    {
+                        "id": "cheap-gate",
+                        "environment": "local",
+                        "tier": "ci-cheap",
+                    }
+                ],
+            },
+            canonical_plan={
+                "changed_paths": ["src/example.py"],
+                "selected_gates": ["cheap-gate", "runtime-gate"],
+            },
+            run={"results": [proven_result("cheap-gate")]},
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
+
     def test_canonical_exact_range_plan_uses_acceptance_planner(self) -> None:
         canonical = MODULE.canonical_plan_for_paths(
             ["tooling/acceptance/core/provisioner.py"]

@@ -212,8 +212,42 @@ func (r *testReceiptRecorder) CommitDeliveryReceipt(
 }
 
 type testDeliveryReceiptForwarder struct {
-	authority valueobject.StationID
-	receipt   *interaction.DeliveryReceipt
+	authority        valueobject.StationID
+	receipt          *interaction.DeliveryReceipt
+	cursor           *interaction.ReadCursorRequest
+	cursorFederation valueobject.FederationID
+	cursorEpoch      valueobject.AuthorityEpoch
+}
+
+func (f *testDeliveryReceiptForwarder) ForwardReadCursor(
+	_ context.Context,
+	authority valueobject.StationID,
+	federationID valueobject.FederationID,
+	authorityEpoch valueobject.AuthorityEpoch,
+	request interaction.ReadCursorRequest,
+) (bool, error) {
+	if f.cursor != nil {
+		if f.authority != authority ||
+			f.cursorFederation != federationID ||
+			f.cursorEpoch != authorityEpoch ||
+			*f.cursor != request {
+			return false, interaction.NewError(
+				interaction.ErrorCodeIdempotencyConflict,
+				"test.read_cursor_forwarder",
+				"cursor",
+				"already identifies different cursor bytes",
+			)
+		}
+
+		return true, nil
+	}
+	cloned := request
+	f.authority = authority
+	f.cursorFederation = federationID
+	f.cursorEpoch = authorityEpoch
+	f.cursor = &cloned
+
+	return false, nil
 }
 
 func (f *testDeliveryReceiptForwarder) ForwardDeliveryReceipt(
@@ -351,6 +385,7 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 	}
 	restartedTyping := stop
 	restartedTyping.Generation = 4
+	restartedTyping.ExpiresAt = first.ExpiresAt.Add(2 * time.Second)
 	restartedTyping.IsTyping = true
 	result, err = service.SubmitTyping(context.Background(), restartedTyping)
 	if err != nil || !result.Accepted || len(typing.events) != 3 {
@@ -370,14 +405,45 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 
 	clock.Advance(10 * time.Second)
 	devices.active[bob] = false
-	restarted := first
-	restarted.Generation = 1
-	restarted.ExpiresAt = clock.Now().Add(6 * time.Second)
+	inactiveRestart := first
+	inactiveRestart.Generation = 1
+	inactiveRestart.ExpiresAt = clock.Now().Add(6 * time.Second)
 	if _, err := service.SubmitTyping(
 		context.Background(),
-		restarted,
+		inactiveRestart,
 	); !interaction.IsCode(err, interaction.ErrorCodeUnauthorized) {
 		t.Fatalf("inactive endpoint error = %v", err)
+	}
+}
+
+func TestServiceTypingAcceptsConfiguredFutureClockSkew(t *testing.T) {
+	service, _, _, typing, _, _ := newInteractionFixture(t)
+	pulse := interaction.TypingPulse{
+		ConversationID: "conversation-1",
+		Sender:         valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"},
+		Generation:     1,
+		ExpiresAt:      interactionTestTime.Add(35 * time.Second),
+		IsTyping:       true,
+	}
+
+	result, err := service.SubmitTyping(context.Background(), pulse)
+	if err != nil || !result.Accepted || len(typing.events) != 1 {
+		t.Fatalf(
+			"clock-skewed typing result=%+v events=%+v err=%v",
+			result,
+			typing.events,
+			err,
+		)
+	}
+
+	tooFarFuture := pulse
+	tooFarFuture.Generation++
+	tooFarFuture.ExpiresAt = interactionTestTime.Add(71 * time.Second)
+	if _, err := service.SubmitTyping(
+		context.Background(),
+		tooFarFuture,
+	); !interaction.IsCode(err, interaction.ErrorCodeInvalidArgument) {
+		t.Fatalf("future typing error = %v", err)
 	}
 }
 
@@ -396,6 +462,62 @@ func TestServiceDelegatesReadCursorToCAW2Port(t *testing.T) {
 		readCursors.requests[0] != request ||
 		result.Result.Cursor.Sequence != request.Sequence {
 		t.Fatalf("read cursor calls=%+v result=%+v", readCursors.requests, result)
+	}
+}
+
+func TestServiceForwardsFollowerReadCursorWithoutLocalAuthorityMutation(t *testing.T) {
+	alice := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
+	snapshot := directInteractionConversationSnapshot(t, alice, bob)
+	snapshot.AuthorityStation = "station:authority"
+	snapshot.Members[0].HomeStation = "station:authority"
+	snapshot.Members[1].HomeStation = "station:local"
+	snapshot.Devices[0].HomeStation = "station:authority"
+	snapshot.Devices[1].HomeStation = "station:local"
+	service, _, _, _, readCursors, forwarder := newInteractionFixture(
+		t,
+		testConversationReader{
+			snapshot:       snapshot,
+			source:         query.SourceFollower,
+			followerStatus: repository.FollowerStatusActive,
+		},
+	)
+	request := interaction.ReadCursorRequest{
+		ConversationID: snapshot.ID,
+		Reader:         bob,
+		Sequence:       snapshot.Head.Sequence,
+	}
+	for expectedReplay := false; ; expectedReplay = true {
+		result, err := service.SubmitReadCursor(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Forwarded ||
+			result.Replay != expectedReplay ||
+			result.Result.Cursor.ConversationID != request.ConversationID ||
+			result.Result.Cursor.Actor != request.Reader.Actor ||
+			result.Result.Cursor.Sequence != request.Sequence {
+			t.Fatalf("forwarded read cursor result = %+v", result)
+		}
+		if expectedReplay {
+			break
+		}
+	}
+	if len(readCursors.requests) != 0 {
+		t.Fatalf("follower mutated authority cursor: %+v", readCursors.requests)
+	}
+	if forwarder.authority != snapshot.AuthorityStation ||
+		forwarder.cursorFederation != snapshot.FederationID ||
+		forwarder.cursorEpoch != snapshot.AuthorityEpoch ||
+		forwarder.cursor == nil ||
+		*forwarder.cursor != request {
+		t.Fatalf(
+			"forwarder authority=%s federation=%s epoch=%d cursor=%+v",
+			forwarder.authority,
+			forwarder.cursorFederation,
+			forwarder.cursorEpoch,
+			forwarder.cursor,
+		)
 	}
 }
 
@@ -542,6 +664,7 @@ func newInteractionFixture(
 		reader,
 		devices,
 		readCursors,
+		forwarder,
 		receipts,
 		forwarder,
 		typing,

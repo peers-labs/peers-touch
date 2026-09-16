@@ -31,13 +31,13 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    fixture_federation_id,
     is_native_tauri_url,
     is_station_authorization_rejection,
     native_runtime_source_identity,
     read_station_version,
     runtime_station_service,
     selected_native_runtime,
+    shared_federation_id,
     station_readback,
     verify_runtime_fixture_ready,
     wait_for_peer_key_bundle,
@@ -458,10 +458,50 @@ class NativeTypingGate(AcceptanceGate):
             raise GateError(device_error)
         enter_chat_page(replacement)
 
-    def sync(self, actor: str, kind: str, conversation_id: str) -> None:
+    def sync(
+        self,
+        actor: str,
+        kind: str,
+        conversation_id: str,
+    ) -> dict[str, Any]:
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
-        async_harness(self.clients[actor], method, {key: conversation_id})
+        if kind == "friend":
+            result = async_harness(
+                self.clients[actor],
+                method,
+                {key: conversation_id},
+            )
+            if not isinstance(result, dict):
+                raise GateError(
+                    f"{actor} returned an invalid Direct projection"
+                )
+            return result
+
+        expected_members = sorted(self.ptids.values())
+
+        def group_ready() -> dict[str, Any] | None:
+            result = async_harness(
+                self.clients[actor],
+                method,
+                {key: conversation_id},
+                timeout=30,
+            )
+            if not isinstance(result, dict):
+                return None
+            members = sorted(
+                str(member)
+                for member in result.get("memberPtids", [])
+                if member
+            )
+            return result if members == expected_members else None
+
+        return wait_until(
+            group_ready,
+            f"{actor} projected Group {conversation_id}",
+            STEP_TIMEOUT,
+            1,
+        )
 
     def seed_message(
         self,
@@ -529,9 +569,14 @@ class NativeTypingGate(AcceptanceGate):
                 raise GateError(description)
             threading.Event().wait(0.1)
 
-    def prove_direct(self, conversation_id: str) -> None:
+    def prove_direct(
+        self,
+        conversation_id: str,
+        alternate_group_id: str,
+    ) -> None:
         alice = self.clients["alice"]
         self._typing_cid = conversation_id
+        self.sync("alice", "friend", conversation_id)
         set_composer(alice, f"direct-start-stop-{time.time_ns()}")
         self.step(
             "direct.typing.start",
@@ -582,28 +627,13 @@ class NativeTypingGate(AcceptanceGate):
         self.assert_condition("direct_typing_blur_clear", True)
         set_composer(alice, "")
 
-        wait_for_peer_key_bundle(alice, self.ptids["charlie"])
-        alternate = async_harness(
-            alice,
-            "createDirectConversation",
-            {
-                "peerPtid": self.ptids["charlie"],
-                "federationId": fixture_federation_id(
-                    self.ptids["alice"],
-                    self.ptids["bob"],
-                ),
-            },
-        )
-        alternate_id = str((alternate or {}).get("conversationId") or "")
-        if not alternate_id:
-            raise GateError("alternate Direct conversation returned no ID")
         self.sync("alice", "friend", conversation_id)
         set_composer(alice, f"direct-switch-clear-{time.time_ns()}")
         self.wait_typing("bob", True, "Bob Direct typing before switch")
         select_conversation(
             alice,
-            "friend",
-            alternate_id,
+            "group",
+            alternate_group_id,
         )
         self.wait_typing("bob", False, "Bob Direct typing cleared by switch")
         self.assert_condition("direct_typing_switch_clear", True)
@@ -928,20 +958,28 @@ class NativeTypingGate(AcceptanceGate):
                 and len(set(self.device_ids.values())) == len(ACTORS)
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
+            federation_id = self.step(
+                "federation.shared",
+                lambda: shared_federation_id(self.clients, ACTORS),
+            )
 
             wait_for_peer_key_bundle(
                 self.clients["alice"],
                 self.ptids["bob"],
+                str(
+                    runtime_station_service(
+                        self.manifest,
+                        "bob",
+                    ).get("runtimeIdentity")
+                    or ""
+                ),
             )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
                 {
                     "peerPtid": self.ptids["bob"],
-                    "federationId": fixture_federation_id(
-                        self.ptids["alice"],
-                        self.ptids["bob"],
-                    ),
+                    "federationId": federation_id,
                 },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
@@ -954,7 +992,31 @@ class NativeTypingGate(AcceptanceGate):
             self.message_ids["direct"] = direct_seed
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
-            self.prove_direct(direct_id)
+
+            group = async_harness(
+                self.clients["alice"],
+                "createGroup",
+                {
+                    "name": f"typing-{time.time_ns()}",
+                    "federationId": federation_id,
+                    "memberPtids": [
+                        self.ptids["bob"],
+                        self.ptids["charlie"],
+                    ],
+                },
+            )
+            group_id = str((group or {}).get("groupUlid") or "")
+            if not group_id:
+                raise GateError("Group creation returned no conversation_id")
+            self.conversations["group"] = group_id
+            for actor in ACTORS:
+                self.sync(actor, "group", group_id)
+            group_seed = self.seed_message("alice", "group", group_id)
+            self.message_ids["group"] = group_seed
+            for actor in ACTORS:
+                self.sync(actor, "group", group_id)
+
+            self.prove_direct(direct_id, group_id)
             direct_before_station = station_readback(
                 direct_id,
                 direct_seed,
@@ -980,31 +1042,6 @@ class NativeTypingGate(AcceptanceGate):
             )
             direct_after_engine = self.engine_snapshot("bob", direct_id, direct_seed)
 
-            group = async_harness(
-                self.clients["alice"],
-                "createGroup",
-                {
-                    "name": f"typing-{time.time_ns()}",
-                    "memberPtids": [
-                        self.ptids["bob"],
-                        self.ptids["charlie"],
-                    ],
-                    "federationId": fixture_federation_id(
-                        self.ptids["alice"],
-                        self.ptids["bob"],
-                    ),
-                },
-            )
-            group_id = str((group or {}).get("groupUlid") or "")
-            if not group_id:
-                raise GateError("Group creation returned no conversation_id")
-            self.conversations["group"] = group_id
-            for actor in ACTORS:
-                self.sync(actor, "group", group_id)
-            group_seed = self.seed_message("alice", "group", group_id)
-            self.message_ids["group"] = group_seed
-            for actor in ACTORS:
-                self.sync(actor, "group", group_id)
             self.prove_group(group_id, direct_id)
             group_event_count: int | None = None
             stable_group_observations = 0

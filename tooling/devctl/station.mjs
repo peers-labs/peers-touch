@@ -159,15 +159,17 @@ function runCompose(root, resolved, action) {
   }
 }
 
-function remoteStationBridge(root, resolved, values, environment) {
+function runRemoteStationBridge(root, resolved, environment) {
   if (process.platform === 'win32') {
     throw new DevctlError(
       ERROR_CODES.UNSUPPORTED_MODE,
-      `Remote Station deployment is not available through native devctl on ${process.platform}`,
+      'Remote Station deployment requires the reviewed Unix deployment adapter',
       { profile: resolved.reference.profileName },
     );
   }
-
+  const runtimeEnv = runtimeEnvironment(resolved, environment);
+  const bash = findExecutable('bash', runtimeEnv);
+  const values = stationValues(resolved);
   const script = path.join(
     root,
     'tooling',
@@ -175,18 +177,20 @@ function remoteStationBridge(root, resolved, values, environment) {
     'local-dev',
     'station-dev.sh',
   );
-  if (!fs.existsSync(script)) {
+  if (!bash || !fs.existsSync(script)) {
     throw new DevctlError(
       ERROR_CODES.DEPENDENCY_MISSING,
-      `Remote Station deployment bridge is missing: ${script}`,
-      { profile: resolved.reference.profileName },
+      'Remote Station deployment adapter is unavailable',
+      {
+        profile: resolved.reference.profileName,
+        script,
+      },
     );
   }
-
   fs.mkdirSync(resolved.paths.profileLogs, { recursive: true });
-  const result = spawnSync('/bin/bash', [script], {
+  const result = spawnSync(bash, [script], {
     cwd: root,
-    env: runtimeEnvironment(resolved, environment),
+    env: runtimeEnv,
     encoding: 'utf8',
     timeout: 1_800_000,
     windowsHide: true,
@@ -203,6 +207,8 @@ function remoteStationBridge(root, resolved, values, environment) {
         profile: resolved.reference.profileName,
         deployEnvironment: resolved.profile.PT_STATION_DEPLOY_ENV,
         status: result.status,
+        cause: result.error?.message,
+        deployLogPath: values.remoteDeployLogPath,
       },
     );
   }
@@ -226,15 +232,15 @@ export async function startStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
   if (values.mode === 'remote') {
-    remoteStationBridge(root, resolved, values, environment);
+    runRemoteStationBridge(root, resolved, environment);
     await waitForHttp(values.healthUrl, { label: 'Remote Station' });
     return {
       ...await stationStatus(root, environment),
       deployed: true,
+      delegated: true,
       deployLogPath: values.remoteDeployLogPath,
     };
   }
-
   const existing = await stationStatus(root, environment);
   if (existing.health.ok) {
     if (values.mode === 'compose' || existing.process.status === 'running') {

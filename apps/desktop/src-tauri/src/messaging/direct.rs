@@ -641,7 +641,7 @@ mod tests {
             .consumption_marker_matches(&item.item_id, &item.payload_sha256)
             .unwrap());
         let archive = store
-            .build_recovery_archive("ptid:bob", [11; 32], 1)
+            .build_recovery_archive("ptid:bob", &[11; 32], 1)
             .unwrap();
         assert_eq!(archive.messages.len(), 1);
         assert_eq!(archive.messages[0].plaintext, "exact direct plaintext");
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(replayed.ratchet.n_recv, 1);
         assert_eq!(
             store
-                .build_recovery_archive("ptid:bob", [11; 32], 1)
+                .build_recovery_archive("ptid:bob", &[11; 32], 1)
                 .unwrap()
                 .messages
                 .len(),

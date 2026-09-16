@@ -17,6 +17,9 @@
 | DTC-D04 | Managed process state is explicit and verified | accepted |
 | DTC-D05 | Migration is an atomic consumer cutover | accepted |
 | DTC-D06 | Remote deployment is bridged before it is ported | accepted |
+| DTC-D07 | Formal execution plan owns Acceptance scheduling | accepted |
+| DTC-D08 | Diff planning detects drift but does not schedule work | accepted |
+| DTC-D09 | Full and release verification require explicit invocation | accepted |
 
 ---
 
@@ -179,3 +182,61 @@ than silently changing deployment semantics.
 
 The first closure does not claim native Windows remote deployment support.
 A later plan may port that owner behind the same `devctl` contract.
+
+---
+
+## DTC-D07: Formal Execution Plan Owns Acceptance Scheduling
+
+**Status**: accepted
+**Date**: 2026-09-12
+
+### Decision
+
+A tracked worktree has exactly one active formal execution plan. That plan's
+existing closure status and embedded Acceptance Execution contract determine
+what `acceptance run` executes. No Acceptance-specific iteration state,
+active-plan pointer, or workflow session is introduced.
+
+### Consequences
+
+`active_work` remains an Agent-facing index and Context Anchor remains a chat
+projection. The CLI discovers the formal plan by verified worktree metadata and
+fails when the match is absent or ambiguous.
+
+---
+
+## DTC-D08: Diff Planning Detects Drift But Does Not Schedule Work
+
+**Status**: accepted
+**Date**: 2026-09-12
+
+### Decision
+
+Registry path matching produces an impact projection. It validates that every
+candidate Gate is declared somewhere in the formal plan, but cannot add a Gate
+to the current closure or execute it.
+
+### Consequences
+
+Broad path rules remain conservative without turning every candidate into an
+immediate runtime test. Missing declarations fail with `DEVCTL_PLAN_DRIFT` and
+must be reconciled in the formal plan.
+
+---
+
+## DTC-D09: Full And Release Verification Require Explicit Invocation
+
+**Status**: accepted
+**Date**: 2026-09-12
+
+### Decision
+
+Plain `acceptance run` executes only the current closure. Plan-completion
+verification requires `--completion`; the plan's full/release matrix requires
+`--full`. Agents may use `--full` only after an explicit user request to
+release or run full Acceptance.
+
+### Consequences
+
+Environment availability is not authorization. PR verification cannot silently
+escalate to full/release execution.

@@ -4,7 +4,7 @@
 > **Version**: v1.1
 > **Created**: 2026-08-24 | **Updated**: 2026-09-13
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
-> **Branch**: `fix/windows-native-chat-closure`
+> **Branch**: `fix/deploy-env-host-guard`
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-13, D-14, D-15, D-16, D-17, D-18
 
@@ -12,19 +12,17 @@
 
 ## 1. Goal And Claims
 
-### Current Windows Execution Scope
+### Completed Windows Sixwin Scope (2026-09-10 to 2026-09-11)
 
-The Owner's 2026-09-10 single-host instruction supersedes the historical
-Windows distinct-Station requirements below. Use sixwin for the orchestrator,
-Windows Native runtime, and the single local source Station. Inject
-`--station-profile station-primary=sixwin` at execution time; omission fails
-closed. No secondary Station, station-four, or station-five is authorized.
-Gate and provisioner definitions must remain host-neutral.
+The Owner's 2026-09-10 single-host instruction governed the completed Windows
+sixwin Goal only. It did not supersede the later NDR-W8 and CA-W6
+multi-Station work, which uses the canonical `four` and `fiveArm` profiles.
+Historical Windows Gate and provisioner definitions remain host-neutral.
 
-NDR-W1-W7 remain closed Linux history; NDR-W8 is out of scope. Single-Station
-Windows proof must not be represented as cross-Station or cross-platform proof.
-Historical evidence and amendments below remain traceable, not instructions
-to redeploy historical hosts.
+NDR-W1-W7 remain closed Linux history. Single-Station Windows proof must not be
+represented as cross-Station or cross-platform proof. Historical evidence and
+amendments below remain traceable, not instructions to redeploy historical
+hosts.
 
 Current Goal: `6aa2282c0ad37e7b2b10927d`. The Windows sixwin closure is
 `DONE/PROVEN` at product source
@@ -956,10 +954,10 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. NDR-W8A has dedicated retained-command proof wiring in the current worktree; NDR-W8B remains exact-source Native-proof pending; NDR-W8C tracks authoritative remote-profile refresh, one PTID-keyed identity projection, recoverable Group creation, and the real three-client Create Group/MLS UI journey. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
-| NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Conversation packages, migration regression, two static contract tests, Desktop bounded/cursor-neutral reconciliation, and rollback-on-integrity-failure tests pass. Exact-source deployment and stale Native command convergence remain `UNPROVEN`. |
-| NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
-| NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
+| NDR-W8 macOS regression | done for selected `four` / `fiveArm` scope | W8A, W8B, and W8C are `PASS/DONE/PROVEN` on exact source. W8C run `20260914T122113394691Z-416c2c7dc23f80a5595eb90f8f9e06c2` at `13d867e8fb17d7dd3c3c83d411be25a158af73ee` proves the complete three-client Group/MLS journey and cleanup. |
+| NDR-W8A submitted-command reconciliation | done | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Exact-source macOS Native Gate `20260913T164933497898Z-87194509f71e18677704f12aea7e5805` is `PASS/DONE/PROVEN` at `638679c0e54a2c657fa208cff390210d6fa47322`: generated command `01M2DTWRTS6JBMBSN4WTKSHX5Q` / message `01M2DTWRQ7FVRJ24EZRQB3V7X9` retained exact identity and bytes, converged to committed/delivered authority truth, rendered on Bob, and released both clients and all six ports. |
+| NDR-W8B federated ephemeral typing | done | Exact-source run `20260914T000309707403Z-c776902fe848cc9d8c9236b9ec1f437a` at `08e13a19e4c2e91e5c97411a3c866a8e25d98af4` is `PASS/DONE/PROVEN` across Direct/Group typing lifecycle, removed-member and revoked-device rejection, zero durable typing writes, three Native clients, two Stations, and cleanup. |
+| NDR-W8C federated contact identity and Group genesis reliability | done | Exact-source run `20260914T122113394691Z-416c2c7dc23f80a5595eb90f8f9e06c2` at `13d867e8fb17d7dd3c3c83d411be25a158af73ee` is `PASS/DONE/PROVEN`: identity/avatar/contact parity, visible Group creation, encrypted delivery, Bob restart recovery, Charlie removal, retained-recipient convergence, and reverse cleanup all pass. |
 | NDR-W9 Windows cell | done for Windows sixwin scope | Product Closure run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN` at clean source `283832a7`; runtime identity, 1920x1080 Win32 evidence, Station binding, and cleanup are proven. |
 | NDR-W10 D-18 binding infrastructure | done for current Windows single-Station scope | Eight-Gate Native aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`, PostgreSQL run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`, two zero-gap reports, and audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` close the Owner-approved sixwin scope. Historical distinct-Station claims remain outside this closure. |
 
@@ -4642,6 +4640,34 @@ The dependency-ready remediation is:
 6. retain receiver native-DOM plaintext, identical message ID, and receipt
    assertions as the product proof.
 
+The retained-client safety boundary is explicit:
+
+- loss of a replenish or full-bundle publication response retries the exact
+  persisted OPK IDs and public bytes;
+- replay at Station accepts identical material without changing a consumed OPK
+  back to available;
+- complete Station bundle loss is repaired with the existing identity/SPK and
+  only a newly persisted, monotonically higher OPK batch;
+- loss or partial deletion of the client's local OPK history is not recoverable
+  from account backup, because MP-D05 excludes SPK/OPK live state. The client
+  fails closed before allocating a reused OPK ID; a fresh device lifecycle is
+  required instead. Databases created before the independent high-water mark
+  existed migrate that mark to an explicit untrusted sentinel rather than
+  deriving trust from the possibly incomplete OPK rows.
+
+Focused regressions for this boundary are
+`missing_bundle_retry_after_lost_upload_ack_reuses_the_fresh_opk_batch`,
+`missing_bundle_retry_reuploads_identical_bytes_when_upload_did_not_commit`,
+`prekey_replenishment_fails_closed_when_local_opk_history_has_a_gap`, and
+`TestCanonicalDirectReplenishmentReplayDoesNotReactivateConsumedKey`; the
+legacy migration sentinel is covered by
+`messaging_schema_marks_legacy_prekey_history_untrusted`.
+The 2026-09-15 owner closure makes the local OPK history continuity check
+executable and all listed regressions pass. This closes the source contract that
+Mobile needs before implementing its `PreKeyInventoryRepository` and
+`PreKeyInventoryTransport` adapters; it does not by itself prove Mobile runtime
+delivery or recovery.
+
 Concurrency Decision: hybrid. Three completed read-only analysis lanes audited
 the portable store, Station Key Exchange contract, and Chat Acceptance mapping.
 All source edits, generated-artifact decisions, deployment, profile/runtime
@@ -5954,3 +5980,589 @@ checks. Deployment and shared runtime evidence remain serial.
 Carol three-client Group/MLS remains parked because creating another worktree is a
 separate Git topology operation. No reset, commit, push, deployment, branch switch,
 or worktree creation is implied by MP-D31/MP-D32 acceptance.
+
+### 2026-09-13 W8A/W8B continuation checkpoint
+
+- PR `#111` merged as `2d54851f95994d717928105aca6470c30adf3657`
+  with the Development Workflow control plane, W8A/W8B Acceptance repairs, the
+  exact submitted-command fixture, and synchronized Native client history.
+  The post-merge function-first checkpoint is
+  `eb0c803afde939ca678f9bafccf0efdc7d4efe32`.
+- `peers-group-chat` is clean at `eb0c803af`; `peers-chat-high-chat` remains
+  clean at `7c7575001`. Before the next Native launch, reconcile high-chat to
+  the exact current checkpoint without reset, force update, or a new worktree.
+- `chat-native-four` and `chat-native-five` were non-destructively deployed and
+  attest build commit `1db3461b354a`. They do not yet attest the later
+  `2ff2cd9ca` source checkpoint.
+- The exact retained identity is:
+  - actor: `alice`;
+  - conversation: `direct-060c1c0291de8a853548f6b289895557`;
+  - message: `01M2B43C1WNPRK9JHACMFZ4DA4`;
+  - command: `01M2B43C65M3QRQVK529SZTMSS`;
+  - expected outcome: `terminal_superseded`;
+  - retained command SHA-256:
+    `e73be505f57465f67a6835e0d7768481f713f1f7c796645ff974258f6fda3a75`.
+- Run `20260913T133705385798Z-f3272b11978049b29f232b5c4566fdee`
+  is `FAIL/PARTIAL/UNPROVEN`: an interrupted predecessor left the Native cell
+  occupied. Cleanup subsequently removed the stale processes and released the
+  six declared ports.
+- Run `20260913T134222022937Z-8e861a0e0457040fdd46c394f4125914`
+  is `FAIL/PARTIAL/UNPROVEN`: source/build identity, cross-worktree topology,
+  two Native clients, actor/device isolation, and cleanup passed, but the stale
+  `direct-8933203d465fd79ac34b9b33953757a2` summary identity did not bind the
+  retained command.
+- Run `20260913T134640973568Z-3bb4d59d7b053fe256345c39086ae6a5`
+  is `FAIL/PARTIAL/UNPROVEN`: the corrected conversation bound the exact command,
+  and exposed the retained logical pending row as `failed` after its replacement
+  command also failed. The fixture now accepts that terminal shape only under
+  the existing no-projection/no-active-replacement fences; its focused Rust
+  regression passes.
+- The continuation follows Development Workflow function-first ordering. After
+  exact-source deployment, run only
+  `tooling.acceptance.gates.chat.native_submitted_command_recovery_entry` as
+  the bounded W8A Native functional journey. Run its formal validator and
+  catalog Gate only after that journey reaches `FUNCTIONAL_PASS`. Apply the
+  same split to W8B: run `tooling.acceptance.gates.chat.native_typing_runner`
+  as the bounded Direct/Group functional journey first, and invoke the formal
+  `chat-native-typing-e2e` Gate only after the product journey passes. Any
+  first actionable failure returns to owner-layer implementation and focused
+  checks; it does not trigger a broad Acceptance matrix.
+- Current-source focused preflight found and corrected one stale static
+  assertion that rejected the production-safe
+  `cfg(any(test, feature = "acceptance-webdriver"))` boundary. The focused
+  assertion and the 97-test Native Chat contract suite pass; this is
+  `SOURCE_CHECK`, not runtime proof.
+- The same checkpoint passes the exact Rust submitted-command fixture
+  regression, 24 W8A runner tests, focused W8A/W8B Conversation and Federation
+  Go packages, 29 W8C Desktop projection/group tests, 56 W8C/W9/W10 Native
+  runtime-binding tests, and 16 Local Development profile/deploy-resolution
+  tests. These results establish source readiness only; they do not replace a
+  Native functional journey or formal Acceptance proof.
+- Final exact-source redeployment is currently blocked by the Local Development
+  Control Plane: the external `env` repository contains
+  `peers-touch/chat-native-four` and `peers-touch/chat-native-five`, but those
+  environment definitions are untracked. The new governance rule correctly
+  rejects `make profile` and `make station` until the Environment Owner
+  Git-tracks/reviews those existing profiles. Do not bypass this guard by
+  invoking `deploy.sh` directly or by creating an authorization file.
+- After the Environment Owner resolves that tracked-profile gap, deploy the
+  current MR HEAD to both Stations, verify `/app-meta/version`, and rerun
+  `chat-native-submitted-command-recovery-e2e` with
+  `PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND=1`,
+  `PT_CHAT_NATIVE_RETAINED_ENGINE_STATE_ROLES=alice`, the two existing W8A
+  persistent storage roots, and the exact tuple above.
+- NDR-W8B remains source-complete but runtime-unproven. Direct start/stop,
+  lost-stop TTL, disconnect, and session-switch plus Group cross-Station fan-out,
+  deny, partial failure, overload, and zero durable typing-row evidence remain
+  required after W8A.
+
+### 2026-09-13 Goal Fixed-Point Exhaustion
+
+- The current checkpoint is
+  `8b236f43367cff0368a39f44d597adaaadfc608e`. Its focused W8A/W8B/W8C and
+  W9/W10 source checks pass, and the worktree is clean.
+- Three consecutive Goal intervals confirmed that
+  `peers-touch/chat-native-four` and `peers-touch/chat-native-five` remain
+  untracked in the external `env` repository. `make config` fails closed with
+  `Profile 'chat-native-four' is not Git-tracked in the env repository`.
+- No dependency-ready runtime action remains in the bound `peers-group-chat`
+  worktree. High-chat synchronization, both Station deployments, W8A, W8B,
+  W8C, W9-D, and W10-D all depend on the Environment Owner committing the two
+  exact profiles first.
+- Additional hard resource boundaries remain explicit: W8C needs authorized
+  third-client topology, PostgreSQL proof needs `MESSAGING_TEST_POSTGRES_DSN`,
+  and required Mobile physical proof has no online iPhone or Android device.
+- The Goal is therefore blocked without weakening runtime identity, bypassing
+  the profile resolver, crossing the selected worktree ownership boundary, or
+  substituting static/simulator evidence for required Native proof.
+
+### 2026-09-13 Canonical Four/Five Resume
+
+- The Owner selected the existing canonical `four` and `fiveArm` profiles in
+  place of `chat-native-four` and `chat-native-five`.
+- Environment commit `55b4985` promotes the pre-existing
+  `station-four` and `station-five-arm` deploy definitions into the reviewed
+  env repository without staging unrelated env changes.
+- `peers-group-chat` and `peers-chat-high-chat` are synchronized to
+  `2c95f8d14f15bcda51b05f0335937ed275c91d59`; group-chat selects `four` and
+  high-chat selects `fiveArm`.
+- Canonical `four` deployed successfully and `/app-meta/version` reports
+  `2c95f8d14f15`.
+- Canonical `fiveArm` source sync and image build completed at the same commit,
+  but startup fails closed because its retained `conversations` table still
+  contains the forbidden pre-CA-W5 `current_seq` column. Read-only inspection
+  shows both `current_seq` and canonical `current_sequence` and zero rows.
+- No database reset or DDL was performed. The accepted hard-cut plan forbids
+  resetting shared `:18080` Stations, so fiveArm recovery requires an explicit
+  owner-approved data operation or a different accepted topology before W8A
+  functional execution can begin.
+- The Owner subsequently authorized the exact canonical `four`/`fiveArm`
+  execution path. For `fiveArm` only, the approved recovery is an empty-schema
+  clean-slate operation: stop the Station, prove every `conversation*` table has
+  zero rows, save a schema-only backup, transactionally drop only that empty
+  Conversation table family, then restart exact source and require the
+  canonical schema guard plus health check to pass. Abort before mutation if
+  any Conversation row exists. This does not authorize a database-volume reset,
+  non-Conversation mutation, or reset of canonical `four`.
+- After the scoped reset exposed stale device ownership on canonical `four`,
+  the Owner explicitly authorized a full reset of both `four` and `fiveArm`
+  development environments with no data preservation. The approved operation
+  removes only each `pt-station` Compose project's `pg_data` and `peers_data`
+  volumes, redeploys exact source, and rebuilds Native client state from clean
+  development identities. The historical W8A command tuple is retired after
+  this reset; the next W8A proof must create and bind a new exact tuple before
+  exercising submitted-command recovery.
+
+### 2026-09-13 W8A Functional Pass And Validator Correction
+
+- Canonical `four` and `fiveArm` both report exact build
+  `b5f42f721d0c`; both Native client worktrees are clean at full commit
+  `b5f42f721d0c6635eba74e4d4df55c62429287e2`.
+- The bounded W8A product entrypoint in run
+  `20260913T163733726022Z-1a649100132ca245d99b69a50f0f30cc`
+  reached `FUNCTIONAL_PASS`. It generated and staged command
+  `01M2DT76RX52W4J6G9T8GS1BN3` for message
+  `01M2DT76MBCG8W64K2TX0A5FJX` in
+  `direct-173e0baa1fc7de528ef29e279c86f51a`, restored the exact bytes and
+  identifiers, committed the authority result, produced the delivered sender
+  projection, rendered the plaintext on Bob, and released both clients and all
+  six ports.
+- The formal catalog result is still `PARTIAL/UNPROVEN`: after the product
+  report passed, the shared validator rejected the valid
+  `submitted-command-recovery` journey because it hard-coded
+  `direct-delivered-receipt`; its next profile check also treated only one
+  current-profile Gate ID as sharing a client profile.
+- The Acceptance-only correction derives the journey and profile-topology rule
+  from the Gate variant. Its 25 focused tests and Python compilation pass.
+- Final exact-source Gate
+  `20260913T164933497898Z-87194509f71e18677704f12aea7e5805`
+  is `PASS/DONE/PROVEN` at
+  `638679c0e54a2c657fa208cff390210d6fa47322`. It generated command
+  `01M2DTWRTS6JBMBSN4WTKSHX5Q` / message
+  `01M2DTWRQ7FVRJ24EZRQB3V7X9`, preserved command SHA-256
+  `ff08c0830a46ccbe7344870484acc17db1f4c693c2b7576946feaa6aede40acb`,
+  reached authority event sequence 6, rendered the exact plaintext on Bob, and
+  passed immutable validation and cleanup.
+- NDR-W8A is complete for the required macOS current-profile cell. The next
+  dependency-ready closure is NDR-W8B's cross-Station Direct/Group typing
+  journey on canonical `four` and `fiveArm`.
+- W8B preflight found its Chat-specific
+  `native-tauri-embedded-webdriver` Provisioner still referenced retired,
+  untracked `chat-native-four` / `chat-native-five` profile and deployment
+  names. The source correction keeps stable Runtime Manifest service IDs while
+  mapping them to canonical `four` / `station-four` and
+  `fiveArm` / `station-five-arm`. The 58-test provisioning model suite and
+  Python compilation pass. This is a mechanical environment-injection repair;
+  it does not change MP-D32 or product behavior.
+- The same preflight found that protected-port reset authorization could name
+  only the active profile, while W8B binds actors to two approved Stations in
+  one Runtime Manifest. The reset owner now accepts an explicit, comma-delimited
+  `CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` allowlist that is mutually exclusive
+  with the single-profile authorization. Every listed deployment is still
+  checked against its exact URL origin, host, Compose project, Station and
+  PostgreSQL containers, and PostgreSQL volume before any reset. The Owner's
+  existing authorization covers exactly `station-four,station-five-arm`; it
+  does not extend to another environment.
+- Initial W8B run
+  `20260913T170741743805Z-9709474e3fb32082d62e4187644731d2`
+  is `BLOCKED/UNPROVEN` before Fixture mutation: the reset child receives the
+  reviewed deployment name but no redundant Station URL argument. The
+  authorization owner now derives the exact Station origin from that
+  deployment's reviewed health URL and revalidates scheme, host, port, path,
+  Compose project, containers, and volume. The focused reset suite passes
+  20/20.
+- Exact-source W8B run
+  `20260913T171324341841Z-e084a3bc6581dc49f375c28c34f86113`
+  reached all three isolated Native clients after resetting both approved
+  Stations, then stopped at its first product action because the runner omitted
+  the now-required `federationId` from `createDirectConversation`; cleanup
+  released all clients, ports, storage, and sessions. Native Chat runners now
+  resolve one Federation shared by their participating clients and supply that
+  stable ID to every programmatic Direct or Group creation. The 161-test
+  focused Native suite passes. No product API fallback or inferred default
+  Federation is added.
+
+### 2026-09-13 W8B Canonical Federation Runtime Boundary
+
+- Exact-source W8B run
+  `20260913T172916171669Z-08cced18a98560673115310c4a9e1725`
+  reached three authenticated Native clients, resolved shared Federation
+  `fed_chat_fc4d197a2cca84c9a142`, and then failed its first Direct creation.
+  Station `four` request
+  `799bbec1-632a-4c22-a7ea-1328f9264c51` returned HTTP 500 with the typed
+  owner error `transport_unavailable: no direct or relay route is available`.
+  Reverse cleanup passed for all three clients, nine ports, sessions, logs, and
+  ephemeral storage roots.
+- Both canonical `:18080` Stations attest exact source
+  `6e2de9065ce531bfa458e4f766a248782951e77d`, but their live Federation health
+  is not ready: `peers=0/1 connected=0 seeds=0/0`. Their containers run with an
+  empty `PEERS_BOOTSTRAP_NODES` and `RELAY_CLIENT_ENABLED=false`.
+- The previously functioning disposable pair proves the intended existing
+  topology: both Stations use the shared relay/bootstrap service at
+  `10.37.118.48`, whose DHT seed is healthy. The canonical runtime repair is to
+  mount `four` and `fiveArm` to that same Federation-owned relay, retain their
+  distinct Station identities, and require `ready=true`, one connected seed,
+  and a live relay mount before another W8B product run.
+- This is a runtime-composition correction under the accepted Federation and
+  service-coordination contracts. Conversation must not add a default
+  Federation, direct-URL fallback, synthetic peer route, local remote-Actor
+  device row, or relaxed product assertion.
+- After both Stations reached ready DHT and live relay mounts, run
+  `20260913T174952713386Z-87e46bac15e72bb351f1e60c14365984`
+  stopped before product execution because an unrelated macOS notification
+  window covered the runtime probe's single hard-coded center point. The target
+  Tauri PID was frontmost with a main window, the pointer reached the requested
+  coordinate, the screenshot was nonempty, and reverse cleanup passed. The
+  runtime-cell repair keeps exact-PID point ownership mandatory while selecting
+  from a bounded set of interior points; a fully occluded target still fails
+  closed.
+- Exact-source run
+  `20260913T175848391418Z-3b5935130122198e6f2c2136d44e63ee`
+  then reached `LEASED`, authenticated all three Native clients, created Direct
+  Conversation `direct-6358c09fed2e2b37704e656c4a11029b`, and accepted
+  Alice's typing submission, but timed out waiting for Bob's active typing
+  projection. Live Station and PostgreSQL inspection found the first missing
+  owner edge: the Authority snapshot held Bob's verified active member device
+  and Home Station while its local Actor Identity device table correctly held
+  only Alice. `productionTypingRouteDirectory` incorrectly queried that
+  local-only table, selected no remote recipient, and therefore emitted no
+  `HOME_FANOUT` frame.
+- The owner-layer correction resolves current typing routes through the existing
+  signed Actor endpoint-manifest capability, then converts those verified
+  routes for Authority fan-out. It does not create remote Actor device rows,
+  change Conversation membership ownership, persist typing, or add a transport
+  fallback. The focused Conversation typing and manifest-route tests pass;
+  exact-source W8B functional and formal proof remain pending.
+- Corrected-source macOS run
+  `20260913T182125546615Z-35457b8cb2e21fce52d06f9a497d196e`
+  remained `BLOCKED/UNPROVEN` before product execution because another
+  declared Goal's Native Desktop process retained the global foreground.
+  Exact-source service attestation and reverse cleanup passed; the W8B product
+  fix was not classified by this run.
+- The independent Linux cell run
+  `20260913T182722850347Z-3ee750b6db838f8fde0a74a3af71df57`
+  then exposed source drift in NDR-W5: the active tree retained the Linux
+  provisioner and runtime-cell contract but omitted the five declared
+  `tooling/acceptance/images/desktop-linux/` image/control files. Those files
+  are restored byte-for-byte from their last reviewed source. The 88 focused
+  runtime/provisioning tests and the 8-test Acceptance Infra ownership boundary
+  pass; the Linux W8B retry remains pending on a clean checkpoint.
+- Linux retries then exposed three independent pre-product infrastructure
+  defects. `pnpm install --frozen-lockfile` rejected a missing
+  `@lobehub/ui@5.25.0` peer snapshot, the runtime host exhausted `/data00`
+  while copying the Desktop bundle, and structured evidence redacted the
+  required public `hostKeySha256` attestation digest. The lockfile was repaired
+  with `pnpm@9.12.0 --fix-lockfile`, 140.9 GB of reclaimable Docker build cache
+  was removed without touching active containers or volumes, and the redaction
+  allowlist now preserves that exact public-key digest. Frozen install, the
+  Desktop production build, 27 redaction tests, 48 Native runner tests, and the
+  8-test Acceptance Infra ownership boundary pass.
+- Exact-source Linux run
+  `20260913T191930463781Z-d79f99f73123baed02b21b7a1b4f70c8`
+  reached a fully attested `LEASED` runtime cell and three authenticated Native
+  clients at `d0e71cfc5579f50fc903b1d26457d9d4624e8ff4`. Its first Direct
+  typing request was rejected with
+  `CONVERSATION_INTERACTION_INVALID_ARGUMENT` before Authority admission.
+  Runtime clocks proved the Linux client host approximately 25 seconds ahead
+  of both Stations: its five-second expiry therefore appeared approximately
+  30 seconds in the future. Conversation policy already declares a one-minute
+  `MaximumFutureClockSkew`, but typing submission and federated-frame
+  validation compared expiry only with `MaximumTypingTTL`. The owner-layer
+  correction now applies the accepted future-skew bound to both validation
+  hops while retaining the existing expiry/TTL fields and zero-durable-write
+  design. The focused interaction regression, race-enabled interaction suite,
+  complete Conversation suite, and Go style check pass; the next action is the
+  corrected exact-source W8B journey.
+- Exact-source Linux run
+  `20260913T193744123578Z-eab0d94c15b1d61ed948a3977deba835`
+  proved the clock-skew correction: Direct typing start and explicit stop both
+  reached Bob in 51 ms. The next immediate start was accepted by the HTTP API
+  but not dispatched because `MemoryTypingPulseLedger` throttled every
+  `is_typing=true` pulse within the minimum interval, including the legitimate
+  `false -> true` state transition. The owner-layer correction now throttles
+  only repeated active heartbeats while preserving stop priority and
+  generation fencing. Focused, race-enabled, complete Conversation, and Go
+  style checks pass; the next action is the corrected exact-source W8B journey.
+- Exact-source Linux run
+  `20260913T195024793204Z-4a1b87d2b764219f6f23c903a2876abf`
+  then passed Direct start/stop, send-clear, and blur-clear. It stopped when
+  the typing Gate tried to create an Alice-Charlie Direct solely as a
+  session-switch target; production correctly returned 403 because the
+  authorized reset fixture establishes only the Alice-Bob friendship.
+  The Gate correction creates its already-required three-member Group before
+  Direct lifecycle checks and uses that authorized Conversation as the switch
+  target. It does not add friendship state, weaken `create_direct` policy, or
+  change product behavior.
+- Exact-source Linux run
+  `20260913T200454558427Z-b3ff47afc56c7e699932520f250be3ce`
+  reached all three authenticated Native clients at
+  `47fa9efe15df5f39b4d53f4cbfcbb38258c614d9`, then failed before Direct
+  lifecycle proof when the required three-member Group was prepared. Station
+  `four` request `0f682ff7-4185-4c32-a221-9379af09d746` failed with
+  `actor_identity.resolve_actor_home_station: home_station_peer_id: is not
+  available from Actor Identity`. Readback proves the Fixture materialized
+  Alice locally and Bob as a remote cache entry on `four`, but omitted
+  Charlie's actual `fiveArm` PTID; `fiveArm` held Bob and Charlie locally and
+  Alice remotely. The nearby Direct bundle 403 belongs to independent
+  background Direct-session loading and is not the Group failure.
+- This is a Fixture ownership gap against the already accepted
+  Alice/Bob/Charlie contact baseline, not a Conversation routing defect. The
+  correction expands the bound-actor Fixture to every declared cross-Station
+  actor pair and makes repeated remote-cache seeding preserve the existing
+  Actor row and relationships. Conversation continues to require Actor
+  Identity-owned Home Station routing and signed endpoint manifests; no
+  fallback route, remote Actor device row, or Social policy weakening is
+  permitted. The combined Fixture owner, reset, Native runtime contract, and
+  interaction-static regression cohort passes 118 tests; W8B remains
+  `UNPROVEN` pending the clean exact-source Native rerun.
+- Exact-source Linux run
+  `20260913T202839608169Z-ba24c341d2887a86c03ffdf9dc1b96a6`
+  proved the Fixture correction: Group preparation and creation advanced with
+  all three bound actors present. The first recipient `syncGroup` then observed
+  the already specified temporary `conversation_members_unavailable` projection
+  state and the W8B runner treated it as terminal. The runner must use the
+  existing bounded Group projection reconciliation pattern, require the exact
+  Alice/Bob/Charlie member set before proceeding, and continue to fail closed
+  on timeout or a permanent product error. Cleanup and exact-source Linux
+  attestation passed; W8B remains `UNPROVEN`.
+- Exact-source Linux run
+  `20260913T203959427403Z-c037f553f13e623df00b8f40cde9c419`
+  proved the bounded Group projection reconciliation and resumed Direct typing,
+  including start and stop. It then failed in the Gate's zero-write readback
+  before further product assertions because the diagnostic SQL queried removed
+  `conversation_read_cursors.reader_ptid`; the canonical schema stores `ptid`.
+  The evidence helper must read and order by `ptid`, retaining the external
+  JSON field `readerPtid`. Runtime attestation and cleanup passed; W8B remains
+  `UNPROVEN`.
+- Exact-source Linux run
+  `20260913T205014307722Z-e8e9ca6e38c5ba98f4aec6166d5cc96a`
+  passed all Direct and Group typing lifecycle assertions through disconnect,
+  then failed at `removeGroupMember`. Station `four` returned
+  `CONVERSATION_INVALID_ARGUMENT` from membership preparation because that path
+  still enumerated the authority-local `actor_devices` table. The committed
+  Group contained Alice, Bob, and Charlie, but the local device table correctly
+  contained only Alice.
+- Accepted MP-D19 requires send, genesis, and membership preparation to consume
+  signed Home Station endpoint manifests. The owner-layer correction passes
+  server-resolved verified routes into membership prepare and submit, binds
+  manifest set and stable-state hashes into the Authority Plan, and removes
+  authority-local remote-device lookup from this path. It adds no remote Actor
+  device row and no routing fallback. Cleanup and exact-source attestation
+  passed; W8B remains `UNPROVEN`.
+- Concurrency decision for this MP-D19 correction is serial. The membership
+  request contract, production HTTP/Federation adapters, DDD fixtures, commit,
+  deployment, and W8B rerun share one Go package and one exact-source boundary;
+  no independent write lane can avoid overlapping those contracts. Read-only
+  inspection remains parallel-safe.
+- The source correction now binds both manifest hashes during prepare, refreshes
+  one shared signed-manifest route snapshot for local and forwarded submit,
+  rejects changed stable directory state before mutation, and filters that full
+  snapshot only when validating the locked pre-transition actor set. Focused
+  manifest-only remote removal and stale-state tests, the complete Conversation
+  suite, the complete Conversation race suite, `go vet`, Go style, and
+  `git diff --check` pass. This is source readiness only; W8B still requires the
+  checkpoint deployment and bounded Native functional rerun.
+- Exact-source Linux run
+  `20260913T212936487149Z-ed835cb01d6862ff711e0845bd9588a1`
+  proves the MP-D19 correction in the real journey: every Direct and Group
+  typing lifecycle assertion, removed-member rejection, zero durable writes,
+  source identity, and cleanup passed. The final revoked-device assertion
+  failed because Desktop `/device/revoke` omitted the current window-scoped
+  `X-Device-ID` and Station correctly returned `401`. That Desktop owner path
+  is parked behind the active MCA write claim; W8B remains `PARTIAL/UNPROVEN`.
+- Independent W8C run
+  `20260913T214114429384Z-d22427d1bb8cdca1049d82a01a1d32ee`
+  reached all three exact-source Native clients and failed before Group
+  creation because Bob's same-Station Charlie contact had no complete
+  Federation identity projection. Readback showed pair-specific fixture
+  Federations and no accepted projection for the local pair. The Fixture now
+  creates one deterministic Federation for the complete bound actor set and
+  seeds every directed relationship, while local peers reuse local Actor rows
+  and remote peers retain identity-stable cache upserts. The 120-test combined
+  Fixture and Native contract cohort passes; W8C runtime proof remains pending.
+- W8C retry
+  `20260913T220152092562Z-1854af5aca651bec0ef38d27e710f70f`
+  failed closed during Fixture provisioning because the membership verifier
+  still filtered by the current pair instead of the full bound Station set.
+  The verifier now derives both its Station IDs and expected count from the
+  shared Federation members; focused one-Station and two-Station tests pass.
+- Exact-source W8C run
+  `20260913T220857646292Z-22e49e67e2f67982b2c5c03b8ae2a433`
+  at `1f30fb6522e0821579fb08c422df43c5b3fa7c1c` proves the corrected complete
+  Federation fixture, all three Native client launches, and the default
+  friendship projection. It then fails at the first identity-parity assertion:
+  Alice receives Bob's cross-Station handle as `bob@host`, while Charlie
+  receives the same PTID's local handle as `@bob@host`. The Social relationship
+  projection currently returns the cache's routing-normalized handle unchanged
+  even though its wire contract requires canonical `@user@host`. Cleanup is
+  `DONE/PROVEN`; W8C remains `PARTIAL/UNPROVEN` pending an owner-layer Social
+  projection correction, focused regression, checkpoint, deployment, and
+  bounded rerun.
+- The Social relationship projection correction now preserves empty legacy
+  values, rejects malformed local-only values, and adds the missing leading
+  `@` only when projecting a routing-normalized `user@host` value onto the
+  canonical wire contract. The focused application race suite, complete Social
+  race suite, `go vet`, Go style, 52-test W8C Fixture/runner cohort, and
+  `git diff --check` pass. The existing W8C `friendship.identity_parity`
+  assertion remains the product regression Gate; runtime proof still requires
+  checkpoint deployment and the bounded exact-source rerun.
+- Exact-source W8C run
+  `20260913T222630465438Z-dafc69d1f5d7c5fae174abfa28bab614`
+  at `8126b05ab63353664cb3faba14857064279256bc` proves the canonical
+  relationship-handle correction: identity metadata and avatar parity, selected
+  contact routing, and existing-friend search all pass across three Native
+  clients. It then times out at `mls.readiness` because Desktop
+  `keypackage_count` omits the current window-scoped `X-Device-ID`; Station
+  correctly returns `401 authenticated Key Exchange device required`.
+  Runtime and Provisioner cleanup are `DONE/PROVEN`. This Desktop-owned
+  correction is parked behind the same active MCA Desktop write claim as the
+  W8B revoke fix; W8C remains `PARTIAL/UNPROVEN`.
+- The owner audit confirms that `keypackage_count` must resolve the current
+  window's Messaging engine, verify that its endpoint PTID matches the
+  authenticated session actor, send canonical
+  `CountMlsKeyPackagesRequest.device`, and bind the same endpoint device ID as
+  `X-Device-ID`. Adding only a header or using process-global device state
+  would remain invalid. The legacy Desktop KeyPackage upload/fetch adapters
+  require the same canonical endpoint review, while the production
+  `StationMlsKeyPackageTransport` already sends a canonical request and matching
+  device header. Declaration expansion failed closed with
+  `RESOURCE_DECLARATION_CONFLICT` on MCA workspace `65e7b6da4dc9be85`;
+  neither Desktop path may be edited until that owner releases or hands off the
+  claim.
+- PR #111's archived head was already an ancestor of the current branch. The
+  published post-merge Agent continuation
+  `7b548118441b1b3909baa54aca027a109a86e555` was integrated by merge commit
+  `09f073e0c11ec2dce8e3f9e2f6e1b0f40554044f` without history rewrite.
+  Semantic reconciliation preserved the complete shared-Federation fixture,
+  canonical `four`/`fiveArm` service bindings, typing restart/clock-skew
+  behavior, monotonic member-history cursors, and all later W8 evidence while
+  admitting the Agent recovery, device-revoke, peer-key readiness, devctl, and
+  completed Windows W9/W10 evidence.
+- Checkpoint `579ca4924c3cfeb74d553ff0c652989a4682ba18` removes the stale MLS
+  KeyPackage commands from the Conversation adapter and routes upload, fetch,
+  and count through the Key Exchange adapter. Tauri and HTTP Gateway now
+  resolve the authenticated window/account Messaging endpoint, verify its PTID,
+  send the canonical protobuf endpoint identity, and bind the matching
+  `X-Device-ID`. Device revoke now rejects a caller device that differs from
+  the active Messaging endpoint. Desktop tests, Rust compilation, the focused
+  Chat/provisioning cohort, Conversation/Agent race suites, and devctl ledger
+  tests pass. W8B/W8C still require exact-source deployment and Native reruns.
+- Exact-source W8B run
+  `20260913T232407335289Z-09e7de4d91b4f783b9c1bdf1e3ce86ca`
+  at `309f421133295ae49e3e2690853124462cfa54fe` passed two-Station
+  provisioning, three Native client authentication, and shared-Federation
+  selection. It then failed at the newly integrated Direct peer-key readiness
+  probe because the probe omitted Bob's attested Home Station ID and Alice's
+  Station correctly returned `404`. Cleanup is `DONE/PROVEN`.
+- The peer-key readiness correction now carries the peer client's
+  runtime-attested Station identity through the Chat Harness into the canonical
+  Key Exchange fetch. It retains the readiness fence and does not infer routes
+  from display fields or introduce a fallback. Focused Chat/provisioning tests,
+  Desktop tests, Rust compilation, and Python compilation pass; W8B remains
+  `PARTIAL/UNPROVEN` pending checkpoint deployment and rerun.
+- Exact-source W8B run
+  `20260913T234025297971Z-4865bcb672111d68a4314cbfdb93d33b`
+  at `74a0135b8a9e3ff26dac3576a81fbfd7737a5579` proves both Station
+  attestations, three Native client authentications, and the complete shared
+  Federation fixture, then fails at Direct peer-key readiness. Alice now sends
+  Bob's attested Home Station ID correctly, but Key Exchange
+  `resolveActorRoutes` still asks Alice's local Actor Device directory to
+  enumerate Bob when `target_device_id` is empty. The local Station has no
+  remote shadow-device rows by design, so it returns `404` before entering the
+  authenticated Federation query. Cleanup is `DONE/PROVEN`.
+- Mechanical W8B remediation is admitted under the existing Key Exchange and
+  Federation contracts: after Actor Identity resolves a remote Home Station,
+  an all-active-device Direct or MLS fetch delegates enumeration to that Home
+  Station. The source Station must not create or require remote Actor Device
+  rows; it validates the authenticated federated result by requested actor and
+  optional target device. Focused Key Exchange service/Federation regressions,
+  checkpoint deployment, and the bounded W8B rerun are required before any
+  functional claim.
+- The owner-layer correction is implemented in canonical Key Exchange route
+  resolution. Remote all-active-device Direct and MLS reads no longer consult
+  the source Station's Actor Device directory; the authenticated target Home
+  Station selects active endpoints, while the source validates actor identity,
+  any explicit device constraint, canonical key material, duplicate endpoints,
+  and irreversible MLS consumption. The Key Exchange race suite, focused
+  `go vet`, Go style, and `git diff --check` pass. This is source evidence only;
+  checkpoint deployment and the exact-source W8B rerun remain next.
+- Exact-source W8B run
+  `20260914T000309707403Z-c776902fe848cc9d8c9236b9ec1f437a`
+  at `08e13a19e4c2e91e5c97411a3c866a8e25d98af4` is
+  `PASS/DONE/PROVEN`. Both Stations attest the exact checkpoint; all three
+  Native clients authenticate; Direct and Group start/stop, send, blur,
+  conversation switch, disconnect/TTL, removed-member denial, revoked-device
+  denial, and zero durable typing writes pass; runtime and Provisioner cleanup
+  are complete. NDR-W8B is done. The serial runtime frontier advances to
+  NDR-W8C.
+- Exact-source W8C run
+  `20260914T001708329983Z-f3bc5aff5c7a5eef6ec66deedfad4aea`
+  at `3ec14ada443728f440ea88b565df44c787c41144` proves identity/avatar
+  parity, MLS readiness, visible three-member Group creation, encrypted
+  delivery to both remote members, and restart recovery. The authority then
+  commits Charlie's removal at sequence three, but Alice and Bob retain the
+  stale three-member projection until the Gate times out. Cleanup is
+  `DONE/PROVEN`; W8C remains `PARTIAL/UNPROVEN`.
+- Runtime readback identifies two owner-layer defects behind that stale
+  projection. The Station federation decoder reconstructs a committed
+  membership event without its `mls_commit_sha256`, so canonical re-sealing
+  rejects the event and remote delivery retries after target HTTP `500`.
+  Independently, portable MLS inbound processing returns no authority snapshot
+  projection for an ordinary sender/recipient membership commit, so Desktop
+  updates epochs but not `messaging_conversation_members`.
+- Mechanical W8C remediation is admitted under the existing authority
+  post-state contract: Station must preserve every event-hash field during
+  membership wire round-trip, portable Messaging Core must derive the complete
+  authoritative member projection for retained endpoints and the sender, and
+  Desktop must replace conversation metadata/members atomically with the MLS
+  transition commit. The removed endpoint keeps the existing retirement path.
+  Focused Station, Messaging Core, and Desktop regressions, checkpoint
+  deployment, and the bounded W8C rerun are required.
+- The owner-layer remediation passes source verification: the complete
+  Conversation package race suite, all 119 portable Messaging Core tests, the
+  two Desktop sender/recipient atomic-member-replacement regressions, Desktop
+  binary compilation, both Rust formatting checks, Go formatting, `go vet`,
+  and `git diff --check` pass. The repository-wide Go style script remains red
+  on its existing missing-doc-comment backlog; the new exported regression has
+  the required comment. This is `SOURCE_CHECK` only. Exact-source deployment to
+  `four` and `fiveArm` and the bounded W8C Native rerun remain required for
+  `FUNCTIONAL_PASS`.
+- Checkpoint `23002bf18d6d316901b9ede4f19bb3bd21124890` was deployed to
+  `four` and `fiveArm`. Stable exact-source run
+  `20260914T114014299344Z-aa87d8f750cbbe4100c3ebff501b0889`
+  passes identity/avatar/contact parity, visible three-member Group creation,
+  encrypted delivery, Bob restart recovery, and Alice's sender-side Charlie
+  removal. It times out only while waiting for Bob's retained-recipient
+  projection. Cleanup is complete.
+- Durable readback proves authority sequence three and Alice's queue item are
+  committed and acknowledged, while `fiveArm` remains at follower sequence two
+  with no sequence-three event or queue item. Both sequence-three remote frames
+  remain in the `four` Federation outbox as `retry_wait /
+  transport_unavailable`. Target logs show every corresponding
+  `/federation/delivery` request reaches `fiveArm` and returns HTTP `500`.
+- The remaining owner-layer defect is lifecycle reconstruction in the
+  Conversation follower projection. `ConversationAuthoritySnapshot`
+  intentionally carries the complete active public state but no historical
+  join sequence. The production decoder therefore used the transition
+  sequence for every active endpoint, while the follower validator compared
+  those synthesized values with retained sequence-one endpoint history and
+  rejected the valid removal. The correction validates actor, role, endpoint,
+  Home Station, active-state, scope, epoch, and hash-chain truth as
+  duplicate-safe sets, then preserves retained lifecycle metadata and derives
+  added lifecycle metadata from the committed transition.
+- Focused remove/add lifecycle regressions, including rejection of forged Home
+  Station state, pass. The complete Conversation race suite, focused `go vet`,
+  Go formatting, and `git diff --check` pass. The repository-wide Go style
+  script remains red only on the recorded missing-doc-comment backlog. This is
+  `SOURCE_CHECK`; checkpoint, exact-source deployment, and the bounded W8C
+  Native rerun remain required.
+- Follower lifecycle checkpoint
+  `13d867e8fb17d7dd3c3c83d411be25a158af73ee` was deployed to `four`
+  and `fiveArm`; both live Stations attested that exact source. Native run
+  `20260914T122113394691Z-416c2c7dc23f80a5595eb90f8f9e06c2`
+  then passed the complete W8C three-client Group/MLS journey, including Bob's
+  retained-recipient Charlie-removal projection and deterministic cleanup.
+  Runtime-cell run `20260914T122244856541Z-9962e22c0179720b`
+  attests the clean source-bound binary, and final cell state is `CLEANED`.
+  NDR-W8C and the selected `four` / `fiveArm` NDR-W8 scope are
+  `PASS/DONE/PROVEN`.

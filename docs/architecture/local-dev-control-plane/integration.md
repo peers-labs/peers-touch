@@ -14,11 +14,11 @@
 |---------------|--------------|-------------|
 | `env/peers-touch/<profile>/` | Profile and deploy topology | Remains canonical topology owner |
 | `<worktree>/.local/dev/profiles/` | Imported cache or authorized local compose profile | Cache is not authority; local profile requires a digest-bound receipt |
-| `<worktree>/.local/dev/active/` | Worktree profile pointer | Replaced by machine registry binding |
-| `<worktree>/.local/dev/pids|logs|data/` | Worktree/profile runtime state | Moves under workspace-scoped global dev root where applicable |
+| `<worktree>/.local/dev/active/` | Legacy worktree profile pointer | No runtime reader; replaced by machine registry binding |
+| `<worktree>/.local/dev/pids|logs|data/` | Legacy worktree/profile runtime state | New runtime state resolves under the workspace-scoped global dev root |
 | `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
-| `/tmp/peers-touch-profile-leases/` | Acceptance/deploy live locks | Replaced by one machine control-plane lease root |
-| `~/.peers-touch/dev/registry.json` | Initial observed snapshot | Target machine allocation registry |
+| `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
+| `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
 
 The migration must be atomic at the runtime command boundary. There must not be
@@ -63,6 +63,9 @@ Target command behavior:
 
 | Command | Control-plane action |
 |---------|----------------------|
+| `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
+| `make env-update` | Atomically refresh the registered Git identity or replace requested binding fields while no lease is held |
+| `make env-check` | Verify current root/ID/branch/HEAD, selected definition, slot, capabilities, target host, and budget |
 | `make dev-start` | Publish and confirm source/runtime intent before mutation |
 | `make dev-update` | Atomically replace the current work item's intent |
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
@@ -70,7 +73,7 @@ Target command behavior:
 | `make dev-release` | Release the work declaration after cleanup |
 | `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
 | `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
-| `make profile <name>` | Update only current `workspaceId` binding |
+| `make profile <name>` | Call canonical `env-update` behavior for only the current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
 | `make env-status-all` | Show all registered worktrees, conflicts, processes and leases |
@@ -80,18 +83,43 @@ Target command behavior:
 | `make station` / restart | Require exclusive `station.deploy` |
 | destructive Acceptance reset | Require exclusive `station.reset` plus explicit run authorization |
 
-## 4. Current Snapshot Boundary
+The generic reset lease API for the later destructive wrapper is:
 
-The initial `~/.peers-touch/dev/registry.json` is intentionally diagnostic:
+```bash
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id <station-fixture-scope> \
+  --reset-authorized-scope <station-fixture-scope> \
+  --budget-seconds <seconds> \
+  -- <reset-command>
+```
+
+It validates the authoritative binding, `allowedCapabilities`, exact active
+Development intent, remote tracked-clean topology, and exact reset scope before
+acquiring the OS lock. It does not itself authorize or implement deletion.
+
+`make station` uses the same API with `station.deploy` and holds the lease
+across source synchronization, build, restart, deploy health readback, and the
+final profile health check. The mutation child inherits the locked file
+descriptor and verifies its exact lease metadata before bypassing acquisition;
+an environment marker alone cannot establish possession. Direct Station
+deployment enters the same canonical lease path, while the old `/tmp` profile
+lease remains only for non-Station deployment roles.
+
+## 4. Bootstrap Snapshot Boundary
+
+Before explicit promotion, `~/.peers-touch/dev/registry.json` is intentionally
+diagnostic:
 
 - It records current worktree/profile/slot/Station facts.
 - It records dirty and untracked env definitions.
 - It records detected conflicts.
 - It records the target and legacy Acceptance roots.
-- No existing script reads it.
+- Runtime commands reject it as non-authoritative.
 - It does not migrate, delete, or symlink any worktree `.local`.
 
-This permits immediate visibility without silently changing active runtimes.
+`env-status-all` may read and label the snapshot, but only `env-register`
+promotes it. This permits visibility without silently changing active runtimes.
 
 ## 5. Migration Constraints
 
@@ -155,6 +183,18 @@ Required negative fixtures:
 - Dirty/untracked environment repository definition.
 - Missing profile with no explicit human authorization to create it.
 - Expired, mismatched, reused, or digest-invalid environment authorization.
+
+Focused implementation verification:
+
+```bash
+node --test --test-timeout=1200000 \
+  tooling/scripts/lib/machine-dev-paths.test.mjs \
+  tooling/scripts/local-dev/*.test.mjs
+```
+
+The lease suite launches isolated child processes for every required lease
+class and proves contention plus release on success, command failure, signal,
+timeout, and stale metadata recovery. It does not contact a Station.
 
 ## 7. Acceptance Root Closure Contract
 

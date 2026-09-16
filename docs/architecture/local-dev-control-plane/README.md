@@ -55,20 +55,30 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
 10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
 
-## 4. 当前机器登记
+## 4. Runtime Authority
 
-当前机器的初始事实快照位于：
+The canonical implementation lives in `tooling/scripts/local-dev/` and stores
+machine-local authority at:
 
 ```text
 ~/.peers-touch/dev/registry.json
+~/.peers-touch/dev/leases/
 ```
 
-该文件当前标记为 `authority: observed-snapshot`，只记录审计事实，不参与运行时选择。
-在控制面实现和迁移完成前，现有 profile 脚本仍是实际执行路径。
+An existing `authority: observed-snapshot` file remains diagnostic until an
+Owner explicitly runs `make env-register`. That one operation promotes the
+registry to `authority: machine-control-plane` and adds the verified current
+workspace binding atomically. Discovery and legacy profile pointers never
+perform promotion or registration.
 
 Git worktree discovery does not create a registration. The initial registered
 cohort is owner-declared; until that list is provided, the machine registry may
 record observations but must keep `registrations` empty.
+
+Normal `make profile`, `make config`, `make station`, Desktop, and Mobile
+resolution now requires the authoritative binding. OS-held leases under
+`leases/` are the only live owners for `local.slot`, `station.deploy`, and
+`station.reset`; JSON in a lock file is diagnostic metadata only.
 
 ## 5. 文档导航
 

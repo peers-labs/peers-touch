@@ -1,8 +1,6 @@
-mod attachment;
 mod attachment_transfer;
 mod command_outbox;
 mod command_reconciliation;
-mod command_result;
 mod consumer;
 mod conversation_state;
 mod direct;
@@ -71,11 +69,6 @@ pub(crate) fn crypto_endpoints_from_actor_device_refs(
         .collect()
 }
 
-pub use attachment::{
-    attachment_chunk_aad, attachment_chunk_nonce, decrypt_attachment_chunk,
-    encrypt_attachment_chunk, validate_encrypted_object_descriptor,
-    validate_encrypted_object_upload_spec, AttachmentCryptoMaterial, EncryptedAttachmentChunk,
-};
 pub use attachment_transfer::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferFailure,
     AttachmentTransferProgress, AttachmentTransferRecord, AttachmentTransferTransport,
@@ -89,7 +82,6 @@ pub use command_outbox::{
 pub use command_reconciliation::{
     CommandReconciliationProgress, CommandReconciliationWorker, CommandResultTransport,
 };
-pub use command_result::CommandResultProcessor;
 pub use consumer::MessagingItemConsumer;
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
@@ -118,15 +110,16 @@ pub use messaging_core::codec::private_content::{
 };
 pub use messaging_core::crypto::prekeys::PendingPreKeyBundle;
 pub use messaging_core::identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
+pub use messaging_core::inbox::CommandResultProcessor;
 pub use mls_key_packages::StationMlsKeyPackageTransport;
 pub use mls_leave_intent::StationMlsLeaveIntentTransport;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
 pub use public_event::PublicEventProcessor;
 pub use receipt::DeliveryReceiptProcessor;
 pub use recovery::{
-    decode_recovery_revision, encode_recovery_revision, EncodedRecoveryRevision,
-    MessagingRecoveryArchive, RecoveryAttachmentMetadata, RecoveryConversationProjection,
-    RecoveryMessageProjection, RecoveryTrustRecord,
+    decode_recovery_revision, encode_recovery_revision, DecodedRecoveryRevision,
+    EncodedRecoveryRevision, MessagingRecoveryArchive, RecoveryAttachmentMetadata,
+    RecoveryConversationProjection, RecoveryMessageProjection, RecoveryTrustRecord,
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{

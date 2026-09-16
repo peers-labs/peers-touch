@@ -15,7 +15,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from tooling.acceptance.core.attestation import (
     PROTOCOL_SOURCE_PATHS,
@@ -28,6 +28,7 @@ from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures import chat_native_reset
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
+    prepare_bound_friendships,
     produce_actor_manifest,
     produce_bound_actor_manifest,
     reset_fixture,
@@ -825,6 +826,107 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ["ptid:alice:four", "ptid:bob:five"],
             )
             run.close()
+
+    def test_bound_friendships_cover_every_cross_station_actor_pair(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        role_targets = {
+            "alice": ("http://station-four", "station-four"),
+            "bob": ("http://station-five", "station-five"),
+            "charlie": ("http://station-five", "station-five"),
+        }
+
+        def record(role: str, station: str) -> chat_native_reset.FixtureActorRecord:
+            return chat_native_reset.FixtureActorRecord(
+                ptid=f"ptid:{role}",
+                preferred_username=role,
+                name=role.title(),
+                summary="",
+                icon="",
+                image="",
+                url=f"https://{station}.example/actors/{role}",
+                federated_handle=f"@{role}@{station}.example",
+                home_station_peer_id=station,
+                home_station_domain=f"{station}.example",
+                visibility=1,
+                locator_seq=1,
+            )
+
+        records = {
+            "alice": record("alice", "station-four"),
+            "bob": record("bob", "station-five"),
+            "charlie": record("charlie", "station-five"),
+        }
+        by_account = {
+            ACTOR_ACCOUNTS[role]: value
+            for role, value in records.items()
+        }
+        actors = tuple(
+            ActorIdentity(
+                role=role,
+                account_ref=f"station-account:{ACTOR_ACCOUNTS[role]}",
+                ptid=value.ptid,
+            )
+            for role, value in records.items()
+        )
+
+        federation_members = tuple(records.values())
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
+            side_effect=lambda _station, _environment, account: by_account[account],
+        ) as read_actor, patch(
+            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
+        ) as seed_contact:
+            prepare_bound_friendships(role_targets, actors)
+
+        self.assertEqual(read_actor.call_count, 3)
+        self.assertEqual(
+            seed_contact.call_args_list,
+            [
+                call(
+                    "http://station-four",
+                    "station-four",
+                    records["alice"],
+                    records["bob"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-four",
+                    "station-four",
+                    records["alice"],
+                    records["charlie"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["bob"],
+                    records["alice"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["bob"],
+                    records["charlie"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["charlie"],
+                    records["alice"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["charlie"],
+                    records["bob"],
+                    federation_members,
+                ),
+            ],
+        )
 
 
 class ProfileActivationContractTests(unittest.TestCase):

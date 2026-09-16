@@ -151,6 +151,49 @@ func TestRelationshipListsHydrateActorProjections(t *testing.T) {
 	}
 }
 
+func TestFederatedHandleOfCanonicalizesWireProjection(t *testing.T) {
+	tests := []struct {
+		name  string
+		actor *db.Actor
+		want  string
+	}{
+		{name: "nil actor", actor: nil, want: ""},
+		{name: "legacy empty handle", actor: &db.Actor{}, want: ""},
+		{
+			name:  "routing normalized remote handle",
+			actor: &db.Actor{FederatedHandle: "bob@station.example"},
+			want:  "@bob@station.example",
+		},
+		{
+			name:  "canonical local handle",
+			actor: &db.Actor{FederatedHandle: "@bob@station.example"},
+			want:  "@bob@station.example",
+		},
+		{
+			name:  "surrounding whitespace",
+			actor: &db.Actor{FederatedHandle: " bob@station.example "},
+			want:  "@bob@station.example",
+		},
+		{
+			name:  "malformed local-only handle",
+			actor: &db.Actor{FederatedHandle: "bob"},
+			want:  "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := federatedHandleOf(test.actor); got != test.want {
+				t.Fatalf(
+					"federatedHandleOf() = %q, want %q",
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
 func TestRelationshipListsFilterBlockedEdges(t *testing.T) {
 	f := newRelationshipFixture(t)
 	ctx := context.Background()

@@ -4,9 +4,32 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+const WORKSPACE_ID = /^[0-9a-f]{16}$/;
+
 export const repoRoot = realpathSync(
   path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..'),
 );
+
+function requireIdentifier(value, label) {
+  if (typeof value !== 'string' || !IDENTIFIER.test(value)) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return value;
+}
+
+function resolveWorkspaceId(options = {}) {
+  if (options.workspaceId !== undefined) {
+    if (
+      typeof options.workspaceId !== 'string' ||
+      !WORKSPACE_ID.test(options.workspaceId)
+    ) {
+      throw new Error(`Invalid workspace ID: ${options.workspaceId}`);
+    }
+    return options.workspaceId;
+  }
+  return workspaceIdForRoot(options.repoRoot ?? repoRoot);
+}
 
 export function workspaceIdForRoot(root = repoRoot) {
   const canonicalRoot = realpathSync(root);
@@ -26,38 +49,39 @@ export function developmentWorkLockPath(home = homedir()) {
 }
 
 export function workspaceWorkflowPath(workItemId, options = {}) {
-  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(workItemId)) {
-    throw new Error(`Invalid development work item: ${workItemId}`);
-  }
-
-  const root = options.repoRoot ?? repoRoot;
+  requireIdentifier(workItemId, 'development work item');
   return path.join(
     machineDevRoot(options.home),
     'workspaces',
-    workspaceIdForRoot(root),
+    resolveWorkspaceId(options),
     'workflow',
     workItemId,
   );
 }
 
 export function workspaceRuntimePath(name, options = {}) {
-  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
-    throw new Error(`Invalid workspace runtime name: ${name}`);
-  }
-
-  const root = options.repoRoot ?? repoRoot;
+  requireIdentifier(name, 'workspace runtime name');
   return path.join(
     machineDevRoot(options.home),
     'workspaces',
-    workspaceIdForRoot(root),
+    resolveWorkspaceId(options),
     'runtime',
     name,
   );
 }
 
 export function workspaceRuntimeRef(name, root = repoRoot) {
-  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) {
-    throw new Error(`Invalid workspace runtime name: ${name}`);
-  }
+  requireIdentifier(name, 'workspace runtime name');
   return `~/.peers-touch/dev/workspaces/${workspaceIdForRoot(root)}/runtime/${name}`;
+}
+
+export function isDirectInvocation(metaUrl, argvPath = process.argv[1]) {
+  if (!argvPath) return false;
+  try {
+    return (
+      realpathSync(path.resolve(argvPath)) === realpathSync(fileURLToPath(metaUrl))
+    );
+  } catch {
+    return false;
+  }
 }

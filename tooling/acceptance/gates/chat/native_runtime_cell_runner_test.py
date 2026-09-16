@@ -17,6 +17,8 @@ from tooling.acceptance.gates.chat.native_support import (
     cleanup_preserving_primary_failure,
     is_native_tauri_url,
     is_station_authorization_rejection,
+    shared_federation_id,
+    wait_for_peer_key_bundle,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
     NativeMultiDeviceGate,
@@ -236,7 +238,57 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "request_json_auth_with_device_id(",
             revoke_source,
         )
+        self.assertIn(
+            "active_key_exchange_context::<Value>",
+            revoke_source,
+        )
+        self.assertIn(
+            "input.device_id != context.device_id",
+            revoke_source,
+        )
         self.assertIn("&input.device_id", revoke_source)
+
+    def test_mls_keypackage_commands_bind_window_endpoint_identity(self) -> None:
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        key_exchange_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        gateway = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+        ).read_text(encoding="utf-8")
+
+        for command in (
+            "keypackage_upload",
+            "keypackage_fetch",
+            "keypackage_count",
+        ):
+            self.assertNotIn(f"pub fn {command}(", conversation_commands)
+            self.assertIn(f"pub fn {command}(", key_exchange_commands)
+            self.assertIn(f"key_exchange::{command}", main)
+        self.assertIn(
+            "active_key_exchange_context_for_account",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "kemodel::CountMlsKeyPackagesRequest",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "request_proto_for_device::<",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "execute_keypackage_count(context)",
+            gateway,
+        )
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
@@ -1077,7 +1129,73 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("SshTransport(", support)
         self.assertIn("SshTarget(", support)
+        self.assertIn("'readerPtid', ptid", support)
+        self.assertIn("ORDER BY ptid", support)
+        self.assertIn("SELECT ptid AS reader_ptid", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
+
+    def test_shared_federation_requires_one_id_for_every_actor(self) -> None:
+        clients = {
+            "alice": object(),
+            "bob": object(),
+            "charlie": object(),
+        }
+        contexts = {
+            clients["alice"]: {
+                "federations": [
+                    {"federationId": "fed-other"},
+                    {"federationId": "fed-shared"},
+                ]
+            },
+            clients["bob"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+            clients["charlie"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+        }
+        with patch(
+            "tooling.acceptance.gates.chat.native_support.async_harness",
+            side_effect=lambda client, *_args, **_kwargs: contexts[client],
+        ):
+            self.assertEqual(
+                shared_federation_id(
+                    clients,  # type: ignore[arg-type]
+                    ("alice", "bob", "charlie"),
+                ),
+                "fed-shared",
+            )
+
+    def test_peer_key_readiness_waits_for_positive_bundle_count(self) -> None:
+        with patch(
+            "tooling.acceptance.gates.chat.native_support.async_harness",
+            side_effect=(
+                {"peerPtid": "ptid:bob", "bundleCount": 0},
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 1,
+                    "deviceIds": ["bob-device"],
+                },
+            ),
+        ) as harness, patch(
+            "tooling.acceptance.gates.chat.native_support.time.sleep",
+        ):
+            result = wait_for_peer_key_bundle(
+                object(),  # type: ignore[arg-type]
+                "ptid:bob",
+                "station-five",
+                timeout=1,
+            )
+
+        self.assertEqual(result["deviceIds"], ["bob-device"])
+        self.assertEqual(harness.call_count, 2)
+        self.assertEqual(
+            harness.call_args.args[2],
+            {
+                "peerPtid": "ptid:bob",
+                "homeStationPeerId": "station-five",
+            },
+        )
 
     def test_station_readback_supports_bound_local_source_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1202,6 +1320,25 @@ INSERT INTO conversation_read_cursors VALUES
                 "resources_released",
             },
         )
+        tree = ast.parse(self.source("typing"))
+        create_direct_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "async_harness"
+            and len(node.args) >= 3
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "createDirectConversation"
+        ]
+        self.assertEqual(len(create_direct_calls), 1)
+        for call in create_direct_calls:
+            payload = call.args[2]
+            self.assertIsInstance(payload, ast.Dict)
+            self.assertIn(
+                "federationId",
+                [ast.literal_eval(key) for key in payload.keys],
+            )
 
     def test_group_creation_uses_current_production_harness_contract(
         self,
@@ -1229,6 +1366,10 @@ INSERT INTO conversation_read_cursors VALUES
                 self.assertIsInstance(payload, ast.Dict)
                 self.assertIn(
                     "memberPtids",
+                    [ast.literal_eval(key) for key in payload.keys],
+                )
+                self.assertIn(
+                    "federationId",
                     [ast.literal_eval(key) for key in payload.keys],
                 )
                 self.assertNotIn(
@@ -1276,6 +1417,50 @@ INSERT INTO conversation_read_cursors VALUES
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 
+    def test_typing_group_sync_waits_for_exact_member_projection(self) -> None:
+        sync = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "sync",
+        )
+        self.assertIn("expected_members = sorted(self.ptids.values())", sync)
+        self.assertIn('result.get("memberPtids", [])', sync)
+        self.assertIn("return wait_until(", sync)
+        self.assertIn("STEP_TIMEOUT", sync)
+
+    def test_direct_creation_uses_current_production_harness_contract(
+        self,
+    ) -> None:
+        for filename in (
+            "native_interactions_runner.py",
+            "native_multi_device_runner.py",
+            "native_recovery_runner.py",
+            "native_typing_runner.py",
+            "native_two_client_runner.py",
+        ):
+            with self.subTest(runner=filename):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                tree = ast.parse(source)
+                create_direct_calls = [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "async_harness"
+                    and len(node.args) >= 3
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "createDirectConversation"
+                ]
+                self.assertTrue(create_direct_calls)
+                for call in create_direct_calls:
+                    payload = call.args[2]
+                    self.assertIsInstance(payload, ast.Dict)
+                    self.assertIn(
+                        "federationId",
+                        [ast.literal_eval(key) for key in payload.keys],
+                    )
+
     def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py"
@@ -1301,7 +1486,12 @@ INSERT INTO conversation_read_cursors VALUES
             self.assertIn('"[data-chat-send]"', lifecycle)
             self.assertIn('"arguments[0].blur()"', lifecycle)
             self.assertIn("select_conversation(", lifecycle)
+        self.assertIn('"group",\n            alternate_group_id', prove_direct)
         self.assertNotIn('"submitTyping"', prove_direct)
+        self.assertLess(
+            source.index('"createGroup"'),
+            source.index("self.prove_direct("),
+        )
         self.assertEqual(
             prove_group.count('"submitTyping"'),
             1,

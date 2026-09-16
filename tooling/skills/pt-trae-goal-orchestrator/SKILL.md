@@ -67,10 +67,11 @@ current stage's owning skill.
 ## Goal Slice
 
 ```text
-Plan or stage workflow = durable full-scope work graph
-Goal Slice = one bounded stage/worktree execution horizon with an adaptive queue
-Subagent = one parallel unit inside that Slice
-active_work = tracked-plan continuity, only after a formal plan exists
+Plan Package or stage workflow = durable full-scope work graph
+Task Slice = one resumable execution closure in the Plan Package
+Goal Slice = one bounded stage/worktree execution horizon within the current Task
+Subagent = one parallel lane inside that Goal Slice
+active_work = package/Task/Session locator, only after a formal plan exists
 ```
 
 A valid Slice is:
@@ -112,8 +113,9 @@ The Goal carries a projection of the source-owned work graph:
 - `Done`: actions whose source-owned completion criteria and evidence passed.
 
 The queue is not a second plan. For tracked work, any newly discovered
-deliverable or dependency is written to the formal plan first, then projected
-into the Goal queue.
+deliverable or dependency is written to the Plan Package manifest/current Task
+first, then projected into the Goal queue. A Goal never changes Task lifecycle
+or selects a successor directly.
 
 ### Dynamic Action Admission
 
@@ -197,8 +199,9 @@ Before authoring or reviewing:
    identity and backend reachability; display presence alone is not ownership.
 2. Ask `pt-god-view` for the current stage and owning skill.
 3. Read that skill's authoritative workflow and artifacts.
-4. For EXECUTE/DELIVER, read `active_work`, its formal plan, task statuses,
-   dependency DAG, gates, and evidence.
+4. For EXECUTE/DELIVER, validate `active_work.plan` with `planctl validate`,
+   resolve `planctl current`, then read compact `plan.md`, only the current Task
+   Slice, its Session projection, DAG, gates, and referenced evidence.
 5. For PRODUCT/DESIGN before a formal plan, do not fabricate `active_work` or a
    Context Anchor.
 6. Inspect current code/evidence only to verify readiness and file ownership;
@@ -304,9 +307,10 @@ Git state as a replacement baseline.
      stage skill;
    - EXECUTE/DELIVER: workstreams, closures, dependencies, and gates from the
      accepted plan.
-2. Inventory every in-scope action and classify it as ready, in progress,
-   parked, or done without adding, removing, or reordering semantic
-   dependencies.
+2. Inventory actions inside the manifest's current Task and classify them as
+   ready, in progress, parked, or done without adding, removing, or reordering
+   semantic dependencies. Other manifest Tasks are frontier context, not
+   concurrently current work.
 3. Compute the complete dependency-ready frontier.
 4. Group ready work by shared stage outcome, evidence tier, runtime environment,
    and reconcile boundary.
@@ -380,6 +384,12 @@ non-claims from authoritative sources.
 - EXECUTE uses plan-defined verification and Acceptance.
 - DELIVER uses quality, completion, commit, PR, and review gates.
 
+For EXECUTE, project only the current Task `closureId` and its Acceptance Gate
+set. Before dispatch, report the Gate IDs, environments, and timeout budget.
+Do not use the latest Acceptance artifact as plan state and do not run the
+plan's full set unless the user explicitly requested release or full
+Acceptance.
+
 Do not require runtime evidence for a stage whose source does not require it.
 Do not define new `PASS`, `PROVEN`, readiness, or failure semantics in the Goal.
 
@@ -387,12 +397,16 @@ Do not define new `PASS`, `PROVEN`, readiness, or failure semantics in the Goal.
 
 - PRODUCT/DESIGN before a formal plan: track through their source artifacts and
   TRAE Goal state only.
-- After a formal plan exists: update plan evidence/status, then `active_work`,
-  then invoke `pt-context-anchor`.
+- After a Plan Package exists: update manifest Task lifecycle/current Task
+  snapshot and Session owners, then mirror `active_work`, then invoke
+  `pt-context-anchor`.
+- `active_work.current_task_id/current_task_path` must mirror the manifest;
+  `active_work.dev_state` must mirror replayed `session.json` or `NONE`.
 - Every queue transition projects source-owned state; it never becomes a second
   completion authority.
-- A dynamically admitted tracked action must be added to the formal plan before
-  it enters the Ready Queue.
+- A dynamically admitted tracked action must be added to the current Task
+  specification or, when it is a new closure, to the manifest plus a bounded
+  Task Slice before it enters the Ready Queue.
 - Blocking one action updates its plan evidence and Parked Queue entry without
   setting `active_work.blocked=true` while another legal action is ready.
 - Completing a Slice advances only its source-owned checkpoints or plan tasks.
@@ -445,6 +459,15 @@ updated. The candidate still passes the full AUTHOR workflow.
 - The output is one copy-safe TRAE block.
 - Goal completion cannot imply broader stage or plan completion.
 
+## Self-Hosting Bootstrap
+
+Until DWF-B5 atomically migrates the active Mobile Shell plan, the exact legacy
+Mobile plan remains the sole DWF-B authority. Project memory currently has no
+`active_work` row; migration must verify and journal `NONE -> NONE` without
+creating a transient pointer. A prepared package may be reviewed but cannot
+supply a Goal queue or current Task before the locked cutover. This exception
+is not generic legacy-plan support.
+
 ## Anti-Patterns
 
 Never:
@@ -455,6 +478,7 @@ Never:
 - invent a task graph, execution closure, architecture rule, or product state;
 - duplicate God View dispatch or Guardian execution rules;
 - create a second progress, successor, evidence, or completion source of truth;
+- read archive content or every Task body to recover one current Goal Slice;
 - create a Goal when equivalent Goal/background work already exists;
 - treat a Goal from another worktree as a semantic duplicate;
 - treat a stale, backend-unaddressable agent entry as a live conflict;

@@ -26,7 +26,6 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,

@@ -2,7 +2,7 @@
 name: "pt-execution-plan-guardian"
 description: "Executes approved plans with explicit concurrency decisions, isolated ownership, reconciliation, and no scope or architecture drift. Invoke for implementation, continuation, merging, or status after a formal plan exists."
 stage: "EXECUTE"
-requires: ["accepted execution plan with status table", "matching active_work entry"]
+requires: ["accepted active Plan Package", "matching active_work Task/Session locator"]
 produces: ["code changes", "tests", "evidence", "updated plan status", "synchronized active_work state"]
 next: "pt-github-commit"
 ---
@@ -112,10 +112,18 @@ Every execution or progress report must distinguish:
 - Verified behavior.
 - Unverified or explicitly not implemented behavior.
 
-If an existing plan document cannot be found, say so before executing and treat
+If an existing Plan Package cannot be found, say so before executing and treat
 an isolated, non-architectural task as ad hoc with a temporary acceptance
 checklist. Architecture migrations and cross-layer refactors must stop with
 `EXECUTION_BLOCKED_BY_PLAN`; they may not proceed ad hoc.
+
+Self-hosting exception: until DWF-B5 atomically migrates
+`docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation.md`,
+that exact legacy Mobile Shell plan remains the sole DWF-B authority. Project
+memory currently has no `active_work` row; migration must verify and journal
+`NONE -> NONE` without creating a transient pointer. The prepared package is
+review-only. Do not select a current Task from it or generalize this exception
+to another active legacy plan.
 
 ## Immutable Worktree Binding
 
@@ -261,10 +269,16 @@ Before any code edit, first satisfy `Immutable Worktree Binding`, then verify:
 
 - Product status is accepted/active where product design is required.
 - Architecture status is accepted/active where architecture is required.
-- A formal execution plan exists and is approved.
-- A matching `active_work` entry points to that plan and matches the verified
+- A Plan Package exists, is approved, and passes `planctl validate`.
+- `planctl current` resolves exactly one Task when package status is `active`,
+  or no Task when status is `blocked/completed`.
+- A matching `active_work` entry points to package `plan.md`, mirrors the
+  current Task and Session, and matches the verified
   branch, `workspaceId`, expected HEAD, and worktree-set digest.
-- Requested work maps to a plan workstream/task ID.
+- `active_work.current_task_id/current_task_path` equal the manifest current
+  Task, and `active_work.dev_state` equals replayed `session.json.state` or
+  `NONE`.
+- Requested work maps to the manifest current Task ID and its Task Slice.
 - Dependencies for that task are complete.
 - Required cutover, deletion, gates, and evidence are defined.
 
@@ -320,6 +334,27 @@ Before coding, define acceptance criteria from the plan:
 - Required evidence files or commands.
 - Required docs/progress updates, if the plan requires them.
 
+Resolve the current closure and its Gate set before implementation:
+
+```bash
+make plan-validate PLAN=<package-plan.md>
+make plan-current PLAN=<package-plan.md>
+python3 tooling/scripts/execution-plan.py
+python3 tooling/scripts/acceptance-plan.py --active-plan
+```
+
+Report package `plan.md`, current Task/Task Slice, closure, selected Gates,
+environments, and timeout budget. Plain `acceptance run` executes only this
+Task closure. Do not run
+`--completion` until all implementation closures are ready for completion
+review. Never run `--full` unless the user explicitly requested a release or
+full Acceptance run.
+
+If registry impact contains a Gate absent from the formal plan, stop with
+`ACCEPTANCE_PLAN_DRIFT`, amend the existing plan, and continue only after the
+plan is internally consistent. Do not create a second plan or silently append
+the Gate to the current execution.
+
 If the user asks for a bug fix, also follow the repository bug-fix protocol:
 root cause, plan, user approval, then execution.
 
@@ -365,7 +400,8 @@ independent units and check whether they can run concurrently:
 - After functional pass, promote the same business Journey into formal
   Acceptance; never create a Harness/API-only substitute.
 - Do not broaden scope silently.
-- Execute only dependency-ready task IDs.
+- Execute only the manifest's current Task. Parallel lanes are subdivisions of
+  that Task, never concurrently current Tasks.
 - Fix root causes at the architecture-assigned layer. Do not patch: no
   compatibility shims, silent fallbacks, error-swallowing, or special-case hacks
   to force a pass. If one action is blocked, surface and park that action,
@@ -384,14 +420,16 @@ independent units and check whether they can run concurrently:
 - Do not rename ad hoc work as formal plan completion.
 - Do not report readiness higher than the gates prove.
 - Keep note of gaps discovered during execution.
-- Synchronize the plan status table and Context Anchor after every meaningful
-  step, evidence, blocker, scope, worktree, branch, or stage change.
+- Update the current Task's compact snapshot/durable evidence at meaningful
+  milestones. Use `planctl advance` for Task lifecycle/handoff and the Session
+  journal for transitions/attempts/first failure; then synchronize
+  `active_work` and Context Anchor.
 
 ### 4.1 Blocker-Aware Execution Queue
 
-Tracked execution maintains four projected states: `Ready Queue`, `In
-Progress`, `Parked Queue`, and `Done`. The formal plan remains the source of
-truth.
+Tracked execution projects four states from the manifest: `Ready Queue`, `In
+Progress`, `Parked Queue`, and `Done`. The Plan Package Task index remains the
+source of truth.
 
 When execution discovers a blocker:
 
@@ -429,7 +467,7 @@ destructive operations, cross-worktree writes, or weaker evidence.
 Invoke `pt-context-anchor`:
 
 1. after worktree-binding verification and before the first tracked edit;
-2. when a workstream or step starts;
+2. when a current Task or Session transition starts;
 3. immediately after verification passes or fails;
 4. when worktree, branch, scope, blocker, or decision changes;
 5. before progress/readiness reports and session handoff.
@@ -471,7 +509,7 @@ non-trivial:
 For readiness reports with predefined gates, use the gate table from the
 readiness document instead of a free-form claim.
 
-After updating plan/tracking evidence, synchronize `active_work`. Any
+After updating manifest/Task/Session owners, synchronize `active_work`. Any
 tracked-work progress, readiness, blocker, or handoff response must then invoke
 `pt-context-anchor` and end with its required fenced chat projection. Never add
 a `## Context Anchor` section to the execution plan.

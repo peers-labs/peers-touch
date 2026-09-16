@@ -37,7 +37,6 @@ from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     LOCAL_SOURCE_RUNTIME,
     acceptance_station_environment,
-    fixture_friendship_federation_id,
 )
 from tooling.acceptance.transports import SshTarget, SshTransport
 
@@ -48,13 +47,6 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
-
-
-def fixture_federation_id(first_ptid: str, second_ptid: str) -> str:
-    try:
-        return fixture_friendship_federation_id(first_ptid, second_ptid)
-    except ValueError as error:
-        raise GateError(str(error)) from error
 
 
 def is_native_tauri_url(value: str) -> bool:
@@ -494,17 +486,67 @@ def async_harness(
     )
 
 
+def shared_federation_id(
+    clients: dict[str, TauriSession],
+    actors: tuple[str, ...],
+) -> str:
+    if len(actors) < 2 or any(actor not in clients for actor in actors):
+        raise GateError("shared Federation lookup requires known Native actors")
+    contexts = {
+        actor: async_harness(
+            clients[actor],
+            "federationContext",
+            {},
+        )
+        for actor in actors
+    }
+    ordered_candidates = [
+        str(item.get("federationId") or "")
+        for item in (contexts[actors[0]] or {}).get("federations", [])
+        if isinstance(item, dict) and item.get("federationId")
+    ]
+    remaining = [
+        {
+            str(item.get("federationId") or "")
+            for item in (contexts[actor] or {}).get("federations", [])
+            if isinstance(item, dict) and item.get("federationId")
+        }
+        for actor in actors[1:]
+    ]
+    federation_id = next(
+        (
+            candidate
+            for candidate in ordered_candidates
+            if all(candidate in values for values in remaining)
+        ),
+        "",
+    )
+    if not federation_id:
+        raise GateError(
+            "Native actors have no shared Federation: "
+            f"{', '.join(actors)}"
+        )
+    return federation_id
+
+
 def wait_for_peer_key_bundle(
     client: TauriSession,
     peer_ptid: str,
+    home_station_peer_id: str,
     *,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
+    if not home_station_peer_id:
+        raise GateError("peer key readiness requires a Home Station peer ID")
+
     def ready() -> dict[str, Any] | None:
         state = async_harness(
             client,
             "peerKeyBundleState",
-            {"peerPtid": peer_ptid},
+            {
+                "peerPtid": peer_ptid,
+                "homeStationPeerId": home_station_peer_id,
+            },
             timeout=10,
         )
         return (
@@ -877,9 +919,9 @@ SELECT json_build_object(
   ), '[]'::json),
   'readCursors', COALESCE((
     SELECT json_agg(json_build_object(
-      'readerPtid', reader_ptid,
+      'readerPtid', ptid,
       'lastReadSequence', last_read_sequence
-    ) ORDER BY reader_ptid)
+    ) ORDER BY ptid)
     FROM conversation_read_cursors
     WHERE conversation_id = {conversation}
   ), '[]'::json)

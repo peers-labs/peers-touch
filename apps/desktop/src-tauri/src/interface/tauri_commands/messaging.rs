@@ -245,6 +245,14 @@ pub struct MessagingAcceptanceInteractionSnapshotInput {
     pub command_id: String,
 }
 
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct MessagingAcceptanceRestorableCommandInput {
+    pub expected_actor_ptid: String,
+    pub conversation_id: String,
+    pub plaintext: String,
+}
+
 pub(crate) fn group_creation_state(
     progress: &CommandDispatchProgress,
     target_command_id: &str,
@@ -906,6 +914,116 @@ pub fn messaging_acceptance_current_endpoint(
         "actor_ptid": actor_ptid,
         "device_id": engine.endpoint().device_id.as_str(),
     }))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub async fn messaging_acceptance_create_restorable_command(
+    input: MessagingAcceptanceRestorableCommandInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> Result<AppResult<Value>, String> {
+    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
+        .ok()
+        .as_deref()
+        != Some("1")
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.submittedCommandFixtureUnauthorized",
+            Some(json!({ "reason": "submitted_command_fixture_unauthorized" })),
+        ));
+    }
+    if input.conversation_id.trim().is_empty() || input.plaintext.is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "acceptance.chat.restorableCommandInputInvalid",
+            Some(json!({ "reason": "restorable_command_input_invalid" })),
+        ));
+    }
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
+    let actor_ptid =
+        match require_acceptance_actor(&input.expected_actor_ptid, &engine.endpoint().ptid) {
+            Ok(actor_ptid) => actor_ptid,
+            Err(error) => return Ok(error),
+        };
+    if let Err(error) = state
+        .messaging_engines
+        .deactivate_profile_worker(&account_id)
+    {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
+    let conversation_id = input.conversation_id;
+    let plaintext = input.plaintext;
+    let submit_engine = engine.clone();
+    let submit_token = token.clone();
+    let submit_conversation_id = conversation_id.clone();
+    let submit_plaintext = plaintext.clone();
+    let outcome = match tauri::async_runtime::spawn_blocking(move || {
+        submit_engine.submit_message(
+            &submit_token,
+            &submit_conversation_id,
+            ConversationKind::Direct,
+            &submit_plaintext,
+            "",
+            "",
+            &[],
+        )
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
+            let _ = state
+                .messaging_engines
+                .activate_profile_worker(&account_id, token);
+            return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+        }
+        Err(error) => {
+            let _ = state
+                .messaging_engines
+                .activate_profile_worker(&account_id, token);
+            return Ok(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("create restorable command worker failed: {error}"),
+                None,
+            ));
+        }
+    };
+    let Some(command_id) = outcome.command_id else {
+        let _ = state
+            .messaging_engines
+            .activate_profile_worker(&account_id, token);
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "acceptance.chat.restorableCommandNotPrepared",
+            Some(json!({ "reason": "restorable_command_not_prepared" })),
+        ));
+    };
+    let snapshot = engine.acceptance_stage_restorable_command_fixture(
+        &conversation_id,
+        &outcome.message_id,
+        &command_id,
+    );
+    if let Err(error) = state
+        .messaging_engines
+        .activate_profile_worker(&account_id, token)
+    {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
+    match snapshot {
+        Ok(snapshot) => Ok(AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "conversationId": conversation_id,
+            "messageId": outcome.message_id,
+            "commandId": command_id,
+            "snapshot": snapshot,
+        }))),
+        Err(error) => Ok(AppResult::fail(ErrorCode::Conflict, error, None)),
+    }
 }
 
 #[cfg(feature = "acceptance-webdriver")]

@@ -34,6 +34,15 @@
   "error.30015": "Failed to create comment",
   "error.30016": "Failed to load comments",
   "error.30017": "Failed to delete comment",
+  "error.30201": "Content pre-key access is forbidden",
+  "error.30202": "Content pre-key material is invalid",
+  "error.30203": "Content pre-key pool was not found",
+  "error.30204": "Content pre-key pool epoch is stale",
+  "error.30205": "Content pre-key request conflicts with an earlier request",
+  "error.30206": "Content pre-key pool is depleted",
+  "error.30207": "Content pre-key request is too large",
+  "error.30208": "Content pre-key quota was exceeded",
+  "error.30209": "Content pre-key dependency is unavailable",
 
   "error.account.notFound": "Account not found",
 

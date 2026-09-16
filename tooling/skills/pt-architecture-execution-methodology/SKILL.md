@@ -3,7 +3,7 @@ name: "pt-architecture-execution-methodology"
 description: "Transforms an accepted architecture into an ordered, dependency-backed execution plan with atomic cutovers, deliverables, gates, and evidence. Invoke for planning only; it must not redesign or execute."
 stage: "PLAN"
 requires: ["accepted product contract when applicable", "accepted architecture docs"]
-produces: ["dependency graph", "execution closures", "ordered step list", "acceptance scenarios per closure"]
+produces: ["Plan Package manifest", "Task Slices", "dependency graph", "acceptance scenarios per closure"]
 next: "pt-plan-and-document"
 ---
 
@@ -88,6 +88,21 @@ An **execution closure** is the smallest deliverable that can be completed,
 verified, and left internally consistent. It must not leave split ownership,
 two live sources of truth, or a compatibility shim with no accepted removal
 condition.
+
+The durable output is one bounded Plan Package:
+
+```text
+execution-plans/<date>-<slug>/
+├── plan.md
+├── tasks/<task-id>.md
+└── archive/
+```
+
+`plan.md` owns the stable goal, scope, architecture traceability, dependency
+DAG, Task lifecycle/current selection, authorization, and the sole Acceptance
+Execution contract. Each Task Slice owns one resumable closure specification
+and compact durable snapshot; it never owns lifecycle status, Session events,
+or raw command output.
 
 ## Method
 
@@ -199,6 +214,23 @@ Every plan item requires:
 - Documentation/knowledge updates.
 - Definition of done and explicit non-claims.
 
+The Plan Package manifest references exactly one machine-readable `Acceptance
+Execution` block in `plan.md`. It maps every Task `closureId` to Gate IDs and
+separately declares plan-completion and explicit full/release sets. It does not
+introduce another progress state.
+
+For each Gate, the human-readable plan must state:
+
+- why the Gate is relevant;
+- tier and environment;
+- closure, completion, or full/release execution point;
+- timeout or expected duration;
+- evidence produced.
+
+Generate a diff-based Acceptance impact projection while planning and reconcile
+it with this table. Candidate Gates may expose a plan gap, but may not silently
+become current-closure work.
+
 Quality gates come from the accepted architecture. The plan may make them
 executable; it may not weaken thresholds or substitute a smoke test.
 
@@ -262,27 +294,39 @@ Include:
 - Review-system growth: invariant, pitfall, playbook, fixture, or gate updates
   exposed by the migration.
 
-### Step 9. Write The Formal Execution Plan
+### Step 9. Write The Formal Plan Package
 
 Place plans under the nearest `execution-plans/` directory.
 
-The plan must contain:
+Create:
+
+- one `plan.md` with a closed `Plan Package` JSON block;
+- one bounded `tasks/<task-id>.md` Task Slice per execution closure;
+- an empty `archive/` unless migration input must be preserved.
+
+The manifest must contain:
 
 - Accepted architecture sources and IDs.
 - Accepted product sources, capability/journey IDs, visible states, and
   receiver-perspective acceptance when applicable.
-- Scope and non-scope.
-- Current-state inventory.
-- Responsibility workstreams.
-- End-to-end lifecycle mapping.
-- Dependency DAG and parallelizable units.
-- Atomic cutover/deletion matrix.
-- Deliverables, gates, commands, and evidence per workstream.
-- Final readiness gate.
-- Risks, non-claims, and escalation conditions.
+- Stable scope/non-goals and exclusive/shared source claims.
+- Task index with dependency DAG, lifecycle status, and at most one current Task.
+- Immutable worktree binding and explicit execution authorization.
+- Exactly one Acceptance Execution contract.
 
-Use date-prefixed names. Organize by stable responsibility when multiple plan
-documents are needed.
+Each Task Slice must contain:
+
+- one responsibility/Journey or equivalent functional boundary;
+- write/read sets and bounded execution budgets;
+- focused checks, completion and failure behavior;
+- durable evidence references and a compact current snapshot;
+- architecture and product traceability inherited from the package.
+
+Use date-prefixed package directories. Enforce the mechanical manifest, Task,
+and snapshot bounds through `planctl validate`; do not rely on reviewer
+convention. The package is `prepared` with zero current Tasks during plan
+review. Only after the plan gate passes may one explicit dependency-ready Task
+be selected and package status become `active`.
 
 ## Plan Acceptance Gate
 
@@ -298,6 +342,8 @@ Return `PLAN_READY_FOR_EXECUTION` only when:
 - Every deliverable has failure behavior, gates, and evidence.
 - The final gate proves the architecture's claimed outcome.
 - No plan item silently redesigns the architecture.
+- `planctl validate` passes the Plan Package and every Task Slice.
+- The prepared package has zero current Tasks and no archive-derived live state.
 
 The owner/reviewer approves the plan before execution.
 
@@ -306,16 +352,21 @@ The owner/reviewer approves the plan before execution.
 The handoff package to `pt-execution-plan-guardian` is:
 
 - Formal plan paths.
+- Package `plan.md` path and the selected Task Slice path.
 - Accepted architecture paths.
 - Accepted product paths and product acceptance IDs when applicable.
 - In-scope workstream/task IDs.
 - Dependency and parallelization constraints.
 - Per-task acceptance commands and evidence paths.
+- The machine-readable Acceptance Execution contract and its reviewed
+  closure/completion/full partition.
 - Cutover/deletion obligations.
 - Final readiness gate and prohibited claims.
-- A plan-owned `Context Anchor` created through `pt-context-anchor`, with the
-  verified worktree, branch, entry stage, first dependency-ready step, and
-  initial evidence state.
+- An `active_work` locator whose `plan` points to package `plan.md`,
+  `current_task_id/current_task_path` mirror the manifest, and `dev_state`
+  mirrors the Development Session or `NONE`.
+- A chat-only Context Anchor created through `pt-context-anchor`; no plan or
+  Task file contains a `## Context Anchor` section.
 
 ## Design Escalation
 
@@ -348,3 +399,5 @@ Never:
 - Define deliverables without failure behavior and evidence.
 - Weaken architecture gates to make delivery easier.
 - Execute code or mark progress while using this skill.
+- Write a new active single-file execution plan.
+- Copy Task lifecycle status into Task Slice prose or Session state into Git.

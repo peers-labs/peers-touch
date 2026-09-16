@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - 'tooling/devctl/**'
+      - 'tooling/acceptance/core/execution_plan.py'
+      - 'tooling/acceptance/tests/test_execution_plan.py'
+      - 'tooling/scripts/acceptance-plan.py'
+      - 'tooling/scripts/acceptance-run.py'
+      - 'tooling/scripts/execution-plan.py'
       - 'tooling/dev.ps1'
       - 'tooling/make/local-dev.mk'
       - 'tooling/scripts/check-frontend-runtime-registry.mjs'

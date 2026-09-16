@@ -265,7 +265,7 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "native-tauri-embedded-webdriver")
         self.assertEqual(
             set(contract.services),
-            {"station-primary"},
+            {"station-four", "station-five"},
         )
         self.assertEqual(
             {client.id for client in contract.clients},
@@ -273,6 +273,19 @@ class EnvironmentContractTests(unittest.TestCase):
         )
         self.assertTrue(
             all(service.kind == "station" for service in contract.services.values())
+        )
+
+    def test_native_tauri_services_use_canonical_profiles(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_embedded_webdriver,
+        )
+
+        self.assertEqual(
+            native_tauri_embedded_webdriver._SERVICE_PROFILES,
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
         )
 
     def test_load_native_tauri_current_profile_contract(self):

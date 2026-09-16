@@ -10,13 +10,16 @@ use base64::Engine as _;
 use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE};
+use secure_content_core::object::{
+    EncryptedObjectChunk as EncryptedAttachmentChunk, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
+};
 use std::time::Duration;
 
 pub use messaging_core::attachment::{
     upload_commitment_fields, AttachmentRetryPolicy, AttachmentTransferControl,
     AttachmentTransferFailure, AttachmentTransferProgress, AttachmentTransferRecord,
-    AttachmentTransferTransport, AttachmentTransferWorker, EncryptedAttachmentChunk,
-    PreparedAttachmentUpload, ATTACHMENT_TAG_SIZE, ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
+    AttachmentTransferTransport, AttachmentTransferWorker, PreparedAttachmentUpload,
+    ATTACHMENT_TRANSFER_MEMORY_OVERHEAD,
 };
 
 pub struct StationAttachmentTransferTransport {

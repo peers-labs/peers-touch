@@ -731,6 +731,52 @@ where
     )
 }
 
+pub(crate) fn request_peers_proto_no_body_for_device_at<Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    device_id: &str,
+) -> Result<Payload, StationClientError>
+where
+    Payload: Message + Default,
+{
+    let envelope: PeersResponse = request_proto_for_device_at::<(), PeersResponse>(
+        station_url,
+        method,
+        path,
+        token,
+        query,
+        None,
+        device_id,
+    )?;
+    if envelope.code != "200" {
+        return Err(StationClientError::new(
+            StationClientErrorKind::InvalidResponse,
+            format!("Station returned Peers error code {}", envelope.code),
+            Some(serde_json::json!({
+                "code": envelope.code,
+                "message": envelope.msg,
+            })),
+        ));
+    }
+    let any = envelope.data.ok_or_else(|| {
+        StationClientError::new(
+            StationClientErrorKind::InvalidResponse,
+            "station response missing data envelope",
+            None,
+        )
+    })?;
+    Payload::decode(any.value.as_slice()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode envelope payload: {error}"),
+            None,
+        )
+    })
+}
+
 pub(crate) fn request_proto_for_device_at<Req, Payload>(
     station_url: &str,
     method: Method,

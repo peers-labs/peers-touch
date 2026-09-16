@@ -16,14 +16,13 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     _remote_transport,
     acceptance_station_environment,
     duplicate_acceptance_queue_delivery,
-    fixture_friendship_federation_id,
+    fixture_federation_id,
     prepare_local_friend_request_lifecycle,
     read_fixture_actor,
     reset_local_client_storage,
     restart_acceptance_station,
     reset_station_chat_state,
-    seed_cross_station_contact,
-    seed_same_station_contact,
+    seed_bound_contact,
     verify_disposable_station_runtime,
 )
 
@@ -41,22 +40,41 @@ DISPOSABLE_ENVIRONMENT = {
 
 
 class FixtureFederationIdentityTest(unittest.TestCase):
-    def test_federation_id_is_order_independent_and_actor_bound(self) -> None:
-        expected = fixture_friendship_federation_id("ptid:alice", "ptid:bob")
+    @staticmethod
+    def actor(ptid: str, station: str) -> FixtureActorRecord:
+        return FixtureActorRecord(
+            ptid=ptid,
+            preferred_username=ptid.removeprefix("ptid:"),
+            name=ptid,
+            summary="",
+            icon="",
+            image="",
+            url=f"https://{station}.example/actors/{ptid}",
+            federated_handle=f"@{ptid.removeprefix('ptid:')}@{station}.example",
+            home_station_peer_id=station,
+            home_station_domain=f"{station}.example",
+            visibility=1,
+            locator_seq=1,
+        )
+
+    def test_federation_id_is_order_independent_and_station_bound(self) -> None:
+        alice = self.actor("ptid:alice", "station-four")
+        bob = self.actor("ptid:bob", "station-five")
+        charlie = self.actor("ptid:charlie", "station-five")
+        expected = fixture_federation_id((alice, bob, charlie))
         self.assertEqual(
-            fixture_friendship_federation_id("ptid:bob", "ptid:alice"),
+            fixture_federation_id((charlie, alice, bob)),
             expected,
         )
-        self.assertNotEqual(
-            fixture_friendship_federation_id("ptid:alice", "ptid:charlie"),
+        self.assertEqual(
+            fixture_federation_id((alice, bob)),
             expected,
         )
 
-    def test_federation_id_rejects_missing_or_duplicate_actors(self) -> None:
-        with self.assertRaisesRegex(ValueError, "two distinct actor PTIDs"):
-            fixture_friendship_federation_id("", "ptid:bob")
-        with self.assertRaisesRegex(ValueError, "two distinct actor PTIDs"):
-            fixture_friendship_federation_id("ptid:alice", "ptid:alice")
+    def test_federation_id_requires_a_home_station(self) -> None:
+        actor = self.actor("ptid:alice", "")
+        with self.assertRaisesRegex(RuntimeError, "requires a Home Station"):
+            fixture_federation_id((actor,))
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
@@ -248,6 +266,124 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "Profile-authorized Chat Acceptance reset target mismatch",
+            ):
+                acceptance_station_environment(
+                    "http://10.37.245.247:18080",
+                    "station-four",
+                )
+
+    def test_accepts_exact_environment_authorized_protected_stations(self) -> None:
+        deployments = {
+            "station-four": {
+                "PT_DEPLOY_HOST": "10.37.245.247",
+                "PT_DEPLOY_USER": "acceptance",
+                "PT_DEPLOY_HEALTH_URL": (
+                    "http://10.37.245.247:18080/sub-oss/healthz"
+                ),
+                "PT_DEPLOY_RESTART_CMD": (
+                    "docker compose -p pt-station -f compose.yml "
+                    "up -d station"
+                ),
+            },
+            "station-five-arm": {
+                "PT_DEPLOY_HOST": "10.37.221.38",
+                "PT_DEPLOY_USER": "acceptance",
+                "PT_DEPLOY_HEALTH_URL": (
+                    "http://10.37.221.38:18080/sub-oss/healthz"
+                ),
+                "PT_DEPLOY_RESTART_CMD": (
+                    "docker compose -p pt-station -f compose.yml "
+                    "up -d station"
+                ),
+            },
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": (
+                    "station-four,station-five-arm"
+                )
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            side_effect=lambda name: deployments[name],
+        ):
+            four = acceptance_station_environment(
+                "http://10.37.245.247:18080",
+                "station-four",
+            )
+            five = acceptance_station_environment(
+                "http://10.37.221.38:18080",
+                "station-five-arm",
+            )
+            five_from_environment = acceptance_station_environment(
+                "",
+                "station-five-arm",
+            )
+
+        self.assertEqual(
+            four["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.245.247:18080",
+        )
+        self.assertEqual(
+            five["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(
+            five_from_environment["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(four["PT_ACCEPTANCE_COMPOSE_PROJECT"], "pt-station")
+        self.assertEqual(five["PT_ACCEPTANCE_COMPOSE_PROJECT"], "pt-station")
+
+    def test_rejects_unlisted_environment_authorization(self) -> None:
+        deployment = {
+            "PT_DEPLOY_HOST": "10.37.221.38",
+            "PT_DEPLOY_USER": "acceptance",
+            "PT_DEPLOY_HEALTH_URL": (
+                "http://10.37.221.38:18080/sub-oss/healthz"
+            ),
+            "PT_DEPLOY_RESTART_CMD": (
+                "docker compose -p pt-station -f compose.yml "
+                "up -d station"
+            ),
+        }
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": "station-four"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            return_value=deployment,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Environment-authorized Chat Acceptance reset target mismatch",
+            ):
+                acceptance_station_environment(
+                    "http://10.37.221.38:18080",
+                    "station-five-arm",
+                )
+
+    def test_rejects_ambiguous_reset_authorization_modes(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHAT_ACCEPTANCE_RESET_PROFILE": "four",
+                "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": "station-four",
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            return_value={},
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "exactly one authorization mode",
             ):
                 acceptance_station_environment(
                     "http://10.37.245.247:18080",
@@ -769,17 +905,19 @@ CREATE TABLE social_relationship_projections (
                 "_encode_social_proto",
                 return_value=b"canonical-proto",
             ):
-                seed_same_station_contact(
+                seed_bound_contact(
                     "http://127.0.0.1:18080",
                     "sixwin",
                     actor,
                     peer,
+                    (actor, peer),
                 )
-                seed_same_station_contact(
+                seed_bound_contact(
                     "http://127.0.0.1:18080",
                     "sixwin",
                     actor,
                     peer,
+                    (actor, peer),
                 )
 
             with closing(sqlite3.connect(database)) as connection:
@@ -854,11 +992,12 @@ ORDER BY owner_ptid
         ), patch(
             "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
         ) as remote_psql:
-            seed_same_station_contact(
+            seed_bound_contact(
                 "http://10.37.94.156:18132",
                 "chat-native-disposable-station",
                 actor,
                 peer,
+                (actor, peer),
             )
 
         remote_psql.assert_called_once()
@@ -868,8 +1007,8 @@ ORDER BY owner_ptid
         self.assertIn("INSERT INTO social_relationship_projections", sql)
         self.assertIn("'ptid:alice'", sql)
         self.assertIn("'ptid:bob'", sql)
-        self.assertIn("relationship_count <> 2", sql)
-        self.assertIn("membership_count <> 1", sql)
+        self.assertIn("relationship_edge_count <> 2", sql)
+        self.assertIn("federation_membership_count <> 1", sql)
         self.assertTrue(sql.rstrip().endswith("COMMIT;"))
 
     def test_reset_rejects_unknown_account_paths(self) -> None:
@@ -970,11 +1109,12 @@ ORDER BY owner_ptid
             locator_seq=1,
         )
 
-        seed_cross_station_contact(
+        seed_bound_contact(
             "http://10.37.94.156:18132",
             "chat-native-acceptance",
             actor,
             peer,
+            (actor, peer),
         )
 
         sql = remote_psql.call_args.args[1]
@@ -984,9 +1124,17 @@ ORDER BY owner_ptid
         self.assertIn("INSERT INTO social_friend_requests", sql)
         self.assertIn("INSERT INTO social_relationship_projections", sql)
         self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertNotIn("DELETE FROM touch_actor", sql)
+        self.assertIn("ON CONFLICT (federated_handle) DO UPDATE SET", sql)
+        self.assertIn("touch_actor.origin = 'remote_cached'", sql)
+        self.assertIn(
+            "cross-Station remote Actor projection is incomplete",
+            sql,
+        )
         self.assertIn("authority_confirmed", sql)
         self.assertIn("canonical accepted Friend Request projection", sql)
         self.assertIn("Chat fixture Federation membership", sql)
+        self.assertIn("federation_membership_count <> 2", sql)
         self.assertIn("LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE", sql)
         self.assertIn(
             "ON CONFLICT (follower_id, following_id) DO NOTHING",
@@ -1005,6 +1153,66 @@ ORDER BY owner_ptid
             "cross-Station accepted relationship is incomplete",
             sql,
         )
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset._remote_psql"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.acceptance_station_environment",
+        return_value=DISPOSABLE_ENVIRONMENT,
+    )
+    def test_same_station_contact_reuses_local_actor(
+        self,
+        _environment,
+        _runtime,
+        remote_psql,
+    ) -> None:
+        actor = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:bob:local",
+            preferred_username="bob",
+            name="Bob",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-five.example/actors/bob",
+            federated_handle="@bob@station-five.example",
+            home_station_peer_id="station-five",
+            home_station_domain="station-five.example",
+            visibility=1,
+            locator_seq=1,
+        )
+        peer = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:carol:local",
+            preferred_username="carol",
+            name="Carol",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-five.example/actors/carol",
+            federated_handle="@carol@station-five.example",
+            home_station_peer_id="station-five",
+            home_station_domain="station-five.example",
+            visibility=1,
+            locator_seq=1,
+        )
+
+        seed_bound_contact(
+            "http://10.37.94.156:18132",
+            "chat-native-acceptance",
+            actor,
+            peer,
+            (actor, peer),
+        )
+
+        sql = remote_psql.call_args.args[1]
+        self.assertNotIn("INSERT INTO touch_actor", sql)
+        self.assertIn("same-Station peer Actor projection is incomplete", sql)
+        self.assertIn("INSERT INTO social_relationship_projections", sql)
+        self.assertIn("fed_chat_", sql)
+        self.assertIn("federation_membership_count <> 1", sql)
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"

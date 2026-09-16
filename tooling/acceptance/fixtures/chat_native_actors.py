@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -22,10 +23,10 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
+    FixtureActorRecord,
     acceptance_station_environment,
     read_fixture_actor,
-    seed_cross_station_contact,
-    seed_same_station_contact,
+    seed_bound_contact,
     verify_disposable_station_runtime,
 )
 
@@ -41,6 +42,12 @@ ACTOR_PASSWORD = "1"
 RESET_TIMEOUT_SECONDS = 120.0
 RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
+
+
+@dataclass(frozen=True)
+class ResolvedActorIdentity(ActorIdentity):
+    federated_handle: str = ""
+    home_station_peer_id: str = ""
 
 
 def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
@@ -281,7 +288,7 @@ def resolve_actor_identity(
     station_url: str,
     deployment_environment: str,
     role: str,
-) -> ActorIdentity:
+) -> ResolvedActorIdentity:
     account = ACTOR_ACCOUNTS.get(role)
     if not account:
         raise BlockedError(
@@ -299,10 +306,12 @@ def resolve_actor_identity(
             reason=f"Cannot resolve canonical PTID for fixture role {role}: {error}",
             resource=f"fixture-actor:{role}",
         ) from error
-    return ActorIdentity(
+    return ResolvedActorIdentity(
         role=role,
         account_ref=f"station-account:{account}",
         ptid=record.ptid,
+        federated_handle=record.federated_handle,
+        home_station_peer_id=record.home_station_peer_id,
     )
 
 
@@ -310,45 +319,37 @@ def prepare_bound_friendships(
     role_targets: Mapping[str, tuple[str, str]],
     actors: tuple[ActorIdentity, ...],
 ) -> None:
-    if "alice" not in role_targets or "bob" not in role_targets:
-        return
-
     by_role = {actor.role: actor for actor in actors}
-    alice = by_role["alice"]
-    bob = by_role["bob"]
-    alice_station_url, alice_environment = role_targets["alice"]
-    bob_station_url, bob_environment = role_targets["bob"]
-    alice_record = read_fixture_actor(
-        alice_station_url,
-        alice_environment,
-        ACTOR_ACCOUNTS["alice"],
-    )
-    bob_record = read_fixture_actor(
-        bob_station_url,
-        bob_environment,
-        ACTOR_ACCOUNTS["bob"],
-    )
-    if role_targets["alice"] == role_targets["bob"]:
-        seed_same_station_contact(
-            alice_station_url,
-            alice_environment,
-            alice_record,
-            bob_record,
+    records: dict[str, FixtureActorRecord] = {}
+    for role, (station_url, environment) in role_targets.items():
+        record = read_fixture_actor(
+            station_url,
+            environment,
+            ACTOR_ACCOUNTS[role],
         )
-        return
+        identity = by_role.get(role)
+        if identity is None or identity.ptid != record.ptid:
+            raise BlockedError(
+                reason=(
+                    f"Fixture actor identity drifted while preparing contacts "
+                    f"for role {role}"
+                ),
+                resource=f"fixture-actor:{role}",
+            )
+        records[role] = record
 
-    seed_cross_station_contact(
-        alice_station_url,
-        alice_environment,
-        alice_record,
-        bob_record,
-    )
-    seed_cross_station_contact(
-        bob_station_url,
-        bob_environment,
-        bob_record,
-        alice_record,
-    )
+    federation_members = tuple(records.values())
+    for actor_role, (station_url, environment) in role_targets.items():
+        for peer_role in role_targets:
+            if actor_role == peer_role:
+                continue
+            seed_bound_contact(
+                station_url,
+                environment,
+                records[actor_role],
+                records[peer_role],
+                federation_members,
+            )
 
 
 def produce_actor_manifest(

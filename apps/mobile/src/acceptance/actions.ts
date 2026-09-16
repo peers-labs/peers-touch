@@ -42,6 +42,7 @@ import {
   acceptSocialFriendRequest,
   readSocialRuntimeProjection,
   reconcileSocialRuntime,
+  searchSocialPeople,
   sendSocialFriendRequest,
 } from '../features/social/socialRuntime';
 import {
@@ -269,7 +270,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   }),
 
   'lifecycle.restart': async () => {
-    await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
+    // #region debug-point A-B:restart-action
+    const before = {
+      lifecycle: getMobileLifecycleKernel().getSnapshot(),
+      access: readAccessRuntimeProjection(),
+      station: activeStationEntry(await loadStationRegistry())?.stationPeerId ?? null,
+    };
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:lifecycle.restart.before', msg: '[DEBUG] Mobile lifecycle restart requested', data: before, ts: Date.now() }) }).catch(() => {});
+    const lifecycle = await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
+    const after = {
+      lifecycle,
+      access: readAccessRuntimeProjection(),
+      station: activeStationEntry(await loadStationRegistry())?.stationPeerId ?? null,
+    };
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:lifecycle.restart.after', msg: '[DEBUG] Mobile lifecycle restart completed', data: after, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     return {
       requested: true,
       scope: 'webview',
@@ -394,6 +409,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       ...account,
       file: new File([bytes.buffer], filename, { type: mimeType }),
     });
+    // #region debug-point A:attachment-stage-result
+    void fetch('http://100.86.255.160:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'A', location: 'apps/mobile/src/acceptance/actions.ts:messaging.attachment.stage', msg: '[DEBUG] Mobile attachment stage completed', data: { stageId: staged.stageId, completed: staged.completed, plaintextSize: staged.plaintextSize, maxChunkBytes: staged.maxChunkBytes }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     return {
       stageId: staged.stageId,
       filename: staged.filename,
@@ -411,6 +429,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         'messaging.attachment.open.attachmentId',
       ),
     });
+    // #region debug-point H-J:attachment-open
+    void fetch('http://100.86.255.160:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'H-J', location: 'apps/mobile/src/acceptance/actions.ts:messaging.attachment.open', msg: '[DEBUG] Mobile attachment open returned', data: result, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     return result.state === 'ready'
       ? { state: 'ready', available: true }
       : {
@@ -433,6 +454,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       threadRootMessageId: input?.threadRootMessageId,
       attachmentStageIds: input?.attachmentStageIds,
     });
+    // #region debug-point A-B:attachment-send-result
+    void fetch('http://100.86.255.160:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:messaging.send', msg: '[DEBUG] Mobile messaging send returned', data: { conversationId, messageId: result.messageId, commandId: 'commandId' in result ? result.commandId : null, state: result.state, attachmentIds: result.attachmentIds }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     return { conversationId, ...result };
   },
 
@@ -511,7 +535,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return { conversationId, isTyping: input.isTyping, submitted: result.submitted };
   },
 
-  'messaging.reconcile': async () => reconcileActiveMessagingSession(),
+  'messaging.reconcile': async () => {
+    const result = await reconcileActiveMessagingSession();
+    // #region debug-point B-C:attachment-reconcile-result
+    void fetch('http://100.86.255.160:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'B-C', location: 'apps/mobile/src/acceptance/actions.ts:messaging.reconcile', msg: '[DEBUG] Mobile messaging reconciliation completed', data: result, ts: Date.now() }) }).catch(() => {});
+    // #endregion
+    return result;
+  },
 
   'messaging.command.read': async (input) => messagingCommandStatus({
     ...requireMessagingAccount(),
@@ -560,7 +590,26 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         conversationId: conversation.conversationId,
       }),
     ] as const)));
-    return sanitizeMessagingProjection({ runtime, conversations, messages });
+    const projection = sanitizeMessagingProjection({ runtime, conversations, messages });
+    // #region debug-point C-D:attachment-projection-read
+    void fetch('http://100.86.255.160:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'C-D', location: 'apps/mobile/src/acceptance/actions.ts:messaging.projection.read', msg: '[DEBUG] Mobile messaging projection read', data: { requestedConversationId, conversations: projection.conversations.map((conversation) => conversation.conversationId), messages: Object.fromEntries(Object.entries(projection.messages).map(([conversationId, projectedMessages]) => [conversationId, projectedMessages.map((message) => ({ messageId: message.messageId, eventId: message.eventId ?? null, eventSequence: message.eventSequence ?? null, state: message.state, attachmentIds: message.attachments.map((attachment) => attachment.attachmentId), attachmentStates: message.attachments.map((attachment) => attachment.availabilityState ?? null) }))])) }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
+    return projection;
+  },
+
+  'social.people.search': async (input) => {
+    const federationId = requireString(
+      input?.federationId,
+      'social.people.search.federationId',
+    );
+    const results = await searchSocialPeople(
+      requireString(input?.query, 'social.people.search.query'),
+    );
+    return results.map((result) => ({
+      ptid: result.ptid,
+      federationId,
+      homeStationPeerId: result.homeStationPeerId,
+    }));
   },
 
   'social.request.send': async (input) => sendSocialFriendRequest(
@@ -718,6 +767,9 @@ async function sha256Hex(value: Uint8Array<ArrayBuffer>): Promise<string> {
 function requireMessagingAccount(): MessagingAccountInput {
   const session = readActiveAuthSession();
   if (!session?.stationPeerId || !session.actorRef.ptid) {
+    // #region debug-point B-D:missing-active-session
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'B-D', location: 'apps/mobile/src/acceptance/actions.ts:requireMessagingAccount', msg: '[DEBUG] Mobile acceptance action has no active Messaging session', data: { lifecycle: getMobileLifecycleKernel().getSnapshot(), access: readAccessRuntimeProjection() }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     throw new Error('acceptance.mobile.activeMessagingSessionRequired');
   }
   return {

@@ -31,6 +31,7 @@
 | D-17 | Runtime Manifest 使用 typed services map 表达完整服务拓扑 | accepted |
 | D-18 | Client 通过 typed binding 引用 Runtime Manifest service | accepted |
 | D-19 | Cleanup后、run finalize前执行只读Evidence Finalizer | accepted |
+| D-20 | Formal Execution Plan owns Acceptance scheduling | accepted |
 
 ---
 
@@ -1587,3 +1588,41 @@ Acceptance Infra和Evidence Store的单一职责。
 
 如果所有业务cleanup evidence都能在Gate退出前由唯一owner安全产生，可移除该扩展；
 不得用提前proof或mutable finalized run代替。
+
+---
+
+## D-20: Formal Execution Plan Owns Acceptance Scheduling
+
+**Status**: accepted
+**Date**: 2026-09-12
+
+### Context
+
+Registry path matching currently returns every Gate relevant to a changed path,
+including expensive environment-backed proof. The runner historically consumed
+the latest generated Acceptance plan and, without a tier filter, executed every
+selected Gate. This conflated impact discovery, work scheduling, and release
+proof.
+
+### Decision
+
+The formal execution plan is the sole scheduling owner. It maps its existing
+closure IDs to immediate Gate IDs and declares separate completion and explicit
+full/release sets. Registry planning remains a conservative impact projection
+used to detect undeclared scope.
+
+Plain Acceptance execution resolves the one active formal plan for the current
+worktree and runs only its current closure. Completion and full execution use
+explicit commands; full execution requires explicit release/full-test user
+intent.
+
+### Consequences
+
+- No Acceptance-specific iteration or active-plan state is introduced.
+- Latest Evidence Store pointers cannot select current work.
+- Broad Registry rules can request coverage without automatically launching
+  every expensive environment.
+- Plan creation and review must expose Gate IDs, environments, timing, and
+  estimated cost before implementation.
+- A changed path that implies an undeclared Gate fails with
+  `ACCEPTANCE_PLAN_DRIFT`.

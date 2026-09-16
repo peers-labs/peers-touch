@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
   existsSync,
   fsyncSync,
@@ -35,6 +36,7 @@ import {
   requiredIdentifier,
   requiredText,
   validateDeclaration,
+  validateSourcePathContainment,
 } from './dev-work-schema.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
@@ -46,6 +48,28 @@ const LEDGER_KEYS = new Set([
 ]);
 const LOCK_KEYS = new Set(['pid', 'processStart', 'createdAt']);
 
+function exactKeys(value, keys) {
+  const actual = Object.keys(value);
+  return actual.length === keys.size && actual.every((key) => keys.has(key));
+}
+
+function toOperationDate(options = {}) {
+  const value =
+    typeof options.clock === 'function'
+      ? options.clock()
+      : options.now ?? new Date();
+  const now = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(now.getTime())) {
+    fail('INVALID_CLOCK', 'operation clock returned an invalid time');
+  }
+  return now;
+}
+
+function ensurePrivateDirectory(directory) {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
+}
+
 export function emptyLedger(now = new Date()) {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -55,10 +79,37 @@ export function emptyLedger(now = new Date()) {
   };
 }
 
-export function readLedger(file, now = new Date()) {
-  if (!existsSync(file)) {
-    return emptyLedger(now);
+function migrateLegacyTerminalDeclaration(declaration) {
+  if (
+    !isObject(declaration) ||
+    !['RELEASED', 'STALE'].includes(declaration.state) ||
+    !Array.isArray(declaration.sourceClaims) ||
+    digestDeclaration(declaration) !== declaration.declarationDigest
+  ) {
+    return declaration;
   }
+  const sourceClaims = declaration.sourceClaims.filter(
+    (claim) =>
+      !(
+        isObject(claim) &&
+        exactKeys(claim, new Set(['pathPrefix', 'mode'])) &&
+        claim.mode === 'exclusive-write' &&
+        claim.pathPrefix === '.'
+      ),
+  );
+  if (sourceClaims.length === declaration.sourceClaims.length) {
+    return declaration;
+  }
+  const migrated = {
+    ...declaration,
+    sourceClaims,
+  };
+  migrated.declarationDigest = digestDeclaration(migrated);
+  return migrated;
+}
+
+export function readLedger(file, now = new Date()) {
+  if (!existsSync(file)) return emptyLedger(now);
   let ledger;
   try {
     ledger = JSON.parse(readFileSync(file, 'utf8'));
@@ -70,22 +121,24 @@ export function readLedger(file, now = new Date()) {
   const updatedAt = Date.parse(ledger?.updatedAt);
   if (
     !isObject(ledger) ||
+    !exactKeys(ledger, LEDGER_KEYS) ||
     ledger.schemaVersion !== SCHEMA_VERSION ||
     ledger.kind !== LEDGER_KIND ||
     !isObject(ledger.declarations) ||
-    Object.keys(ledger).some((key) => !LEDGER_KEYS.has(key)) ||
     !Number.isFinite(updatedAt) ||
     new Date(updatedAt).toISOString() !== ledger.updatedAt
   ) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'work ledger schema is invalid');
   }
   for (const [id, declaration] of Object.entries(ledger.declarations)) {
-    validateDeclaration(declaration);
-    if (id !== declaration.declarationId) {
+    const migrated = migrateLegacyTerminalDeclaration(declaration);
+    ledger.declarations[id] = migrated;
+    validateDeclaration(migrated);
+    if (id !== migrated.declarationId) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
         'declaration map key does not match declarationId',
-        { declarationId: declaration.declarationId, key: id },
+        { declarationId: migrated.declarationId, key: id },
       );
     }
   }
@@ -143,8 +196,7 @@ function readLockMetadata(lockFile) {
   const createdAt = Date.parse(metadata?.createdAt);
   if (
     !isObject(metadata) ||
-    Object.keys(metadata).length !== LOCK_KEYS.size ||
-    Object.keys(metadata).some((key) => !LOCK_KEYS.has(key)) ||
+    !exactKeys(metadata, LOCK_KEYS) ||
     !Number.isInteger(metadata.pid) ||
     metadata.pid <= 0 ||
     typeof metadata.processStart !== 'string' ||
@@ -159,6 +211,16 @@ function readLockMetadata(lockFile) {
     );
   }
   return metadata;
+}
+
+function syncDirectory(directory) {
+  let fd;
+  try {
+    fd = openSync(directory, 'r');
+    fsyncSync(fd);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 function publishLockAtomic(lockFile, metadata) {
@@ -182,8 +244,13 @@ function publishLockAtomic(lockFile, metadata) {
   }
 }
 
-function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
+function acquireLock(
+  lockFile,
+  timeoutMs = LOCK_TIMEOUT_MS,
+  lockTime = new Date(),
+) {
   const deadline = Date.now() + timeoutMs;
+  let ownedMetadata;
   while (true) {
     try {
       const processStart = processStartIdentity();
@@ -193,14 +260,26 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
           'cannot establish lock process identity',
         );
       }
-      publishLockAtomic(lockFile, {
+      ownedMetadata = {
         pid: process.pid,
         processStart,
-        createdAt: new Date().toISOString(),
-      });
+        createdAt: lockTime.toISOString(),
+      };
+      publishLockAtomic(lockFile, ownedMetadata);
       return () => {
+        const current = readLockMetadata(lockFile);
+        if (
+          current &&
+          JSON.stringify(current) !== JSON.stringify(ownedMetadata)
+        ) {
+          fail(
+            'MACHINE_WORK_LEDGER_LOCK_INVALID',
+            'work ledger lock ownership changed',
+          );
+        }
         try {
           unlinkSync(lockFile);
+          syncDirectory(path.dirname(lockFile));
         } catch (error) {
           if (error?.code !== 'ENOENT') throw error;
         }
@@ -209,19 +288,18 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
       if (error?.code !== 'EEXIST') throw error;
       const metadata = readLockMetadata(lockFile);
       if (metadata === null) continue;
-      const pid = metadata.pid;
-      const live = processIsAlive(pid);
-      const actualStart = processStartIdentity(pid);
+      const live = processIsAlive(metadata.pid);
+      const actualStart = processStartIdentity(metadata.pid);
       if (live && actualStart === null) {
         fail(
           'MACHINE_WORK_LEDGER_LOCK_INVALID',
           'live work ledger lock has no verifiable process identity',
         );
       }
-      const stale = !live || actualStart !== metadata.processStart;
-      if (stale) {
+      if (!live || actualStart !== metadata.processStart) {
         try {
           unlinkSync(lockFile);
+          syncDirectory(path.dirname(lockFile));
         } catch (unlinkError) {
           if (unlinkError?.code !== 'ENOENT') throw unlinkError;
         }
@@ -235,20 +313,11 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
   }
 }
 
-function syncDirectory(directory) {
-  let fd;
-  try {
-    fd = openSync(directory, 'r');
-    fsyncSync(fd);
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
 function writeLedgerAtomic(file, ledger) {
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const directory = path.dirname(file);
+  ensurePrivateDirectory(directory);
   const temp = path.join(
-    path.dirname(file),
+    directory,
     `.${path.basename(file)}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`,
   );
   let fd;
@@ -259,7 +328,8 @@ function writeLedgerAtomic(file, ledger) {
     closeSync(fd);
     fd = undefined;
     renameSync(temp, file);
-    syncDirectory(path.dirname(file));
+    chmodSync(file, 0o600);
+    syncDirectory(directory);
   } finally {
     if (fd !== undefined) closeSync(fd);
     if (existsSync(temp)) unlinkSync(temp);
@@ -267,7 +337,6 @@ function writeLedgerAtomic(file, ledger) {
 }
 
 function pathsOverlap(left, right) {
-  if (left === '.' || right === '.') return true;
   return (
     left === right ||
     left.startsWith(`${right}/`) ||
@@ -306,15 +375,13 @@ function conflictWith(candidate, current) {
   ) {
     return { kind: 'BRANCH_WRITE_CONFLICT', resource: candidate.branch };
   }
-  if (candidate.workspaceId === current.workspaceId) {
-    for (const left of candidate.sourceClaims) {
-      for (const right of current.sourceClaims) {
-        if (
-          pathsOverlap(left.pathPrefix, right.pathPrefix) &&
-          (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
-        ) {
-          return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
-        }
+  for (const left of candidate.sourceClaims) {
+    for (const right of current.sourceClaims) {
+      if (
+        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
+        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
+      ) {
+        return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
       }
     }
   }
@@ -328,30 +395,6 @@ function conflictWith(candidate, current) {
         return {
           kind: 'RUNTIME_RESOURCE_CONFLICT',
           resource: `${left.kind}:${left.resourceId}`,
-        };
-      }
-    }
-  }
-  return null;
-}
-
-function sourceOverlapWarning(candidate, current) {
-  if (
-    candidate.workspaceId === current.workspaceId ||
-    candidate.branch === current.branch
-  ) {
-    return null;
-  }
-  for (const left of candidate.sourceClaims) {
-    for (const right of current.sourceClaims) {
-      if (
-        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
-        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
-      ) {
-        return {
-          kind: 'SOURCE_OVERLAP_WARNING',
-          resource: left.pathPrefix,
-          otherPathPrefix: right.pathPrefix,
         };
       }
     }
@@ -407,6 +450,9 @@ function buildDeclaration(options, existing, now) {
   if (sourceClaims.length === 0) {
     fail('INVALID_DECLARATION', 'at least one source claim is required');
   }
+  for (const claim of sourceClaims) {
+    validateSourcePathContainment(workspaceRoot, claim.pathPrefix);
+  }
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
@@ -423,7 +469,7 @@ function buildDeclaration(options, existing, now) {
     journeyId: options.journeyId
       ? requiredIdentifier(options.journeyId, 'journeyId')
       : existing?.journeyId ?? null,
-    state: options.state ?? existing?.state ?? 'DECLARED',
+    state: existing?.state ?? 'DECLARED',
     createdAt: existing?.createdAt ?? now.toISOString(),
     heartbeatAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + expiresMinutes * 60_000).toISOString(),
@@ -431,6 +477,7 @@ function buildDeclaration(options, existing, now) {
     runtimeClaims,
   };
   declaration.declarationDigest = digestDeclaration(declaration);
+  validateDeclaration(declaration);
   return declaration;
 }
 
@@ -438,9 +485,10 @@ function mutateLedger(options, mutation) {
   const home = options.home ?? homedir();
   const file = options.ledgerPath ?? developmentWorkLedgerPath(home);
   const lockFile = options.lockPath ?? developmentWorkLockPath(home);
-  const now = options.now ?? new Date();
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const release = acquireLock(lockFile, options.lockTimeoutMs);
+  const now = toOperationDate(options);
+  ensurePrivateDirectory(path.dirname(file));
+  ensurePrivateDirectory(path.dirname(lockFile));
+  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -456,10 +504,9 @@ function mutateLedger(options, mutation) {
 
 export function startOrUpdateDeclaration(
   options,
-  { requireExisting = false, onWarning = () => {} } = {},
+  { requireExisting = false } = {},
 ) {
-  const warnings = [];
-  const declaration = mutateLedger(options, (ledger, now) => {
+  return mutateLedger(options, (ledger, now) => {
     const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
     const workspaceId = workspaceIdForRoot(workspaceRoot);
     const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
@@ -511,23 +558,10 @@ export function startOrUpdateDeclaration(
           ...conflict,
         });
       }
-      const warning = sourceOverlapWarning(candidate, current);
-      if (warning) {
-        warnings.push({
-          declarationId: current.declarationId,
-          workspaceId: current.workspaceId,
-          branch: current.branch,
-          ...warning,
-        });
-      }
     }
     ledger.declarations[id] = candidate;
     return candidate;
   }).output;
-  for (const warning of warnings) {
-    onWarning(warning);
-  }
-  return declaration;
 }
 
 function ownedDeclaration(options, ledger) {
@@ -547,6 +581,19 @@ function ownedDeclaration(options, ledger) {
     });
   }
   return declaration;
+}
+
+export function requireActiveDeclaration(options) {
+  return mutateLedger(options, (ledger) => {
+    const declaration = ownedDeclaration(options, ledger);
+    if (declaration.state !== 'ACTIVE') {
+      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration is not ACTIVE', {
+        declarationId: declaration.declarationId,
+        state: declaration.state,
+      });
+    }
+    return declaration;
+  }).output;
 }
 
 export function heartbeatDeclaration(options) {
@@ -600,8 +647,8 @@ export function statusCurrent(options) {
 export function checkDeclaration(options) {
   return mutateLedger(options, (ledger, now) => {
     const declaration = ownedDeclaration(options, ledger);
-    if (!LIVE_STATES.has(declaration.state)) {
-      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration is not active', {
+    if (!['DECLARED', 'ACTIVE'].includes(declaration.state)) {
+      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration cannot become ACTIVE', {
         state: declaration.state,
       });
     }

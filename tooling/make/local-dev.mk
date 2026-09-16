@@ -1,7 +1,8 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: profile profile-authorize profile-init profiles config \
+.PHONY: env-register env-update env-check env-status-all \
+        profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
@@ -12,8 +13,13 @@
 
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
+MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
+ENV_OWNER_ARG := $(or $(OWNER),$(shell git config user.email 2>/dev/null))
+ENV_CAPABILITIES_ARG := $(CAPABILITIES)
+ENV_PURPOSE_ARG := $(PURPOSE)
+ENV_BUDGET_SECONDS_ARG := $(or $(BUDGET_SECONDS),1200)
 DEV_WORK_ITEM_ARG := $(or $(WORK_ITEM),$(DEV_WORK_ITEM))
 DEV_SESSION_ARG := $(or $(SESSION),$(DEV_SESSION))
 DEV_JOURNEY_ARG := $(or $(JOURNEY),$(DEV_JOURNEY))
@@ -26,8 +32,40 @@ DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
 
+env-register:
+	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
+		echo "Usage: make env-register PROFILE=<name> SLOT=<n> CAPABILITIES='station.connect[,station.deploy]' PURPOSE='<text>'"; \
+		exit 1; \
+	fi
+	@node $(MACHINE_DEV_SCRIPT) register \
+		--profile "$(PROFILE)" \
+		--slot "$(SLOT)" \
+		--capabilities "$(ENV_CAPABILITIES_ARG)" \
+		--purpose "$(ENV_PURPOSE_ARG)" \
+		--owner "$(ENV_OWNER_ARG)"
+
+env-update:
+	@node $(MACHINE_DEV_SCRIPT) update \
+		$(if $(PROFILE),--profile "$(PROFILE)",) \
+		$(if $(SLOT),--slot "$(SLOT)",) \
+		$(if $(ENV_CAPABILITIES_ARG),--capabilities "$(ENV_CAPABILITIES_ARG)",) \
+		$(if $(ENV_PURPOSE_ARG),--purpose "$(ENV_PURPOSE_ARG)",) \
+		$(if $(OWNER),--owner "$(OWNER)",)
+
+env-check:
+	@node $(MACHINE_DEV_SCRIPT) check \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",) \
+		$(if $(PROFILE),--profile "$(PROFILE)",) \
+		$(if $(SLOT),--slot "$(SLOT)",) \
+		$(if $(ENV_CAPABILITIES_ARG),--capabilities "$(ENV_CAPABILITIES_ARG)",) \
+		--budget-seconds "$(ENV_BUDGET_SECONDS_ARG)"
+
+env-status-all:
+	@node $(MACHINE_DEV_SCRIPT) status-all
+
 profile:
-	@$(DEVCTL) profile activate $(PROFILE_ARG)
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
+	@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"
 
 profile-authorize:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-authorize <name> [SLOT=0]  or  make profile-authorize PROFILE=<name> [SLOT=0]"; exit 1; fi

@@ -32,7 +32,10 @@ from .home_station import HomeStationProvisioner
 from .remote_source_identity import resolve_remote_source_identity
 
 
-ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
+_SERVICE_PROFILES = {
+    "station-four": "four",
+    "station-five": "fiveArm",
+}
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -46,7 +49,11 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         station_profiles: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(contract)
-        self._station_profiles = dict(station_profiles or {})
+        self._station_profiles = dict(
+            _SERVICE_PROFILES
+            if station_profiles is None
+            else station_profiles
+        )
 
     def _required_station_profiles(self) -> dict[str, str]:
         expected = {

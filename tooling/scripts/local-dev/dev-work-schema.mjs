@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  realpathSync,
+} from 'node:fs';
 import path from 'node:path';
 
 export const LEDGER_KIND = 'peers-touch-development-work-ledger';
@@ -22,6 +26,7 @@ export const DECLARATION_STATES = new Set([
   'RELEASED',
   'STALE',
 ]);
+
 const DECLARATION_KEYS = new Set([
   'declarationId',
   'workItemId',
@@ -40,6 +45,8 @@ const DECLARATION_KEYS = new Set([
   'runtimeClaims',
   'declarationDigest',
 ]);
+const SOURCE_CLAIM_KEYS = new Set(['pathPrefix', 'mode']);
+const RUNTIME_CLAIM_KEYS = new Set(['kind', 'resourceId', 'mode']);
 
 export class DevWorkError extends Error {
   constructor(code, message, detail = {}) {
@@ -50,7 +57,7 @@ export class DevWorkError extends Error {
   }
 }
 
-export function fail(code, message, detail) {
+export function fail(code, message, detail = {}) {
   throw new DevWorkError(code, message, detail);
 }
 
@@ -59,17 +66,20 @@ export function isObject(value) {
 }
 
 export function canonicalize(value) {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (!isObject(value)) {
-    return value;
-  }
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!isObject(value)) return value;
   return Object.fromEntries(
     Object.keys(value)
       .filter((key) => value[key] !== undefined)
       .sort()
       .map((key) => [key, canonicalize(value[key])]),
+  );
+}
+
+function hasExactKeys(value, keys) {
+  const actual = Object.keys(value);
+  return (
+    actual.length === keys.size && actual.every((key) => keys.has(key))
   );
 }
 
@@ -100,26 +110,77 @@ export function requiredIdentifier(value, field) {
   return normalized;
 }
 
-function normalizeSourcePath(value) {
-  const text = requiredText(value, 'source claim path', 1024).replaceAll('\\', '/');
-  if (text.startsWith('/') || text.split('/').includes('..')) {
+export function normalizeSourcePath(value) {
+  const text = requiredText(value, 'source claim path', 1024).replaceAll(
+    '\\',
+    '/',
+  );
+  const segments = text.split('/');
+  if (
+    text.startsWith('/') ||
+    /^[a-z]:\//i.test(text) ||
+    segments.includes('.') ||
+    segments.includes('..')
+  ) {
     fail('INVALID_SOURCE_CLAIM', 'source claim must be repository-relative', {
       pathPrefix: text,
     });
   }
-  const normalized = path.posix.normalize(text.replace(/^\.\//, ''));
-  if (normalized === '..' || normalized.startsWith('../')) {
-    fail('INVALID_SOURCE_CLAIM', 'source claim escapes the repository', {
+  const normalized = path.posix.normalize(text).replace(/\/+$/, '');
+  if (!normalized || normalized === '.') {
+    fail('INVALID_SOURCE_CLAIM', 'source claim must name a repository path', {
       pathPrefix: text,
     });
   }
-  return normalized.replace(/\/+$/, '') || '.';
+  return normalized;
+}
+
+export function validateSourcePathContainment(root, pathPrefix) {
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(root);
+  } catch (error) {
+    fail('WORKTREE_IDENTITY_UNAVAILABLE', 'workspace root cannot be resolved', {
+      root,
+      cause: String(error),
+    });
+  }
+  const target = path.resolve(canonicalRoot, ...pathPrefix.split('/'));
+  const relativeTarget = path.relative(canonicalRoot, target);
+  if (
+    relativeTarget === '..' ||
+    relativeTarget.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeTarget)
+  ) {
+    fail('INVALID_SOURCE_CLAIM', 'source claim escapes the repository', {
+      pathPrefix,
+    });
+  }
+  let existing = target;
+  while (!existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) {
+      fail('INVALID_SOURCE_CLAIM', 'source claim has no repository parent', {
+        pathPrefix,
+      });
+    }
+    existing = parent;
+  }
+  const canonicalExisting = realpathSync(existing);
+  const relativeExisting = path.relative(canonicalRoot, canonicalExisting);
+  if (
+    relativeExisting === '..' ||
+    relativeExisting.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeExisting)
+  ) {
+    fail('INVALID_SOURCE_CLAIM', 'source claim resolves outside the repository', {
+      pathPrefix,
+    });
+  }
 }
 
 function parseDelimited(value) {
-  if (value === undefined || value === null || value === '') {
-    return [];
-  }
+  if (value === undefined || value === null || value === '') return [];
   return String(value)
     .split(';')
     .map((part) => part.trim())
@@ -178,9 +239,7 @@ export function parseRuntimeClaims(value) {
   for (const claim of claims) {
     const key = `${claim.kind}:${claim.resourceId}`;
     const current = deduped.get(key);
-    if (!current || claim.mode === 'exclusive') {
-      deduped.set(key, claim);
-    }
+    if (!current || claim.mode === 'exclusive') deduped.set(key, claim);
   }
   return [...deduped.values()].sort((left, right) =>
     `${left.kind}:${left.resourceId}`.localeCompare(
@@ -192,11 +251,12 @@ export function parseRuntimeClaims(value) {
 function validateClaimArrays(declaration) {
   if (
     !Array.isArray(declaration.sourceClaims) ||
-    declaration.sourceClaims.length === 0
+    (LIVE_STATES.has(declaration.state) &&
+      declaration.sourceClaims.length === 0)
   ) {
     fail(
       'MACHINE_WORK_LEDGER_INVALID',
-      'sourceClaims must be a non-empty array',
+      'live sourceClaims must be a non-empty array',
     );
   }
   if (!Array.isArray(declaration.runtimeClaims)) {
@@ -205,7 +265,7 @@ function validateClaimArrays(declaration) {
   for (const claim of declaration.sourceClaims) {
     if (
       !isObject(claim) ||
-      Object.keys(claim).some((key) => !['pathPrefix', 'mode'].includes(key)) ||
+      !hasExactKeys(claim, SOURCE_CLAIM_KEYS) ||
       !SOURCE_MODES.has(claim.mode)
     ) {
       fail('MACHINE_WORK_LEDGER_INVALID', 'invalid source claim');
@@ -223,9 +283,7 @@ function validateClaimArrays(declaration) {
   for (const claim of declaration.runtimeClaims) {
     if (
       !isObject(claim) ||
-      Object.keys(claim).some(
-        (key) => !['kind', 'resourceId', 'mode'].includes(key),
-      ) ||
+      !hasExactKeys(claim, RUNTIME_CLAIM_KEYS) ||
       !RUNTIME_MODES.has(claim.mode) ||
       !RUNTIME_KINDS.has(claim.kind)
     ) {
@@ -267,14 +325,16 @@ function validateClaimArrays(declaration) {
   }
 }
 
+function validIsoTimestamp(value) {
+  const milliseconds = Date.parse(value);
+  return (
+    Number.isFinite(milliseconds) &&
+    new Date(milliseconds).toISOString() === value
+  );
+}
+
 export function validateDeclaration(declaration) {
-  if (!isObject(declaration)) {
-    fail('MACHINE_WORK_LEDGER_INVALID', 'declaration must be an object');
-  }
-  if (
-    Object.keys(declaration).length !== DECLARATION_KEYS.size ||
-    Object.keys(declaration).some((key) => !DECLARATION_KEYS.has(key))
-  ) {
+  if (!isObject(declaration) || !hasExactKeys(declaration, DECLARATION_KEYS)) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'declaration fields are invalid');
   }
   for (const [field, maxLength] of [
@@ -299,10 +359,7 @@ export function validateDeclaration(declaration) {
       fail('MACHINE_WORK_LEDGER_INVALID', `${field} is not canonical`);
     }
   }
-  for (const field of [
-    'workItemId',
-    'sessionId',
-  ]) {
+  for (const field of ['workItemId', 'sessionId']) {
     let normalized;
     try {
       normalized = requiredIdentifier(declaration[field], field);
@@ -329,13 +386,15 @@ export function validateDeclaration(declaration) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'declaration state is invalid');
   }
   for (const field of ['createdAt', 'heartbeatAt', 'expiresAt']) {
-    const milliseconds = Date.parse(declaration[field]);
-    if (
-      !Number.isFinite(milliseconds) ||
-      new Date(milliseconds).toISOString() !== declaration[field]
-    ) {
+    if (!validIsoTimestamp(declaration[field])) {
       fail('MACHINE_WORK_LEDGER_INVALID', `${field} is invalid`);
     }
+  }
+  if (
+    Date.parse(declaration.createdAt) > Date.parse(declaration.heartbeatAt) ||
+    Date.parse(declaration.heartbeatAt) > Date.parse(declaration.expiresAt)
+  ) {
+    fail('MACHINE_WORK_LEDGER_INVALID', 'declaration timestamps are out of order');
   }
   if (declaration.journeyId !== null) {
     let normalized;
@@ -349,9 +408,13 @@ export function validateDeclaration(declaration) {
     }
   }
   validateClaimArrays(declaration);
+  if (!/^[0-9a-f]{64}$/.test(declaration.declarationDigest)) {
+    fail('MACHINE_WORK_LEDGER_INVALID', 'declaration digest is invalid');
+  }
   if (digestDeclaration(declaration) !== declaration.declarationDigest) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'declaration digest mismatch', {
       declarationId: declaration.declarationId,
     });
   }
+  return declaration;
 }

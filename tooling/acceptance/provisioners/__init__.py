@@ -58,6 +58,7 @@ def get_provisioner(
     contract: EnvironmentContract,
     *,
     station_profiles: Mapping[str, str] | None = None,
+    service_profiles: Mapping[str, str] | None = None,
 ) -> EnvironmentProvisioner:
     provisioner_class = _PROVISIONERS.get(contract.id)
     if provisioner_class is None:
@@ -65,13 +66,23 @@ def get_provisioner(
             f"no provisioner registered for environment: {contract.id}"
         )
     if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
         return provisioner_class(
             contract,
             station_profiles=station_profiles,
         )
-    if station_profiles:
+    if provisioner_class is MobileSocialSimulatorProvisioner:
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+            service_profiles=service_profiles,
+        )
+    if station_profiles or service_profiles:
         raise ProvisioningError(
-            f"environment {contract.id!r} does not accept Station profile bindings"
+            f"environment {contract.id!r} does not accept runtime profile bindings"
         )
     return provisioner_class(contract)
 

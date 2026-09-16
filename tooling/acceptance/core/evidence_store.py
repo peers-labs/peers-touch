@@ -123,7 +123,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
-def _new_run_id() -> str:
+def new_run_id() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     return f"{timestamp}-{secrets.token_hex(16)}"
 
@@ -334,7 +334,7 @@ def current_run_directory(
         root
         / context_workspace
         / _validate_gate_id(gate_id)
-        / _validate_run_id(run_id)
+        / validate_run_id(run_id)
     )
     _ensure_no_symlink(root, run_dir)
     if not run_dir.is_dir():
@@ -456,7 +456,7 @@ def _validate_gate_id(gate_id: str) -> str:
     return gate_id
 
 
-def _validate_run_id(run_id: str) -> str:
+def validate_run_id(run_id: str) -> str:
     if not RUN_ID_PATTERN.fullmatch(run_id):
         raise EvidencePathTraversal(
             f"invalid run ID: {run_id!r}",
@@ -678,7 +678,7 @@ class ArtifactRef:
         if not re.fullmatch(r"[0-9a-f]{16}", self.workspace_id):
             raise EvidenceManifestInvalid("invalid workspace ID")
         _validate_gate_id(self.gate_id)
-        _validate_run_id(self.run_id)
+        validate_run_id(self.run_id)
         _validate_relative_path(self.path)
         if not SHA256_PATTERN.fullmatch(self.sha256):
             raise EvidenceManifestInvalid("invalid artifact SHA-256")
@@ -819,7 +819,7 @@ class EvidenceStore:
         gate_dir = self.workspace_dir / normalized_gate
         _private_directory(gate_dir, "gate")
         for _ in range(16):
-            candidate = _validate_run_id(run_id) if run_id else _new_run_id()
+            candidate = validate_run_id(run_id) if run_id else new_run_id()
             run_dir = gate_dir / candidate
             try:
                 run_dir.mkdir(mode=0o700)
@@ -856,7 +856,7 @@ class EvidenceStore:
         run_dir = (
             self.workspace_dir
             / _validate_gate_id(reference.gate_id)
-            / _validate_run_id(reference.run_id)
+            / validate_run_id(reference.run_id)
         )
         relative = _validate_relative_path(reference.path)
         target = run_dir.joinpath(*relative.parts)
@@ -1063,7 +1063,7 @@ class EvidenceStore:
 
     def delete_run(self, gate_id: str, run_id: str) -> None:
         normalized_gate = _validate_gate_id(gate_id)
-        normalized_run = _validate_run_id(run_id)
+        normalized_run = validate_run_id(run_id)
         gate_dir = self.workspace_dir / normalized_gate
         run_dir = gate_dir / normalized_run
         if not run_dir.is_dir():

@@ -5,7 +5,16 @@
     "identity_match": true
   },
   "services": {
-    "station-primary": {
+    "station-four": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-five": {
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
@@ -23,7 +32,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-four",
           "required_kind": "station"
         }
       }
@@ -35,7 +44,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-four",
           "required_kind": "station"
         }
       }
@@ -47,7 +56,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-five",
           "required_kind": "station"
         }
       }
@@ -59,7 +68,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-five",
           "required_kind": "station"
         }
       }
@@ -71,7 +80,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-five",
           "required_kind": "station"
         }
       }
@@ -83,7 +92,7 @@
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
-          "service_id": "station-primary",
+          "service_id": "station-five",
           "required_kind": "station"
         }
       }

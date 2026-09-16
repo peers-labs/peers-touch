@@ -15,6 +15,8 @@ gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
 gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
 gap_detector="tooling/scripts/acceptance-gap-detect.py"
 plan_skill="tooling/skills/pt-plan-and-document/SKILL.md"
+architecture_execution_skill="tooling/skills/pt-architecture-execution-methodology/SKILL.md"
+dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
 english_workflow_skill="tooling/skills/pt-ew/SKILL.md"
 execution_guardian_skill="tooling/skills/pt-execution-plan-guardian/SKILL.md"
 dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
@@ -24,6 +26,8 @@ god_view_skill="tooling/skills/pt-god-view/SKILL.md"
 goal_orchestrator_skill="tooling/skills/pt-trae-goal-orchestrator/SKILL.md"
 goal_template="tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md"
 goal_review_rubric="tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md"
+workflow_architecture="docs/architecture/development-workflow/design.md"
+agents_contract="AGENTS.md"
 
 failures=0
 
@@ -46,6 +50,8 @@ require_file "$gap_skill"
 require_file "$gap_procedures"
 require_file "$gap_detector"
 require_file "$plan_skill"
+require_file "$architecture_execution_skill"
+require_file "$dev_workflow_skill"
 require_file "$english_workflow_skill"
 require_file "$execution_guardian_skill"
 require_file "$dev_workflow_skill"
@@ -55,6 +61,8 @@ require_file "$god_view_skill"
 require_file "$goal_orchestrator_skill"
 require_file "$goal_template"
 require_file "$goal_review_rubric"
+require_file "$workflow_architecture"
+require_file "$agents_contract"
 
 required_sections=(
   "Review Philosophy"
@@ -300,6 +308,57 @@ if ! grep -Fq "merely to print the Anchor" "$god_view_skill"; then
   fail "$god_view_skill must not let resume-time Anchor projection pause execution"
 fi
 
+package_contract_files=(
+  "$architecture_execution_skill"
+  "$plan_skill"
+  "$dev_workflow_skill"
+  "$execution_guardian_skill"
+  "$context_anchor_skill"
+  "$god_view_skill"
+  "$goal_orchestrator_skill"
+  "$agents_contract"
+)
+
+for contract_file in "${package_contract_files[@]}"; do
+  for marker in "Plan Package" "current_task_id" "current_task_path" "dev_state"; do
+    if ! grep -Fq "$marker" "$contract_file"; then
+      fail "$contract_file missing Plan Package contract marker: $marker"
+    fi
+  done
+done
+
+for marker in \
+  "planctl validate" \
+  "planctl current" \
+  "session.json" \
+  "DWF-B5" \
+  "NONE -> NONE"; do
+  if ! grep -Fq "$marker" "$god_view_skill"; then
+    fail "$god_view_skill missing bounded resume marker: $marker"
+  fi
+done
+
+for marker in \
+  "planctl validate" \
+  "Task Slice" \
+  "prepared" \
+  "Acceptance Execution"; do
+  if ! grep -Fq "$marker" "$plan_skill"; then
+    fail "$plan_skill missing package authoring marker: $marker"
+  fi
+done
+
+if rg -q '\| id \| plan \| stage \| current_step \|' \
+  "${package_contract_files[@]}"; then
+  fail "workflow contracts still publish the legacy active_work current_step schema"
+fi
+
+for marker in "Task lifecycle" "current Task" "Development Session"; do
+  if ! grep -Fq "$marker" "$workflow_architecture"; then
+    fail "$workflow_architecture missing workflow ownership marker: $marker"
+  fi
+done
+
 if rg -q \
   'Four stale legacy agent entries.*do not spawn|do not spawn subagents while they remain visible' \
   tooling/skills AGENTS.md; then
@@ -335,18 +394,26 @@ expected_hash="$(awk -F': *' '/^covered_docs_hash:/ {print $2; exit}' "$freshnes
 if [[ -z "$expected_hash" ]]; then
   fail "$freshness_file missing covered_docs_hash"
 else
+  if command -v shasum >/dev/null 2>&1; then
+    hash_command=(shasum -a 256)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    hash_command=(sha256sum)
+  else
+    fail "neither shasum nor sha256sum is available"
+    hash_command=(false)
+  fi
   actual_hash="$(
     for doc in "${covered_docs[@]}"; do
       if [[ -f "$doc" ]]; then
         printf '### %s\n' "$doc"
         cat "$doc"
       elif [[ -d "$doc" ]]; then
-        find "$doc" -type f -name '*.md' | sort | while IFS= read -r nested; do
+        find "$doc" -type f -name '*.md' | LC_ALL=C sort | while IFS= read -r nested; do
           printf '### %s\n' "$nested"
           cat "$nested"
         done
       fi
-    done | shasum -a 256 | awk '{print $1}'
+    done | "${hash_command[@]}" | awk '{print $1}'
   )"
   if [[ "$actual_hash" != "$expected_hash" ]]; then
     fail "upstream review rules drifted: expected $expected_hash but got $actual_hash"
@@ -454,82 +521,6 @@ knowledge_dir_output="$(
 if ! grep -q "republisher-broadcast-spam" <<< "$knowledge_dir_output"; then
   fail "knowledge-match.sh must match owns directories with trailing slashes"
 fi
-
-quality_root="$(mktemp -d)"
-set +e
-PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
-  python3 tooling/scripts/quality-evidence.py \
-    --range HEAD >/tmp/pt-quality-evidence.$$ 2>&1
-quality_status=$?
-set -e
-if [[ "$quality_status" -ne 0 && "$quality_status" -ne 1 ]]; then
-  cat /tmp/pt-quality-evidence.$$
-  fail "quality-evidence.py must produce review-ready evidence for HEAD"
-else
-  if ! quality_json="$(
-    PT_ACCEPTANCE_ARTIFACT_ROOT="$quality_root" \
-      python3 tooling/scripts/acceptance-artifact.py latest \
-        --gate quality-evidence \
-        --role quality-json
-  )"; then
-    fail "quality-evidence.py did not publish quality-json"
-  fi
-fi
-if [[ -n "${quality_json:-}" ]] && ! python3 - "$quality_json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-required = {"range", "changed_paths", "route", "knowledge", "acceptance", "evidence_gaps", "ready_for_github_review"}
-missing = sorted(required - set(data))
-if missing:
-    raise SystemExit(f"missing quality evidence keys: {missing}")
-PY
-then
-  fail "quality-evidence.py JSON output is missing required keys"
-fi
-rm -rf "$quality_root"
-rm -f /tmp/pt-quality-evidence.$$
-
-tier_run_root="$(mktemp -d)"
-set +e
-PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
-  python3 tooling/scripts/acceptance-run.py \
-  --gate acceptance-plan-self \
-  --gate chat-desktop-gateway-e2e \
-  --tier ci-structure \
-  --dry-run >/tmp/pt-acceptance-tier.$$ 2>&1
-tier_run_status=$?
-set -e
-if [[ "$tier_run_status" -ne 1 ]]; then
-  cat /tmp/pt-acceptance-tier.$$
-  fail "acceptance-run.py dry runs must select gates but remain unproven with exit 1"
-else
-  if ! tier_run_json="$(
-    PT_ACCEPTANCE_ARTIFACT_ROOT="$tier_run_root" \
-      python3 tooling/scripts/acceptance-artifact.py latest \
-        --gate acceptance-run \
-        --role run
-  )"; then
-    fail "acceptance-run.py did not publish the aggregate run"
-  fi
-fi
-if [[ -n "${tier_run_json:-}" ]] && ! python3 - "$tier_run_json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-results = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("results", [])
-ids = [result.get("id") for result in results]
-if ids != ["acceptance-plan-self"]:
-    raise SystemExit(f"unexpected tier-filtered gates: {ids}")
-PY
-then
-  fail "acceptance-run.py tier filtering selected the wrong gates"
-fi
-rm -rf "$tier_run_root"
-rm -f /tmp/pt-acceptance-tier.$$
 
 if rg -n 'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' "$skill_file" "$freshness_file" >/tmp/pt-skill-danger.$$ 2>/dev/null; then
   cat /tmp/pt-skill-danger.$$

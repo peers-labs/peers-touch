@@ -5,8 +5,10 @@
 > **Created**: 2026-09-12 | **Updated**: 2026-09-12
 > **Owner**: Developer Infrastructure
 > **Branch**: `fix/windows-native-chat-closure`
+> **Workspace ID**: `1f485431c64ce139`
+> **Initial HEAD**: `20394e919160646b83301b7979dcf9e25416ebf0`
 > **Architecture**: [../design.md](../design.md)
-> **Decisions**: DTC-D01 through DTC-D06
+> **Decisions**: DTC-D01 through DTC-D09
 
 ---
 
@@ -33,6 +35,8 @@ The first complete claim is:
 - Desktop check migration and duplicate applet-build removal.
 - Windows and Unix automated coverage.
 - Documentation and obsolete-path deletion.
+- Plan-bound Acceptance scheduling across development, completion, PR, and
+  explicit full/release verification.
 
 ### Non-Scope
 
@@ -226,6 +230,41 @@ node --test tooling/devctl/test/*.test.mjs
 git diff --check
 ```
 
+### C7: Plan-Bound Acceptance Workflow
+
+**Dependencies**: C1 and existing Acceptance Infra.
+
+**Deliverables**:
+
+- Active formal-plan discovery from worktree metadata.
+- One-active-plan and current-closure validation.
+- Machine-readable Acceptance Execution contract embedded in the formal plan.
+- Diff impact reconciliation that reports drift without expanding execution.
+- Closure-default, plan-completion, and explicit full execution modes.
+- Existing planning, execution, quality, PR, release, and orchestration Skills
+  aligned to the same source of truth.
+- Obsolete `.pt-dev-workflow` session-state documentation removed.
+
+**Failure behavior**:
+
+- Zero or multiple active plans fail before Gate execution.
+- Missing current closure or malformed Gate declarations fail closed.
+- Registry-derived Gates absent from the formal plan return
+  `ACCEPTANCE_PLAN_DRIFT`.
+- Plain execution never runs completion/full Gates.
+- Full execution requires explicit `--full`.
+
+**Gates**:
+
+```text
+python3 -m unittest tooling.acceptance.tests.test_execution_plan
+python3 tooling/scripts/acceptance-plan-test.py
+python3 tooling/scripts/acceptance-run-test.py
+python3 tooling/scripts/acceptance-run.py
+python3 tooling/scripts/acceptance-infra-boundary-test.py
+tooling/scripts/review/skill-check.sh
+```
+
 ## 6. Dependency DAG And Concurrency
 
 ```text
@@ -267,6 +306,41 @@ gates.
 | Prove wrapper parity and remove old owners | C6 |
 
 No authentication or account-session transition is owned by this plan.
+
+## 8.1 Acceptance Execution
+
+```json
+{
+  "schemaVersion": 1,
+  "closures": {
+    "C1": [],
+    "C2": [],
+    "C3": [],
+    "C4": [],
+    "C5": [],
+    "C6": [],
+    "C7": [
+      "acceptance-plan-self",
+      "acceptance-infra-validation",
+      "acceptance-workflow-contract"
+    ]
+  },
+  "completion": [
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-workflow-contract"
+  ],
+  "full": [
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-workflow-contract",
+    "acceptance-runtime-provisioning-self"
+  ]
+}
+```
+
+This is the only Acceptance schedule for this plan. Registry impact is a
+derived validation projection and may not change the current closure.
 
 ## 8. Acceptance Scenarios
 
@@ -387,4 +461,5 @@ Desktop development smoke.
 | C3 Process adapters | completed | Runtime-state/process tests, including foreign PID refusal |
 | C4 Local Station | completed | Disposable profile start/restart/stop and retained SQLite hash |
 | C5 Desktop App/Web | completed | App and Web dual-health lifecycle; responding native `Peers` window |
-| C6 Cutover, CI, deletion | in progress | Local gates pass; Ubuntu/Windows CI workflow awaits first remote run |
+| C6 Cutover, CI, deletion | completed | Consumer/docs cutover and dual-platform workflow implemented; remote run remains a DELIVER gate |
+| C7 Plan-bound Acceptance workflow | completed | Completion run passed 3/3; full execution remained explicit |

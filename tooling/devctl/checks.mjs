@@ -109,7 +109,7 @@ export function checkSocialRuntimeBoundaries(root) {
     },
     {
       id: 'ui-must-not-install-social-runtime',
-      expression: /startEventStream|installEventStreamBridge|installSocialRealtimeBridge|installSocialChatRealtimeBridge|startRealtimeStream|startSocialRuntime|dispatchSocialRuntimeExternalEvent/u,
+      expression: /startEventStream|installEventStreamBridge|installSocialRealtimeBridge|installSocialChatRealtimeBridge|startRealtimeStream|startSocialRuntime|dispatchSocialRuntimeExternalEvent|createSocialEventIngress|createMomentsProjection|createProfileProjection|createMomentsGateway|createProfileGateway|stubIngress/u,
       roots: [...desktopRoots, ...mobileRoots],
     },
     {

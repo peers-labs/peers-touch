@@ -1,4 +1,4 @@
-use messaging_core::ports::AttachmentBlob;
+use secure_content_core::ports::ObjectBlob as AttachmentBlob;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};

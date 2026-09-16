@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from 'node:url';
-import path from 'node:path';
-
+import { isDirectInvocation } from '../lib/machine-dev-paths.mjs';
 import {
   checkDeclaration,
   heartbeatDeclaration,
@@ -24,10 +22,26 @@ export {
   processStartIdentity,
   readLedger,
   releaseDeclaration,
+  requireActiveDeclaration,
   startOrUpdateDeclaration,
   statusAll,
   statusCurrent,
 } from './dev-work-ledger.mjs';
+
+const OPTION_NAMES = {
+  'work-item': 'workItemId',
+  session: 'sessionId',
+  journey: 'journeyId',
+  owner: 'owner',
+  purpose: 'purpose',
+  branch: 'branch',
+  'source-head': 'sourceHead',
+  'source-claims': 'sourceClaims',
+  'runtime-claims': 'runtimeClaims',
+  'expires-minutes': 'expiresMinutes',
+  'workspace-root': 'workspaceRoot',
+  home: 'home',
+};
 
 function parseArguments(argv) {
   const [action, ...rest] = argv;
@@ -43,20 +57,7 @@ function parseArguments(argv) {
       throw new DevWorkError('INVALID_ARGUMENT', `missing value for --${key}`);
     }
     index += 1;
-    const optionKey = {
-      'work-item': 'workItemId',
-      session: 'sessionId',
-      journey: 'journeyId',
-      owner: 'owner',
-      purpose: 'purpose',
-      branch: 'branch',
-      'source-head': 'sourceHead',
-      'source-claims': 'sourceClaims',
-      'runtime-claims': 'runtimeClaims',
-      'expires-minutes': 'expiresMinutes',
-      'workspace-root': 'workspaceRoot',
-      home: 'home',
-    }[key];
+    const optionKey = OPTION_NAMES[key];
     if (!optionKey) {
       throw new DevWorkError(
         'INVALID_ARGUMENT',
@@ -68,54 +69,35 @@ function parseArguments(argv) {
   return { action, options };
 }
 
-function output(value) {
-  process.stdout.write(`${JSON.stringify(canonicalize(value), null, 2)}\n`);
+function output(value, stream = process.stdout) {
+  stream.write(`${JSON.stringify(canonicalize(value), null, 2)}\n`);
 }
 
-function outputWarning(warning) {
-  process.stderr.write(
-    `${JSON.stringify(
-      canonicalize({
-        status: 'WARNING',
-        code: warning.kind,
-        message:
-          'source paths overlap with an independent worktree; coordinate before merge',
-        detail: warning,
-      }),
-      null,
-      2,
-    )}\n`,
-  );
-}
-
-export function runCli(argv) {
+export function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
+  const write = io.output ?? output;
+  let result;
   switch (action) {
     case 'start':
-      output(startOrUpdateDeclaration(options, { onWarning: outputWarning }));
+      result = startOrUpdateDeclaration(options);
       break;
     case 'update':
-      output(
-        startOrUpdateDeclaration(options, {
-          requireExisting: true,
-          onWarning: outputWarning,
-        }),
-      );
+      result = startOrUpdateDeclaration(options, { requireExisting: true });
       break;
     case 'status':
-      output(statusCurrent(options));
+      result = statusCurrent(options);
       break;
     case 'status-all':
-      output(statusAll(options));
+      result = statusAll(options);
       break;
     case 'check':
-      output(checkDeclaration(options));
+      result = checkDeclaration(options);
       break;
     case 'heartbeat':
-      output(heartbeatDeclaration(options));
+      result = heartbeatDeclaration(options);
       break;
     case 'release':
-      output(releaseDeclaration(options));
+      result = releaseDeclaration(options);
       break;
     default:
       throw new DevWorkError(
@@ -123,30 +105,32 @@ export function runCli(argv) {
         'action must be start, update, status, status-all, check, heartbeat, or release',
       );
   }
+  write(result);
+  return result;
 }
 
-const invokedDirectly =
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+function reportError(error) {
+  const payload =
+    error instanceof DevWorkError
+      ? {
+          status: 'BLOCKED',
+          code: error.code,
+          message: error.message,
+          detail: error.detail,
+        }
+      : {
+          status: 'BLOCKED',
+          code: 'DEV_WORK_INTERNAL_ERROR',
+          message: String(error),
+        };
+  output(payload, process.stderr);
+  process.exitCode = 2;
+}
 
-if (invokedDirectly) {
+if (isDirectInvocation(import.meta.url)) {
   try {
     runCli(process.argv.slice(2));
   } catch (error) {
-    const payload =
-      error instanceof DevWorkError
-        ? {
-            status: 'BLOCKED',
-            code: error.code,
-            message: error.message,
-            detail: error.detail,
-          }
-        : {
-            status: 'BLOCKED',
-            code: 'DEV_WORK_INTERNAL_ERROR',
-            message: String(error),
-          };
-    process.stderr.write(`${JSON.stringify(canonicalize(payload), null, 2)}\n`);
-    process.exitCode = 2;
+    reportError(error);
   }
 }

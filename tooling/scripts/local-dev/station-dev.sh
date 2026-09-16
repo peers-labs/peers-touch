@@ -17,6 +17,35 @@ DEPLOY_SCRIPT="$PROJECT_ROOT/tooling/scripts/deploy/deploy.sh"
 COMPOSE_FILE="$PROJECT_ROOT/tooling/docker/compose.yml"
 COMPOSE_ENV_FILE="${PT_STATION_COMPOSE_ENV_FILE:-$PROJECT_ROOT/tooling/docker/.env}"
 COMPOSE_PROJECT_NAME_VALUE="${PT_STATION_COMPOSE_PROJECT:-pt-${PT_DEV_PROFILE}}"
+MACHINE_DEV_SCRIPT="$SCRIPT_DIR/machine-dev.mjs"
+
+if [[ "$STATION_MODE" == "remote" ]]; then
+  deploy_env="${PT_STATION_DEPLOY_ENV:-}"
+  if [[ -z "$deploy_env" ]]; then
+    echo "[ERROR] Station mode is remote, but PT_STATION_DEPLOY_ENV is not set."
+    exit 1
+  fi
+  if [[ "${PT_MACHINE_LEASE_KIND:-}" == "station.deploy" ]] \
+    && [[ "${PT_MACHINE_LEASE_RESOURCE_ID:-}" == "$deploy_env" ]]; then
+    node "$MACHINE_DEV_SCRIPT" verify-held \
+      --workspace-root "$PROJECT_ROOT" \
+      --resource-kind station.deploy \
+      --resource-id "$deploy_env" >/dev/null
+  else
+    exec node "$MACHINE_DEV_SCRIPT" lease \
+      --workspace-root "$PROJECT_ROOT" \
+      --env-repo "$PT_ENV_REPO" \
+      --resource-kind station.deploy \
+      --resource-id "$deploy_env" \
+      --budget-seconds "${PT_STATION_LEASE_BUDGET_SECONDS:-1200}" \
+      -- /bin/bash "$0"
+  fi
+fi
+
+node "$MACHINE_DEV_SCRIPT" check \
+  --workspace-root "$PROJECT_ROOT" \
+  --env-repo "$PT_ENV_REPO" \
+  --capabilities station.connect >/dev/null
 
 station_is_ready() {
   curl -fsS -m 2 "$STATION_CHECK_URL" >/dev/null 2>&1
@@ -163,18 +192,6 @@ if [[ "$STATION_MODE" == "remote" ]]; then
       exit 0
     fi
     echo "[WARN] PT_STATION_SKIP_DEPLOY=true but Station not reachable: $STATION_URL"
-  fi
-
-  deploy_env="${PT_STATION_DEPLOY_ENV:-}"
-  if [[ -z "$deploy_env" ]]; then
-    echo "[ERROR] Station mode is remote, but PT_STATION_DEPLOY_ENV is not set."
-    echo "        make station now means: deploy/restart/check remote Station."
-    echo "        Set it in the active profile, for example:"
-    echo "          PT_STATION_DEPLOY_ENV=station-1"
-    echo ""
-    echo "        If you only want a health probe, run:"
-    echo "          make station-check"
-    exit 1
   fi
 
   if ! deploy_env_file="$("$DEPLOY_SCRIPT" resolve "$deploy_env")"; then

@@ -35,13 +35,13 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
-    fixture_federation_id,
     is_native_tauri_url,
     is_station_authorization_rejection,
     native_runtime_source_identity,
     read_station_version,
     runtime_station_service,
     selected_native_runtime,
+    shared_federation_id,
     station_readback as shared_station_readback,
     stop_client,
     verify_runtime_fixture_ready,
@@ -2350,20 +2350,28 @@ class NativeInteractionsGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == len(ACTORS)
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
+            federation_id = self.step(
+                "federation.shared",
+                lambda: shared_federation_id(self.clients, ACTORS),
+            )
 
             wait_for_peer_key_bundle(
                 self.clients["alice"],
                 self.ptids["bob"],
+                str(
+                    runtime_station_service(
+                        self.manifest,
+                        "bob",
+                    ).get("runtimeIdentity")
+                    or ""
+                ),
             )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
                 {
                     "peerPtid": self.ptids["bob"],
-                    "federationId": fixture_federation_id(
-                        self.ptids["alice"],
-                        self.ptids["bob"],
-                    ),
+                    "federationId": federation_id,
                 },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
@@ -2404,14 +2412,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 "createGroup",
                 {
                     "name": f"acceptance-{time.time_ns()}",
+                    "federationId": federation_id,
                     "memberPtids": [
                         self.ptids["bob"],
                         self.ptids["charlie"],
                     ],
-                    "federationId": fixture_federation_id(
-                        self.ptids["alice"],
-                        self.ptids["bob"],
-                    ),
                 },
             )
             group_id = str((group or {}).get("groupUlid") or "")

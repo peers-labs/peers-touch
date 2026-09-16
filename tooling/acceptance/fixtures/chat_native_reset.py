@@ -17,6 +17,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+from typing import Iterable
 import urllib.parse
 import urllib.request
 
@@ -29,6 +30,9 @@ APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 LOCAL_SOURCE_RUNTIME = "local-source"
 RESET_PROFILE_AUTHORIZATION_ENV = "CHAT_ACCEPTANCE_RESET_PROFILE"
+RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
+    "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS"
+)
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
@@ -266,7 +270,7 @@ def _deployment_compose_project(environment: dict[str, str]) -> str:
     )
 
 
-def _profile_authorized_reset_environment(
+def _authorized_reset_environment(
     station_url: str,
     selected_environment: str,
     environment: dict[str, str],
@@ -275,29 +279,95 @@ def _profile_authorized_reset_environment(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
-    if not authorized_profile:
+    authorized_environments_raw = os.environ.get(
+        RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+        "",
+    ).strip()
+    if authorized_profile and authorized_environments_raw:
+        raise RuntimeError(
+            "Chat Acceptance reset requires exactly one authorization mode"
+        )
+    if not authorized_profile and not authorized_environments_raw:
         return None
 
-    profile = active_profile_environment()
-    active_profile = profile.get("PT_DEV_PROFILE", "").strip()
-    active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
-    active_station = profile.get("PT_STATION_URL", "").rstrip("/")
-    requested_station = station_url.rstrip("/") or active_station
-    if (
-        authorized_profile != active_profile
-        or selected_environment != active_environment
-        or not active_station
-        or requested_station != active_station
-    ):
-        raise RuntimeError(
-            "Profile-authorized Chat Acceptance reset target mismatch: "
-            f"authorized_profile={authorized_profile or 'missing'} "
-            f"active_profile={active_profile or 'missing'} "
-            f"deployment_environment={selected_environment} "
-            f"active_environment={active_environment or 'missing'}"
+    if authorized_profile:
+        profile = active_profile_environment()
+        active_profile = profile.get("PT_DEV_PROFILE", "").strip()
+        active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
+        active_station = profile.get("PT_STATION_URL", "").rstrip("/")
+        requested_station = station_url.rstrip("/") or active_station
+        if (
+            authorized_profile != active_profile
+            or selected_environment != active_environment
+            or not active_station
+            or requested_station != active_station
+        ):
+            raise RuntimeError(
+                "Profile-authorized Chat Acceptance reset target mismatch: "
+                f"authorized_profile={authorized_profile or 'missing'} "
+                f"active_profile={active_profile or 'missing'} "
+                f"deployment_environment={selected_environment} "
+                f"active_environment={active_environment or 'missing'}"
+            )
+    else:
+        authorized_environments = [
+            value.strip()
+            for value in authorized_environments_raw.split(",")
+        ]
+        if (
+            not authorized_environments
+            or any(
+                not value or not SAFE_RUNTIME_NAME.fullmatch(value)
+                for value in authorized_environments
+            )
+            or len(set(authorized_environments))
+            != len(authorized_environments)
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset list is invalid"
+            )
+        if selected_environment not in authorized_environments:
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset target mismatch: "
+                f"deployment_environment={selected_environment}"
+            )
+        health_url = environment.get("PT_DEPLOY_HEALTH_URL", "").strip()
+        parsed_health = urllib.parse.urlparse(health_url)
+        if (
+            parsed_health.scheme not in {"http", "https"}
+            or not parsed_health.hostname
+            or parsed_health.port is None
+            or parsed_health.path != "/sub-oss/healthz"
+            or parsed_health.params
+            or parsed_health.query
+            or parsed_health.fragment
+            or parsed_health.username
+            or parsed_health.password
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset health target "
+                f"is invalid: deployment_environment={selected_environment}"
+            )
+        requested_station = station_url.rstrip("/") or (
+            f"{parsed_health.scheme}://{parsed_health.netloc}"
         )
+        parsed_requested = urllib.parse.urlparse(requested_station)
+        if (
+            parsed_requested.scheme not in {"http", "https"}
+            or parsed_requested.scheme != parsed_health.scheme
+            or parsed_requested.hostname != parsed_health.hostname
+            or parsed_requested.port != parsed_health.port
+            or parsed_requested.path not in {"", "/"}
+            or parsed_requested.params
+            or parsed_requested.query
+            or parsed_requested.fragment
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset target mismatch: "
+                f"deployment_environment={selected_environment}"
+            )
 
-    parsed = urllib.parse.urlparse(active_station)
+    parsed = urllib.parse.urlparse(requested_station)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     if (
         parsed.scheme not in {"http", "https"}
@@ -308,21 +378,21 @@ def _profile_authorized_reset_environment(
         or parsed.fragment
     ):
         raise RuntimeError(
-            "Profile-authorized Chat Acceptance reset Station URL does not "
-            "match the deployment host"
+            "Authorized Chat Acceptance reset Station URL does not match "
+            "the deployment host"
         )
 
     compose_project = _deployment_compose_project(environment)
     authorized_environment = {
         **environment,
         "PT_ACCEPTANCE_DISPOSABLE": "1",
-        "PT_ACCEPTANCE_STATION_URL": active_station,
+        "PT_ACCEPTANCE_STATION_URL": requested_station,
         "PT_ACCEPTANCE_COMPOSE_PROJECT": compose_project,
         "PT_ACCEPTANCE_STATION_CONTAINER": f"{compose_project}-station-1",
         "PT_ACCEPTANCE_POSTGRES_CONTAINER": f"{compose_project}-postgres-1",
         "PT_ACCEPTANCE_POSTGRES_VOLUME": f"{compose_project}_pg_data",
     }
-    return active_station, authorized_environment
+    return requested_station, authorized_environment
 
 
 def acceptance_station_environment(
@@ -337,13 +407,13 @@ def acceptance_station_environment(
         return local_environment
     selected_environment = environment_name or active_deployment_environment()
     environment = deploy_environment(selected_environment)
-    profile_authorized = _profile_authorized_reset_environment(
+    explicit_authorization = _authorized_reset_environment(
         station_url,
         selected_environment,
         environment,
     )
-    if profile_authorized is not None:
-        station_url, environment = profile_authorized
+    if explicit_authorization is not None:
+        station_url, environment = explicit_authorization
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     expected_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").rstrip("/")
@@ -351,7 +421,7 @@ def acceptance_station_environment(
     expected = urllib.parse.urlparse(expected_url)
     if (
         parsed_url.port in PROTECTED_CLEANUP_PORTS
-        and profile_authorized is None
+        and explicit_authorization is None
     ):
         raise RuntimeError(
             "Disposable Chat Acceptance refuses protected cleanup target port: "
@@ -368,11 +438,11 @@ def acceptance_station_environment(
         or parsed_url.hostname != host
         or parsed_url.hostname != expected.hostname
         or (
-            profile_authorized is None
+            explicit_authorization is None
             and parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
         )
         or (
-            profile_authorized is None
+            explicit_authorization is None
             and expected.port != APPROVED_DISPOSABLE_STATION_PORT
         )
         or parsed_url.port != expected.port
@@ -739,31 +809,37 @@ def _friend_request_event_text(
     return "\n".join(fields) + "\n"
 
 
-def fixture_friendship_federation_id(
-    first_ptid: str,
-    second_ptid: str,
+def fixture_federation_id_from_station_ids(
+    home_station_peer_ids: Iterable[str],
 ) -> str:
-    participants = sorted((first_ptid.strip(), second_ptid.strip()))
-    if not participants[0] or participants[0] == participants[1]:
-        raise ValueError("fixture Federation requires two distinct actor PTIDs")
-    identity = hashlib.sha256(
-        (participants[0] + "\x00" + participants[1]).encode("utf-8")
-    ).hexdigest()
+    station_ids = sorted(
+        {
+            station_id.strip()
+            for station_id in home_station_peer_ids
+            if station_id.strip()
+        }
+    )
+    if not station_ids:
+        raise RuntimeError("Chat fixture Federation requires a Home Station")
+    identity = hashlib.sha256("\x00".join(station_ids).encode("utf-8")).hexdigest()
     return f"fed_chat_{identity[:20]}"
+
+
+def fixture_federation_id(actors: Iterable[FixtureActorRecord]) -> str:
+    return fixture_federation_id_from_station_ids(
+        actor.home_station_peer_id for actor in actors
+    )
 
 
 def _accepted_friendship(
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
+    federation_id: str,
 ) -> FixtureAcceptedFriendship:
     sender, receiver = sorted((actor, peer), key=lambda item: item.ptid)
     identity = hashlib.sha256(
         (sender.ptid + "\x00" + receiver.ptid).encode("utf-8")
     ).hexdigest()
-    federation_id = fixture_friendship_federation_id(
-        sender.ptid,
-        receiver.ptid,
-    )
     request_id = f"acceptance-cross-{identity[:24]}"
     pending_event_id = f"friend-request-event:{request_id}:1"
     accepted_event_id = f"friend-request-event:{request_id}:2"
@@ -1149,15 +1225,33 @@ WHERE email = {_sql_literal(account_email)}
     return record
 
 
-def seed_cross_station_contact(
+def seed_bound_contact(
     station_url: str,
     environment_name: str,
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
+    federation_members: Iterable[FixtureActorRecord],
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
-    friendship = _accepted_friendship(actor, peer)
+    members = tuple(federation_members)
+    if not members:
+        raise RuntimeError("Chat fixture Federation requires actors")
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        seed_same_station_contact(
+            station_url,
+            environment_name,
+            actor,
+            peer,
+            members,
+        )
+        return
+    federation_owner = min(members, key=lambda member: member.ptid)
+    friendship = _accepted_friendship(
+        actor,
+        peer,
+        fixture_federation_id(members),
+    )
     sender_ref = _encode_social_proto(
         "peers_touch.model.actor.v1.ActorRef",
         _actor_ref_text(friendship.sender),
@@ -1168,10 +1262,16 @@ def seed_cross_station_contact(
     )
     local_scheme = urllib.parse.urlparse(station_url).scheme
     station_urls = {
-        actor.home_station_peer_id: station_url.rstrip("/"),
-        peer.home_station_peer_id: (
-            f"{local_scheme}://{peer.home_station_domain}"
-        ),
+        member.home_station_peer_id: (
+            station_url.rstrip("/")
+            if member.home_station_peer_id == actor.home_station_peer_id
+            else f"{local_scheme}://{member.home_station_domain}"
+        )
+        for member in members
+    }
+    members_by_station = {
+        member.home_station_peer_id: member
+        for member in members
     }
     memberships = ",\n".join(
         f"""(
@@ -1182,76 +1282,34 @@ def seed_cross_station_contact(
     {_sql_literal(
         "founder"
         if member.home_station_peer_id
-        == friendship.sender.home_station_peer_id
+        == federation_owner.home_station_peer_id
         else "member_station"
     )},
     'active',
     to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
     ''
   )"""
-        for member in (friendship.sender, friendship.receiver)
+        for member in members_by_station.values()
     )
-    sql = f"""
-BEGIN;
-INSERT INTO federation (
-  federation_id,
-  name,
-  description,
-  status,
-  policy_type,
-  sequencer_station_peer_id,
-  genesis_hash,
-  head_hash,
-  head_seq,
-  created_by_actor_ptid,
-  created_by_station_peer_id,
-  created_at,
-  updated_at
-) VALUES (
-  {_sql_literal(friendship.federation_id)},
-  'chat-native-acceptance',
-  '',
-  'active',
-  'single_admin',
-  {_sql_literal(friendship.sender.home_station_peer_id)},
-  {_sql_bytes(bytes(32))},
-  {_sql_bytes(bytes(32))},
-  0,
-  {_sql_literal(friendship.sender.ptid)},
-  {_sql_literal(friendship.sender.home_station_peer_id)},
-  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
-  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
-)
-ON CONFLICT (federation_id) DO UPDATE SET
-  status = EXCLUDED.status,
-  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
-  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
-  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
-  updated_at = EXCLUDED.updated_at;
-INSERT INTO federation_station_membership (
-  federation_id,
-  station_peer_id,
-  station_name,
-  station_url,
-  role,
-  status,
-  joined_at,
-  approved_by_event_id
-) VALUES
-  {memberships}
-ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
-  station_name = EXCLUDED.station_name,
-  station_url = EXCLUDED.station_url,
-  role = EXCLUDED.role,
-  status = EXCLUDED.status;
-LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
-LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
-DELETE FROM touch_actor
-WHERE origin = 'remote_cached'
-  AND (
-    ptid = {_sql_literal(peer.ptid)}
-    OR federated_handle = {_sql_literal(peer.federated_handle)}
-  );
+    membership_station_ids = ",\n      ".join(
+        _sql_literal(station_id)
+        for station_id in members_by_station
+    )
+    peer_is_remote = (
+        peer.home_station_peer_id != actor.home_station_peer_id
+    )
+    peer_projection = ""
+    peer_projection_check = f"""
+  SELECT count(*) INTO peer_actor_count
+  FROM touch_actor
+  WHERE ptid = {_sql_literal(peer.ptid)}
+    AND origin = 'local';
+  IF peer_actor_count <> 1 THEN
+    RAISE EXCEPTION 'same-Station peer Actor projection is incomplete';
+  END IF;
+"""
+    if peer_is_remote:
+        peer_projection = f"""
 INSERT INTO touch_actor (
   id,
   ptid,
@@ -1298,7 +1356,96 @@ INSERT INTO touch_actor (
   (extract(epoch FROM clock_timestamp() + interval '1 hour') * 1000)::bigint,
   clock_timestamp(),
   clock_timestamp()
-);
+)
+ON CONFLICT (federated_handle) DO UPDATE SET
+  ptid = EXCLUDED.ptid,
+  namespace = EXCLUDED.namespace,
+  preferred_username = EXCLUDED.preferred_username,
+  name = EXCLUDED.name,
+  type = EXCLUDED.type,
+  summary = EXCLUDED.summary,
+  icon = EXCLUDED.icon,
+  image = EXCLUDED.image,
+  email = EXCLUDED.email,
+  password_hash = EXCLUDED.password_hash,
+  kind = EXCLUDED.kind,
+  url = EXCLUDED.url,
+  home_station_peer_id = EXCLUDED.home_station_peer_id,
+  home_station_domain = EXCLUDED.home_station_domain,
+  visibility = EXCLUDED.visibility,
+  locator_seq = EXCLUDED.locator_seq,
+  cached_until_unix_ms = EXCLUDED.cached_until_unix_ms,
+  updated_at = EXCLUDED.updated_at
+WHERE touch_actor.origin = 'remote_cached'
+  AND touch_actor.ptid = EXCLUDED.ptid;
+"""
+        peer_projection_check = f"""
+  SELECT count(*) INTO peer_actor_count
+  FROM touch_actor
+  WHERE ptid = {_sql_literal(peer.ptid)}
+    AND federated_handle = {_sql_literal(peer.federated_handle)}
+    AND home_station_peer_id = {_sql_literal(peer.home_station_peer_id)}
+    AND origin = 'remote_cached';
+  IF peer_actor_count <> 1 THEN
+    RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
+  END IF;
+"""
+    sql = f"""
+BEGIN;
+INSERT INTO federation (
+  federation_id,
+  name,
+  description,
+  status,
+  policy_type,
+  sequencer_station_peer_id,
+  genesis_hash,
+  head_hash,
+  head_seq,
+  created_by_actor_ptid,
+  created_by_station_peer_id,
+  created_at,
+  updated_at
+) VALUES (
+  {_sql_literal(friendship.federation_id)},
+  'chat-native-acceptance',
+  '',
+  'active',
+  'single_admin',
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  {_sql_bytes(bytes(32))},
+  {_sql_bytes(bytes(32))},
+  0,
+  {_sql_literal(federation_owner.ptid)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
+)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
+  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
+  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
+  updated_at = EXCLUDED.updated_at;
+INSERT INTO federation_station_membership (
+  federation_id,
+  station_peer_id,
+  station_name,
+  station_url,
+  role,
+  status,
+  joined_at,
+  approved_by_event_id
+) VALUES
+  {memberships}
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = EXCLUDED.station_name,
+  station_url = EXCLUDED.station_url,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status;
+LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
+{peer_projection}
 WITH actor_pair AS (
   SELECT
     actor.id AS actor_id,
@@ -1408,10 +1555,12 @@ ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
   accepted_at = EXCLUDED.accepted_at;
 DO $acceptance$
 DECLARE
+  peer_actor_count integer;
   relationship_edge_count integer;
   accepted_request_count integer;
   federation_membership_count integer;
 BEGIN
+{peer_projection_check}
   SELECT count(*) INTO relationship_edge_count
   FROM follows
   WHERE (follower_id, following_id) IN (
@@ -1442,11 +1591,10 @@ BEGIN
   FROM federation_station_membership
   WHERE federation_id = {_sql_literal(friendship.federation_id)}
     AND station_peer_id IN (
-      {_sql_literal(friendship.sender.home_station_peer_id)},
-      {_sql_literal(friendship.receiver.home_station_peer_id)}
+      {membership_station_ids}
     )
     AND status = 'active';
-  IF federation_membership_count <> 2 THEN
+  IF federation_membership_count <> {len(members_by_station)} THEN
     RAISE EXCEPTION 'Chat fixture Federation membership is incomplete';
   END IF;
 END
@@ -1461,9 +1609,13 @@ def seed_same_station_contact(
     environment_name: str,
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
+    federation_members: Iterable[FixtureActorRecord],
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
+    members = tuple(federation_members)
+    if not members:
+        raise RuntimeError("Chat fixture Federation requires actors")
     if (
         actor.home_station_peer_id != peer.home_station_peer_id
         or actor.home_station_peer_id == ""
@@ -1472,7 +1624,12 @@ def seed_same_station_contact(
             "same-Station canonical contact actors must share one Station"
         )
 
-    friendship = _accepted_friendship(actor, peer)
+    federation_owner = min(members, key=lambda member: member.ptid)
+    friendship = _accepted_friendship(
+        actor,
+        peer,
+        fixture_federation_id(members),
+    )
     sender_ref = _encode_social_proto(
         "peers_touch.model.actor.v1.ActorRef",
         _actor_ref_text(friendship.sender),
@@ -1502,12 +1659,12 @@ INSERT INTO federation (
   '',
   'active',
   'single_admin',
-  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
   {_sql_bytes(bytes(32))},
   {_sql_bytes(bytes(32))},
   0,
-  {_sql_literal(friendship.sender.ptid)},
-  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_literal(federation_owner.ptid)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
   to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
   to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
 )
@@ -1522,8 +1679,8 @@ INSERT INTO federation_station_membership (
   status, joined_at, approved_by_event_id
 ) VALUES (
   {_sql_literal(friendship.federation_id)},
-  {_sql_literal(friendship.sender.home_station_peer_id)},
-  {_sql_literal(friendship.sender.home_station_domain)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  {_sql_literal(federation_owner.home_station_domain)},
   {_sql_literal(station_url.rstrip("/"))},
   'founder',
   'active',
@@ -1625,7 +1782,7 @@ BEGIN
   FROM federation_station_membership
   WHERE federation_id = {_sql_literal(friendship.federation_id)}
     AND station_peer_id =
-      {_sql_literal(friendship.sender.home_station_peer_id)}
+      {_sql_literal(federation_owner.home_station_peer_id)}
     AND status = 'active';
   IF accepted_request_count <> 1 OR relationship_count <> 2
     OR membership_count <> 1 THEN
@@ -1660,11 +1817,11 @@ ON CONFLICT (federation_id) DO UPDATE SET
                 (
                     friendship.federation_id,
                     "chat-native-acceptance",
-                    friendship.sender.home_station_peer_id,
+                    federation_owner.home_station_peer_id,
                     bytes(32),
                     bytes(32),
-                    friendship.sender.ptid,
-                    friendship.sender.home_station_peer_id,
+                    federation_owner.ptid,
+                    federation_owner.home_station_peer_id,
                     created_at,
                     created_at,
                 ),
@@ -1683,8 +1840,8 @@ ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
 """,
                 (
                     friendship.federation_id,
-                    friendship.sender.home_station_peer_id,
-                    friendship.sender.home_station_domain,
+                    federation_owner.home_station_peer_id,
+                    federation_owner.home_station_domain,
                     station_url.rstrip("/"),
                     created_at,
                 ),

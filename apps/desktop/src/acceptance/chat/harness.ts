@@ -265,6 +265,12 @@ export function installAcceptanceHarness(): void {
       commandId: string;
     }) => nativeAcceptanceBridge.prepareSubmittedCommand(input),
 
+    createRestorableCommand: (input: {
+      actorPtid: string;
+      conversationId: string;
+      plaintext: string;
+    }) => nativeAcceptanceBridge.createRestorableCommand(input),
+
     resumeMessagingLifecycle: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.resumeMessagingLifecycle(input),
 
@@ -828,8 +834,18 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async peerKeyBundleState({ peerPtid }: { peerPtid: string }) {
-      const response = await api.keyExchangeFetchBundle(peerPtid);
+    async peerKeyBundleState({
+      peerPtid,
+      homeStationPeerId,
+    }: {
+      peerPtid: string;
+      homeStationPeerId: string;
+    }) {
+      const response = await api.keyExchangeFetchBundle(
+        peerPtid,
+        undefined,
+        homeStationPeerId,
+      );
       return {
         peerPtid,
         bundleCount: response.bundles.length,

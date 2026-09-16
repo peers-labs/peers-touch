@@ -2,9 +2,12 @@
 package native
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -120,7 +123,11 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 		s.psRouter[h.Path()] = h
 	}
 
-	s.httpServer = &http.Server{Addr: s.Options().Address, Handler: s}
+	s.httpServer = newHTTPServer(
+		s.Options().Address,
+		s,
+		server.RequestReadTimeout(s.Options().Timeout),
+	)
 	go func() { _ = s.httpServer.ListenAndServe() }()
 
 	if s.transport != nil {
@@ -145,6 +152,18 @@ func (s *Server) Start(ctx context.Context, opts ...option.Option) error {
 	<-s.done
 
 	return nil
+}
+
+func newHTTPServer(
+	address string,
+	handler http.Handler,
+	readTimeout time.Duration,
+) *http.Server {
+	return &http.Server{
+		Addr:        address,
+		Handler:     handler,
+		ReadTimeout: readTimeout,
+	}
 }
 
 // ServeHTTP implements http.Handler using the internal router.
@@ -205,7 +224,9 @@ func (s *Server) handleSocket(ctx context.Context, sock transport.Socket) {
 }
 
 type request struct {
-	r *http.Request
+	r         *http.Request
+	bodyCache []byte
+	bodyRead  bool
 }
 
 // Context returns the request context.
@@ -222,6 +243,9 @@ func (r *request) Header() map[string]string {
 			h[k] = v[0]
 		}
 	}
+	if r.r.ContentLength >= 0 {
+		h["Content-Length"] = strconv.FormatInt(r.r.ContentLength, 10)
+	}
 	return h
 }
 
@@ -237,8 +261,23 @@ func (r *request) Path() string {
 
 // Body reads and returns the request body.
 func (r *request) Body() []byte {
-	body, _ := io.ReadAll(r.r.Body)
-	return body
+	if r.bodyRead {
+		return r.bodyCache
+	}
+	r.bodyRead = true
+	r.bodyCache, _ = io.ReadAll(r.r.Body)
+	return r.bodyCache
+}
+
+func (r *request) BodyStream() io.Reader {
+	if r.bodyRead {
+		return bytes.NewReader(r.bodyCache)
+	}
+	r.bodyRead = true
+	if r.r.Body == nil {
+		return bytes.NewReader(nil)
+	}
+	return r.r.Body
 }
 
 type response struct {
@@ -272,6 +311,18 @@ func (r *response) Write(b []byte) (int, error) {
 		r.w.WriteHeader(r.status)
 	}
 	return r.w.Write(b)
+}
+
+func (r *response) SetBodyStream(reader io.ReadCloser, size int64) error {
+	for key, value := range r.header {
+		r.w.Header().Set(key, value)
+	}
+	if r.status != 0 {
+		r.w.WriteHeader(r.status)
+	}
+	defer reader.Close()
+	_, err := io.CopyN(r.w, reader, size)
+	return err
 }
 
 func (r *response) Flush() error {

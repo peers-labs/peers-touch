@@ -485,6 +485,11 @@ export class MobileLifecycleKernel {
         runtimeId,
         () => entry.descriptor.teardown(),
       );
+      if (!result.success) {
+        // #region debug-point E:lifecycle-teardown-failure
+        void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'E', location: 'apps/mobile/src/app/lifecycle/MobileLifecycleKernel.ts:teardownRuntimes', msg: '[DEBUG] Runtime teardown failed', data: { runtimeId, errorMessage: result.errorMessage ?? null, durationMs: result.durationMs }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+      }
       results.push(result);
       this.dispatch({ type: 'RUNTIME_TORN_DOWN', runtimeId });
     }

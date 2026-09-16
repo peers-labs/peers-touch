@@ -454,20 +454,49 @@ func (s *subServer) handlePrepareMembership(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	actors, err := s.composition.CommandService.CommandRouteActors(
+		ctx,
+		conversationID,
+		requester.Actor,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	actors = uniqueProductionActors(append(actors, change.Actor))
+	manifests, err := s.composition.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	verifiedRoutes, err := productionEndpointRoutesFromManifests(
+		manifests,
+		actors,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	manifestSetHash, manifestStateHash, err := productionEndpointManifestSetHashes(
+		manifests,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	plan, err := s.composition.CommandService.PrepareMembership(
 		ctx,
 		command.PrepareMembershipRequest{
-			ConversationID: conversationID,
-			Requester:      requester,
-			Changes:        []entity.MembershipChange{change},
-			TTL:            defaultAuthorityPlanTTL,
+			ConversationID:    conversationID,
+			Requester:         requester,
+			Changes:           []entity.MembershipChange{change},
+			VerifiedRoutes:    verifiedRoutes,
+			ManifestSetHash:   manifestSetHash,
+			ManifestStateHash: manifestStateHash,
+			TTL:               defaultAuthorityPlanTTL,
 		},
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
 
-	return s.productionMembershipPlanResponse(ctx, plan)
+	return s.productionMembershipPlanResponse(plan, manifests), nil
 }
 
 func (s *subServer) handleSubmitAuthorityCommand(
@@ -536,8 +565,21 @@ func (s *subServer) handleSubmitAuthorityCommand(
 			err,
 		), nil
 	}
-	if mapped.Membership == nil {
-		mapped.VerifiedRoutes = verifiedRoutes
+	mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
+		s.composition.productionSubmitCommandRoutes(
+			ctx,
+			plan,
+			mapped.Membership != nil,
+			verifiedRoutes,
+		)
+	if err != nil {
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
 	}
 	result, err := s.composition.CommandService.Submit(ctx, mapped)
 	if err != nil {
@@ -1243,17 +1285,9 @@ func (s *subServer) productionGroupPlanResponse(
 }
 
 func (s *subServer) productionMembershipPlanResponse(
-	ctx context.Context,
 	plan entity.AuthorityPlan,
-) (*chatmodel.PrepareConversationMembershipResponse, error) {
-	manifests, err := s.composition.productionEndpointManifests(
-		ctx,
-		productionPlanActors(plan),
-	)
-	if err != nil {
-		return nil, err
-	}
-
+	manifests []*actormodel.ActorEndpointManifest,
+) *chatmodel.PrepareConversationMembershipResponse {
 	return &chatmodel.PrepareConversationMembershipResponse{
 		AuthorityPlanId:        string(plan.ID),
 		ExpiresAt:              timestamppb.New(plan.ExpiresAt.UTC()),
@@ -1269,7 +1303,7 @@ func (s *subServer) productionMembershipPlanResponse(
 		ReservedKeyPackages:    productionPlanKeyPackageReservations(plan),
 		EndpointManifests:      manifests,
 		AuthorityPlanSha256:    plan.Hash.Bytes(),
-	}, nil
+	}
 }
 
 func (c *ProductionComposition) productionEndpointManifests(
@@ -1385,6 +1419,46 @@ func (c *ProductionComposition) productionEndpointRoutes(
 		return nil, err
 	}
 	return productionEndpointRoutesFromManifests(manifests, actors)
+}
+
+func (c *ProductionComposition) productionAuthorityPlanRoutes(
+	ctx context.Context,
+	plan entity.AuthorityPlan,
+) ([]ports.EndpointRoute, valueobject.Hash, error) {
+	actors := productionPlanActors(plan)
+	manifests, err := c.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	routes, err := productionEndpointRoutesFromManifests(manifests, actors)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	_, stateHash, err := productionEndpointManifestSetHashes(manifests)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	return routes, stateHash, nil
+}
+
+func (c *ProductionComposition) productionSubmitCommandRoutes(
+	ctx context.Context,
+	plan *entity.AuthorityPlan,
+	membership bool,
+	commandRoutes []ports.EndpointRoute,
+) ([]ports.EndpointRoute, valueobject.Hash, error) {
+	if !membership {
+		return commandRoutes, valueobject.Hash{}, nil
+	}
+	if plan == nil {
+		return nil, valueobject.Hash{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"production_http.submit_command_routes",
+			"authority_plan",
+			"is required for a membership transition",
+		)
+	}
+	return c.productionAuthorityPlanRoutes(ctx, *plan)
 }
 
 func (c *ProductionComposition) productionCommandRoutes(
@@ -1891,8 +1965,20 @@ func productionEndpointUnion(
 
 func productionPlanActors(plan entity.AuthorityPlan) []valueobject.PTID {
 	actors := make(map[valueobject.PTID]struct{})
+	if plan.Requester.Actor != "" {
+		actors[plan.Requester.Actor] = struct{}{}
+	}
 	for _, change := range plan.Changes {
 		actors[change.Actor] = struct{}{}
+	}
+	for _, endpoint := range append(
+		append(
+			[]valueobject.Endpoint(nil),
+			plan.PreEndpoints...,
+		),
+		plan.PostEndpoints...,
+	) {
+		actors[endpoint.Actor] = struct{}{}
 	}
 	result := make([]valueobject.PTID, 0, len(actors))
 	for actor := range actors {

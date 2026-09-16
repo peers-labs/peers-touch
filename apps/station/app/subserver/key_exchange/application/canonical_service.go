@@ -315,6 +315,13 @@ func (s *CanonicalService) FetchDirectKeyBundles(
 	if err != nil {
 		return nil, wrapDependencyError(fetchDirectOperation, err)
 	}
+	if homeStationID != s.localStation {
+		return validatedFederatedDirectKeyBundles(
+			bundles,
+			actorPTID,
+			targetDeviceID,
+		)
+	}
 	return validatedDirectKeyBundles(bundles, routes, actorPTID)
 }
 
@@ -431,6 +438,30 @@ func validatedDirectKeyBundles(
 		result = append(result, bundle.Clone())
 	}
 	return result, nil
+}
+
+func validatedFederatedDirectKeyBundles(
+	bundles []domain.DirectKeyBundle,
+	actorPTID string,
+	targetDeviceID string,
+) ([]domain.DirectKeyBundle, error) {
+	actorPTID = strings.TrimSpace(actorPTID)
+	targetDeviceID = strings.TrimSpace(targetDeviceID)
+	routes := make([]domain.DeviceRoute, 0, len(bundles))
+	for _, bundle := range bundles {
+		if bundle.Device.ActorPTID != actorPTID ||
+			(targetDeviceID != "" &&
+				bundle.Device.DeviceID != targetDeviceID) {
+			return nil, domain.NewError(
+				domain.ErrorCodeConflict,
+				fetchDirectOperation,
+				"bundle.device",
+				"does not match the authenticated Federation request",
+			)
+		}
+		routes = append(routes, domain.DeviceRoute{Endpoint: bundle.Device})
+	}
+	return validatedDirectKeyBundles(bundles, routes, actorPTID)
 }
 
 func (s *CanonicalService) ReplenishDirectOneTimePreKeys(
@@ -606,7 +637,7 @@ func (s *CanonicalService) FetchMLSKeyPackage(
 		if err := validateFederatedReservation(
 			fetchMLSOperation,
 			*reservation,
-			routes,
+			actorPTID,
 			homeStationID,
 		); err != nil {
 			return nil, err
@@ -1178,7 +1209,10 @@ func (s *CanonicalService) resolveActorRoutes(
 			"does not match the Actor Identity route",
 		)
 	}
-	if targetDeviceID != "" && homeStationID != s.localStation {
+	if homeStationID != s.localStation {
+		if targetDeviceID == "" {
+			return nil, homeStationID, nil
+		}
 		route := domain.DeviceRoute{
 			Endpoint: domain.Endpoint{
 				ActorPTID: actorPTID,
@@ -1317,7 +1351,7 @@ func validateFetchedDirectBundles(
 func validateFederatedReservation(
 	operation string,
 	reservation domain.MLSKeyPackageReservation,
-	routes []domain.DeviceRoute,
+	actorPTID string,
 	homeStationID string,
 ) error {
 	if err := reservation.Validate(operation); err != nil {
@@ -1332,17 +1366,15 @@ func validateFederatedReservation(
 			"does not prove one-time consumption by the target Home Station",
 		)
 	}
-	for _, route := range routes {
-		if reservation.Target == route.Endpoint {
-			return nil
-		}
+	if reservation.Target.ActorPTID != strings.TrimSpace(actorPTID) {
+		return domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"reservation.target",
+			"does not match the authenticated Federation request",
+		)
 	}
-	return domain.NewError(
-		domain.ErrorCodeConflict,
-		operation,
-		"reservation.target",
-		"is not an active requested endpoint",
-	)
+	return nil
 }
 
 func validateClaimedReservation(

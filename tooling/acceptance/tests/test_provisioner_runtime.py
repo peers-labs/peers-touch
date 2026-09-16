@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import socket
 import tempfile
 import unittest
@@ -56,22 +57,39 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             MobileNativeProvisioner,
         )
 
-    def test_native_tauri_requires_complete_runtime_station_profiles(self):
+    def test_native_tauri_defaults_to_canonical_station_profiles(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
         provisioner = get_provisioner(contract)
 
+        self.assertEqual(
+            provisioner._required_station_profiles(),
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
+        )
+
+    def test_native_tauri_rejects_incomplete_runtime_station_profiles(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={"station-four": "four"},
+        )
         with self.assertRaisesRegex(
             BlockedError,
-            r"--station-profile SERVICE_ID=PROFILE.*missing=station-primary",
+            r"--station-profile SERVICE_ID=PROFILE.*missing=station-five",
         ):
             provisioner._required_station_profiles()
 
         provisioner = get_provisioner(
             contract,
             station_profiles={
-                "station-primary": "sixwin",
+                "station-four": "four",
+                "station-five": "fiveArm",
                 "station-unknown": "sixwin-unknown",
             },
         )
@@ -86,7 +104,8 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
         bindings = {
-            "station-primary": "sixwin",
+            "station-four": "four",
+            "station-five": "fiveArm",
         }
         provisioner = get_provisioner(
             contract,
@@ -99,15 +118,25 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
+        contract = dataclasses.replace(
+            contract,
+            services={"station-four": contract.services["station-four"]},
+            clients=tuple(
+                client
+                for client in contract.clients
+                if client.service_bindings["station"].service_id
+                == "station-four"
+            ),
+        )
         provisioner = get_provisioner(
             contract,
-            station_profiles={"station-primary": "sixwin"},
+            station_profiles={"station-four": "sixwin"},
         )
         manifest = provisioner._new_base_manifest(
             "chat-native-product-closure-e2e"
         )
         attestation = ServiceAttestation(
-            service_id="station-primary",
+            service_id="station-four",
             service_kind="station",
             environment_id=contract.id,
             deployment_environment="local",
@@ -161,7 +190,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             ) as produce:
                 services = provisioner._provision_station_services(manifest)
 
-        self.assertEqual(services, {"station-primary": attestation})
+        self.assertEqual(services, {"station-four": attestation})
         profile_lease.assert_called_once()
         remote_lease.assert_not_called()
         self.assertEqual(

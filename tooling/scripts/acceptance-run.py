@@ -12,6 +12,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,10 +51,27 @@ CONTEXT_GATE_INHERITED_ENV_KEYS = (
     "TZ",
     "WINDIR",
 )
+DEVELOPMENT_WORK_ITEM_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def development_artifact_root(work_item: str, workspace: str) -> Path:
+    if not DEVELOPMENT_WORK_ITEM_PATTERN.fullmatch(work_item):
+        raise SystemExit("--work-item must be a valid development work item ID")
+    home = Path(os.environ.get("HOME") or Path.home())
+    return (
+        home
+        / ".peers-touch"
+        / "dev"
+        / "workspaces"
+        / workspace
+        / "workflow"
+        / work_item
+        / "artifacts"
+    )
 
 
 def sha256_file(path: Path) -> str:
@@ -220,6 +238,7 @@ def environment_provisioner(
     environment_id: str,
     *,
     station_profiles: Mapping[str, str] | None = None,
+    service_profiles: Mapping[str, str] | None = None,
 ) -> Any | None:
     from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
     from tooling.acceptance.provisioners import get_provisioner
@@ -230,6 +249,7 @@ def environment_provisioner(
     return get_provisioner(
         EnvironmentContract.from_yaml(contract_path),
         station_profiles=station_profiles,
+        service_profiles=service_profiles,
     )
 
 
@@ -246,6 +266,24 @@ def parse_station_profile_bindings(values: list[str]) -> dict[str, str]:
         if service_id in bindings:
             raise SystemExit(
                 f"--station-profile repeats service {service_id!r}"
+            )
+        bindings[service_id] = profile_name
+    return bindings
+
+
+def parse_service_profile_bindings(values: list[str]) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for value in values:
+        service_id, separator, profile_name = value.partition("=")
+        service_id = service_id.strip()
+        profile_name = profile_name.strip()
+        if not separator or not service_id or not profile_name:
+            raise SystemExit(
+                "--service-profile must use SERVICE_ID=PROFILE"
+            )
+        if service_id in bindings:
+            raise SystemExit(
+                f"--service-profile repeats service {service_id!r}"
             )
         bindings[service_id] = profile_name
     return bindings
@@ -721,25 +759,53 @@ def ephemeral_cleanup_payload(value: Any) -> dict[str, Any] | None:
 def load_plan(
     path: Path | None,
     store: Any,
+    execution_mode: str = "closure",
+    execution_plan_path: Path | None = None,
 ) -> tuple[dict[str, Any], Any]:
     if path is not None:
         if not path.is_file():
             raise SystemExit(f"acceptance plan {str(path)!r} does not exist")
         return json.loads(path.read_text(encoding="utf-8")), str(path)
+    command = [
+        sys.executable,
+        "tooling/scripts/acceptance-plan.py",
+    ]
+    if execution_plan_path is None:
+        command.append("--active-plan")
+    else:
+        command.extend(["--execution-plan", str(execution_plan_path)])
+    if execution_mode == "completion":
+        command.append("--completion")
+    elif execution_mode == "full":
+        command.append("--full")
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temporary:
+        projection_path = Path(temporary.name)
+    command.extend(["--output", str(projection_path)])
     try:
-        reference = store.latest_artifact_ref("acceptance-plan", "plan")
-    except Exception:
-        subprocess.run(
-            [sys.executable, "tooling/scripts/acceptance-plan.py"],
+        generated = subprocess.run(
+            command,
             cwd=REPO_ROOT,
-            check=True,
+            check=False,
+            capture_output=True,
+            text=True,
             env={
                 **os.environ,
                 "PT_ACCEPTANCE_ARTIFACT_ROOT": str(store.root),
             },
         )
-        reference = store.latest_artifact_ref("acceptance-plan", "plan")
-    return store.read_json(reference), reference.to_dict()
+        if generated.returncode != 0:
+            detail = generated.stderr.strip() or generated.stdout.strip()
+            raise SystemExit(
+                "active execution plan projection failed with exit code "
+                f"{generated.returncode}: {detail}"
+            )
+        plan = json.loads(projection_path.read_text(encoding="utf-8"))
+    finally:
+        projection_path.unlink(missing_ok=True)
+    source = plan.get("execution", {}).get("formalPlan")
+    if not isinstance(source, str) or not source:
+        raise SystemExit("active execution plan projection has no formal plan")
+    return plan, source
 
 
 def load_gate_definitions(path: Path) -> dict[str, Any]:
@@ -1207,6 +1273,7 @@ def standardize_result(
     plan_path: Any,
     *,
     candidate_mode: bool = False,
+    execution_policy: str = "acceptance",
 ) -> dict[str, Any]:
     standardized = dict(result)
     gate_id = str(standardized.get("id") or "unknown")
@@ -1237,6 +1304,24 @@ def standardize_result(
             and traceability.get("status") == "complete"
         )
     )
+    if execution_policy == "development":
+        standardized["artifactKind"] = "development-functional-result"
+        if status == "blocked":
+            standardized["completionStatus"] = "BLOCKED"
+        elif status == "passed" and environment_evidence_valid:
+            standardized["completionStatus"] = "DONE"
+        else:
+            standardized["completionStatus"] = "PARTIAL"
+            if status == "passed" and environment_proof:
+                standardized.setdefault(
+                    "reason",
+                    "development runtime result lacks complete typed runtime evidence",
+                )
+        standardized["proofStatus"] = "NOT_APPLICABLE"
+        standardized["sampleEmissionAllowed"] = False
+        standardized["verificationClass"] = "FUNCTIONAL_CHECK"
+        standardized["traceability"] = traceability
+        return standardized
     if status == "passed" and environment_evidence_valid:
         standardized.setdefault("completionStatus", "DONE")
         standardized.setdefault("proofStatus", "PROVEN")
@@ -1261,15 +1346,16 @@ def standardize_result(
     return standardized
 
 
-def finalize_gate_result(
+def prepare_gate_result(
     result: dict[str, Any],
-    gate_run: Any,
     plan_path: Any,
     runtime: dict[str, Any] | None = None,
     runtime_cell: str | None = None,
     secret_values: tuple[str, ...] = (),
+    *,
     candidate_mode: bool = False,
-) -> dict[str, Any]:
+    execution_policy: str = "acceptance",
+) -> tuple[dict[str, Any], dict[str, Any]]:
     from tooling.acceptance.core import canonical_secret_scan
 
     redacted_result, result_leaked = redact_runtime_value(
@@ -1332,7 +1418,11 @@ def finalize_gate_result(
     if existing_scan_failed or leaked_fields:
         redacted_result["status"] = "failed"
         redacted_result["completionStatus"] = "PARTIAL"
-        redacted_result["proofStatus"] = "UNPROVEN"
+        redacted_result["proofStatus"] = (
+            "NOT_APPLICABLE"
+            if execution_policy == "development"
+            else "UNPROVEN"
+        )
         redacted_result.setdefault(
             "reason",
             (
@@ -1346,9 +1436,56 @@ def finalize_gate_result(
         redacted_result,
         plan_path,
         candidate_mode=candidate_mode,
+        execution_policy=execution_policy,
+    )
+    return standardized, redacted_runtime
+
+
+def finalize_gate_result(
+    result: dict[str, Any],
+    gate_run: Any,
+    plan_path: Any,
+    runtime: dict[str, Any] | None = None,
+    runtime_cell: str | None = None,
+    secret_values: tuple[str, ...] = (),
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
+    standardized, redacted_runtime = prepare_gate_result(
+        result,
+        plan_path,
+        runtime,
+        runtime_cell,
+        secret_values,
+        candidate_mode=candidate_mode,
     )
     gate_run.finalize(result=standardized, runtime=redacted_runtime)
     gate_run.publish_latest(runtime_cell=runtime_cell)
+    return standardized
+
+
+def record_development_result(
+    result: dict[str, Any],
+    gate_run: Any,
+    plan_path: Any,
+    runtime: dict[str, Any] | None = None,
+    runtime_cell: str | None = None,
+    secret_values: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    standardized, _ = prepare_gate_result(
+        result,
+        plan_path,
+        runtime,
+        runtime_cell,
+        secret_values,
+        execution_policy="development",
+    )
+    reference = gate_run.write_json(
+        "development/result.json",
+        standardized,
+        role="development-result",
+    )
+    standardized["developmentArtifact"] = reference.to_dict()
+    standardized["developmentRunId"] = gate_run.run_id
     return standardized
 
 
@@ -1457,6 +1594,7 @@ def result_traceability_state(
     results: list[dict[str, Any]],
     *,
     candidate_mode: bool = False,
+    execution_policy: str = "acceptance",
 ) -> dict[str, Any]:
     missing = [
         {
@@ -1478,10 +1616,16 @@ def result_traceability_state(
         "status": status,
         "completionStatus": "DONE" if status == "pass" else "PARTIAL",
         "proofStatus": (
-            "CANDIDATE" if candidate_mode else "PROVEN"
+            "NOT_APPLICABLE"
+            if execution_policy == "development"
+            else ("CANDIDATE" if candidate_mode else "PROVEN")
         )
         if status == "pass"
-        else "UNPROVEN",
+        else (
+            "NOT_APPLICABLE"
+            if execution_policy == "development"
+            else "UNPROVEN"
+        ),
         "sampleEmissionAllowed": False,
         "missingTraceabilityCount": len(missing),
         "missingTraceability": missing,
@@ -1494,12 +1638,14 @@ def build_run_report(
     *,
     source: Mapping[str, str] | None = None,
     candidate_mode: bool = False,
+    execution_policy: str = "acceptance",
 ) -> dict[str, Any]:
     results = [
         standardize_result(
             result,
             plan_path,
             candidate_mode=candidate_mode,
+            execution_policy=execution_policy,
         )
         for result in results
     ]
@@ -1523,9 +1669,16 @@ def build_run_report(
         and not incomplete
         and missing_traceability == 0
     )
+    if execution_policy == "development":
+        sample_emission_allowed = False
     report_complete = bool(results) and not incomplete and not dry_run
     report: dict[str, Any] = {
-        "artifactKind": RUN_ARTIFACT_KIND,
+        "artifactKind": (
+            "development-functional-run"
+            if execution_policy == "development"
+            else RUN_ARTIFACT_KIND
+        ),
+        "executionPolicy": execution_policy,
         "plan": plan_path,
         "sourceArtifact": plan_path,
         "source": dict(source) if source is not None else {},
@@ -1548,17 +1701,28 @@ def build_run_report(
             else ("DONE" if report_complete else "PARTIAL")
         ),
         "proofStatus": (
-            ("CANDIDATE" if candidate_mode else "PROVEN")
+            (
+                "NOT_APPLICABLE"
+                if execution_policy == "development"
+                else ("CANDIDATE" if candidate_mode else "PROVEN")
+            )
             if report_complete
             and not failed
             and not blocked
             and not unproven
-            else "UNPROVEN"
+            else (
+                "NOT_APPLICABLE"
+                if execution_policy == "development"
+                else "UNPROVEN"
+            )
         ),
-        "sampleEmissionAllowed": sample_emission_allowed,
+        "sampleEmissionAllowed": (
+            False if execution_policy == "development" else sample_emission_allowed
+        ),
         "resultTraceabilityState": result_traceability_state(
             results,
             candidate_mode=candidate_mode,
+            execution_policy=execution_policy,
         ),
         "results": results,
     }
@@ -1641,6 +1805,14 @@ def acceptance_exit_code(
     return 0
 
 
+def development_exit_code(report: dict[str, Any]) -> int:
+    if report.get("completionStatus") == "BLOCKED":
+        return 2
+    if report.get("completionStatus") != "DONE":
+        return 1
+    return 0
+
+
 def candidate_artifacts_required(
     result: dict[str, Any],
     *,
@@ -1654,17 +1826,38 @@ def main() -> int:
         EvidenceConflict,
         EvidenceError,
         EvidenceStore,
+        new_run_id,
         source_identity,
+        validate_run_id,
+        workspace_id,
     )
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan")
+    parser.add_argument("--execution-plan")
     parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
     parser.add_argument("--gate", action="append", default=[])
     parser.add_argument("--tier", action="append", default=[])
+    execution_mode = parser.add_mutually_exclusive_group()
+    execution_mode.add_argument("--completion", action="store_true")
+    execution_mode.add_argument("--full", action="store_true")
     parser.add_argument("--runtime-cell")
     parser.add_argument(
+        "--execution-policy",
+        choices=("acceptance", "development"),
+        default="acceptance",
+    )
+    parser.add_argument("--run-id")
+    parser.add_argument("--allocate-run-id", action="store_true")
+    parser.add_argument("--work-item")
+    parser.add_argument(
         "--station-profile",
+        action="append",
+        default=[],
+        metavar="SERVICE_ID=PROFILE",
+    )
+    parser.add_argument(
+        "--service-profile",
         action="append",
         default=[],
         metavar="SERVICE_ID=PROFILE",
@@ -1673,7 +1866,39 @@ def main() -> int:
     parser.add_argument("--candidate-ref-out")
     parser.add_argument("--candidate-manifest-sha-out")
     args = parser.parse_args()
+    if args.allocate_run_id:
+        if any(
+            (
+                args.plan,
+                args.execution_plan,
+                args.gate,
+                args.tier,
+                args.completion,
+                args.full,
+                args.runtime_cell,
+                args.station_profile,
+                args.dry_run,
+                args.candidate_ref_out,
+                args.candidate_manifest_sha_out,
+                args.run_id,
+                args.work_item,
+            )
+        ):
+            raise SystemExit("--allocate-run-id cannot be combined with execution options")
+        print(json.dumps({"runId": new_run_id()}, sort_keys=True))
+        return 0
+    if args.plan and args.execution_plan:
+        raise SystemExit("--plan and --execution-plan are mutually exclusive")
+    if (args.completion or args.full) and (args.plan or args.gate):
+        raise SystemExit(
+            "--completion/--full use the active formal plan and cannot be "
+            "combined with --plan or --gate"
+        )
+    selected_execution_mode = (
+        "completion" if args.completion else "full" if args.full else "closure"
+    )
     station_profiles = parse_station_profile_bindings(args.station_profile)
+    service_profiles = parse_service_profile_bindings(args.service_profile)
     candidate_mode = bool(
         args.candidate_ref_out or args.candidate_manifest_sha_out
     )
@@ -1688,19 +1913,73 @@ def main() -> int:
         raise SystemExit(
             "candidate handoff requires exactly one --gate and forbids --dry-run"
         )
+    if args.execution_policy == "development":
+        if not args.work_item:
+            raise SystemExit("development execution requires --work-item")
+        if (
+            args.completion
+            or args.full
+            or args.dry_run
+            or candidate_mode
+            or args.run_id
+        ):
+            raise SystemExit(
+                "development execution forbids completion/full, dry-run, "
+                "candidate handoff, and formal --run-id"
+            )
+    elif args.work_item:
+        raise SystemExit("--work-item is valid only for development execution")
+    if args.run_id:
+        try:
+            validate_run_id(args.run_id)
+        except EvidenceError as error:
+            raise SystemExit(str(error)) from error
+        if (
+            len(args.gate) != 1
+            or args.plan
+            or args.execution_plan
+            or args.completion
+            or args.full
+            or args.dry_run
+        ):
+            raise SystemExit(
+                "--run-id requires one explicit formal --gate invocation"
+            )
 
     try:
-        store = EvidenceStore.from_environment(
-            repo_root=REPO_ROOT,
-            worktree=REPO_ROOT,
-        )
-        plan, plan_source = load_plan(
-            Path(args.plan) if args.plan else None,
-            store,
-        )
+        if args.execution_policy == "development":
+            store = EvidenceStore(
+                development_artifact_root(
+                    str(args.work_item),
+                    workspace_id(REPO_ROOT),
+                ),
+                worktree=REPO_ROOT,
+            )
+        else:
+            store = EvidenceStore.from_environment(
+                repo_root=REPO_ROOT,
+                worktree=REPO_ROOT,
+            )
+        if args.gate and not args.plan and not args.execution_plan:
+            plan = {"selected_gates": []}
+            plan_source = {
+                "artifactKind": "acceptance-manual-selection",
+                "gateIds": list(args.gate),
+            }
+        else:
+            plan, plan_source = load_plan(
+                Path(args.plan) if args.plan else None,
+                store,
+                selected_execution_mode,
+                Path(args.execution_plan) if args.execution_plan else None,
+            )
         aggregate_source = source_identity(REPO_ROOT)
         aggregate_run = store.begin_run(
-            "acceptance-run",
+            (
+                "development-run"
+                if args.execution_policy == "development"
+                else "acceptance-run"
+            ),
             source=aggregate_source,
         )
     except EvidenceError as error:
@@ -1715,10 +1994,23 @@ def main() -> int:
     gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
-    print("Acceptance Run")
-    print("==============")
+    print(
+        "Development Functional Run"
+        if args.execution_policy == "development"
+        else "Acceptance Run"
+    )
+    print("==========================")
+    execution = plan.get("execution")
+    if isinstance(execution, dict):
+        print(f"formal_plan: {execution.get('formalPlan', '')}")
+        print(f"closure: {execution.get('closure') or 'complete'}")
+        print(f"mode: {execution.get('mode', '')}")
     if args.tier:
         print(f"tiers: {', '.join(args.tier)}")
+    print(
+        "timeout_budget_seconds: "
+        + str(sum(int(gate.get("timeout_seconds") or 600) for gate in gates))
+    )
     if not gates:
         print("[SKIP] no selected gates")
 
@@ -1757,7 +2049,11 @@ def main() -> int:
                 aggregate_source,
                 gate_source,
             )
-            gate_run = store.begin_run(gate_id, source=gate_source)
+            gate_run = store.begin_run(
+                gate_id,
+                source=gate_source,
+                run_id=args.run_id,
+            )
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
             gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
@@ -1830,6 +2126,7 @@ def main() -> int:
                             provisioner = environment_provisioner(
                                 provisioner_id,
                                 station_profiles=station_profiles,
+                                service_profiles=service_profiles,
                             )
                             provisioner.bind_evidence_run(gate_run)
                             try:
@@ -2357,18 +2654,28 @@ def main() -> int:
                 finalized_runtime["runtimeCellManifest"] = (
                     runtime_cell_manifest
                 )
-            result = finalize_gate_result(
-                result,
-                gate_run,
-                plan_source,
-                finalized_runtime,
-                runtime_cell or None,
-                runtime_secrets,
-                candidate_mode=candidate_mode,
-            )
-            result["runManifest"] = gate_run.manifest_ref.to_dict()
-            if candidate_mode and result.get("status") == "passed":
-                candidate_manifest_ref = gate_run.manifest_ref
+            if args.execution_policy == "development":
+                result = record_development_result(
+                    result,
+                    gate_run,
+                    plan_source,
+                    finalized_runtime,
+                    runtime_cell or None,
+                    runtime_secrets,
+                )
+            else:
+                result = finalize_gate_result(
+                    result,
+                    gate_run,
+                    plan_source,
+                    finalized_runtime,
+                    runtime_cell or None,
+                    runtime_secrets,
+                    candidate_mode=candidate_mode,
+                )
+                result["runManifest"] = gate_run.manifest_ref.to_dict()
+                if candidate_mode and result.get("status") == "passed":
+                    candidate_manifest_ref = gate_run.manifest_ref
             gate_run.close()
             active_gate_run = None
             results.append(result)
@@ -2382,6 +2689,7 @@ def main() -> int:
             results,
             candidate_mode=candidate_mode,
             source=aggregate_source,
+            execution_policy=args.execution_policy,
         )
         run_ref = aggregate_run.write_json(
             "reports/run.json",
@@ -2394,27 +2702,32 @@ def main() -> int:
             media_type="text/markdown",
             role="run-markdown",
         )
-        aggregate_run.finalize(
-            result={
-                "status": (
-                    "passed"
-                    if acceptance_exit_code(
-                        report,
-                        candidate_mode=candidate_mode,
-                    )
-                    == 0
-                    else "failed"
-                ),
-                "completionStatus": report.get("completionStatus"),
-                "proofStatus": report.get("proofStatus"),
-            },
-            runtime={"plan": plan_source},
-        )
-        aggregate_run.publish_latest()
+        if args.execution_policy == "acceptance":
+            aggregate_run.finalize(
+                result={
+                    "status": (
+                        "passed"
+                        if acceptance_exit_code(
+                            report,
+                            candidate_mode=candidate_mode,
+                        )
+                        == 0
+                        else "failed"
+                    ),
+                    "completionStatus": report.get("completionStatus"),
+                    "proofStatus": report.get("proofStatus"),
+                },
+                runtime={"plan": plan_source},
+            )
+            aggregate_run.publish_latest()
         print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
-        exit_code = acceptance_exit_code(
-            report,
-            candidate_mode=candidate_mode,
+        exit_code = (
+            development_exit_code(report)
+            if args.execution_policy == "development"
+            else acceptance_exit_code(
+                report,
+                candidate_mode=candidate_mode,
+            )
         )
         if candidate_mode:
             if exit_code != 0 or candidate_manifest_ref is None:
