@@ -660,6 +660,10 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 launcher._launch_environment["PT_DESKTOP_E2E"],
                 "true",
             )
+            self.assertEqual(
+                launcher._launch_environment["TAURI_WEBDRIVER_PORT"],
+                "4476",
+            )
 
             stopped = Mock(returncode=0, stdout="", stderr="")
             runtime_profile_root = runtime_profile.parent

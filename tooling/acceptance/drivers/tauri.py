@@ -424,6 +424,7 @@ class MakeDesktopLauncher(AppLauncher):
                 "PT_ACCEPTANCE_NATIVE_DEV": "1",
                 "PT_DESKTOP_E2E": "true",
                 "PT_ACCEPTANCE_WEBDRIVER_PORT": str(self.port),
+                "TAURI_WEBDRIVER_PORT": str(self.port),
                 "PT_GATEWAY_PORT": str(self.gateway_port),
                 "PT_RENDERER_PORT": str(self.renderer_port),
                 "PT_PROFILE": self.profile,
