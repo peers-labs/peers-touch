@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type homeAgentListerStub struct {
@@ -25,6 +27,35 @@ func (s homeAgentListerStub) ListAgents(
 type homeConversationListerStub struct {
 	byAgent map[string][]*domain.Conversation
 	errors  map[string]error
+}
+
+type homeReadinessGetterStub struct {
+	byAgent map[string]*model.CapabilityReadinessSnapshot
+	errors  map[string]error
+}
+
+func (s homeReadinessGetterStub) Get(
+	_ context.Context,
+	_ string,
+	req *model.GetCapabilityReadinessRequest,
+) (*model.CapabilityReadinessSnapshot, error) {
+	if err := s.errors[req.GetAgentId()]; err != nil {
+		return nil, err
+	}
+	return s.byAgent[req.GetAgentId()], nil
+}
+
+type homeTaskListerStub struct {
+	tasks []*persistence.AgentTask
+	err   error
+}
+
+func (s homeTaskListerStub) ListTasks(
+	context.Context,
+	string,
+	string,
+) ([]*persistence.AgentTask, error) {
+	return s.tasks, s.err
 }
 
 func (s homeConversationListerStub) ListConversations(
@@ -161,5 +192,66 @@ func TestHomeProjectionRejectsMissingActor(t *testing.T) {
 
 	if _, err := svc.Get(context.Background(), " ", 0); err == nil {
 		t.Fatal("Get() error = nil, want actor validation error")
+	}
+}
+
+func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{agents: []domain.Agent{{
+			AgentID:    "agent-1",
+			Name:       "researcher",
+			Title:      "Researcher",
+			ProviderID: "provider-1",
+			ModelName:  "model-1",
+			ConfigJSON: `{"pinned":true}`,
+			Version:    3,
+			UpdatedAt:  now,
+		}}},
+		homeConversationListerStub{},
+		homeReadinessGetterStub{byAgent: map[string]*model.CapabilityReadinessSnapshot{
+			"agent-1": {
+				SnapshotId:        "readiness-1",
+				AgentId:           "agent-1",
+				RuntimeSnapshotId: "runtime-1",
+				CreatedAt:         timestamppb.New(now),
+				Capabilities: []*model.CapabilityReadiness{{
+					CapabilityId:      "tool.search",
+					CapabilityVersion: "1",
+					State:             model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+				}},
+			},
+		}},
+		homeTaskListerStub{tasks: []*persistence.AgentTask{{
+			ID:           "task-1",
+			Title:        "Prepare brief",
+			AgentID:      "agent-1",
+			Status:       "running",
+			Progress:     25,
+			OwnerActorID: "ptid:actor-1",
+			UpdatedAt:    now,
+		}}},
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if projection.GetPinnedAgents()[0].GetReadinessSnapshotId() != "readiness-1" ||
+		projection.GetPinnedAgents()[0].GetAgentVersion() != 3 {
+		t.Fatalf("pinned Agent = %+v", projection.GetPinnedAgents()[0])
+	}
+	if len(projection.GetActiveTasks()) != 1 ||
+		projection.GetActiveTasks()[0].GetTaskId() != "task-1" {
+		t.Fatalf("active tasks = %+v", projection.GetActiveTasks())
+	}
+	if len(projection.GetRecentWork()) != 1 ||
+		projection.GetRecentWork()[0].GetKind() != model.HomeWorkKind_HOME_WORK_KIND_TASK {
+		t.Fatalf("recent work = %+v", projection.GetRecentWork())
+	}
+	if len(projection.GetCapabilitySummaries()) != 1 ||
+		projection.GetCapabilitySummaries()[0].GetReadinessState() != "ready" {
+		t.Fatalf("capability summaries = %+v", projection.GetCapabilitySummaries())
 	}
 }

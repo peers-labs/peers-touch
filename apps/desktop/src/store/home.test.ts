@@ -15,17 +15,35 @@ describe('home projection store', () => {
         ptid: 'ptid:actor-1',
         revision: 9n,
       }),
-      {},
     );
     useHomeStore.getState().applyProjection(
       create(HomeWorkProjectionSchema, {
         ptid: 'ptid:actor-1',
         revision: 8n,
       }),
-      {},
     );
 
     expect(useHomeStore.getState().projection?.revision).toBe(9n);
     expect(useHomeStore.getState().loading).toBe(false);
+  });
+
+  it('accepts a lower revision after the actor scope changes', () => {
+    useHomeStore.getState().applyProjection(
+      create(HomeWorkProjectionSchema, {
+        ptid: 'ptid:actor-1',
+        revision: 9n,
+      }),
+    );
+    useHomeStore.getState().applyProjection(
+      create(HomeWorkProjectionSchema, {
+        ptid: 'ptid:actor-2',
+        revision: 1n,
+      }),
+    );
+
+    expect(useHomeStore.getState().projection).toEqual(expect.objectContaining({
+      ptid: 'ptid:actor-2',
+      revision: 1n,
+    }));
   });
 });

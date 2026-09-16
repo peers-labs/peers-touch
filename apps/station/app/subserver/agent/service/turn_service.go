@@ -449,6 +449,47 @@ func (s *TurnService) RunExecutionWorker(worker func(context.Context)) bool {
 	return true
 }
 
+// StartAdmittedTurn executes a Turn whose durable admission was committed by
+// another canonical command, such as the atomic Home first-turn command.
+func (s *TurnService) StartAdmittedTurn(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	admission *model.TurnAdmission,
+) bool {
+	if request == nil || admission == nil ||
+		admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+		return false
+	}
+	return s.RunExecutionWorker(func(ctx context.Context) {
+		s.executeAdmittedQueuedTurn(ctx, actorID, &AdmittedTurn{
+			Admission: admission,
+			Request:   request,
+		})
+	})
+}
+
+// FailAdmittedTurnStart settles a committed admission when the Station
+// lifecycle cannot accept its worker. This prevents a rejected Home command
+// from leaving a durable Turn falsely marked as running.
+func (s *TurnService) FailAdmittedTurnStart(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	_, err := s.failTurnWithEvent(
+		ctx,
+		strings.TrimSpace(agentID),
+		strings.TrimSpace(turnID),
+		"",
+		"",
+		strings.TrimSpace(reason),
+		cause,
+	)
+	return err
+}
+
 // StopExecutionLifecycle closes lifecycle admission, cancels every registered
 // operation, and waits for workers and detached turns to drain.
 func (s *TurnService) StopExecutionLifecycle(ctx context.Context) error {

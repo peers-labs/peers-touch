@@ -3749,6 +3749,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_home::get_projection(input, &token))
         }
+        "agent_home_chat_submit" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::submit_chat(input, &token))
+        }
+        "agent_home_task_submit" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::submit_task(input, &token))
+        }
         "agent_capability_binding_list" => {
             let input =
                 match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {

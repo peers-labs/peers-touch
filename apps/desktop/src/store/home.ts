@@ -3,7 +3,12 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import {
   HomeProjectionFreshness,
   HomeWorkKind,
+  type HomeBriefItem,
+  type HomeCapabilitySummary,
+  type HomeNeedsUserItem,
+  type HomeReadiness,
   type HomeSliceError,
+  type HomeTaskProjection,
   type HomeWorkProjection,
 } from '../gen/proto/domain/agent/home_pb';
 import { createDesktopStore } from './createDesktopStore';
@@ -34,6 +39,11 @@ export interface HomeProjectionView {
   freshness: HomeProjectionFreshness;
   pinnedAgents: HomePinnedAgentView[];
   recentWork: HomeRecentWorkView[];
+  readiness: HomeReadiness[];
+  briefItems: HomeBriefItem[];
+  needsUserItems: HomeNeedsUserItem[];
+  activeTasks: HomeTaskProjection[];
+  capabilitySummaries: HomeCapabilitySummary[];
   sliceErrors: HomeSliceError[];
 }
 
@@ -42,10 +52,7 @@ interface HomeState {
   loading: boolean;
   error: string | null;
   beginLoad: () => void;
-  applyProjection: (
-    projection: HomeWorkProjection,
-    agentNamesById: Readonly<Record<string, string>>,
-  ) => void;
+  applyProjection: (projection: HomeWorkProjection) => void;
   failLoad: (error: string) => void;
   reset: () => void;
 }
@@ -59,7 +66,6 @@ function timestampToISO(value?: Timestamp): string {
 
 export function normalizeHomeProjection(
   projection: HomeWorkProjection,
-  agentNamesById: Readonly<Record<string, string>>,
 ): HomeProjectionView {
   return {
     ptid: projection.ptid,
@@ -67,10 +73,7 @@ export function normalizeHomeProjection(
     freshness: projection.freshness,
     pinnedAgents: projection.pinnedAgents.map((agent) => ({
       agentId: agent.agentId,
-      agentName:
-        agent.agentName
-        || agentNamesById[agent.agentId]
-        || agent.displayName,
+      agentName: agent.agentName || agent.displayName,
       displayName: agent.displayName,
       avatarRef: agent.avatarRef,
       readinessSnapshotId: agent.readinessSnapshotId,
@@ -82,10 +85,17 @@ export function normalizeHomeProjection(
       workId: work.workId,
       kind: work.kind,
       agentId: work.agentId,
-      agentName: agentNamesById[work.agentId] || work.agentId,
+      agentName:
+        projection.pinnedAgents.find((agent) => agent.agentId === work.agentId)
+          ?.agentName || work.agentId,
       title: work.title,
       updatedAt: timestampToISO(work.updatedAt),
     })),
+    readiness: projection.readiness,
+    briefItems: projection.briefItems,
+    needsUserItems: projection.needsUserItems,
+    activeTasks: projection.activeTasks,
+    capabilitySummaries: projection.capabilitySummaries,
     sliceErrors: projection.sliceErrors,
   };
 }
@@ -97,15 +107,16 @@ export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
 
   beginLoad: () => set({ loading: true, error: null }),
 
-  applyProjection: (projection, agentNamesById) => set((state) => {
+  applyProjection: (projection) => set((state) => {
     if (
       state.projection
+      && state.projection.ptid === projection.ptid
       && projection.revision < state.projection.revision
     ) {
       return { loading: false };
     }
     return {
-      projection: normalizeHomeProjection(projection, agentNamesById),
+      projection: normalizeHomeProjection(projection),
       loading: false,
       error: null,
     };

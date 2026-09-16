@@ -7,18 +7,18 @@ import {
 } from '../gen/proto/domain/agent/home_pb';
 
 const getHomeWorkProjection = vi.hoisted(() => vi.fn());
-const loadAgents = vi.hoisted(() => vi.fn());
+const submitHomeChatCommand = vi.hoisted(() => vi.fn());
+const submitHomeTaskCommand = vi.hoisted(() => vi.fn());
 const setAgentSurface = vi.hoisted(() => vi.fn());
 const setSelectedAgent = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
+const setActiveTask = vi.hoisted(() => vi.fn());
 const applyProjection = vi.hoisted(() => vi.fn());
 const beginLoad = vi.hoisted(() => vi.fn());
 const failLoad = vi.hoisted(() => vi.fn());
 const reset = vi.hoisted(() => vi.fn());
 
 const agentState = {
-  agents: [{ id: 'agent-1', name: 'researcher' }],
-  loadAgents,
   setAgentSurface,
   setSelectedAgent,
 };
@@ -32,25 +32,28 @@ const homeState = {
 };
 
 vi.mock('../services/desktop_api', () => ({
-  api: { getHomeWorkProjection },
+  api: {
+    getHomeWorkProjection,
+    submitHomeChatCommand,
+    submitHomeTaskCommand,
+  },
 }));
 
 vi.mock('../store/agent', () => ({
   useAgentStore: {
     getState: () => agentState,
-    subscribe: vi.fn(() => vi.fn()),
-  },
-}));
-
-vi.mock('../store/agentTopics', () => ({
-  useAgentTopicStore: {
-    subscribe: vi.fn(() => vi.fn()),
   },
 }));
 
 vi.mock('../store/chat', () => ({
   useChatStore: {
     getState: () => ({ selectSession }),
+  },
+}));
+
+vi.mock('../store/tasks', () => ({
+  useTaskStore: {
+    getState: () => ({ setActiveTask }),
   },
 }));
 
@@ -76,13 +79,14 @@ vi.mock('../utils/logger', () => ({
 import {
   homeRuntime,
   openHomeConversation,
+  submitHomeChat,
+  submitHomeTask,
 } from './homeRuntime';
 
 describe('homeRuntime', () => {
   beforeEach(() => {
     homeRuntime.teardown();
     vi.clearAllMocks();
-    loadAgents.mockResolvedValue(undefined);
     selectSession.mockResolvedValue(undefined);
     getHomeWorkProjection.mockResolvedValue(create(HomeWorkProjectionSchema, {
       ptid: 'ptid:actor-1',
@@ -96,11 +100,9 @@ describe('homeRuntime', () => {
     await homeRuntime.bootstrap('ptid:actor-1');
 
     expect(beginLoad).toHaveBeenCalledOnce();
-    expect(loadAgents).toHaveBeenCalledOnce();
     expect(getHomeWorkProjection).toHaveBeenCalledWith(0n);
     expect(applyProjection).toHaveBeenCalledWith(
       expect.objectContaining({ ptid: 'ptid:actor-1', revision: 7n }),
-      { 'agent-1': 'researcher' },
     );
   });
 
@@ -117,5 +119,54 @@ describe('homeRuntime', () => {
     expect(setAgentSurface).toHaveBeenCalledWith('researcher', 'chat');
     expect(setSelectedAgent).toHaveBeenCalledWith('researcher');
     expect(selectSession).toHaveBeenCalledWith('conversation-1');
+  });
+
+  it('submits Home Chat with the projected Agent revision and readiness', async () => {
+    submitHomeChatCommand.mockResolvedValue({
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      projectionRevision: 8n,
+    });
+
+    const work = await submitHomeChat({
+      agentId: 'agent-1',
+      agentName: 'researcher',
+      displayName: 'Researcher',
+      avatarRef: '',
+      readinessSnapshotId: 'readiness-1',
+      agentVersion: 3n,
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    }, 'Compare recovery models', 'home-chat-key');
+
+    expect(submitHomeChatCommand).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-1',
+      input: 'Compare recovery models',
+      clientIdempotencyKey: 'home-chat-key',
+      expectedAgentVersion: 3n,
+      readinessSnapshotId: 'readiness-1',
+    }));
+    expect(work.workId).toBe('conversation-1');
+  });
+
+  it('selects the exact task after Station accepts Task mode', async () => {
+    submitHomeTaskCommand.mockResolvedValue({
+      taskId: 'task-1',
+      projectionRevision: 8n,
+    });
+
+    const taskId = await submitHomeTask({
+      agentId: 'agent-1',
+      agentName: 'researcher',
+      displayName: 'Researcher',
+      avatarRef: '',
+      readinessSnapshotId: 'readiness-1',
+      agentVersion: 3n,
+      providerId: 'provider-1',
+      modelId: 'model-1',
+    }, 'Prepare the launch brief', 'home-task-key');
+
+    expect(taskId).toBe('task-1');
+    expect(setActiveTask).toHaveBeenCalledWith('task-1');
   });
 });

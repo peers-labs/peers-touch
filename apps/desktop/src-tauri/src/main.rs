@@ -683,6 +683,8 @@ fn main() {
             agents::agents_duplicate,
             agents::agents_search,
             home::agent_home_projection_get,
+            home::agent_home_chat_submit,
+            home::agent_home_task_submit,
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn_stream,

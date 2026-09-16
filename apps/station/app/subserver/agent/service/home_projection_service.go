@@ -99,7 +99,7 @@ func (s *HomeProjectionService) Get(
 				ptid,
 				&model.GetCapabilityReadinessRequest{AgentId: agent.AgentID},
 			)
-			if readinessErr != nil {
+			if readinessErr != nil || snapshot == nil {
 				projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
 				projection.Readiness = append(projection.Readiness, &model.HomeReadiness{
 					AgentId:     agent.AgentID,
@@ -187,7 +187,6 @@ func (s *HomeProjectionService) Get(
 		}
 	}
 
-	sort.SliceStable(projection.RecentWork, func(i, j int) bool {
 	if s.tasks != nil {
 		tasks, taskErr := s.tasks.ListTasks(ctx, ptid, "")
 		if taskErr != nil {
@@ -217,17 +216,17 @@ func (s *HomeProjectionService) Get(
 					model.HomeTaskStatus_HOME_TASK_STATUS_RUNNING,
 					model.HomeTaskStatus_HOME_TASK_STATUS_NEEDS_USER:
 					projection.ActiveTasks = append(projection.ActiveTasks, &model.HomeTaskProjection{
-						TaskId:         task.ID,
-						AgentId:        task.AgentID,
-						Title:          task.Title,
-						Status:         status,
-						ProgressPercent: uint32(max(task.Progress, 0)),
+						TaskId:          task.ID,
+						AgentId:         task.AgentID,
+						Title:           task.Title,
+						Status:          status,
+						ProgressPercent: uint32(min(max(task.Progress, 0), 100)),
 						UpdatedAt:       timestamppb.New(task.UpdatedAt.UTC()),
-						TopicRef:       task.TopicKey,
+						TopicRef:        task.TopicKey,
 					})
 				case model.HomeTaskStatus_HOME_TASK_STATUS_COMPLETED:
 					projection.BriefItems = append(projection.BriefItems, &model.HomeBriefItem{
-						BriefId:  "task:" + task.ID,
+						BriefId:   "task:" + task.ID,
 						SourceRef: task.ID,
 						Title:     task.Title,
 						Summary:   firstNonEmpty(task.Result, "Task completed"),
@@ -235,9 +234,9 @@ func (s *HomeProjectionService) Get(
 					})
 				case model.HomeTaskStatus_HOME_TASK_STATUS_FAILED:
 					projection.NeedsUserItems = append(projection.NeedsUserItems, &model.HomeNeedsUserItem{
-						ItemId:    "task:" + task.ID,
-						SourceRef: task.ID,
-						Title:     task.Title,
+						ItemId:     "task:" + task.ID,
+						SourceRef:  task.ID,
+						Title:      task.Title,
 						ActionKind: "open_task",
 						ActionRef:  task.ID,
 					})
@@ -246,7 +245,7 @@ func (s *HomeProjectionService) Get(
 		}
 	}
 
-		return projection.RecentWork[i].GetUpdatedAt().AsTime().
+	sort.SliceStable(projection.RecentWork, func(i, j int) bool {
 		return projection.RecentWork[i].GetUpdatedAt().AsTime().
 			After(projection.RecentWork[j].GetUpdatedAt().AsTime())
 	})

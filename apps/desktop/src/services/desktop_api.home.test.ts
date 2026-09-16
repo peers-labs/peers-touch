@@ -6,6 +6,10 @@ import {
   GetHomeWorkProjectionRequestSchema,
   GetHomeWorkProjectionResponseSchema,
   HomeWorkKind,
+  SubmitHomeChatCommandRequestSchema,
+  SubmitHomeChatCommandResponseSchema,
+  SubmitHomeTaskCommandRequestSchema,
+  SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import { api } from './desktop_api';
 
@@ -54,5 +58,71 @@ describe('Desktop Home projection API', () => {
       new Uint8Array(args?.input?.requestBytes ?? []),
     );
     expect(request.afterRevision).toBe(7n);
+  });
+
+  it('encodes the Home Chat command preconditions', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      ok: true,
+      data: Array.from(toBinary(
+        SubmitHomeChatCommandResponseSchema,
+        create(SubmitHomeChatCommandResponseSchema, {
+          conversationId: 'conversation-1',
+          turnId: 'turn-1',
+          projectionRevision: 10n,
+        }),
+      )),
+    });
+
+    const response = await api.submitHomeChatCommand({
+      agentId: 'agent-1',
+      input: 'Compare recovery models',
+      runtimeProfileId: 'modern-chat-agent-v1',
+      clientIdempotencyKey: 'home-chat-1',
+      expectedAgentVersion: 3n,
+      readinessSnapshotId: 'readiness-1',
+    });
+
+    expect(response.conversationId).toBe('conversation-1');
+    const invocation = vi.mocked(invoke).mock.calls[0];
+    expect(invocation?.[0]).toBe('agent_home_chat_submit');
+    const args = invocation?.[1] as { input?: { requestBytes?: number[] } } | undefined;
+    const request = fromBinary(
+      SubmitHomeChatCommandRequestSchema,
+      new Uint8Array(args?.input?.requestBytes ?? []),
+    );
+    expect(request.expectedAgentVersion).toBe(3n);
+    expect(request.readinessSnapshotId).toBe('readiness-1');
+  });
+
+  it('encodes and decodes the Home Task command', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      ok: true,
+      data: Array.from(toBinary(
+        SubmitHomeTaskCommandResponseSchema,
+        create(SubmitHomeTaskCommandResponseSchema, {
+          taskId: 'task-1',
+          projectionRevision: 11n,
+        }),
+      )),
+    });
+
+    const response = await api.submitHomeTaskCommand({
+      agentId: 'agent-1',
+      input: 'Prepare the launch brief',
+      runtimeProfileId: 'modern-chat-agent-v1',
+      clientIdempotencyKey: 'home-task-1',
+      expectedAgentVersion: 3n,
+      readinessSnapshotId: 'readiness-1',
+    });
+
+    expect(response.taskId).toBe('task-1');
+    const invocation = vi.mocked(invoke).mock.calls[0];
+    expect(invocation?.[0]).toBe('agent_home_task_submit');
+    const args = invocation?.[1] as { input?: { requestBytes?: number[] } } | undefined;
+    const request = fromBinary(
+      SubmitHomeTaskCommandRequestSchema,
+      new Uint8Array(args?.input?.requestBytes ?? []),
+    );
+    expect(request.clientIdempotencyKey).toBe('home-task-1');
   });
 });

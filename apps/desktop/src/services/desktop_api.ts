@@ -121,10 +121,16 @@ import {
 } from '../gen/proto/domain/agent/capability_pb';
 import type {
   HomeWorkProjection,
+  SubmitHomeChatCommandResponse,
+  SubmitHomeTaskCommandResponse,
 } from '../gen/proto/domain/agent/home_pb';
 import {
   GetHomeWorkProjectionRequestSchema,
   GetHomeWorkProjectionResponseSchema,
+  SubmitHomeChatCommandRequestSchema,
+  SubmitHomeChatCommandResponseSchema,
+  SubmitHomeTaskCommandRequestSchema,
+  SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
@@ -5050,6 +5056,38 @@ export const api = {
     }
     return response.projection;
   },
+
+  submitHomeChatCommand: async (input: {
+    agentId: string;
+    input: string;
+    runtimeProfileId: string;
+    clientIdempotencyKey: string;
+    conversationId?: string;
+    expectedAgentVersion: bigint;
+    readinessSnapshotId: string;
+  }): Promise<SubmitHomeChatCommandResponse> =>
+    invokeRustProtoRequest(
+      'agent_home_chat_submit',
+      SubmitHomeChatCommandRequestSchema,
+      SubmitHomeChatCommandResponseSchema,
+      create(SubmitHomeChatCommandRequestSchema, input),
+    ),
+
+  submitHomeTaskCommand: async (input: {
+    agentId: string;
+    input: string;
+    runtimeProfileId: string;
+    clientIdempotencyKey: string;
+    expectedAgentVersion: bigint;
+    readinessSnapshotId: string;
+    topicRef?: string;
+  }): Promise<SubmitHomeTaskCommandResponse> =>
+    invokeRustProtoRequest(
+      'agent_home_task_submit',
+      SubmitHomeTaskCommandRequestSchema,
+      SubmitHomeTaskCommandResponseSchema,
+      create(SubmitHomeTaskCommandRequestSchema, input),
+    ),
 
   getAgentWorkspaceInfo: (agentId: string) =>
     invokeRustDataFromStatus<{ agent_id: string }, AgentWorkspaceInfo>(

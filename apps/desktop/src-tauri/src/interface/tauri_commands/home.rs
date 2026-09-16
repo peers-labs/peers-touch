@@ -18,3 +18,29 @@ pub fn agent_home_projection_get(
     }
     home::get_projection(input, &token)
 }
+
+#[tauri::command]
+pub fn agent_home_chat_submit(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::submit_chat(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_home_task_submit(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::submit_task(input, &token)
+}
