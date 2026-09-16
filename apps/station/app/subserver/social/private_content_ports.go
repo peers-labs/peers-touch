@@ -41,6 +41,7 @@ type privateContentActorCapabilities interface {
 		string,
 		string,
 		string,
+		string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
 }
 
@@ -447,10 +448,19 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 		len(signature) != ed25519.SignatureSize {
 		return errors.New("Social private author signature is incomplete")
 	}
+	actorPTID := sender.GetActor().GetPtid()
+	homeStation, err := v.actors.ResolveActorHomeStationPeerID(
+		ctx,
+		actorPTID,
+	)
+	if err != nil {
+		return err
+	}
 	key, err := v.actors.ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
-		sender.GetActor().GetPtid(),
+		actorPTID,
+		homeStation,
 		sender.GetDeviceId(),
 		signingKeyID,
 	)
