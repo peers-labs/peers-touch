@@ -9,6 +9,7 @@
     "tooling/acceptance/gates/chat/native_support.py",
     "tooling/acceptance/gates/chat/native_two_client_e2e.py",
     "tooling/acceptance/gates/chat/native_current_profile_two_client_*.py",
+    "tooling/acceptance/gates/chat/lifecycle_onboarding*.py",
     "tooling/acceptance/gates/chat/*_test.py",
     "tooling/acceptance/playbooks/chat-native-visible-clients.md",
     "apps/desktop/src/acceptance/chat/**",
@@ -23,6 +24,7 @@
   ],
   "required_gates": [
     "chat-native-visible-static",
+    "chat-lifecycle-onboarding-e2e",
     "chat-native-current-profile-two-client-e2e",
     "chat-native-two-client-e2e",
     "chat-native-multi-device-e2e",
@@ -33,6 +35,7 @@
     "product_truths": [
       "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
       "current-profile parity proof launches peers-group-chat and peers-chat-high-chat as distinct synchronized worktrees, with peers-group-chat initiating the journey",
+      "native onboarding starts from canonical stranger state, shows stable local, federated-handle, and Station-scoped identity, and converges through reject, retry, accept, one Direct conversation, and exact plaintext",
       "a persistent current-profile client explicitly authenticates its assigned actor even when a prior session restores",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
@@ -50,6 +53,9 @@
       {"type": "native-desktop", "selector": "[data-chat-message-bottom-sentinel]"},
       {"type": "native-desktop", "selector": "[data-message-ulid]"},
       {"type": "native-desktop", "selector": "[data-chat-avatar-src]"},
+      {"type": "native-desktop", "selector": "[data-chat-find-people-result]"},
+      {"type": "native-desktop", "selector": "[data-chat-friend-request-id]"},
+      {"type": "native-desktop", "selector": "[data-chat-contact-message]"},
       {"type": "native-desktop", "selector": "[data-session-security]"},
       {"type": "native-desktop", "selector": "[data-group-security]"}
     ]
@@ -58,6 +64,8 @@
     "live journeys must launch through make desktop",
     "two clients launched from one worktree cannot prove current-profile cross-worktree parity",
     "a restored authenticated actor must not be silently reused as the Gate's requested actor",
+    "an existing relationship may be normalized only through production Social commands; fixture or client state must not fabricate stranger, pending, rejected, or accepted state",
+    "the onboarding Gate must not pre-create a Direct conversation or substitute gateway-only relationship evidence for Native UI",
     "fixed sleeps and startup-order assumptions are forbidden",
     "seeded demo avatars must not depend on an HTTP or HTTPS image-generation service",
     "seeded avatar assets must not bake in a circular mask that overrides the shared UserSquareAvatar radius",

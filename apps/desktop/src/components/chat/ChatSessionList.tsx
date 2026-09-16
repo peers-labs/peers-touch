@@ -37,7 +37,6 @@ import {
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import {
   useActiveChatFederationSlice,
-  useActiveChatRelationshipsSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
@@ -204,9 +203,6 @@ export function ChatSessionList({
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
-  const mutualFriends = useActiveChatRelationshipsSlice(
-    (state) => state.mutualFriends,
-  );
   const federations = useActiveChatFederationSlice(
     (state) => state.federations,
   );
@@ -239,7 +235,6 @@ export function ChatSessionList({
   );
   const friendIdentities = useMemo(
     () => projectChatFriendContacts({
-      mutualFriends,
       conversations: conversationProjection,
       friendRequests,
       peerProfiles,
@@ -250,7 +245,6 @@ export function ChatSessionList({
       conversationProjection,
       federations,
       friendRequests,
-      mutualFriends,
       currentUserPtid,
       peerProfiles,
     ],

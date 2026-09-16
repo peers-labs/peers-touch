@@ -4,6 +4,8 @@ import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
+import { refreshSocialProjection } from '../../services/socialRealtime';
+import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq } from '../../store/socialProjection';
@@ -23,6 +25,10 @@ interface SyncFriendInput {
   sessionUlid: string;
   limit?: number;
   maxPages?: number;
+}
+
+interface OnboardingPeerInput {
+  peerPtid: string;
 }
 
 interface CreateGroupInput {
@@ -245,6 +251,39 @@ async function hydrateSocialForActiveActor(): Promise<void> {
   }
 }
 
+async function onboardingSnapshot(peerPtid: string) {
+  const actorPtid = activeActorPtid();
+  const social = useSocialChatStore.getState();
+  const requests = social.friendRequests
+    .filter((request) => (
+      (request.senderPtid === actorPtid && request.receiverPtid === peerPtid)
+      || (request.senderPtid === peerPtid && request.receiverPtid === actorPtid)
+    ))
+    .map((request) => ({
+      id: request.id,
+      senderPtid: request.senderPtid,
+      receiverPtid: request.receiverPtid,
+      status: request.status,
+      federationId: request.federationId,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const conversationIds = social.getIMConversations()
+    .filter((conversation) => (
+      conversation.kind === 'friend'
+      && conversation.peerPtid === peerPtid
+    ))
+    .map((conversation) => conversation.id)
+    .sort();
+
+  return {
+    actorPtid,
+    peerPtid,
+    acceptedFriendship: requests.some((request) => request.status === 2),
+    requests,
+    conversationIds,
+  };
+}
+
 export function installAcceptanceHarness(): void {
   (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
   registerAcceptanceHarness('chat', {
@@ -342,6 +381,43 @@ export function installAcceptanceHarness(): void {
           status: federation.status,
         })),
       };
+    },
+
+    async onboardingIdentity() {
+      const identity = await api.federationGetSelf();
+      return {
+        actorPtid: activeActorPtid(),
+        preferredUsername: identity.preferredUsername,
+        federatedHandle: identity.federatedHandle,
+        homeStationPeerId: identity.homeStationPeerId,
+        homeStationDomain: identity.homeStationDomain,
+        locatorSeq: Number(identity.locatorSeq),
+      };
+    },
+
+    async prepareOnboardingPeer({ peerPtid }: OnboardingPeerInput) {
+      const actorPtid = activeActorPtid();
+      const relationships = useRelationshipsStore.getState();
+      await relationships.unfollow(peerPtid);
+
+      const social = useSocialChatStore.getState();
+      await social.loadFriendRequests();
+      const pendingIncoming = useSocialChatStore.getState().friendRequests
+        .filter((request) => (
+          request.status === 1
+          && request.senderPtid === peerPtid
+          && request.receiverPtid === actorPtid
+        ));
+      for (const request of pendingIncoming) {
+        await useSocialChatStore.getState().rejectFriendRequest(request);
+      }
+      await refreshSocialProjection('acceptance:onboarding-prepare', true);
+      return onboardingSnapshot(peerPtid);
+    },
+
+    async refreshOnboardingProjection({ peerPtid }: OnboardingPeerInput) {
+      await refreshSocialProjection('acceptance:onboarding-readback', true);
+      return onboardingSnapshot(peerPtid);
     },
 
     async createDirectConversation({

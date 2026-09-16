@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import unittest
+
+from tooling.acceptance.core import REPO_ROOT
+from tooling.acceptance.gates.chat.lifecycle_onboarding import (
+    GATE_ID,
+    accepted_conversation_id,
+    matching_requests,
+)
+from tooling.acceptance.gates.chat.lifecycle_onboarding_e2e import (
+    validate_onboarding_report,
+)
+from tooling.acceptance.gates.chat.native_two_client_runner import (
+    is_current_profile_gate,
+    journey_for_gate,
+)
+
+
+class LifecycleOnboardingContractTest(unittest.TestCase):
+    def test_request_matching_uses_exact_actor_pair_and_state(self) -> None:
+        snapshot = {
+            "requests": [
+                {
+                    "id": "pending",
+                    "senderPtid": "ptid:alice",
+                    "receiverPtid": "ptid:bob",
+                    "status": 1,
+                },
+                {
+                    "id": "rejected",
+                    "senderPtid": "ptid:alice",
+                    "receiverPtid": "ptid:bob",
+                    "status": 3,
+                },
+                {
+                    "id": "other",
+                    "senderPtid": "ptid:carol",
+                    "receiverPtid": "ptid:bob",
+                    "status": 1,
+                },
+            ]
+        }
+
+        self.assertEqual(
+            matching_requests(
+                snapshot,
+                sender_ptid="ptid:alice",
+                receiver_ptid="ptid:bob",
+                status=1,
+            ),
+            [snapshot["requests"][0]],
+        )
+
+    def test_direct_conversation_requires_one_shared_identity(self) -> None:
+        self.assertEqual(
+            accepted_conversation_id(
+                (
+                    {"conversationIds": ["direct-1"]},
+                    {"conversationIds": ["direct-1"]},
+                )
+            ),
+            "direct-1",
+        )
+        self.assertIsNone(
+            accepted_conversation_id(
+                (
+                    {"conversationIds": ["direct-1", "direct-2"]},
+                    {"conversationIds": ["direct-1"]},
+                )
+            )
+        )
+        self.assertIsNone(
+            accepted_conversation_id(
+                (
+                    {"conversationIds": ["direct-1"]},
+                    {"conversationIds": ["direct-2"]},
+                )
+            )
+        )
+
+    def test_onboarding_is_a_current_profile_gate_variant(self) -> None:
+        self.assertTrue(is_current_profile_gate(GATE_ID))
+        self.assertEqual(
+            journey_for_gate(GATE_ID),
+            "onboarding-first-message",
+        )
+
+    def test_onboarding_validator_requires_distinct_retry_and_shared_direct(self) -> None:
+        valid = {
+            "runtime": {
+                "conversationId": "direct-1",
+                "onboarding": {
+                    "discovery": {"pendingRequestId": "request-1"},
+                    "retry": {"pendingRequestId": "request-2"},
+                    "snapshots": [
+                        {"conversationIds": ["direct-1"]},
+                        {"conversationIds": ["direct-1"]},
+                    ],
+                },
+            },
+        }
+        validate_onboarding_report(valid)
+
+        valid["runtime"]["onboarding"]["retry"]["pendingRequestId"] = "request-1"
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "reject/retry identities",
+        ):
+            validate_onboarding_report(valid)
+
+    def test_runner_does_not_bypass_onboarding_with_direct_creation(self) -> None:
+        source = (
+            REPO_ROOT
+            / "tooling/acceptance/gates/chat/lifecycle_onboarding.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('"createDirectConversation"', source)
+        for selector in (
+            "data-chat-find-people-result",
+            "data-chat-find-people-scope",
+            "data-chat-friend-request-action",
+            "data-chat-contact-message",
+        ):
+            self.assertIn(selector, source)
+
+    def test_find_people_uses_canonical_pending_and_station_scope(self) -> None:
+        source = (
+            REPO_ROOT
+            / "apps/desktop/src/components/chat/FindPeopleModal.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("sentIds", source)
+        self.assertIn("pendingReceiverIds.has(receiverPtid)", source)
+        self.assertIn(
+            "station_id: searchScope === 'station' ? selectedStationId : undefined",
+            source,
+        )
+        self.assertIn('data-chat-find-people-scope="station"', source)
+        self.assertIn("data-chat-find-people-ptid", source)
+
+    def test_request_actions_keep_visible_recovery_state(self) -> None:
+        source = (
+            REPO_ROOT
+            / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
+        ).read_text(encoding="utf-8")
+        for marker in (
+            "data-chat-friend-request-id",
+            'data-chat-friend-request-action="accept"',
+            'data-chat-friend-request-action="reject"',
+            "data-chat-friend-request-error",
+            "error.chat.conversationActionFailed",
+        ):
+            self.assertIn(marker, source)
+
+        provisioner = (
+            REPO_ROOT
+            / "tooling/acceptance/provisioners/native_tauri_current_profile.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(GATE_ID, provisioner)
+
+
+if __name__ == "__main__":
+    unittest.main()

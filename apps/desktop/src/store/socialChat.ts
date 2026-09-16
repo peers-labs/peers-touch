@@ -408,6 +408,9 @@ interface SocialChatState {
   /** Own DID for message ownership; prefer profile.id, may align with participant DIDs in sessions */
   currentUserPtid: string | null;
   friendRequests: FriendRequestData[];
+  friendRequestsLoading: boolean;
+  friendRequestsLoadedAt?: number;
+  friendRequestsError: string | null;
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
   conversationLocalState: Record<string, ConversationLocalState>;
@@ -889,6 +892,9 @@ const initialSocialState: Pick<
   | 'currentUserProfile'
   | 'currentUserPtid'
   | 'friendRequests'
+  | 'friendRequestsLoading'
+  | 'friendRequestsLoadedAt'
+  | 'friendRequestsError'
   | 'groupUnreadCounts'
   | 'lastPreviews'
   | 'peerProfiles'
@@ -939,6 +945,9 @@ const initialSocialState: Pick<
   currentUserProfile: null,
   currentUserPtid: null,
   friendRequests: [],
+  friendRequestsLoading: false,
+  friendRequestsLoadedAt: undefined,
+  friendRequestsError: null,
   groupUnreadCounts: {},
   lastPreviews: {},
   peerProfiles: {},
@@ -1768,18 +1777,32 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
+    set({
+      friendRequestsLoading: true,
+      friendRequestsError: null,
+    });
     try {
       const data = await api.socialFriendRequestList(status, limit, offset);
       const requests = normalizeFriendRequests(
         (data as Record<string, unknown>)?.requests ?? [],
       );
-      set({ friendRequests: requests });
+      set({
+        friendRequests: requests,
+        friendRequestsLoading: false,
+        friendRequestsLoadedAt: Date.now(),
+        friendRequestsError: null,
+      });
       await Promise.allSettled(
         friendRequestProfileDids(requests, get().currentUserPtid)
           .map((did) => get().loadPeerProfile(did)),
       );
-    } catch {
-      set({ friendRequests: [] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({
+        friendRequestsLoading: false,
+        friendRequestsError: message,
+      });
+      throw error;
     }
   },
 

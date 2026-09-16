@@ -9,11 +9,16 @@ import {
   projectChatFriendContacts,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
+import type { FriendRequestData } from '../../store/socialNormalizers';
+import {
+  presentError,
+  type PresentedError,
+} from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
   useActiveChatFederationSlice,
-  useActiveChatRelationshipsSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import {
@@ -41,6 +46,9 @@ export function ChatContactsPanel({
   const { t } = useTranslation('chat');
   const {
     friendRequests,
+    friendRequestsLoading,
+    friendRequestsLoadedAt,
+    friendRequestsError,
     peerProfiles,
     currentUserPtid,
     conversationRecords,
@@ -53,6 +61,9 @@ export function ChatContactsPanel({
     rejectFriendRequest,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
+    friendRequestsLoading: s.friendRequestsLoading,
+    friendRequestsLoadedAt: s.friendRequestsLoadedAt,
+    friendRequestsError: s.friendRequestsError,
     peerProfiles: s.peerProfiles,
     currentUserPtid: s.currentUserPtid,
     conversationRecords: s.conversations,
@@ -64,22 +75,10 @@ export function ChatContactsPanel({
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
   }));
-  const {
-    mutualFriends,
-    mutualFriendsActorPtid,
-    mutualFriendsLoading,
-    mutualFriendsLoadedAt,
-    mutualFriendsError,
-  } = useActiveChatRelationshipsSlice((s) => ({
-    mutualFriends: s.mutualFriends,
-    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
-    mutualFriendsLoading: s.mutualFriendsLoading,
-    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
-    mutualFriendsError: s.mutualFriendsError,
-  }));
   const federations = useActiveChatFederationSlice((s) => s.federations);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
+  const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
   const conversations = useMemo(
     () => {
       // getIMConversations reads the store imperatively. Referencing its
@@ -109,12 +108,10 @@ export function ChatContactsPanel({
   const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
   const friendshipReady = Boolean(
     myDid
-    && mutualFriendsActorPtid === myDid
-    && mutualFriendsLoadedAt,
+    && friendRequestsLoadedAt,
   );
   const friendContacts = useMemo(
     () => projectChatFriendContacts({
-      mutualFriends,
       conversations,
       friendRequests,
       peerProfiles,
@@ -125,7 +122,6 @@ export function ChatContactsPanel({
       conversations,
       federations,
       friendRequests,
-      mutualFriends,
       myDid,
       peerProfiles,
     ],
@@ -217,6 +213,37 @@ export function ChatContactsPanel({
     onSelectContact(selection);
   };
 
+  const runRequestAction = async (
+    request: FriendRequestData,
+    action: 'accept' | 'reject',
+  ) => {
+    setBusyAction({ id: request.id, kind: action });
+    setRequestActionErrors((current) => {
+      if (!(request.id in current)) return current;
+      const next = { ...current };
+      delete next[request.id];
+      return next;
+    });
+    try {
+      if (action === 'accept') {
+        await acceptFriendRequest(request);
+      } else {
+        await rejectFriendRequest(request);
+      }
+    } catch (error) {
+      log.error('contacts', `${action}FriendRequest failed`, error);
+      setRequestActionErrors((current) => ({
+        ...current,
+        [request.id]: presentError(error, {
+          mode: 'inline',
+          fallbackKey: 'error.chat.conversationActionFailed',
+        }),
+      }));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const newFriendsContent = unifiedRequests.length === 0 ? (
     <Empty
       image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -253,11 +280,16 @@ export function ChatContactsPanel({
         };
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
         const isAccepted = request.status === 2;
+        const actionError = requestActionErrors[request.id];
         const isSelected = selectedContact?.kind === 'friend'
           && selectedContact.peerPtid === peerPtid;
         return (
           <Flexbox
             key={request.id}
+            data-chat-friend-request-id={request.id}
+            data-chat-friend-request-peer-ptid={peerPtid}
+            data-chat-friend-request-direction={direction}
+            data-chat-friend-request-status={request.status}
             horizontal
             align="flex-start"
             gap={10}
@@ -313,41 +345,45 @@ export function ChatContactsPanel({
               {isPendingIncoming ? (
                 <Flexbox horizontal gap={6}>
                   <Button
+                    data-chat-friend-request-action="accept"
                     size="small"
                     type="primary"
                     icon={<Check size={12} />}
                     loading={busyAction?.id === request.id && busyAction?.kind === 'accept'}
-                    onClick={async () => {
-                      setBusyAction({ id: request.id, kind: 'accept' });
-                      try {
-                        await acceptFriendRequest(request);
-                      } catch (error) {
-                        log.error('contacts', 'acceptFriendRequest failed', error);
-                      } finally {
-                        setBusyAction(null);
-                      }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void runRequestAction(request, 'accept');
                     }}
                   >
                     {t('chat.social.contacts.accept')}
                   </Button>
                   <Button
+                    data-chat-friend-request-action="reject"
                     size="small"
                     icon={<X size={12} />}
                     loading={busyAction?.id === request.id && busyAction?.kind === 'reject'}
-                    onClick={async () => {
-                      setBusyAction({ id: request.id, kind: 'reject' });
-                      try {
-                        await rejectFriendRequest(request);
-                      } catch (error) {
-                        log.error('contacts', 'rejectFriendRequest failed', error);
-                      } finally {
-                        setBusyAction(null);
-                      }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void runRequestAction(request, 'reject');
                     }}
                   >
                     {t('chat.social.contacts.reject')}
                   </Button>
                 </Flexbox>
+              ) : null}
+              {actionError ? (
+                <div data-chat-friend-request-error={request.id}>
+                  <PresentedErrorAlert
+                    error={actionError}
+                    onClose={() => {
+                      setRequestActionErrors((current) => {
+                        const next = { ...current };
+                        delete next[request.id];
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
               ) : null}
             </Flexbox>
           </Flexbox>
@@ -360,7 +396,12 @@ export function ChatContactsPanel({
     {
       key: 'new-friends',
       label: (
-        <Flexbox horizontal align="center" gap={8}>
+        <Flexbox
+          data-chat-friend-request-section
+          horizontal
+          align="center"
+          gap={8}
+        >
           <UserPlus size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
             {t('chat.social.contacts.newFriendsCount', { count: pendingIncomingCount })}
@@ -464,13 +505,13 @@ export function ChatContactsPanel({
         </Flexbox>
       ),
       children:
-        mutualFriendsError ? (
+        friendRequestsError ? (
           <Alert
             type="error"
             showIcon
             message={t('chat.social.findPeople.friendshipUnavailable')}
           />
-        ) : !friendshipReady || mutualFriendsLoading ? (
+        ) : !friendshipReady || friendRequestsLoading ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Spin size="small" />
           </Flexbox>
@@ -537,7 +578,7 @@ export function ChatContactsPanel({
     <Flexbox
       data-chat-contacts
       data-chat-friendship-state={
-        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+        friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
       }
       style={{
         width: PANEL_WIDTH,

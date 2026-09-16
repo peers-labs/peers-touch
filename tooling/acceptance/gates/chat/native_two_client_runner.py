@@ -47,12 +47,14 @@ from tooling.acceptance.gates.chat.native_support import (
 
 GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
+LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
 CURRENT_PROFILE_GATE_IDS = frozenset(
     {
         CURRENT_PROFILE_GATE_ID,
+        LIFECYCLE_ONBOARDING_GATE_ID,
         SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     }
 )
@@ -122,6 +124,14 @@ SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
 
 def is_current_profile_gate(gate_id: str) -> bool:
     return gate_id in CURRENT_PROFILE_GATE_IDS
+
+
+def journey_for_gate(gate_id: str) -> str:
+    if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
+        return "onboarding-first-message"
+    if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+        return "submitted-command-recovery"
+    return "direct-delivered-receipt"
 
 
 def runtime_manifest(
@@ -513,7 +523,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.report.runtime.update(
             {
                 "runtimeCell": self.runtime_binding.cell_id,
-                "journey": "direct-delivered-receipt",
+                "journey": journey_for_gate(self.gate_id),
                 "steps": self.steps,
                 "cleanup": {},
             }
@@ -1629,11 +1639,7 @@ class NativeTwoClientGate(AcceptanceGate):
         return {
             "runtimeCell": self.runtime_binding.cell_id,
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
-            "journey": (
-                "submitted-command-recovery"
-                if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
-                else "direct-delivered-receipt"
-            ),
+            "journey": journey_for_gate(self.gate_id),
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,

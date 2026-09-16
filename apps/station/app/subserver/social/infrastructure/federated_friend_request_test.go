@@ -223,6 +223,47 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesWithoutRemoteActorRows
 	if err != nil || effect == nil || conversationID == "" {
 		t.Fatalf("completed Direct effect = %+v conversation=%q err=%v", effect, conversationID, err)
 	}
+
+	active, activeTotal, err := fixture.a.service.ListFriendRequestProjections(
+		context.Background(),
+		alicePTID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+		25,
+		0,
+	)
+	if err != nil || activeTotal != 1 || len(active) != 1 {
+		t.Fatalf(
+			"active accepted relationship page total=%d items=%d err=%v",
+			activeTotal,
+			len(active),
+			err,
+		)
+	}
+	if err := fixture.a.db.Exec(
+		"DELETE FROM social_relationship_projections "+
+			"WHERE owner_ptid = ? AND peer_ptid = ?",
+		alicePTID,
+		bobPTID,
+	).Error; err != nil {
+		t.Fatalf("retire active relationship: %v", err)
+	}
+	retired, retiredTotal, err := fixture.a.service.ListFriendRequestProjections(
+		context.Background(),
+		alicePTID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+		25,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retiredTotal != 0 || len(retired) != 0 {
+		t.Fatalf(
+			"retired accepted relationship page total=%d items=%d",
+			retiredTotal,
+			len(retired),
+		)
+	}
 }
 
 func TestFederatedFriendRequestListReadsCanonicalProjections(t *testing.T) {

@@ -17,9 +17,9 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     REQUIRED_ASSERTIONS,
-    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     commits_match,
     is_current_profile_gate,
+    journey_for_gate,
 )
 from tooling.acceptance.gates.chat.native_support import runtime_station_service
 
@@ -48,9 +48,7 @@ class GateError(RuntimeError):
 
 
 def expected_journey_for_gate(gate_id: str) -> str:
-    if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
-        return "submitted-command-recovery"
-    return "direct-delivered-receipt"
+    return journey_for_gate(gate_id)
 
 
 def requires_distinct_client_profiles(gate_id: str) -> bool:

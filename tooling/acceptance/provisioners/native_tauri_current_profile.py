@@ -37,11 +37,13 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 GATE_ID = "chat-native-current-profile-two-client-e2e"
+LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
 SUPPORTED_GATE_IDS = {
     GATE_ID,
+    LIFECYCLE_ONBOARDING_GATE_ID,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
 }
 CLIENT_ROLES = ("alice", "bob")

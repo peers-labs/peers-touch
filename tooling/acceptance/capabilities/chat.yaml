@@ -236,6 +236,7 @@
         "proto-build",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-lifecycle-onboarding-e2e",
         "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",
@@ -246,6 +247,7 @@
         "tooling/acceptance/gates/chat/native_multi_device_runner.py",
         "tooling/acceptance/gates/chat/native_recovery_runner.py",
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+        "tooling/acceptance/gates/chat/lifecycle_onboarding.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
         "model/domain/social/relationship.proto",
         "apps/station/frame/touch/federation/cache/cache.go",
@@ -295,7 +297,8 @@
           "recoverable visible Group creation failure"
         ],
         "proven_by": [
-        "chat-native-current-profile-two-client-e2e",
+          "chat-lifecycle-onboarding-e2e",
+          "chat-native-current-profile-two-client-e2e",
           "chat-native-two-client-e2e",
           "chat-native-multi-device-e2e",
           "chat-native-recovery-e2e",
@@ -303,13 +306,15 @@
         ],
         "proven_scope": [
           "Only successful live runs with complete current source-bound reports prove W8 journeys",
+          "Current-profile Native onboarding proves local, federated-handle, and Station-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
           "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
           "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
           "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass",
-          "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
+          "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source",
+          "Cross-Station onboarding remains UNPROVEN until the continuity closure runs the onboarding Journey across distinct Station bindings"
         ]
       }
     },

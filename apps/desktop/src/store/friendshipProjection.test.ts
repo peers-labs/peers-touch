@@ -151,25 +151,19 @@ describe('projectMutualFriends', () => {
 });
 
 describe('projectChatFriendContacts', () => {
-  it('keeps mutual friendship as truth and uses other sources only as metadata', () => {
-    const mutualFriends = [{
-      actorPtid: 'ptid:alice',
-      username: 'alice',
-      displayName: 'Alice',
-      avatarUrl: 'alice-avatar',
-      federatedHandle: '@alice@station.test',
-      homeStationDomain: 'station.test',
-      homeStationPeerId: 'station-peer',
-    }];
-
+  it('uses accepted friend-request authority and ignores conversation-only peers', () => {
     const contacts = projectChatFriendContacts({
-      mutualFriends,
       conversations: [
         conversation('direct-alice', 'ptid:alice', 'federation-from-conversation'),
         conversation('direct-not-friend', 'ptid:not-friend', 'federation-ignored'),
       ],
       friendRequests: [
-        acceptedRequest('ptid:self', 'ptid:request-only', 'federation-ignored'),
+        {
+          ...acceptedRequest('ptid:self', 'ptid:alice', 'federation-request'),
+          receiverDisplayName: 'Alice',
+          receiverAvatar: 'alice-avatar',
+          receiverHomeStationPeerId: 'station-peer',
+        },
       ],
       peerProfiles: {},
       currentUserPtid: 'ptid:self',
@@ -191,17 +185,11 @@ describe('projectChatFriendContacts', () => {
 
   it('assigns the sole available federation before a Direct conversation exists', () => {
     const contacts = projectChatFriendContacts({
-      mutualFriends: [{
-        actorPtid: 'ptid:carol',
-        username: 'carol',
-        displayName: 'Carol',
-        avatarUrl: '',
-        federatedHandle: '',
-        homeStationDomain: '',
-        homeStationPeerId: '',
-      }],
       conversations: [],
-      friendRequests: [],
+      friendRequests: [{
+        ...acceptedRequest('ptid:self', 'ptid:carol', ''),
+        receiverDisplayName: 'Carol',
+      }],
       peerProfiles: {},
       currentUserPtid: 'ptid:self',
       federations: [{
@@ -220,15 +208,6 @@ describe('projectChatFriendContacts', () => {
 
   it('uses one authoritative profile priority on every contact surface', () => {
     const contacts = projectChatFriendContacts({
-      mutualFriends: [{
-        actorPtid: 'ptid:bob',
-        username: 'bob',
-        displayName: 'Bob cached',
-        avatarUrl: 'cached-avatar',
-        federatedHandle: '@bob@old.example',
-        homeStationDomain: 'old.example',
-        homeStationPeerId: 'station-peer',
-      }],
       conversations: [
         conversation('direct-bob', 'ptid:bob', 'federation-current'),
       ],
@@ -237,6 +216,7 @@ describe('projectChatFriendContacts', () => {
           ...acceptedRequest('ptid:self', 'ptid:bob', 'federation-current'),
           receiverDisplayName: 'Bob request',
           receiverAvatar: 'request-avatar',
+          receiverHomeStationPeerId: 'station-peer',
         },
       ],
       peerProfiles: {
@@ -271,6 +251,30 @@ describe('projectChatFriendContacts', () => {
       federation: 'Friends Federation',
       station: 'station.example',
     });
+  });
+
+  it('does not fabricate contacts from pending, rejected, or conversation state', () => {
+    const pending = {
+      ...acceptedRequest('ptid:self', 'ptid:pending', 'federation-current'),
+      status: 1,
+    };
+    const rejected = {
+      ...acceptedRequest('ptid:self', 'ptid:rejected', 'federation-current'),
+      status: 3,
+    };
+
+    expect(projectChatFriendContacts({
+      conversations: [
+        conversation('direct-stranger', 'ptid:stranger', 'federation-current'),
+      ],
+      friendRequests: [pending, rejected],
+      peerProfiles: {},
+      currentUserPtid: 'ptid:self',
+      federations: [{
+        federationId: 'federation-current',
+        name: 'Current Federation',
+      }],
+    })).toEqual([]);
   });
 
   it('derives the Station domain from the canonical handle when needed', () => {

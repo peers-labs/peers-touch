@@ -170,6 +170,7 @@
         "proto-build",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-lifecycle-onboarding-e2e",
         "chat-native-group-mls-e2e"
       ]
     },
@@ -283,6 +284,9 @@
           "tooling/acceptance/gates/chat/native_multi_device_runner.py",
           "tooling/acceptance/gates/chat/native_recovery_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/lifecycle_onboarding.py",
+          "tooling/acceptance/gates/chat/lifecycle_onboarding_e2e.py",
+          "tooling/acceptance/gates/chat/lifecycle_onboarding_test.py",
           "tooling/acceptance/gates/chat/native_current_profile_two_client_entry.py",
           "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
           "tooling/acceptance/gates/chat/native_support.py",
@@ -300,6 +304,7 @@
       },
       "require": [
         "chat-native-visible-static",
+        "chat-lifecycle-onboarding-e2e",
         "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",

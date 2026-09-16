@@ -35,7 +35,6 @@ export interface ChatActorIdentityMetadataParts {
 }
 
 export interface ProjectChatFriendContactsInput {
-  mutualFriends: readonly MutualFriendProjection[];
   conversations: readonly DesktopIMConversationProjection[];
   friendRequests: readonly FriendRequestData[];
   peerProfiles: Readonly<Record<string, AccountProfile | null>>;
@@ -82,7 +81,6 @@ export function projectMutualFriends(
 }
 
 export function projectChatFriendContacts({
-  mutualFriends,
   conversations,
   friendRequests,
   peerProfiles,
@@ -103,7 +101,14 @@ export function projectChatFriendContacts({
       : request.receiverPtid === currentUserPtid
         ? request.senderPtid
         : '';
-    if (peerPtid) {
+    if (
+      peerPtid
+      && (
+        !acceptedRequestByPeer.has(peerPtid)
+        || friendRequestTime(request)
+          >= friendRequestTime(acceptedRequestByPeer.get(peerPtid)!)
+      )
+    ) {
       acceptedRequestByPeer.set(peerPtid, request);
     }
   }
@@ -116,49 +121,42 @@ export function projectChatFriendContacts({
     ]),
   );
 
-  return mutualFriends.map((friend) => {
-    const conversation = conversationsByPeer.get(friend.actorPtid);
-    const request = acceptedRequestByPeer.get(friend.actorPtid);
-    const profile = peerProfiles[friend.actorPtid];
+  return [...acceptedRequestByPeer.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([actorPtid, request]) => {
+    const conversation = conversationsByPeer.get(actorPtid);
+    const profile = peerProfiles[actorPtid];
     const profileHandle = canonicalFederatedHandle(profile);
-    const federatedHandle = profileHandle || friend.federatedHandle;
-    const requestAvatar = request
-      ? request.senderPtid === friend.actorPtid
-        ? request.senderAvatar
-        : request.receiverAvatar
-      : '';
-    const requestDisplayName = request
-      ? request.senderPtid === friend.actorPtid
-        ? request.senderDisplayName
-        : request.receiverDisplayName
-      : '';
+    const federatedHandle = profileHandle;
+    const requestAvatar = request.senderPtid === actorPtid
+      ? request.senderAvatar
+      : request.receiverAvatar;
+    const requestDisplayName = request.senderPtid === actorPtid
+      ? request.senderDisplayName
+      : request.receiverDisplayName;
     const homeStationDomain = homeStationDomainFromHandle(profileHandle)
-      || friend.homeStationDomain
       || homeStationDomainFromHandle(federatedHandle);
-    const homeStationPeerId = friend.homeStationPeerId
-      || (request
-        ? request.senderPtid === friend.actorPtid
-          ? request.senderHomeStationPeerId
-          : request.receiverHomeStationPeerId
-        : '');
+    const homeStationPeerId = request.senderPtid === actorPtid
+      ? request.senderHomeStationPeerId
+      : request.receiverHomeStationPeerId;
     const federationId = conversation?.federationId
-      || request?.federationId
+      || request.federationId
       || defaultFederationId;
+    const username = profile?.username?.trim()
+      || localPartFromHandle(federatedHandle);
 
     return {
-      ...friend,
+      actorPtid,
       ...(conversation ? { conversationId: conversation.id } : {}),
-      username: profile?.username?.trim() || friend.username,
+      username,
       displayName: profile?.display_name?.trim()
-        || friend.displayName
-        || friend.username
-        || conversation?.title
         || requestDisplayName
-        || friend.actorPtid,
+        || username
+        || conversation?.title
+        || actorPtid,
       avatarUrl: profile?.avatar?.trim()
-        || friend.avatarUrl
-        || conversation?.avatar
         || requestAvatar
+        || conversation?.avatar
         || '',
       federatedHandle,
       homeStationDomain,
@@ -167,6 +165,16 @@ export function projectChatFriendContacts({
       federationName: federationNames.get(federationId) || '',
     };
   });
+}
+
+function friendRequestTime(request: FriendRequestData): number {
+  return Date.parse(request.respondedAt || request.createdAt) || 0;
+}
+
+function localPartFromHandle(handle: string): string {
+  const value = handle.trim().replace(/^@/, '');
+  const separator = value.indexOf('@');
+  return separator >= 0 ? value.slice(0, separator) : value;
 }
 
 export function chatActorIdentityMetadata(
