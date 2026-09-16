@@ -96,6 +96,9 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertIn("provisioner._resolve_active_profile = lambda:", source)
         self.assertNotIn(".local/dev/active", source)
         self.assertIn('manifest.state.value == "FIXTURE_READY"', source)
+        self.assertIn("authenticate_native_client(client, profile_env)", source)
+        self.assertNotIn("_authenticate_clients(", source)
+        self.assertNotIn('"ensureProvider"', source)
 
 
 if __name__ == "__main__":

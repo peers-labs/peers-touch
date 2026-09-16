@@ -559,13 +559,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
         missing_configuration = sorted(
             name
-            for name in (
-                "CHAT_NATIVE_DEMO_PASSWORD",
-                "PT_AGENT_PROVIDER_ID",
-                "PT_AGENT_PROVIDER_BASE_URL",
-                "PT_AGENT_PROVIDER_API_KEY",
-                "PT_AGENT_DEFAULT_MODEL_ID",
-            )
+            for name in ("CHAT_NATIVE_DEMO_PASSWORD",)
             if not profile_env.get(name, "")
         )
         if missing_configuration:
@@ -576,7 +570,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ),
                 resource=f"profile:{missing_configuration[0]}",
             )
-        credential_refs = self._export_profile_credential_refs(profile_env)
+        credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
         _, _, actor_ref = produce_actor_manifest(
             environment_id=self.environment_id,
             run_id=manifest.run_id,

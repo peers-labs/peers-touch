@@ -333,10 +333,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_DESKTOP_WEB_WEB_PORT": "24211",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
                 "CHAT_ACCEPTANCE_RESET": "1",
-                "PT_AGENT_PROVIDER_ID": "provider-1",
-                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.invalid",
-                "PT_AGENT_PROVIDER_API_KEY": "fixture-provider-key",
-                "PT_AGENT_DEFAULT_MODEL_ID": "model-1",
             },
         )
 
@@ -1088,11 +1084,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(browser.webdriver_port, 25446)
         self.assertEqual(
             manifest.credential_refs,
-            (
-                "profile:CHAT_NATIVE_DEMO_PASSWORD",
-                "profile:PT_AGENT_PROVIDER_API_KEY",
-                "profile:PT_AGENT_DEFAULT_MODEL_ID",
-            ),
+            ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
         )
         actor_manifest.assert_called_once()
         self.assertEqual(

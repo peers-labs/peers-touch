@@ -28,10 +28,10 @@ from tooling.acceptance.core.evidence_store import (
 from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.fixtures.chat_native_actors import reset_fixture
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationRuntimeClient,
     FoundationRuntimePair,
 )
 from tooling.acceptance.gates.agent.foundation_scenario_runner import (
-    _authenticate_clients,
     _build_client_manifest,
 )
 from tooling.acceptance.provisioners.home_station import (
@@ -184,6 +184,42 @@ def evaluate_capability_binding(
     return assertions
 
 
+def authenticate_native_client(
+    client: FoundationRuntimeClient,
+    profile_env: Mapping[str, str],
+) -> None:
+    client.configure_station(timeout=60)
+    login = client.harness(
+        "loginWithPassword",
+        {
+            "account": "alice@p.t",
+            "password": profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+        },
+        timeout=120,
+    )
+    require(
+        isinstance(login, Mapping)
+        and login.get("authenticated") is True
+        and bool(login.get("actorId")),
+        "Native actor login failed",
+    )
+    navigation = client.harness("navigateToAgent", {}, timeout=60)
+    require(
+        isinstance(navigation, Mapping)
+        and navigation.get("navigated") is True,
+        "Native Agent navigation failed",
+    )
+    health = client.harness(
+        "getAcceptanceHarnessStatus",
+        {},
+        timeout=30,
+    )
+    require(
+        isinstance(health, Mapping) and health.get("ready") is True,
+        "Native Agent Harness is unavailable",
+    )
+
+
 def cleanup_clients(runtime_pair: FoundationRuntimePair) -> dict[str, Any]:
     result = runtime_pair.stop(remove_storage=False)
     fallback: list[dict[str, Any]] = []
@@ -308,8 +344,7 @@ def main() -> int:
         )
         client = runtime_pair.native
         client.start()
-        _authenticate_clients(runtime_pair, profile_env, clients=(client,))
-        client.harness("navigateToAgent", {}, timeout=60)
+        authenticate_native_client(client, profile_env)
         sample_id = f"mca-j02-{artifact_run_id}"
         inventory = client.harness(
             "runCapabilityBindingDevelopment",
