@@ -18,6 +18,23 @@ import (
 	"gorm.io/gorm"
 )
 
+type legacyFederatedMLSKeyPackageClaimModel struct {
+	AuthorityStationID string    `gorm:"column:authority_station_id;primaryKey"`
+	AuthorityPlanID    string    `gorm:"column:authority_plan_id;primaryKey"`
+	TargetPTID         string    `gorm:"column:target_ptid;primaryKey"`
+	TargetDeviceID     string    `gorm:"column:target_device_id;primaryKey"`
+	HomeStationID      string    `gorm:"column:home_station_id;not null"`
+	PackageID          string    `gorm:"column:package_id;not null"`
+	KeyPackage         []byte    `gorm:"column:key_package;not null"`
+	KeyPackageSHA256   []byte    `gorm:"column:key_package_sha256;not null"`
+	PlanExpiresAt      time.Time `gorm:"column:plan_expires_at;not null"`
+	ClaimedAt          time.Time `gorm:"column:claimed_at;not null"`
+}
+
+func (*legacyFederatedMLSKeyPackageClaimModel) TableName() string {
+	return "federated_mls_key_package_claims"
+}
+
 type postgresStateError struct {
 	code string
 }
@@ -28,6 +45,77 @@ func (e postgresStateError) Error() string {
 
 func (e postgresStateError) SQLState() string {
 	return e.code
+}
+
+func TestMigrateReplacesEmptyLegacyFederatedClaimIdentity(t *testing.T) {
+	db := openCanonicalStoreDatabase(t)
+	if err := db.AutoMigrate(&legacyFederatedMLSKeyPackageClaimModel{}); err != nil {
+		t.Fatalf("migrate legacy claim schema: %v", err)
+	}
+	store, err := NewCanonicalStore(db)
+	if err != nil {
+		t.Fatalf("create canonical store: %v", err)
+	}
+
+	if err := store.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate empty legacy claim schema: %v", err)
+	}
+
+	columnTypes, err := db.Migrator().ColumnTypes(
+		&FederatedMLSKeyPackageClaimModel{},
+	)
+	if err != nil {
+		t.Fatalf("inspect canonical claim schema: %v", err)
+	}
+	primary := map[string]bool{}
+	for _, columnType := range columnTypes {
+		if isPrimary, ok := columnType.PrimaryKey(); ok && isPrimary {
+			primary[columnType.Name()] = true
+		}
+	}
+	if len(primary) != 2 ||
+		!primary["authority_station_id"] ||
+		!primary["request_id"] {
+		t.Fatalf("canonical claim primary key = %v", primary)
+	}
+}
+
+func TestMigrateRejectsNonEmptyLegacyFederatedClaimIdentity(t *testing.T) {
+	db := openCanonicalStoreDatabase(t)
+	if err := db.AutoMigrate(&legacyFederatedMLSKeyPackageClaimModel{}); err != nil {
+		t.Fatalf("migrate legacy claim schema: %v", err)
+	}
+	legacy := legacyFederatedMLSKeyPackageClaimModel{
+		AuthorityStationID: "station-1",
+		AuthorityPlanID:    "plan-1",
+		TargetPTID:         "ptid:target",
+		TargetDeviceID:     "device-1",
+		HomeStationID:      "station-2",
+		PackageID:          "package-1",
+		KeyPackage:         []byte("package"),
+		KeyPackageSHA256:   []byte("hash"),
+		PlanExpiresAt:      time.Unix(1_800_000_000, 0).UTC(),
+		ClaimedAt:          time.Unix(1_799_999_000, 0).UTC(),
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("seed legacy claim: %v", err)
+	}
+	store, err := NewCanonicalStore(db)
+	if err != nil {
+		t.Fatalf("create canonical store: %v", err)
+	}
+
+	if err := store.Migrate(context.Background()); err == nil {
+		t.Fatal("migration accepted a non-empty legacy claim schema")
+	}
+	var count int64
+	if err := db.Model(&legacyFederatedMLSKeyPackageClaimModel{}).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count preserved legacy claims: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("legacy claim count = %d, want 1", count)
+	}
 }
 
 func TestCanonicalDirectInventoryRequiresCompleteBundle(t *testing.T) {
@@ -864,21 +952,7 @@ func newCanonicalStoreForTest(
 	devices ...domain.Endpoint,
 ) *CanonicalStore {
 	t.Helper()
-	db, err := gorm.Open(
-		sqlite.Open(
-			"file:key-exchange-store-"+uuid.NewString()+
-				"?mode=memory&cache=shared&_busy_timeout=5000",
-		),
-		&gorm.Config{},
-	)
-	if err != nil {
-		t.Fatalf("open canonical store database: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("open canonical store SQL database: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
+	db := openCanonicalStoreDatabase(t)
 	store, err := NewCanonicalStore(db)
 	if err != nil {
 		t.Fatalf("create canonical store: %v", err)
@@ -907,6 +981,31 @@ func newCanonicalStoreForTest(
 		}
 	}
 	return store
+}
+
+func openCanonicalStoreDatabase(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(
+		sqlite.Open(
+			"file:key-exchange-store-"+uuid.NewString()+
+				"?mode=memory&cache=shared&_busy_timeout=5000",
+		),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open canonical store database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open canonical store SQL database: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close canonical store SQL database: %v", err)
+		}
+	})
+	return db
 }
 
 func canonicalDirectBundle(
