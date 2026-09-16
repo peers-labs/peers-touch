@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ERROR_CODES, fail } from './errors.mjs';
+import {
+  checkWorkspace,
+  MachineDevError,
+  updateWorkspace,
+} from '../scripts/local-dev/machine-dev-registry.mjs';
+import { DevctlError, ERROR_CODES, fail } from './errors.mjs';
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 const SECRET_NAME = /(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY|CREDENTIAL)/i;
@@ -93,6 +98,35 @@ function selectedProfileName(activePath) {
   }
 }
 
+function machineOperation(operation) {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof MachineDevError) {
+      throw new DevctlError(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
+function applyMachineAllocation(profile, resolved) {
+  const allocated = {
+    ...profile,
+    PT_DEV_SLOT: String(resolved.binding.slot),
+    PT_DESKTOP_APP_GATEWAY_PORT: String(resolved.ports.desktopAppGateway),
+    PT_DESKTOP_APP_WEB_PORT: String(resolved.ports.desktopAppWeb),
+    PT_DESKTOP_WEB_GATEWAY_PORT: String(resolved.ports.desktopWebGateway),
+    PT_DESKTOP_WEB_WEB_PORT: String(resolved.ports.desktopWebWeb),
+    PT_MOBILE_WEB_PORT: String(resolved.ports.mobileWeb),
+  };
+
+  if (['local', 'compose'].includes(allocated.PT_STATION_MODE)) {
+    allocated.PT_STATION_PORT = String(resolved.ports.station);
+    allocated.PT_STATION_URL = `http://127.0.0.1:${resolved.ports.station}`;
+  }
+  return allocated;
+}
+
 export function validateProfile(profile, expectedName, filePath) {
   const required = [
     'PT_DEV_PROFILE',
@@ -147,47 +181,68 @@ export function validateProfile(profile, expectedName, filePath) {
 
 export function resolveProfile(root, environment = process.env) {
   const paths = localDevPaths(root);
-  const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
   const explicit = environment.PT_DEV_PROFILE_FILE
     ? path.resolve(environment.PT_DEV_PROFILE_FILE)
     : undefined;
 
-  if (!explicit && !fs.existsSync(activePath)) {
-    fail(
-      ERROR_CODES.PROFILE_REQUIRED,
-      `No active profile for worktree '${worktreeId(root)}'`,
-      { activePath },
-    );
+  if (explicit) {
+    const name = path.basename(explicit, '.env');
+    const profile = validateProfile(readEnvFile(explicit), name, explicit);
+    return {
+      profile,
+      reference: {
+        worktreeId: worktreeId(root),
+        workspaceRoot: path.resolve(root),
+        profileName: name,
+        activePath: explicit,
+        resolvedPath: explicit,
+        canonical: false,
+      },
+      paths: {
+        ...paths,
+        profileData: path.join(paths.data, name),
+        profileLogs: path.join(paths.logs, name),
+        profilePids: path.join(paths.pids, name),
+        profileState: path.join(paths.state, name),
+      },
+    };
   }
 
-  const selectedPath = explicit ?? activePath;
-  const name = explicit
-    ? path.basename(explicit, '.env')
-    : selectedProfileName(activePath);
-  const envRepo = resolveEnvRepo(root, environment);
-  const canonicalPath = envRepo
-    ? path.join(envRepo, 'peers-touch', name, 'profile.env.example')
-    : undefined;
-  const resolvedPath = canonicalPath && fs.existsSync(canonicalPath)
-    ? canonicalPath
-    : selectedPath;
-  const profile = validateProfile(readEnvFile(resolvedPath), name, resolvedPath);
+  const resolved = machineOperation(() => checkWorkspace({
+    workspaceRoot: root,
+    envRepo: environment.PT_ENV_REPO,
+    home: environment.HOME,
+  }));
+  const name = resolved.binding.profile;
+  const resolvedPath = resolved.profile.profileFile;
+  const profile = applyMachineAllocation(
+    validateProfile(readEnvFile(resolvedPath), name, resolvedPath),
+    resolved,
+  );
+  const runtimeRoot = path.join(
+    resolved.workspaceStateRoot,
+    'runtime',
+    name,
+  );
 
   return {
     profile,
     reference: {
       worktreeId: worktreeId(root),
+      workspaceId: resolved.binding.workspaceId,
+      workspaceRoot: resolved.binding.canonicalRoot,
       profileName: name,
-      activePath,
+      activePath: resolvedPath,
       resolvedPath,
-      canonical: resolvedPath === canonicalPath,
+      canonical: resolved.profile.sourceState === 'tracked-clean',
+      authority: resolved.authority,
     },
     paths: {
       ...paths,
-      profileData: path.join(paths.data, name),
-      profileLogs: path.join(paths.logs, name),
-      profilePids: path.join(paths.pids, name),
-      profileState: path.join(paths.state, name),
+      profileData: path.join(runtimeRoot, 'data'),
+      profileLogs: path.join(runtimeRoot, 'logs'),
+      profilePids: path.join(runtimeRoot, 'pids'),
+      profileState: path.join(runtimeRoot, 'state'),
     },
   };
 }
@@ -218,8 +273,16 @@ export function listProfiles(root, environment = process.env) {
     }
   }
 
-  const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  const active = fs.existsSync(activePath) ? selectedProfileName(activePath) : undefined;
+  let active;
+  try {
+    active = checkWorkspace({
+      workspaceRoot: root,
+      envRepo: environment.PT_ENV_REPO,
+      home: environment.HOME,
+    }).binding.profile;
+  } catch {
+    active = undefined;
+  }
   return [...names].sort().map((name) => ({ name, active: name === active }));
 }
 
@@ -227,29 +290,12 @@ export function activateProfile(root, name, environment = process.env) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(name)) {
     fail(ERROR_CODES.PROFILE_INVALID, `Invalid profile name: ${name}`, { name });
   }
-
-  const paths = localDevPaths(root);
-  fs.mkdirSync(paths.profiles, { recursive: true });
-  fs.mkdirSync(paths.active, { recursive: true });
-
-  const localPath = path.join(paths.profiles, `${name}.env`);
-  const envRepo = resolveEnvRepo(root, environment);
-  const canonicalPath = envRepo
-    ? path.join(envRepo, 'peers-touch', name, 'profile.env.example')
-    : undefined;
-  if (canonicalPath && fs.existsSync(canonicalPath)) {
-    fs.copyFileSync(canonicalPath, localPath);
-  } else if (!fs.existsSync(localPath)) {
-    fail(ERROR_CODES.PROFILE_REQUIRED, `Profile '${name}' was not found`, {
-      localPath,
-      canonicalPath,
-    });
-  }
-
-  validateProfile(readEnvFile(localPath), name, localPath);
-  const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  fs.rmSync(activePath, { force: true });
-  fs.symlinkSync(path.relative(path.dirname(activePath), localPath), activePath, 'file');
+  machineOperation(() => updateWorkspace({
+    workspaceRoot: root,
+    envRepo: environment.PT_ENV_REPO,
+    home: environment.HOME,
+    profile: name,
+  }));
   return resolveProfile(root, environment);
 }
 
@@ -334,7 +380,8 @@ export function runtimeEnvironment(resolved, environment = process.env) {
     ...environment,
     ...profile,
     PATH: [...configuredBins, environment.PATH ?? ''].join(path.delimiter),
-    PROJECT_ROOT: path.resolve(resolved.reference.activePath, '..', '..', '..', '..'),
+    PROJECT_ROOT: resolved.reference.workspaceRoot
+      ?? path.resolve(resolved.reference.activePath, '..', '..', '..', '..'),
     LOCAL_DEV_DIR: resolved.paths.localDev,
     PT_DEV_DATA: resolved.paths.profileData,
     PT_DEV_LOGS: resolved.paths.profileLogs,

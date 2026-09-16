@@ -51,7 +51,7 @@ test('config emits one redacted JSON document', (t) => {
   assert.equal(parsed.profile.profileName, 'cli-test');
 });
 
-test('missing profile returns a stable typed error', (t) => {
+test('non-worktree root fails closed with a stable identity error', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-cli-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -62,7 +62,7 @@ test('missing profile returns a stable typed error', (t) => {
 
   assert.equal(result.status, 2);
   const parsed = JSON.parse(result.stderr);
-  assert.equal(parsed.error.code, 'DEVCTL_PROFILE_REQUIRED');
+  assert.equal(parsed.error.code, 'WORKTREE_IDENTITY_UNAVAILABLE');
 });
 
 test('unknown commands return DEVCTL_UNSUPPORTED_MODE', () => {

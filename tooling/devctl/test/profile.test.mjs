@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
+import {
+  readRegistry,
+  registerWorkspace,
+} from '../../scripts/local-dev/machine-dev-registry.mjs';
+import { machineRegistryPath } from '../../scripts/lib/machine-dev-paths.mjs';
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
 import {
   activateProfile,
@@ -36,6 +42,84 @@ function temporaryRoot(t) {
   return root;
 }
 
+function initializeRepository(root) {
+  fs.mkdirSync(root, { recursive: true });
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Devctl Test'], { cwd: root });
+}
+
+function commitRepository(root) {
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-m', 'test fixture'], { cwd: root });
+}
+
+function registeredFixture(t) {
+  const sandbox = temporaryRoot(t);
+  const root = path.join(sandbox, 'peers-ai-agent');
+  const envRepo = path.join(sandbox, 'env');
+  const home = path.join(sandbox, 'home');
+  initializeRepository(root);
+  initializeRepository(envRepo);
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(root, 'README.md'), 'fixture\n');
+
+  for (const name of ['two', 'three', 'chat-native-disposable']) {
+    const profileRoot = path.join(envRepo, 'peers-touch', name);
+    fs.mkdirSync(profileRoot, { recursive: true });
+    fs.writeFileSync(
+      path.join(profileRoot, 'profile.env.example'),
+      fixtureProfile(name)
+        .replace('PT_STATION_MODE=local', 'PT_STATION_MODE=remote')
+        .replace('http://127.0.0.1:18080', `http://10.0.0.${name === 'two' ? 2 : 3}:18080`),
+    );
+  }
+  commitRepository(root);
+  commitRepository(envRepo);
+
+  const legacyProfile = path.join(
+    root,
+    '.local',
+    'dev',
+    'profiles',
+    'chat-native-disposable.env',
+  );
+  const legacyActive = path.join(
+    root,
+    '.local',
+    'dev',
+    'active',
+    'peers-ai-agent.env',
+  );
+  fs.mkdirSync(path.dirname(legacyProfile), { recursive: true });
+  fs.mkdirSync(path.dirname(legacyActive), { recursive: true });
+  fs.writeFileSync(
+    legacyProfile,
+    fixtureProfile('chat-native-disposable'),
+  );
+  fs.symlinkSync(path.relative(path.dirname(legacyActive), legacyProfile), legacyActive);
+
+  const registryPath = machineRegistryPath(home);
+  registerWorkspace({
+    workspaceRoot: root,
+    envRepo,
+    registryPath,
+    profile: 'two',
+    slot: 1,
+    capabilities: 'station.connect',
+    purpose: 'devctl test',
+    owner: 'test@example.com',
+  });
+  return {
+    envRepo,
+    environment: { HOME: home, PT_ENV_REPO: envRepo },
+    home,
+    registryPath,
+    root,
+    sandbox,
+  };
+}
+
 test('parses declarative env values without evaluating shell', () => {
   assert.deepEqual(
     parseEnvText('NAME=value\nQUOTED="value with spaces"\n# comment\n'),
@@ -50,19 +134,43 @@ test('parses declarative env values without evaluating shell', () => {
   );
 });
 
-test('activates and resolves a profile by worktree identity', (t) => {
-  const root = temporaryRoot(t);
-  const name = 'local-test';
-  const profileDir = path.join(root, '.local', 'dev', 'profiles');
-  fs.mkdirSync(profileDir, { recursive: true });
-  fs.writeFileSync(path.join(profileDir, `${name}.env`), fixtureProfile(name));
+test('resolves the machine binding instead of a stale legacy pointer', (t) => {
+  const fixture = registeredFixture(t);
+  const resolved = resolveProfile(fixture.root, fixture.environment);
 
-  const activated = activateProfile(root, name, { PT_ENV_REPO: '' });
-  const resolved = resolveProfile(root, { PT_ENV_REPO: '' });
+  assert.equal(resolved.reference.authority, 'machine-control-plane');
+  assert.equal(resolved.reference.profileName, 'two');
+  assert.equal(resolved.profile.PT_DEV_PROFILE, 'two');
+  assert.equal(resolved.profile.PT_DEV_SLOT, '1');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3130');
+});
 
-  assert.equal(activated.reference.profileName, name);
-  assert.equal(resolved.profile.PT_DEV_PROFILE, name);
-  assert.equal(resolved.reference.worktreeId, path.basename(root));
+test('activates a profile by updating the machine binding', (t) => {
+  const fixture = registeredFixture(t);
+  const activated = activateProfile(
+    fixture.root,
+    'three',
+    fixture.environment,
+  );
+  const registry = readRegistry(fixture.registryPath);
+
+  assert.equal(activated.reference.profileName, 'three');
+  assert.equal(registry.registrations[0].profile, 'three');
+});
+
+test('rejects an unregistered worktree without a legacy fallback', (t) => {
+  const fixture = registeredFixture(t);
+  const unregisteredRoot = path.join(fixture.sandbox, 'unregistered');
+  initializeRepository(unregisteredRoot);
+  fs.writeFileSync(path.join(unregisteredRoot, 'README.md'), 'unregistered\n');
+  commitRepository(unregisteredRoot);
+
+  assert.throws(
+    () => resolveProfile(unregisteredRoot, fixture.environment),
+    (error) =>
+      error instanceof DevctlError
+      && error.code === 'WORKSPACE_UNREGISTERED',
+  );
 });
 
 test('rejects a profile identity mismatch', (t) => {
