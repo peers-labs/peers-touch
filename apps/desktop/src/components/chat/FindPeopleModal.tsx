@@ -176,7 +176,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'station-scoped-search',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId: 'A-E',
             location: 'FindPeopleModal.tsx:handleSearch:request',
             msg: '[DEBUG] Station-scoped search request',
@@ -201,7 +201,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'station-scoped-search',
-            runId: 'pre-fix',
+            runId: 'post-fix',
             hypothesisId: 'A-E',
             location: 'FindPeopleModal.tsx:handleSearch:response',
             msg: '[DEBUG] Station-scoped search response',
@@ -239,7 +239,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'station-scoped-search',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'E',
           location: 'FindPeopleModal.tsx:handleSearch:error',
           msg: '[DEBUG] Find People search failed',
@@ -326,7 +326,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'station-scoped-search',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'B-C',
         location: 'FindPeopleModal.tsx:handleScopeChange',
         msg: '[DEBUG] Find People scope selected',
