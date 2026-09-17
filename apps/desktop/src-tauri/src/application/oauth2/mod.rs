@@ -1080,6 +1080,18 @@ fn reconcile_connector_station_head(
     Ok(())
 }
 
+fn connector_projection_matches_station_head(
+    connection: &OAuthConnectionState,
+    current: &[ConnectorResourceManifest],
+) -> bool {
+    connection.revision == connection.projected_revision
+        && !current.is_empty()
+        && current.iter().all(|resource| {
+            resource.oauth_connection_id == connection.connection_id
+                && resource.connection_revision == connection.revision
+        })
+}
+
 pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<u8>> {
     if !actor_ptid.starts_with("ptid:") || token.trim().is_empty() {
         return AppResult::fail(
@@ -1120,6 +1132,10 @@ pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<
                 "agent.connectorManifestSyncFailed",
                 Some(json!({ "cause": error })),
             );
+        }
+        if connector_projection_matches_station_head(connection, &station_resources) {
+            merged.manifests.extend(station_resources);
+            continue;
         }
         if connection.status == "active" {
             match connection_expired(connection) {
@@ -2004,6 +2020,34 @@ mod tests {
 
         assert_eq!(connection.projected_revision, 7);
         assert_eq!(connection.revision, 8);
+    }
+
+    #[test]
+    fn connector_already_projected_station_head_is_a_sync_noop_bits_ut() {
+        let connection = OAuthConnectionState {
+            connection_id: "oauth-connection-1".to_string(),
+            revision: 5,
+            projected_revision: 5,
+            provider_id: "github".to_string(),
+            ..Default::default()
+        };
+        let current = vec![ConnectorResourceManifest {
+            oauth_connection_id: "oauth-connection-1".to_string(),
+            connection_revision: 5,
+            ..Default::default()
+        }];
+
+        assert!(connector_projection_matches_station_head(
+            &connection,
+            &current,
+        ));
+
+        let mut unprojected = connection.clone();
+        unprojected.revision = 6;
+        assert!(!connector_projection_matches_station_head(
+            &unprojected,
+            &current,
+        ));
     }
 
     #[test]
