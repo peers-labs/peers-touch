@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -479,19 +480,54 @@ class EvaluationProviderFixture:
         return self.server.snapshot()
 
 
-def _validate_identity_root(root: Path) -> None:
+def _validate_identity_root_path(root: Path) -> None:
     require(root.is_dir() and not root.is_symlink(), "identity root is invalid")
     require(
         not any(path.is_symlink() for path in root.rglob("*")),
         "identity root contains a symlink",
     )
+
+
+def _validate_identity_key(key: Path) -> None:
+    require(key.is_file() and not key.is_symlink(), "identity key is missing")
+    key_text = key.read_text(encoding="utf-8").strip()
+    require(
+        len(key_text) == 64
+        and all(
+            character in "0123456789abcdefABCDEF"
+            for character in key_text
+        ),
+        "identity key is invalid",
+    )
+
+
+def _validate_identity_root(root: Path) -> None:
+    _validate_identity_root_path(root)
     key_files = tuple(path for path in root.rglob("*.key") if path.is_file())
     require(len(key_files) == 1, "identity root must contain exactly one key")
-    key = key_files[0].read_text(encoding="utf-8").strip()
-    require(
-        len(key) == 64
-        and all(character in "0123456789abcdefABCDEF" for character in key),
-        "identity key is invalid",
+    _validate_identity_key(key_files[0])
+
+
+def _stable_identity_key_path(
+    root: Path,
+    station_peer_id: str,
+    actor_id: str,
+) -> Path:
+    require(bool(station_peer_id.strip()), "Station runtime identity is missing")
+    actor_scope = "".join(
+        character
+        if character.isascii()
+        and (character.isalnum() or character in "-_.")
+        else "_"
+        for character in actor_id.strip()
+    )
+    require(bool(actor_scope), "actor identity is missing")
+    key_ref = f"station_peer_{station_peer_id.strip()}/{actor_scope}"
+    key_name = hashlib.sha256(key_ref.encode("utf-8")).hexdigest()
+    return (
+        root
+        / "peers-touch/desktop/data/secure-store/identity-keys"
+        / f"{key_name}.key"
     )
 
 
@@ -499,6 +535,7 @@ def seed_actor_identity(
     role: str,
     target_root: Path,
     station_url: str,
+    station_peer_id: str,
 ) -> bool:
     fixture = IDENTITY_FIXTURE_ROOT / role
     if not fixture.exists():
@@ -516,6 +553,13 @@ def seed_actor_identity(
     )
     source = fixture / "actor-identity"
     _validate_identity_root(source)
+    _validate_identity_key(
+        _stable_identity_key_path(
+            source,
+            station_peer_id,
+            str(metadata["actorId"]),
+        )
+    )
     require(not target_root.exists(), f"{role} identity target already exists")
     target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copytree(source, target_root, symlinks=False)
@@ -527,6 +571,7 @@ def persist_actor_identity(
     source_root: Path,
     station_url: str,
     actor_id: str,
+    station_peer_id: str,
 ) -> dict[str, Any]:
     fixture = IDENTITY_FIXTURE_ROOT / role
     metadata = {
@@ -544,14 +589,32 @@ def persist_actor_identity(
             existing == metadata,
             f"retained {role} identity belongs to another actor",
         )
-        _validate_identity_root(fixture / "actor-identity")
+        fixture_identity_root = fixture / "actor-identity"
+        _validate_identity_root(fixture_identity_root)
+        _validate_identity_key(
+            _stable_identity_key_path(
+                fixture_identity_root,
+                station_peer_id,
+                actor_id,
+            )
+        )
         return metadata
-    _validate_identity_root(source_root)
+    _validate_identity_root_path(source_root)
+    source_key = _stable_identity_key_path(
+        source_root,
+        station_peer_id,
+        actor_id,
+    )
+    _validate_identity_key(source_key)
     fixture.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = fixture.parent / f".{role}.tmp-{os.getpid()}"
     shutil.rmtree(temporary, ignore_errors=True)
     try:
-        shutil.copytree(source_root, temporary / "actor-identity")
+        target_key = temporary / "actor-identity" / source_key.relative_to(
+            source_root
+        )
+        target_key.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.copy2(source_key, target_key)
         (temporary / "fixture.json").write_text(
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -807,6 +870,11 @@ def main() -> int:
             runtime_manifest.to_dict(),
             profile_env,
         )
+        station = runtime_manifest.services.get("station")
+        require(
+            station is not None and bool(station.runtime_identity),
+            "J06 Station runtime identity is unavailable",
+        )
         provider_fixture.start()
         provider_fixture_started = True
         provider_base_url = provider_bridge.start(
@@ -819,6 +887,7 @@ def main() -> int:
                 role,
                 client.actor_identity_root,
                 profile_env["PT_STATION_URL"],
+                station.runtime_identity,
             )
             client.start()
             login = authenticate_client(
@@ -832,6 +901,7 @@ def main() -> int:
                     client.actor_identity_root,
                     profile_env["PT_STATION_URL"],
                     str(login["actorId"]),
+                    station.runtime_identity,
                 ),
                 "reused": reused,
             }

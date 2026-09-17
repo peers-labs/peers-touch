@@ -14,6 +14,7 @@ from tooling.acceptance.gates.agent.evaluation_development import (
     EvaluationDevelopmentError,
     ROOT,
     TUPLE_FIELDS,
+    _stable_identity_key_path,
     begin_attestation_run,
     evaluate_evaluation_journey,
     persist_actor_identity,
@@ -199,17 +200,19 @@ class EvaluationDevelopmentTest(unittest.TestCase):
     def test_reused_identity_validates_fixture_not_transient_run_keys(
         self,
     ) -> None:
+        station_peer_id = "station-peer"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fixture_root = root / "fixtures"
             fixture = fixture_root / "alice"
-            fixture_identity = (
-                fixture
-                / "actor-identity/peers-touch/desktop/data/"
-                "secure-store/identity-keys"
+            fixture_actor_identity = fixture / "actor-identity"
+            fixture_key = _stable_identity_key_path(
+                fixture_actor_identity,
+                station_peer_id,
+                "ptid:alice",
             )
-            fixture_identity.mkdir(parents=True)
-            (fixture_identity / "actor.key").write_text(
+            fixture_key.parent.mkdir(parents=True)
+            fixture_key.write_text(
                 "ab" * 32,
                 encoding="utf-8",
             )
@@ -245,12 +248,59 @@ class EvaluationDevelopmentTest(unittest.TestCase):
                     transient_identity,
                     "https://station.example/",
                     "ptid:alice",
+                    station_peer_id,
                 )
 
             self.assertEqual(observed, metadata)
             self.assertEqual(
-                list(fixture_identity.glob("*.key")),
-                [fixture_identity / "actor.key"],
+                list(fixture_key.parent.glob("*.key")),
+                [fixture_key],
+            )
+
+    def test_new_identity_persists_only_station_scoped_actor_key(
+        self,
+    ) -> None:
+        station_peer_id = "station-peer"
+        actor_id = "ptid:bob"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture_root = root / "fixtures"
+            source_root = root / "transient"
+            stable_key = _stable_identity_key_path(
+                source_root,
+                station_peer_id,
+                actor_id,
+            )
+            stable_key.parent.mkdir(parents=True)
+            stable_key.write_text("ab" * 32, encoding="utf-8")
+            (stable_key.parent / "proxy-scoped.key").write_text(
+                "cd" * 32,
+                encoding="utf-8",
+            )
+
+            with patch(
+                "tooling.acceptance.gates.agent."
+                "evaluation_development.IDENTITY_FIXTURE_ROOT",
+                fixture_root,
+            ):
+                persist_actor_identity(
+                    "bob",
+                    source_root,
+                    "https://station.example",
+                    actor_id,
+                    station_peer_id,
+                )
+
+            persisted_root = fixture_root / "bob/actor-identity"
+            persisted_keys = list(persisted_root.rglob("*.key"))
+            self.assertEqual(len(persisted_keys), 1)
+            self.assertEqual(
+                persisted_keys[0].relative_to(persisted_root),
+                stable_key.relative_to(source_root),
+            )
+            self.assertEqual(
+                persisted_keys[0].read_text(encoding="utf-8"),
+                "ab" * 32,
             )
 
     def test_accepts_complete_j06_capture(self) -> None:
