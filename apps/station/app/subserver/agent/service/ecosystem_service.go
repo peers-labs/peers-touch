@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: EcosystemService with CRUD for
-//   AgentGroups, TopicComments, EvalDatasets, CustomPlugins.
+//   AgentGroups, TopicComments, CustomPlugins.
 
 package service
 
@@ -100,51 +100,6 @@ func (s *EcosystemService) ListTopicComments(ctx context.Context, topicKey strin
 		return nil, err
 	}
 	return comments, nil
-}
-
-// --- Eval Datasets ---
-
-func (s *EcosystemService) CreateEvalDataset(ctx context.Context, dataset *persistence.EcosystemEvalDataset) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	if dataset.ID == "" {
-		dataset.ID = uuid.New().String()
-	}
-	return db.WithContext(ctx).Create(dataset).Error
-}
-
-func (s *EcosystemService) UpdateEvalDataset(ctx context.Context, dataset *persistence.EcosystemEvalDataset) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Model(dataset).Updates(map[string]interface{}{
-		"name":        dataset.Name,
-		"description": dataset.Description,
-		"items_json":  dataset.ItemsJSON,
-	}).Error
-}
-
-func (s *EcosystemService) DeleteEvalDataset(ctx context.Context, id string) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Delete(&persistence.EcosystemEvalDataset{}, "id = ?", id).Error
-}
-
-func (s *EcosystemService) ListEvalDatasets(ctx context.Context, ownerActorPTID string) ([]persistence.EcosystemEvalDataset, error) {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var datasets []persistence.EcosystemEvalDataset
-	if err := db.WithContext(ctx).Where("owner_actor_ptid = ?", ownerActorPTID).Order("created_at DESC").Find(&datasets).Error; err != nil {
-		return nil, err
-	}
-	return datasets, nil
 }
 
 // --- Custom Plugins ---

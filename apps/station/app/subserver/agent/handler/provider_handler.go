@@ -687,15 +687,15 @@ func modelToProto(m *persistence.AgentModel) (*model.AgentModelInfo, error) {
 		return nil, err
 	}
 	return &model.AgentModelInfo{
-		Id:            m.ID,
-		ActorPtid:     m.ActorPTID,
-		ProviderId:    m.ProviderID,
-		ModelId:       m.ModelID,
-		DisplayName:   m.DisplayName,
-		Enabled:       m.Enabled,
-		Version:       m.Version,
-		CreatedAt:     timestamppb.New(m.CreatedAt),
-		UpdatedAt:     timestamppb.New(m.UpdatedAt),
+		Id:          m.ID,
+		ActorPtid:   m.ActorPTID,
+		ProviderId:  m.ProviderID,
+		ModelId:     m.ModelID,
+		DisplayName: m.DisplayName,
+		Enabled:     m.Enabled,
+		Version:     m.Version,
+		CreatedAt:   timestamppb.New(m.CreatedAt),
+		UpdatedAt:   timestamppb.New(m.UpdatedAt),
 		ContextWindow: int32(m.ContextWindow),
 		Capabilities:  capabilities,
 	}, nil

@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -68,6 +68,22 @@ make dev-heartbeat WORK_ITEM=<id>
 make dev-release WORK_ITEM=<id>
 ```
 
+Tracked runs add `PLAN=<repository-relative-package-plan.md>` and
+`TASK=<current-task-id>` to `dev-start` and `dev-update`. Those commands
+validate and publish the Plan locator. Heartbeat runs periodically before
+expiry and preserves the locator.
+
+After commit, merge, or rebase, Dev Workflow runs both `make env-update` and
+`make dev-update` so registration and declaration source identities advance
+together. Task handoff also updates the declaration's `TASK`.
+
+The declaration schema rolls out as a hard compatibility boundary. Repository
+source must be synchronized to every active worktree before the first writer
+publishes non-null Plan locator fields into the shared machine ledger. Until
+that synchronization completes, existing declarations retain their legacy
+shape and Peers Dev may use the validated Development Session only as a
+read-only locator bridge. The bridge never writes inferred fields back.
+
 Plan Package:
 
 ```bash
@@ -110,6 +126,8 @@ All commands:
   action may execute;
 - performs allowed work and persists Session, Task, manifest, and
   `active_work` updates through their owning commands;
+- drains supporting actions until the current Progress Slice closes one Task or
+  reaches a hard boundary;
 - reports task/Journey progress, not file/Gate counts;
 - fences Acceptance before `FUNCTIONAL_PASS`;
 - releases declaration and leases on close/cancel.
@@ -153,10 +171,25 @@ projection labels `dev_state` as Session-owned and Task lifecycle as
 manifest-owned. Any mismatch is reported to Dev Workflow; the Anchor does not
 repair it.
 
+The projection uses `planctl status.progress` and renders one compact
+continuation contract:
+
+- stable mission and execution horizon;
+- current Task closure and Session state;
+- completed/total Task closures;
+- completed delta since the previous Anchor;
+- next Progress Slice;
+- expected `+1` closure and percentage-point delta;
+- newly unlocked Tasks, evidence, and hard boundaries.
+
+It does not expose an administrative command as the user-facing next action.
+
 ### `pt-trae-goal-orchestrator`
 
 - builds ready queue from manifest DAG;
 - maps one Goal Slice to dependency-ready actions inside the current Task;
+- binds the Goal Slice completion boundary to the current Task's derived
+  Progress Slice;
 - chooses serial/parallel/hybrid lanes and one integration order;
 - never rewrites manifest, Task, Session, `active_work`, or evidence;
 - treats stale/unaddressable agent records as runtime metadata, not blockers.
@@ -363,3 +396,9 @@ After completion:
 
 Context Anchor renders current/next and blocker summary only. Detailed logs stay
 in machine-local artifacts.
+
+The `next` field is a Progress Slice, not an individual command. Its successful
+completion must match the `planctl status.progress.nextProgressBoundary`
+projection. Dev Workflow continues across internal actions until that boundary
+is reached; otherwise it reports the hard boundary and the unchanged delta
+explicitly.

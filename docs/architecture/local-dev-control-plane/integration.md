@@ -2,9 +2,9 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
+> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
 ---
 
@@ -20,6 +20,7 @@
 | `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
+| `apps/dev/` | Peers Dev server, web UI, tests and package entry | Canonical application owner |
 
 The migration must be atomic at the runtime command boundary. There must not be
 permanent dual-read precedence between global registry and `.local/dev/active`.
@@ -77,6 +78,8 @@ Target command behavior:
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
 | `make env-status-all` | Show all registered worktrees, conflicts, processes and leases |
+| `make dev-ui` | Start the one machine-wide Peers Dev server or reuse the compatible existing instance |
+| `make dev-ui-snapshot` | Print the redacted Peers Dev projection without starting the server |
 | `make desktop[-web]` | Acquire current workspace `local.slot` lease |
 | `make mobile` | Acquire current workspace `local.slot` lease |
 | `make station-check` | Require `station.connect` |
@@ -124,6 +127,8 @@ promotes it. This permits visibility without silently changing active runtimes.
 ## 5. Migration Constraints
 
 - Preserve each worktree's independent profile choice.
+- Require `PT_AGENT_CONTROL_MODE` on every reviewed profile; do not infer it
+  from the profile name or Station mode.
 - Do not select a default profile for unbound worktrees.
 - Do not assign slot 0 as a fallback.
 - Do not create, copy, derive, or register an environment-repository profile,
@@ -191,6 +196,35 @@ node --test --test-timeout=1200000 \
   tooling/scripts/lib/machine-dev-paths.test.mjs \
   tooling/scripts/local-dev/*.test.mjs
 ```
+
+Dashboard verification:
+
+```bash
+node --test apps/dev/server/*.test.mjs
+node apps/dev/server/index.mjs snapshot \
+  --env-repo ../env
+```
+
+The snapshot must contain only selected non-secret profile fields, machine
+registrations, work declarations, lease projections, a worktree-centric joined
+view and derived profile occupancy. The primary view must retain declaration-
+only workspaces, group active requirements and Journeys by `workspaceId`, and
+distinguish runtime intent from held leases. The served HTML must have no
+state-changing endpoint.
+
+Tracked declarations must also resolve their declared Plan Package through the
+registered worktree root and expose canonical Task-closure progress. Tests must
+cover a valid package, identifier mismatch, missing package, legacy plan,
+unregistered root, and an escaping path. Active and stale declarations remain
+visible, while only live declarations contribute intent or occupancy.
+`workState` and `environmentHealth` are asserted independently so profile or
+registry problems cannot rewrite task lifecycle.
+
+Single-instance verification starts two Peers Dev servers concurrently against
+one free test port. Exactly one returns `started`; the other returns `existing`
+after validating `/api/server`. A foreign listener on the same port must
+produce `DEV_SERVER_PORT_CONFLICT`. Public `make dev-ui` does not expose host or
+port overrides.
 
 The lease suite launches isolated child processes for every required lease
 class and proves contention plus release on success, command failure, signal,

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -14,7 +14,9 @@ import {
   Workflow,
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
+import { ToolExecutionOwner } from '../../gen/proto/domain/agent/agent_pb';
 import { usePortalStore } from '../../store/portal';
+import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import {
   logToolDecisionFailure,
   logToolRecoveryFailure,
@@ -24,6 +26,47 @@ import {
   toolRuntime,
 } from '../../runtimes/toolRuntime';
 import { useTranslation } from 'react-i18next';
+
+function executionOwnerLocaleKey(owner: ToolExecutionOwner): string {
+  if (owner === ToolExecutionOwner.STATION) return 'station';
+  if (owner === ToolExecutionOwner.CLIENT_CAPABILITY) return 'clientCapability';
+  return 'unknown';
+}
+
+function policyLocaleKey(policy: string): string {
+  const normalized = policy.trim().toLowerCase();
+  if (normalized === 'manual') return 'manual';
+  if (normalized === 'allow_list') return 'allowList';
+  if (normalized === 'auto') return 'auto';
+  if (normalized === 'deny' || normalized === 'disabled') return 'deny';
+  return 'unknown';
+}
+
+function ToolGovernanceRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <Flexbox horizontal align="flex-start" justify="space-between" gap={12}>
+      <span style={{ color: token.colorTextTertiary, fontSize: 11 }}>{label}</span>
+      <span
+        style={{
+          color: token.colorTextSecondary,
+          fontSize: 11,
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          textAlign: 'right',
+        }}
+      >
+        {value}
+      </span>
+    </Flexbox>
+  );
+}
 
 // --- Delegation helpers ---
 
@@ -102,10 +145,12 @@ export function DelegationResultsBlock({ results }: { results: DelegationTaskInf
 export function ToolCallItem({
   tool: sourceTool,
   messageId,
+  turnId,
   onRequestAgain,
 }: {
   tool: ToolCallInfo;
   messageId?: string;
+  turnId?: string;
   onRequestAgain?: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -113,7 +158,7 @@ export function ToolCallItem({
   const [reconnectingExecutor, setReconnectingExecutor] = useState(false);
   const [requestingAgain, setRequestingAgain] = useState(false);
   const { token } = theme.useToken();
-  const { t } = useTranslation(['chat', 'agent']);
+  const { t, i18n } = useTranslation(['chat', 'agent']);
   const projection = useSyncExternalStore(
     toolRuntime.subscribe,
     () => toolRuntime.getProjection(sourceTool.id),
@@ -135,6 +180,42 @@ export function ToolCallItem({
   const approvalExpired =
     tool.status === 'expired'
     && tool.error === 'agent.errors.toolApprovalExpired';
+  const unknownSideEffect = tool.status === 'unknown_side_effect';
+  const visibleExpanded =
+    expanded || approvalRequired || approvalExpired || unknownSideEffect;
+  const manifest = useAgentCapabilityStore((state) => {
+    if (!tool.manifestId || !tool.manifestVersion) return undefined;
+    return state.manifests.find(
+      (item) =>
+        item.capabilityId === tool.manifestId
+        && item.version === tool.manifestVersion,
+    );
+  });
+  const target =
+    tool.targetDeviceId
+    || tool.serverName
+    || manifest?.sourceInstanceId
+    || '';
+  const expiresAt = tool.expiresAt
+    ? new Date(tool.expiresAt)
+    : undefined;
+  const expiresAtLabel =
+    expiresAt && !Number.isNaN(expiresAt.getTime())
+      ? new Intl.DateTimeFormat(i18n.language, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }).format(expiresAt)
+      : '';
+  const governanceVisible = Boolean(
+    tool.source
+    || target
+    || tool.executionOwner !== undefined
+    || manifest?.riskClass
+    || tool.approvalPolicy
+    || expiresAtLabel
+    || tool.decisionId
+    || tool.readinessSnapshotId,
+  );
   const toolErrorMessage = tool.error
     ? (
         tool.error.startsWith('agent.')
@@ -147,7 +228,7 @@ export function ToolCallItem({
     ? 'success'
     : status === 'error' || status === 'denied'
       ? 'error'
-      : status === 'expired'
+      : status === 'expired' || status === 'unknown_side_effect'
         ? 'warning'
       : status === 'cancelled'
         ? 'default'
@@ -160,11 +241,12 @@ export function ToolCallItem({
   return (
     <div
       data-pt-agent-tool-call={tool.id}
+      data-pt-agent-tool-turn={turnId}
       style={{ borderRadius: 6, overflow: 'hidden' }}
     >
       <div
         data-pt-agent-tool-call-toggle
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setExpanded(!visibleExpanded)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -180,11 +262,11 @@ export function ToolCallItem({
         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = token.colorFillQuaternary; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
       >
-        {expanded
+        {visibleExpanded
           ? <ChevronDown size={12} style={{ flexShrink: 0 }} />
           : <ChevronRight size={12} style={{ flexShrink: 0 }} />
         }
-        {approvalRequired
+        {approvalRequired || unknownSideEffect
           ? <AlertTriangle size={12} style={{ color: token.colorWarning, flexShrink: 0 }} />
           : denied
             ? <XCircle size={12} style={{ color: token.colorError, flexShrink: 0 }} />
@@ -196,7 +278,7 @@ export function ToolCallItem({
         <Tag bordered={false} color={statusColor} style={{ margin: 0, fontSize: 11 }}>
           {t(`chat.message.toolCall.status.${status}`)}
         </Tag>
-        {tool.args && !expanded && (
+        {tool.args && !visibleExpanded && (
           <span style={{ color: token.colorTextQuaternary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
             {tool.args.length > 60 ? tool.args.slice(0, 60) + '…' : tool.args}
           </span>
@@ -216,7 +298,7 @@ export function ToolCallItem({
           </span>
         )}
       </div>
-      {expanded && (
+      {visibleExpanded && (
         <div style={{
           padding: '4px 8px 8px 26px',
           fontSize: 12,
@@ -244,6 +326,81 @@ export function ToolCallItem({
               <span>{tool.serverName}</span>
             </div>
           )}
+          {governanceVisible && (
+            <Flexbox
+              data-pt-agent-tool-governance={tool.id}
+              gap={4}
+              style={{
+                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                marginBottom: 8,
+                marginTop: 6,
+                paddingTop: 8,
+              }}
+            >
+              {tool.manifestId && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.capability')}
+                  value={`${tool.manifestId} @ ${tool.manifestVersion || '?'}`}
+                />
+              )}
+              {target && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.target')}
+                  value={target}
+                />
+              )}
+              {tool.executionOwner !== undefined && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.authority')}
+                  value={t(
+                    `chat.message.toolCall.executionOwner.${executionOwnerLocaleKey(
+                      tool.executionOwner,
+                    )}`,
+                  )}
+                />
+              )}
+              {manifest?.riskClass && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.risk')}
+                  value={manifest.riskClass}
+                />
+              )}
+              {tool.approvalPolicy && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.policy')}
+                  value={t(
+                    `chat.message.toolCall.policy.${policyLocaleKey(
+                      tool.approvalPolicy,
+                    )}`,
+                  )}
+                />
+              )}
+              {expiresAtLabel && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.expiresAt')}
+                  value={expiresAtLabel}
+                />
+              )}
+              {tool.decisionId && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.decision')}
+                  value={`${tool.decisionId} · r${tool.decisionRevision ?? 0}`}
+                />
+              )}
+              {tool.readinessSnapshotId && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.readiness')}
+                  value={tool.readinessSnapshotId}
+                />
+              )}
+              {tool.source && (
+                <ToolGovernanceRow
+                  label={t('chat.message.toolCall.source')}
+                  value={tool.source}
+                />
+              )}
+            </Flexbox>
+          )}
           {tool.approvalActor && (
             <div style={{ marginBottom: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.approval')}</div>
@@ -261,6 +418,7 @@ export function ToolCallItem({
                 disabled={!canApprove}
                 onClick={(event) => {
                   event.stopPropagation();
+                  setExpanded(true);
                   setSubmittingDecision(true);
                   void submitAgentToolDecision(tool.id, true)
                     .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
@@ -283,6 +441,7 @@ export function ToolCallItem({
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
+                  setExpanded(true);
                   setSubmittingDecision(true);
                   void submitAgentToolDecision(tool.id, false)
                     .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
@@ -409,6 +568,8 @@ function hasActionableToolState(
     ) || (
       status === 'expired'
       && error === 'agent.errors.toolApprovalExpired'
+    ) || (
+      status === 'unknown_side_effect'
     );
   });
 }
@@ -416,10 +577,12 @@ function hasActionableToolState(
 export function ToolCallsBlock({
   toolCalls,
   messageId,
+  turnId,
   onRequestAgain,
 }: {
   toolCalls: ToolCallInfo[];
   messageId?: string;
+  turnId?: string;
   onRequestAgain?: () => Promise<void>;
 }) {
   const projections = useSyncExternalStore(
@@ -430,31 +593,33 @@ export function ToolCallsBlock({
   const projectedToolCalls = toolCalls.map((toolCall) =>
     resolveToolCallProjection(toolCall, projections[toolCall.id]));
   const actionableToolState = hasActionableToolState(projectedToolCalls);
-  const [expanded, setExpanded] = useState(actionableToolState);
+  const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const pendingCount = projectedToolCalls.filter((toolCall) =>
     toolCall.pending).length;
   const doneCount = projectedToolCalls.length - pendingCount;
-
-  useEffect(() => {
-    if (actionableToolState) setExpanded(true);
-  }, [actionableToolState]);
+  const visibleExpanded =
+    expanded || actionableToolState || pendingCount > 0;
 
   const summary = pendingCount > 0
     ? t('chat.message.toolCall.using', { count: toolCalls.length })
     : t('chat.message.toolCall.used', { count: doneCount });
 
   return (
-    <div style={{
-      borderRadius: 8,
-      border: `1px solid ${token.colorBorderSecondary}`,
-      background: token.colorFillQuaternary,
-      marginBottom: 8,
-      overflow: 'hidden',
-    }}>
+    <div
+      data-pt-agent-tool-call-group={turnId}
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        marginBottom: 8,
+        overflow: 'hidden',
+      }}
+    >
       <div
-        onClick={() => setExpanded(!expanded)}
+        data-pt-agent-tool-call-group-toggle
+        onClick={() => setExpanded(!visibleExpanded)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -466,7 +631,7 @@ export function ToolCallsBlock({
           color: token.colorTextSecondary,
         }}
       >
-        {expanded
+        {visibleExpanded
           ? <ChevronDown size={13} style={{ flexShrink: 0 }} />
           : <ChevronRight size={13} style={{ flexShrink: 0 }} />
         }
@@ -476,13 +641,14 @@ export function ToolCallsBlock({
           <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary, marginLeft: 'auto' }} />
         )}
       </div>
-      {expanded && (
+      {visibleExpanded && (
         <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
           {toolCalls.map((tc) => (
             <ToolCallItem
               key={tc.id}
               tool={tc}
               messageId={messageId}
+              turnId={turnId}
               onRequestAgain={onRequestAgain}
             />
           ))}

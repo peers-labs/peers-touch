@@ -29,6 +29,7 @@ import {
   statusAll,
   statusCurrent,
 } from './dev-work.mjs';
+import { parseRuntimeClaims } from './dev-work-schema.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 
@@ -82,6 +83,12 @@ function expectCode(code, operation) {
   });
 }
 
+test('resolves a stable process-start identity for the current platform', () => {
+  const identity = processStartIdentity();
+  assert.equal(typeof identity, 'string');
+  assert.notEqual(identity, '');
+});
+
 test('publishes a closed declaration with owner-only storage', () => {
   const scope = fixture();
   try {
@@ -110,6 +117,92 @@ test('publishes a closed declaration with owner-only storage', () => {
   } finally {
     scope.close();
   }
+});
+
+test('publishes and validates an explicit Plan locator without rewriting legacy declarations', () => {
+  const scope = fixture();
+  try {
+    const planStatus = {
+      planId: 'DWF-PLAN',
+      currentTaskId: 'DWF-T1',
+      workspaceId: 'unused',
+      branch: 'merge-desktop-prototype',
+      expectedHead: '7'.repeat(40),
+    };
+    planStatus.workspaceId = startOrUpdateDeclaration(options(scope)).workspaceId;
+    const legacy = statusCurrent({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      clock: clock(),
+    }).declarations[0];
+    assert.equal(Object.hasOwn(legacy, 'planPath'), false);
+
+    const tracked = startOrUpdateDeclaration(
+      options(scope, {
+        workItemId: 'tracked-task',
+        sessionId: 'tracked-session',
+        sourceClaims: 'exclusive-write:apps/dev',
+        runtimeClaims: '',
+        planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+        taskId: 'DWF-T1',
+        planStatus,
+      }),
+    );
+    assert.deepEqual(
+      {
+        planPath: tracked.planPath,
+        planId: tracked.planId,
+        taskId: tracked.taskId,
+      },
+      {
+        planPath:
+          'docs/architecture/example/execution-plans/test/plan.md',
+        planId: 'DWF-PLAN',
+        taskId: 'DWF-T1',
+      },
+    );
+
+    expectCode('PLAN_LOCATOR_MISMATCH', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workItemId: 'mismatched-task',
+          sessionId: 'mismatched-session',
+          sourceClaims: 'exclusive-write:model',
+          runtimeClaims: '',
+          planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+          taskId: 'DWF-T2',
+          planStatus,
+        }),
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('accepts Relay and database runtime intent without granting leases', () => {
+  assert.deepEqual(
+    parseRuntimeClaims(
+      'shared:relay.connect:relay-1;exclusive:relay.deploy:relay-1;exclusive:database:chat-postgres',
+    ),
+    [
+      {
+        kind: 'database',
+        resourceId: 'chat-postgres',
+        mode: 'exclusive',
+      },
+      {
+        kind: 'relay.connect',
+        resourceId: 'relay-1',
+        mode: 'shared',
+      },
+      {
+        kind: 'relay.deploy',
+        resourceId: 'relay-1',
+        mode: 'exclusive',
+      },
+    ],
+  );
 });
 
 test('rejects source and runtime conflicts but permits shared reads', () => {

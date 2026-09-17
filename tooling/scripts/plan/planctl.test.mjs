@@ -963,11 +963,27 @@ test('planctl validate/current/next/status emit structured JSON through direct a
   const status = parseCliSuccess(invokeCli(['status', ...common]));
   assert.equal(status.ok, true);
   assert.equal(status.plan, fixture.planPath);
+  assert.equal(status.planId, 'DWF-TEST');
   assert.equal(status.status, 'active');
   assert.equal(status.branch, 'merge-desktop-prototype');
   assert.equal(status.workspaceId, WORKSPACE_ID);
   assert.equal(status.initialHead, INITIAL_HEAD);
   assert.equal(status.expectedHead, EXPECTED_HEAD);
+  assert.deepEqual(status.progress, {
+    unit: 'task-closure',
+    completed: 0,
+    total: 2,
+    percentage: 0,
+    currentTaskId: 'task-a',
+    nextProgressBoundary: {
+      taskId: 'task-a',
+      title: 'Task task-a',
+      transition: 'in_progress->done',
+      completedDelta: 1,
+      percentagePointDelta: 50,
+      unlocksTaskIds: ['task-b'],
+    },
+  });
   assert.equal(status.currentTaskId, 'task-a');
   assert.equal(status.currentTaskPath, 'tasks/task-a.md');
   assert.equal(status.currentClosure, 'closure-task-a');

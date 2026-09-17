@@ -22,7 +22,6 @@ import {
   Bot,
   Brain,
   FolderOpen,
-  Cpu,
   Wrench,
   Sparkles,
   Activity,
@@ -74,7 +73,7 @@ import {
   useAgentCapabilityStore,
   type AgentCapabilityState,
 } from '../store/agentCapabilities';
-import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';
+import { AgentCapabilityInventoryPanel } from '../components/agent/AgentCapabilityInventoryPanel';
 import { EVENT, eventBus } from '../kernel/events';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
@@ -518,10 +517,13 @@ interface BoundKnowledgeProjection extends BoundCapabilityProjection {
 interface ProfileCapabilityProjection {
   tools: CapabilitySourceProjection;
   mcp: CapabilitySourceProjection;
+  connectors: CapabilitySourceProjection;
   skills: CapabilitySourceProjection;
   knowledge: CapabilitySourceProjection;
   knowledgeDescriptors: KnowledgeResourceDescriptor[];
+  loadingAgent: boolean;
   pendingMutations: AgentCapabilityState['pendingMutations'];
+  loadAgent: AgentCapabilityState['loadAgent'];
   upsertBinding: AgentCapabilityState['upsertBinding'];
   deleteBinding: AgentCapabilityState['deleteBinding'];
   createKnowledgeDescriptor: AgentCapabilityState['createKnowledgeDescriptor'];
@@ -535,18 +537,21 @@ function createProfileCapabilitySelector(agentId: string) {
   let knowledgeDescriptorsReference: KnowledgeResourceDescriptor[] | undefined;
   let bindingsReference: AgentCapabilityBinding[] | undefined;
   let readinessReference: AgentCapabilityState['readinessByAgentId'][string];
+  let loadingAgentReference: boolean | undefined;
   let pendingMutationsReference: AgentCapabilityState['pendingMutations'] | undefined;
   let projection: ProfileCapabilityProjection | undefined;
 
   return (state: AgentCapabilityState): ProfileCapabilityProjection => {
     const bindings = state.bindingsByAgentId[agentId] ?? EMPTY_CAPABILITY_BINDINGS;
     const readiness = state.readinessByAgentId[agentId];
+    const loadingAgent = Boolean(state.loadingAgentIds[agentId]);
     if (
       projection
       && manifestsReference === state.manifests
       && knowledgeDescriptorsReference === state.knowledgeDescriptors
       && bindingsReference === bindings
       && readinessReference === readiness
+      && loadingAgentReference === loadingAgent
       && pendingMutationsReference === state.pendingMutations
     ) {
       return projection;
@@ -563,6 +568,7 @@ function createProfileCapabilitySelector(agentId: string) {
     knowledgeDescriptorsReference = state.knowledgeDescriptors;
     bindingsReference = bindings;
     readinessReference = readiness;
+    loadingAgentReference = loadingAgent;
     pendingMutationsReference = state.pendingMutations;
     projection = {
       tools: {
@@ -571,10 +577,13 @@ function createProfileCapabilitySelector(agentId: string) {
         readiness: [...builtinTools.readiness, ...clientTools.readiness],
       },
       mcp: source(CapabilitySourceKind.MCP),
+      connectors: source(CapabilitySourceKind.CONNECTOR),
       skills: source(CapabilitySourceKind.SKILL),
       knowledge: source(CapabilitySourceKind.KNOWLEDGE),
       knowledgeDescriptors: selectKnowledgeResourceDescriptors(state),
+      loadingAgent,
       pendingMutations: state.pendingMutations,
+      loadAgent: state.loadAgent,
       upsertBinding: state.upsertBinding,
       deleteBinding: state.deleteBinding,
       createKnowledgeDescriptor: state.createKnowledgeDescriptor,
@@ -582,10 +591,6 @@ function createProfileCapabilitySelector(agentId: string) {
     };
     return projection;
   };
-}
-
-function capabilityManifestKey(capabilityId: string, version: string): string {
-  return `${capabilityId}\u0000${version}`;
 }
 
 function enabledCapabilityBindings(
@@ -747,35 +752,6 @@ export async function removeOwnedKnowledgeResource(
   ));
 }
 
-function capabilityLabel(manifest: CapabilityManifest): string {
-  return (
-    manifest.displayMetadata?.name.trim()
-    || manifest.sourceInstanceId.trim()
-    || manifest.capabilityId
-  );
-}
-
-function CapabilityReadinessTag({
-  readiness,
-}: {
-  readiness?: CapabilityReadiness;
-}) {
-  const { t } = useTranslation('agent');
-  const state = readiness?.state ?? CapabilityReadinessState.UNKNOWN;
-  if (state === CapabilityReadinessState.READY) {
-    return <Tag color="success" style={{ margin: 0 }}>{t('agent.profile.enabled')}</Tag>;
-  }
-  if (state === CapabilityReadinessState.DEGRADED) {
-    return <Tag color="warning" style={{ margin: 0 }}>{t('agent.profile.degradation.partial')}</Tag>;
-  }
-  if (
-    state === CapabilityReadinessState.UNAVAILABLE
-    || state === CapabilityReadinessState.BLOCKED
-  ) {
-    return <Tag color="error" style={{ margin: 0 }}>{t('agent.profile.degradation.unavailable')}</Tag>;
-  }
-  return <Tag style={{ margin: 0 }}>{t('agent.profile.unknown')}</Tag>;
-}
 
 function knowledgeResourceKindKey(
   kind: KnowledgeResourceKind,
@@ -1322,24 +1298,6 @@ export function AgentProfilePage({
     [agent?.id],
   );
   const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
-  const enabledSkillBindings = useMemo(
-    () => enabledCapabilityBindings(capabilityProjection.skills.bindings),
-    [capabilityProjection.skills.bindings],
-  );
-  const skillOptions = useMemo(
-    () => capabilityProjection.skills.manifests
-      .filter((manifest) => !manifest.retiredAt)
-      .map((manifest) => ({
-        value: capabilityManifestKey(manifest.capabilityId, manifest.version),
-        label: capabilityLabel(manifest),
-      })),
-    [capabilityProjection.skills.manifests],
-  );
-  const selectedSkillManifestKeys = useMemo(
-    () => enabledSkillBindings.map((binding) =>
-      capabilityManifestKey(binding.capabilityId, binding.capabilityVersion)),
-    [enabledSkillBindings],
-  );
   const filteredProfileAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
     if (!query) return agents;
@@ -1694,63 +1652,6 @@ export function AgentProfilePage({
     }
   }, [createAgent, t]);
 
-  const handleBoundSkillsChange = useCallback(
-    async (values: string[]) => {
-      if (!agent) return;
-      const selectedKeys = new Set(values);
-      const currentKeys = new Set(selectedSkillManifestKeys);
-      const additions = capabilityProjection.skills.manifests.filter((manifest) =>
-        selectedKeys.has(capabilityManifestKey(manifest.capabilityId, manifest.version))
-        && !currentKeys.has(capabilityManifestKey(manifest.capabilityId, manifest.version)));
-      const removals = enabledSkillBindings.filter((binding) =>
-        !selectedKeys.has(capabilityManifestKey(
-          binding.capabilityId,
-          binding.capabilityVersion,
-        )));
-      try {
-        await Promise.all([
-          ...additions.map((manifest) => {
-            const existingBinding = capabilityProjection.skills.bindings.find(
-              (binding) =>
-                binding.capabilityId === manifest.capabilityId
-                && binding.capabilityVersion === manifest.version
-                && !binding.tombstonedAt,
-            );
-            return capabilityProjection.upsertBinding({
-              bindingId: existingBinding?.bindingId,
-              agentId: agent.id,
-              capabilityId: manifest.capabilityId,
-              capabilityVersion: manifest.version,
-              enabled: true,
-              approvalPolicy: manifest.defaultApprovalPolicy,
-              expectedAgentVersion: agent.version,
-              expectedBindingRevision: existingBinding?.revision ?? 0n,
-              idempotencyKey: crypto.randomUUID(),
-            });
-          }),
-          ...removals.map((binding) => capabilityProjection.deleteBinding({
-            agentId: agent.id,
-            bindingId: binding.bindingId,
-            expectedBindingRevision: binding.revision,
-            idempotencyKey: crypto.randomUUID(),
-            reason: 'agent_profile_skill_unbound',
-          })),
-        ]);
-        antMessage.success(t('agent.profile.skills.boundUpdated'));
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-        antMessage.error(message);
-      }
-    },
-    [
-      agent,
-      capabilityProjection,
-      enabledSkillBindings,
-      selectedSkillManifestKeys,
-      t,
-    ],
-  );
-
   const knowledgeCapabilityProjections = useMemo(
     () => boundKnowledgeProjections(
       capabilityProjection.knowledge,
@@ -2001,15 +1902,21 @@ export function AgentProfilePage({
   const workspaceRoot = chatConfig.workspace?.root?.trim();
   const boundTools = boundCapabilityProjections(capabilityProjection.tools);
   const boundMcpServers = boundCapabilityProjections(capabilityProjection.mcp);
+  const boundConnectors = boundCapabilityProjections(capabilityProjection.connectors);
   const boundSkills = boundCapabilityProjections(capabilityProjection.skills);
-  const boundCapabilities = [...boundTools, ...boundMcpServers, ...boundSkills];
+  const boundKnowledge = boundCapabilityProjections(capabilityProjection.knowledge);
+  const boundCapabilities = [
+    ...boundTools,
+    ...boundMcpServers,
+    ...boundConnectors,
+    ...boundSkills,
+    ...boundKnowledge,
+  ];
   const capabilityBindingsReady =
     boundCapabilities.length > 0
     && boundCapabilities.every(
       ({ readiness }) => readiness?.state === CapabilityReadinessState.READY,
     );
-  const capabilityMutationPending =
-    Object.keys(capabilityProjection.pendingMutations).length > 0;
   const activityCurrentSession = activitySessions.find((session) => session.key === activityCurrentSessionKey);
   const isCurrentAgentActivitySession =
     activityCurrentSession?.agent_name === agent.name || activityCurrentSession?.agent_name === agent.id;
@@ -2056,6 +1963,7 @@ export function AgentProfilePage({
         tools: boundTools.length,
         skills: boundSkills.length,
         mcp: boundMcpServers.length,
+        connectors: boundConnectors.length,
         knowledge: knowledgeCapabilityProjections.length,
       }),
       ready: capabilityBindingsReady,
@@ -2094,6 +2002,7 @@ export function AgentProfilePage({
     bindings: {
       tools: boundTools.map(({ manifest }) => manifest.sourceInstanceId),
       mcp_servers: boundMcpServers.map(({ manifest }) => manifest.sourceInstanceId),
+      connectors: boundConnectors.map(({ manifest }) => manifest.sourceInstanceId),
       skills: boundSkills.map(({ manifest }) => manifest.sourceInstanceId),
     },
   };
@@ -2776,52 +2685,8 @@ export function AgentProfilePage({
                   }}
                 >
                   <ProfileCard
-                    title={t('agent.profile.section.skillPackages')}
-                    description={t('agent.profile.section.skillPackagesDesc')}
-                  >
-                    <Flexbox gap={8} style={{ minHeight: 0 }}>
-                      <Select
-                        mode="multiple"
-                        value={selectedSkillManifestKeys}
-                        onChange={handleBoundSkillsChange}
-                        options={skillOptions}
-                        disabled={capabilityMutationPending}
-                        loading={capabilityMutationPending}
-                        placeholder={t('agent.profile.skills.bindPlaceholder')}
-                        optionFilterProp="label"
-                        style={{ width: '100%' }}
-                      />
-                      {boundSkills.length === 0 ? (
-                        <Empty description={t('agent.profile.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                      ) : (
-                        <Flexbox gap={6} style={{ overflow: 'auto', paddingRight: 2 }}>
-                          {boundSkills.map(({ binding, manifest, readiness }) => (
-                            <Flexbox
-                              key={binding.bindingId}
-                              horizontal
-                              align="center"
-                              gap={10}
-                              style={{
-                                minHeight: 40,
-                                padding: '7px 10px',
-                                borderRadius: 12,
-                                border: `1px solid ${token.colorBorderSecondary}`,
-                                background: token.colorBgContainer,
-                              }}
-                            >
-                              <span style={{ width: 26, height: 26, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: token.colorPrimaryBg, color: token.colorPrimary, fontWeight: 800 }}>#</span>
-                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
-                              <CapabilityReadinessTag readiness={readiness} />
-                            </Flexbox>
-                          ))}
-                        </Flexbox>
-                      )}
-                    </Flexbox>
-                  </ProfileCard>
-
-                  <ProfileCard
-                    title={t('agent.profile.section.toolsAndMcp')}
-                    description={t('agent.profile.section.toolsAndMcpDesc')}
+                    title={t('agent.profile.section.capabilities')}
+                    description={t('agent.profile.section.capabilitiesDesc')}
                     action={(
                       <Button
                         size="small"
@@ -2833,51 +2698,36 @@ export function AgentProfilePage({
                       />
                     )}
                   >
-                    <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
-                      {boundTools.length === 0 && boundMcpServers.length === 0 ? (
-                        <Empty description={t('agent.profile.mcpEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                      ) : null}
-                      {boundTools.map(({ binding, manifest, readiness }) => (
-                        <Flexbox
-                          key={binding.bindingId}
-                          horizontal
-                          align="center"
-                          gap={10}
-                          style={{
-                            minHeight: 38,
-                            padding: '7px 10px',
-                            borderRadius: 12,
-                            border: `1px solid ${token.colorBorderSecondary}`,
-                            background: token.colorBgContainer,
-                          }}
-                        >
-                          <Wrench size={15} color={token.colorTextTertiary} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
-                          <Tag style={{ margin: 0 }}>{t('agent.profile.tag.tool')}</Tag>
-                          <CapabilityReadinessTag readiness={readiness} />
-                        </Flexbox>
-                      ))}
-                      {boundMcpServers.map(({ binding, manifest, readiness }) => (
-                        <Flexbox
-                          key={binding.bindingId}
-                          horizontal
-                          align="center"
-                          gap={10}
-                          style={{
-                            minHeight: 38,
-                            padding: '7px 10px',
-                            borderRadius: 12,
-                            border: `1px solid ${token.colorBorderSecondary}`,
-                            background: token.colorBgContainer,
-                          }}
-                        >
-                          <Cpu size={15} color={token.colorTextTertiary} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{capabilityLabel(manifest)}</span>
-                          <Tag style={{ margin: 0 }}>{t('agent.profile.tag.mcp')}</Tag>
-                          <CapabilityReadinessTag readiness={readiness} />
-                        </Flexbox>
-                      ))}
-                    </Flexbox>
+                    <AgentCapabilityInventoryPanel
+                      agentId={agent.id}
+                      agentVersion={agent.version}
+                      manifests={[
+                        ...capabilityProjection.tools.manifests,
+                        ...capabilityProjection.mcp.manifests,
+                        ...capabilityProjection.connectors.manifests,
+                        ...capabilityProjection.skills.manifests,
+                        ...capabilityProjection.knowledge.manifests,
+                      ]}
+                      bindings={[
+                        ...capabilityProjection.tools.bindings,
+                        ...capabilityProjection.mcp.bindings,
+                        ...capabilityProjection.connectors.bindings,
+                        ...capabilityProjection.skills.bindings,
+                        ...capabilityProjection.knowledge.bindings,
+                      ]}
+                      readiness={[
+                        ...capabilityProjection.tools.readiness,
+                        ...capabilityProjection.mcp.readiness,
+                        ...capabilityProjection.connectors.readiness,
+                        ...capabilityProjection.skills.readiness,
+                        ...capabilityProjection.knowledge.readiness,
+                      ]}
+                      pendingMutations={capabilityProjection.pendingMutations}
+                      loading={capabilityProjection.loadingAgent}
+                      loadAgent={capabilityProjection.loadAgent}
+                      upsertBinding={capabilityProjection.upsertBinding}
+                      deleteBinding={capabilityProjection.deleteBinding}
+                    />
                   </ProfileCard>
 
                   <ProfileCard
@@ -3040,15 +2890,6 @@ export function AgentProfilePage({
                     </Flexbox>
                   </ProfileCard>
 
-                  <ProfileCard
-                    title={t('agent.connectors.title')}
-                    description={t('agent.connectors.description')}
-                  >
-                    <AgentConnectorsPanel
-                      agentId={agent.id}
-                      onNavigateToSettings={() => setSettingsOpen(true)}
-                    />
-                  </ProfileCard>
                 </div>
               )}
 

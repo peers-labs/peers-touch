@@ -13,69 +13,83 @@ import (
 type Code string
 
 const (
-	AgentInvalidRequest                Code = "AGENT_4001"
-	AgentUnauthorized                  Code = "AGENT_4002"
-	AgentNotFound                      Code = "AGENT_4004"
-	AgentVersionConflict               Code = "AGENT_4009"
-	AgentIdempotencyConflict           Code = "IDEMPOTENCY_CONFLICT"
-	AgentInvalidSourceState            Code = "INVALID_SOURCE_STATE"
-	AgentActiveDependency              Code = "ACTIVE_DEPENDENCY"
-	AgentOwnershipForbiddenActor       Code = "OWNERSHIP_FORBIDDEN_ACTOR"
-	AgentQueueFull                     Code = "ADMISSION_QUEUE_FULL"
-	AgentAttachmentRejected            Code = "CONTEXT_ATTACHMENT_REJECTED"
-	AgentRuntimeUnavailable            Code = "RUNTIME_UNAVAILABLE"
-	AgentRuntimeIncompatibleCapability Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
-	AgentToolUnknown                   Code = "TOOL_UNKNOWN"
-	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
-	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
-	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
-	AgentClientLeaseExpired            Code = "CLIENT_LEASE_EXPIRED"
-	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
-	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
-	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
-	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
-	AgentLifecycleStaleVersion         Code = "LIFECYCLE_STALE_VERSION"
-	AgentLifecycleTerminalMutation     Code = "LIFECYCLE_TERMINAL_MUTATION"
-	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
-	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
-	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
-	AgentProviderTimeout               Code = "PROVIDER_TIMEOUT"
-	AgentProviderFailed                Code = "AGENT_5001"
-	AgentCompressionFailed             Code = "AGENT_5002"
-	AgentDelegationFailed              Code = "AGENT_5003"
-	AgentCredentialFailed              Code = "AGENT_5004"
-	AgentProviderDisabled              Code = "AGENT_5005"
-	AgentSecurityViolation             Code = "AGENT_4003"
-	AgentInternal                      Code = "AGENT_5000"
+	AgentInvalidRequest                 Code = "AGENT_4001"
+	AgentUnauthorized                   Code = "AGENT_4002"
+	AgentNotFound                       Code = "AGENT_4004"
+	AgentVersionConflict                Code = "AGENT_4009"
+	AgentIdempotencyConflict            Code = "IDEMPOTENCY_CONFLICT"
+	AgentInvalidSourceState             Code = "INVALID_SOURCE_STATE"
+	AgentActiveDependency               Code = "ACTIVE_DEPENDENCY"
+	AgentOwnershipForbiddenActor        Code = "OWNERSHIP_FORBIDDEN_ACTOR"
+	AgentQueueFull                      Code = "ADMISSION_QUEUE_FULL"
+	AgentAttachmentRejected             Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentRuntimeUnavailable             Code = "RUNTIME_UNAVAILABLE"
+	AgentRuntimeIncompatibleCapability  Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
+	AgentToolUnknown                    Code = "TOOL_UNKNOWN"
+	AgentToolApprovalDenied             Code = "TOOL_APPROVAL_DENIED"
+	AgentToolApprovalExpired            Code = "TOOL_APPROVAL_EXPIRED"
+	AgentClientExecutorUnavailable      Code = "CLIENT_EXECUTOR_UNAVAILABLE"
+	AgentClientLeaseExpired             Code = "CLIENT_LEASE_EXPIRED"
+	AgentToolBudgetExhausted            Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentContextOverflow                Code = "CONTEXT_OVERFLOW"
+	AgentContextInvalidReference        Code = "CONTEXT_INVALID_REFERENCE"
+	AgentLifecycleCancelled             Code = "LIFECYCLE_CANCELLED"
+	AgentLifecycleInterrupted           Code = "LIFECYCLE_INTERRUPTED"
+	AgentLifecycleStaleVersion          Code = "LIFECYCLE_STALE_VERSION"
+	AgentLifecycleTerminalMutation      Code = "LIFECYCLE_TERMINAL_MUTATION"
+	AgentProviderCredentialMissing      Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderRateLimit              Code = "PROVIDER_RATE_LIMIT"
+	AgentProviderModelUnavailable       Code = "PROVIDER_MODEL_UNAVAILABLE"
+	AgentProviderTimeout                Code = "PROVIDER_TIMEOUT"
+	AgentConnectorOAuthExpired          Code = "CONNECTOR_OAUTH_EXPIRED"
+	AgentConnectorScopeDenied           Code = "CONNECTOR_SCOPE_DENIED"
+	AgentConnectorResourceRemoved       Code = "CONNECTOR_RESOURCE_REMOVED"
+	AgentConnectorManifestStale         Code = "CONNECTOR_MANIFEST_STALE"
+	AgentConnectorDisconnected          Code = "CONNECTOR_DISCONNECTED"
+	AgentConnectorProviderRevoked       Code = "CONNECTOR_PROVIDER_REVOKED"
+	AgentConnectorRevocationUnconfirmed Code = "CONNECTOR_REVOCATION_UNCONFIRMED"
+	AgentProviderFailed                 Code = "AGENT_5001"
+	AgentCompressionFailed              Code = "AGENT_5002"
+	AgentDelegationFailed               Code = "AGENT_5003"
+	AgentCredentialFailed               Code = "AGENT_5004"
+	AgentProviderDisabled               Code = "AGENT_5005"
+	AgentSecurityViolation              Code = "AGENT_4003"
+	AgentInternal                       Code = "AGENT_5000"
 
 	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
-	AgentAdmissionDuplicateConflictLocaleKey    = "agent.errors.duplicateConflict"
-	AgentCanvasSingleAgentNotReadyLocaleKey     = "agent.errors.canvasSingleAgentNotReady"
-	AgentCanvasSingleAgentNotReadyRequiredGate  = "agent-v2-kernel-foundation-e2e"
-	AgentQueueFullLocaleKey                     = "agent.errors.queueFull"
-	AgentOwnershipForbiddenActorLocaleKey       = "agent.errors.forbiddenActor"
-	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
-	AgentRuntimeUnavailableLocaleKey            = "agent.errors.runtimeUnavailable"
-	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
-	AgentToolUnknownLocaleKey                   = "agent.errors.toolUnknown"
-	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
-	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
-	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
-	AgentClientLeaseExpiredLocaleKey            = "agent.errors.clientLeaseExpired"
-	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
-	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
-	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
-	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
-	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
-	AgentLifecycleStaleVersionLocaleKey         = "agent.errors.lifecycleStaleVersion"
-	AgentLifecycleTerminalMutationLocaleKey     = "agent.errors.lifecycleTerminalMutation"
-	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
-	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
-	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
-	AgentProviderTimeoutLocaleKey               = "agent.errors.providerTimeout"
+	AgentAdmissionDuplicateConflictLocaleKey     = "agent.errors.duplicateConflict"
+	AgentCanvasSingleAgentNotReadyLocaleKey      = "agent.errors.canvasSingleAgentNotReady"
+	AgentCanvasSingleAgentNotReadyRequiredGate   = "agent-v2-kernel-foundation-e2e"
+	AgentQueueFullLocaleKey                      = "agent.errors.queueFull"
+	AgentOwnershipForbiddenActorLocaleKey        = "agent.errors.forbiddenActor"
+	AgentAttachmentRejectedLocaleKey             = "agent.errors.attachmentRejected"
+	AgentRuntimeUnavailableLocaleKey             = "agent.errors.runtimeUnavailable"
+	AgentRuntimeIncompatibleCapabilityLocaleKey  = "agent.errors.incompatibleCapability"
+	AgentToolUnknownLocaleKey                    = "agent.errors.toolUnknown"
+	AgentToolApprovalDeniedLocaleKey             = "agent.errors.toolApprovalDenied"
+	AgentToolApprovalExpiredLocaleKey            = "agent.errors.toolApprovalExpired"
+	AgentClientExecutorUnavailableLocaleKey      = "agent.errors.executorUnavailable"
+	AgentClientLeaseExpiredLocaleKey             = "agent.errors.clientLeaseExpired"
+	AgentToolBudgetExhaustedLocaleKey            = "agent.errors.toolLoopBudgetExhausted"
+	AgentContextOverflowLocaleKey                = "agent.errors.contextOverflow"
+	AgentContextInvalidReferenceLocaleKey        = "agent.errors.contextInvalidReference"
+	AgentLifecycleCancelledLocaleKey             = "agent.errors.lifecycleCancelled"
+	AgentLifecycleInterruptedLocaleKey           = "agent.errors.lifecycleInterrupted"
+	AgentLifecycleStaleVersionLocaleKey          = "agent.errors.lifecycleStaleVersion"
+	AgentLifecycleTerminalMutationLocaleKey      = "agent.errors.lifecycleTerminalMutation"
+	AgentProviderCredentialMissingLocaleKey      = "agent.errors.providerCredentialMissing"
+	AgentProviderRateLimitLocaleKey              = "agent.errors.providerRateLimit"
+	AgentProviderModelUnavailableLocaleKey       = "agent.errors.providerModelUnavailable"
+	AgentProviderTimeoutLocaleKey                = "agent.errors.providerTimeout"
+	AgentConnectorOAuthExpiredLocaleKey          = "agent.errors.connectorOAuthExpired"
+	AgentConnectorScopeDeniedLocaleKey           = "agent.errors.connectorScopeDenied"
+	AgentConnectorResourceRemovedLocaleKey       = "agent.errors.connectorResourceRemoved"
+	AgentConnectorManifestStaleLocaleKey         = "agent.errors.connectorManifestStale"
+	AgentConnectorDisconnectedLocaleKey          = "agent.errors.connectorDisconnected"
+	AgentConnectorProviderRevokedLocaleKey       = "agent.errors.connectorProviderRevoked"
+	AgentConnectorRevocationUnconfirmedLocaleKey = "agent.errors.connectorRevocationUnconfirmed"
 )
 
 const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
@@ -339,6 +353,50 @@ func NewClientExecutorUnavailablePayload(targetDeviceID, capabilityID string) *m
 		Details: map[string]string{
 			"target_device_id": targetDeviceID,
 			"capability_id":    capabilityID,
+		},
+	}
+}
+
+func NewConnectorUnavailablePayload(
+	status model.ConnectorResourceStatus,
+	connectorID string,
+	resourceID string,
+	connectionRevision uint64,
+) *model.ErrorPayload {
+	code := AgentConnectorManifestStale
+	localeKey := AgentConnectorManifestStaleLocaleKey
+	retryable := true
+	switch status {
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_EXPIRED:
+		code = AgentConnectorOAuthExpired
+		localeKey = AgentConnectorOAuthExpiredLocaleKey
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_SCOPE_DENIED:
+		code = AgentConnectorScopeDenied
+		localeKey = AgentConnectorScopeDeniedLocaleKey
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_REMOVED:
+		code = AgentConnectorResourceRemoved
+		localeKey = AgentConnectorResourceRemovedLocaleKey
+		retryable = false
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_DISCONNECTED:
+		code = AgentConnectorDisconnected
+		localeKey = AgentConnectorDisconnectedLocaleKey
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_REVOKED:
+		code = AgentConnectorProviderRevoked
+		localeKey = AgentConnectorProviderRevokedLocaleKey
+	case model.ConnectorResourceStatus_CONNECTOR_RESOURCE_STATUS_REVOCATION_UNCONFIRMED:
+		code = AgentConnectorRevocationUnconfirmed
+		localeKey = AgentConnectorRevocationUnconfirmedLocaleKey
+	}
+	return &model.ErrorPayload{
+		Error:     localeKey,
+		ErrorType: string(code),
+		LocaleKey: localeKey,
+		Retryable: retryable,
+		Terminal:  true,
+		Details: map[string]string{
+			"connector_id":        connectorID,
+			"resource_id":         resourceID,
+			"connection_revision": strconv.FormatUint(connectionRevision, 10),
 		},
 	}
 }

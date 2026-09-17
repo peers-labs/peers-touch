@@ -466,7 +466,7 @@ fn required_resource_kind(capability_id: &str) -> Option<&'static str> {
     match capability_id {
         "filesystem.read" => Some("file"),
         "filesystem.list" => Some("folder"),
-        "shell.execute" | "mcp.invoke" => Some("workspace"),
+        "shell.execute" => Some("workspace"),
         _ => None,
     }
 }

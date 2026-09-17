@@ -15,7 +15,9 @@ use crate::model::agent::{
     ReportCapabilityOperationEventResponse, RevokeClientCapabilityLeaseRequest,
     RevokeClientCapabilityLeaseResponse, SubmitClientCapabilityReceiptRequest,
     SubmitClientCapabilityReceiptResponse, SubmitClientCapabilityRecoveryReceiptRequest,
-    SubmitClientCapabilityRecoveryReceiptResponse,
+    SubmitClientCapabilityRecoveryReceiptResponse, TakeOverCapabilityCleanupRequest,
+    TakeOverCapabilityCleanupResponse, TakeOverCapabilityOperationRequest,
+    TakeOverCapabilityOperationResponse,
 };
 use prost::Message;
 use rand::RngCore;
@@ -32,6 +34,9 @@ const RECOVERY_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt/recover
 const OPERATION_PULL_PATH: &str = "/sub-agent/agent/capability/operation/pull";
 const OPERATION_EVENT_PATH: &str = "/sub-agent/agent/capability/operation/event";
 const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
+const OPERATION_TAKEOVER_PATH: &str = "/sub-agent/agent/capability/operation/takeover";
+const OPERATION_CLEANUP_TAKEOVER_PATH: &str =
+    "/sub-agent/agent/capability/operation/cleanup/takeover";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapabilityNegativeControl {
@@ -290,6 +295,46 @@ impl<'a> CapabilityStationTransport<'a> {
             return Err("Station returned an untargeted capability operation".to_string());
         }
         Ok(response)
+    }
+
+    pub fn take_over_operation(
+        &self,
+        mut request: TakeOverCapabilityOperationRequest,
+    ) -> Result<TakeOverCapabilityOperationResponse, String> {
+        request.command_proof = Some(self.sign_command(
+            ClientCapabilityCommandDomain::TakeOverOperation,
+            &request_without_operation_takeover_proof(&request),
+        )?);
+        station_client::request_proto_for_device_at(
+            self.station_url,
+            Method::POST,
+            OPERATION_TAKEOVER_PATH,
+            self.token,
+            None,
+            Some(&request),
+            self.device_id,
+        )
+        .map_err(|error| format!("take over Station capability operation: {error}"))
+    }
+
+    pub fn take_over_cleanup(
+        &self,
+        mut request: TakeOverCapabilityCleanupRequest,
+    ) -> Result<TakeOverCapabilityCleanupResponse, String> {
+        request.command_proof = Some(self.sign_command(
+            ClientCapabilityCommandDomain::TakeOverCleanup,
+            &request_without_operation_cleanup_takeover_proof(&request),
+        )?);
+        station_client::request_proto_for_device_at(
+            self.station_url,
+            Method::POST,
+            OPERATION_CLEANUP_TAKEOVER_PATH,
+            self.token,
+            None,
+            Some(&request),
+            self.device_id,
+        )
+        .map_err(|error| format!("take over Station capability cleanup: {error}"))
     }
 
     pub fn emit_negative_control(
@@ -609,6 +654,22 @@ fn request_without_operation_pull_proof(
 fn request_without_operation_event_proof(
     request: &ReportCapabilityOperationEventRequest,
 ) -> ReportCapabilityOperationEventRequest {
+    let mut canonical = request.clone();
+    canonical.command_proof = None;
+    canonical
+}
+
+fn request_without_operation_takeover_proof(
+    request: &TakeOverCapabilityOperationRequest,
+) -> TakeOverCapabilityOperationRequest {
+    let mut canonical = request.clone();
+    canonical.command_proof = None;
+    canonical
+}
+
+fn request_without_operation_cleanup_takeover_proof(
+    request: &TakeOverCapabilityCleanupRequest,
+) -> TakeOverCapabilityCleanupRequest {
     let mut canonical = request.clone();
     canonical.command_proof = None;
     canonical

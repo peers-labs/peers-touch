@@ -95,6 +95,7 @@ def resolve_machine_profile_environment(
         resolved = json.loads(completed.stdout)
         binding = resolved["binding"]
         profile = resolved["profile"]
+        ports = resolved["ports"]
         profile_name = binding["profile"]
         slot = binding["slot"]
         profile_file = Path(profile["profileFile"]).resolve(strict=True)
@@ -122,6 +123,14 @@ def resolve_machine_profile_environment(
             reason="Machine Dev profile binding has invalid identity or slot",
             resource="profile:machine-control-plane",
         )
+    if (
+        resolved.get("authority") != "machine-control-plane"
+        or profile.get("sourceState") != "tracked-clean"
+    ):
+        raise BlockedError(
+            reason="Machine Dev profile binding is not authoritative",
+            resource="profile:machine-control-plane",
+        )
     declared_profile = values.get("PT_DEV_PROFILE", "")
     if require_identity_match and declared_profile != profile_name:
         raise BlockedError(
@@ -131,6 +140,25 @@ def resolve_machine_profile_environment(
             ),
             resource=f"profile:identity:{profile_name}",
         )
+    port_fields = {
+        "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
+        "desktopAppWeb": "PT_DESKTOP_APP_WEB_PORT",
+        "desktopWebGateway": "PT_DESKTOP_WEB_GATEWAY_PORT",
+        "desktopWebWeb": "PT_DESKTOP_WEB_WEB_PORT",
+        "mobileWeb": "PT_MOBILE_WEB_PORT",
+    }
+    values["PT_DEV_SLOT"] = str(slot)
+    for machine_field, environment_field in port_fields.items():
+        port = ports.get(machine_field)
+        if not isinstance(port, int) or isinstance(port, bool) or port <= 0:
+            raise BlockedError(
+                reason=(
+                    "Machine Dev profile binding has an invalid "
+                    f"{machine_field} port"
+                ),
+                resource="profile:machine-control-plane",
+            )
+        values[environment_field] = str(port)
     return profile_name, profile_file, slot, values
 
 

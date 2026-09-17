@@ -778,6 +778,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             <ToolCallsBlock
               toolCalls={message.toolCalls}
               messageId={message.id}
+              turnId={message.turnId}
               onRequestAgain={handleRetry}
             />
           )}

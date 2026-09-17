@@ -17,6 +17,20 @@ include this title or explanatory text in the generated Goal.
 - Completion boundary: <what this Goal may complete without crossing a stage gate>
 - Hard cut point: <product, architecture, authorization, ownership, worktree, or external-resource boundary>
 
+## Progress Contract
+
+- Unit: `task-closure`
+- Baseline: <completed>/<total> Task closures (<percentage>%)
+- Target Task: <current Task ID and title>
+- Required transition: `in_progress -> done`
+- Expected delta: <completed/total -> completed+1/total; percentage-point delta>
+- Unlock effect: <Task IDs newly dependency-ready after completion>
+- Reporting boundary: do not emit a successful handoff after setup,
+  authorization, diagnosis, checkpoint, deploy, or an individual check; keep
+  executing until the target Task closes.
+- Zero-delta rule: only a source-backed hard boundary after complete frontier
+  exhaustion may end the Slice without progress.
+
 ## Worktree Binding
 
 - Canonical runtime worktree root: `<materialized-canonical-absolute-path>`
@@ -96,9 +110,9 @@ dependencies here.>
 
 ### Initial Ready Queue
 
-| Action | Source task | Dependencies | Owner/write set | Required evidence |
+| Action | Progress role | Dependencies | Owner/write set | Required evidence |
 |---|---|---|---|---|
-| <action> | <plan/checkpoint ID> | <complete prerequisites> | <owner> | <gate/check> |
+| <action> | <supports closure or closes Task> | <complete prerequisites> | <owner> | <gate/check> |
 
 ### Initial In Progress
 
@@ -145,7 +159,9 @@ dependencies here.>
    action never blocks unrelated ready work.
 7. The workflow persists plan, Session, `active_work`, and evidence through
    their owners; the Goal does not write them.
-8. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
+8. Do not report Slice success until the target Task is `done` and the
+   Progress Contract delta is visible in `planctl status`.
+9. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
    diagnostic or remediation remains, every remaining action is hard-blocked,
    and the repeated-blocker lifecycle threshold is satisfied.
 
@@ -202,7 +218,7 @@ dependencies here.>
 
 ## Slice Completion
 
-- Complete when:
+- Complete when: <the target Task is done and the declared progress delta is visible>
 - Remains unproven:
 - Parked at completion:
 - Exhaustion proof, when blocked:
@@ -212,8 +228,9 @@ dependencies here.>
 
 - Durable source update by `pt-dev-workflow`:
 - `active_work` update by its owner, when tracked:
-- Context Anchor, when tracked: include completed delta, ready queue, execution
-  mode and lanes, conflict controls, critical path, and evidence-backed ETA or
+- Context Anchor, when tracked: include the Progress Slice baseline, completed
+  delta, expected progress effect, remaining frontier, execution mode and
+  lanes, conflict controls, critical path, and evidence-backed ETA or
   `unknown`.
-- Next action: continue the Ready Queue; use `NEXT` only after this Goal reaches
-  its completion, stage, or hard-boundary cut.
+- Next Progress Slice: use `NEXT` only after this Goal reaches its Task-closing
+  completion or a source-backed hard-boundary cut.

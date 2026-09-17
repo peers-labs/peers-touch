@@ -6,14 +6,29 @@ import {
   CapabilityApprovalPolicy,
   CapabilityManifestSchema,
   CapabilitySourceKind,
+  ConnectorResourceManifestSchema,
+  ConnectorResourceStatus,
 } from '../gen/proto/domain/agent/capability_pb';
 
 const connectorManifest = create(CapabilityManifestSchema, {
   capabilityId: 'connector.search',
   version: '2',
   sourceKind: CapabilitySourceKind.CONNECTOR,
-  sourceInstanceId: 'search-provider',
+  sourceInstanceId: 'connector_resource_1234567890abcdef12345678',
   defaultApprovalPolicy: CapabilityApprovalPolicy.MANUAL,
+});
+
+const connectorResource = create(ConnectorResourceManifestSchema, {
+  connectorId: 'search-provider',
+  oauthConnectionId: 'oauth-connection-1',
+  connectionRevision: 2n,
+  resourceId: 'connection.status',
+  resourceVersion: 'connection-status',
+  status: ConnectorResourceStatus.READY,
+  toolManifests: [{
+    capabilityId: connectorManifest.capabilityId,
+    capabilityVersion: connectorManifest.version,
+  }],
 });
 
 const connectorBinding = create(AgentCapabilityBindingSchema, {
@@ -85,9 +100,12 @@ describe('agent connector capability bindings', () => {
     capabilityState.bindingsByAgentId = {};
     capabilityState.upsertBinding.mockResolvedValue(connectorBinding);
     capabilityState.deleteBinding.mockResolvedValue(connectorBinding);
+    useAgentConnectorStore.setState({
+      resourceManifests: [connectorResource],
+    });
   });
 
-  it('binds the CONNECTOR manifest selected by sourceInstanceId', async () => {
+  it('binds the CONNECTOR manifest referenced by the resource projection', async () => {
     await useAgentConnectorStore
       .getState()
       .bindConnector('agent-1', 'search-provider');
@@ -122,6 +140,44 @@ describe('agent connector capability bindings', () => {
         bindingId: 'binding-connector',
         expectedBindingRevision: 3n,
         reason: 'connector_unbound',
+      }),
+    );
+  });
+
+  it('binds every ready resource manifest for one Connector', async () => {
+    const profileManifest = create(CapabilityManifestSchema, {
+      capabilityId: 'connector.profile',
+      version: '3',
+      sourceKind: CapabilitySourceKind.CONNECTOR,
+      sourceInstanceId: 'connector_resource_abcdef1234567890abcdef12',
+      defaultApprovalPolicy: CapabilityApprovalPolicy.MANUAL,
+    });
+    const profileResource = create(ConnectorResourceManifestSchema, {
+      connectorId: 'search-provider',
+      oauthConnectionId: 'oauth-connection-1',
+      connectionRevision: 2n,
+      resourceId: 'connection.profile',
+      resourceVersion: 'connection-profile',
+      status: ConnectorResourceStatus.READY,
+      toolManifests: [{
+        capabilityId: profileManifest.capabilityId,
+        capabilityVersion: profileManifest.version,
+      }],
+    });
+    capabilityState.manifests = [connectorManifest, profileManifest];
+    useAgentConnectorStore.setState({
+      resourceManifests: [connectorResource, profileResource],
+    });
+
+    await useAgentConnectorStore
+      .getState()
+      .bindConnector('agent-1', 'search-provider');
+
+    expect(capabilityState.upsertBinding).toHaveBeenCalledTimes(2);
+    expect(capabilityState.upsertBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capabilityId: 'connector.profile',
+        capabilityVersion: '3',
       }),
     );
   });

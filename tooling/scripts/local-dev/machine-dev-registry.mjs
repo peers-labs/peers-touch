@@ -38,6 +38,11 @@ export const STATION_CAPABILITIES = new Set([
   'station.deploy',
   'station.reset',
 ]);
+export const AGENT_CONTROL_MODES = new Set([
+  'human-gated',
+  'managed',
+  'disposable',
+]);
 export const LEASE_RESOURCE_KINDS = new Set([
   'local.slot',
   'station.deploy',
@@ -197,14 +202,14 @@ function gitValue(root, args, field, code = 'WORKTREE_IDENTITY_UNAVAILABLE') {
 export function captureWorkspace(workspaceRoot = repoRoot) {
   let canonicalRoot;
   try {
-    canonicalRoot = realpathSync(workspaceRoot);
+    canonicalRoot = realpathSync.native(workspaceRoot);
   } catch (error) {
     fail('WORKTREE_IDENTITY_UNAVAILABLE', 'workspace root is unavailable', {
       root: workspaceRoot,
       cause: String(error),
     });
   }
-  const gitRoot = realpathSync(
+  const gitRoot = realpathSync.native(
     gitValue(canonicalRoot, ['rev-parse', '--show-toplevel'], 'Git worktree root'),
   );
   if (gitRoot !== canonicalRoot) {
@@ -445,6 +450,18 @@ export function resolveProfileDefinition(options) {
       declared: values.PT_DEV_PROFILE ?? null,
     });
   }
+  const agentControlMode = values.PT_AGENT_CONTROL_MODE?.trim();
+  if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
+    fail(
+      'PROFILE_AGENT_CONTROL_INVALID',
+      'profile has an unsupported Agent control mode',
+      {
+        profile,
+        agentControlMode,
+        allowed: [...AGENT_CONTROL_MODES],
+      },
+    );
+  }
   const stationMode = requiredText(
     values.PT_STATION_MODE,
     'PT_STATION_MODE',
@@ -473,6 +490,7 @@ export function resolveProfileDefinition(options) {
     profileFile,
     sourceState,
     envRepo,
+    agentControlMode,
     stationMode,
     stationUrl,
     stationHost,
@@ -483,6 +501,19 @@ export function resolveProfileDefinition(options) {
 }
 
 function validateProfileCapabilities(definition, capabilities) {
+  if (
+    definition.agentControlMode === 'managed' &&
+    capabilities.includes('station.reset')
+  ) {
+    fail(
+      'PROFILE_AGENT_CONTROL_DENIED',
+      'managed profiles cannot grant autonomous Station reset',
+      {
+        profile: definition.profile,
+        agentControlMode: definition.agentControlMode,
+      },
+    );
+  }
   const requiresStationMutation = capabilities.some((capability) =>
     ['station.deploy', 'station.reset'].includes(capability),
   );
@@ -760,6 +791,7 @@ function acquireRegistryLock(lockFile, timeoutMs = REGISTRY_LOCK_TIMEOUT_MS) {
 }
 
 function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
   let fd;
   try {
     fd = openSync(directory, 'r');
@@ -844,6 +876,10 @@ function machineDevScriptPath() {
 
 export function observeLeases(options = {}) {
   const home = options.home;
+  const leaseRoot = options.leaseRoot ?? machineLeaseRoot(home);
+  if (!existsSync(leaseRoot)) {
+    return { activeLeases: [], staleMetadata: [] };
+  }
   try {
     const output = execFileSync(
       options.python ?? 'python3',
@@ -851,7 +887,7 @@ export function observeLeases(options = {}) {
         leaseHelperPath(),
         'status',
         '--lease-root',
-        options.leaseRoot ?? machineLeaseRoot(home),
+        leaseRoot,
       ],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
@@ -1319,12 +1355,14 @@ export function statusAll(options = {}) {
     }
     let profileState = 'available';
     let profileError = null;
+    let agentControlMode = null;
     try {
-      resolveProfileDefinition({
+      const definition = resolveProfileDefinition({
         workspaceRoot: normalized.canonicalRoot,
         envRepo: options.envRepo,
         profile: normalized.profile,
       });
+      agentControlMode = definition.agentControlMode;
     } catch (error) {
       profileState = 'blocked';
       profileError = {
@@ -1335,6 +1373,7 @@ export function statusAll(options = {}) {
     return {
       ...normalized,
       ...state,
+      agentControlMode,
       profileState,
       profileError,
     };

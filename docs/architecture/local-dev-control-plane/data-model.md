@@ -2,9 +2,9 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
+> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
 ---
 
@@ -96,6 +96,7 @@ Profile definitions remain references to the sibling environment repository:
 ```ts
 interface ProfileDefinition {
   name: string;
+  agentControlMode: 'human-gated' | 'managed' | 'disposable';
   stationMode: 'local' | 'compose' | 'remote';
   stationUrl: string;
   stationDeployEnvironment?: string;
@@ -111,6 +112,23 @@ interface ProfileDefinition {
     | 'authorized-local';
 }
 ```
+
+`PT_AGENT_CONTROL_MODE` is required in every profile definition. Absence or an
+unknown value returns `PROFILE_AGENT_CONTROL_INVALID`; there is no permissive
+default.
+
+Operational meaning:
+
+- `human-gated`: Agent binding/deploy/reset requires an explicit human
+  authorization for that operation.
+- `managed`: Agent may register/bind/select/deploy/restart under the normal
+  declaration, capability and lease contracts; reset remains forbidden.
+- `disposable`: Agent may additionally execute exact-scope reset when
+  `station.reset` is present in both the work declaration and workspace
+  capability and the reset lease is held.
+
+The mode is projected into registry status but is not copied into
+`WorkspaceRecord`; the reviewed profile remains its only durable owner.
 
 Target state removes machine-local slot authority from profile definitions.
 During migration, an observed legacy `PT_DEV_SLOT` may be reported as
@@ -253,6 +271,144 @@ interface RuntimeObservation {
 Declared and observed state must remain separate. A declared slot with no
 listener is allocated but idle; a listener without a matching binding is an
 unowned runtime conflict.
+
+## 7.1 Dashboard Projection
+
+```ts
+interface DevelopmentDashboardSnapshot {
+  observedAt: string;
+  server: PeersDevServerIdentity;
+  profiles: Array<{
+    name: string;
+    agentControlMode:
+      | 'human-gated'
+      | 'managed'
+      | 'disposable'
+      | 'invalid';
+    stationMode: string | null;
+    stationUrl: string | null;
+    stationDeployEnvironment: string | null;
+    relayUrl: string | null;
+    relayDeployEnvironment: string | null;
+    sourceState: string;
+    status: 'available' | 'blocked';
+    error: null | { code: string; message: string };
+  }>;
+  registrations: WorkspaceRecord[];
+  declarations: DevelopmentResourceDeclaration[];
+  activeLeases: LeaseRecord[];
+  staleLeaseMetadata: unknown[];
+  worktrees: Array<{
+    workspaceId: string;
+    name: string | null;
+    branches: string[];
+    workState:
+      | 'in-progress'
+      | 'stale'
+      | 'reserved'
+      | 'blocked';
+    environmentHealth: {
+      state: 'ready' | 'warning' | 'blocked' | 'conflict' | 'unregistered';
+      issues: string[];
+    };
+    requirements: Array<{
+      workItemId: string;
+      journeyId: string | null;
+      purpose: string;
+      state: 'DECLARED' | 'ACTIVE' | 'RELEASING' | 'STALE';
+      plan: null | {
+        planId: string;
+        taskId: string;
+        status:
+          | 'available'
+          | 'untracked'
+          | 'missing'
+          | 'legacy'
+          | 'invalid'
+          | 'mismatch'
+          | 'unregistered';
+        progress: null | {
+          completed: number;
+          total: number;
+          percentage: number;
+        };
+      };
+    }>;
+    environment: {
+      profile: string | null;
+      slot: number | string | null;
+      agentControlMode: string | null;
+      sourceState: string | null;
+    };
+    resources: {
+      station: RuntimeResourceProjection;
+      relay: RuntimeResourceProjection;
+      databases: RuntimeClaimProjection[];
+      other: RuntimeClaimProjection[];
+    };
+    leases: LeaseRecord[];
+  }>;
+  occupancy: Array<{
+    profile: string;
+    workspaceIds: string[];
+    slots: number[];
+    workItemIds: string[];
+    leaseIds: string[];
+    state: 'free' | 'reserved' | 'active' | 'conflict' | 'blocked';
+  }>;
+}
+
+interface PeersDevServerIdentity {
+  schemaVersion: 1;
+  kind: 'peers-touch-dev-server';
+  protocolVersion: 2;
+  endpoint: 'http://127.0.0.1:4177';
+  startedAt: string;
+  source: {
+    workspaceId: string;
+    branch: string;
+    head: string;
+    dirty: boolean;
+  };
+}
+
+interface RuntimeClaimProjection {
+  kind: string;
+  resourceId: string;
+  mode: 'shared' | 'exclusive';
+  workItemIds: string[];
+}
+
+interface RuntimeResourceProjection {
+  url: string | null;
+  deployEnvironment: string | null;
+  claims: RuntimeClaimProjection[];
+}
+```
+
+This object is generated on request and never persisted as authority. Secret
+profile fields, canonical roots and raw profile documents are excluded by
+construction. `worktrees` is the primary operator projection; `occupancy`
+remains a secondary profile-capacity projection.
+
+## 7.2 Single-Instance State
+
+Peers Dev has no persisted owner record. Live ownership is exactly the process
+holding the `127.0.0.1:4177` TCP listener.
+
+```ts
+type PeersDevProbe =
+  | { state: 'absent' }
+  | { state: 'compatible'; server: PeersDevServerIdentity }
+  | { state: 'foreign'; status?: number };
+```
+
+Startup accepts only `kind=peers-touch-dev-server`,
+`schemaVersion=1`, and `protocolVersion=2`. An absent listener may be bound.
+A compatible listener is reused. A foreign, malformed, timed-out, or
+incompatible listener produces `DEV_SERVER_PORT_CONFLICT`.
+
+PID files and lock metadata are not part of this state model.
 
 ## 8. Conflict Model
 

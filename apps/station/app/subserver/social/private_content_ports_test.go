@@ -9,15 +9,101 @@ import (
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func TestActorIdentitySubserverSatisfiesPrivateContentCapabilities(t *testing.T) {
-	candidate := actoridentity.NewActorIdentitySubServer()
-	if _, ok := candidate.(privateContentActorCapabilities); !ok {
-		t.Fatal("Actor Identity subserver does not satisfy Social private content capabilities")
+func TestPrivateContentActorCapabilitiesMatchCanonicalActorIdentity(
+	t *testing.T,
+) {
+	provider := actoridentity.NewActorIdentitySubServer()
+	if _, ok := provider.(privateContentActorCapabilities); !ok {
+		t.Fatalf(
+			"canonical Actor Identity %T does not implement Social private content capabilities",
+			provider,
+		)
 	}
+}
+
+func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
+	t *testing.T,
+) {
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors := &recordingPrivateContentActorCapabilities{
+		homeStationPeerID: "station-author-home",
+		key: &actormodel.VerifiedActorDeviceSigningKey{
+			Ed25519PublicKey: publicKey,
+		},
+	}
+	canonical := []byte("private-content-author-signature")
+	sender := &actormodel.ActorDeviceRef{
+		Actor:    &actormodel.ActorRef{Ptid: "alice"},
+		DeviceId: "alice-device",
+	}
+
+	err = (privateContentAuthorSignatureVerifier{actors: actors}).Verify(
+		context.Background(),
+		testFederationTransaction{},
+		sender,
+		"alice-signing-key",
+		canonical,
+		ed25519.Sign(privateKey, canonical),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actors.resolvedActorPTID != sender.GetActor().GetPtid() ||
+		actors.resolvedHomeStationPeerID != actors.homeStationPeerID ||
+		actors.resolvedDeviceID != sender.GetDeviceId() ||
+		actors.resolvedSigningKeyID != "alice-signing-key" {
+		t.Fatalf(
+			"resolved identity = actor %q, home %q, device %q, key %q",
+			actors.resolvedActorPTID,
+			actors.resolvedHomeStationPeerID,
+			actors.resolvedDeviceID,
+			actors.resolvedSigningKeyID,
+		)
+	}
+}
+
+type recordingPrivateContentActorCapabilities struct {
+	privateContentActorCapabilities
+
+	homeStationPeerID         string
+	key                       *actormodel.VerifiedActorDeviceSigningKey
+	resolvedActorPTID         string
+	resolvedHomeStationPeerID string
+	resolvedDeviceID          string
+	resolvedSigningKeyID      string
+}
+
+func (a *recordingPrivateContentActorCapabilities) ResolveActorHomeStationPeerID(
+	_ context.Context,
+	actorPTID string,
+) (string, error) {
+	a.resolvedActorPTID = actorPTID
+
+	return a.homeStationPeerID, nil
+}
+
+func (a *recordingPrivateContentActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	actorPTID string,
+	expectedHomeStationPeerID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	a.resolvedActorPTID = actorPTID
+	a.resolvedHomeStationPeerID = expectedHomeStationPeerID
+	a.resolvedDeviceID = deviceID
+	a.resolvedSigningKeyID = signingKeyID
+
+	return a.key, nil
 }
 
 func TestPrivateContentStationSignerVerifiesRetainedProofKeyAfterRotation(

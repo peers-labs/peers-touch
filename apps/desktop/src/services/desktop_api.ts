@@ -95,31 +95,64 @@ import type {
   CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
   CapabilitySourceKind,
   CreateKnowledgeResourceDescriptorRequest,
+  ConnectorResourceManifest,
+  ListConnectorResourceManifestsRequest,
   ListKnowledgeResourceDescriptorsRequest,
+  StartCapabilityOperationResponse,
+  TakeOverCapabilityCleanupRequest,
+  TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
   UpdateKnowledgeResourceDescriptorRequest,
 } from '../gen/proto/domain/agent/capability_pb';
 import {
   AgentCapabilityBindingSchema,
   AgentPackageDocumentSchema,
+  CancelCapabilityOperationRequestSchema,
+  CancelCapabilityOperationResponseSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
   DeleteAgentCapabilityBindingResponseSchema,
   ExportAgentPackageRequestSchema,
   ExportAgentPackageResponseSchema,
+  GetCapabilityOperationRequestSchema,
+  GetCapabilityOperationResponseSchema,
   GetCapabilityReadinessResponseSchema,
   ImportAgentPackageRequestSchema,
   ImportAgentPackageResponseSchema,
   ListAgentCapabilityBindingsResponseSchema,
   ListCapabilityManifestsResponseSchema,
+  ListConnectorResourceManifestsRequestSchema,
+  ListConnectorResourceManifestsResponseSchema,
   ListKnowledgeResourceDescriptorsRequestSchema,
   ListKnowledgeResourceDescriptorsResponseSchema,
+  ReconcileCapabilityOperationRequestSchema,
+  ReconcileCapabilityOperationResponseSchema,
+  StartCapabilityOperationResponseSchema,
+  SyncConnectorResourceManifestsResponseSchema,
+  TakeOverCapabilityCleanupRequestSchema,
+  TakeOverCapabilityCleanupResponseSchema,
+  TakeOverCapabilityOperationRequestSchema,
+  TakeOverCapabilityOperationResponseSchema,
   TombstoneKnowledgeResourceDescriptorRequestSchema,
   TombstoneKnowledgeResourceDescriptorResponseSchema,
   UpdateKnowledgeResourceDescriptorRequestSchema,
   UpdateKnowledgeResourceDescriptorResponseSchema,
   UpsertAgentCapabilityBindingResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
+import type {
+  HomeWorkProjection,
+  SubmitHomeChatCommandResponse,
+  SubmitHomeTaskCommandResponse,
+} from '../gen/proto/domain/agent/home_pb';
+import {
+  GetHomeWorkProjectionRequestSchema,
+  GetHomeWorkProjectionResponseSchema,
+  SubmitHomeChatCommandRequestSchema,
+  SubmitHomeChatCommandResponseSchema,
+  SubmitHomeTaskCommandRequestSchema,
+  SubmitHomeTaskCommandResponseSchema,
+} from '../gen/proto/domain/agent/home_pb';
+import * as EvaluationModel from '../gen/proto/domain/agent/evaluation_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
@@ -545,7 +578,7 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
   }
-  throw new Error(response.error?.message || `${command} failed`);
+  throw new RustCommandException(command, response.error);
 }
 
 async function invokeRustProtoRequest<
@@ -1625,6 +1658,10 @@ export interface SkillImportResult {
   identifier: string;
   name: string;
   isNew: boolean;
+  packageType?: string;
+  scanVerdict?: string;
+  targetAuthority?: string;
+  targetReadback?: boolean;
 }
 
 export interface SkillImportBatchResult {
@@ -1656,14 +1693,29 @@ async function fileToBase64(file: File): Promise<string> {
 export interface MarketSource {
   id: string;
   name: string;
+  transportKind: 'official_station' | 'user_pinned_github';
   url: string;
   branch?: string;
+  manifestPath: string;
+  publisherId: string;
+  signingKeyId: string;
+  publicKeyFingerprint: string;
+  trustLevel: 'official' | 'user-pinned' | 'unknown';
+  builtIn: boolean;
+  enabled: boolean;
+  catalogRevision: string;
+  generatedAt: string;
+  signatureStatus: 'verified' | 'invalid' | 'pending';
+  syncState: 'bootstrap_verified' | 'fresh_verified' | 'stale_verified' | 'invalid_rejected';
+  revoked: boolean;
+  revokedAt?: string;
 }
 
 export interface MarketSummary extends MarketSource {
   skillCount: number;
   lastSynced?: string;
   synced: boolean;
+  stale: boolean;
   error?: string;
 }
 
@@ -1685,6 +1737,14 @@ export interface MarketSkillEntry {
   riskLevel?: string;
   packageType?: string;
   source?: string;
+  contentHash?: string;
+  signatureStatus?: 'verified' | 'invalid';
+  signingKeyId?: string;
+  installPolicy?: 'allowed' | 'confirmation_required' | 'blocked';
+  revoked?: boolean;
+  revokedAt?: string;
+  targetAuthority?: 'station-agent' | 'station-skill' | 'desktop-mcp' | string;
+  targetReadbackAt?: string;
 }
 
 export interface MarketSkillDetail extends MarketSkillEntry {
@@ -1695,6 +1755,13 @@ export interface MarketSkillDetail extends MarketSkillEntry {
   publisher: string;
   homepage: string;
   repository: string;
+}
+
+export interface MarketSkillPage {
+  skills: MarketSkillEntry[];
+  total: number;
+  nextCursor?: string;
+  catalogRevision: string;
 }
 
 // ── MCP Server types ──
@@ -1709,10 +1776,20 @@ export interface MCPServerItem {
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
-  status?: 'unknown' | 'connected' | 'failed';
+  status?: 'unknown' | 'pending' | 'connected' | 'disconnected' | 'cancelled' | 'timed_out' | 'failed' | 'unknown_side_effect';
   lastTestedAt?: string;
   lastError?: string;
+  operationId?: string;
+  operationKind?: McpLifecycleOperationKind;
 }
+
+export type McpLifecycleOperationKind =
+  | 'install'
+  | 'configure'
+  | 'test'
+  | 'connect'
+  | 'reconnect'
+  | 'uninstall';
 
 export interface MCPServerRecord {
   name: string;
@@ -1723,11 +1800,15 @@ export interface MCPServerRecord {
   command: string;
   args: string[];
   env: Record<string, string>;
+  envKeys?: string[];
   url: string;
   headers: Record<string, string>;
+  headersKeys?: string[];
   authType: string;
   authToken: string;
+  hasAuthToken?: boolean;
   authAccessToken: string;
+  hasAuthAccessToken?: boolean;
   configSchema: Record<string, unknown>;
   settings: Record<string, string>;
   metaAvatar: string;
@@ -1736,10 +1817,12 @@ export interface MCPServerRecord {
   homepage: string;
   repository: string;
   enabled: boolean;
-  status?: 'unknown' | 'connected' | 'failed';
+  status?: MCPServerItem['status'];
   lastTestedAt?: string;
   lastError?: string;
   tools?: string[];
+  operationId?: string;
+  operationKind?: McpLifecycleOperationKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -2046,6 +2129,9 @@ export interface OAuth2ProviderDetail {
 }
 
 export interface OAuth2Connection {
+  connection_id: string;
+  revision: number;
+  projected_revision: number;
   provider_id: string;
   provider_name: string;
   user_id: string;
@@ -2056,7 +2142,16 @@ export interface OAuth2Connection {
   connected_at: string;
   expires_at?: string;
   scopes: string[];
-  status: 'active' | 'expired' | 'error';
+  status: 'active' | 'expired' | 'disconnected' | 'revoked' | 'revocation_unconfirmed' | 'error';
+}
+
+export interface OAuthDisconnectResult {
+  status: 'revoked' | 'revocation_unconfirmed';
+  provider_revoke: {
+    status: 'revoked' | 'unconfirmed';
+    error_code: string;
+    idempotency_key: string;
+  };
 }
 
 export interface SimulateLoginStart {
@@ -2485,34 +2580,10 @@ export interface McpToggleInput {
   enabled: boolean;
 }
 
-export interface McpExecuteToolInput {
-  server_name: string;
-  tool_name: string;
-  arguments?: Record<string, unknown>;
-  call_id?: string;
-  workspace_root?: string;
-  allowed_roots?: string[];
-}
-
-export interface McpToolExecutionResult {
-  ok: boolean;
-  serverName: string;
-  toolName: string;
-  callId: string;
-  arguments: Record<string, unknown>;
-  durationMs: number;
-  output?: unknown;
-  error?: string;
-  audit: {
-    source: 'mcp';
-    serverName: string;
-    toolName: string;
-    transport: 'stdio' | 'http' | 'sse';
-    workspaceRoot?: string;
-    allowedRootCount?: number;
-    policyDecision?: 'allow' | 'deny';
-    executedAt: string;
-  };
+export interface McpLifecycleOperationInput {
+  name: string;
+  operation_kind: McpLifecycleOperationKind;
+  idempotency_key?: string;
 }
 
 export interface AgentToolDecisionIntentInput {
@@ -4181,6 +4252,7 @@ export interface OAuthCallbackInput {
   avatar_url?: string;
   profile_url?: string;
   expires_at?: string;
+  scopes?: string[];
 }
 
 export interface AccountUpsertOAuthInput {
@@ -4353,9 +4425,14 @@ export interface SkillMarketIdInput {
 }
 
 export interface SkillMarketAddInput {
+  source_id?: string;
   url: string;
   name?: string;
   branch?: string;
+  manifest_path?: string;
+  publisher_id?: string;
+  signing_key_id?: string;
+  public_key_base64?: string;
 }
 
 export interface SkillMarketSyncInput {
@@ -4365,12 +4442,15 @@ export interface SkillMarketSyncInput {
 export interface SkillMarketListInput {
   market_id: string;
   q?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface SkillMarketDetailInput {
   agent_id?: string;
   market_id: string;
   file_path: string;
+  risk_acknowledged?: boolean;
 }
 
 export interface AgentIdInput {
@@ -4557,6 +4637,14 @@ export interface StationProbeResult {
   peer_id?: string;
   peers_count?: number;
   error?: string;
+}
+
+function requireEvaluationValue<T>(
+  value: T | undefined,
+  errorKey: string,
+): T {
+  if (!value) throw new Error(errorKey);
+  return value;
 }
 
 export const api = {
@@ -5031,6 +5119,361 @@ export const api = {
       { id },
     ).then((r) =>
       r.sessions.map((s) => ({ ...s, agent_name: s.agent_name ?? s.agent_id ?? '' })),
+    ),
+
+  getHomeWorkProjection: async (
+    afterRevision: number | bigint = 0n,
+  ): Promise<HomeWorkProjection> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_projection_get',
+      GetHomeWorkProjectionRequestSchema,
+      GetHomeWorkProjectionResponseSchema,
+      create(GetHomeWorkProjectionRequestSchema, {
+        afterRevision: BigInt(afterRevision),
+      }),
+    );
+    if (!response.projection) {
+      throw new Error('agent.homeProjectionMissing');
+    }
+    return response.projection;
+  },
+
+  submitHomeChatCommand: async (input: {
+    agentId: string;
+    input: string;
+    runtimeProfileId: string;
+    clientIdempotencyKey: string;
+    conversationId?: string;
+    expectedAgentVersion: bigint;
+    readinessSnapshotId: string;
+  }): Promise<SubmitHomeChatCommandResponse> =>
+    invokeRustProtoRequest(
+      'agent_home_chat_submit',
+      SubmitHomeChatCommandRequestSchema,
+      SubmitHomeChatCommandResponseSchema,
+      create(SubmitHomeChatCommandRequestSchema, input),
+    ),
+
+  submitHomeTaskCommand: async (input: {
+    agentId: string;
+    input: string;
+    runtimeProfileId: string;
+    clientIdempotencyKey: string;
+    expectedAgentVersion: bigint;
+    readinessSnapshotId: string;
+    topicRef?: string;
+  }): Promise<SubmitHomeTaskCommandResponse> =>
+    invokeRustProtoRequest(
+      'agent_home_task_submit',
+      SubmitHomeTaskCommandRequestSchema,
+      SubmitHomeTaskCommandResponseSchema,
+      create(SubmitHomeTaskCommandRequestSchema, input),
+    ),
+
+  createEvaluationBenchmark: async (
+    request: EvaluationModel.CreateEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.EvaluationBenchmark> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_create',
+      EvaluationModel.CreateEvaluationBenchmarkRequestSchema,
+      EvaluationModel.CreateEvaluationBenchmarkResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.benchmark,
+      'agent.evaluationBenchmarkResponseMissing',
+    );
+  },
+
+  updateEvaluationBenchmark: async (
+    request: EvaluationModel.UpdateEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.EvaluationBenchmark> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_update',
+      EvaluationModel.UpdateEvaluationBenchmarkRequestSchema,
+      EvaluationModel.UpdateEvaluationBenchmarkResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.benchmark,
+      'agent.evaluationBenchmarkResponseMissing',
+    );
+  },
+
+  deleteEvaluationBenchmark: (
+    request: EvaluationModel.DeleteEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationBenchmarkResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_benchmark_delete',
+      EvaluationModel.DeleteEvaluationBenchmarkRequestSchema,
+      EvaluationModel.DeleteEvaluationBenchmarkResponseSchema,
+      request,
+    ),
+
+  listEvaluationBenchmarks: async (): Promise<EvaluationModel.EvaluationBenchmark[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_list',
+      EvaluationModel.ListEvaluationBenchmarksRequestSchema,
+      EvaluationModel.ListEvaluationBenchmarksResponseSchema,
+      create(EvaluationModel.ListEvaluationBenchmarksRequestSchema),
+    );
+    return response.benchmarks;
+  },
+
+  createEvaluationDataset: async (
+    request: EvaluationModel.CreateEvaluationDatasetRequest,
+  ): Promise<{
+    dataset: EvaluationModel.EvaluationDataset;
+    benchmark: EvaluationModel.EvaluationBenchmark;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_create',
+      EvaluationModel.CreateEvaluationDatasetRequestSchema,
+      EvaluationModel.CreateEvaluationDatasetResponseSchema,
+      request,
+    );
+    return {
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+      benchmark: requireEvaluationValue(
+        response.benchmark,
+        'agent.evaluationBenchmarkResponseMissing',
+      ),
+    };
+  },
+
+  updateEvaluationDataset: async (
+    request: EvaluationModel.UpdateEvaluationDatasetRequest,
+  ): Promise<EvaluationModel.EvaluationDataset> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_update',
+      EvaluationModel.UpdateEvaluationDatasetRequestSchema,
+      EvaluationModel.UpdateEvaluationDatasetResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.dataset,
+      'agent.evaluationDatasetResponseMissing',
+    );
+  },
+
+  deleteEvaluationDataset: (
+    request: EvaluationModel.DeleteEvaluationDatasetRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationDatasetResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_dataset_delete',
+      EvaluationModel.DeleteEvaluationDatasetRequestSchema,
+      EvaluationModel.DeleteEvaluationDatasetResponseSchema,
+      request,
+    ),
+
+  listEvaluationDatasets: async (
+    benchmarkId: string,
+  ): Promise<EvaluationModel.EvaluationDataset[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_list',
+      EvaluationModel.ListEvaluationDatasetsRequestSchema,
+      EvaluationModel.ListEvaluationDatasetsResponseSchema,
+      create(EvaluationModel.ListEvaluationDatasetsRequestSchema, {
+        benchmarkId,
+      }),
+    );
+    return response.datasets;
+  },
+
+  createEvaluationTestCase: async (
+    request: EvaluationModel.CreateEvaluationTestCaseRequest,
+  ): Promise<{
+    testCase: EvaluationModel.EvaluationTestCase;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_create',
+      EvaluationModel.CreateEvaluationTestCaseRequestSchema,
+      EvaluationModel.CreateEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      testCase: requireEvaluationValue(
+        response.testCase,
+        'agent.evaluationCaseResponseMissing',
+      ),
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  updateEvaluationTestCase: async (
+    request: EvaluationModel.UpdateEvaluationTestCaseRequest,
+  ): Promise<{
+    testCase: EvaluationModel.EvaluationTestCase;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_update',
+      EvaluationModel.UpdateEvaluationTestCaseRequestSchema,
+      EvaluationModel.UpdateEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      testCase: requireEvaluationValue(
+        response.testCase,
+        'agent.evaluationCaseResponseMissing',
+      ),
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  deleteEvaluationTestCase: async (
+    request: EvaluationModel.DeleteEvaluationTestCaseRequest,
+  ): Promise<{
+    deleted: boolean;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_delete',
+      EvaluationModel.DeleteEvaluationTestCaseRequestSchema,
+      EvaluationModel.DeleteEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      deleted: response.deleted,
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  listEvaluationTestCases: async (
+    datasetId: string,
+  ): Promise<EvaluationModel.EvaluationTestCase[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_list',
+      EvaluationModel.ListEvaluationTestCasesRequestSchema,
+      EvaluationModel.ListEvaluationTestCasesResponseSchema,
+      create(EvaluationModel.ListEvaluationTestCasesRequestSchema, {
+        datasetId,
+      }),
+    );
+    return response.testCases;
+  },
+
+  createEvaluationRun: async (
+    request: EvaluationModel.CreateEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_create',
+      EvaluationModel.CreateEvaluationRunRequestSchema,
+      EvaluationModel.CreateEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  startEvaluationRun: async (
+    request: EvaluationModel.StartEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_start',
+      EvaluationModel.StartEvaluationRunRequestSchema,
+      EvaluationModel.StartEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  cancelEvaluationRun: async (
+    request: EvaluationModel.CancelEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_cancel',
+      EvaluationModel.CancelEvaluationRunRequestSchema,
+      EvaluationModel.CancelEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  retryEvaluationCases: async (
+    request: EvaluationModel.RetryEvaluationCasesRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_retry',
+      EvaluationModel.RetryEvaluationCasesRequestSchema,
+      EvaluationModel.RetryEvaluationCasesResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.childRun,
+      'agent.evaluationChildRunResponseMissing',
+    );
+  },
+
+  getEvaluationRun: (
+    runId: string,
+  ): Promise<EvaluationModel.GetEvaluationRunResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_get',
+      EvaluationModel.GetEvaluationRunRequestSchema,
+      EvaluationModel.GetEvaluationRunResponseSchema,
+      create(EvaluationModel.GetEvaluationRunRequestSchema, { runId }),
+    ),
+
+  listEvaluationRuns: (
+    page = 1,
+    pageSize = 100,
+    parentRunId?: string,
+  ): Promise<EvaluationModel.ListEvaluationRunsResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_list',
+      EvaluationModel.ListEvaluationRunsRequestSchema,
+      EvaluationModel.ListEvaluationRunsResponseSchema,
+      create(EvaluationModel.ListEvaluationRunsRequestSchema, {
+        page,
+        pageSize,
+        parentRunId,
+      }),
+    ),
+
+  listEvaluationRunEvents: (
+    runId: string,
+    afterSequence: bigint,
+  ): Promise<EvaluationModel.ListEvaluationRunEventsResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_events_list',
+      EvaluationModel.ListEvaluationRunEventsRequestSchema,
+      EvaluationModel.ListEvaluationRunEventsResponseSchema,
+      create(EvaluationModel.ListEvaluationRunEventsRequestSchema, {
+        runId,
+        afterSequence,
+      }),
+    ),
+
+  deleteEvaluationRun: (
+    request: EvaluationModel.DeleteEvaluationRunRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationRunResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_delete',
+      EvaluationModel.DeleteEvaluationRunRequestSchema,
+      EvaluationModel.DeleteEvaluationRunResponseSchema,
+      request,
     ),
 
   getAgentWorkspaceInfo: (agentId: string) =>
@@ -5598,22 +6041,54 @@ export const api = {
   listSkillMarkets: () =>
     invokeRustDataFromStatus<void, { markets: MarketSummary[] }>('skills_market_list').then(r => r.markets),
 
-  addSkillMarketSource: (url: string, name?: string, branch?: string) =>
-    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean }>('skills_market_add', { url, name, branch }),
+  addSkillMarketSource: (
+    url: string,
+    name?: string,
+    branch?: string,
+    governance?: {
+      sourceId?: string;
+      manifestPath?: string;
+      publisherId?: string;
+      signingKeyId?: string;
+      publicKeyBase64?: string;
+    },
+  ) =>
+    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean; id: string }>('skills_market_add', {
+      url,
+      name,
+      branch,
+      source_id: governance?.sourceId,
+      manifest_path: governance?.manifestPath,
+      publisher_id: governance?.publisherId,
+      signing_key_id: governance?.signingKeyId,
+      public_key_base64: governance?.publicKeyBase64,
+    }),
 
   removeSkillMarketSource: (id: string) =>
     invokeRustDataFromStatus<SkillMarketIdInput, { ok: boolean }>('skills_market_remove', { id }),
 
   syncSkillMarket: (marketId: string) =>
-    invokeRustDataFromStatus<SkillMarketSyncInput, { skills: MarketSkillEntry[]; total: number }>(
+    invokeRustDataFromStatus<
+      SkillMarketSyncInput,
+      MarketSkillPage & {
+        signatureStatus: string;
+        syncState: MarketSource['syncState'];
+        transportKind: MarketSource['transportKind'];
+        transportEndpoint: string;
+        distributionId: string;
+        envelopeSha256: string;
+        stale: boolean;
+        error?: string;
+      }
+    >(
       'skills_market_sync',
       { market_id: marketId },
     ),
 
-  listMarketSkills: (marketId: string, q?: string) => {
-    return invokeRustDataFromStatus<SkillMarketListInput, { skills: MarketSkillEntry[]; total: number }>(
+  listMarketSkills: (marketId: string, q?: string, cursor?: string, limit?: number) => {
+    return invokeRustDataFromStatus<SkillMarketListInput, MarketSkillPage>(
       'skills_market_list_skills',
-      { market_id: marketId, q },
+      { market_id: marketId, q, cursor, limit },
     );
   },
 
@@ -5623,10 +6098,11 @@ export const api = {
       file_path: filePath,
     }),
 
-  installMarketSkill: (marketId: string, filePath: string) =>
+  installMarketSkill: (marketId: string, filePath: string, riskAcknowledged = false) =>
     invokeRustDataFromStatus<SkillMarketDetailInput, SkillImportResult>('skills_market_install', {
       market_id: marketId,
       file_path: filePath,
+      risk_acknowledged: riskAcknowledged,
     }),
 
   uninstallMarketSkill: (marketId: string, filePath: string) =>
@@ -5647,31 +6123,142 @@ export const api = {
     invokeRustDataFromStatus<McpNameInput, MCPServerRecord>('mcp_get_server', { name }),
 
   createMCPServer: (data: Partial<MCPServerRecord>) =>
-    invokeRustDataFromStatus<McpCreateInput, { ok: boolean; name: string }>('mcp_create_server', { data }),
+    invokeRustProto<McpCreateInput, StartCapabilityOperationResponse>(
+      'mcp_create_server',
+      StartCapabilityOperationResponseSchema,
+      { data },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   updateMCPServer: (name: string, data: Partial<MCPServerRecord>) =>
-    invokeRustDataFromStatus<McpUpdateInput, { ok: boolean }>('mcp_update_server', { name, data }),
+    invokeRustProto<McpUpdateInput, StartCapabilityOperationResponse>(
+      'mcp_update_server',
+      StartCapabilityOperationResponseSchema,
+      { name, data },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   deleteMCPServer: (name: string) =>
-    invokeRustDataFromStatus<McpNameInput, { ok: boolean }>('mcp_delete_server', { name }),
+    invokeRustProto<McpNameInput, StartCapabilityOperationResponse>(
+      'mcp_delete_server',
+      StartCapabilityOperationResponseSchema,
+      { name },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   toggleMCPServer: (name: string, enabled: boolean) =>
-    invokeRustDataFromStatus<McpToggleInput, { ok: boolean }>('mcp_toggle_server', { name, enabled }),
+    invokeRustProto<McpToggleInput, StartCapabilityOperationResponse>(
+      'mcp_toggle_server',
+      StartCapabilityOperationResponseSchema,
+      { name, enabled },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
-  testMCPServer: (name: string) =>
-    invokeRustDataFromStatus<McpNameInput, { ok: boolean; error?: string; tools?: string[] }>('mcp_test_server', { name }),
-
-  executeMCPTool: (
-    serverName: string,
-    toolName: string,
-    args: Record<string, unknown>,
-    callId?: string,
+  startMCPLifecycleOperation: (
+    name: string,
+    operationKind: McpLifecycleOperationKind,
+    idempotencyKey?: string,
   ) =>
-    invokeRustDataFromStatus<McpExecuteToolInput, McpToolExecutionResult>('mcp_execute_tool', {
-      server_name: serverName,
-      tool_name: toolName,
-      arguments: args,
-      call_id: callId,
+    invokeRustProto<McpLifecycleOperationInput, StartCapabilityOperationResponse>(
+      'mcp_start_lifecycle_operation',
+      StartCapabilityOperationResponseSchema,
+      {
+        name,
+        operation_kind: operationKind,
+        idempotency_key: idempotencyKey,
+      },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  getCapabilityOperation: (operationId: string) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_get',
+      GetCapabilityOperationRequestSchema,
+      GetCapabilityOperationResponseSchema,
+      create(GetCapabilityOperationRequestSchema, { operationId }),
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  cancelCapabilityOperation: (
+    operationId: string,
+    expectedRevision: number | bigint,
+    idempotencyKey: string,
+  ) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_cancel',
+      CancelCapabilityOperationRequestSchema,
+      CancelCapabilityOperationResponseSchema,
+      create(CancelCapabilityOperationRequestSchema, {
+        operationId,
+        expectedRevision: BigInt(expectedRevision),
+        idempotencyKey,
+      }),
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  reconcileCapabilityOperation: (operationId: string, afterSequence = 0n) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_reconcile',
+      ReconcileCapabilityOperationRequestSchema,
+      ReconcileCapabilityOperationResponseSchema,
+      create(ReconcileCapabilityOperationRequestSchema, {
+        operationId,
+        afterSequence,
+      }),
+    ),
+
+  takeOverCapabilityOperation: (request: TakeOverCapabilityOperationRequest) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_takeover',
+      TakeOverCapabilityOperationRequestSchema,
+      TakeOverCapabilityOperationResponseSchema,
+      request,
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  takeOverCapabilityOperationCleanup: (request: TakeOverCapabilityCleanupRequest) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_cleanup_takeover',
+      TakeOverCapabilityCleanupRequestSchema,
+      TakeOverCapabilityCleanupResponseSchema,
+      request,
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
     }),
 
   executeGuardedCanvasTurnOnce: (input: AgentExecuteTurnInput) =>
@@ -5747,6 +6334,21 @@ export const api = {
       ListCapabilityManifestsResponseSchema,
       { sourceKinds: [...sourceKinds] },
     ).then((response) => response.manifests),
+
+  syncOAuthConnectorManifests: () =>
+    invokeRustProto(
+      'oauth2_sync_connector_manifests',
+      SyncConnectorResourceManifestsResponseSchema,
+    ),
+
+  listConnectorResourceManifests: (
+    request: ListConnectorResourceManifestsRequest,
+  ): Promise<ConnectorResourceManifest[]> => invokeRustProtoRequest(
+    'agent_connector_manifest_list',
+    ListConnectorResourceManifestsRequestSchema,
+    ListConnectorResourceManifestsResponseSchema,
+    request,
+  ).then((response) => response.manifests),
 
   listAgentCapabilityBindings: (agentId: string) =>
     invokeRustProto(
@@ -6323,7 +6925,10 @@ export const api = {
     invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id }),
 
   oauth2Disconnect: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id }),
+    invokeRustDataFromStatus<OAuthIdInput, OAuthDisconnectResult>(
+      'oauth2_disconnect',
+      { id },
+    ),
 
   oauth2RefreshToken: (id: string) =>
     invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id }),

@@ -1,7 +1,11 @@
 package persistence
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,10 +32,10 @@ var actorIdentityColumnMigrations = []actorIdentityColumnMigration{
 	{table: "ecosystem_custom_plugins", legacyColumn: "owner_actor_id", targetColumn: "owner_actor_ptid"},
 }
 
-// MigrateActorIdentityColumns performs the PTID naming hard cut before
-// AutoMigrate observes the target models. Existing values are preserved by
-// renaming columns in place; coexistence fails closed instead of choosing a
-// compatibility source.
+// MigrateActorIdentityColumns performs the PTID hard cut before AutoMigrate
+// observes the target models. Legacy numeric identities are resolved only
+// through touch_actor.id -> touch_actor.ptid. Any unresolved identity or
+// uniqueness collision aborts the entire migration.
 func MigrateActorIdentityColumns(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("agent actor identity migration requires database")
@@ -63,6 +67,9 @@ func MigrateActorIdentityColumns(db *gorm.DB) error {
 					)
 				}
 			}
+			if err := migrateActorIdentityValues(tx, migration); err != nil {
+				return err
+			}
 			for _, legacyIndex := range migration.legacyIndexes {
 				if tx.Migrator().HasIndex(migration.table, legacyIndex) {
 					if err := tx.Migrator().DropIndex(migration.table, legacyIndex); err != nil {
@@ -73,6 +80,128 @@ func MigrateActorIdentityColumns(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func migrateActorIdentityValues(tx *gorm.DB, migration actorIdentityColumnMigration) error {
+	if !tx.Migrator().HasColumn(migration.table, migration.targetColumn) {
+		return nil
+	}
+
+	var values []sql.NullString
+	if err := tx.Table(migration.table).
+		Distinct(migration.targetColumn).
+		Pluck(migration.targetColumn, &values).Error; err != nil {
+		return fmt.Errorf(
+			"read %s.%s actor identities: %w",
+			migration.table,
+			migration.targetColumn,
+			err,
+		)
+	}
+
+	resolvedActorIDs := make(map[string]string)
+	for _, value := range values {
+		if !value.Valid {
+			continue
+		}
+		rawValue := value.String
+		normalizedValue := strings.TrimSpace(rawValue)
+		actorID, numeric, err := parseLegacyActorID(normalizedValue)
+		if err != nil {
+			return fmt.Errorf(
+				"migrate %s.%s actor identity %q: %w",
+				migration.table,
+				migration.targetColumn,
+				rawValue,
+				err,
+			)
+		}
+		if !numeric {
+			continue
+		}
+
+		actorPTID, err := resolveMigrationActorPTID(tx, actorID)
+		if err != nil {
+			return fmt.Errorf(
+				"migrate %s.%s actor identity %q: %w",
+				migration.table,
+				migration.targetColumn,
+				rawValue,
+				err,
+			)
+		}
+		if previousActorID, exists := resolvedActorIDs[actorPTID]; exists && previousActorID != normalizedValue {
+			return fmt.Errorf(
+				"migrate %s.%s actor identities: numeric IDs %s and %s resolve to the same PTID %q",
+				migration.table,
+				migration.targetColumn,
+				previousActorID,
+				normalizedValue,
+				actorPTID,
+			)
+		}
+		resolvedActorIDs[actorPTID] = normalizedValue
+
+		columnPredicate := fmt.Sprintf("%s = ?", migration.targetColumn)
+		if err := tx.Table(migration.table).
+			Where(columnPredicate, rawValue).
+			Update(migration.targetColumn, actorPTID).Error; err != nil {
+			return fmt.Errorf(
+				"rewrite %s.%s actor ID %s as PTID %q: %w",
+				migration.table,
+				migration.targetColumn,
+				normalizedValue,
+				actorPTID,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func parseLegacyActorID(value string) (uint64, bool, error) {
+	if value == "" {
+		return 0, false, nil
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return 0, false, nil
+		}
+	}
+
+	actorID, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, true, fmt.Errorf("invalid numeric actor ID: %w", err)
+	}
+	if actorID == 0 {
+		return 0, true, fmt.Errorf("actor ID 0 is invalid")
+	}
+	return actorID, true, nil
+}
+
+func resolveMigrationActorPTID(tx *gorm.DB, actorID uint64) (string, error) {
+	if !tx.Migrator().HasTable("touch_actor") {
+		return "", fmt.Errorf("touch_actor is missing while resolving actor ID %d", actorID)
+	}
+
+	var actorPTID sql.NullString
+	err := tx.Table("touch_actor").
+		Select("ptid").
+		Where("id = ?", actorID).
+		Row().
+		Scan(&actorPTID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("actor ID %d is unresolved", actorID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("query actor ID %d: %w", actorID, err)
+	}
+
+	normalizedPTID := strings.TrimSpace(actorPTID.String)
+	if !actorPTID.Valid || normalizedPTID == "" {
+		return "", fmt.Errorf("actor ID %d resolves to an empty PTID", actorID)
+	}
+	return normalizedPTID, nil
 }
 
 // MigrateAgentMessages prepares historical rows before AutoMigrate applies the

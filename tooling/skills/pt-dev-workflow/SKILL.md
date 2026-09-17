@@ -97,14 +97,24 @@ make dev-start \
   PURPOSE='<short purpose>' \
   SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
   RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]' \
+  [PLAN=<repository-relative-package-plan.md>] [TASK=<current-task-id>] \
   [JOURNEY=<id>] [SESSION=<id>]
 ```
 
 Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
-- Run `make dev-update` before expanding scope/resources and after an
-  authorized commit, merge, or rebase changes source HEAD.
+- A tracked run must publish `PLAN` and `TASK`; the declaration validates the
+  Plan ID, binding, expected HEAD, and single current Task. An untracked run
+  publishes no inferred Plan locator.
+- Run `make dev-update` before expanding scope/resources and after Task handoff.
+- Before a long action crosses half of the current heartbeat-to-expiry window,
+  run `make dev-heartbeat`; heartbeat extends liveness but cannot change source,
+  scope, or Plan identity.
+- After an authorized commit, merge, or rebase changes source HEAD, run
+  `make env-update`, then `make dev-update ... PLAN=<path> TASK=<id>`, and
+  finally `make dev-check`. Registry and declaration source identities must
+  advance together before the next mutation or runtime action.
 - Different worktrees on different branches may overlap with
   `SOURCE_OVERLAP_WARNING`; same-workspace overlap, same-branch parallel
   writes, and exclusive runtime overlap return
@@ -137,7 +147,8 @@ For an accepted Plan Package:
 2. Verify `active_work.current_task_id`, `current_task_path`, and `dev_state`
    against the manifest and Development Session.
 3. Ask `pt-trae-goal-orchestrator` for the bounded Ready/Parked schedule and
-   concurrency lanes.
+   concurrency lanes. The schedule must bind one Progress Slice to the current
+   Task's `planctl status.progress.nextProgressBoundary`.
 4. Submit each proposed action to `pt-execution-plan-guardian`.
 5. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
 6. Record the first actionable failure in the Session and stop that action.
@@ -145,13 +156,42 @@ For an accepted Plan Package:
    - Session transition/evidence;
    - Task snapshot and manifest lifecycle through `planctl`;
    - `active_work` locator/binding projection.
-8. Recompute the schedule until the current Task closes or only a hard boundary
-   remains.
+8. Recompute and continue the schedule across setup, authorization, diagnostic,
+   checkpoint, deploy, and verification actions until the current Task closes
+   or only a hard boundary remains.
 9. Invoke read-only `pt-context-anchor` when a user-facing projection is due.
 
 The Guardian cannot execute, schedule, mutate a plan, or update tracking.
 The scheduler cannot admit work outside accepted sources or mutate durable
 state. The Anchor cannot repair state.
+
+### Progress-Bearing Continuation
+
+One user-authorized continuation must target one complete Progress Slice:
+
+```text
+current Task in_progress
+  -> supporting actions
+  -> Task done
+  -> +1 completed Task closure
+  -> successor frontier recomputed
+```
+
+Before execution, read the machine-derived baseline and completion effect from
+`planctl status.progress`. After execution, require the manifest to show that
+effect before reporting successful progress.
+
+Do not return control merely because an internal action succeeded. Continue
+until:
+
+- the Task closes and the declared progress delta is durable; or
+- a hard boundary prevents closure and no other dependency-ready Task can
+  advance.
+
+If a successful action produces no Task progress, keep it inside the current
+Slice. If the Task is too large to close within one bounded Slice, return
+`PLAN_AMENDMENT_REQUIRED` so the plan owner can split it; never invent a
+partial percentage.
 
 ## 5. Product-Functional Fence
 
@@ -232,6 +272,8 @@ earliest legal action. Do not pause merely to print the Anchor.
 
 - One Development Run owns the lifecycle.
 - Public declaration preceded mutation and was released at closure.
+- Every successful continuation closed its declared Progress Slice and matched
+  the `planctl status.progress` delta.
 - Scheduler, Guardian, persistence, and projection boundaries remained
   separate.
 - Required Journey has current exact-source functional evidence.
@@ -248,6 +290,10 @@ Never:
 - let Context Anchor repair `active_work`;
 - write before declaration or outside declared scope;
 - diagnose product behavior with broad Acceptance;
+- return an Anchor after a successful administrative action while its Progress
+  Slice remains open;
+- claim progress from commands, checks, files, commits, declarations, leases,
+  or Session transitions that did not close a Task;
 - copy one Journey into separate Development and Acceptance implementations;
 - claim readiness from static checks or stale proof;
 - leave declarations or owned runtime resources active after closure.

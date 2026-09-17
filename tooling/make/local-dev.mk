@@ -1,9 +1,10 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-check env-status-all \
+.PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        plan-validate plan-status plan-current plan-next \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -14,6 +15,9 @@
 DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
+DEV_APP_SCRIPT := apps/dev/server/index.mjs
+PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
+ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
 ENV_OWNER_ARG := $(or $(OWNER),$(shell git config user.email 2>/dev/null))
@@ -23,6 +27,8 @@ ENV_BUDGET_SECONDS_ARG := $(or $(BUDGET_SECONDS),1200)
 DEV_WORK_ITEM_ARG := $(or $(WORK_ITEM),$(DEV_WORK_ITEM))
 DEV_SESSION_ARG := $(or $(SESSION),$(DEV_SESSION))
 DEV_JOURNEY_ARG := $(or $(JOURNEY),$(DEV_JOURNEY))
+DEV_PLAN_ARG := $(or $(DEV_PLAN),$(PLAN))
+DEV_TASK_ARG := $(or $(DEV_TASK),$(TASK))
 DEV_OWNER_EXPLICIT_ARG := $(or $(OWNER),$(DEV_OWNER))
 DEV_OWNER_ARG := $(or $(DEV_OWNER_EXPLICIT_ARG),$(shell git config user.email 2>/dev/null))
 DEV_PURPOSE_ARG := $(or $(PURPOSE),$(DEV_PURPOSE))
@@ -63,6 +69,28 @@ env-check:
 env-status-all:
 	@node $(MACHINE_DEV_SCRIPT) status-all
 
+dev-ui:
+	@node $(DEV_APP_SCRIPT) serve --env-repo "$(ENV_REPO_ARG)"
+
+dev-ui-snapshot:
+	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
+
+plan-validate:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) validate --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-status:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-status PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) status --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-current:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-current PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) current --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-next:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-next PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) next --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
 profile:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
 	@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"
@@ -83,7 +111,7 @@ config:
 
 dev-start:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_PURPOSE_ARG)" ] || [ -z "$(DEV_SOURCE_CLAIMS_ARG)" ]; then \
-		echo "Usage: make dev-start WORK_ITEM=<id> PURPOSE='<text>' SOURCE_CLAIMS='<mode>:<path>[;...]' [JOURNEY=<id>] [RUNTIME_CLAIMS='<mode>:<kind>:<id>[;...]']"; \
+		echo "Usage: make dev-start WORK_ITEM=<id> PURPOSE='<text>' SOURCE_CLAIMS='<mode>:<path>[;...]' [PLAN=<path> TASK=<id>] [JOURNEY=<id>] [RUNTIME_CLAIMS='<mode>:<kind>:<id>[;...]']"; \
 		exit 1; \
 	fi
 	@node $(DEV_WORK_SCRIPT) start \
@@ -94,7 +122,9 @@ dev-start:
 		--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)" \
 		--expires-minutes "$(DEV_EXPIRES_MINUTES_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",) \
-		$(if $(DEV_JOURNEY_ARG),--journey "$(DEV_JOURNEY_ARG)",)
+		$(if $(DEV_JOURNEY_ARG),--journey "$(DEV_JOURNEY_ARG)",) \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",) \
+		$(if $(DEV_TASK_ARG),--task "$(DEV_TASK_ARG)",)
 
 dev-update:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-update WORK_ITEM=<id> [SOURCE_CLAIMS='...'] [RUNTIME_CLAIMS='...']"; exit 1; fi
@@ -106,7 +136,9 @@ dev-update:
 		$(if $(DEV_OWNER_EXPLICIT_ARG),--owner "$(DEV_OWNER_EXPLICIT_ARG)",) \
 		$(if $(DEV_PURPOSE_ARG),--purpose "$(DEV_PURPOSE_ARG)",) \
 		$(if $(DEV_SOURCE_CLAIMS_ARG),--source-claims "$(DEV_SOURCE_CLAIMS_ARG)",) \
-		$(if $(DEV_RUNTIME_CLAIMS_SPECIFIED),--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)",)
+		$(if $(DEV_RUNTIME_CLAIMS_SPECIFIED),--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)",) \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",) \
+		$(if $(DEV_TASK_ARG),--task "$(DEV_TASK_ARG)",)
 
 dev-status:
 	@node $(DEV_WORK_SCRIPT) status $(if $(DEV_WORK_ITEM_ARG),--work-item "$(DEV_WORK_ITEM_ARG)",)

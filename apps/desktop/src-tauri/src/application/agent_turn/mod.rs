@@ -766,7 +766,7 @@ pub fn agent_execute_turn_stream(
         Err(error) => Err(error),
         Ok(()) => {
             if input.available_tools.is_none() {
-                if let Ok(tool_entries) = tools::tools_list_entries() {
+                if let Ok(tool_entries) = tools::tools_list_entries(&ptid) {
                     input.available_tools = Some(tool_entries);
                 }
             }

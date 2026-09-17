@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -21,6 +21,10 @@
 | LDCP-D07 | Place Acceptance Evidence under the machine Dev root | accepted |
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
 | LDCP-D09 | Require human authorization for environment creation | accepted |
+| LDCP-D10 | Declare Agent control mode in each profile | accepted |
+| LDCP-D11 | Provide one read-only Development Control Plane dashboard | accepted |
+| LDCP-D12 | Run one machine-wide Peers Dev application | accepted |
+| LDCP-D13 | Project Plan progress separately from environment health | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -316,3 +320,216 @@ ownership decision, not an implementation convenience.
   cannot authorize selection, deployment, restart, or reset.
 - Agent workflows stop and report the missing environment instead of creating
   one.
+
+## LDCP-D10: Profile-Declared Agent Control
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+The current model knows a workspace's allowed Station capabilities but does not
+say whether a reviewed profile is intended for autonomous Agent operation.
+Agents therefore repeatedly ask for profile selection, registration, deploy,
+restart, or reset approval even when the environment was created specifically
+for automated development.
+
+### Decision
+
+Every profile must declare:
+
+```env
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
+```
+
+- `human-gated` requires human approval for binding changes and Station
+  mutation.
+- `managed` authorizes Agent registration, binding, deploy, restart and cleanup
+  within the existing declaration/capability/lease envelope.
+- `disposable` additionally authorizes exact-scope reset when the work
+  declaration, workspace capability and reset lease all agree.
+
+The field is a maximum policy. It never grants a lease, expands a declaration,
+creates topology, supplies credentials, authorizes history rewrite, or bypasses
+source identity.
+
+### Rationale
+
+One reviewed profile policy is safer and less disruptive than repeating
+operation-by-operation prompts that do not change the underlying authority.
+
+### Alternatives Considered
+
+- A boolean `agentManaged`: rejected because it cannot distinguish deploy from
+  destructive reset.
+- Infer policy from profile names such as `disposable`: rejected because names
+  are not authority.
+- Keep all operations human-gated: rejected because it makes long-running
+  development non-progressing administrative work.
+
+### Consequences
+
+- Every profile must be updated atomically; missing mode fails closed.
+- Skills may proceed without repeated prompts only within the declared mode.
+- Changing a profile's control mode remains a reviewed human action.
+
+## LDCP-D11: Read-Only Development Control Plane Dashboard
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+Environment topology, machine registrations, development declarations and
+leases are separately queryable. There is no single view showing which
+requirements and Journeys each worktree is executing together with the
+profiles, slots, Stations, Relays, databases, fixtures and leases they use.
+
+### Decision
+
+Add a lightweight application under `apps/dev/`. Its server joins redacted
+profile definitions with registry, declaration and live lease projections and
+serves the Peers Dev UI locally.
+
+The primary projection is worktree-centric: one row groups a workspace's active
+requirements and Journeys with its declared and held runtime resources. Profile
+occupancy remains a secondary capacity view. Unregistered declaration owners
+remain visible by `workspaceId` and branch instead of being silently dropped.
+
+The dashboard is read-only and has no mutation controls.
+
+### Rationale
+
+Operators and Agents need one current development picture without making the
+env repository or UI a second workflow or allocation authority.
+
+### Alternatives Considered
+
+- Store occupancy in the env repository: rejected because occupancy is
+  machine-local mutable state.
+- Build a separate worktree/project board: rejected because it would split
+  delivery intent and runtime-resource truth into two operator surfaces.
+- Build a full management application: rejected as unnecessary for the current
+  operational need.
+- Show only `registry.json`: rejected because it omits work intent, live leases
+  and profile trust/policy.
+
+### Consequences
+
+- The dashboard can disappear without affecting runtime authority.
+- Status generation must redact secrets by selecting fields, not by returning
+  raw profile contents.
+- Runtime claims may identify Relay and database intent for visibility, but
+  adding those claim kinds does not create lease or mutation authority.
+- Any future write action requires a separate accepted control-plane decision.
+
+## LDCP-D12: One Machine-Wide Peers Dev Application
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+Every worktree contains the same launch command. Without a machine-wide
+exclusivity contract, concurrent starts can create duplicate servers, bind
+different ports, or silently replace the source instance that other worktrees
+are observing.
+
+### Decision
+
+Peers Dev has one fixed endpoint: `http://127.0.0.1:4177`. The operating
+system's exclusive TCP listener is the live ownership authority.
+
+`make dev-ui` follows one idempotent ensure protocol:
+
+1. Probe `GET /api/server`.
+2. If a compatible Peers Dev server responds, report its source identity and
+   exit successfully without starting another process.
+3. If no listener exists, bind `127.0.0.1:4177`.
+4. If a concurrent start wins the bind race, re-probe and accept only a
+   compatible Peers Dev identity.
+5. If any unrelated or incompatible listener owns the port, fail with
+   `DEV_SERVER_PORT_CONFLICT`.
+
+The server projects `workspaceId`, branch, source HEAD, and whether the serving
+worktree is dirty, but never its canonical filesystem root or changed paths.
+There is no host or port override in the public launcher.
+
+### Rationale
+
+TCP bind exclusivity is kernel-enforced, atomic and tied to the real process
+lifetime. It cannot become stale like PID or lock metadata. The identity probe
+makes repeat launches idempotent while rejecting unrelated listeners.
+
+### Alternatives Considered
+
+- PID or lock file: rejected because stale metadata cannot prove a live owner.
+- One port per worktree: rejected because it creates multiple competing
+  management surfaces.
+- Kill and replace the existing process: rejected because a worktree must not
+  steal machine-global ownership implicitly.
+- Dynamic fallback ports: rejected because they violate the single-entry-point
+  contract.
+
+### Consequences
+
+- The first compatible process owns the server until it exits.
+- Other worktrees reuse that process and can see which source identity owns it.
+- Switching the serving source requires an explicit stop followed by a start.
+- `apps/dev/` is the only app implementation; the env-repository UI and
+  tooling-local server are deleted in the same cutover.
+
+## LDCP-D13: Plan-Aware Work And Independent Environment Health
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+Peers Dev currently filters the ledger to live declarations, shows no Plan
+progress, and derives one worktree state from registration, profile, slot,
+declaration, and lease conditions. An expired heartbeat can make in-progress
+work disappear, while an unreviewed profile can label valid source execution as
+blocked.
+
+### Decision
+
+Peers Dev projects two independent dimensions:
+
+- `workState`: declaration lifecycle plus resolved Plan/Task lifecycle;
+- `environmentHealth`: registration, profile, slot, lease, and source-identity
+  diagnostics.
+
+Active declarations are primary. The newest stale declaration for a work item
+remains visible as historical operational state but never authorizes mutation
+or possession. Tracked declarations resolve their repository-relative
+`planPath` under the registered canonical root and use the canonical Plan
+Package parser. Missing, legacy, invalid, mismatched, or inaccessible plans are
+typed progress states.
+
+The public snapshot selects safe fields and never returns a canonical root or
+absolute Plan path.
+
+### Rationale
+
+Task progress and environment readiness answer different questions. Collapsing
+them loses causal information: dirty topology can block deployment without
+making source work fail, and an expired declaration can be an observability
+problem without erasing the task.
+
+### Alternatives Considered
+
+- Keep one aggregate `blocked` state: rejected because it misclassifies task
+  execution and hides the actionable environment cause.
+- Hide stale declarations: rejected because heartbeat failure then removes
+  active work from the operator surface.
+- Parse legacy Markdown heuristically: rejected because it creates a second
+  plan model and unreviewable percentages.
+
+### Consequences
+
+- The dashboard displays task progress and environment warnings together but
+  does not merge their semantics.
+- Stale work is visible and clearly non-live.
+- Legacy or unsynchronized worktrees remain visible with typed unavailable
+  progress until they adopt the declaration and Plan Package contracts.

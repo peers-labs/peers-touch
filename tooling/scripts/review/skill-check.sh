@@ -276,8 +276,10 @@ fi
 rm -f /tmp/pt-dev-work-acceptance-writer.$$
 
 for marker in \
-  "Completed since previous anchor" \
-  "Ready queue" \
+  "Completed delta" \
+  "Next Progress Slice" \
+  "Expected progress effect" \
+  "Remaining frontier" \
   "Execution mode / lanes" \
   "Conflict controls" \
   "Critical path / ETA"; do
@@ -307,11 +309,14 @@ done
 
 for marker in \
   "Concurrency Decision" \
+  "Progress Contract" \
+  "Expected delta" \
+  "Reporting boundary" \
   "Exclusive write-set owners" \
   "Shared runtime resources" \
   "Integration order and rollback boundary" \
   "Existing-agent reconciliation" \
-  "Context Anchor, when tracked: include completed delta, ready queue, execution" \
+  "Context Anchor, when tracked: include the Progress Slice baseline" \
   "conflict controls" \
   "Critical path"; do
   if ! grep -Fq "$marker" "$goal_template"; then

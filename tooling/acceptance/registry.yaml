@@ -1316,6 +1316,47 @@
       ]
     },
     {
+      "id": "agent-trusted-package-catalog",
+      "features": [
+        "agent-trusted-package-catalog"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/package_catalog.proto",
+          "packages/agent-catalog/**",
+          "apps/station/app/subserver/agent/catalog/**",
+          "apps/station/app/subserver/agent/handler/package_catalog_handler.go",
+          "apps/station/app/subserver/agent/handler/package_catalog_handler_test.go",
+          "apps/station/app/subserver/agent/model/package_catalog.pb.go",
+          "apps/station/app/subserver/agent/agent.go",
+          "apps/desktop/src-tauri/build.rs",
+          "apps/desktop/src-tauri/src/application/skills_market/**",
+          "apps/desktop/src/pages/MarketplacePage.tsx",
+          "apps/desktop/src/pages/marketplace/**",
+          "apps/desktop/src/components/SkillsTab.tsx",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/hooks/useNavigation.ts",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "packages/locales/en/agent.json",
+          "packages/locales/zh-CN/agent.json",
+          "packages/locales/en/provider.json",
+          "packages/locales/zh-CN/provider.json",
+          "tooling/acceptance/gates/agent/marketplace_catalog_development.py",
+          "tooling/acceptance/gates/agent/marketplace_catalog_development_test.py",
+          "tooling/acceptance/gates/agent/marketplace_catalog_fault_proxy_test.py",
+          "tooling/acceptance/fixtures/agent_marketplace_catalog_fault_proxy.py",
+          "tooling/acceptance/provisioners/home_station.py",
+          "tooling/acceptance/features/agent-trusted-package-catalog.yaml"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-agent-unit",
+        "desktop-check",
+        "agent-marketplace-catalog-e2e"
+      ]
+    },
+    {
       "id": "agent-task-management",
       "features": [
         "agent-task-management"

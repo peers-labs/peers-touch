@@ -207,6 +207,161 @@ func TestMigrateActorIdentityColumnsRenamesLegacyColumnsIdempotently(t *testing.
 	}
 }
 
+func TestMigrateActorIdentityColumnsResolvesNumericValuesToCanonicalPTIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-values?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE touch_actor (
+			id INTEGER PRIMARY KEY,
+			ptid TEXT NOT NULL UNIQUE
+		)
+	`).Error; err != nil {
+		t.Fatalf("create actor table: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO touch_actor (id, ptid)
+		VALUES (42, 'ptid:v1:actor:peers:p:fixture')
+	`).Error; err != nil {
+		t.Fatalf("seed actor table: %v", err)
+	}
+
+	for _, migration := range actorIdentityColumnMigrations {
+		createTable := fmt.Sprintf(
+			`CREATE TABLE %s (id TEXT PRIMARY KEY, %s TEXT)`,
+			migration.table,
+			migration.targetColumn,
+		)
+		if err := db.Exec(createTable).Error; err != nil {
+			t.Fatalf("create target table %s: %v", migration.table, err)
+		}
+		insertRows := fmt.Sprintf(
+			`INSERT INTO %s (id, %s) VALUES (?, ?), (?, ?), (?, ?)`,
+			migration.table,
+			migration.targetColumn,
+		)
+		if err := db.Exec(
+			insertRows,
+			"numeric", "42",
+			"canonical", "ptid:v1:actor:peers:p:existing",
+			"global", "",
+		).Error; err != nil {
+			t.Fatalf("seed target table %s: %v", migration.table, err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err != nil {
+		t.Fatalf("migrate actor identity values: %v", err)
+	}
+	if err := MigrateActorIdentityColumns(db); err != nil {
+		t.Fatalf("repeat actor identity value migration: %v", err)
+	}
+
+	expectedValues := map[string]string{
+		"numeric":   "ptid:v1:actor:peers:p:fixture",
+		"canonical": "ptid:v1:actor:peers:p:existing",
+		"global":    "",
+	}
+	for _, migration := range actorIdentityColumnMigrations {
+		for rowID, expected := range expectedValues {
+			var actorPTID string
+			if err := db.Table(migration.table).
+				Select(migration.targetColumn).
+				Where("id = ?", rowID).
+				Scan(&actorPTID).Error; err != nil {
+				t.Fatalf("read %s row %s: %v", migration.table, rowID, err)
+			}
+			if actorPTID != expected {
+				t.Fatalf(
+					"%s.%s row %s = %q, want %q",
+					migration.table,
+					migration.targetColumn,
+					rowID,
+					actorPTID,
+					expected,
+				)
+			}
+		}
+	}
+}
+
+func TestMigrateActorIdentityColumnsRollsBackUnresolvedNumericValues(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-unresolved?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	statements := []string{
+		`CREATE TABLE touch_actor (id INTEGER PRIMARY KEY, ptid TEXT NOT NULL UNIQUE)`,
+		`INSERT INTO touch_actor (id, ptid) VALUES (42, 'ptid:v1:actor:peers:p:fixture')`,
+		`CREATE TABLE agents (id TEXT PRIMARY KEY, owner_actor_ptid TEXT NOT NULL)`,
+		`INSERT INTO agents (id, owner_actor_ptid) VALUES ('agent-1', '42')`,
+		`CREATE TABLE agent_conversations (id TEXT PRIMARY KEY, actor_ptid TEXT NOT NULL)`,
+		`INSERT INTO agent_conversations (id, actor_ptid) VALUES ('conversation-1', '999')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare unresolved actor migration: %v", err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err == nil {
+		t.Fatal("expected unresolved numeric actor identity to fail closed")
+	}
+
+	var actorPTID string
+	if err := db.Table("agents").
+		Select("owner_actor_ptid").
+		Where("id = ?", "agent-1").
+		Scan(&actorPTID).Error; err != nil {
+		t.Fatalf("read rolled-back agent identity: %v", err)
+	}
+	if actorPTID != "42" {
+		t.Fatalf("agent identity after rollback = %q, want numeric source value", actorPTID)
+	}
+}
+
+func TestMigrateActorIdentityColumnsRollsBackCanonicalCollision(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-collision?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	statements := []string{
+		`CREATE TABLE touch_actor (id INTEGER PRIMARY KEY, ptid TEXT NOT NULL UNIQUE)`,
+		`INSERT INTO touch_actor (id, ptid) VALUES (42, 'ptid:v1:actor:peers:p:fixture')`,
+		`CREATE TABLE agent_providers (
+			id TEXT PRIMARY KEY,
+			actor_ptid TEXT NOT NULL,
+			name TEXT NOT NULL,
+			UNIQUE (actor_ptid, name)
+		)`,
+		`INSERT INTO agent_providers (id, actor_ptid, name)
+		 VALUES
+			('provider-numeric', '42', 'ark'),
+			('provider-canonical', 'ptid:v1:actor:peers:p:fixture', 'ark')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare colliding actor migration: %v", err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err == nil {
+		t.Fatal("expected canonical identity collision to fail closed")
+	}
+
+	var actorPTID string
+	if err := db.Table("agent_providers").
+		Select("actor_ptid").
+		Where("id = ?", "provider-numeric").
+		Scan(&actorPTID).Error; err != nil {
+		t.Fatalf("read rolled-back provider identity: %v", err)
+	}
+	if actorPTID != "42" {
+		t.Fatalf("provider identity after rollback = %q, want numeric source value", actorPTID)
+	}
+}
+
 func TestMigrateActorIdentityColumnsRejectsDualColumns(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-conflict?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

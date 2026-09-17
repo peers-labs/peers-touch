@@ -13,6 +13,6 @@ export function registerEvaluationPage(): void {
     factory: () => <EvaluationPageContainer />,
     preload: 'on-visit',
     keepAlive: { lru: 1 },
-    runtimes: [],
+    runtimes: ['evaluation', 'agent-capability'],
   });
 }
