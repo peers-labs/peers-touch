@@ -233,6 +233,7 @@ function readLockMetadata(lockFile) {
 }
 
 function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
   let fd;
   try {
     fd = openSync(directory, 'r');

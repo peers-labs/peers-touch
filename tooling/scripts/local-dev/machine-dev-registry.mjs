@@ -791,6 +791,7 @@ function acquireRegistryLock(lockFile, timeoutMs = REGISTRY_LOCK_TIMEOUT_MS) {
 }
 
 function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
   let fd;
   try {
     fd = openSync(directory, 'r');
@@ -875,6 +876,10 @@ function machineDevScriptPath() {
 
 export function observeLeases(options = {}) {
   const home = options.home;
+  const leaseRoot = options.leaseRoot ?? machineLeaseRoot(home);
+  if (!existsSync(leaseRoot)) {
+    return { activeLeases: [], staleMetadata: [] };
+  }
   try {
     const output = execFileSync(
       options.python ?? 'python3',
@@ -882,7 +887,7 @@ export function observeLeases(options = {}) {
         leaseHelperPath(),
         'status',
         '--lease-root',
-        options.leaseRoot ?? machineLeaseRoot(home),
+        leaseRoot,
       ],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
