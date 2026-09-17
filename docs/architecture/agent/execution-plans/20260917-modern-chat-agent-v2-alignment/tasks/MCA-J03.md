@@ -35,12 +35,12 @@
   "checks": [
     {
       "id": "governed-tool-focused",
-      "command": "pnpm --dir apps/desktop exec vitest run src/runtimes/toolRuntime.test.ts src/components/messages/ToolCallCard.test.ts src/store/chatMerge.test.ts && (cd apps/station && go test ./app/subserver/agent/service -run 'Tool|CapabilityOperation')",
+      "command": "pnpm --dir apps/desktop exec vitest run src/runtimes/toolRuntime.test.ts src/components/messages/ToolCallCard.test.ts src/store/chatMerge.test.ts && (cd apps/station && go test ./app/subserver/agent/service -run 'Tool|CapabilityOperation') && python3 -m unittest tooling.acceptance.gates.agent.governed_tool_development_test tooling.acceptance.tests.test_provisioner_runtime.ProvisionerBlockingTests.test_agent_v2_governed_tool_provisions_profile_two_clients",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "governed-tool-native-journey",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mca-v2-j03 --gate agent-v2-governed-tool-loop-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/governed_tool_development.py",
       "verificationClass": "FUNCTIONAL_CHECK"
     }
   ],
@@ -70,4 +70,17 @@ deterministic sanctioned fixture.
 - Governance metadata, approval hydration, and unkeyed-message reconciliation
   fixes are implemented in the current dirty source.
 - Focused tests, TypeScript, and production build previously passed.
+- The dedicated Development runner uses a source-attested OpenAI-compatible
+  provider fixture through the production provider boundary; the formal
+  86-tuple Gate remains owned by MCA-A01.
+- Timeout/disconnect taxonomy and retry-command lineage remain
+  `DESIGN_AMENDMENT_REQUIRED` and are not invented by this slice.
 - Post-fix exact-source native functional evidence remains unproven.
+
+## Concurrency Decision
+
+- Mode: hybrid.
+- Integrator owns this Task, Harness, Home Station provisioning, provider
+  Fixture/tunnel, commits, deployment, and functional evidence.
+- Desktop runtime/status/UI corrections are path-isolated until integration.
+- Shared plan/tracking files and runtime resources remain serial.

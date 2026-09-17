@@ -55,7 +55,7 @@ import {
 export { useAgentStore } from './agent';
 export type { Session } from '../services/desktop_api';
 
-export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled' | 'expired';
+export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled' | 'expired' | 'unknown_side_effect';
 export type DelegationTaskStatus = 'completed' | 'failed' | 'timeout' | 'unknown';
 
 export interface DelegationTaskInfo {

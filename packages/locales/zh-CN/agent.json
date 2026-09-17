@@ -1116,6 +1116,7 @@
   "agent.errors.contextInvalidReference": "上下文引用无效或不可用。",
   "agent.errors.attachmentRejected": "该附件无法用于本次请求。",
   "agent.errors.toolUnknown": "请求的工具不可用。",
+  "agent.errors.toolUnknownSideEffect": "工具可能已经执行，但无法确认结果。请先检查受影响的系统，再决定下一步操作。",
   "agent.errors.toolApprovalDenied": "工具执行未获批准。",
   "agent.errors.toolApprovalExpired": "工具审批请求已过期。",
   "agent.errors.toolLoopBudgetExhausted": "工具循环已达到执行上限。",

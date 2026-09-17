@@ -1116,6 +1116,7 @@
   "agent.errors.contextInvalidReference": "A context reference is invalid or unavailable.",
   "agent.errors.attachmentRejected": "An attachment cannot be used for this request.",
   "agent.errors.toolUnknown": "The requested tool is unavailable.",
+  "agent.errors.toolUnknownSideEffect": "The tool may have run, but its outcome cannot be confirmed. Review the affected system before taking another action.",
   "agent.errors.toolApprovalDenied": "Tool execution was not approved.",
   "agent.errors.toolApprovalExpired": "The tool approval request has expired.",
   "agent.errors.toolLoopBudgetExhausted": "The tool loop reached its execution limit.",

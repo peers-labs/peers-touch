@@ -180,7 +180,9 @@ export function ToolCallItem({
   const approvalExpired =
     tool.status === 'expired'
     && tool.error === 'agent.errors.toolApprovalExpired';
-  const visibleExpanded = expanded || approvalRequired || approvalExpired;
+  const unknownSideEffect = tool.status === 'unknown_side_effect';
+  const visibleExpanded =
+    expanded || approvalRequired || approvalExpired || unknownSideEffect;
   const manifest = useAgentCapabilityStore((state) => {
     if (!tool.manifestId || !tool.manifestVersion) return undefined;
     return state.manifests.find(
@@ -226,7 +228,7 @@ export function ToolCallItem({
     ? 'success'
     : status === 'error' || status === 'denied'
       ? 'error'
-      : status === 'expired'
+      : status === 'expired' || status === 'unknown_side_effect'
         ? 'warning'
       : status === 'cancelled'
         ? 'default'
@@ -264,7 +266,7 @@ export function ToolCallItem({
           ? <ChevronDown size={12} style={{ flexShrink: 0 }} />
           : <ChevronRight size={12} style={{ flexShrink: 0 }} />
         }
-        {approvalRequired
+        {approvalRequired || unknownSideEffect
           ? <AlertTriangle size={12} style={{ color: token.colorWarning, flexShrink: 0 }} />
           : denied
             ? <XCircle size={12} style={{ color: token.colorError, flexShrink: 0 }} />
@@ -566,6 +568,8 @@ function hasActionableToolState(
     ) || (
       status === 'expired'
       && error === 'agent.errors.toolApprovalExpired'
+    ) || (
+      status === 'unknown_side_effect'
     );
   });
 }

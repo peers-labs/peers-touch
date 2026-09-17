@@ -129,4 +129,34 @@ describe('ToolCallsBlock approval visibility', () => {
     expect(runtimeSource).toContain('manifestId: fact.manifestId');
     expect(runtimeSource).toContain('targetDeviceId: fact.targetDeviceId');
   });
+
+  it('keeps unknown side effects visible without an automatic retry action', () => {
+    const source = readFileSync(
+      new URL('./ToolCallCard.tsx', import.meta.url),
+      'utf8',
+    );
+    const runtimeSource = readFileSync(
+      new URL('../../runtimes/toolRuntime.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain(
+      "const unknownSideEffect = tool.status === 'unknown_side_effect'",
+    );
+    expect(source).toContain(
+      'expanded || approvalRequired || approvalExpired || unknownSideEffect',
+    );
+    expect(source).toContain(
+      "status === 'unknown_side_effect'",
+    );
+    expect(runtimeSource).toContain(
+      "return 'unknown_side_effect'",
+    );
+    expect(runtimeSource).toContain(
+      "return 'agent.errors.toolUnknownSideEffect'",
+    );
+    expect(source).toContain(
+      'approvalExpired && onRequestAgain',
+    );
+  });
 });

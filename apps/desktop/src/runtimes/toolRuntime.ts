@@ -62,6 +62,7 @@ const CLIENT_EXECUTOR_UNAVAILABLE = 'CLIENT_EXECUTOR_UNAVAILABLE';
 const EXECUTOR_UNAVAILABLE_DECISION_ERROR_CODE =
   'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE';
 const EXECUTOR_UNAVAILABLE_LOCALE_KEY = 'agent.errors.executorUnavailable';
+const TOOL_RECONCILE_INTERVAL_MS = 60_000;
 
 function stringValue(data: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -262,9 +263,7 @@ export function reduceToolProjection(
     ));
   }
   if (event.event === 'done') {
-    return updateTurnProjections(state, turnId, (projection) => (
-      projection.pending ? { ...projection, status: 'success', pending: false } : projection
-    ));
+    return state;
   }
   if (event.event === 'cancelled') {
     return updateTurnProjections(state, turnId, (projection) => (
@@ -420,7 +419,11 @@ export function resolveToolCallProjection(
 
   const sourceIsTerminal = isTerminalToolStatus(source.status);
   const projectionAddsTypedTerminalOutcome = (
-    (projection.status === 'denied' || projection.status === 'expired')
+    (
+      projection.status === 'denied'
+      || projection.status === 'expired'
+      || projection.status === 'unknown_side_effect'
+    )
     && Boolean(
       projection.error
       || decisionOutcomeError(projection.decisionOutcome)
@@ -470,12 +473,10 @@ function toolStatusFromDiagnostic(
   if (status === AgentToolCallStatus.DENIED) return 'denied';
   if (status === AgentToolCallStatus.CANCELLED) return 'cancelled';
   if (status === AgentToolCallStatus.EXPIRED) return 'expired';
-  if (
-    status === AgentToolCallStatus.FAILED
-    || status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT
-  ) {
-    return 'error';
+  if (status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT) {
+    return 'unknown_side_effect';
   }
+  if (status === AgentToolCallStatus.FAILED) return 'error';
   return undefined;
 }
 
@@ -494,7 +495,8 @@ function isTerminalToolStatus(
     || status === 'error'
     || status === 'denied'
     || status === 'cancelled'
-    || status === 'expired';
+    || status === 'expired'
+    || status === 'unknown_side_effect';
 }
 
 function diagnosticToolError(
@@ -512,6 +514,9 @@ function diagnosticToolError(
     && fact.errorCode === 'TOOL_APPROVAL_DENIED'
   ) {
     return 'agent.errors.toolApprovalDenied';
+  }
+  if (fact.status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT) {
+    return 'agent.errors.toolUnknownSideEffect';
   }
   return fact.errorCode || source.error;
 }
@@ -679,6 +684,7 @@ class ToolRuntime implements RuntimeDescriptor {
   private listeners = new Set<Listener>();
   private actorId: string | null = null;
   private installed = false;
+  private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private pendingDecisions = new Map<string, Promise<AgentToolDecisionIntentResponse>>();
   private pendingExecutorReconnects = new Map<string, Promise<void>>();
   private decisionIntentIds = new Map<string, string>();
@@ -687,11 +693,22 @@ class ToolRuntime implements RuntimeDescriptor {
   install(): void {
     if (this.installed) return;
     this.installed = true;
+    this.reconcileTimer = setInterval(() => {
+      void this.reconcile('periodic').catch((error) => {
+        log.warn('toolRuntime', 'Periodic ToolCall reconciliation failed', {
+          error: String(error),
+        });
+      });
+    }, TOOL_RECONCILE_INTERVAL_MS);
   }
 
   teardown(): void {
     if (!this.installed) return;
     this.installed = false;
+    if (this.reconcileTimer !== null) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = null;
+    }
     this.actorId = null;
     this.pendingDecisions.clear();
     this.pendingExecutorReconnects.clear();
@@ -711,6 +728,22 @@ class ToolRuntime implements RuntimeDescriptor {
   }
 
   getSnapshot = (): ToolProjectionState => this.state;
+
+  async reconcile(reason: string): Promise<void> {
+    const tracked = Object.values(this.state).filter(
+      (projection) =>
+        projection.pending || projection.status === 'unknown_side_effect',
+    );
+    if (tracked.length === 0) return;
+    log.info('toolRuntime', 'Reconciling Station ToolCall projections', {
+      reason,
+      count: tracked.length,
+    });
+    await this.reconcileMessages(tracked.map((projection) => ({
+      turnId: projection.turnId,
+      toolCalls: [toToolCallInfo(projection)],
+    })));
+  }
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -761,6 +794,7 @@ class ToolRuntime implements RuntimeDescriptor {
         return (
           !current
           || current.pending
+          || current.status === 'unknown_side_effect'
           || (current.status === 'error' && !current.decisionErrorCode)
         );
       });

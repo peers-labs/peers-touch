@@ -77,6 +77,29 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('does not infer ToolCall success from the terminal turn event', () => {
+    const pending = reduceToolProjection({}, {
+      event: 'tool_call',
+      data: {
+        turnId: 'turn-1',
+        toolCallId: 'tool-call-1',
+        toolName: 'filesystem.read',
+        arguments: '{}',
+      },
+    });
+
+    const afterDone = reduceToolProjection(pending, {
+      event: 'done',
+      data: { turnId: 'turn-1' },
+    });
+
+    expect(afterDone).toBe(pending);
+    expect(afterDone['tool-call-1']).toMatchObject({
+      status: 'pending',
+      pending: true,
+    });
+  });
+
   it('reconciles a missed approval event from authoritative Turn diagnostics', async () => {
     exportAgentTurnDiagnostics.mockResolvedValue({
       replay: {
@@ -404,6 +427,45 @@ describe('toolRuntime projection authority', () => {
       error: 'agent.errors.toolApprovalDenied',
       decisionErrorCode: 'TOOL_APPROVAL_DENIED',
       approvalId: 'approval-1',
+      decisionId: 'decision-1',
+      decisionRevision: 1,
+    });
+  });
+
+  it('reconciles an unknown side effect as a distinct fail-closed state', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.UNKNOWN_SIDE_EFFECT,
+          approvalId: 'approval-1',
+          decisionId: 'decision-1',
+          decisionRevision: 1n,
+          errorCode: 'TOOL_EXECUTION_UNKNOWN_SIDE_EFFECT',
+        }],
+      },
+    });
+    toolRuntime.consume({
+      event: 'tool_call',
+      data: {
+        turnId: 'turn-1',
+        toolCallId: 'tool-call-1',
+        toolName: 'filesystem.read',
+        arguments: '{}',
+      },
+    });
+
+    await toolRuntime.reconcile('periodic');
+
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledWith('turn-1');
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'unknown_side_effect',
+      pending: false,
+      error: 'agent.errors.toolUnknownSideEffect',
+      decisionErrorCode: 'TOOL_EXECUTION_UNKNOWN_SIDE_EFFECT',
       decisionId: 'decision-1',
       decisionRevision: 1,
     });

@@ -15495,6 +15495,57 @@ interface FoundationDisposableRuntimeFixture {
   modelId: string;
 }
 
+async function createGovernedToolRuntimeFixture(
+  purpose: string,
+  baseUrl: string,
+): Promise<FoundationDisposableRuntimeFixture> {
+  const suffix = crypto.randomUUID();
+  const requestedProviderId = `mca-j03-${suffix}`;
+  const modelId = `model-${suffix}`;
+  const created = await api.createProvider({
+    id: requestedProviderId,
+    name: requestedProviderId,
+    description: `V2-J03 ${purpose}`,
+    base_url: baseUrl,
+    api_key: 'mca-j03-fixture-key',
+  });
+  const providerId = String(created.provider?.id || '');
+  if (providerId !== requestedProviderId) {
+    throw new Error('agent.acceptance.governedToolProviderIdentityMismatch');
+  }
+  try {
+    await api.addModel(providerId, {
+      id: modelId,
+      display_name: `Governed Tool ${purpose}`,
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: true,
+    });
+    const availableModel = (await api.listAvailableModels()).models.find(
+      (model) => (
+        model.provider_id === providerId
+        && model.id === modelId
+        && model.enabled
+      ),
+    );
+    if (
+      !availableModel
+      || availableModel.streaming !== true
+      || availableModel.function_call !== true
+    ) {
+      throw new Error(
+        'agent.acceptance.governedToolRuntimeModelUnavailable',
+      );
+    }
+    return { providerId, modelId };
+  } catch (error) {
+    await api.deleteProvider(providerId).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
@@ -21127,6 +21178,343 @@ async function runCapabilityAdmissionRejection(input: {
   }
 }
 
+async function runGovernedToolDevelopmentJourney(input: {
+  sampleId: string;
+  providerBaseUrl: string;
+}): Promise<Record<string, unknown>> {
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.governedToolProviderUrlInvalid');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let disposableAgent:
+    NonNullable<ReturnType<typeof selectedAgent>> | null = null;
+  let disposableAgentId = '';
+  let toolFixture: FoundationToolFixture | null = null;
+  let currentBinding: AgentCapabilityBinding | null = null;
+  let turn: FoundationToolTurn | null = null;
+  let conversationId = '';
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    bindingRestored: false,
+    conversationDeleted: false,
+    disposableAgentDeleted: false,
+    fixtureModelDeleted: false,
+    fixtureProviderDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    runtimeFixture = await createGovernedToolRuntimeFixture(
+      'governed-tool',
+      providerUrl.toString(),
+    );
+    disposableAgent = await agentStore.createAgent({
+      name: `governed-tool-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Governed Tool ${input.sampleId}`,
+      description: 'V2-J03 governed ToolCall Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    disposableAgentId = disposableAgent.id || disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    toolFixture = await foundationToolFixture(
+      disposableAgentId,
+      'desktop_app',
+    );
+    currentBinding = await updateFoundationToolPolicy(
+      disposableAgent,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: toolFixture,
+      sampleId: input.sampleId,
+      label: 'governed-tool-development',
+      onConversationCreated: (createdConversationId) => {
+        conversationId = createdConversationId;
+      },
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.governedToolApprovalInvalid');
+    }
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'governed ToolCall native receiver',
+      30_000,
+    );
+    const toolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.governedToolReceiverMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'governed ToolCall approval control',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve || approve.disabled) {
+      throw new Error('agent.acceptance.governedToolApprovalUnavailable');
+    }
+    approve.click();
+    await waitFor(
+      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+      'governed ToolCall decision acknowledgement',
+      30_000,
+    );
+    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
+    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
+      throw new Error('agent.acceptance.governedToolDecisionRejected');
+    }
+    const replayedDecision = await api.submitAgentToolDecision(
+      decisionAttempt.input,
+    );
+
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.SUCCEEDED
+        && diagnosticReplayTerminal(replay)
+      ),
+      'governed ToolCall settlement',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.SUCCEEDED
+        && diagnosticReplayTerminal(replay)
+      ),
+      'governed ToolCall replay',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'governed ToolCall terminal receiver projection',
+      30_000,
+    );
+
+    const sourceFact = source.facts[0];
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      sourceFact,
+    );
+    const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+    const lineage = evidenceRecord(
+      stationFact.lineage,
+      'governedToolLineage',
+    );
+    const readback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    const sourceHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const replayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const governance = toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-governance]',
+    );
+    const lineageComplete = [
+      lineage.toolCallId,
+      lineage.toolBatchId,
+      lineage.manifestId,
+      lineage.manifestVersion,
+      lineage.bindingId,
+      lineage.readinessSnapshotId,
+      lineage.approvalId,
+      lineage.decisionId,
+      lineage.executionClaimId,
+      lineage.sideEffectReceiptId,
+      lineage.resultId,
+      lineage.continuationId,
+    ].every((value) => typeof value === 'string' && value.length > 0)
+      && Number(lineage.bindingRevision) > 0
+      && Number(lineage.decisionRevision) > 0
+      && Number(lineage.fencingToken) > 0;
+    const assertions = {
+      nativeApprovalSubmittedOnce:
+        decisionAttempt.response.decision_id
+          === replayedDecision.decision_id
+        && decisionAttempt.response.decision_revision
+          === replayedDecision.decision_revision
+        && decisionAttempt.response.payload_hash
+          === replayedDecision.payload_hash,
+      oneExecutionAndSideEffect:
+        stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1,
+      durableLineageComplete: lineageComplete,
+      stationReplayEqual:
+        sourceHash === replayHash,
+      nativeReceiverAuthoritative:
+        receiverProjection?.status === 'success'
+        && receiverProjection.pending === false
+        && Boolean(governance?.getClientRects().length)
+        && JSON.stringify(readback.messages).includes(toolCallId),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.governedToolAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      assertions,
+      'receiver-dom': {
+        visible: true,
+        toolCallId,
+        status: receiverProjection?.status ?? '',
+        governanceVisible: Boolean(governance?.getClientRects().length),
+      },
+      'station-readback': {
+        entityKind: 'agent-tool-call-lineage',
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        fact: stationFact,
+        replayHash,
+        sourceHash,
+      },
+      facts: {
+        capabilitySession: capabilitySession.facts,
+        decision: decisionAttempt.response,
+        replayedDecision,
+        lineage,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      if (conversationId) {
+        await cleanupFoundationToolConversation(
+          conversationId,
+          turn?.turnId ?? '',
+        );
+        cleanup.conversationDeleted = true;
+      }
+      if (currentBinding && disposableAgent && toolFixture) {
+        if (toolFixture.binding) {
+          await updateFoundationToolPolicy(
+            disposableAgent,
+            toolFixture,
+            currentBinding,
+            toolFixture.binding.approvalPolicy,
+            toolFixture.binding.enabled,
+          );
+        } else {
+          await api.deleteAgentCapabilityBinding(
+            currentBinding.bindingId,
+            currentBinding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.bindingRestored = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (runtimeFixture) {
+        await api.deleteModel(
+          runtimeFixture.providerId,
+          runtimeFixture.modelId,
+        );
+        cleanup.fixtureModelDeleted = true;
+        await api.deleteProvider(runtimeFixture.providerId);
+        cleanup.fixtureProviderDeleted = true;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        !priorSelection
+        || useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.governedToolCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.governedToolCaptureMissing');
+  }
+  const cleanupComplete = Object.values(cleanup).every(Boolean);
+  if (!cleanupComplete) {
+    throw new Error('agent.acceptance.governedToolCleanupIncomplete');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'governedToolAssertions'),
+      cleanupComplete,
+    },
+    cleanup: {
+      ...cleanup,
+      status: 'clean',
+    },
+  }) as Record<string, unknown>;
+}
+
 async function runCapabilityBindingDevelopmentJourney(
   sampleId: string,
 ): Promise<Record<string, unknown>> {
@@ -21888,6 +22276,19 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
     }) {
       return runCapabilityBindingDevelopmentJourney(sampleId);
+    },
+
+    async runGovernedToolDevelopment({
+      sampleId,
+      providerBaseUrl,
+    }: {
+      sampleId: string;
+      providerBaseUrl: string;
+    }) {
+      return runGovernedToolDevelopmentJourney({
+        sampleId,
+        providerBaseUrl,
+      });
     },
 
     async runCapabilityIncompatibleDevelopment({

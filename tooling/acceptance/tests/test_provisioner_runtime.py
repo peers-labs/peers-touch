@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import socket
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -227,7 +229,7 @@ class ProvisionerBaseClassTests(unittest.TestCase):
 
 
 class ProfileResolutionTests(unittest.TestCase):
-    def test_missing_active_profile_blocks(self):
+    def test_missing_machine_binding_blocks(self):
         provisioner = get_provisioner(
             EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "home-station.yaml"
@@ -239,9 +241,87 @@ class ProfileResolutionTests(unittest.TestCase):
             with patch(
                 "tooling.acceptance.core.provisioner.REPO_ROOT",
                 fake_worktree,
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=2,
+                    stdout="",
+                    stderr='{"code":"WORKSPACE_BINDING_MISSING"}',
+                ),
             ):
-                with self.assertRaisesRegex(BlockedError, "No active profile"):
+                with self.assertRaisesRegex(
+                    BlockedError,
+                    "Machine Dev profile resolution failed",
+                ):
                     provisioner._resolve_active_profile()
+
+    def test_machine_binding_resolves_canonical_profile_and_slot_ports(self):
+        provisioner = get_provisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_worktree = Path(tmpdir) / "peers-oss"
+            profile_dir = Path(tmpdir) / "env" / "peers-touch" / "two"
+            profile_dir.mkdir(parents=True)
+            profile = profile_dir / "profile.env.example"
+            profile.write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=two",
+                        "PT_DEV_SLOT=99",
+                        "PT_STATION_MODE=remote",
+                        "PT_STATION_URL=http://station.example:18080",
+                        "PT_DESKTOP_APP_GATEWAY_PORT=1",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            resolution = {
+                "authority": "machine-control-plane",
+                "binding": {
+                    "canonicalRoot": str(fake_worktree),
+                    "profile": "two",
+                    "slot": 3,
+                    "workspaceId": "0" * 16,
+                },
+                "profile": {
+                    "profileFile": str(profile),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3330,
+                    "desktopAppWeb": 3510,
+                    "desktopWebGateway": 3331,
+                    "desktopWebWeb": 3511,
+                    "mobileWeb": 5473,
+                },
+            }
+            with patch(
+                "tooling.acceptance.core.provisioner.REPO_ROOT",
+                fake_worktree,
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps(resolution),
+                    stderr="",
+                ),
+            ):
+                name, resolved_profile, slot, values = (
+                    provisioner._resolve_active_profile()
+                )
+
+        self.assertEqual(name, "two")
+        self.assertEqual(resolved_profile, profile.resolve())
+        self.assertEqual(slot, 3)
+        self.assertEqual(values["PT_DEV_SLOT"], "3")
+        self.assertEqual(values["PT_DESKTOP_APP_GATEWAY_PORT"], "3330")
+        self.assertEqual(values["PT_MOBILE_WEB_PORT"], "5473")
 
     def test_profile_identity_mismatch_blocks(self):
         provisioner = get_provisioner(
@@ -251,19 +331,42 @@ class ProfileResolutionTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             fake_worktree = Path(tmpdir) / "peers-oss"
-            profile_dir = fake_worktree / ".local" / "dev" / "profiles"
-            active_dir = fake_worktree / ".local" / "dev" / "active"
-            profile_dir.mkdir(parents=True)
-            active_dir.mkdir(parents=True)
-            profile = profile_dir / "expected.env"
+            profile = Path(tmpdir) / "profile.env.example"
             profile.write_text(
-                "PT_DEV_PROFILE=other\nPT_DEV_SLOT=1\n",
+                "PT_DEV_PROFILE=other\n",
                 encoding="utf-8",
             )
-            (active_dir / "peers-oss.env").symlink_to(profile)
+            resolution = {
+                "authority": "machine-control-plane",
+                "binding": {
+                    "canonicalRoot": str(fake_worktree),
+                    "profile": "two",
+                    "slot": 1,
+                    "workspaceId": "0" * 16,
+                },
+                "profile": {
+                    "profileFile": str(profile),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3130,
+                    "desktopAppWeb": 3310,
+                    "desktopWebGateway": 3131,
+                    "desktopWebWeb": 3311,
+                    "mobileWeb": 5273,
+                },
+            }
             with patch(
                 "tooling.acceptance.core.provisioner.REPO_ROOT",
                 fake_worktree,
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps(resolution),
+                    stderr="",
+                ),
             ):
                 with self.assertRaisesRegex(BlockedError, "identity mismatch"):
                     provisioner._resolve_active_profile()
@@ -562,6 +665,9 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_AGENT_ATTACHMENT_WEBDRIVER_PORT": "14450"},
             clear=True,
+        ), patch.object(
+            provisioner,
+            "_assert_client_ports_available",
         ):
             client = provisioner._agent_attachment_client(
                 "run-attachment",
@@ -631,9 +737,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             fake_worktree = Path(tmpdir) / "peers-oss"
             profile_dir = fake_worktree / ".local" / "dev" / "profiles"
-            active_dir = fake_worktree / ".local" / "dev" / "active"
             profile_dir.mkdir(parents=True)
-            active_dir.mkdir(parents=True)
             profile = profile_dir / "three.env"
             profile.write_text(
                 "\n".join(
@@ -648,7 +752,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            (active_dir / "peers-oss.env").symlink_to(profile)
             attestation = ServiceAttestation(
                 service_id="station",
                 service_kind="station",
@@ -676,6 +779,21 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ), patch(
                 "tooling.acceptance.provisioners.home_station.REPO_ROOT",
                 fake_worktree,
+            ), patch.object(
+                provisioner,
+                "_resolve_active_profile",
+                return_value=(
+                    "three",
+                    profile,
+                    2,
+                    {
+                        "PT_DEV_PROFILE": "three",
+                        "PT_DEV_SLOT": "2",
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": "http://station.example:18080",
+                        "PT_STATION_DEPLOY_ENV": "station-three",
+                    },
+                ),
             ), patch.object(
                 provisioner,
                 "_git_commit",
@@ -1100,6 +1218,83 @@ class ProvisionerBlockingTests(unittest.TestCase):
         cleanup = provisioner.cleanup()
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-binding-", cleanup[0])
+
+    def test_agent_v2_governed_tool_provisions_profile_two_clients(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            deployment_environment="station-2",
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._two_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="sha256:j03-development-diff",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_V2_GOVERNED_TOOL_NATIVE_WEBDRIVER_PORT": "26445",
+                "PT_AGENT_V2_GOVERNED_TOOL_BROWSER_WEBDRIVER_PORT": "26446",
+            },
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "agent-v2-governed-tool-loop-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.profile_resolved, "two")
+        self.assertEqual(manifest.services, {"station": attestation})
+        self.assertEqual(len(manifest.clients), 2)
+        native, browser = manifest.clients
+        self.assertEqual(native.actor, "bob")
+        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(native.profile, "agent-v2-governed-tool-native")
+        self.assertEqual(browser.profile, "agent-v2-governed-tool-browser")
+        self.assertEqual(native.webdriver_port, 26445)
+        self.assertEqual(browser.webdriver_port, 26446)
+        self.assertIn("pt-agent-v2-governed-tool-", native.storage_root)
+        self.assertEqual(
+            manifest.credential_refs,
+            ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+        )
+        profile_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-v2-governed-tool-loop-e2e:{manifest.run_id}",
+        )
+        source_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-v2-governed-tool-loop-e2e:{manifest.run_id}",
+        )
+        cleanup = provisioner.cleanup()
+        self.assertEqual(len(cleanup), 1)
+        self.assertIn("pt-agent-v2-governed-tool-", cleanup[0])
 
     def test_agent_v2_binding_rejects_non_two_profile(self):
         contract = EnvironmentContract.from_yaml(

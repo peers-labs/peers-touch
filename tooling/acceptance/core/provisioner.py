@@ -303,49 +303,123 @@ class EnvironmentProvisioner(ABC):
             return "unknown"
 
     def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:
-        worktree_id = REPO_ROOT.name
-        active_file = (
-            REPO_ROOT / ".local" / "dev" / "active" / f"{worktree_id}.env"
+        resolver = (
+            REPO_ROOT
+            / "tooling"
+            / "scripts"
+            / "local-dev"
+            / "machine-dev.mjs"
         )
-        if not active_file.exists() and not active_file.is_symlink():
+        try:
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(resolver),
+                    "resolve",
+                    "--workspace-root",
+                    str(REPO_ROOT),
+                    "--format",
+                    "json",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
             raise BlockedError(
-                reason=(
-                    f"No active profile for worktree {worktree_id!r}. "
-                    "Run: make profile PROFILE=<name>"
-                ),
-                resource=f"profile:active:{worktree_id}",
+                reason=f"Machine Dev profile resolution failed: {error}",
+                resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
+            ) from error
+
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise BlockedError(
+                reason=f"Machine Dev profile resolution failed: {detail}",
+                resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
             )
         try:
-            profile_file = active_file.resolve(strict=True)
+            resolved = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise BlockedError(
+                reason=f"Machine Dev profile resolution returned invalid JSON: {error}",
+                resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
+            ) from error
+        if (
+            not isinstance(resolved, dict)
+            or resolved.get("authority") != "machine-control-plane"
+            or not isinstance(resolved.get("binding"), dict)
+            or not isinstance(resolved.get("profile"), dict)
+            or not isinstance(resolved.get("ports"), dict)
+        ):
+            raise BlockedError(
+                reason="Machine Dev profile resolution is not authoritative",
+                resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
+            )
+
+        binding = resolved["binding"]
+        profile = resolved["profile"]
+        ports = resolved["ports"]
+        profile_name = binding.get("profile")
+        raw_profile_file = profile.get("profileFile")
+        slot = binding.get("slot")
+        if (
+            not isinstance(profile_name, str)
+            or not profile_name
+            or not isinstance(raw_profile_file, str)
+            or not raw_profile_file
+            or not isinstance(slot, int)
+            or slot < 0
+            or profile.get("sourceState") != "tracked-clean"
+        ):
+            raise BlockedError(
+                reason="Machine Dev profile resolution is incomplete",
+                resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
+            )
+        try:
+            profile_file = Path(raw_profile_file).expanduser().resolve(strict=True)
         except (OSError, RuntimeError) as error:
             raise BlockedError(
-                reason=f"Active profile cannot be resolved: {active_file}: {error}",
-                resource=f"profile:symlink:{active_file}",
+                reason=f"Canonical profile cannot be resolved: {raw_profile_file}: {error}",
+                resource=f"profile:canonical:{profile_name}",
             ) from error
 
         values = load_env_file(profile_file)
-        profile_name = values.get("PT_DEV_PROFILE", "")
-        try:
-            slot = int(values.get("PT_DEV_SLOT", "0"))
-        except ValueError as error:
-            raise BlockedError(
-                reason=f"Profile {profile_file} has invalid PT_DEV_SLOT",
-                resource=f"profile:slot:{profile_file}",
-            ) from error
-        if not profile_name:
+        declared_profile = values.get("PT_DEV_PROFILE", "")
+        if not declared_profile:
             raise BlockedError(
                 reason=f"Profile {profile_file} is missing PT_DEV_PROFILE",
                 resource=f"profile:content:{profile_file}",
             )
-        expected_name = profile_file.stem
-        if self.contract.profile.identity_match and profile_name != expected_name:
+        if self.contract.profile.identity_match and declared_profile != profile_name:
             raise BlockedError(
                 reason=(
-                    f"Profile identity mismatch: PT_DEV_PROFILE={profile_name} "
-                    f"but filename is {expected_name}.env"
+                    f"Profile identity mismatch: PT_DEV_PROFILE={declared_profile} "
+                    f"but machine binding selects {profile_name}"
                 ),
-                resource=f"profile:identity:{expected_name}",
+                resource=f"profile:identity:{profile_name}",
             )
+
+        port_fields = {
+            "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
+            "desktopAppWeb": "PT_DESKTOP_APP_WEB_PORT",
+            "desktopWebGateway": "PT_DESKTOP_WEB_GATEWAY_PORT",
+            "desktopWebWeb": "PT_DESKTOP_WEB_WEB_PORT",
+            "mobileWeb": "PT_MOBILE_WEB_PORT",
+        }
+        values["PT_DEV_SLOT"] = str(slot)
+        for machine_field, environment_field in port_fields.items():
+            value = ports.get(machine_field)
+            if not isinstance(value, int) or value <= 0:
+                raise BlockedError(
+                    reason=(
+                        "Machine Dev profile resolution has an invalid "
+                        f"{machine_field} port"
+                    ),
+                    resource=f"profile:machine-control-plane:{REPO_ROOT.name}",
+                )
+            values[environment_field] = str(value)
         return profile_name, profile_file, slot, values
 
     def _station_ready(self, station_url: str, health_url: str = "") -> bool:

@@ -341,6 +341,7 @@
   "chat.message.toolCall.status.error": "Failed",
   "chat.message.toolCall.status.cancelled": "Cancelled",
   "chat.message.toolCall.status.expired": "Expired",
+  "chat.message.toolCall.status.unknown_side_effect": "Outcome unknown",
   "chat.message.toolCall.collapse": "Collapse",
   "chat.message.toolCall.showAll": "Show all ({{count}} chars)",
   "chat.message.toolCall.using": "Using {{count}} tool…",

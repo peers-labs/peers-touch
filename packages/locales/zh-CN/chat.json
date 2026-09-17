@@ -341,6 +341,7 @@
   "chat.message.toolCall.status.error": "失败",
   "chat.message.toolCall.status.cancelled": "已取消",
   "chat.message.toolCall.status.expired": "已过期",
+  "chat.message.toolCall.status.unknown_side_effect": "执行结果未知",
   "chat.message.toolCall.collapse": "收起",
   "chat.message.toolCall.showAll": "显示全部（{{count}} 字符）",
   "chat.message.toolCall.using": "正在使用 {{count}} 个工具…",

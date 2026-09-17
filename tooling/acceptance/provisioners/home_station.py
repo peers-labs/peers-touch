@@ -32,6 +32,7 @@ GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
+    "agent-v2-governed-tool-loop-e2e": ("bob",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
@@ -44,6 +45,7 @@ GATE_ROLES = {
 
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
 AGENT_V2_BINDING_GATE = "agent-v2-capability-binding-e2e"
+AGENT_V2_GOVERNED_TOOL_GATE = "agent-v2-governed-tool-loop-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -267,10 +269,20 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         run_id: str,
         slot: int,
         profile_env: dict[str, str],
+        *,
+        runtime_name: str = "binding",
     ) -> tuple[ClientRuntime, ClientRuntime]:
-        run_root = Path(tempfile.gettempdir()) / f"pt-agent-v2-binding-{run_id}"
+        environment_prefix = (
+            "PT_AGENT_V2_BINDING"
+            if runtime_name == "binding"
+            else "PT_AGENT_V2_GOVERNED_TOOL"
+        )
+        run_root = (
+            Path(tempfile.gettempdir())
+            / f"pt-agent-v2-{runtime_name}-{run_id}"
+        )
         worktree = Path(
-            os.environ.get("PT_AGENT_V2_BINDING_WORKTREE", str(REPO_ROOT))
+            os.environ.get(f"{environment_prefix}_WORKTREE", str(REPO_ROOT))
         ).expanduser().resolve()
         native = ClientRuntime(
             actor="bob",
@@ -278,7 +290,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             worktree=str(worktree),
             gateway_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_NATIVE_GATEWAY_PORT",
+                    f"{environment_prefix}_NATIVE_GATEWAY_PORT",
                     profile_env.get(
                         "PT_DESKTOP_APP_GATEWAY_PORT",
                         str(3030 + slot * 100),
@@ -287,7 +299,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             ),
             renderer_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_NATIVE_RENDERER_PORT",
+                    f"{environment_prefix}_NATIVE_RENDERER_PORT",
                     profile_env.get(
                         "PT_DESKTOP_APP_WEB_PORT",
                         str(3210 + slot * 100),
@@ -296,13 +308,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             ),
             webdriver_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_NATIVE_WEBDRIVER_PORT",
+                    f"{environment_prefix}_NATIVE_WEBDRIVER_PORT",
                     str(4445 + slot * 10),
                 )
             ),
             profile=os.environ.get(
-                "PT_AGENT_V2_BINDING_NATIVE_PROFILE",
-                "agent-v2-binding-native",
+                f"{environment_prefix}_NATIVE_PROFILE",
+                f"agent-v2-{runtime_name}-native",
             ),
             storage_root=str(run_root / "native" / "storage"),
         )
@@ -312,7 +324,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             worktree=str(worktree),
             gateway_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_BROWSER_GATEWAY_PORT",
+                    f"{environment_prefix}_BROWSER_GATEWAY_PORT",
                     profile_env.get(
                         "PT_DESKTOP_WEB_GATEWAY_PORT",
                         str(3031 + slot * 100),
@@ -321,7 +333,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             ),
             renderer_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_BROWSER_RENDERER_PORT",
+                    f"{environment_prefix}_BROWSER_RENDERER_PORT",
                     profile_env.get(
                         "PT_DESKTOP_WEB_WEB_PORT",
                         str(3211 + slot * 100),
@@ -330,11 +342,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             ),
             webdriver_port=int(
                 os.environ.get(
-                    "PT_AGENT_V2_BINDING_BROWSER_WEBDRIVER_PORT",
+                    f"{environment_prefix}_BROWSER_WEBDRIVER_PORT",
                     str(4446 + slot * 10),
                 )
             ),
-            profile="agent-v2-binding-browser",
+            profile=f"agent-v2-{runtime_name}-browser",
             storage_root=str(run_root / "browser" / "storage"),
         )
         self._assert_client_ports_available(native)
@@ -578,6 +590,36 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_resources=self.contract.cleanup.resources,
         )
 
+    def _agent_v2_governed_tool_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
+            raise BlockedError(
+                reason=(
+                    "Agent V2 governed ToolCall Development requires "
+                    "CHAT_NATIVE_DEMO_PASSWORD in Profile two"
+                ),
+                resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            )
+        clients = self._agent_v2_binding_clients(
+            manifest.run_id,
+            slot,
+            profile_env,
+            runtime_name="governed-tool",
+        )
+        return dataclasses.replace(
+            manifest,
+            credential_refs=("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+            clients=clients,
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
     def _agent_native_manifest(
         self,
         manifest: RuntimeManifest,
@@ -651,7 +693,10 @@ class HomeStationProvisioner(EnvironmentProvisioner):
     ) -> None:
         required_profile = (
             AGENT_V2_BINDING_PROFILE
-            if gate_id == AGENT_V2_BINDING_GATE
+            if gate_id in {
+                AGENT_V2_BINDING_GATE,
+                AGENT_V2_GOVERNED_TOOL_GATE,
+            }
             else AGENT_V2_PROFILE
         )
         if profile_name != required_profile:
@@ -688,6 +733,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 gate_id in {
                     AGENT_V2_FOUNDATION_GATE,
                     AGENT_V2_BINDING_GATE,
+                    AGENT_V2_GOVERNED_TOOL_GATE,
                 }
                 or gate_id in AGENT_NATIVE_GATES
             ):
@@ -801,6 +847,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 gate_id in {
                     AGENT_V2_FOUNDATION_GATE,
                     AGENT_V2_BINDING_GATE,
+                    AGENT_V2_GOVERNED_TOOL_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -839,6 +886,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 return self._ready(manifest)
             if gate_id == AGENT_V2_BINDING_GATE:
                 manifest = self._agent_v2_binding_manifest(
+                    manifest,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_GOVERNED_TOOL_GATE:
+                manifest = self._agent_v2_governed_tool_manifest(
                     manifest,
                     station_url=station_url,
                     deployment_environment=deployment_environment,
