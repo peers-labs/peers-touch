@@ -1688,11 +1688,21 @@ Rules:
 MCA-D20 defines an exact-byte signed discovery contract:
 
 ```text
+CatalogTrustRoot:
+  source_id, publisher_id
+  signing_key_id, public_key
+  trust_class
+
+CatalogTransport:
+  official_station:
+    endpoint_path, distribution_id
+  user_pinned_github:
+    repository, branch, manifest_path
+
 CatalogSourceRegistration:
-  source_id, display_name, source_kind
-  repository, branch, manifest_path
-  publisher_id, signing_key_id, public_key
-  trust_class, built_in
+  display_name, built_in, enabled
+  trust_root
+  transport
 
 CatalogEnvelopeV1:
   schema_version = "peers.package-catalog.envelope.v1"
@@ -1716,10 +1726,31 @@ CatalogPackageV1:
 
 The Ed25519 signature covers the exact decoded `payload_base64` bytes with
 domain separator `peers-touch/package-catalog/v1\0`. The verifier resolves the
-public key only from `CatalogSourceRegistration`, checks that envelope key ID
-matches the pinned key, then validates source ID, publisher ID, schema, revision,
-package IDs, semantic versions, artifact encodings, artifact hashes, and
-bounded sizes.
+public key only from `CatalogTrustRoot`, checks that envelope key ID matches the
+pinned key, then validates source ID, publisher ID, schema, revision, package
+IDs, semantic versions, artifact encodings, artifact hashes, and bounded sizes.
+Transport metadata cannot modify the trust root.
+
+MCA-D20A adds one proto-first Station distribution response:
+
+```text
+GetOfficialPackageCatalogResponse:
+  envelope_json
+  media_type = "application/json"
+  distribution_id = "peers-official-station-v1"
+  envelope_sha256
+```
+
+`envelope_sha256` validates transport bytes but never substitutes for the
+publisher signature. The official endpoint is side-effect free and returns one
+immutable envelope per Station build. An old Station, timeout, authentication
+failure, invalid digest, invalid signature, or rollback leaves the last
+verified snapshot visible only as stale.
+
+The canonical signed asset is
+`packages/agent-catalog/official-catalog.v1.envelope.json`. Desktop bootstrap
+reads it directly; the Station byte projection is generated and must match it
+exactly.
 
 Derived projection fields are never accepted from the payload:
 

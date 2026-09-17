@@ -19,6 +19,7 @@
   "writeSet": [
     "apps/desktop",
     "apps/station/app/subserver/agent",
+    "packages/agent-catalog",
     "packages/locales",
     "tooling/acceptance",
     "docs/client",
@@ -56,8 +57,19 @@
     "Do not copy LobeHub hosted commercial marketplace or Community behavior",
     "Do not accept source-provided trust labels without verification"
   ],
-  "updatedAt": "2026-09-17T12:00:00Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-17T13:16:46Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d;tree:631fec514047ba64dbb51bd7ce8d161b19a306ee;rust:14-pass;python:8-pass;typescript:pass;eslint:pass;agent-contracts:39-valid"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "BLOCKED",
+      "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d;diagnostic:/Users/bytedance/Documents/Projects/peers-touch/env/peers-touch/two/profile.env.example"
+    }
+  ]
 }
 ```
 
@@ -79,4 +91,11 @@ the product into a hosted commercial marketplace.
 - Focused X3 checks pass. The broader Desktop wrapper remains red only on 12
   pre-existing Mobile social-runtime-boundary violations outside this Task
   write set.
-- The exact-source native Journey remains to be executed.
+- Source checkpoint:
+  `e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d`.
+- The exact-source native Journey is `BLOCKED/UNPROVEN`: Profile `two` cannot
+  authorize deployment while its canonical env definition is dirty.
+- The Owner accepted MCA-D20A on 2026-09-17: the built-in source will fetch
+  exact signed bytes from Station, while `packages/agent-catalog` becomes the
+  sole manually maintained official envelope. Implementation starts only after
+  this approved architecture/Plan checkpoint is submitted to PR #112.
