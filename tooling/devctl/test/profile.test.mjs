@@ -58,11 +58,65 @@ test('activates and resolves a profile by worktree identity', (t) => {
   fs.writeFileSync(path.join(profileDir, `${name}.env`), fixtureProfile(name));
 
   const activated = activateProfile(root, name, { PT_ENV_REPO: '' });
-  const resolved = resolveProfile(root, { PT_ENV_REPO: '' });
+  const resolved = resolveProfile(root, {
+    PT_DEV_PROFILE_FILE: path.join(profileDir, `${name}.env`),
+    PT_ENV_REPO: '',
+  });
 
   assert.equal(activated.reference.profileName, name);
   assert.equal(resolved.profile.PT_DEV_PROFILE, name);
   assert.equal(resolved.reference.worktreeId, path.basename(root));
+});
+
+test('normal resolution uses the machine binding instead of the active symlink', (t) => {
+  const root = temporaryRoot(t);
+  const paths = path.join(root, '.local', 'dev');
+  const activeDir = path.join(paths, 'active');
+  const profileDir = path.join(paths, 'profiles');
+  fs.mkdirSync(activeDir, { recursive: true });
+  fs.mkdirSync(profileDir, { recursive: true });
+  const staleProfile = path.join(profileDir, 'stale.env');
+  fs.writeFileSync(staleProfile, fixtureProfile('stale'));
+  fs.symlinkSync(
+    path.relative(activeDir, staleProfile),
+    path.join(activeDir, `${path.basename(root)}.env`),
+  );
+
+  const machineProfile = path.join(root, 'machine.env');
+  fs.writeFileSync(machineProfile, fixtureProfile('machine'));
+  const machineState = path.join(root, 'machine-state');
+  const resolved = resolveProfile(
+    root,
+    { PT_ENV_REPO: '' },
+    () => ({
+      binding: {
+        profile: 'machine',
+        slot: 5,
+      },
+      ports: {
+        station: 18580,
+        desktopAppGateway: 3530,
+        desktopAppWeb: 3710,
+        desktopWebGateway: 3531,
+        desktopWebWeb: 3711,
+        mobileWeb: 5673,
+      },
+      profile: {
+        profileFile: machineProfile,
+      },
+      workspaceStateRoot: machineState,
+    }),
+  );
+
+  assert.equal(resolved.reference.profileName, 'machine');
+  assert.equal(resolved.reference.resolvedPath, machineProfile);
+  assert.equal(resolved.profile.PT_DEV_SLOT, '5');
+  assert.equal(resolved.profile.PT_STATION_PORT, '18580');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3530');
+  assert.equal(
+    resolved.paths.profileData,
+    path.join(machineState, 'runtime', 'machine', 'data'),
+  );
 });
 
 test('rejects a profile identity mismatch', (t) => {

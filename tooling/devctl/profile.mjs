@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ERROR_CODES, fail } from './errors.mjs';
+import { checkWorkspace } from '../scripts/local-dev/machine-dev-registry.mjs';
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 const SECRET_NAME = /(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY|CREDENTIAL)/i;
@@ -145,34 +146,81 @@ export function validateProfile(profile, expectedName, filePath) {
   return profile;
 }
 
-export function resolveProfile(root, environment = process.env) {
+export function resolveProfile(
+  root,
+  environment = process.env,
+  machineResolver = checkWorkspace,
+) {
   const paths = localDevPaths(root);
   const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
   const explicit = environment.PT_DEV_PROFILE_FILE
     ? path.resolve(environment.PT_DEV_PROFILE_FILE)
     : undefined;
 
-  if (!explicit && !fs.existsSync(activePath)) {
-    fail(
-      ERROR_CODES.PROFILE_REQUIRED,
-      `No active profile for worktree '${worktreeId(root)}'`,
-      { activePath },
-    );
+  if (explicit) {
+    const name = path.basename(explicit, '.env');
+    const profile = validateProfile(readEnvFile(explicit), name, explicit);
+    return {
+      profile,
+      reference: {
+        worktreeId: worktreeId(root),
+        profileName: name,
+        activePath,
+        resolvedPath: explicit,
+        canonical: false,
+      },
+      paths: {
+        ...paths,
+        profileData: path.join(paths.data, name),
+        profileLogs: path.join(paths.logs, name),
+        profilePids: path.join(paths.pids, name),
+        profileState: path.join(paths.state, name),
+      },
+    };
   }
 
-  const selectedPath = explicit ?? activePath;
-  const name = explicit
-    ? path.basename(explicit, '.env')
-    : selectedProfileName(activePath);
-  const envRepo = resolveEnvRepo(root, environment);
-  const canonicalPath = envRepo
-    ? path.join(envRepo, 'peers-touch', name, 'profile.env.example')
-    : undefined;
-  const resolvedPath = canonicalPath && fs.existsSync(canonicalPath)
-    ? canonicalPath
-    : selectedPath;
-  const profile = validateProfile(readEnvFile(resolvedPath), name, resolvedPath);
-
+  let resolved;
+  try {
+    resolved = machineResolver({
+      workspaceRoot: root,
+      envRepo: resolveEnvRepo(root, environment),
+    });
+  } catch (error) {
+    fail(
+      ERROR_CODES.PROFILE_REQUIRED,
+      `Machine profile binding is unavailable for '${worktreeId(root)}'`,
+      {
+        cause: error instanceof Error ? error.message : String(error),
+        machineCode: error?.code,
+      },
+    );
+  }
+  const name = resolved.binding.profile;
+  const resolvedPath = resolved.profile.profileFile;
+  const profile = validateProfile(
+    readEnvFile(resolvedPath),
+    name,
+    resolvedPath,
+  );
+  profile.PT_DEV_SLOT = String(resolved.binding.slot);
+  profile.PT_DESKTOP_APP_GATEWAY_PORT = String(
+    resolved.ports.desktopAppGateway,
+  );
+  profile.PT_DESKTOP_APP_WEB_PORT = String(resolved.ports.desktopAppWeb);
+  profile.PT_DESKTOP_WEB_GATEWAY_PORT = String(
+    resolved.ports.desktopWebGateway,
+  );
+  profile.PT_DESKTOP_WEB_WEB_PORT = String(resolved.ports.desktopWebWeb);
+  profile.PT_MOBILE_WEB_PORT = String(resolved.ports.mobileWeb);
+  if (profile.PT_STATION_MODE !== 'remote') {
+    profile.PT_STATION_PORT = String(resolved.ports.station);
+    profile.PT_STATION_URL = `http://127.0.0.1:${resolved.ports.station}`;
+  }
+  const runtimeRoot = path.join(
+    resolved.workspaceStateRoot,
+    'runtime',
+    name,
+  );
   return {
     profile,
     reference: {
@@ -180,14 +228,14 @@ export function resolveProfile(root, environment = process.env) {
       profileName: name,
       activePath,
       resolvedPath,
-      canonical: resolvedPath === canonicalPath,
+      canonical: true,
     },
     paths: {
       ...paths,
-      profileData: path.join(paths.data, name),
-      profileLogs: path.join(paths.logs, name),
-      profilePids: path.join(paths.pids, name),
-      profileState: path.join(paths.state, name),
+      profileData: path.join(runtimeRoot, 'data'),
+      profileLogs: path.join(runtimeRoot, 'logs'),
+      profilePids: path.join(runtimeRoot, 'pids'),
+      profileState: path.join(runtimeRoot, 'state'),
     },
   };
 }
@@ -250,7 +298,10 @@ export function activateProfile(root, name, environment = process.env) {
   const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
   fs.rmSync(activePath, { force: true });
   fs.symlinkSync(path.relative(path.dirname(activePath), localPath), activePath, 'file');
-  return resolveProfile(root, environment);
+  return resolveProfile(root, {
+    ...environment,
+    PT_DEV_PROFILE_FILE: localPath,
+  });
 }
 
 export function initializeProfile(root, name, slot = 0) {
