@@ -528,7 +528,6 @@ def persist_actor_identity(
     station_url: str,
     actor_id: str,
 ) -> dict[str, Any]:
-    _validate_identity_root(source_root)
     fixture = IDENTITY_FIXTURE_ROOT / role
     metadata = {
         "schemaVersion": 1,
@@ -545,7 +544,9 @@ def persist_actor_identity(
             existing == metadata,
             f"retained {role} identity belongs to another actor",
         )
+        _validate_identity_root(fixture / "actor-identity")
         return metadata
+    _validate_identity_root(source_root)
     fixture.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = fixture.parent / f".{role}.tmp-{os.getpid()}"
     shutil.rmtree(temporary, ignore_errors=True)

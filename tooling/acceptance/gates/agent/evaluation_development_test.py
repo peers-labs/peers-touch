@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tooling.acceptance.gates.agent.agent_v2_gate import _validate_candidate
 from tooling.acceptance.gates.agent.evaluation_development import (
@@ -15,6 +16,7 @@ from tooling.acceptance.gates.agent.evaluation_development import (
     TUPLE_FIELDS,
     begin_attestation_run,
     evaluate_evaluation_journey,
+    persist_actor_identity,
     write_candidate,
 )
 
@@ -193,6 +195,63 @@ class EvaluationDevelopmentTest(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+    def test_reused_identity_validates_fixture_not_transient_run_keys(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture_root = root / "fixtures"
+            fixture = fixture_root / "alice"
+            fixture_identity = (
+                fixture
+                / "actor-identity/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            fixture_identity.mkdir(parents=True)
+            (fixture_identity / "actor.key").write_text(
+                "ab" * 32,
+                encoding="utf-8",
+            )
+            metadata = {
+                "schemaVersion": 1,
+                "profile": "two",
+                "account": "alice@p.t",
+                "actorId": "ptid:alice",
+                "stationUrl": "https://station.example",
+            }
+            (fixture / "fixture.json").write_text(
+                json.dumps(metadata),
+                encoding="utf-8",
+            )
+            transient_identity = root / "transient"
+            transient_identity.mkdir()
+            (transient_identity / "old.key").write_text(
+                "cd" * 32,
+                encoding="utf-8",
+            )
+            (transient_identity / "current.key").write_text(
+                "ef" * 32,
+                encoding="utf-8",
+            )
+
+            with patch(
+                "tooling.acceptance.gates.agent."
+                "evaluation_development.IDENTITY_FIXTURE_ROOT",
+                fixture_root,
+            ):
+                observed = persist_actor_identity(
+                    "alice",
+                    transient_identity,
+                    "https://station.example/",
+                    "ptid:alice",
+                )
+
+            self.assertEqual(observed, metadata)
+            self.assertEqual(
+                list(fixture_identity.glob("*.key")),
+                [fixture_identity / "actor.key"],
+            )
 
     def test_accepts_complete_j06_capture(self) -> None:
         capture = valid_capture()
