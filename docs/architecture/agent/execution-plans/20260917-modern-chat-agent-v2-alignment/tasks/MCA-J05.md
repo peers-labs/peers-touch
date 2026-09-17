@@ -55,12 +55,17 @@
     "Do not duplicate OAuth credential ownership in Agent configuration",
     "Disconnect and invoke races must preserve pinned revisions and idempotency"
   ],
-  "updatedAt": "2026-09-17T08:00:13Z",
+  "updatedAt": "2026-09-17T23:04:09Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
       "result": "PASS",
       "ref": "git:ec9995a5e6dec7acfa9c52a75485838caba65b7d;apps/desktop:rust-connector-tests-pass;apps/desktop:tsc-pass;apps/desktop:vitest-39-pass;apps/station:connector-capability-tool-tests-pass;tooling/acceptance:j05-runner-and-provisioner-tests-14-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:80161c9b4853b19f255fbed5f2cd4b55c7d9334c;profile:two;station:station-two;runtime:native-tauri;artifact:/Users/bytedance/.peers-touch/dev/workspaces/a534541b87e49abf/workflow/MCA-V2-ALIGNMENT-J05/artifacts/20260917T230215585911Z/result.json"
     }
   ]
 }
@@ -79,8 +84,12 @@ binding, governed execution, result, and recovery.
 - The generic `oauth_connector_call` production path is removed; startup
   backfill only retires legacy placeholder rows.
 - Versioned opaque Connector resources, Station-owned binding/readiness,
-  pinned disconnect-race dispatch, typed recovery, and the native Journey
-  driver are implemented at checkpoint
-  `ec9995a5e6dec7acfa9c52a75485838caba65b7d`.
+  pinned disconnect-race dispatch, typed recovery, lease replacement on OAuth
+  projection changes, and the native Journey driver are implemented at
+  checkpoint `80161c9b4853b19f255fbed5f2cd4b55c7d9334c`.
 - Focused Rust, TypeScript, Vitest, Go, and Python verification passes.
-- Exact-source Profile `two` native invocation/recovery remains `UNPROVEN`.
+- Exact-source Profile `two` native invocation/recovery is
+  `FUNCTIONAL_PASS`; the Gate proved one governed Connector side effect,
+  Station replay equality, disconnect idempotency, reconnect rebasing,
+  native ToolCall visibility, Connector surface visibility, and clean
+  resource teardown.
