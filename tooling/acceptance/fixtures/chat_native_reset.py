@@ -40,6 +40,7 @@ RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
+INDEXED_ACTOR_VISIBILITY = 3
 CHAT_TABLES = (
     "actor_devices",
     "actor_endpoint_directory_versions",
@@ -2320,7 +2321,8 @@ BEGIN
   WHERE email = 'alice@p.t';
 
   UPDATE touch_actor
-  SET password_hash = preset_hash
+  SET password_hash = preset_hash,
+      visibility = {INDEXED_ACTOR_VISIBILITY}
   WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t');
   GET DIAGNOSTICS updated_count = ROW_COUNT;
   IF updated_count <> 3 THEN

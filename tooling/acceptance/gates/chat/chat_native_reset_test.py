@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
+    INDEXED_ACTOR_VISIBILITY,
     RETIRED_CHAT_TABLES,
     FixtureActorRecord,
     _remote_transport,
@@ -1283,6 +1284,10 @@ ORDER BY owner_ptid
         self.assertIn("SELECT password_hash INTO STRICT preset_hash", sql)
         self.assertIn(
             "WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t')",
+            sql,
+        )
+        self.assertIn(
+            f"visibility = {INDEXED_ACTOR_VISIBILITY}",
             sql,
         )
         self.assertIn("updated_count <> 3", sql)
