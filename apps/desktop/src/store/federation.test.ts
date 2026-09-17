@@ -92,4 +92,25 @@ describe('federation actor Station directory', () => {
       memberStationsByFederation: {},
     })).toBe('');
   });
+
+  it('prefers the actor-specific Station name over a generic member directory label', () => {
+    expect(resolveFederationStationName({
+      actorPtid: 'ptid:bob',
+      federationId: 'federation-1',
+      stationPeerId: 'station-bob',
+      actorStationEntries: {
+        'ptid:bob': {
+          actorPtid: 'ptid:bob',
+          homeStationPeerId: 'station-bob',
+          homeStationName: 'Aspen Station',
+        } as FederationCatalogEntry,
+      },
+      memberStationsByFederation: {
+        'federation-1': [{
+          stationPeerId: 'station-bob',
+          stationName: 'local',
+        } as MemberStationView],
+      },
+    })).toBe('Aspen Station');
+  });
 });

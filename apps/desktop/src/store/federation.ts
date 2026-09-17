@@ -58,14 +58,6 @@ export function resolveFederationStationName(input: {
 }): string {
   const stationPeerId = input.stationPeerId?.trim() || '';
   const federationId = input.federationId?.trim() || '';
-  const scopedStations = federationId
-    ? input.memberStationsByFederation[federationId] ?? []
-    : Object.values(input.memberStationsByFederation).flat();
-  const memberStation = scopedStations.find(
-    (station) => station.stationPeerId.trim() === stationPeerId,
-  );
-  if (memberStation?.stationName.trim()) return memberStation.stationName.trim();
-
   const actorEntry = input.actorPtid
     ? input.actorStationEntries[input.actorPtid]
     : undefined;
@@ -75,6 +67,14 @@ export function resolveFederationStationName(input: {
   ) {
     return actorEntry.homeStationName.trim();
   }
+
+  const scopedStations = federationId
+    ? input.memberStationsByFederation[federationId] ?? []
+    : Object.values(input.memberStationsByFederation).flat();
+  const memberStation = scopedStations.find(
+    (station) => station.stationPeerId.trim() === stationPeerId,
+  );
+  if (memberStation?.stationName.trim()) return memberStation.stationName.trim();
   return '';
 }
 

@@ -117,6 +117,9 @@ async function refreshFriendStationIdentities(): Promise<void> {
         username: chat.peerProfiles[peer.ptid]?.username?.trim() || '',
       }];
     });
+  // #region debug-point A:station-candidates
+  void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'socialRealtime.ts:refreshFriendStationIdentities', msg: '[DEBUG] Station identity candidates resolved', data: { requestCandidates, conversationCandidates: conversationCandidates.map((candidate) => ({ ...candidate, displayName: chat.peerProfiles[candidate.actorPtid]?.display_name?.trim() || '', memberNickname: chat.conversationMembers[chat.conversations.find((conversation) => conversation.kind === 1 && conversation.federationId === candidate.federationId)?.conversationId || '']?.find((member) => member.ptid === candidate.actorPtid)?.nickname?.trim() || '' })) }, ts: Date.now() }) }).catch(() => {});
+  // #endregion
   await useFederationStore.getState().resolveActorStations([
     ...requestCandidates,
     ...conversationCandidates,
@@ -194,6 +197,8 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+    ]);
+    await Promise.allSettled([
       refreshFriendStationIdentities(),
       refreshPeerPresence(peerPtids),
       refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
@@ -277,9 +282,14 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
       .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
   ));
   await Promise.allSettled([
+    ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+  ]);
+
+  if (sequence !== bootstrapSequence) return;
+
+  await Promise.allSettled([
     refreshed.loadGroupUnreadCounts(),
     refreshed.loadConversationPreviews(),
-    ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
     refreshFriendStationIdentities(),
     refreshPeerPresence(peerPtids),
     refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
