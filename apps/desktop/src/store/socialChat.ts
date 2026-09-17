@@ -1818,7 +1818,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A-D',
           location: 'socialChat.ts:sendFriendRequest:command',
           msg: '[DEBUG] Sending friend request command',
@@ -1853,7 +1853,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A',
           location: 'socialChat.ts:sendFriendRequest:response',
           msg: '[DEBUG] Friend request command returned',
@@ -1876,7 +1876,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'C-E',
           location: 'socialChat.ts:sendFriendRequest:projection',
           msg: '[DEBUG] Friend request projection refreshed',
@@ -1904,7 +1904,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A-C',
           location: 'socialChat.ts:sendFriendRequest:error',
           msg: '[DEBUG] Friend request command failed',

@@ -19,6 +19,38 @@ export interface ActorSearchResult {
   homeStationName?: string;
 }
 
+interface FriendRequestFederationContext {
+  senderPtid: string;
+  receiverPtid: string;
+  federationId: string;
+}
+
+export function friendRequestFederationId(
+  requests: readonly FriendRequestFederationContext[],
+  currentUserPtid: string | null,
+  peerPtid: string,
+): string {
+  if (!currentUserPtid || !peerPtid) return '';
+  const federationIds = new Set(
+    requests
+      .filter((request) => (
+        (
+          request.senderPtid === currentUserPtid
+          && request.receiverPtid === peerPtid
+        )
+        || (
+          request.senderPtid === peerPtid
+          && request.receiverPtid === currentUserPtid
+        )
+      ))
+      .map((request) => request.federationId.trim())
+      .filter(Boolean),
+  );
+  return federationIds.size === 1
+    ? federationIds.values().next().value ?? ''
+    : '';
+}
+
 export function resolvedProfileToSearchResult(
   view: FederationResolveView,
 ): ActorSearchResult | null {

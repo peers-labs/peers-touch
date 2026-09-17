@@ -423,7 +423,7 @@ export function installAcceptanceHarness(): void {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'C-E',
           location: 'harness.ts:refreshOnboardingProjection',
           msg: '[DEBUG] Onboarding projection read back',

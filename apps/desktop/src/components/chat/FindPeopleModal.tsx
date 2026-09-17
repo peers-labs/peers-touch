@@ -21,6 +21,7 @@ import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
 import {
   catalogEntryToSearchResult,
+  friendRequestFederationId,
   resolvedProfileToSearchResult,
   type ActorSearchResult,
 } from './findPeopleIdentity';
@@ -262,21 +263,28 @@ export function FindPeopleModal({ open, onClose }: Props) {
   };
 
   const handleSendRequest = async (target: ActorSearchResult) => {
+    const receiverPtid = target.id.trim();
+    const previousRequestFederationId = friendRequestFederationId(
+      friendRequests,
+      currentUserPtid,
+      receiverPtid,
+    );
     // #region debug-point B-D:friend-request-retry-handler-entry
     void fetch('http://127.0.0.1:7781/event', {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'friend-request-retry',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'B-D',
         location: 'FindPeopleModal.tsx:handleSendRequest:entry',
         msg: '[DEBUG] Friend request handler entered',
         data: {
           addingId,
           currentUserPtid,
-          receiverPtid: target.id,
+          receiverPtid,
           receiverHomeStationPeerId: target.homeStationPeerId,
           activeFederationId,
+          previousRequestFederationId,
           defaultFederationId,
           matchingRequests: friendRequests
             .filter((request) => (
@@ -294,14 +302,15 @@ export function FindPeopleModal({ open, onClose }: Props) {
     }).catch(() => {});
     // #endregion
     if (addingId) return;
-    const receiverPtid = target.id.trim();
     if (!receiverPtid) {
       setSearchError(t('chat.social.findPeople.requestIdentityUnavailable'));
       return;
     }
     if (receiverPtid === currentUserPtid) return;
     const federationId =
-      activeFederationId || defaultFederationId;
+      activeFederationId
+      || previousRequestFederationId
+      || defaultFederationId;
     if (!federationId || !target.homeStationPeerId) {
       setRequestErrors((current) => ({
         ...current,
@@ -761,7 +770,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
                         method: 'POST',
                         body: JSON.stringify({
                           sessionId: 'friend-request-retry',
-                          runId: 'pre-fix',
+                          runId: 'post-fix',
                           hypothesisId: 'B',
                           location: 'FindPeopleModal.tsx:findPeopleAction:onClick',
                           msg: '[DEBUG] Friend request action clicked',

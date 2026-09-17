@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FederationResolveView } from '../../services/desktop_api';
-import { resolvedProfileToSearchResult } from './findPeopleIdentity';
+import {
+  friendRequestFederationId,
+  resolvedProfileToSearchResult,
+} from './findPeopleIdentity';
 
 describe('Find People identity projection', () => {
   it('uses ActorRef PTID instead of the legacy profile URL identity', () => {
@@ -56,5 +59,40 @@ describe('Find People identity projection', () => {
     } as unknown as FederationResolveView;
 
     expect(resolvedProfileToSearchResult(view)).toBeNull();
+  });
+
+  it('reuses the unique relationship federation for a rejected-request retry', () => {
+    expect(friendRequestFederationId([
+      {
+        senderPtid: 'ptid:bob',
+        receiverPtid: 'ptid:alice',
+        federationId: 'federation-shared',
+      },
+      {
+        senderPtid: 'ptid:bob',
+        receiverPtid: 'ptid:alice',
+        federationId: 'federation-shared',
+      },
+      {
+        senderPtid: 'ptid:unrelated',
+        receiverPtid: 'ptid:alice',
+        federationId: 'federation-other',
+      },
+    ], 'ptid:bob', 'ptid:alice')).toBe('federation-shared');
+  });
+
+  it('does not guess when relationship history spans multiple federations', () => {
+    expect(friendRequestFederationId([
+      {
+        senderPtid: 'ptid:bob',
+        receiverPtid: 'ptid:alice',
+        federationId: 'federation-a',
+      },
+      {
+        senderPtid: 'ptid:alice',
+        receiverPtid: 'ptid:bob',
+        federationId: 'federation-b',
+      },
+    ], 'ptid:bob', 'ptid:alice')).toBe('');
   });
 });
