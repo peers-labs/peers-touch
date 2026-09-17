@@ -712,6 +712,53 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdmissionListAvailableModelsIncludesGovernedToolCustomProvider(t *testing.T) {
+	catalog.SetForTesting(nil)
+	defer catalog.RestoreForTesting()
+	db := openAdmissionTestDB(t, "admission_list_custom_provider")
+
+	keyVaults, _ := json.Marshal(map[string]string{"api_key": "test-key"})
+	seedTestProvider(t, db, "actor-1", "custom-provider", true, string(keyVaults))
+	if err := db.Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ?", "actor-1", "custom-provider").
+		Update("display_name", "Custom Provider").Error; err != nil {
+		t.Fatalf("set custom provider display name: %v", err)
+	}
+	seedTestModel(
+		t,
+		db,
+		"actor-1",
+		"custom-provider",
+		"custom-model",
+		true,
+		8192,
+		`{"streaming":true,"native-tools":true}`,
+	)
+
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	models, err := resolver.ListAvailableModels(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("list available models: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("expected custom provider model, got %+v", models)
+	}
+	got := models[0]
+	if got.ID != "custom-model" ||
+		got.ProviderID != "custom-provider" ||
+		got.ProviderName != "Custom Provider" ||
+		got.Type != "chat" ||
+		!got.Enabled ||
+		got.ContextWindow != 8192 ||
+		!got.Capabilities["streaming"] ||
+		!got.Capabilities["native-tools"] {
+		t.Fatalf("custom provider model projection = %+v", got)
+	}
+}
+
 func TestRuntimeAdmissionListAvailableModelsExcludesUnconfigured(t *testing.T) {
 	restore := setupTestCatalog()
 	defer restore()

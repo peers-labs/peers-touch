@@ -175,6 +175,62 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 		}
 	}
 
+	for i := range userProviders {
+		provider := &userProviders[i]
+		if catalog.Find(provider.Name) != nil ||
+			!provider.Enabled ||
+			!ProviderRuntimeAdvertised(provider.RuntimeKind, provider.Protocol) {
+			continue
+		}
+		hidden := parseHiddenModels(provider.HiddenModels)
+		dbModels, err := r.models.List(ctx, actorPTID, provider.Name)
+		if err != nil {
+			return nil, errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				fmt.Sprintf(
+					"failed to load model capability source for provider %q",
+					provider.Name,
+				),
+				err,
+			)
+		}
+		providerName := strings.TrimSpace(provider.DisplayName)
+		if providerName == "" {
+			providerName = provider.Name
+		}
+		for j := range dbModels {
+			databaseModel := &dbModels[j]
+			if !databaseModel.Enabled ||
+				databaseModel.ContextWindow <= 1 ||
+				containsStr(hidden, databaseModel.ModelID) {
+				continue
+			}
+			capabilities, err := resolveModelCapabilityFacts(nil, databaseModel)
+			if err != nil {
+				return nil, errcode.New(
+					errcode.AgentInvalidSourceState,
+					http.StatusConflict,
+					fmt.Sprintf(
+						"model %q capability metadata is invalid",
+						databaseModel.ModelID,
+					),
+					err,
+				)
+			}
+			result = append(result, ResolvedAvailableModel{
+				ID:            databaseModel.ModelID,
+				ProviderID:    provider.Name,
+				ProviderName:  providerName,
+				DisplayName:   databaseModel.DisplayName,
+				Type:          "chat",
+				Enabled:       true,
+				ContextWindow: int32(databaseModel.ContextWindow),
+				Capabilities:  map[string]bool(capabilities),
+			})
+		}
+	}
+
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].ProviderID != result[j].ProviderID {
 			return result[i].ProviderID < result[j].ProviderID
