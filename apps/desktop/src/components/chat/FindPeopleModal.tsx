@@ -331,7 +331,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'B-D',
           location: 'FindPeopleModal.tsx:handleSendRequest:dispatch',
           msg: '[DEBUG] Dispatching friend request retry',
@@ -355,7 +355,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'B-E',
           location: 'FindPeopleModal.tsx:handleSendRequest:success',
           msg: '[DEBUG] Friend request retry handler succeeded',
@@ -370,7 +370,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-retry',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A-B',
           location: 'FindPeopleModal.tsx:handleSendRequest:error',
           msg: '[DEBUG] Friend request retry handler failed',

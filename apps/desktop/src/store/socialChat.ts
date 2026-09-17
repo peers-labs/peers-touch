@@ -1924,6 +1924,30 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   acceptFriendRequest: async (request) => {
     try {
       const requestId = request.id;
+      // #region debug-point C:friend-request-accept-command
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C',
+          location: 'socialChat.ts:acceptFriendRequest:command',
+          msg: '[DEBUG] Sending friend request accept command',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            request: {
+              id: request.id,
+              senderPtid: request.senderPtid,
+              receiverPtid: request.receiverPtid,
+              senderHomeStationPeerId: request.senderHomeStationPeerId,
+              receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+              federationId: request.federationId,
+              status: request.status,
+            },
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       const data = await api.socialFriendRequestAccept({
         requestId,
         senderPtid: request.senderPtid,
@@ -1932,6 +1956,24 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         message: request.message,
       });
       const acceptedRequest = normalizeFriendRequestData(data?.request);
+      // #region debug-point C-D:friend-request-accept-response
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C-D',
+          location: 'socialChat.ts:acceptFriendRequest:response',
+          msg: '[DEBUG] Friend request accept command returned',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId,
+            responseRequestId: acceptedRequest?.id ?? '',
+            responseStatus: acceptedRequest?.status ?? null,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       set((state) => ({
         friendRequests: state.friendRequests.map((candidate) =>
           candidate.id === requestId
@@ -1944,11 +1986,54 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
       await get().loadFriendRequests();
+      // #region debug-point D-E:friend-request-accept-projection
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'D-E',
+          location: 'socialChat.ts:acceptFriendRequest:projection',
+          msg: '[DEBUG] Friend request accept projection refreshed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId,
+            matchingRequests: get().friendRequests
+              .filter((candidate) => (
+                candidate.senderPtid === request.senderPtid
+                && candidate.receiverPtid === request.receiverPtid
+              ))
+              .map((candidate) => ({
+                id: candidate.id,
+                status: candidate.status,
+                federationId: candidate.federationId,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await get().loadSessions();
       // Retry loadSessions after a short delay to catch the DM conversation
       // that Station creates asynchronously upon friend acceptance.
       setTimeout(() => { get().loadSessions().catch(() => {}); }, 1500);
     } catch (error) {
+      // #region debug-point C-D:friend-request-accept-error
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C-D',
+          location: 'socialChat.ts:acceptFriendRequest:error',
+          msg: '[DEBUG] Friend request accept failed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId: request.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'acceptFriendRequest failed', error);
       throw error;
     }

@@ -431,6 +431,19 @@ export function installAcceptanceHarness(): void {
         }),
       }).catch(() => {});
       // #endregion
+      // #region debug-point D-E:friend-request-accept-readback
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'D-E',
+          location: 'harness.ts:refreshOnboardingProjection',
+          msg: '[DEBUG] Onboarding accept projection read back',
+          data: snapshot,
+        }),
+      }).catch(() => {});
+      // #endregion
       return snapshot;
     },
 

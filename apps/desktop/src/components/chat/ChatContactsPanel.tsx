@@ -217,6 +217,41 @@ export function ChatContactsPanel({
     request: FriendRequestData,
     action: 'accept' | 'reject',
   ) => {
+    // #region debug-point B-C:friend-request-accept-handler
+    void fetch('http://127.0.0.1:7782/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'friend-request-accept',
+        runId: 'pre-fix',
+        hypothesisId: 'B-C',
+        location: 'ChatContactsPanel.tsx:runRequestAction:entry',
+        msg: '[DEBUG] Friend request decision handler entered',
+        data: {
+          action,
+          currentUserPtid: myDid,
+          request: {
+            id: request.id,
+            senderPtid: request.senderPtid,
+            receiverPtid: request.receiverPtid,
+            senderHomeStationPeerId: request.senderHomeStationPeerId,
+            receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+            federationId: request.federationId,
+            status: request.status,
+          },
+          matchingRequests: friendRequests
+            .filter((candidate) => (
+              candidate.senderPtid === request.senderPtid
+              && candidate.receiverPtid === request.receiverPtid
+            ))
+            .map((candidate) => ({
+              id: candidate.id,
+              status: candidate.status,
+              federationId: candidate.federationId,
+            })),
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
     setBusyAction({ id: request.id, kind: action });
     setRequestActionErrors((current) => {
       if (!(request.id in current)) return current;
@@ -230,7 +265,38 @@ export function ChatContactsPanel({
       } else {
         await rejectFriendRequest(request);
       }
+      // #region debug-point B-D:friend-request-accept-handler-success
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'B-D',
+          location: 'ChatContactsPanel.tsx:runRequestAction:success',
+          msg: '[DEBUG] Friend request decision handler succeeded',
+          data: { action, requestId: request.id, currentUserPtid: myDid },
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (error) {
+      // #region debug-point B-D:friend-request-accept-handler-error
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'B-D',
+          location: 'ChatContactsPanel.tsx:runRequestAction:error',
+          msg: '[DEBUG] Friend request decision handler failed',
+          data: {
+            action,
+            requestId: request.id,
+            currentUserPtid: myDid,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       log.error('contacts', `${action}FriendRequest failed`, error);
       setRequestActionErrors((current) => ({
         ...current,
@@ -352,6 +418,25 @@ export function ChatContactsPanel({
                     loading={busyAction?.id === request.id && busyAction?.kind === 'accept'}
                     onClick={(event) => {
                       event.stopPropagation();
+                      // #region debug-point A-B:friend-request-accept-click
+                      void fetch('http://127.0.0.1:7782/event', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          sessionId: 'friend-request-accept',
+                          runId: 'pre-fix',
+                          hypothesisId: 'A-B',
+                          location: 'ChatContactsPanel.tsx:accept:onClick',
+                          msg: '[DEBUG] Friend request accept clicked',
+                          data: {
+                            requestId: request.id,
+                            senderPtid: request.senderPtid,
+                            receiverPtid: request.receiverPtid,
+                            status: request.status,
+                            currentUserPtid: myDid,
+                          },
+                        }),
+                      }).catch(() => {});
+                      // #endregion
                       void runRequestAction(request, 'accept');
                     }}
                   >
