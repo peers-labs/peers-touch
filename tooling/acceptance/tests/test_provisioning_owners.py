@@ -233,7 +233,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 return completed
 
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), patch(
@@ -291,7 +291,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
             )
 
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), self.assertRaisesRegex(
@@ -338,7 +338,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 return completed
 
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), patch(
@@ -391,7 +391,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 ),
             )
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), self.assertRaisesRegex(
@@ -431,7 +431,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), self.assertRaisesRegex(
@@ -480,7 +480,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity."
+                "tooling.acceptance.core.provisioner."
                 "resolve_machine_profile_environment",
                 return_value=("bound", profile_file, 3, {}),
             ), self.assertRaisesRegex(
