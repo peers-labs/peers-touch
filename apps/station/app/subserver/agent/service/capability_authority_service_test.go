@@ -906,6 +906,78 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 	}
 }
 
+func TestCapabilityBackfillKeepsPersistedConnectorManifestAuthority(
+	t *testing.T,
+) {
+	authority := newCapabilityAuthorityTestService(t, "persisted-connector-manifest")
+	if err := authority.db.AutoMigrate(
+		&persistence.Skill{},
+		&persistence.AgentSkillBinding{},
+		&persistence.AgentKnowledgeBinding{},
+		&persistence.AgentMcpBinding{},
+		&persistence.ClientCapabilityLease{},
+		&persistence.EcosystemCustomPlugin{},
+	); err != nil {
+		t.Fatalf("migrate capability backfill sources: %v", err)
+	}
+	manifest := capabilityAuthorityTestManifest()
+	manifest.CapabilityId = "connector.resource.persisted"
+	manifest.Version = "connector-version-1"
+	manifest.SourceKind =
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR
+	manifest.SourceInstanceId = "connector_resource_persisted"
+	manifest.ExecutionOwner =
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
+	manifest.RiskClass = "connector"
+	manifest.SecretBoundary = "oauth-owner"
+	manifest.OwnerPtid = "ptid:person:owner"
+	_, err := authority.RegisterManifest(
+		context.Background(),
+		manifest,
+	)
+	if err != nil {
+		t.Fatalf("register Connector manifest: %v", err)
+	}
+	leasePayload := operationCapabilityLeasePayloadFor(
+		t,
+		manifest.GetCapabilityId(),
+		manifest.GetVersion(),
+	)
+	if err := authority.db.Create(&persistence.ClientCapabilityLease{
+		SessionID:     "connector-session",
+		ActorID:       "ptid:person:owner",
+		DeviceID:      "device-1",
+		AuthSessionID: "auth-1",
+		ConnectionID:  "connection-1",
+		LeaseID:       "lease-1",
+		LeasePayload:  leasePayload,
+		ExpiresAt:     authority.now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatalf("seed Connector capability lease: %v", err)
+	}
+
+	backfill := NewCapabilityBackfillService(authority.db, nil)
+	backfill.now = authority.now
+	if _, err := backfill.Run(context.Background()); err != nil {
+		t.Fatalf("backfill persisted Connector manifest: %v", err)
+	}
+
+	var persisted persistence.CapabilityManifest
+	if err := authority.db.Where(
+		"capability_id = ? AND version = ?",
+		manifest.GetCapabilityId(),
+		manifest.GetVersion(),
+	).First(&persisted).Error; err != nil {
+		t.Fatalf("load persisted Connector manifest: %v", err)
+	}
+	if persisted.SourceKind != int32(model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR) ||
+		persisted.SourceInstanceID != manifest.GetSourceInstanceId() ||
+		persisted.RiskClass != "connector" ||
+		persisted.SecretBoundary != "oauth-owner" {
+		t.Fatalf("persisted Connector authority changed: %+v", persisted)
+	}
+}
+
 func TestCapabilityBackfillRebindsBuiltinToolToNewManifestVersion(t *testing.T) {
 	authority := newCapabilityAuthorityTestService(t, "builtin-tool-manifest-upgrade")
 	seedCapabilityAuthorityAgent(

@@ -795,6 +795,16 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 	for _, seed := range knownManifests {
 		knownCapabilityIDs[seed.manifest.GetCapabilityId()] = struct{}{}
 	}
+	var persistedCapabilityIDs []string
+	if err := s.db.WithContext(ctx).
+		Model(&persistence.CapabilityManifest{}).
+		Distinct("capability_id").
+		Pluck("capability_id", &persistedCapabilityIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, capabilityID := range persistedCapabilityIDs {
+		knownCapabilityIDs[strings.TrimSpace(capabilityID)] = struct{}{}
+	}
 	var manifests []capabilityManifestSeed
 	var rejections []CapabilityBackfillRejection
 	for _, row := range rows {
