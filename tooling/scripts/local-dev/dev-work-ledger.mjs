@@ -15,6 +15,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   developmentWorkLedgerPath,
@@ -31,6 +32,7 @@ import {
   digestDeclaration,
   fail,
   isObject,
+  normalizePlanPath,
   parseRuntimeClaims,
   parseSourceClaims,
   requiredIdentifier,
@@ -40,6 +42,9 @@ import {
 } from './dev-work-schema.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
+const PLANCTL_SCRIPT = fileURLToPath(
+  new URL('../plan/planctl.mjs', import.meta.url),
+);
 const LEDGER_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -456,6 +461,109 @@ function validateExpiry(value) {
   return expiresMinutes;
 }
 
+function parsePlanStatus(workspaceRoot, planPath, options) {
+  if (options.planStatus) return options.planStatus;
+  const absolutePlan = path.resolve(
+    workspaceRoot,
+    ...planPath.split('/'),
+  );
+  try {
+    return JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          PLANCTL_SCRIPT,
+          'status',
+          '--plan',
+          absolutePlan,
+          '--repo-root',
+          workspaceRoot,
+        ],
+        {
+          cwd: workspaceRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      ),
+    );
+  } catch (error) {
+    fail('PLAN_LOCATOR_INVALID', 'declared Plan Package is unavailable', {
+      cause:
+        error?.stderr?.toString().trim() ||
+        error?.stdout?.toString().trim() ||
+        String(error),
+    });
+  }
+}
+
+function resolvePlanLocator(options, existing, identity) {
+  const supplied = [
+    options.planPath,
+    options.planId,
+    options.taskId,
+  ].some((value) => value !== undefined);
+  const existingHasLocator = Object.hasOwn(existing ?? {}, 'planPath');
+  if (!supplied && !existingHasLocator) return null;
+
+  const planPath =
+    options.planPath === undefined ? existing?.planPath : options.planPath;
+  const planId =
+    options.planId === undefined ? existing?.planId : options.planId;
+  const taskId =
+    options.taskId === undefined ? existing?.taskId : options.taskId;
+  const values = [planPath, planId, taskId];
+  if (values.every((value) => value === null)) {
+    return { planPath: null, planId: null, taskId: null };
+  }
+  if (
+    typeof planPath !== 'string' ||
+    planPath.trim() === '' ||
+    typeof taskId !== 'string' ||
+    taskId.trim() === '' ||
+    (planId !== undefined &&
+      planId !== null &&
+      (typeof planId !== 'string' || planId.trim() === ''))
+  ) {
+    fail(
+      'INVALID_PLAN_LOCATOR',
+      'planPath and taskId must be supplied together',
+    );
+  }
+
+  const normalizedPlanPath = normalizePlanPath(planPath);
+  validateSourcePathContainment(identity.workspaceRoot, normalizedPlanPath);
+  const normalizedTaskId = requiredIdentifier(taskId, 'taskId');
+  const status = parsePlanStatus(
+    identity.workspaceRoot,
+    normalizedPlanPath,
+    options,
+  );
+  const normalizedPlanId =
+    planId === undefined || planId === null
+      ? requiredIdentifier(status.planId, 'planId')
+      : requiredIdentifier(planId, 'planId');
+  const mismatches = {};
+  for (const [field, expected, actual] of [
+    ['planId', normalizedPlanId, status.planId],
+    ['taskId', normalizedTaskId, status.currentTaskId],
+    ['workspaceId', identity.workspaceId, status.workspaceId],
+    ['branch', identity.branch, status.branch],
+    ['sourceHead', identity.sourceHead, status.expectedHead],
+  ]) {
+    if (expected !== actual) mismatches[field] = { expected, actual };
+  }
+  if (Object.keys(mismatches).length > 0) {
+    fail('PLAN_LOCATOR_MISMATCH', 'declared Plan locator does not match', {
+      mismatches,
+    });
+  }
+  return {
+    planPath: normalizedPlanPath,
+    planId: normalizedPlanId,
+    taskId: normalizedTaskId,
+  };
+}
+
 function buildDeclaration(options, existing, now) {
   const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
   const workspaceId = workspaceIdForRoot(workspaceRoot);
@@ -479,17 +587,25 @@ function buildDeclaration(options, existing, now) {
   for (const claim of sourceClaims) {
     validateSourcePathContainment(workspaceRoot, claim.pathPrefix);
   }
+  const branch =
+    options.branch ??
+    gitValue(workspaceRoot, ['branch', '--show-current'], 'branch');
+  const sourceHead =
+    options.sourceHead ??
+    gitValue(workspaceRoot, ['rev-parse', 'HEAD'], 'sourceHead');
+  const planLocator = resolvePlanLocator(options, existing, {
+    workspaceRoot,
+    workspaceId,
+    branch,
+    sourceHead,
+  });
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
     sessionId,
     workspaceId,
-    branch:
-      options.branch ??
-      gitValue(workspaceRoot, ['branch', '--show-current'], 'branch'),
-    sourceHead:
-      options.sourceHead ??
-      gitValue(workspaceRoot, ['rev-parse', 'HEAD'], 'sourceHead'),
+    branch,
+    sourceHead,
     owner: requiredText(options.owner ?? existing?.owner, 'owner', 256),
     purpose: requiredText(options.purpose ?? existing?.purpose, 'purpose', 1024),
     journeyId: options.journeyId
@@ -502,6 +618,7 @@ function buildDeclaration(options, existing, now) {
     sourceClaims,
     runtimeClaims,
   };
+  if (planLocator) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
   validateDeclaration(declaration);
   return declaration;
@@ -715,6 +832,23 @@ export function checkDeclaration(options) {
         'WORKTREE_IDENTITY_MISMATCH',
         'declared source HEAD does not match worktree',
         { declared: declaration.sourceHead, actual: currentHead },
+      );
+    }
+    if (declaration.planPath !== null && declaration.planPath !== undefined) {
+      resolvePlanLocator(
+        {
+          ...options,
+          planPath: declaration.planPath,
+          planId: declaration.planId,
+          taskId: declaration.taskId,
+        },
+        declaration,
+        {
+          workspaceRoot,
+          workspaceId: declaration.workspaceId,
+          branch: currentBranch,
+          sourceHead: currentHead,
+        },
       );
     }
     declaration.state = 'ACTIVE';

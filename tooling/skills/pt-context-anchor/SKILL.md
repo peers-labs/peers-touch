@@ -62,8 +62,9 @@ the owner, then invokes this Skill again.
 | Task lifecycle/current Task/dependencies | Plan Package manifest |
 | Current transition and first failure | Development Session |
 | Completed delta and evidence | Task snapshot plus referenced evidence |
-| Ready queue, lanes, conflict controls, critical path | scheduler output backed by the current graph |
-| Overall progress | `done` manifest Tasks / total Tasks |
+| Remaining frontier, lanes, conflict controls, critical path | scheduler output backed by the current graph |
+| Overall progress and next completion effect | `planctl status.progress` |
+| Next Progress Slice | current Task plus scheduler horizon |
 | ETA | remaining critical path plus observed throughput |
 
 No global precedence rule exists. Each field comes from its owner.
@@ -95,13 +96,16 @@ The Anchor reports a mismatch; it never rewrites the row.
 
 1. Select exactly one matching non-complete `active_work` row.
 2. Verify the persisted worktree binding. Do not recapture a new baseline.
-3. Run `planctl validate` and `planctl current`.
+3. Run `planctl validate`, `planctl current`, and `planctl status`.
 4. Read compact `plan.md`, only `current_task_path`, and matching
    `session.json`.
 5. Validate each projected field against its owner.
 6. Use `unknown` for ETA when critical-path or throughput evidence is
    insufficient.
-7. Render one final chat block.
+7. Require one source-backed Next Progress Slice for an active non-blocked
+   package. It must target the current Task's `in_progress -> done` boundary and
+   state the exact completed-count, percentage-point, and unlock delta.
+8. Render one final chat block.
 
 Do not scan archive files, every Task body, raw command logs, or conversation
 history.
@@ -114,23 +118,22 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 ```markdown
 **Context Anchor**
 - **Main task**:
-- **Current task**:
+- **Execution horizon**:
+- **Current closure / state**:
 - **Worktree / branch / workspace**:
 - **Initial HEAD**:
 - **Expected / verified HEAD**:
 - **Worktree-set digest**:
-- **Stage / step**:
-- **Overall progress**: <done>/<total> workstreams (<percentage>%)
-- **Completed since previous anchor**:
-- **Ready queue**:
+- **Progress**: <done>/<total> Task closures (<percentage>%)
+- **Completed delta**:
+- **Next Progress Slice**: <Task ID, outcome, and completion boundary>
+- **Expected progress effect**: <done/total -> done+1/total, percentage-point delta, unlocked Task IDs>
+- **Remaining frontier**:
 - **Execution mode / lanes**:
 - **Conflict controls**:
 - **Critical path / ETA**:
-- **Progress**:
-- **Action and reason**:
 - **Evidence**:
-- **Next action**:
-- **Blockers / decisions**:
+- **Hard boundaries / decisions**:
 - **Tracking document**:
 ```
 ````
@@ -145,6 +148,10 @@ For status-only requests, emit the projection and stop.
 
 For `continue`/`resume`, projection must not pause execution. `pt-dev-workflow`
 continues first and invokes this Skill at the next meaningful report boundary.
+A successful declaration, authorization, status check, diagnostic, checkpoint,
+deploy, or focused check is internal Slice activity and must not trigger a new
+Anchor while the Task remains open. A zero-delta Anchor is valid only at a hard
+boundary after the complete ready frontier is exhausted.
 
 ## Output Errors
 
@@ -162,8 +169,9 @@ Each error names the mismatched field and owning writer.
 - The Plan Package and matching locator exist.
 - Git identity matches persisted binding.
 - `planctl current`, current Task, Session, and `active_work` agree.
-- Completed delta, Ready queue, Execution mode / lanes, Conflict controls, and
-  Critical path / ETA are source-backed.
+- Progress, completed delta, Next Progress Slice, expected progress effect,
+  remaining frontier, lanes, conflict controls, and critical path are
+  source-backed.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
 - No file, registry, plan, Session, or runtime state was mutated.
 - The response ends with one fenced chat projection.
@@ -177,6 +185,9 @@ Never:
 - reconstruct state from chat;
 - recapture Git identity during resume;
 - invent progress or ETA;
+- emit a free-text administrative `Next action`;
+- emit a successful zero-delta continuation while the current Task remains
+  closable;
 - report stale agent metadata as a live lane;
 - treat one parked action as a Goal-wide blocker;
 - use the Anchor as completion authority;

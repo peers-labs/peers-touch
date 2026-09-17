@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-09-16
+> **Created**: 2026-09-16 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -64,13 +64,13 @@ tooling/scripts/local-dev/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D14 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D16 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
 | `execution-plans/*/tasks/*.md` | One independently resumable Task Slice |
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
-| `plan-package.mjs` | Structured Markdown parser, schema validation, DAG and bounds |
+| `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
 | `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
 | `planctl.mjs` | `validate/current/next/status/advance/migrate` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |

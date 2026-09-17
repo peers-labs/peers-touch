@@ -37,7 +37,30 @@ export function workspaceIdForRoot(root = repoRoot) {
 }
 
 export function machineDevRoot(home = homedir()) {
+  const override = process.env.PT_MACHINE_DEV_ROOT?.trim();
+  if (override) return path.resolve(override);
   return path.join(home, '.peers-touch', 'dev');
+}
+
+export function machineRegistryPath(home = homedir()) {
+  return path.join(machineDevRoot(home), 'registry.json');
+}
+
+export function machineRegistryLockPath(home = homedir()) {
+  return path.join(machineDevRoot(home), 'registry.lock');
+}
+
+export function machineLeaseRoot(home = homedir()) {
+  return path.join(machineDevRoot(home), 'leases');
+}
+
+export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
+  const kind = requireIdentifier(resourceKind, 'lease resource kind').replaceAll(
+    '.',
+    '-',
+  );
+  const resource = requireIdentifier(resourceId, 'lease resource id');
+  return path.join(machineLeaseRoot(home), `${kind}-${resource}.lock`);
 }
 
 export function developmentWorkLedgerPath(home = homedir()) {
@@ -46,6 +69,14 @@ export function developmentWorkLedgerPath(home = homedir()) {
 
 export function developmentWorkLockPath(home = homedir()) {
   return path.join(machineDevRoot(home), 'work.lock');
+}
+
+export function workspaceStatePath(options = {}) {
+  return path.join(
+    machineDevRoot(options.home),
+    'workspaces',
+    resolveWorkspaceId(options),
+  );
 }
 
 export function workspaceWorkflowPath(workItemId, options = {}) {

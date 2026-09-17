@@ -111,6 +111,12 @@ execution-plans/<date>-<slug>/
 - durable evidence refs；
 - 不超过 30 行的 current snapshot。
 
+每个 Task Slice 同时是一个 progress unit。它必须小到一个 bounded Progress
+Slice 能把 lifecycle 推进到 `done`，并让 `planctl status` 计算出精确的
+`+1` closure、percentage-point delta 和新解锁 Task。若做不到，回到
+`pt-architecture-execution-methodology` 按真实依赖拆分，禁止加入主观权重或
+命令级百分比。
+
 Task 文件不复制 lifecycle，Session 不进入 Git。
 
 ## 4. 机械边界

@@ -63,6 +63,8 @@ The caller supplies:
 - verified worktree binding;
 - active Development declaration and operation authorization;
 - scheduler Concurrency Decision when the action belongs to a parallel lane;
+- scheduler Progress Contract identifying whether the action supports or closes
+  the current Task boundary;
 - current functional and Acceptance state.
 
 Missing required input returns `ACTION_DENIED` with
@@ -97,13 +99,17 @@ Evaluate in this order:
    - reject overlapping write sets, mutable shared runtime resources,
      unfrozen contracts, or undefined integration order;
    - do not redesign the schedule.
-7. **Evidence policy**
+7. **Progress policy**
+   - the action belongs to the current Task's Progress Slice;
+   - a supporting action cannot be reported as Slice completion;
+   - Slice success requires the manifest's `in_progress -> done` effect.
+8. **Evidence policy**
    - the proposed check proves only its declared class;
    - broad Acceptance remains fenced until required exact-source
      `FUNCTIONAL_PASS`;
    - formal Acceptance uses the current Task closure unless completion/full was
      explicitly authorized.
-8. **Operation authorization**
+9. **Operation authorization**
    - commit, push, PR, deploy, reset, destructive mutation, and history rewrite
      each have the required explicit authorization.
 
@@ -190,6 +196,7 @@ Reject the lane, not the entire plan, when these conditions fail.
 - Scheduler and execution responsibilities were not duplicated.
 - Any escalation points to the owning Skill.
 - The strongest permitted claim matches current evidence.
+- Supporting activity and Task-closing progress remain distinct.
 
 ## Anti-Patterns
 

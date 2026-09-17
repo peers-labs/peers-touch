@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-16
-covered_docs_hash: 3f996fb3b40086a8910ebf398b0c7f5a5eb7d4dda7a1533cbf6870281c1e0264
+last_verified_at: 2026-09-17
+covered_docs_hash: 29818125151c4809533e9da3b850ede763e2f17c8f22592182fd17e954b37003
 
 covered_docs:
   - AGENTS.md
@@ -236,3 +236,30 @@ The follow-up review makes every non-trivial stage dispatch through
 functional proof for every product Journey it aggregates. These changes close
 workflow bypasses without changing PR review severity or adding a new review
 fixture.
+
+## 2026-09-17 Review
+
+Progress-bearing continuation makes Task closure the user-facing progress unit,
+derives the exact next completion effect through `planctl status`, and prevents
+Context Anchor from returning successful zero-delta administrative actions.
+Profile Agent control and the read-only Development Control Plane dashboard
+refine Local Dev operation policy without weakening declaration, capability,
+lease, reset-scope, source-identity, or evidence rules. The dashboard now uses
+one worktree-first projection for requirements, Journeys and runtime resources,
+with profile occupancy retained as a secondary capacity view. PR review
+severity and fixtures remain unchanged; `review/skill-check.sh`, Plan tests,
+Local Dev tests, and dashboard tests own the executable contract.
+
+Peers Dev now owns that projection as a first-class `apps/dev` application with
+one fixed machine endpoint and a fail-closed server identity contract. Concurrent
+read-only lease observers use shared locks so they do not impersonate live
+exclusive holders. These changes preserve existing review severity and require
+no new review fixture.
+
+Plan-aware observability adds an explicit declaration-to-Plan locator, a
+read-only Development Session bridge for mixed-version rollout, typed legacy
+and stale states, and separate work versus environment projections. Review must
+reject inferred percentages, hidden stale work, environment failures presented
+as Task failure, absolute Plan path exposure, or server identities that omit
+dirty source state. Existing Local Dev, Plan, Peers Dev, redaction, and visual
+regressions cover these rules; no new generic review fixture is required.

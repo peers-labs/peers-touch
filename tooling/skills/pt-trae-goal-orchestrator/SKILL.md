@@ -71,12 +71,14 @@ A valid Slice is:
 
 - dependency-closed;
 - inside one stage, worktree, ownership envelope, and current Task;
-- broad enough to produce a meaningful outcome;
+- broad enough to close the current Task and produce the
+  `planctl status.progress.nextProgressBoundary` effect;
 - bounded by time, runtime, and review limits;
 - recoverable from durable owner state;
 - explicit about Ready, In Progress, Parked, and Done actions.
 
-Goal completion never implies Task, stage, plan, or product completion.
+Goal completion must imply the selected Task closure. It never implies broader
+stage, plan, or product completion.
 
 ## Schedule Algorithm
 
@@ -86,12 +88,16 @@ Goal completion never implies Task, stage, plan, or product completion.
 3. Put dependency-ready actions in the Ready Queue.
 4. Group ready actions by frozen contracts, disjoint write sets, isolated
    runtime resources, independent verification, and integration order.
-5. Choose one bounded serial, parallel, or hybrid horizon.
+5. Choose one bounded serial, parallel, or hybrid horizon whose successful end
+   closes the current Task. Internal setup or diagnostic actions are not Slice
+   boundaries.
 6. Submit proposed actions and lanes to `pt-execution-plan-guardian`.
 7. Return the schedule to `pt-dev-workflow`.
 
 The scheduler never adds a missing deliverable to the Plan Package. Discovery
 of unmodeled required work returns `PLAN_AMENDMENT_REQUIRED` to the workflow.
+If the current Task cannot be closed within one bounded Goal Slice, return
+`PLAN_AMENDMENT_REQUIRED`; do not schedule a knowingly zero-delta continuation.
 
 ## Blocker Routing
 
@@ -163,12 +169,14 @@ that cannot be edited, return `GOAL_REPLACEMENT_REQUIRED`.
 The schedule contains:
 
 - source/stage/current Task identity;
+- progress baseline and the machine-derived Task completion effect;
 - Ready, In Progress, Parked, and Done projections;
 - selected horizon and stop boundary;
 - Concurrency Decision and lane ownership;
 - proposed action IDs for Guardian evaluation;
 - hard blockers and unblocking conditions;
 - evidence expected from each action;
+- the one Task closure that makes the Slice successful;
 - one integrator and reconcile order.
 
 For `AUTHOR`, render one four-backtick `markdown` block with `/goal` as the
@@ -177,6 +185,8 @@ first line. Do not embed `Use Skill:` directives.
 ## Verification
 
 - Every proposed action exists in the owner-supplied graph.
+- The Slice success boundary closes the current Task and produces the declared
+  `+1` Task-closure delta.
 - No action crosses stage, current Task, worktree, or declared scope.
 - Dependencies and parked boundaries are explicit.
 - Concurrent writes and runtime resources do not overlap.
@@ -197,3 +207,5 @@ Never:
 - treat stale agent metadata as a blanket spawn ban;
 - let one Goal cross a stage/review boundary;
 - auto-activate the next Goal.
+- return a Goal whose successful boundary is only setup, status, authorization,
+  diagnosis, checkpoint, deploy, or an individual check.
