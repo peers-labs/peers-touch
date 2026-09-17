@@ -791,10 +791,9 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 	if err := s.db.WithContext(ctx).Order("session_id").Find(&rows).Error; err != nil {
 		return nil, nil, err
 	}
-	known := make(map[string]struct{}, len(knownManifests))
+	knownCapabilityIDs := make(map[string]struct{}, len(knownManifests))
 	for _, seed := range knownManifests {
-		key := seed.manifest.GetCapabilityId() + "\x00" + seed.manifest.GetVersion()
-		known[key] = struct{}{}
+		knownCapabilityIDs[seed.manifest.GetCapabilityId()] = struct{}{}
 	}
 	var manifests []capabilityManifestSeed
 	var rejections []CapabilityBackfillRejection
@@ -817,7 +816,7 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 				))
 				continue
 			}
-			if _, exists := known[capabilityID+"\x00"+version]; exists {
+			if _, exists := knownCapabilityIDs[capabilityID]; exists {
 				continue
 			}
 			manifests = append(manifests, capabilityManifestSeed{

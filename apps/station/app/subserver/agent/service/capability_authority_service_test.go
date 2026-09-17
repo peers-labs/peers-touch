@@ -834,6 +834,78 @@ func TestCapabilityToolManifestSeedUsesCanonicalExecutionRequirements(t *testing
 	}
 }
 
+func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
+	t *testing.T,
+) {
+	authority := newCapabilityAuthorityTestService(t, "known-manifest-lease-version")
+	if err := authority.db.AutoMigrate(
+		&persistence.Skill{},
+		&persistence.AgentSkillBinding{},
+		&persistence.AgentKnowledgeBinding{},
+		&persistence.AgentMcpBinding{},
+		&persistence.ClientCapabilityLease{},
+		&persistence.EcosystemCustomPlugin{},
+	); err != nil {
+		t.Fatalf("migrate capability backfill sources: %v", err)
+	}
+	registry := NewToolRegistryService(nil, nil)
+	definitions := registry.Definitions([]string{"local_mcp"})
+	if len(definitions) != 1 {
+		t.Fatalf("local_mcp definitions = %d, want 1", len(definitions))
+	}
+	current := capabilityToolManifestSeed(definitions[0]).manifest
+	historical := proto.Clone(current).(*model.CapabilityManifest)
+	historical.Version = "1"
+	historical.Availability =
+		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
+	if _, err := upsertBackfillManifest(
+		authority.db,
+		historical,
+		authority.now(),
+	); err != nil {
+		t.Fatalf("seed historical MCP manifest: %v", err)
+	}
+	leasePayload := operationCapabilityLeasePayloadFor(
+		t,
+		current.GetCapabilityId(),
+		historical.GetVersion(),
+	)
+	if err := authority.db.Create(&persistence.ClientCapabilityLease{
+		SessionID:     "legacy-mcp-session",
+		ActorID:       "ptid:person:owner",
+		DeviceID:      "device-1",
+		AuthSessionID: "auth-1",
+		ConnectionID:  "connection-1",
+		LeaseID:       "lease-1",
+		LeasePayload:  leasePayload,
+		ExpiresAt:     authority.now().Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatalf("seed legacy MCP capability lease: %v", err)
+	}
+
+	backfill := NewCapabilityBackfillService(authority.db, registry)
+	backfill.now = authority.now
+	report, err := backfill.Run(context.Background())
+	if err != nil {
+		t.Fatalf("backfill known manifest with legacy lease version: %v", err)
+	}
+	for _, rejection := range report.Rejections {
+		if rejection.Source == "client_capability" &&
+			rejection.SourceID == "legacy-mcp-session:mcp.invoke" {
+			t.Fatalf("known MCP advertisement became a manifest source: %+v", rejection)
+		}
+	}
+	var manifestCount int64
+	if err := authority.db.Model(&persistence.CapabilityManifest{}).
+		Where("capability_id = ?", current.GetCapabilityId()).
+		Count(&manifestCount).Error; err != nil {
+		t.Fatalf("count MCP manifest versions: %v", err)
+	}
+	if manifestCount != 2 {
+		t.Fatalf("MCP manifest version count = %d, want 2", manifestCount)
+	}
+}
+
 func TestCapabilityBackfillRebindsBuiltinToolToNewManifestVersion(t *testing.T) {
 	authority := newCapabilityAuthorityTestService(t, "builtin-tool-manifest-upgrade")
 	seedCapabilityAuthorityAgent(
