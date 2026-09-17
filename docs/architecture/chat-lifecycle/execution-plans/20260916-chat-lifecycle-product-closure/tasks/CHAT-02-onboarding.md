@@ -19,6 +19,7 @@
   "writeSet": [
     "apps/station/app/subserver",
     "apps/station/frame/core/federation",
+    "apps/station/frame/core/server",
     "apps/station/frame/touch/actor",
     "apps/desktop",
     "tooling/acceptance",

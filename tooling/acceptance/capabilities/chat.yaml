@@ -250,6 +250,7 @@
         "tooling/acceptance/gates/chat/lifecycle_onboarding.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
         "model/domain/social/relationship.proto",
+        "apps/station/frame/core/server/typed_handler.go",
         "apps/station/frame/touch/federation/cache/cache.go",
         "apps/station/app/subserver/social/application/relationship_service.go",
         "apps/station/app/subserver/social/infrastructure/follow_repo.go",

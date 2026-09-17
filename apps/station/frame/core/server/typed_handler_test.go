@@ -13,9 +13,10 @@ import (
 )
 
 type typedHandlerTestRequest struct {
-	headers map[string]string
-	body    []byte
-	path    string
+	headers       map[string]string
+	body          []byte
+	path          string
+	nativeContext interface{}
 }
 
 func (r *typedHandlerTestRequest) Context() context.Context  { return context.Background() }
@@ -28,6 +29,17 @@ func (r *typedHandlerTestRequest) Path() string {
 	return "/test"
 }
 func (r *typedHandlerTestRequest) Body() []byte { return r.body }
+func (r *typedHandlerTestRequest) GetHertzContext() interface{} {
+	return r.nativeContext
+}
+
+type typedHandlerTestNativeContext struct {
+	params map[string]string
+}
+
+func (c *typedHandlerTestNativeContext) Param(name string) string {
+	return c.params[name]
+}
 
 type typedHandlerTestResponse struct {
 	headers map[string]string
@@ -67,6 +79,165 @@ func TestTypedHandlerQueryBindingUsesSnakeCaseJSONFields(t *testing.T) {
 	}
 	if got.ConversationID != "direct-1" || got.AfterSeq != 7 || got.Limit != 20 {
 		t.Fatalf("unexpected bound request: %+v", got)
+	}
+}
+
+func TestTypedHandlerBindsRoutePathParamsIntoProtoRequest(t *testing.T) {
+	var got string
+	handler := NewTypedHandler(
+		"path-request",
+		"/federations/:federation_id",
+		GET,
+		func(
+			_ context.Context,
+			request *chat.Conversation,
+		) (*chat.Conversation, error) {
+			got = request.FederationId
+
+			return &chat.Conversation{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		path: "/federations/01ROUTE",
+		nativeContext: &typedHandlerTestNativeContext{
+			params: map[string]string{"federation_id": "01ROUTE"},
+		},
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got != "01ROUTE" {
+		t.Fatalf("bound federation_id = %q, want route value", got)
+	}
+	if response.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.status)
+	}
+}
+
+func TestTypedHandlerPathParamsOverrideProtobufBodyAndPreservePayload(t *testing.T) {
+	body, err := proto.Marshal(&chat.Conversation{
+		FederationId: "01BODY",
+		Name:         "preserve me",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got *chat.Conversation
+	handler := NewTypedHandler(
+		"path-body-request",
+		"/federations/:federation_id",
+		POST,
+		func(
+			_ context.Context,
+			request *chat.Conversation,
+		) (*chat.Conversation, error) {
+			got = proto.Clone(request).(*chat.Conversation)
+
+			return &chat.Conversation{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		headers: map[string]string{"Content-Type": "application/protobuf"},
+		body:    body,
+		path:    "/federations/01ROUTE",
+		nativeContext: &typedHandlerTestNativeContext{
+			params: map[string]string{"federation_id": "01ROUTE"},
+		},
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.FederationId != "01ROUTE" || got.Name != "preserve me" {
+		t.Fatalf("unexpected bound request: %+v", got)
+	}
+}
+
+func TestTypedHandlerRejectsPathAndQueryParamConflict(t *testing.T) {
+	called := false
+	handler := NewTypedHandler(
+		"path-query-conflict",
+		"/federations/:federation_id",
+		GET,
+		func(
+			_ context.Context,
+			_ *chat.Conversation,
+		) (*chat.Conversation, error) {
+			called = true
+
+			return &chat.Conversation{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		path: "/federations/01ROUTE?federation_id=01QUERY",
+		nativeContext: &typedHandlerTestNativeContext{
+			params: map[string]string{"federation_id": "01ROUTE"},
+		},
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("typed handler accepted conflicting path and query values")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.status)
+	}
+}
+
+func TestTypedHandlerRejectsRouteParamMissingFromRequestType(t *testing.T) {
+	called := false
+	handler := NewTypedHandler(
+		"unknown-path-param",
+		"/federations/:missing_id",
+		GET,
+		func(
+			_ context.Context,
+			_ *chat.Conversation,
+		) (*chat.Conversation, error) {
+			called = true
+
+			return &chat.Conversation{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		path: "/federations/01ROUTE",
+		nativeContext: &typedHandlerTestNativeContext{
+			params: map[string]string{"missing_id": "01ROUTE"},
+		},
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("typed handler accepted a route parameter absent from the request")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.status)
 	}
 }
 
