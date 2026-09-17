@@ -17,9 +17,9 @@ if str(ROOT) not in sys.path:
 
 from tooling.acceptance.core import (
     ArtifactSession,
-    ENVIRONMENTS_DIR,
-    EnvironmentContract,
     current_artifact_ref,
+    load_runtime_manifest,
+    require_runtime_service,
 )
 from tooling.acceptance.core.evidence_store import source_identity
 from tooling.acceptance.gates.agent.capability_binding_development import (
@@ -38,10 +38,7 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 from tooling.acceptance.fixtures.agent_marketplace_catalog_fault_proxy import (
     AgentMarketplaceCatalogFaultProxy,
 )
-from tooling.acceptance.provisioners.home_station import (
-    AGENT_MARKETPLACE_GATE,
-    HomeStationProvisioner,
-)
+from tooling.acceptance.provisioners.home_station import AGENT_MARKETPLACE_GATE
 
 
 JOURNEY_ID = "X3-P4-3"
@@ -211,53 +208,61 @@ def _client_from_manifest(
     )
 
 
+def _load_provisioned_runtime_manifest() -> dict[str, Any]:
+    manifest_value = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
+    require(bool(manifest_value), "PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
+    return load_runtime_manifest(
+        Path(manifest_value).expanduser().resolve(),
+        AGENT_MARKETPLACE_GATE,
+    )
+
+
 def main() -> int:
     started_at = time.monotonic()
-    profile_name, profile_file, slot, profile_env = resolve_machine_profile()
+    profile_name, _profile_file, slot, profile_env = resolve_machine_profile()
     require(profile_name == PROFILE, "active profile is not Profile two")
-    station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
-    deployment_environment = profile_env.get("PT_STATION_DEPLOY_ENV", "")
-    require(bool(station_url), "Profile two has no Station URL")
-    require(bool(deployment_environment), "Profile two has no Station identity")
     os.environ.update(profile_env)
     os.environ["PT_DEV_PROFILE"] = PROFILE
 
-    provisioner = HomeStationProvisioner(
-        EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "home-station.yaml")
-    )
-    provisioner._resolve_active_profile = lambda: (
-        profile_name,
-        profile_file,
-        slot,
-        dict(profile_env),
-    )
     client: FoundationRuntimeClient | None = None
     catalog_proxy: AgentMarketplaceCatalogFaultProxy | None = None
-    runtime_manifest = None
+    runtime_manifest: dict[str, Any] | None = None
     capture: dict[str, Any] = {}
     failure = ""
     status = "failed"
     runtime_cleanup: dict[str, Any] = {
         "status": "clean",
         "client": None,
-        "provisionerResourcesReleased": [],
         "failures": [],
     }
 
     with ArtifactSession(repo_root=ROOT, gate_id=AGENT_MARKETPLACE_GATE) as artifacts:
         try:
-            runtime_manifest = provisioner.provision(AGENT_MARKETPLACE_GATE)
-            require(
-                runtime_manifest.state.value == "FIXTURE_READY",
-                (
-                    "X3 provisioning did not become ready: "
-                    f"{runtime_manifest.blocked_reason or runtime_manifest.state.value}"
-                ),
+            runtime_manifest = _load_provisioned_runtime_manifest()
+            manifest_profile = require_mapping(
+                runtime_manifest.get("profile"),
+                "X3 runtime profile",
             )
+            require(
+                runtime_manifest.get("environmentId") == "home-station",
+                "X3 runtime manifest must use home-station",
+            )
+            require(
+                manifest_profile.get("resolvedName") == profile_name
+                and manifest_profile.get("slot") == slot,
+                "X3 runtime manifest does not match the active profile binding",
+            )
+            station = require_runtime_service(
+                runtime_manifest,
+                "station",
+                "station",
+            )
+            station_url = str(station.get("endpoint") or "").rstrip("/")
+            require(bool(station_url), "X3 runtime manifest has no Station URL")
             catalog_proxy = AgentMarketplaceCatalogFaultProxy(station_url)
             catalog_proxy.start()
             client = _client_from_manifest(
-                runtime_manifest.to_dict(),
+                runtime_manifest,
                 profile_env,
                 station_url=catalog_proxy.url,
             )
@@ -322,15 +327,6 @@ def main() -> int:
                     runtime_cleanup["failures"].append(
                         f"catalog proxy cleanup: {error}"
                     )
-            try:
-                runtime_cleanup["provisionerResourcesReleased"] = list(
-                    provisioner.cleanup()
-                )
-            except Exception as error:  # noqa: BLE001
-                runtime_cleanup["status"] = "failed"
-                runtime_cleanup["failures"].append(
-                    f"provisioner cleanup: {error}"
-                )
             if runtime_cleanup["status"] != "clean":
                 status = "failed"
                 failure = failure or "X3 runtime cleanup failed"

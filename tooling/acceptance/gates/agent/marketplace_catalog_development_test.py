@@ -194,7 +194,11 @@ class MarketplaceCatalogDevelopmentTest(unittest.TestCase):
             / "tooling/acceptance/gates/agent/marketplace_catalog_development.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"runMarketplaceCatalogDevelopment"', source)
-        self.assertIn("HomeStationProvisioner", source)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", source)
+        self.assertIn("load_runtime_manifest", source)
+        self.assertNotIn("HomeStationProvisioner", source)
+        self.assertNotIn(".provision(", source)
+        self.assertNotIn("provisioner.cleanup", source)
         self.assertIn("source_identity(ROOT)", source)
         self.assertNotIn("useAgentStore", source)
         self.assertNotIn("useSkillStore", source)
