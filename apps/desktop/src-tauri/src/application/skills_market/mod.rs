@@ -1,5 +1,6 @@
 mod trusted_catalog;
 
+use crate::application::skills::{SKILL_DELETE_PATH, SKILL_INSTALL_PATH, SKILL_LIST_PATH};
 use crate::application::{agents, mcp, plugins};
 use crate::contracts::{
     AgentIdInput, McpCreateInput, McpNameInput, SkillImportAddressInput, SkillImportGitHubInput,
@@ -527,13 +528,8 @@ fn install_skill_at_station(
     match station_client::request_proto::<
         model::agent::InstallSkillRequest,
         model::agent::InstallSkillResponse,
-    >(
-        Method::POST,
-        "/agent/skill/install",
-        token,
-        None,
-        Some(&req),
-    ) {
+    >(Method::POST, SKILL_INSTALL_PATH, token, None, Some(&req))
+    {
         Ok(resp) => Ok(SkillInstallOutcome {
             skill_id: resp.skill_id,
             installed: resp.installed,
@@ -1534,7 +1530,7 @@ fn verify_skill_readback(
         model::agent::ListSkillsResponse,
     >(
         Method::POST,
-        "/agent/skill/list",
+        SKILL_LIST_PATH,
         token,
         None,
         Some(&model::agent::ListSkillsRequest {
@@ -2007,7 +2003,7 @@ fn verify_skill_absent(
         model::agent::ListSkillsResponse,
     >(
         Method::POST,
-        "/agent/skill/list",
+        SKILL_LIST_PATH,
         token,
         None,
         Some(&model::agent::ListSkillsRequest {
@@ -2166,7 +2162,7 @@ pub fn skills_market_uninstall(
     if let Err(err) = station_client::request_proto::<
         model::agent::DeleteSkillRequest,
         model::agent::DeleteSkillResponse,
-    >(Method::POST, "/agent/skill/delete", token, None, Some(&req))
+    >(Method::POST, SKILL_DELETE_PATH, token, None, Some(&req))
     {
         return station_error("skills_market_uninstall", err);
     }
