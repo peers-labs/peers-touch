@@ -1775,6 +1775,7 @@ async function foundationConversationReadback(conversationId: string) {
       role: message.role,
       status: message.status,
       content: message.content,
+      toolCallsJson: message.tool_calls_json ?? '',
       errorJson: message.error_json ?? '',
       attachments: message.attachments ?? [],
       seq: message.seq,
@@ -2110,6 +2111,29 @@ async function waitForFoundationToolFacts(
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   throw new Error(`timed out waiting for: ${description}`);
+}
+
+function governedToolSettlementSucceeded(
+  facts: Record<string, unknown>[],
+  replay: Record<string, unknown>,
+): boolean {
+  if (facts.length !== 1) return false;
+  const status = Number(facts[0].status) as ToolCallStatus;
+  if (status === ToolCallStatus.SUCCEEDED) {
+    return diagnosticReplayTerminal(replay);
+  }
+  if ([
+    ToolCallStatus.FAILED,
+    ToolCallStatus.CANCELLED,
+    ToolCallStatus.EXPIRED,
+    ToolCallStatus.UNKNOWN_SIDE_EFFECT,
+    ToolCallStatus.DENIED,
+  ].includes(status)) {
+    throw new Error(
+      `agent.acceptance.governedToolTerminalFailure:${toolStatusName(status)}`,
+    );
+  }
+  return false;
 }
 
 async function foundationToolFixture(
@@ -21311,20 +21335,12 @@ async function runGovernedToolDevelopmentJourney(input: {
 
     const source = await waitForFoundationToolFacts(
       turn.turnId,
-      (facts, replay) => (
-        facts.length === 1
-        && Number(facts[0].status) === ToolCallStatus.SUCCEEDED
-        && diagnosticReplayTerminal(replay)
-      ),
+      governedToolSettlementSucceeded,
       'governed ToolCall settlement',
     );
     const replayed = await waitForFoundationToolFacts(
       turn.turnId,
-      (facts, replay) => (
-        facts.length === 1
-        && Number(facts[0].status) === ToolCallStatus.SUCCEEDED
-        && diagnosticReplayTerminal(replay)
-      ),
+      governedToolSettlementSucceeded,
       'governed ToolCall replay',
     );
     await toolRuntime.reconcileMessages(useChatStore.getState().messages);
@@ -21354,9 +21370,55 @@ async function runGovernedToolDevelopmentJourney(input: {
       withoutDiagnosticGenerationTime(replayed.replay),
     ));
     const receiverProjection = toolRuntime.getProjection(toolCallId);
-    const governance = toolCallElement.querySelector<HTMLElement>(
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallGroupSelector)),
+      'governed ToolCall terminal group',
+      30_000,
+    );
+    const toolCallGroup = document.querySelector<HTMLElement>(
+      toolCallGroupSelector,
+    );
+    if (
+      toolCallGroup
+      && !document.querySelector(toolCallSelector)
+    ) {
+      toolCallGroup.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-group-toggle]',
+      )?.click();
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'governed ToolCall terminal receiver',
+      30_000,
+    );
+    const settledToolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!settledToolCallElement) {
+      throw new Error('agent.acceptance.governedToolReceiverMissing');
+    }
+    let governance = settledToolCallElement.querySelector<HTMLElement>(
       '[data-pt-agent-tool-governance]',
     );
+    if (!governance?.getClientRects().length) {
+      settledToolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(
+          document.querySelector<HTMLElement>(
+            `${toolCallSelector} [data-pt-agent-tool-governance="${toolCallId}"]`,
+          )?.getClientRects().length,
+        ),
+        'governed ToolCall terminal governance',
+        10_000,
+      );
+      governance = document.querySelector<HTMLElement>(
+        `${toolCallSelector} [data-pt-agent-tool-governance="${toolCallId}"]`,
+      );
+    }
     const lineageComplete = [
       lineage.toolCallId,
       lineage.toolBatchId,

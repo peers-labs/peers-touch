@@ -7,6 +7,7 @@ import urllib.request
 
 from tooling.acceptance.gates.agent.governed_tool_development import (
     FIXTURE_API_KEY,
+    FIXTURE_CLIPBOARD_TEXT,
     FIXTURE_TOOL_NAME,
     GovernedToolDevelopmentError,
     OpenAIProviderFixture,
@@ -46,6 +47,7 @@ def valid_provider_requests() -> list[dict[str, object]]:
             "stream": True,
             "authorizationPresent": True,
             "hasToolResult": False,
+            "hasExpectedToolResult": False,
             "toolNames": [FIXTURE_TOOL_NAME],
         },
         {
@@ -53,6 +55,7 @@ def valid_provider_requests() -> list[dict[str, object]]:
             "stream": True,
             "authorizationPresent": True,
             "hasToolResult": True,
+            "hasExpectedToolResult": True,
             "toolNames": [FIXTURE_TOOL_NAME],
         },
     ]
@@ -87,6 +90,16 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         ):
             evaluate_governed_tool(journey, valid_provider_requests())
 
+    def test_rejects_ambient_clipboard_result(self) -> None:
+        requests = valid_provider_requests()
+        requests[1]["hasExpectedToolResult"] = False
+
+        with self.assertRaisesRegex(
+            GovernedToolDevelopmentError,
+            "deterministicProviderSequence",
+        ):
+            evaluate_governed_tool(valid_journey(), requests)
+
     def test_fixture_emits_one_tool_call_then_terminal_continuation(self) -> None:
         fixture = OpenAIProviderFixture()
         fixture.start()
@@ -114,7 +127,11 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
                     {
                         "role": "tool",
                         "tool_call_id": "provider-call-1",
-                        "content": "fixture result",
+                        "content": (
+                            '{"output":{"text":"'
+                            f'{FIXTURE_CLIPBOARD_TEXT}'
+                            '"}}'
+                        ),
                     },
                 ],
             )
@@ -129,6 +146,7 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         self.assertEqual(len(requests), 2)
         self.assertFalse(requests[0]["hasToolResult"])
         self.assertTrue(requests[1]["hasToolResult"])
+        self.assertTrue(requests[1]["hasExpectedToolResult"])
 
     def test_fixture_cleanup_is_safe_before_start(self) -> None:
         fixture = OpenAIProviderFixture()
@@ -152,6 +170,8 @@ class GovernedToolDevelopmentTest(unittest.TestCase):
         self.assertIn('"runGovernedToolDevelopment"', source)
         self.assertIn("seed_native_actor_identity(", source)
         self.assertIn("persist_native_actor_identity(", source)
+        self.assertIn("create_native_desktop_adapter()", source)
+        self.assertIn("native_adapter.write_clipboard(original_clipboard)", source)
         self.assertNotIn("agent_v2_gate.py", source)
         self.assertNotIn("reset_fixture", source)
 

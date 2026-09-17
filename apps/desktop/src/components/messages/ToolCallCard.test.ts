@@ -117,6 +117,8 @@ describe('ToolCallsBlock approval visibility', () => {
       'utf8',
     );
 
+    expect(source).toContain('data-pt-agent-tool-call-group');
+    expect(source).toContain('data-pt-agent-tool-call-group-toggle');
     expect(source).toContain('data-pt-agent-tool-governance');
     expect(source).toContain('data-pt-agent-tool-turn');
     expect(source).toContain('tool.manifestId');

@@ -47,6 +47,7 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 from tooling.acceptance.gates.agent.foundation_scenario_runner import (
     _build_client_manifest,
 )
+from tooling.acceptance.drivers.native import create_native_desktop_adapter
 from tooling.acceptance.provisioners.home_station import (
     AGENT_V2_GOVERNED_TOOL_GATE,
     HomeStationProvisioner,
@@ -60,6 +61,8 @@ JOURNEY_ID = "V2-J03"
 PROFILE = "two"
 FIXTURE_API_KEY = "mca-j03-fixture-key"
 FIXTURE_TOOL_NAME = "local_clipboard_read"
+FIXTURE_CLIPBOARD_TEXT = "mca-j03-clipboard-fixture"
+FIXTURE_CLIPBOARD_BYTES = FIXTURE_CLIPBOARD_TEXT.encode("utf-8")
 MAX_REQUEST_BYTES = 1_048_576
 
 REMOTE_TCP_BRIDGE = r"""
@@ -175,6 +178,13 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
             for message in messages
             if isinstance(messages, list) and isinstance(message, Mapping)
         ] if isinstance(messages, list) else []
+        tool_result_messages = [
+            message
+            for message in messages
+            if isinstance(messages, list)
+            and isinstance(message, Mapping)
+            and message.get("role") == "tool"
+        ] if isinstance(messages, list) else []
         tool_names = []
         if isinstance(tools, list):
             for tool in tools:
@@ -193,6 +203,11 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                 "messageRoles": message_roles,
                 "toolNames": tool_names,
                 "hasToolResult": "tool" in message_roles,
+                "hasExpectedToolResult": any(
+                    FIXTURE_CLIPBOARD_TEXT
+                    in str(message.get("content") or "")
+                    for message in tool_result_messages
+                ),
                 "authorizationPresent": (
                     self.headers.get("Authorization")
                     == f"Bearer {FIXTURE_API_KEY}"
@@ -483,6 +498,7 @@ def evaluate_governed_tool(
             and continuation.get("stream") is True
             and continuation.get("authorizationPresent") is True
             and continuation.get("hasToolResult") is True
+            and continuation.get("hasExpectedToolResult") is True
         ),
         "nativeReceiverObserved": (
             receiver.get("visible") is True
@@ -562,6 +578,8 @@ def main() -> int:
     provider_fixture = OpenAIProviderFixture()
     provider_bridge = RemoteProviderBridge(deployment_environment)
     runtime_pair: FoundationRuntimePair | None = None
+    native_adapter = None
+    original_clipboard: bytes | None = None
     manifest = None
     capture: dict[str, Any] = {}
     assertions: dict[str, bool] = {}
@@ -572,10 +590,17 @@ def main() -> int:
         "providerBridge": None,
         "providerFixtureStopped": False,
         "provisionerResourcesReleased": [],
+        "clipboard": {
+            "fixtureSeeded": False,
+            "fixtureRoundTrip": False,
+            "restored": False,
+        },
         "failures": [],
     }
 
     try:
+        native_adapter = create_native_desktop_adapter()
+        original_clipboard = native_adapter.read_clipboard()
         manifest = provisioner.provision(AGENT_V2_GOVERNED_TOOL_GATE)
         require(
             manifest.state.value == "FIXTURE_READY",
@@ -608,6 +633,13 @@ def main() -> int:
             station_url=profile_env["PT_STATION_URL"],
             actor_id=str(login["actorId"]),
         )
+        native_adapter.write_clipboard(FIXTURE_CLIPBOARD_BYTES)
+        fixture_round_trip = (
+            native_adapter.read_clipboard() == FIXTURE_CLIPBOARD_BYTES
+        )
+        cleanup["clipboard"]["fixtureSeeded"] = True
+        cleanup["clipboard"]["fixtureRoundTrip"] = fixture_round_trip
+        require(fixture_round_trip, "clipboard fixture did not round-trip")
         sample_id = f"mca-j03-{artifact_run_id}"
         journey = client.harness(
             "runGovernedToolDevelopment",
@@ -641,6 +673,23 @@ def main() -> int:
     except BaseException as error:
         primary_error = error
     finally:
+        if native_adapter is not None and original_clipboard is not None:
+            try:
+                native_adapter.write_clipboard(original_clipboard)
+                cleanup["clipboard"]["restored"] = (
+                    native_adapter.read_clipboard() == original_clipboard
+                )
+                if not cleanup["clipboard"]["restored"]:
+                    cleanup["status"] = "failed"
+                    cleanup["failures"].append(
+                        "clipboard fixture restoration did not round-trip"
+                    )
+            except BaseException as error:
+                cleanup["status"] = "failed"
+                cleanup["failures"].append(
+                    "clipboard fixture restoration: "
+                    f"{type(error).__name__}: {error}"
+                )
         if runtime_pair is not None:
             try:
                 cleanup["nativeRuntimeLogs"] = copy_native_runtime_logs(

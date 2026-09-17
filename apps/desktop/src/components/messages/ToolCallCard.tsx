@@ -607,14 +607,18 @@ export function ToolCallsBlock({
     : t('chat.message.toolCall.used', { count: doneCount });
 
   return (
-    <div style={{
-      borderRadius: 8,
-      border: `1px solid ${token.colorBorderSecondary}`,
-      background: token.colorFillQuaternary,
-      marginBottom: 8,
-      overflow: 'hidden',
-    }}>
+    <div
+      data-pt-agent-tool-call-group={turnId}
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorFillQuaternary,
+        marginBottom: 8,
+        overflow: 'hidden',
+      }}
+    >
       <div
+        data-pt-agent-tool-call-group-toggle
         onClick={() => setExpanded(!visibleExpanded)}
         style={{
           display: 'flex',
