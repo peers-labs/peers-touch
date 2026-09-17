@@ -93,9 +93,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
-  const { federations, listMemberStations } = useActiveChatFederationSlice((s) => ({
+  const {
+    federations,
+    listMemberStations,
+    rememberCatalogEntries,
+  } = useActiveChatFederationSlice((s) => ({
     federations: s.federations,
     listMemberStations: s.listMemberStations,
+    rememberCatalogEntries: s.rememberCatalogEntries,
   }));
   const federationOptions = useMemo(
     () => federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
@@ -197,6 +202,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           station_id: searchScope === 'station' ? selectedStationId : undefined,
           page_size: 20,
         });
+        rememberCatalogEntries(resp.entries ?? []);
         // #region debug-point A-E:station-scoped-search-response
         void fetch('http://127.0.0.1:7780/event', {
           method: 'POST',

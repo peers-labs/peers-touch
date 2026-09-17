@@ -7,8 +7,10 @@ import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { currentAuthenticatedActorPtid } from '../../store/session';
 import {
   projectChatFriendContacts,
+  projectChatFriendRequestPeers,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
+import { remoteProfileHandle } from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
 import {
   presentError,
@@ -23,6 +25,7 @@ import {
 } from './useActiveSocialChatStore';
 import {
   friendContactSelection,
+  personContactSelection,
   type ContactSelection,
 } from './contactSelection';
 import { ChatActorIdentityRow } from './ChatActorIdentityRow';
@@ -75,7 +78,15 @@ export function ChatContactsPanel({
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
   }));
-  const federations = useActiveChatFederationSlice((s) => s.federations);
+  const {
+    federations,
+    memberStationsByFederation,
+    actorStationEntries,
+  } = useActiveChatFederationSlice((s) => ({
+    federations: s.federations,
+    memberStationsByFederation: s.memberStationsByFederation,
+    actorStationEntries: s.actorStationEntries,
+  }));
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
@@ -110,6 +121,41 @@ export function ChatContactsPanel({
     myDid
     && friendRequestsLoadedAt,
   );
+  const stationNamesByPeerId = useMemo(() => {
+    const candidates = new Map<string, Set<string>>();
+    Object.values(memberStationsByFederation).flat().forEach((station) => {
+      const peerId = station.stationPeerId.trim();
+      const name = station.stationName.trim();
+      if (!peerId || !name) return;
+      const names = candidates.get(peerId) ?? new Set<string>();
+      names.add(name);
+      candidates.set(peerId, names);
+    });
+    Object.values(actorStationEntries).forEach((entry) => {
+      const peerId = entry.homeStationPeerId.trim();
+      const name = entry.homeStationName.trim();
+      if (!peerId || !name) return;
+      const names = candidates.get(peerId) ?? new Set<string>();
+      names.add(name);
+      candidates.set(peerId, names);
+    });
+    return Object.fromEntries(
+      [...candidates.entries()]
+        .filter(([, names]) => names.size === 1)
+        .map(([peerId, names]) => [peerId, [...names][0] ?? '']),
+    );
+  }, [actorStationEntries, memberStationsByFederation]);
+  const stationNamesByActorPtid = useMemo(
+    () => Object.fromEntries(
+      Object.entries(actorStationEntries)
+        .filter(([, entry]) => entry.homeStationName.trim())
+        .map(([actorPtid, entry]) => [
+          actorPtid,
+          entry.homeStationName.trim(),
+        ]),
+    ),
+    [actorStationEntries],
+  );
   const friendContacts = useMemo(
     () => projectChatFriendContacts({
       conversations,
@@ -117,6 +163,8 @@ export function ChatContactsPanel({
       peerProfiles,
       currentUserPtid: myDid,
       federations,
+      stationNamesByPeerId,
+      stationNamesByActorPtid,
     }),
     [
       conversations,
@@ -124,6 +172,8 @@ export function ChatContactsPanel({
       friendRequests,
       myDid,
       peerProfiles,
+      stationNamesByPeerId,
+      stationNamesByActorPtid,
     ],
   );
   const friendContactsByPtid = useMemo(
@@ -140,33 +190,9 @@ export function ChatContactsPanel({
 
   const totalContacts = friendContacts.length;
 
-  const unifiedRequests = useMemo(() => {
-    if (!myDid) return [];
-    return friendRequests
-      .filter((request) => request.senderPtid === myDid || request.receiverPtid === myDid)
-      .map((request) => {
-        const outgoing = request.senderPtid === myDid;
-        return {
-          request,
-          direction: outgoing ? 'outgoing' as const : 'incoming' as const,
-          peerPtid: outgoing ? request.receiverPtid : request.senderPtid,
-          peerName: outgoing ? request.receiverDisplayName : request.senderDisplayName,
-          peerAvatar: outgoing ? request.receiverAvatar : request.senderAvatar,
-          federationId: request.federationId,
-        };
-      })
-      .sort((left, right) => {
-        const leftTime = Date.parse(left.request.createdAt) || 0;
-        const rightTime = Date.parse(right.request.createdAt) || 0;
-        return rightTime - leftTime;
-      });
-  }, [friendRequests, myDid]);
-
-  const pendingIncomingCount = useMemo(
-    () => unifiedRequests.filter(
-      ({ direction, request }) => direction === 'incoming' && request.status === 1,
-    ).length,
-    [unifiedRequests],
+  const requestPeers = useMemo(
+    () => projectChatFriendRequestPeers(friendRequests, myDid),
+    [friendRequests, myDid],
   );
 
   const requestCardStyle: CSSProperties = {
@@ -209,7 +235,12 @@ export function ChatContactsPanel({
 
   const selectAcceptedActor = (identity: ChatActorIdentityProjection) => {
     const selection = friendContactSelection(identity, friendConversations);
-    if (selection.conversationId) selectSession(selection.conversationId);
+    if (
+      selection.kind === 'friend'
+      && selection.conversationId
+    ) {
+      selectSession(selection.conversationId);
+    }
     onSelectContact(selection);
   };
 
@@ -310,72 +341,100 @@ export function ChatContactsPanel({
     }
   };
 
-  const newFriendsContent = unifiedRequests.length === 0 ? (
+  const newFriendsContent = requestPeers.length === 0 ? (
     <Empty
       image={Empty.PRESENTED_IMAGE_SIMPLE}
       description={t('chat.social.contacts.noPendingRequests')}
     />
   ) : (
     <Flexbox gap={8}>
-      {unifiedRequests.map(({
+      {requestPeers.map(({
         request,
         direction,
         peerPtid,
-        peerName,
-        peerAvatar,
-        federationId,
+        attemptCount,
       }) => {
+        const peerName = direction === 'outgoing'
+          ? request.receiverDisplayName
+          : request.senderDisplayName;
+        const peerAvatar = direction === 'outgoing'
+          ? request.receiverAvatar
+          : request.senderAvatar;
+        const federationId = request.federationId;
         const cachedProfile = peerProfiles[peerPtid];
         const peerLabel = cachedProfile?.display_name?.trim()
           || cachedProfile?.username?.trim()
           || peerName
           || t('chat.social.sessionList.unknown');
         const resolvedAvatar = cachedProfile?.avatar?.trim() || peerAvatar;
+        const federatedHandle = cachedProfile
+          ? remoteProfileHandle(cachedProfile)
+          : '';
+        const homeStationPeerId = direction === 'incoming'
+          ? request.senderHomeStationPeerId
+          : request.receiverHomeStationPeerId;
         const projectedIdentity = friendContactsByPtid.get(peerPtid) ?? {
           actorPtid: peerPtid,
           username: cachedProfile?.username?.trim() || '',
           displayName: peerLabel,
           avatarUrl: resolvedAvatar,
-          federatedHandle: '',
-          homeStationDomain: '',
-          homeStationPeerId: direction === 'incoming'
-            ? request.senderHomeStationPeerId
-            : request.receiverHomeStationPeerId,
+          federatedHandle,
+          homeStationDomain: homeStationDomainFromHandle(federatedHandle),
+          homeStationPeerId,
+          homeStationName: stationNamesByActorPtid[peerPtid]
+            || stationNamesByPeerId[homeStationPeerId]
+            || '',
           federationId,
           federationName: federationNames.get(federationId) || '',
         };
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
-        const isAccepted = request.status === 2;
         const actionError = requestActionErrors[request.id];
-        const isSelected = selectedContact?.kind === 'friend'
-          && selectedContact.peerPtid === peerPtid;
+        const isSelected = Boolean(
+          selectedContact
+          && selectedContact.kind !== 'group'
+          && selectedContact.peerPtid === peerPtid
+        );
+        const selection = request.status === 2
+          ? friendContactSelection(projectedIdentity, friendConversations)
+          : personContactSelection(
+              projectedIdentity,
+              request.status,
+              direction,
+              attemptCount,
+            );
+        const selectRequestActor = () => {
+          if (
+            selection.kind === 'friend'
+            && selection.conversationId
+          ) {
+            selectSession(selection.conversationId);
+          }
+          onSelectContact(selection);
+        };
         return (
           <Flexbox
-            key={request.id}
+            key={peerPtid}
             data-chat-friend-request-id={request.id}
             data-chat-friend-request-peer-ptid={peerPtid}
             data-chat-friend-request-direction={direction}
             data-chat-friend-request-status={request.status}
+            data-chat-friend-request-attempt-count={attemptCount}
             horizontal
             align="flex-start"
             gap={10}
             title={peerLabel}
-            role={isAccepted ? 'button' : undefined}
-            tabIndex={isAccepted ? 0 : undefined}
-            onClick={isAccepted
-              ? () => selectAcceptedActor(projectedIdentity)
-              : undefined}
-            onKeyDown={isAccepted
-              ? (event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  selectAcceptedActor(projectedIdentity);
-                }
-              : undefined}
+            role="button"
+            tabIndex={0}
+            onClick={selectRequestActor}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              selectRequestActor();
+            }}
             style={{
               ...requestCardStyle,
               ...(isSelected ? selectedRowStyle : {}),
-              cursor: isAccepted ? 'pointer' : 'default',
+              cursor: 'pointer',
             }}
           >
             <UserSquareAvatar remoteUrl={resolvedAvatar} name={peerLabel} size={36} />
@@ -407,6 +466,11 @@ export function ChatContactsPanel({
                   {t(`chat.social.contacts.direction.${direction}`)}
                 </Tag>
                 {statusTag(request.status)}
+                <Tag>
+                  {t('chat.social.contacts.requestAttempts', {
+                    count: attemptCount,
+                  })}
+                </Tag>
               </Flexbox>
               {isPendingIncoming ? (
                 <Flexbox horizontal gap={6}>
@@ -489,7 +553,7 @@ export function ChatContactsPanel({
         >
           <UserPlus size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.newFriendsCount', { count: pendingIncomingCount })}
+            {t('chat.social.contacts.newFriendsCount', { count: requestPeers.length })}
           </Text>
         </Flexbox>
       ),
@@ -622,6 +686,7 @@ export function ChatContactsPanel({
                   data-chat-contact-federated-handle={friend.federatedHandle}
                   data-chat-contact-home-station-domain={friend.homeStationDomain}
                   data-chat-contact-home-station-peer-id={friend.homeStationPeerId}
+                  data-chat-contact-home-station-name={friend.homeStationName ?? ''}
                   data-chat-contact-avatar-src={friend.avatarUrl}
                   horizontal
                   align="center"
@@ -684,4 +749,10 @@ export function ChatContactsPanel({
       </Flexbox>
     </Flexbox>
   );
+}
+
+function homeStationDomainFromHandle(handle: string): string {
+  const value = handle.trim().replace(/^@/, '');
+  const separator = value.indexOf('@');
+  return separator >= 0 ? value.slice(separator + 1) : '';
 }
