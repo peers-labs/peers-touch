@@ -2,9 +2,9 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
+> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
 ---
 
@@ -49,11 +49,20 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 3. 让每个 worktree 独立选择 profile 和本机 slot。
 4. 将环境拓扑定义与本机资源分配分离。
 5. 区分 Station 共享连接、独占部署和独占重置权限。
-6. 用机器可读账本统一展示 worktree、branch、profile、slot、Station、进程和租约。
+6. 用统一开发看板按 worktree 展示需求/Journey、branch、profile、slot、
+   Station、Relay、database、进程和租约。
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
 9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
 10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
+11. 每个 profile 明确声明 `human-gated`、`managed` 或 `disposable`
+    Agent 控制模式，避免重复授权和名称推断。
+12. 在 `apps/dev/` 提供 Peers Dev 自开发管理应用，以 worktree 为主视图、
+    profile 占用为辅助视图，不复制控制面真源。
+13. 所有 worktree 通过固定的 `127.0.0.1:4177` 复用同一个 Peers Dev
+    Server；OS listener 是唯一在线 Owner。
+14. Peers Dev 通过显式 Plan locator 展示 Task closure 进度，并将工作状态与
+    环境健康分开；stale 声明可见但不拥有资源。
 
 ## 4. Runtime Authority
 
@@ -87,6 +96,7 @@ resolution now requires the authoritative binding. OS-held leases under
 | [design.md](./design.md) | Owner、控制面、租约和失败语义 |
 | [data-model.md](./data-model.md) | 机器注册表、worktree 绑定和租约模型 |
 | [integration.md](./integration.md) | 与 env 仓、现有 `.local` 和 Make 入口的关系 |
+| [module-layout.md](./module-layout.md) | `apps/dev` 与 control-plane 模块职责 |
 | [decisions.md](./decisions.md) | 关键架构决策与替代方案 |
 
 Development task sequencing, Journey state and functional/Acceptance

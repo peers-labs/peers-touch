@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -25,6 +25,8 @@
 | DWF-D12 | Upgrade `pt-dev-workflow`; do not add another orchestrator Skill | accepted |
 | DWF-D13 | Make Plan Package + Task Slice the active-plan source | accepted |
 | DWF-D14 | Separate source completion from functional and formal proof | accepted |
+| DWF-D15 | Make a Task-closing Progress Slice the continuation unit | accepted |
+| DWF-D16 | Bind tracked declarations to an explicit Plan locator | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -465,3 +467,104 @@ iteration without weakening exact-source evidence.
   same-workstream functional successor.
 - The runner must keep development artifacts outside the repository and outside
   the Acceptance latest namespace.
+
+## DWF-D15: A Progress Slice Is The Continuation Unit
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+Context Anchors currently expose an unstructured `Next action`. Agents can
+execute that action successfully while only reading state, obtaining
+authorization, changing a profile, or running a diagnostic. The next Anchor
+then reports the same completed/total count, so a succession of valid local
+actions produces no visible project progress.
+
+### Decision
+
+- Overall progress is completed Task closures divided by total Task closures.
+- `planctl status` derives the current Task's exact completion effect:
+  `in_progress -> done`, `+1` closure, percentage-point delta, and newly
+  unlocked Task IDs.
+- Context Anchor replaces `Next action` with one `Next Progress Slice` that
+  targets that completion effect.
+- Goal orchestration may schedule several supporting actions inside the Slice,
+  but Dev Workflow continues through them until the Task closes or reaches a
+  hard boundary.
+- Successful setup, status, authorization, diagnostic, checkpoint, deploy, or
+  focused-check actions cannot by themselves end the user-facing continuation.
+- A zero-delta handoff is valid only for a source-backed hard boundary after
+  the complete ready frontier is exhausted.
+
+### Rationale
+
+This makes every normal continuation predictably increase durable progress
+without turning each command into a Task or duplicating the plan DAG in chat.
+
+### Alternatives Considered
+
+- Add arbitrary percentage weights to Tasks: rejected because weights are
+  subjective and hide poorly sliced work.
+- Treat every command or Session transition as progress: rejected because it
+  rewards activity instead of outcomes.
+- Keep free-text `Next action` and rely on prompt quality: rejected because no
+  machine contract links the action to durable progress.
+
+### Consequences
+
+- Task Slices must remain meaningful and independently closable.
+- Long-running Goals are bounded by Task closure, not by one command.
+- Context Anchors become smaller while carrying a stronger continuation
+  contract.
+- A large Task that repeatedly cannot close must be amended or split rather
+  than reporting artificial partial percentages.
+
+## DWF-D16: Tracked Declarations Carry An Explicit Plan Locator
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+The machine work ledger identifies `workItemId` and Journey but does not identify
+the Plan Package that owns progress. `workItemId` is not a Plan or Task key and
+may intentionally differ from both. Consumers therefore cannot join a live
+Development Run to `planctl status` without guessing from repository contents.
+
+### Decision
+
+Every post-rollout declaration stores `planPath`, `planId`, and `taskId`. The
+three fields are either all non-null for tracked work or all null for explicitly
+untracked work. During rollout, legacy records may omit the tuple and remain
+readable without bulk rewrite. `planPath` is repository-relative and
+containment-checked. On publication or update, tracked declarations must match
+the package identity, binding, and single current Task.
+
+Task handoff, commit, merge, rebase, or other source-identity change requires
+one declaration update. Heartbeat extends liveness only; it does not change the
+Plan locator or source identity.
+
+### Rationale
+
+An explicit foreign key is the only deterministic join. Inferring a Plan from
+`workItemId`, active-work prose, branch, directory names, or a repository scan
+creates ambiguous progress and can attach one task to another plan.
+
+### Alternatives Considered
+
+- Infer Plan from `workItemId`: rejected because work item and Task IDs are
+  independent identities.
+- Scan for the only active Plan: rejected because repositories may contain
+  multiple packages and historical legacy plans.
+- Read `active_work` directly in Peers Dev: rejected because the dashboard
+  consumes the machine declaration contract and must not gain another mutable
+  workflow authority.
+
+### Consequences
+
+- Existing ledger records remain byte-compatible until their worktree adopts
+  the new writer; new readers project missing fields as a null locator.
+- Tracked workflow commands publish and refresh all three fields atomically.
+- Peers Dev can resolve progress through the canonical Plan Package parser and
+  expose typed unavailable/mismatch states without filesystem-path leakage.

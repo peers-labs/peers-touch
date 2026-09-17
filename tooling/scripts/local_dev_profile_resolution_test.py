@@ -68,6 +68,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             "\n".join(
                 (
                     "PT_DEV_PROFILE=three",
+                    "PT_AGENT_CONTROL_MODE=managed",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://canonical.example:18080",
                     "PT_API_TOKEN=canonical-secret-token",
@@ -99,6 +100,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             "\n".join(
                 (
                     "PT_DEV_PROFILE=three",
+                    "PT_AGENT_CONTROL_MODE=managed",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://stale-cache.example:18132",
                     "",
@@ -296,6 +298,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             "\n".join(
                 (
                     "PT_DEV_PROFILE=override",
+                    "PT_AGENT_CONTROL_MODE=managed",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://override.example:19080",
                     "",
@@ -322,7 +325,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         self.assertEqual(registered.returncode, 0, registered.stderr)
         override = Path(self.temp_dir.name) / "override.env"
         override.write_text(
-            "PT_DEV_PROFILE=override\nPT_STATION_MODE=remote\n",
+            "PT_DEV_PROFILE=override\nPT_AGENT_CONTROL_MODE=managed\nPT_STATION_MODE=remote\n",
             encoding="utf-8",
         )
 
@@ -360,6 +363,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
                 (
                     "PT_DEV_PROFILE=untracked",
                     "PT_DEV_SLOT=2",
+                    "PT_AGENT_CONTROL_MODE=managed",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_URL=http://untracked.example:18080",
                     "",
@@ -397,6 +401,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
                 (
                     "PT_DEV_PROFILE=local",
                     "PT_DEV_SLOT=4",
+                    "PT_AGENT_CONTROL_MODE=human-gated",
                     "PT_STATION_MODE=compose",
                     "PT_STATION_URL=http://127.0.0.1:18480",
                     "",

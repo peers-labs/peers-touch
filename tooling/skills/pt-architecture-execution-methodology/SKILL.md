@@ -68,6 +68,11 @@ required owners. Do not decompose the primary DAG into isolated frontend,
 backend, database, test, or documentation phases. Those are deliverables inside
 a vertical closure.
 
+Each persisted Task Slice will be one progress unit. Size every closure so one
+bounded Progress Slice can finish it and produce a durable Task transition to
+`done`. If that is not realistic, split the closure along a real dependency
+boundary before persistence; do not rely on subjective partial percentages.
+
 ## Method
 
 ### 1. Bind To Accepted Sources
@@ -211,6 +216,7 @@ Return `PLAN_MODEL_READY` only when:
 - verification traces to product states or concrete risks;
 - no plan item redesigns architecture;
 - completion claims are bounded.
+- each closure is small enough to be one meaningful Task-closing continuation.
 
 The owner/reviewer accepts the plan model before persistence/final plan review.
 

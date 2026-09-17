@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -103,6 +103,31 @@ Current Task derives from exactly one manifest Task entry with
 `status: in_progress`. Ready Tasks derive from the same manifest DAG and statuses.
 `expectedHead` changes only after an authorized Git operation; `initialHead` and
 `worktreeSetDigest` follow the immutable binding rules.
+
+`planctl status` also derives a read-only progress projection:
+
+```ts
+interface PlanProgress {
+  unit: 'task-closure';
+  completed: number;
+  total: number;
+  percentage: number;
+  currentTaskId: string | null;
+  nextProgressBoundary: null | {
+    taskId: string;
+    title: string;
+    transition: 'in_progress->done';
+    completedDelta: 1;
+    percentagePointDelta: number;
+    unlocksTaskIds: string[];
+  };
+}
+```
+
+The projection is computed from manifest lifecycle and Task titles. It is not
+persisted. A non-blocked active package always exposes one
+`nextProgressBoundary`. Prepared, blocked, completed and superseded packages
+expose `null`.
 
 Status rules:
 
@@ -208,6 +233,10 @@ functional proof Task is done.
 The Task does not own lifecycle status, current selection or transition event
 history. `updatedAt` changes only when a durable task snapshot changes, not for
 each command.
+
+Task closure is the only progress unit. Task weights and command-level progress
+percentages are forbidden. A Task that cannot be completed as one meaningful
+continuation boundary must be split by the plan owner before execution.
 
 ## 4. Path And Scope Containment
 
@@ -341,6 +370,9 @@ interface DevelopmentResourceIntent {
       | 'station.connect'
       | 'station.deploy'
       | 'station.reset'
+      | 'relay.connect'
+      | 'relay.deploy'
+      | 'database'
       | 'client.storage'
       | 'fixture';
     resourceId: string;
@@ -352,6 +384,9 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
   declarationId: string;
   workItemId: string;
   sessionId: string;
+  planPath: string | null;
+  planId: string | null;
+  taskId: string | null;
   workspaceId: string;
   branch: string;
   sourceHead: string;
@@ -366,8 +401,18 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
 }
 ```
 
+The Plan locator fields are an all-or-none tuple. Null means the declaration is
+explicitly untracked; it never means "discover a Plan". A non-null
+`planPath` is repository-relative, resolves inside the declared worktree, and
+must identify a package whose `planId`, binding, and current `taskId` match the
+declaration. During the mixed-version rollout, legacy records may omit the
+tuple; compatible readers normalize absence to a locator-less declaration
+without rewriting the shared ledger.
+
 Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
+Relay and database claims provide machine-wide planning visibility only; they
+do not create deployment, mutation or lease authority.
 
 ## 9. Execution Authorization
 
@@ -449,6 +494,11 @@ interface DevelopmentSession {
   eventDigest: string;
 }
 ```
+
+Session transitions describe execution state but do not increment overall
+progress. A Progress Slice may contain several transitions and supporting
+actions; its successful terminal effect is the manifest's current Task changing
+from `in_progress` to `done`.
 
 Only one state is current. The bounded event log owns transition order;
 `session.json` is its materialized current projection. Neither is duplicated in

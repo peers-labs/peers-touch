@@ -1522,6 +1522,72 @@ export function allDeclaredGateIds(acceptance) {
   return [...new Set(ordered)];
 }
 
+export function summarizePlanProgress(planPackage) {
+  const tasks = planPackage.manifest.tasks;
+  const completed = tasks.filter((task) => task.status === 'done').length;
+  const total = tasks.length;
+  const percentage = total === 0 ? 100 : Number(((completed / total) * 100).toFixed(2));
+  const current = tasks.find((task) => task.status === 'in_progress') ?? null;
+
+  if (!current) {
+    return {
+      unit: 'task-closure',
+      completed,
+      total,
+      percentage,
+      currentTaskId: null,
+      nextProgressBoundary: null,
+    };
+  }
+
+  const completedAfter = completed + 1;
+  const percentageAfter = Number(((completedAfter / total) * 100).toFixed(2));
+  const doneAfter = new Set(
+    tasks
+      .filter((task) => task.status === 'done')
+      .map((task) => task.id),
+  );
+  doneAfter.add(current.id);
+  const readyBefore = new Set(
+    tasks
+      .filter(
+        (task) =>
+          task.status === 'pending' &&
+          task.dependsOn.every((dependency) =>
+            tasks.some(
+              (candidate) =>
+                candidate.id === dependency && candidate.status === 'done',
+            ),
+          ),
+      )
+      .map((task) => task.id),
+  );
+  const unlocksTaskIds = tasks
+    .filter(
+      (task) =>
+        task.status === 'pending' &&
+        !readyBefore.has(task.id) &&
+        task.dependsOn.every((dependency) => doneAfter.has(dependency)),
+    )
+    .map((task) => task.id);
+
+  return {
+    unit: 'task-closure',
+    completed,
+    total,
+    percentage,
+    currentTaskId: current.id,
+    nextProgressBoundary: {
+      taskId: current.id,
+      title: planPackage.taskSlices.get(current.id).title,
+      transition: 'in_progress->done',
+      completedDelta: 1,
+      percentagePointDelta: Number((percentageAfter - percentage).toFixed(2)),
+      unlocksTaskIds,
+    },
+  };
+}
+
 export function summarizePlanPackage(planPackage) {
   const currentManifestTask =
     planPackage.manifest.tasks.find((task) => task.status === 'in_progress') ?? null;
@@ -1534,11 +1600,13 @@ export function summarizePlanPackage(planPackage) {
   return {
     ok: true,
     plan: planPackage.path,
+    planId: planPackage.manifest.planId,
     status: planPackage.manifest.status,
     branch: planPackage.manifest.binding.branch,
     workspaceId: planPackage.manifest.binding.workspaceId,
     initialHead: planPackage.manifest.binding.initialHead,
     expectedHead: planPackage.manifest.binding.expectedHead,
+    progress: summarizePlanProgress(planPackage),
     currentTaskId: currentManifestTask?.id ?? null,
     currentTaskPath: currentManifestTask?.path ?? null,
     currentClosure: planPackage.currentTask?.closureId ?? null,

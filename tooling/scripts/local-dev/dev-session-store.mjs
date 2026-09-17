@@ -12,10 +12,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 import { workspaceWorkflowPath } from '../lib/machine-dev-paths.mjs';
+import { processStartIdentity } from './dev-work-ledger.mjs';
 import { canonicalize, isObject } from './dev-work-schema.mjs';
 import {
   DevSessionError,
@@ -110,18 +110,6 @@ function processIsAlive(pid) {
     return true;
   } catch (error) {
     return error?.code === 'EPERM';
-  }
-}
-
-function processStartIdentity(pid = process.pid) {
-  try {
-    const value = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-    return value || null;
-  } catch {
-    return null;
   }
 }
 

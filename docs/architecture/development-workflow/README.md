@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -59,6 +59,8 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 7. Context Anchor 只投影 active pointer、manifest、current task 和 session。
 8. 所有状态和结论绑定 source、workspace、task/Journey 和 runtime identity。
 9. 先用当前 Mobile Shell 计划完成真实迁移，再推广到其他 active plan。
+10. Context Anchor 的续作单位是可关闭一个 Task 的 Progress Slice，并明确
+    该 Slice 对 completed/total 进度和后续解锁项的影响。
 
 ## 4. Document Navigation
 
@@ -66,13 +68,14 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D14 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D16 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
+| [Progress-bearing workflow plan](./execution-plans/20260917-progress-bearing-development-loop/plan.md) | Anchor、Goal、profile policy 与环境看板的落地计划 |
 | [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | `DWF-B` 自举闭环与首个真实 Plan Package pilot |
 
 ## 5. Current Status
 
-DWF-D01..DWF-D14 已接受，Plan Package pilot 正在由唯一 active Mobile Shell
+DWF-D01..DWF-D16 已接受，Plan Package pilot 正在由唯一 active Mobile Shell
 计划的
 `DWF-B` workstream 自举工具和最终迁移；不会创建第二个 active plan。
