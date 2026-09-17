@@ -161,8 +161,22 @@ function processIsAlive(pid) {
 }
 
 export function processStartIdentity(pid = process.pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
-    const value = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    const command =
+      process.platform === 'win32'
+        ? [
+            'powershell.exe',
+            [
+              '-NoLogo',
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString("o")`,
+            ],
+          ]
+        : ['ps', ['-o', 'lstart=', '-p', String(pid)]];
+    const value = execFileSync(command[0], command[1], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();

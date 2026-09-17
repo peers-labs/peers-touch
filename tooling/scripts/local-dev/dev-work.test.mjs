@@ -83,6 +83,12 @@ function expectCode(code, operation) {
   });
 }
 
+test('resolves a stable process-start identity for the current platform', () => {
+  const identity = processStartIdentity();
+  assert.equal(typeof identity, 'string');
+  assert.notEqual(identity, '');
+});
+
 test('publishes a closed declaration with owner-only storage', () => {
   const scope = fixture();
   try {
