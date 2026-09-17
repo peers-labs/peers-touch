@@ -41,6 +41,89 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def resolve_deployment_environment_path(
+    environment_name: str,
+    *,
+    repo_root: Path | None = None,
+) -> Path:
+    root = REPO_ROOT if repo_root is None else repo_root
+    resolver = root / "tooling" / "scripts" / "deploy" / "deploy.sh"
+    resource = f"deployment-environment:{environment_name}"
+    try:
+        completed = subprocess.run(
+            ["/bin/bash", str(resolver), "resolve", environment_name],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {error}"
+            ),
+            resource=resource,
+        ) from error
+
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"resolver exited with status {completed.returncode}"
+        )
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {detail}"
+            ),
+            resource=resource,
+        )
+
+    candidates = [
+        line.strip()
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    ]
+    if len(candidates) != 1:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned {len(candidates)} paths; expected exactly one"
+            ),
+            resource=resource,
+        )
+    candidate = Path(candidates[0])
+    if not candidate.is_absolute():
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned a non-absolute path: {candidate}"
+            ),
+            resource=resource,
+        )
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} path cannot be "
+                f"resolved: {candidate}: {error}"
+            ),
+            resource=resource,
+        ) from error
+    if not resolved.is_file():
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} is not a file: "
+                f"{resolved}"
+            ),
+            resource=resource,
+        )
+    return resolved
+
+
 class EnvironmentProvisioner(ABC):
     environment_id = ""
 
@@ -238,21 +321,7 @@ class EnvironmentProvisioner(ABC):
                 ),
                 resource="source-lease:invalid-resource",
             )
-        environment_path = (
-            REPO_ROOT
-            / ".local"
-            / "deploy"
-            / "envs"
-            / f"{environment_name}.env"
-        )
-        if not environment_path.is_file():
-            raise BlockedError(
-                reason=(
-                    "Station deployment environment is missing: "
-                    f"{environment_path}"
-                ),
-                resource=f"station-deployment:{environment_name}",
-            )
+        environment_path = resolve_deployment_environment_path(environment_name)
         environment = load_env_file(environment_path)
         try:
             lease = RemoteGitSourceLease(

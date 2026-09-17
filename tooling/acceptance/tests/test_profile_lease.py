@@ -16,7 +16,10 @@ from tooling.acceptance.core.lease import (
     RemoteGitSourceLeaseUnavailable,
     _remote_git_source_lease_script,
 )
-from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioner import (
+    EnvironmentProvisioner,
+    resolve_deployment_environment_path,
+)
 from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     RuntimeManifest,
@@ -136,6 +139,87 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_deployment_environment_resolver_uses_reviewed_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = root / "station-three.env.example"
+            environment.write_text(
+                "PT_DEPLOY_HOST=station.example\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{environment}\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=completed,
+            ) as run:
+                resolved = resolve_deployment_environment_path(
+                    "station-three",
+                    repo_root=root,
+                )
+
+        self.assertEqual(resolved, environment.resolve())
+        run.assert_called_once_with(
+            [
+                "/bin/bash",
+                str(root / "tooling" / "scripts" / "deploy" / "deploy.sh"),
+                "resolve",
+                "station-three",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    def test_deployment_environment_resolver_maps_authority_failure(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="[ERROR] reviewed environment topology is dirty\n",
+        )
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tooling.acceptance.core.provisioner.subprocess.run",
+            return_value=completed,
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "reviewed environment topology is dirty",
+        ) as caught:
+            resolve_deployment_environment_path(
+                "station-three",
+                repo_root=Path(directory),
+            )
+
+        self.assertEqual(
+            caught.exception.resource,
+            "deployment-environment:station-three",
+        )
+
+    def test_deployment_environment_resolver_rejects_relative_path(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="relative/station-three.env.example\n",
+            stderr="",
+        )
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tooling.acceptance.core.provisioner.subprocess.run",
+            return_value=completed,
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "non-absolute path",
+        ):
+            resolve_deployment_environment_path(
+                "station-three",
+                repo_root=Path(directory),
+            )
+
     def test_ssh_transport_imports_first_in_fresh_process(self) -> None:
         completed = subprocess.run(
             [
@@ -272,14 +356,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
     def test_provisioner_registers_remote_source_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
+            environment = root / "station-three.env.example"
             environment.write_text(
                 "\n".join(
                     (
@@ -299,9 +376,9 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                 EnvironmentContract(id="lease-test")
             )
             with patch(
-                "tooling.acceptance.core.provisioner.REPO_ROOT",
-                root,
-            ), patch(
+                "tooling.acceptance.core.provisioner.resolve_deployment_environment_path",
+                return_value=environment,
+            ) as resolve_environment, patch(
                 "tooling.acceptance.core.provisioner.RemoteGitSourceLease",
                 return_value=lease,
             ) as lease_type:
@@ -311,6 +388,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                 )
                 completed = provisioner.cleanup()
 
+        resolve_environment.assert_called_once_with("station-three")
         lease_type.assert_called_once_with(
             "station-three",
             "gate-owner",
@@ -327,14 +405,7 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
     def test_provisioner_maps_remote_conflict_to_structured_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
+            environment = root / "station-three.env.example"
             environment.write_text(
                 "\n".join(
                     (
@@ -355,8 +426,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                 EnvironmentContract(id="lease-test")
             )
             with patch(
-                "tooling.acceptance.core.provisioner.REPO_ROOT",
-                root,
+                "tooling.acceptance.core.provisioner.resolve_deployment_environment_path",
+                return_value=environment,
             ), patch(
                 "tooling.acceptance.core.provisioner.RemoteGitSourceLease",
                 return_value=lease,
