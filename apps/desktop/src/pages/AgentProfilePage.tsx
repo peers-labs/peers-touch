@@ -65,6 +65,7 @@ import { ModelSelect } from '../components/ModelSelect';
 import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
+import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';
 import {
   selectAgentCapabilityBindingsBySource,
   selectAgentCapabilityReadinessBySource,
@@ -2728,6 +2729,13 @@ export function AgentProfilePage({
                       upsertBinding={capabilityProjection.upsertBinding}
                       deleteBinding={capabilityProjection.deleteBinding}
                     />
+                  </ProfileCard>
+
+                  <ProfileCard
+                    title={t('agent.connectors.title')}
+                    description={t('agent.connectors.description')}
+                  >
+                    <AgentConnectorsPanel agentId={agent.id} />
                   </ProfileCard>
 
                   <ProfileCard

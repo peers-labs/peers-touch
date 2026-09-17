@@ -258,4 +258,16 @@ describe('Agent evidence UI projections', () => {
     expect(details).toContain('data-turn-diagnostics-export');
     expect(details).toContain('requestId !== loadRequestRef.current');
   });
+
+  it('mounts the Connector projection on the Agent capability surface', () => {
+    const profile = readFileSync(
+      new URL('../pages/AgentProfilePage.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(profile).toContain(
+      "import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';",
+    );
+    expect(profile).toContain('<AgentConnectorsPanel agentId={agent.id} />');
+  });
 });
