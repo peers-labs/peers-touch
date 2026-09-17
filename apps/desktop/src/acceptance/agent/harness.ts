@@ -22626,6 +22626,26 @@ async function runConnectorInvocationDevelopmentJourney(
       'Connector ToolCall terminal receiver projection',
       30_000,
     );
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    const currentToolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!currentToolCallElement?.getClientRects().length) {
+      document.querySelector<HTMLElement>(
+        `${toolCallGroupSelector} `
+        + '[data-pt-agent-tool-call-group-toggle]',
+      )?.click();
+    }
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          toolCallSelector,
+        )?.getClientRects().length,
+      ),
+      'Connector ToolCall terminal native receiver',
+      30_000,
+    );
     const sourceFact = source.facts[0];
     const sideEffectCount = await foundationToolSideEffectCount(
       'desktop_app',
@@ -22640,7 +22660,9 @@ async function runConnectorInvocationDevelopmentJourney(
     ));
     const receiverProjection = toolRuntime.getProjection(toolCallId);
     const terminalReceiverVisible = Boolean(
-      toolCallElement.getClientRects().length,
+      document.querySelector<HTMLElement>(
+        toolCallSelector,
+      )?.getClientRects().length,
     );
 
     const firstDisconnect = await api.oauth2Disconnect(connectorId);
