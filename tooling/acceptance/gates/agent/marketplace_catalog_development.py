@@ -35,6 +35,9 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientSpec,
     FoundationRuntimeClient,
 )
+from tooling.acceptance.fixtures.agent_marketplace_catalog_fault_proxy import (
+    AgentMarketplaceCatalogFaultProxy,
+)
 from tooling.acceptance.provisioners.home_station import (
     AGENT_MARKETPLACE_GATE,
     HomeStationProvisioner,
@@ -67,6 +70,19 @@ def evaluate_marketplace_capture(capture: Mapping[str, Any]) -> dict[str, bool]:
     catalog = require_mapping(capture.get("catalog"), "catalog evidence")
     source = require_mapping(catalog.get("source"), "catalog source")
     sync = require_mapping(catalog.get("sync"), "catalog sync")
+    negative_transport = require_mapping(
+        catalog.get("negativeTransport"),
+        "catalog negative transport",
+    )
+    tampered_sync = require_mapping(
+        negative_transport.get("tampered"),
+        "tampered catalog sync",
+    )
+    old_station_sync = require_mapping(
+        negative_transport.get("oldStation"),
+        "old Station catalog sync",
+    )
+    catalog_proxy = require_mapping(capture.get("catalog-proxy"), "catalog proxy")
     first_page = require_mapping(catalog.get("firstPage"), "first page")
     second_page = require_mapping(catalog.get("secondPage"), "second page")
     readback = require_mapping(capture.get("target-readback"), "target readback")
@@ -91,12 +107,45 @@ def evaluate_marketplace_capture(capture: Mapping[str, Any]) -> dict[str, bool]:
             and source.get("builtIn") is True
             and source.get("signatureStatus") == "verified"
             and source.get("trustLevel") == "official"
+            and source.get("transportKind") == "official_station"
+            and not source.get("url")
+            and not source.get("branch")
+            and not source.get("manifestPath")
             and bool(source.get("publicKeyFingerprint"))
         ),
         "freshSignedSynchronization": (
             sync.get("signatureStatus") == "verified"
+            and sync.get("syncState") == "fresh_verified"
             and sync.get("stale") is False
             and not sync.get("error")
+        ),
+        "officialStationTransportVerified": (
+            sync.get("transportKind") == "official_station"
+            and sync.get("transportEndpoint")
+            == "/sub-agent/agent/package-catalog/official"
+            and sync.get("distributionId") == "peers-official-station-v1"
+            and len(str(sync.get("envelopeSha256") or "")) == 64
+        ),
+        "tamperedTransportRejected": (
+            tampered_sync.get("stale") is True
+            and tampered_sync.get("syncState") == "stale_verified"
+            and tampered_sync.get("error")
+            == "OFFICIAL_CATALOG_TRANSPORT_DIGEST_INVALID"
+            and tampered_sync.get("catalogRevision") == sync.get("catalogRevision")
+        ),
+        "oldStationRetainsVerifiedSnapshot": (
+            old_station_sync.get("stale") is True
+            and old_station_sync.get("syncState") == "stale_verified"
+            and old_station_sync.get("error")
+            == "OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE"
+            and old_station_sync.get("catalogRevision") == sync.get("catalogRevision")
+        ),
+        "catalogFaultProxyObserved": (
+            catalog_proxy.get("targetPath")
+            == "/sub-agent/agent/package-catalog/official"
+            and catalog_proxy.get("requestCount") == 4
+            and catalog_proxy.get("actions")
+            == ["pass", "tamper", "missing", "pass"]
         ),
         "cursorPaginationVerified": (
             bool(first_page.get("nextCursor"))
@@ -134,6 +183,8 @@ def evaluate_marketplace_capture(capture: Mapping[str, Any]) -> dict[str, bool]:
 def _client_from_manifest(
     manifest: Mapping[str, Any],
     profile_env: Mapping[str, str],
+    *,
+    station_url: str,
 ) -> FoundationRuntimeClient:
     services = manifest.get("services")
     station = services.get("station") if isinstance(services, Mapping) else None
@@ -154,7 +205,7 @@ def _client_from_manifest(
     )
     return FoundationRuntimeClient(
         FoundationClientSpec.from_mapping(client),
-        station_url=str(station["endpoint"]),
+        station_url=station_url,
         profile_env=profile_env,
         startup_timeout=900,
     )
@@ -181,6 +232,7 @@ def main() -> int:
         dict(profile_env),
     )
     client: FoundationRuntimeClient | None = None
+    catalog_proxy: AgentMarketplaceCatalogFaultProxy | None = None
     runtime_manifest = None
     capture: dict[str, Any] = {}
     failure = ""
@@ -202,7 +254,13 @@ def main() -> int:
                     f"{runtime_manifest.blocked_reason or runtime_manifest.state.value}"
                 ),
             )
-            client = _client_from_manifest(runtime_manifest.to_dict(), profile_env)
+            catalog_proxy = AgentMarketplaceCatalogFaultProxy(station_url)
+            catalog_proxy.start()
+            client = _client_from_manifest(
+                runtime_manifest.to_dict(),
+                profile_env,
+                station_url=catalog_proxy.url,
+            )
             reused = seed_actor_identity("alice", client.actor_identity_root, station_url)
             client.start()
             login = authenticate_client(
@@ -222,7 +280,11 @@ def main() -> int:
                 timeout=600,
             )
             require(isinstance(result, Mapping), "X3 Harness result is invalid")
-            capture = {**dict(result), "identity": {**identity, "reused": reused}}
+            capture = {
+                **dict(result),
+                "identity": {**identity, "reused": reused},
+                "catalog-proxy": catalog_proxy.evidence(),
+            }
             checks = evaluate_marketplace_capture(capture)
             capture["gateAssertions"] = checks
             status = "passed"
@@ -252,6 +314,14 @@ def main() -> int:
                 except Exception as error:  # noqa: BLE001
                     runtime_cleanup["status"] = "failed"
                     runtime_cleanup["failures"].append(f"client cleanup: {error}")
+            if catalog_proxy is not None:
+                try:
+                    catalog_proxy.stop()
+                except Exception as error:  # noqa: BLE001
+                    runtime_cleanup["status"] = "failed"
+                    runtime_cleanup["failures"].append(
+                        f"catalog proxy cleanup: {error}"
+                    )
             try:
                 runtime_cleanup["provisionerResourcesReleased"] = list(
                     provisioner.cleanup()
@@ -281,16 +351,16 @@ def main() -> int:
             "completionStatus": "DONE" if status == "passed" else "FAILED",
             "proofStatus": "PROVEN" if status == "passed" else "UNPROVEN",
             "phase": "X3 Trusted Package Discovery",
-            "bom": ["X3", "P4-3", "MCA-D20"],
+            "bom": ["X3", "P4-3", "MCA-D20", "MCA-D20A"],
             "spec": [
                 "tooling/acceptance/features/agent-trusted-package-catalog.yaml",
                 "docs/architecture/agent/modern-chat-agent/decisions.md#"
-                "mca-d20-publisher-signed-package-catalogs-and-authority-readback",
+                "mca-d20a-station-distributed-publisher-signed-official-catalog",
             ],
             "gate": (
                 "X3 requires a verified default source, signed synchronization, "
-                "pagination, native browse/detail, Agent/Skill/MCP authority "
-                "readback, revocation, uninstall, and cleanup."
+                "authenticated Station transport, pagination, native browse/detail, "
+                "Agent/Skill/MCP authority readback, revocation, uninstall, and cleanup."
             ),
             "sampleEmissionAllowed": status == "passed",
             "source": source_identity(ROOT),
@@ -302,7 +372,10 @@ def main() -> int:
         }
         role_payloads = {
             "receiver-dom": capture.get("receiver-dom", {}),
-            "catalog-source": capture.get("catalog", {}),
+            "catalog-source": {
+                "catalog": capture.get("catalog", {}),
+                "transportProxy": capture.get("catalog-proxy", {}),
+            },
             "target-readback": capture.get("target-readback", {}),
             "revocation": capture.get("revocation", {}),
             "cleanup": {

@@ -727,11 +727,17 @@
         "agent-marketplace-catalog-e2e"
       ],
       "synthetic_paths": [
+        "model/domain/agent/package_catalog.proto",
+        "packages/agent-catalog/official-catalog.v1.envelope.json",
+        "apps/station/app/subserver/agent/catalog/official_catalog_gen.go",
+        "apps/station/app/subserver/agent/handler/package_catalog_handler.go",
         "apps/desktop/src-tauri/src/application/skills_market/trusted_catalog.rs"
       ],
       "evidence": {
         "truth_sources": [
           "publisher-signed peers.package-catalog.v1 snapshot",
+          "Station-distributed exact envelope bytes with authenticated transport digest",
+          "Desktop-pinned publisher key and verified local cache",
           "Station Agent package and Skill authorities",
           "actor-scoped Desktop Rust MCP authority"
         ],
@@ -744,7 +750,7 @@
           "agent-marketplace-catalog-e2e"
         ],
         "proven_scope": [
-          "X3 default source, signed sync, pagination, browse/detail, Agent/Skill/MCP install, authority readback, uninstall, revocation, and cleanup"
+          "X3 default source, authenticated Station signed sync, pagination, browse/detail, Agent/Skill/MCP install, authority readback, uninstall, revocation, and cleanup"
         ],
         "unproven_scope": [
           "Initial state: UNPROVEN until the exact-source Native X3 Journey and cleanup pass"

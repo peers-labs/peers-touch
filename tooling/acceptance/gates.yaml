@@ -649,7 +649,7 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "X3 trusted package catalog: default signed source, sync, pagination, native browse/detail, Agent/Skill/MCP authority readback, revocation, uninstall, and cleanup.",
+      "description": "X3 trusted package catalog: canonical bootstrap, authenticated Station signed sync, transport digest, pagination, native browse/detail, Agent/Skill/MCP authority readback, revocation, uninstall, and cleanup.",
       "initial_proof_status": "UNPROVEN",
       "required_artifact_roles": [
         "receiver-dom",

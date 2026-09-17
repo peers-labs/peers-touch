@@ -1687,6 +1687,7 @@ async function fileToBase64(file: File): Promise<string> {
 export interface MarketSource {
   id: string;
   name: string;
+  transportKind: 'official_station' | 'user_pinned_github';
   url: string;
   branch?: string;
   manifestPath: string;
@@ -1699,6 +1700,7 @@ export interface MarketSource {
   catalogRevision: string;
   generatedAt: string;
   signatureStatus: 'verified' | 'invalid' | 'pending';
+  syncState: 'bootstrap_verified' | 'fresh_verified' | 'stale_verified' | 'invalid_rejected';
   revoked: boolean;
   revokedAt?: string;
 }
@@ -6064,6 +6066,11 @@ export const api = {
       SkillMarketSyncInput,
       MarketSkillPage & {
         signatureStatus: string;
+        syncState: MarketSource['syncState'];
+        transportKind: MarketSource['transportKind'];
+        transportEndpoint: string;
+        distributionId: string;
+        envelopeSha256: string;
         stale: boolean;
         error?: string;
       }

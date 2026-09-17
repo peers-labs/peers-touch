@@ -25099,6 +25099,10 @@ async function runMarketplaceCatalogDevelopmentJourney(
       || !source.builtIn
       || source.signatureStatus !== 'verified'
       || source.trustLevel !== 'official'
+      || source.transportKind !== 'official_station'
+      || source.url
+      || source.branch
+      || source.manifestPath
       || !source.publicKeyFingerprint
     ) {
       throw new Error('agent.acceptance.marketplaceDefaultSourceInvalid');
@@ -25106,10 +25110,41 @@ async function runMarketplaceCatalogDevelopmentJourney(
     const synchronized = await api.syncSkillMarket(source.id);
     if (
       synchronized.signatureStatus !== 'verified'
+      || synchronized.syncState !== 'fresh_verified'
+      || synchronized.transportKind !== 'official_station'
+      || synchronized.transportEndpoint !== '/sub-agent/agent/package-catalog/official'
+      || synchronized.distributionId !== 'peers-official-station-v1'
+      || !/^[0-9a-f]{64}$/.test(synchronized.envelopeSha256)
       || synchronized.stale
       || synchronized.error
     ) {
       throw new Error('agent.acceptance.marketplaceSyncUnverified');
+    }
+    const tamperedSync = await api.syncSkillMarket(source.id);
+    if (
+      !tamperedSync.stale
+      || tamperedSync.syncState !== 'stale_verified'
+      || tamperedSync.error !== 'OFFICIAL_CATALOG_TRANSPORT_DIGEST_INVALID'
+      || tamperedSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceTamperWasNotRejected');
+    }
+    const missingEndpointSync = await api.syncSkillMarket(source.id);
+    if (
+      !missingEndpointSync.stale
+      || missingEndpointSync.syncState !== 'stale_verified'
+      || missingEndpointSync.error !== 'OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE'
+      || missingEndpointSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceOldStationWasNotStale');
+    }
+    const recoveredSync = await api.syncSkillMarket(source.id);
+    if (
+      recoveredSync.stale
+      || recoveredSync.syncState !== 'fresh_verified'
+      || recoveredSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceSyncDidNotRecover');
     }
 
     const firstPage = await api.listMarketSkills(source.id, undefined, undefined, 1);
@@ -25295,6 +25330,10 @@ async function runMarketplaceCatalogDevelopmentJourney(
       assertions: {
         defaultSourceVerified: true,
         signedSyncVerified: true,
+        officialStationTransportVerified: true,
+        tamperedTransportRejected: true,
+        oldStationMarkedStale: true,
+        transportRecovered: true,
         paginationVerified: true,
         packageTypesVisible: true,
         packageDetailVisible: true,
@@ -25316,7 +25355,11 @@ async function runMarketplaceCatalogDevelopmentJourney(
       },
       catalog: {
         source,
-        sync: synchronized,
+        sync: recoveredSync,
+        negativeTransport: {
+          tampered: tamperedSync,
+          oldStation: missingEndpointSync,
+        },
         firstPage,
         secondPage,
         packagePolicies: packages.map((entry) => ({

@@ -15,24 +15,24 @@ pub(crate) const CATALOG_PAYLOAD_SCHEMA: &str = "peers.package-catalog.v1";
 pub(crate) const INSTALL_ALLOWED: &str = "allowed";
 pub(crate) const INSTALL_CONFIRMATION_REQUIRED: &str = "confirmation_required";
 pub(crate) const INSTALL_BLOCKED: &str = "blocked";
+pub(crate) const TRANSPORT_OFFICIAL_STATION: &str = "official_station";
+pub(crate) const TRANSPORT_USER_PINNED_GITHUB: &str = "user_pinned_github";
 const SIGNATURE_DOMAIN: &[u8] = b"peers-touch/package-catalog/v1\0";
 const MAX_CATALOG_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES: usize = 512 * 1024;
 const MAX_PACKAGES: usize = 500;
-const DEFAULT_REPOSITORY: &str = "https://github.com/peers-labs/peers-touch";
-const DEFAULT_BRANCH: &str = "main";
-const DEFAULT_MANIFEST_PATH: &str =
-    "apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json";
 const DEFAULT_PUBLISHER_ID: &str = "peers-labs";
 const DEFAULT_SIGNING_KEY_ID: &str = "peers-marketplace-2026-01";
 const DEFAULT_PUBLIC_KEY_BASE64: &str = "S0WiI5NaYr+jhd4C6uykn9JH9zdQy5afs2jcqCpAVo0=";
-const DEFAULT_ENVELOPE: &str = include_str!("official-catalog.v1.envelope.json");
+const DEFAULT_ENVELOPE: &[u8] =
+    include_bytes!("../../../../../../packages/agent-catalog/official-catalog.v1.envelope.json");
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CatalogSourceRegistration {
     pub source_id: String,
     pub display_name: String,
+    pub transport_kind: String,
     pub repository: String,
     pub branch: String,
     pub manifest_path: String,
@@ -130,9 +130,10 @@ pub(crate) fn default_source() -> CatalogSourceRegistration {
     CatalogSourceRegistration {
         source_id: DEFAULT_SOURCE_ID.to_string(),
         display_name: "Peers Official".to_string(),
-        repository: DEFAULT_REPOSITORY.to_string(),
-        branch: DEFAULT_BRANCH.to_string(),
-        manifest_path: DEFAULT_MANIFEST_PATH.to_string(),
+        transport_kind: TRANSPORT_OFFICIAL_STATION.to_string(),
+        repository: String::new(),
+        branch: String::new(),
+        manifest_path: String::new(),
         publisher_id: DEFAULT_PUBLISHER_ID.to_string(),
         signing_key_id: DEFAULT_SIGNING_KEY_ID.to_string(),
         public_key_base64: DEFAULT_PUBLIC_KEY_BASE64.to_string(),
@@ -143,7 +144,12 @@ pub(crate) fn default_source() -> CatalogSourceRegistration {
 }
 
 pub(crate) fn default_catalog() -> Result<VerifiedCatalog, String> {
-    verify_catalog(&default_source(), DEFAULT_ENVELOPE)
+    verify_catalog(&default_source(), default_envelope_json()?)
+}
+
+pub(crate) fn default_envelope_json() -> Result<&'static str, String> {
+    std::str::from_utf8(DEFAULT_ENVELOPE)
+        .map_err(|_| "bundled catalog envelope must be UTF-8".to_string())
 }
 
 pub(crate) fn verify_catalog(
@@ -270,14 +276,10 @@ pub(crate) fn github_raw_manifest_url(
     source: &CatalogSourceRegistration,
 ) -> Result<String, String> {
     validate_source_registration(source)?;
-    let url = Url::parse(source.repository.trim())
-        .map_err(|error| format!("invalid catalog repository URL: {error}"))?;
-    if url.scheme() != "https" || url.host_str() != Some("github.com") {
-        return Err("catalog repository must be an https://github.com repository".to_string());
+    if source.transport_kind != TRANSPORT_USER_PINNED_GITHUB {
+        return Err("catalog source does not use GitHub transport".to_string());
     }
-    if url.query().is_some() || url.fragment().is_some() {
-        return Err("catalog repository URL cannot include query or fragment".to_string());
-    }
+    let url = validate_github_transport(source)?;
     let segments = url
         .path_segments()
         .map(|segments| {
@@ -292,8 +294,6 @@ pub(crate) fn github_raw_manifest_url(
     {
         return Err("catalog repository must identify one GitHub owner/repository".to_string());
     }
-    validate_relative_path(&source.branch)?;
-    validate_relative_path(&source.manifest_path)?;
     Ok(format!(
         "https://raw.githubusercontent.com/{}/{}/{}/{}",
         segments[0],
@@ -335,7 +335,41 @@ fn validate_source_registration(source: &CatalogSourceRegistration) -> Result<()
         return Err("catalog trust class is invalid".to_string());
     }
     public_key_fingerprint(&source.public_key_base64)?;
-    Ok(())
+    match source.transport_kind.as_str() {
+        TRANSPORT_OFFICIAL_STATION => {
+            if source.source_id != DEFAULT_SOURCE_ID
+                || !source.built_in
+                || source.trust_class != "official"
+                || !source.repository.is_empty()
+                || !source.branch.is_empty()
+                || !source.manifest_path.is_empty()
+            {
+                return Err("official Station catalog registration is invalid".to_string());
+            }
+            Ok(())
+        }
+        TRANSPORT_USER_PINNED_GITHUB => {
+            if source.built_in || source.trust_class != "user-pinned" {
+                return Err("user-pinned GitHub catalog registration is invalid".to_string());
+            }
+            validate_github_transport(source).map(|_| ())
+        }
+        _ => Err("catalog transport kind is invalid".to_string()),
+    }
+}
+
+fn validate_github_transport(source: &CatalogSourceRegistration) -> Result<Url, String> {
+    let url = Url::parse(source.repository.trim())
+        .map_err(|error| format!("invalid catalog repository URL: {error}"))?;
+    if url.scheme() != "https" || url.host_str() != Some("github.com") {
+        return Err("catalog repository must be an https://github.com repository".to_string());
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err("catalog repository URL cannot include query or fragment".to_string());
+    }
+    validate_relative_path(&source.branch)?;
+    validate_relative_path(&source.manifest_path)?;
+    Ok(url)
 }
 
 fn validate_catalog_timestamp(value: &str, label: &str) -> Result<(), String> {
@@ -493,6 +527,23 @@ fn validate_relative_path(value: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn user_pinned_source() -> CatalogSourceRegistration {
+        CatalogSourceRegistration {
+            source_id: "user-source".to_string(),
+            display_name: "User Source".to_string(),
+            transport_kind: TRANSPORT_USER_PINNED_GITHUB.to_string(),
+            repository: "https://github.com/example/catalog".to_string(),
+            branch: "main".to_string(),
+            manifest_path: "packages/catalog/envelope.json".to_string(),
+            publisher_id: "example".to_string(),
+            signing_key_id: "example-key".to_string(),
+            public_key_base64: DEFAULT_PUBLIC_KEY_BASE64.to_string(),
+            trust_class: "user-pinned".to_string(),
+            built_in: false,
+            enabled: true,
+        }
+    }
+
     #[test]
     fn bundled_catalog_verifies_and_derives_policy() {
         let catalog = default_catalog().expect("default catalog");
@@ -522,23 +573,27 @@ mod tests {
     #[test]
     fn tampered_catalog_is_rejected() {
         let source = default_source();
-        let tampered = DEFAULT_ENVELOPE.replacen("payloadBase64", "payloadBase65", 1);
+        let tampered = default_envelope_json().expect("default envelope").replacen(
+            "payloadBase64",
+            "payloadBase65",
+            1,
+        );
         let error = verify_catalog(&source, &tampered).expect_err("tamper must fail");
         assert!(error.contains("payload") || error.contains("envelope"));
     }
 
     #[test]
     fn repository_and_branch_resolve_to_raw_manifest() {
-        let source = default_source();
+        let source = user_pinned_source();
         assert_eq!(
             github_raw_manifest_url(&source).expect("raw URL"),
-            "https://raw.githubusercontent.com/peers-labs/peers-touch/main/apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json"
+            "https://raw.githubusercontent.com/example/catalog/main/packages/catalog/envelope.json"
         );
     }
 
     #[test]
     fn arbitrary_json_url_is_not_a_catalog_repository() {
-        let mut source = default_source();
+        let mut source = user_pinned_source();
         source.repository = "https://example.test/catalog.json".to_string();
         assert!(github_raw_manifest_url(&source).is_err());
     }
@@ -547,8 +602,19 @@ mod tests {
     fn source_cannot_replace_the_pinned_key() {
         let mut source = default_source();
         source.public_key_base64 = BASE64_STANDARD.encode([7_u8; 32]);
-        let error = verify_catalog(&source, DEFAULT_ENVELOPE).expect_err("wrong key must fail");
+        let error = verify_catalog(&source, default_envelope_json().expect("default envelope"))
+            .expect_err("wrong key must fail");
         assert!(error.contains("signature"));
+    }
+
+    #[test]
+    fn official_source_has_no_github_transport_fields() {
+        let source = default_source();
+        assert_eq!(source.transport_kind, TRANSPORT_OFFICIAL_STATION);
+        assert!(source.repository.is_empty());
+        assert!(source.branch.is_empty());
+        assert!(source.manifest_path.is_empty());
+        assert!(github_raw_manifest_url(&source).is_err());
     }
 
     #[test]

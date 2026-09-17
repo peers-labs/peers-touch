@@ -16,16 +16,25 @@ use reqwest::blocking::Client;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use trusted_catalog::{
-    default_catalog, default_source, github_raw_manifest_url, public_key_fingerprint,
-    verify_catalog, CatalogPackage, CatalogSourceRegistration, VerifiedCatalog, DEFAULT_SOURCE_ID,
-    INSTALL_ALLOWED, INSTALL_BLOCKED, INSTALL_CONFIRMATION_REQUIRED,
+    default_catalog, default_envelope_json, default_source, github_raw_manifest_url,
+    public_key_fingerprint, verify_catalog, CatalogPackage, CatalogSourceRegistration,
+    VerifiedCatalog, DEFAULT_SOURCE_ID, INSTALL_ALLOWED, INSTALL_BLOCKED,
+    INSTALL_CONFIRMATION_REQUIRED, TRANSPORT_OFFICIAL_STATION, TRANSPORT_USER_PINNED_GITHUB,
 };
+
+const OFFICIAL_CATALOG_ENDPOINT: &str = "/sub-agent/agent/package-catalog/official";
+const OFFICIAL_CATALOG_DISTRIBUTION_ID: &str = "peers-official-station-v1";
+const CATALOG_SYNC_BOOTSTRAP_VERIFIED: &str = "bootstrap_verified";
+const CATALOG_SYNC_FRESH_VERIFIED: &str = "fresh_verified";
+const CATALOG_SYNC_STALE_VERIFIED: &str = "stale_verified";
+const CATALOG_SYNC_INVALID_REJECTED: &str = "invalid_rejected";
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -42,6 +51,8 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
 struct MarketSource {
     id: String,
     name: String,
+    #[serde(default = "default_user_pinned_transport")]
+    transport_kind: String,
     url: String,
     #[serde(default)]
     branch: Option<String>,
@@ -73,6 +84,8 @@ struct MarketSource {
     source_revoked_at: Option<String>,
     #[serde(default)]
     verified_envelope: Option<String>,
+    #[serde(default = "default_stale_verified_state")]
+    sync_state: String,
     #[serde(default)]
     last_synced: Option<String>,
     #[serde(default)]
@@ -156,8 +169,25 @@ struct SkillInstallOutcome {
     verdict: String,
 }
 
+#[derive(Debug)]
+struct CatalogFetch {
+    envelope: String,
+    transport_kind: String,
+    endpoint: String,
+    distribution_id: String,
+    envelope_sha256: String,
+}
+
 fn default_true() -> bool {
     true
+}
+
+fn default_user_pinned_transport() -> String {
+    TRANSPORT_USER_PINNED_GITHUB.to_string()
+}
+
+fn default_stale_verified_state() -> String {
+    CATALOG_SYNC_STALE_VERIFIED.to_string()
 }
 
 impl MarketSource {
@@ -165,8 +195,9 @@ impl MarketSource {
         CatalogSourceRegistration {
             source_id: self.id.clone(),
             display_name: self.name.clone(),
+            transport_kind: self.transport_kind.clone(),
             repository: self.url.clone(),
-            branch: self.branch.clone().unwrap_or_else(|| "main".to_string()),
+            branch: self.branch.clone().unwrap_or_default(),
             manifest_path: self.manifest_path.clone(),
             publisher_id: self.publisher_id.clone(),
             signing_key_id: self.signing_key_id.clone(),
@@ -177,12 +208,19 @@ impl MarketSource {
         }
     }
 
-    fn apply_verified_catalog(&mut self, catalog: VerifiedCatalog, envelope: String) {
+    fn apply_verified_catalog(
+        &mut self,
+        catalog: VerifiedCatalog,
+        envelope: String,
+        sync_state: &str,
+        last_synced: Option<String>,
+    ) {
         self.catalog_revision = catalog.revision;
         self.generated_at = catalog.generated_at;
         self.signature_status = catalog.signature_status;
         self.source_revoked_at = catalog.revoked_at;
         self.verified_envelope = Some(envelope);
+        self.sync_state = sync_state.to_string();
         self.enabled = self.source_revoked_at.is_none();
         let source_id = self.id.clone();
         let catalog_revision = self.catalog_revision.clone();
@@ -201,7 +239,7 @@ impl MarketSource {
                 )
             })
             .collect();
-        self.last_synced = Some(current_millis().to_string());
+        self.last_synced = last_synced;
         self.error = None;
     }
 
@@ -214,8 +252,9 @@ impl MarketSource {
         let mut source = Self {
             id: registration.source_id,
             name: registration.display_name,
+            transport_kind: registration.transport_kind,
             url: registration.repository,
-            branch: Some(registration.branch),
+            branch: (!registration.branch.is_empty()).then_some(registration.branch),
             manifest_path: registration.manifest_path,
             publisher_id: registration.publisher_id,
             signing_key_id: registration.signing_key_id,
@@ -230,11 +269,12 @@ impl MarketSource {
             signature_status: "pending".to_string(),
             source_revoked_at: None,
             verified_envelope: None,
+            sync_state: CATALOG_SYNC_INVALID_REJECTED.to_string(),
             last_synced: None,
             error: None,
         };
         if let (Some(catalog), Some(envelope)) = (catalog, envelope) {
-            source.apply_verified_catalog(catalog, envelope);
+            source.apply_verified_catalog(catalog, envelope, CATALOG_SYNC_BOOTSTRAP_VERIFIED, None);
         }
         Ok(source)
     }
@@ -299,7 +339,7 @@ impl Default for MarketStore {
                 MarketSource::from_registration(
                     source,
                     Some(catalog),
-                    Some(include_str!("official-catalog.v1.envelope.json").to_string()),
+                    Some(default_envelope_json()?.to_string()),
                 )
             })
             .ok();
@@ -639,8 +679,9 @@ fn normalize_market_store(mut store: MarketStore) -> MarketStore {
         if source.id == DEFAULT_SOURCE_ID {
             let registration = default_source();
             source.name = registration.display_name;
+            source.transport_kind = registration.transport_kind;
             source.url = registration.repository;
-            source.branch = Some(registration.branch);
+            source.branch = None;
             source.manifest_path = registration.manifest_path;
             source.publisher_id = registration.publisher_id;
             source.signing_key_id = registration.signing_key_id;
@@ -652,6 +693,8 @@ fn normalize_market_store(mut store: MarketStore) -> MarketStore {
             source.enabled = true;
         }
         let registration = source.registration();
+        let persisted_sync_state = source.sync_state.clone();
+        let persisted_last_synced = source.last_synced.clone();
         match source
             .verified_envelope
             .clone()
@@ -659,19 +702,38 @@ fn normalize_market_store(mut store: MarketStore) -> MarketStore {
             .and_then(|envelope| {
                 verify_catalog(&registration, &envelope).map(|catalog| (catalog, envelope))
             }) {
-            Ok((catalog, envelope)) => source.apply_verified_catalog(catalog, envelope),
+            Ok((catalog, envelope)) => source.apply_verified_catalog(
+                catalog,
+                envelope,
+                if matches!(
+                    persisted_sync_state.as_str(),
+                    CATALOG_SYNC_BOOTSTRAP_VERIFIED
+                        | CATALOG_SYNC_FRESH_VERIFIED
+                        | CATALOG_SYNC_STALE_VERIFIED
+                ) {
+                    &persisted_sync_state
+                } else {
+                    CATALOG_SYNC_STALE_VERIFIED
+                },
+                persisted_last_synced,
+            ),
             Err(error) if source.id == DEFAULT_SOURCE_ID => {
                 match default_catalog().and_then(|catalog| {
                     source.apply_verified_catalog(
                         catalog,
-                        include_str!("official-catalog.v1.envelope.json").to_string(),
+                        default_envelope_json()?.to_string(),
+                        CATALOG_SYNC_STALE_VERIFIED,
+                        persisted_last_synced,
                     );
                     Ok(())
                 }) {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        source.error = Some(error.clone());
+                    }
                     Err(default_error) => {
                         source.enabled = false;
                         source.signature_status = "invalid".to_string();
+                        source.sync_state = CATALOG_SYNC_INVALID_REJECTED.to_string();
                         source.error = Some(default_error);
                     }
                 }
@@ -680,6 +742,7 @@ fn normalize_market_store(mut store: MarketStore) -> MarketStore {
             Err(_) => {
                 source.enabled = false;
                 source.signature_status = "invalid".to_string();
+                source.sync_state = CATALOG_SYNC_INVALID_REJECTED.to_string();
                 source.skills.clear();
                 source.error = Some("LEGACY_UNSIGNED_CATALOG_SOURCE_DISABLED".to_string());
             }
@@ -765,19 +828,88 @@ fn infer_risk_level(skill: &MarketSkill) -> &'static str {
     }
 }
 
-fn fetch_catalog_envelope(source: &MarketSource) -> Result<String, String> {
-    if source.id == DEFAULT_SOURCE_ID {
-        if let Some(path) = std::env::var_os("PEERS_MARKETPLACE_CATALOG_OVERRIDE") {
-            return fs::read_to_string(&path).map_err(|error| {
-                format!(
-                    "failed to read catalog override {}: {error}",
-                    PathBuf::from(path).display()
-                )
-            });
+fn fetch_catalog_envelope(source: &MarketSource, token: &str) -> Result<CatalogFetch, String> {
+    match source.transport_kind.as_str() {
+        TRANSPORT_OFFICIAL_STATION => {
+            if token.trim().is_empty() {
+                return Err("OFFICIAL_CATALOG_AUTHORIZATION_FAILED".to_string());
+            }
+            let response = station_client::request_proto::<
+                model::agent::GetOfficialPackageCatalogRequest,
+                model::agent::GetOfficialPackageCatalogResponse,
+            >(Method::GET, OFFICIAL_CATALOG_ENDPOINT, token, None, None)
+            .map_err(official_catalog_transport_error)?;
+            validate_official_catalog_response(response)
         }
+        TRANSPORT_USER_PINNED_GITHUB => {
+            let url = github_raw_manifest_url(&source.registration())?;
+            let envelope = fetch_catalog_text(&url)?;
+            Ok(CatalogFetch {
+                envelope_sha256: sha256_hex(envelope.as_bytes()),
+                envelope,
+                transport_kind: TRANSPORT_USER_PINNED_GITHUB.to_string(),
+                endpoint: url,
+                distribution_id: String::new(),
+            })
+        }
+        _ => Err("CATALOG_TRANSPORT_UNSUPPORTED".to_string()),
     }
-    let url = github_raw_manifest_url(&source.registration())?;
-    fetch_catalog_text(&url)
+}
+
+fn validate_official_catalog_response(
+    response: model::agent::GetOfficialPackageCatalogResponse,
+) -> Result<CatalogFetch, String> {
+    const MAX_REMOTE_CATALOG_BYTES: usize = 2 * 1024 * 1024;
+    if response.envelope_json.is_empty() || response.envelope_json.len() > MAX_REMOTE_CATALOG_BYTES
+    {
+        return Err("OFFICIAL_CATALOG_RESPONSE_SIZE_INVALID".to_string());
+    }
+    if response.media_type != "application/json" {
+        return Err("OFFICIAL_CATALOG_MEDIA_TYPE_INVALID".to_string());
+    }
+    if response.distribution_id != OFFICIAL_CATALOG_DISTRIBUTION_ID {
+        return Err("OFFICIAL_CATALOG_DISTRIBUTION_INVALID".to_string());
+    }
+    let actual_sha256 = sha256_hex(&response.envelope_json);
+    if response.envelope_sha256 != actual_sha256 {
+        return Err("OFFICIAL_CATALOG_TRANSPORT_DIGEST_INVALID".to_string());
+    }
+    let envelope = String::from_utf8(response.envelope_json)
+        .map_err(|_| "OFFICIAL_CATALOG_RESPONSE_NOT_UTF8".to_string())?;
+    Ok(CatalogFetch {
+        envelope,
+        transport_kind: TRANSPORT_OFFICIAL_STATION.to_string(),
+        endpoint: OFFICIAL_CATALOG_ENDPOINT.to_string(),
+        distribution_id: response.distribution_id,
+        envelope_sha256: actual_sha256,
+    })
+}
+
+fn official_catalog_transport_error(error: station_client::StationClientError) -> String {
+    match error.kind {
+        station_client::StationClientErrorKind::HttpStatus(401)
+        | station_client::StationClientErrorKind::SessionRevoked => {
+            "OFFICIAL_CATALOG_AUTHORIZATION_FAILED".to_string()
+        }
+        station_client::StationClientErrorKind::HttpStatus(404) => {
+            "OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE".to_string()
+        }
+        station_client::StationClientErrorKind::Network => {
+            "OFFICIAL_CATALOG_NETWORK_FAILED".to_string()
+        }
+        _ => "OFFICIAL_CATALOG_RESPONSE_INVALID".to_string(),
+    }
+}
+
+fn mark_catalog_sync_failed(source: &mut MarketSource, error: String, synced_at: String) {
+    source.error = Some(error);
+    source.last_synced = Some(synced_at);
+    source.sync_state = if source.skills.is_empty() {
+        CATALOG_SYNC_INVALID_REJECTED
+    } else {
+        CATALOG_SYNC_STALE_VERIFIED
+    }
+    .to_string();
 }
 
 fn encode_page_cursor(source_id: &str, revision: &str, query: &str, offset: usize) -> String {
@@ -1009,6 +1141,7 @@ pub fn skills_market_list() -> AppResult<StubPayload> {
             json!({
                 "id": source.id,
                 "name": source.name,
+                "transportKind": source.transport_kind,
                 "url": source.url,
                 "branch": source.branch,
                 "manifestPath": source.manifest_path,
@@ -1021,6 +1154,7 @@ pub fn skills_market_list() -> AppResult<StubPayload> {
                 "catalogRevision": source.catalog_revision,
                 "generatedAt": source.generated_at,
                 "signatureStatus": source.signature_status,
+                "syncState": source.sync_state,
                 "revoked": source.source_revoked_at.is_some(),
                 "revokedAt": source.source_revoked_at,
                 "skillCount": source.skills.len(),
@@ -1036,6 +1170,13 @@ pub fn skills_market_list() -> AppResult<StubPayload> {
 
 pub fn skills_market_add(input: SkillMarketAddInput) -> AppResult<StubPayload> {
     if input.url.trim().is_empty()
+        || input.branch.as_deref().unwrap_or("").trim().is_empty()
+        || input
+            .manifest_path
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
         || input
             .publisher_id
             .as_deref()
@@ -1056,23 +1197,12 @@ pub fn skills_market_add(input: SkillMarketAddInput) -> AppResult<StubPayload> {
             .is_empty()
     {
         return invalid_argument(
-            "repository, publisher_id, signing_key_id and public_key_base64 are required",
+            "repository, branch, manifest_path, publisher_id, signing_key_id and public_key_base64 are required",
         );
     }
     let url = input.url.trim().to_string();
-    let branch = input
-        .branch
-        .unwrap_or_else(|| "main".to_string())
-        .trim()
-        .to_string();
-    let manifest_path = input
-        .manifest_path
-        .unwrap_or_else(|| {
-            "apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json"
-                .to_string()
-        })
-        .trim()
-        .to_string();
+    let branch = input.branch.unwrap_or_default().trim().to_string();
+    let manifest_path = input.manifest_path.unwrap_or_default().trim().to_string();
     let publisher_id = input.publisher_id.unwrap_or_default().trim().to_string();
     let signing_key_id = input.signing_key_id.unwrap_or_default().trim().to_string();
     let public_key_base64 = input
@@ -1092,6 +1222,7 @@ pub fn skills_market_add(input: SkillMarketAddInput) -> AppResult<StubPayload> {
     let registration = CatalogSourceRegistration {
         source_id: id.clone(),
         display_name: input.name.unwrap_or_else(|| url.clone()),
+        transport_kind: TRANSPORT_USER_PINNED_GITHUB.to_string(),
         repository: url,
         branch,
         manifest_path,
@@ -1120,7 +1251,8 @@ pub fn skills_market_add(input: SkillMarketAddInput) -> AppResult<StubPayload> {
         }
     };
     if let Some(existing) = guard.sources.iter().find(|source| source.id == id) {
-        if existing.url != source.url
+        if existing.transport_kind != source.transport_kind
+            || existing.url != source.url
             || existing.branch != source.branch
             || existing.manifest_path != source.manifest_path
             || existing.publisher_id != source.publisher_id
@@ -1189,7 +1321,7 @@ pub fn skills_market_remove(input: SkillMarketIdInput) -> AppResult<StubPayload>
     )
 }
 
-pub fn skills_market_sync(input: SkillMarketSyncInput) -> AppResult<StubPayload> {
+pub fn skills_market_sync(input: SkillMarketSyncInput, token: &str) -> AppResult<StubPayload> {
     if input.market_id.trim().is_empty() {
         return invalid_argument("market_id is required");
     }
@@ -1211,10 +1343,10 @@ pub fn skills_market_sync(input: SkillMarketSyncInput) -> AppResult<StubPayload>
         return AppResult::fail(ErrorCode::NotFound, "market source not found", None);
     };
     let registration = source_snapshot.registration();
-    let sync_result = fetch_catalog_envelope(&source_snapshot).and_then(|envelope| {
-        let catalog = verify_catalog(&registration, &envelope)?;
-        validate_catalog_update(&source_snapshot, &catalog, &envelope)?;
-        Ok((catalog, envelope))
+    let sync_result = fetch_catalog_envelope(&source_snapshot, token).and_then(|fetch| {
+        let catalog = verify_catalog(&registration, &fetch.envelope)?;
+        validate_catalog_update(&source_snapshot, &catalog, &fetch.envelope)?;
+        Ok((catalog, fetch))
     });
     let mut guard = match market_store().lock() {
         Ok(guard) => guard,
@@ -1233,17 +1365,46 @@ pub fn skills_market_sync(input: SkillMarketSyncInput) -> AppResult<StubPayload>
     else {
         return AppResult::fail(ErrorCode::NotFound, "market source not found", None);
     };
-    let stale_error = match sync_result {
-        Ok((catalog, envelope)) => {
-            source.apply_verified_catalog(catalog, envelope);
-            None
-        }
-        Err(error) => {
-            source.error = Some(error.clone());
-            source.last_synced = Some(current_millis().to_string());
-            Some(error)
-        }
-    };
+    let synced_at = current_millis().to_string();
+    let (stale_error, transport_kind, endpoint, distribution_id, envelope_sha256) =
+        match sync_result {
+            Ok((catalog, fetch)) => {
+                let CatalogFetch {
+                    envelope,
+                    transport_kind,
+                    endpoint,
+                    distribution_id,
+                    envelope_sha256,
+                } = fetch;
+                source.apply_verified_catalog(
+                    catalog,
+                    envelope,
+                    CATALOG_SYNC_FRESH_VERIFIED,
+                    Some(synced_at),
+                );
+                (
+                    None,
+                    transport_kind,
+                    endpoint,
+                    distribution_id,
+                    envelope_sha256,
+                )
+            }
+            Err(error) => {
+                mark_catalog_sync_failed(source, error.clone(), synced_at);
+                (
+                    Some(error),
+                    source_snapshot.transport_kind.clone(),
+                    if source_snapshot.transport_kind == TRANSPORT_OFFICIAL_STATION {
+                        OFFICIAL_CATALOG_ENDPOINT.to_string()
+                    } else {
+                        github_raw_manifest_url(&source_snapshot.registration()).unwrap_or_default()
+                    },
+                    String::new(),
+                    String::new(),
+                )
+            }
+        };
     reconcile_revocations(&mut guard);
     if let Err(error) = persist_market_store(&guard) {
         return persist_error(error);
@@ -1278,6 +1439,11 @@ pub fn skills_market_sync(input: SkillMarketSyncInput) -> AppResult<StubPayload>
             "total": skills.len(),
             "catalogRevision": source.catalog_revision,
             "signatureStatus": source.signature_status,
+            "syncState": source.sync_state,
+            "transportKind": transport_kind,
+            "transportEndpoint": endpoint,
+            "distributionId": distribution_id,
+            "envelopeSha256": envelope_sha256,
             "stale": stale_error.is_some(),
             "error": stale_error
         }),
@@ -2041,9 +2207,12 @@ fn remove_market_install_record(
 }
 
 fn sha256_short(value: &str) -> String {
-    use sha2::{Digest, Sha256};
     let digest = Sha256::digest(value.as_bytes());
     hex::encode(&digest[..6])
+}
+
+fn sha256_hex(value: &[u8]) -> String {
+    hex::encode(Sha256::digest(value))
 }
 
 fn current_millis() -> i64 {
@@ -2069,7 +2238,12 @@ mod tests {
         let store = MarketStore::default();
         let source = store.sources.first().expect("default source");
         assert!(source.built_in);
+        assert_eq!(source.transport_kind, TRANSPORT_OFFICIAL_STATION);
+        assert!(source.url.is_empty());
+        assert!(source.branch.is_none());
+        assert!(source.manifest_path.is_empty());
         assert_eq!(source.signature_status, "verified");
+        assert_eq!(source.sync_state, CATALOG_SYNC_BOOTSTRAP_VERIFIED);
         for package_type in ["agent", "skill", "mcp"] {
             assert!(source
                 .skills
@@ -2145,6 +2319,113 @@ mod tests {
         catalog.generated_at = "2026-09-17T00:30:00Z".to_string();
 
         assert!(validate_catalog_update(&source, &catalog, "new-envelope").is_ok());
+    }
+
+    #[test]
+    fn official_transport_accepts_exact_bytes_and_digest() {
+        let envelope = default_envelope_json()
+            .expect("default envelope")
+            .as_bytes()
+            .to_vec();
+        let fetch =
+            validate_official_catalog_response(model::agent::GetOfficialPackageCatalogResponse {
+                envelope_sha256: sha256_hex(&envelope),
+                envelope_json: envelope,
+                media_type: "application/json".to_string(),
+                distribution_id: OFFICIAL_CATALOG_DISTRIBUTION_ID.to_string(),
+            })
+            .expect("valid official response");
+        assert_eq!(fetch.transport_kind, TRANSPORT_OFFICIAL_STATION);
+        assert_eq!(fetch.endpoint, OFFICIAL_CATALOG_ENDPOINT);
+        assert_eq!(
+            verify_catalog(&default_source(), &fetch.envelope,)
+                .expect("signed catalog")
+                .signature_status,
+            "verified",
+        );
+    }
+
+    #[test]
+    fn official_transport_rejects_tampered_bytes_before_signature_verification() {
+        let mut envelope = default_envelope_json()
+            .expect("default envelope")
+            .as_bytes()
+            .to_vec();
+        let digest = sha256_hex(&envelope);
+        envelope[0] ^= 0xff;
+        let error =
+            validate_official_catalog_response(model::agent::GetOfficialPackageCatalogResponse {
+                envelope_sha256: digest,
+                envelope_json: envelope,
+                media_type: "application/json".to_string(),
+                distribution_id: OFFICIAL_CATALOG_DISTRIBUTION_ID.to_string(),
+            })
+            .expect_err("tampered response must fail");
+        assert_eq!(error, "OFFICIAL_CATALOG_TRANSPORT_DIGEST_INVALID");
+    }
+
+    #[test]
+    fn failed_official_sync_retains_last_verified_snapshot_as_stale() {
+        let mut source = MarketStore::default()
+            .sources
+            .into_iter()
+            .next()
+            .expect("default source");
+        let revision = source.catalog_revision.clone();
+        let envelope = source.verified_envelope.clone();
+        let package_ids = source
+            .skills
+            .iter()
+            .map(|package| package.identifier.clone())
+            .collect::<Vec<_>>();
+
+        mark_catalog_sync_failed(
+            &mut source,
+            "OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE".to_string(),
+            "123".to_string(),
+        );
+
+        assert_eq!(source.sync_state, CATALOG_SYNC_STALE_VERIFIED);
+        assert_eq!(source.catalog_revision, revision);
+        assert_eq!(source.verified_envelope, envelope);
+        assert_eq!(
+            source
+                .skills
+                .iter()
+                .map(|package| package.identifier.clone())
+                .collect::<Vec<_>>(),
+            package_ids,
+        );
+        assert_eq!(
+            source.error.as_deref(),
+            Some("OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE"),
+        );
+    }
+
+    #[test]
+    fn official_transport_does_not_send_an_unauthenticated_request() {
+        let source = MarketStore::default()
+            .sources
+            .into_iter()
+            .next()
+            .expect("default source");
+        assert_eq!(
+            fetch_catalog_envelope(&source, "").expect_err("missing token must fail"),
+            "OFFICIAL_CATALOG_AUTHORIZATION_FAILED",
+        );
+    }
+
+    #[test]
+    fn old_station_endpoint_maps_to_typed_stale_reason() {
+        let error = station_client::StationClientError::new(
+            station_client::StationClientErrorKind::HttpStatus(404),
+            "not found",
+            None,
+        );
+        assert_eq!(
+            official_catalog_transport_error(error),
+            "OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE",
+        );
     }
 
     #[test]

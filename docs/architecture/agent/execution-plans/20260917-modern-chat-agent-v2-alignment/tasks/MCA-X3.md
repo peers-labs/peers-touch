@@ -19,9 +19,11 @@
   "writeSet": [
     "apps/desktop",
     "apps/station/app/subserver/agent",
+    "model/domain/agent",
     "packages/agent-catalog",
     "packages/locales",
     "tooling/acceptance",
+    "tooling/scripts/check-agent-v2-proto-coverage.py",
     "docs/client",
     "docs/architecture/agent"
   ],
@@ -37,7 +39,7 @@
   "checks": [
     {
       "id": "marketplace-focused",
-      "command": "(cd apps/desktop/src-tauri && cargo test --bin peers-touch-desktop application::skills_market -- --test-threads=1) && python3 -m unittest tooling.acceptance.gates.agent.marketplace_catalog_development_test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && (cd apps/desktop && ESLINT_USE_FLAT_CONFIG=false pnpm exec eslint src/pages/MarketplacePage.tsx src/pages/marketplace/PackageCard.tsx --report-unused-disable-directives --max-warnings 0) && make acceptance-validate DOMAIN=agent",
+      "command": "(cd apps/station/app && go test ./subserver/agent/... && go run ./subserver/agent/catalog/generate -check) && python3 tooling/scripts/check-agent-v2-proto-coverage.py && (cd apps/desktop/src-tauri && cargo test --bin peers-touch-desktop application::skills_market -- --test-threads=1) && python3 -m unittest tooling.acceptance.gates.agent.marketplace_catalog_development_test tooling.acceptance.gates.agent.marketplace_catalog_fault_proxy_test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && (cd apps/desktop && ESLINT_USE_FLAT_CONFIG=false pnpm exec eslint src/pages/MarketplacePage.tsx src/pages/marketplace/PackageCard.tsx --report-unused-disable-directives --max-warnings 0) && python3 tooling/scripts/acceptance-run.py --gate station-api-ownership && make acceptance-validate DOMAIN=agent",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -57,7 +59,7 @@
     "Do not copy LobeHub hosted commercial marketplace or Community behavior",
     "Do not accept source-provided trust labels without verification"
   ],
-  "updatedAt": "2026-09-17T13:16:46Z",
+  "updatedAt": "2026-09-17T13:29:06Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
@@ -83,8 +85,12 @@ the product into a hosted commercial marketplace.
 - MCA-D20 now defines publisher-signed, key-pinned catalog snapshots,
   derived scan/risk/install policy, explicit revocation, and target-authority
   readback.
-- Desktop Rust now boots a verified Peers source with real Agent, Skill, MCP,
-  and revoked entries; arbitrary unsigned JSON sources are disabled.
+- `packages/agent-catalog` is now the sole maintained official envelope;
+  Desktop bootstraps it directly and Station serves a generated exact-byte
+  projection through the authenticated proto endpoint.
+- Desktop Rust now separates `official_station` from
+  `user_pinned_github`, rejects transport digest/signature/rollback failures,
+  and retains the last verified snapshot as stale.
 - Cursor pagination, repository/branch resolution, Agent/Skill/MCP install
   dispatch, authority readback, high-risk confirmation, and revocation UI are
   implemented.
@@ -95,7 +101,5 @@ the product into a hosted commercial marketplace.
   `e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d`.
 - The exact-source native Journey is `BLOCKED/UNPROVEN`: Profile `two` cannot
   authorize deployment while its canonical env definition is dirty.
-- The Owner accepted MCA-D20A on 2026-09-17: the built-in source will fetch
-  exact signed bytes from Station, while `packages/agent-catalog` becomes the
-  sole manually maintained official envelope. Implementation starts only after
-  this approved architecture/Plan checkpoint is submitted to PR #112.
+- The X3 Journey now carries a transparent four-step Station proxy contract:
+  exact response, tampered digest, old-Station 404, and successful recovery.

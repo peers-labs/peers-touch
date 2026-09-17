@@ -110,7 +110,7 @@ export const MarketplacePage = memo(() => {
   const [sourceSigningKeyId, setSourceSigningKeyId] = useState('');
   const [sourcePublicKey, setSourcePublicKey] = useState('');
   const [sourceManifestPath, setSourceManifestPath] = useState(
-    'apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json',
+    'packages/agent-catalog/official-catalog.v1.envelope.json',
   );
   const [addingSource, setAddingSource] = useState(false);
 
@@ -202,6 +202,7 @@ export const MarketplacePage = memo(() => {
       || !sourcePublisherId.trim()
       || !sourceSigningKeyId.trim()
       || !sourcePublicKey.trim()
+      || !sourceManifestPath.trim()
     ) {
       void message.warning(t('agent.marketplace.sourceUrlRequired'));
       return;
@@ -245,7 +246,7 @@ export const MarketplacePage = memo(() => {
         setSourceSigningKeyId('');
         setSourcePublicKey('');
         setSourceManifestPath(
-          'apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json',
+          'packages/agent-catalog/official-catalog.v1.envelope.json',
         );
         reloadCatalog();
       }

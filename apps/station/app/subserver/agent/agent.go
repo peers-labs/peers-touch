@@ -358,6 +358,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 			capabilityAuthoritySvc,
 		),
 	)
+	packageCatalogHandlers := handler.NewPackageCatalogHandlers()
 	turnSvc.SetToolDispatch(toolDispatchSvc)
 	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
@@ -399,6 +400,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-delete", "/agent/delete", server.POST, agentHandlers.HandleDeleteAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-package-export", "/agent/package/export", server.POST, agentPackageHandlers.HandleExport, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-package-import", "/agent/package/import", server.POST, agentPackageHandlers.HandleImport, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-package-catalog-official", "/agent/package-catalog/official", server.GET, packageCatalogHandlers.HandleOfficial, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-projection-get", "/agent/home/projection/get", server.POST, homeHandlers.HandleGetProjection, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-chat-submit", "/agent/home/chat/submit", server.POST, homeHandlers.HandleSubmitChat, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-home-task-submit", "/agent/home/task/submit", server.POST, homeHandlers.HandleSubmitTask, logIDWrapper, jwtWrapper),

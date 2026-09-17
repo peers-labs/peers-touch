@@ -4520,7 +4520,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_market_sync(input))
+            let token = http_gateway_bearer_token(state).unwrap_or_default();
+            to_json(app_skills_market::skills_market_sync(input, &token))
         }
         "skills_market_list_skills" => {
             let input = match parse_args::<SkillMarketListInput>(args) {

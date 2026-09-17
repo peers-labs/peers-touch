@@ -465,7 +465,7 @@ function AddMarketModal({
   const [signingKeyId, setSigningKeyId] = useState('');
   const [publicKeyBase64, setPublicKeyBase64] = useState('');
   const [manifestPath, setManifestPath] = useState(
-    'apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json',
+    'packages/agent-catalog/official-catalog.v1.envelope.json',
   );
   const [loading, setLoading] = useState(false);
 
@@ -482,6 +482,7 @@ function AddMarketModal({
       || !publisherId.trim()
       || !signingKeyId.trim()
       || !publicKeyBase64.trim()
+      || !manifestPath.trim()
     ) {
       message.warning(t('provider.skills.market.add.urlRequired'));
       return;
