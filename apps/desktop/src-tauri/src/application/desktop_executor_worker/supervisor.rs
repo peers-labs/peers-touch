@@ -383,6 +383,7 @@ struct ActiveWorker {
 
 impl ActiveWorker {
     fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
+        let connector_projection_epoch = oauth2::connector_projection_epoch();
         let contracts = local_contracts(surface, &context.actor_ptid)?;
         let (executor, ledger, resources) = if !contracts.is_empty() {
             let executor = LocalCapabilityExecutor::new(&context.actor_ptid, contracts.clone())?;
@@ -425,7 +426,7 @@ impl ActiveWorker {
             pull_cursor: 0,
             surface,
             paused: false,
-            connector_projection_epoch: oauth2::connector_projection_epoch(),
+            connector_projection_epoch,
         })
     }
 
@@ -958,7 +959,10 @@ fn reconcile_workers(
             .get(&account_id)
             .is_some_and(|worker| !worker.same_identity(&context));
         let connector_projection_changed = workers.get(&account_id).is_some_and(|worker| {
-            worker.connector_projection_epoch != oauth2::connector_projection_epoch()
+            connector_projection_changed(
+                worker.connector_projection_epoch,
+                oauth2::connector_projection_epoch(),
+            )
         });
         if identity_changed || connector_projection_changed {
             stop_worker(
@@ -1002,6 +1006,10 @@ fn reconcile_workers(
             }
         }
     }
+}
+
+fn connector_projection_changed(registered_epoch: u64, current_epoch: u64) -> bool {
+    registered_epoch != current_epoch
 }
 
 fn stop_worker(
@@ -1389,6 +1397,12 @@ mod tests {
     fn browser_surface_requires_explicit_lifecycle_start() {
         assert!(!ClientSurface::Browser.starts_automatically());
         assert!(ClientSurface::Desktop.starts_automatically());
+    }
+
+    #[test]
+    fn connector_projection_change_replaces_a_stale_capability_lease() {
+        assert!(!connector_projection_changed(7, 7));
+        assert!(connector_projection_changed(7, 8));
     }
 
     #[test]
