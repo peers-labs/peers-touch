@@ -36,6 +36,71 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
+    @staticmethod
+    def _create_environment_repository(
+        root: Path,
+        definitions: tuple[tuple[str, str, str], ...],
+    ) -> Path:
+        env_repo = root / "env"
+        env_repo.mkdir()
+        git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        subprocess.run(
+            ["git", "init"],
+            cwd=env_repo,
+            env=git_environment,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "acceptance@test.invalid"],
+            cwd=env_repo,
+            env=git_environment,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Acceptance Test"],
+            cwd=env_repo,
+            env=git_environment,
+            check=True,
+        )
+        profile_file = (
+            env_repo / "peers-touch" / "bound" / "profile.env.example"
+        )
+        profile_file.parent.mkdir(parents=True)
+        profile_file.write_text(
+            "PT_DEV_PROFILE=bound\n",
+            encoding="utf-8",
+        )
+        for profile, deploy_environment, contents in definitions:
+            environment_path = (
+                env_repo
+                / "peers-touch"
+                / profile
+                / "deploy"
+                / f"{deploy_environment}.env.example"
+            )
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(contents, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "peers-touch"],
+            cwd=env_repo,
+            env=git_environment,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "test: add environment definitions"],
+            cwd=env_repo,
+            env=git_environment,
+            check=True,
+            capture_output=True,
+        )
+        return profile_file.resolve()
+
     def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
         native_git_environment = {
             key: value
@@ -135,26 +200,24 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "station.example ssh-ed25519 test-key\n",
                 encoding="utf-8",
             )
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
-            environment.write_text(
-                "\n".join(
+            profile_file = self._create_environment_repository(
+                root,
+                (
                     (
-                        "PT_DEPLOY_HOST=station.example",
-                        "PT_DEPLOY_USER=acceptance",
-                        "PT_DEPLOY_PATH=station-three",
-                        "PT_DEPLOY_SSH_PORT=2222",
-                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={known_hosts}",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
+                        "three",
+                        "station-three",
+                        "\n".join(
+                            (
+                                "PT_DEPLOY_HOST=station.example",
+                                "PT_DEPLOY_USER=acceptance",
+                                "PT_DEPLOY_PATH=station-three",
+                                "PT_DEPLOY_SSH_PORT=2222",
+                                f"PT_DEPLOY_KNOWN_HOSTS_FILE={known_hosts}",
+                            )
+                        )
+                        + "\n",
+                    ),
+                ),
             )
             completed = subprocess.CompletedProcess(
                 args=[],
@@ -162,12 +225,20 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 stdout="abcdef123456\nclean\nproto-digest\n",
                 stderr="",
             )
+            native_run = subprocess.run
+
+            def run_command(command, *args, **kwargs):
+                if command[0] == "git":
+                    return native_run(command, *args, **kwargs)
+                return completed
+
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
             ), patch(
                 "tooling.acceptance.transports.ssh.subprocess.run",
-                return_value=completed,
+                side_effect=run_command,
             ) as run:
                 identity = resolve_remote_source_identity("station-three")
 
@@ -199,30 +270,30 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
-            environment.write_text(
-                "\n".join(
+            profile_file = self._create_environment_repository(
+                root,
+                (
                     (
-                        "PT_DEPLOY_HOST=station.example",
-                        "PT_DEPLOY_USER=acceptance",
-                        "PT_DEPLOY_PATH=station-three",
-                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={root / 'missing-known-hosts'}",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
+                        "three",
+                        "station-three",
+                        "\n".join(
+                            (
+                                "PT_DEPLOY_HOST=station.example",
+                                "PT_DEPLOY_USER=acceptance",
+                                "PT_DEPLOY_PATH=station-three",
+                                "PT_DEPLOY_KNOWN_HOSTS_FILE="
+                                f"{root / 'missing-known-hosts'}",
+                            )
+                        )
+                        + "\n",
+                    ),
+                ),
             )
 
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
             ), self.assertRaisesRegex(
                 BlockedError,
                 "SSH contract is invalid",
@@ -236,24 +307,22 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-four.env"
-            )
-            environment.parent.mkdir(parents=True)
-            environment.write_text(
-                "\n".join(
+            profile_file = self._create_environment_repository(
+                root,
+                (
                     (
-                        "PT_DEPLOY_HOST=station.example",
-                        "PT_DEPLOY_USER=acceptance",
-                        "PT_DEPLOY_PATH=station-four",
-                    )
-                )
-                + "\n",
-                encoding="utf-8",
+                        "four",
+                        "station-four",
+                        "\n".join(
+                            (
+                                "PT_DEPLOY_HOST=station.example",
+                                "PT_DEPLOY_USER=acceptance",
+                                "PT_DEPLOY_PATH=station-four",
+                            )
+                        )
+                        + "\n",
+                    ),
+                ),
             )
             completed = subprocess.CompletedProcess(
                 args=[],
@@ -261,12 +330,20 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 stdout="abcdef123456\nclean\nproto-digest\n",
                 stderr="",
             )
+            native_run = subprocess.run
+
+            def run_command(command, *args, **kwargs):
+                if command[0] == "git":
+                    return native_run(command, *args, **kwargs)
+                return completed
+
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
             ), patch(
                 "tooling.acceptance.transports.ssh.subprocess.run",
-                return_value=completed,
+                side_effect=run_command,
             ) as run:
                 identity = resolve_remote_source_identity("station-four")
 
@@ -279,6 +356,138 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 for argument in command
             )
         )
+
+    def test_remote_attestation_rejects_invalid_environment_identifier(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with self.assertRaisesRegex(BlockedError, "invalid identifier"):
+            resolve_remote_source_identity("../station-three")
+
+    def test_remote_attestation_rejects_ambiguous_environment_definition(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            contents = "\n".join(
+                (
+                    "PT_DEPLOY_HOST=station.example",
+                    "PT_DEPLOY_USER=acceptance",
+                    "PT_DEPLOY_PATH=station-three",
+                )
+            ) + "\n"
+            profile_file = self._create_environment_repository(
+                root,
+                (
+                    ("three", "station-three", contents),
+                    ("duplicate", "station-three", contents),
+                ),
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "exactly one canonical definition",
+            ):
+                resolve_remote_source_identity("station-three")
+
+    def test_remote_attestation_rejects_untracked_environment_definition(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_file = self._create_environment_repository(root, ())
+            environment = (
+                root
+                / "env"
+                / "peers-touch"
+                / "three"
+                / "deploy"
+                / "station-three.env.example"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "Git-tracked source validation",
+            ):
+                resolve_remote_source_identity("station-three")
+
+    def test_remote_attestation_rejects_dirty_environment_definition(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_file = self._create_environment_repository(
+                root,
+                (
+                    (
+                        "three",
+                        "station-three",
+                        "\n".join(
+                            (
+                                "PT_DEPLOY_HOST=station.example",
+                                "PT_DEPLOY_USER=acceptance",
+                                "PT_DEPLOY_PATH=station-three",
+                            )
+                        )
+                        + "\n",
+                    ),
+                ),
+            )
+            environment = (
+                root
+                / "env"
+                / "peers-touch"
+                / "three"
+                / "deploy"
+                / "station-three.env.example"
+            )
+            environment.write_text(
+                environment.read_text(encoding="utf-8")
+                + "PT_DEPLOY_SSH_PORT=2222\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity."
+                "resolve_machine_profile_environment",
+                return_value=("bound", profile_file, 3, {}),
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "dirty or untracked environment definitions",
+            ):
+                resolve_remote_source_identity("station-three")
 
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
