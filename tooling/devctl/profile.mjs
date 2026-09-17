@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ERROR_CODES, fail } from './errors.mjs';
+import {
+  MachineDevError,
+  checkWorkspace,
+} from '../scripts/local-dev/machine-dev-registry.mjs';
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 const SECRET_NAME = /(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY|CREDENTIAL)/i;
@@ -93,6 +97,98 @@ function selectedProfileName(activePath) {
   }
 }
 
+function resolveMachineWorkspace(root, environment) {
+  try {
+    return checkWorkspace({
+      workspaceRoot: root,
+      envRepo: resolveEnvRepo(root, environment),
+      home: environment.HOME,
+    });
+  } catch (error) {
+    if (error instanceof MachineDevError) {
+      fail(
+        ERROR_CODES.CHECK_FAILED,
+        `Machine Dev Control Plane resolution failed: ${error.message}`,
+        {
+          machineCode: error.code,
+          machineDetails: error.detail,
+        },
+      );
+    }
+    throw error;
+  }
+}
+
+function resolveAcceptanceProfilePath(environment) {
+  if (!environment.PT_DEV_PROFILE_FILE) {
+    return undefined;
+  }
+  if (
+    environment.PT_DEV_PROFILE_FILE_AUTHORITY
+    !== 'acceptance-runtime-manifest'
+  ) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'PT_DEV_PROFILE_FILE requires acceptance-runtime-manifest authority',
+    );
+  }
+
+  const declaredRoot = environment.PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT;
+  if (!declaredRoot || !path.isAbsolute(declaredRoot)) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT must be an absolute path',
+    );
+  }
+
+  let profilePath;
+  let profileRoot;
+  let metadata;
+  try {
+    profilePath = fs.realpathSync(path.resolve(environment.PT_DEV_PROFILE_FILE));
+    profileRoot = fs.realpathSync(declaredRoot);
+    metadata = fs.lstatSync(profilePath);
+  } catch (error) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'Acceptance runtime profile cannot be resolved',
+      { cause: String(error) },
+    );
+  }
+
+  const ownedByCurrentUser =
+    typeof process.getuid !== 'function' || metadata.uid === process.getuid();
+  if (
+    !metadata.isFile()
+    || !ownedByCurrentUser
+    || path.dirname(profilePath) !== profileRoot
+  ) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'PT_DEV_PROFILE_FILE must be an owned regular file directly under the declared Acceptance runtime profile root',
+      { profilePath, profileRoot },
+    );
+  }
+  return profilePath;
+}
+
+function applyMachineAllocation(profile, machine) {
+  const allocated = {
+    ...profile,
+    PT_DEV_SLOT: String(machine.binding.slot),
+    PT_DESKTOP_APP_GATEWAY_PORT: String(machine.ports.desktopAppGateway),
+    PT_DESKTOP_APP_WEB_PORT: String(machine.ports.desktopAppWeb),
+    PT_DESKTOP_WEB_GATEWAY_PORT: String(machine.ports.desktopWebGateway),
+    PT_DESKTOP_WEB_WEB_PORT: String(machine.ports.desktopWebWeb),
+    PT_MOBILE_WEB_PORT: String(machine.ports.mobileWeb),
+  };
+  if (['local', 'compose'].includes(allocated.PT_STATION_MODE)) {
+    allocated.PT_STATION_PORT = String(machine.ports.station);
+    allocated.PT_STATION_URL = `http://127.0.0.1:${machine.ports.station}`;
+  }
+  return allocated;
+}
+
 export function validateProfile(profile, expectedName, filePath) {
   const required = [
     'PT_DEV_PROFILE',
@@ -148,46 +244,44 @@ export function validateProfile(profile, expectedName, filePath) {
 export function resolveProfile(root, environment = process.env) {
   const paths = localDevPaths(root);
   const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  const explicit = environment.PT_DEV_PROFILE_FILE
-    ? path.resolve(environment.PT_DEV_PROFILE_FILE)
-    : undefined;
-
-  if (!explicit && !fs.existsSync(activePath)) {
-    fail(
-      ERROR_CODES.PROFILE_REQUIRED,
-      `No active profile for worktree '${worktreeId(root)}'`,
-      { activePath },
-    );
-  }
-
-  const selectedPath = explicit ?? activePath;
-  const name = explicit
-    ? path.basename(explicit, '.env')
-    : selectedProfileName(activePath);
-  const envRepo = resolveEnvRepo(root, environment);
-  const canonicalPath = envRepo
-    ? path.join(envRepo, 'peers-touch', name, 'profile.env.example')
-    : undefined;
-  const resolvedPath = canonicalPath && fs.existsSync(canonicalPath)
-    ? canonicalPath
-    : selectedPath;
-  const profile = validateProfile(readEnvFile(resolvedPath), name, resolvedPath);
+  const machine = resolveMachineWorkspace(root, environment);
+  const explicit = resolveAcceptanceProfilePath(environment);
+  const resolvedPath = explicit ?? machine.profile.profileFile;
+  const selectedProfile = validateProfile(
+    readEnvFile(resolvedPath),
+    explicit ? undefined : machine.binding.profile,
+    resolvedPath,
+  );
+  const profile = validateProfile(
+    applyMachineAllocation(selectedProfile, machine),
+    selectedProfile.PT_DEV_PROFILE,
+    resolvedPath,
+  );
+  const runtimeRoot = path.join(
+    machine.workspaceStateRoot,
+    'runtime',
+    profile.PT_DEV_PROFILE,
+  );
 
   return {
     profile,
     reference: {
       worktreeId: worktreeId(root),
-      profileName: name,
+      workspaceId: machine.binding.workspaceId,
+      workspaceRoot: machine.binding.canonicalRoot,
+      profileName: profile.PT_DEV_PROFILE,
+      machineProfileName: machine.binding.profile,
       activePath,
       resolvedPath,
-      canonical: resolvedPath === canonicalPath,
+      canonical: !explicit && machine.profile.sourceState === 'tracked-clean',
+      authority: machine.authority,
     },
     paths: {
       ...paths,
-      profileData: path.join(paths.data, name),
-      profileLogs: path.join(paths.logs, name),
-      profilePids: path.join(paths.pids, name),
-      profileState: path.join(paths.state, name),
+      profileData: path.join(runtimeRoot, 'data'),
+      profileLogs: path.join(runtimeRoot, 'logs'),
+      profilePids: path.join(runtimeRoot, 'pids'),
+      profileState: runtimeRoot,
     },
   };
 }
@@ -334,7 +428,7 @@ export function runtimeEnvironment(resolved, environment = process.env) {
     ...environment,
     ...profile,
     PATH: [...configuredBins, environment.PATH ?? ''].join(path.delimiter),
-    PROJECT_ROOT: path.resolve(resolved.reference.activePath, '..', '..', '..', '..'),
+    PROJECT_ROOT: resolved.reference.workspaceRoot,
     LOCAL_DEV_DIR: resolved.paths.localDev,
     PT_DEV_DATA: resolved.paths.profileData,
     PT_DEV_LOGS: resolved.paths.profileLogs,

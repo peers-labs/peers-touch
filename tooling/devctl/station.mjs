@@ -109,7 +109,7 @@ function ensureAuthSecret(filePath) {
   return fs.readFileSync(filePath, 'utf8').trim();
 }
 
-function runCompose(root, resolved, action) {
+function runCompose(root, resolved, action, environment) {
   const profile = resolved.profile;
   const composeFile = path.join(root, 'tooling', 'docker', 'compose.yml');
   const envFile = profile.PT_STATION_COMPOSE_ENV_FILE
@@ -140,7 +140,7 @@ function runCompose(root, resolved, action) {
   const result = spawnSync('docker', args, {
     cwd: root,
     env: {
-      ...runtimeEnvironment(resolved),
+      ...runtimeEnvironment(resolved, environment),
       COMPOSE_PROJECT_NAME:
         profile.PT_STATION_COMPOSE_PROJECT || `pt-${profile.PT_DEV_PROFILE}`,
       STATION_PORT: profile.PT_STATION_PORT,
@@ -261,7 +261,7 @@ export async function startStation(root, environment = process.env) {
   }
 
   if (values.mode === 'compose') {
-    runCompose(root, resolved, 'up');
+    runCompose(root, resolved, 'up', environment);
     await waitForHttp(values.healthUrl, { label: 'Station' });
     return stationStatus(root, environment);
   }
@@ -346,7 +346,7 @@ export async function startStation(root, environment = process.env) {
 export async function stopStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   if (resolved.profile.PT_STATION_MODE === 'compose') {
-    runCompose(root, resolved, 'stop');
+    runCompose(root, resolved, 'stop', environment);
     return stationStatus(root, environment);
   }
   if (resolved.profile.PT_STATION_MODE === 'remote') {

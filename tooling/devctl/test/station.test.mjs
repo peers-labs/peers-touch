@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -15,6 +17,7 @@ function fixtureProfile({
   return [
     `PT_DEV_PROFILE=${name}`,
     'PT_DEV_SLOT=0',
+    'PT_AGENT_CONTROL_MODE=managed',
     `PT_STATION_MODE=${mode}`,
     `PT_STATION_NAME=${name}`,
     `PT_STATION_URL=http://127.0.0.1:${port}`,
@@ -57,14 +60,94 @@ function writeRemoteBridge(root, source) {
   fs.writeFileSync(script, source, { mode: 0o755 });
 }
 
-async function startHealthServer(t) {
+function git(root, ...args) {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+function machineEnvironment(t, root, slot = 0) {
+  const envRepo = `${root}-env`;
+  const home = `${root}-home`;
+  const profileDirectory = path.join(
+    envRepo,
+    'peers-touch',
+    'machine-test',
+  );
+  fs.mkdirSync(profileDirectory, { recursive: true });
+  fs.mkdirSync(path.join(home, '.peers-touch', 'dev'), { recursive: true });
+  t.after(() => fs.rmSync(envRepo, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  fs.writeFileSync(path.join(root, 'README.md'), 'fixture\n');
+  git(root, 'init');
+  git(root, 'config', 'user.email', 'test@example.com');
+  git(root, 'config', 'user.name', 'Test');
+  git(root, 'add', 'README.md');
+  git(root, 'commit', '-m', 'fixture');
+
+  fs.writeFileSync(
+    path.join(profileDirectory, 'profile.env.example'),
+    fixtureProfile({
+      name: 'machine-test',
+      mode: 'local',
+      port: 18080,
+    }).replace(
+      'PT_STATION_DEPLOY_ENV=fixture-station',
+      'PT_STATION_DEPLOY_ENV=',
+    ),
+  );
+  git(envRepo, 'init');
+  git(envRepo, 'config', 'user.email', 'test@example.com');
+  git(envRepo, 'config', 'user.name', 'Test');
+  git(envRepo, 'add', '.');
+  git(envRepo, 'commit', '-m', 'fixture');
+
+  const canonicalRoot = fs.realpathSync(root);
+  const workspaceId = createHash('sha256')
+    .update(canonicalRoot)
+    .digest('hex')
+    .slice(0, 16);
+  const now = new Date().toISOString();
+  fs.writeFileSync(
+    path.join(home, '.peers-touch', 'dev', 'registry.json'),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      kind: 'peers-touch-machine-dev-registry',
+      authority: 'machine-control-plane',
+      updatedAt: now,
+      registrations: [{
+        workspaceId,
+        canonicalRoot,
+        name: path.basename(canonicalRoot),
+        branch: git(root, 'branch', '--show-current'),
+        head: git(root, 'rev-parse', 'HEAD'),
+        profile: 'machine-test',
+        slot,
+        allowedCapabilities: ['station.connect'],
+        purpose: 'devctl station test',
+        owner: 'test@example.com',
+        registeredAt: now,
+        updatedAt: now,
+        updatedBy: 'test@example.com',
+      }],
+    }, null, 2)}\n`,
+  );
+  return {
+    ...process.env,
+    HOME: home,
+    PT_ENV_REPO: envRepo,
+    PT_DEV_PROFILE_FILE_AUTHORITY: 'acceptance-runtime-manifest',
+    PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT: root,
+  };
+}
+
+async function startHealthServer(t, port = 0) {
   const server = http.createServer((_request, response) => {
     response.writeHead(200);
     response.end('ok');
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(port, '127.0.0.1', resolve);
   });
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const address = server.address();
@@ -79,6 +162,7 @@ test(
     const root = temporaryRoot(t);
     const port = await startHealthServer(t);
     const profilePath = writeProfile(root, 'remote-test', 'remote', port);
+    const environment = machineEnvironment(t, root);
     writeRemoteBridge(
       root,
       [
@@ -90,9 +174,8 @@ test(
     );
 
     const result = await startStation(root, {
-      ...process.env,
+      ...environment,
       PT_DEV_PROFILE_FILE: profilePath,
-      PT_ENV_REPO: '',
     });
 
     assert.equal(result.deployed, true);
@@ -110,6 +193,7 @@ test(
   async (t) => {
     const root = temporaryRoot(t);
     const profilePath = writeProfile(root, 'remote-failure', 'remote', 18080);
+    const environment = machineEnvironment(t, root);
     writeRemoteBridge(
       root,
       '#!/usr/bin/env bash\nexit 23\n',
@@ -117,9 +201,8 @@ test(
 
     await assert.rejects(
       startStation(root, {
-        ...process.env,
+        ...environment,
         PT_DEV_PROFILE_FILE: profilePath,
-        PT_ENV_REPO: '',
       }),
       (error) =>
         error instanceof DevctlError
@@ -131,14 +214,16 @@ test(
 
 test('local start still rejects a healthy unowned Station port', async (t) => {
   const root = temporaryRoot(t);
-  const port = await startHealthServer(t);
+  const slot = 97;
+  const port = 18080 + slot * 100;
+  await startHealthServer(t, port);
   const profilePath = writeProfile(root, 'local-test', 'local', port);
+  const environment = machineEnvironment(t, root, slot);
 
   await assert.rejects(
     startStation(root, {
-      ...process.env,
+      ...environment,
       PT_DEV_PROFILE_FILE: profilePath,
-      PT_ENV_REPO: '',
     }),
     (error) =>
       error instanceof DevctlError

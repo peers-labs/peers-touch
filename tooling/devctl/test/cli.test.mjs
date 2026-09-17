@@ -33,7 +33,7 @@ function runCli(args, environment = {}) {
   });
 }
 
-test('config emits one redacted JSON document', (t) => {
+test('Acceptance profile override cannot bypass machine registration', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-cli-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const profilePath = path.join(root, 'cli-test.env');
@@ -41,17 +41,21 @@ test('config emits one redacted JSON document', (t) => {
 
   const result = runCli(
     ['config', '--json', '--root', root],
-    { PT_DEV_PROFILE_FILE: profilePath, PT_ENV_REPO: '' },
+    {
+      PT_DEV_PROFILE_FILE: profilePath,
+      PT_DEV_PROFILE_FILE_AUTHORITY: 'acceptance-runtime-manifest',
+      PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT: root,
+      PT_ENV_REPO: '',
+    },
   );
 
-  assert.equal(result.status, 0, result.stderr);
-  const parsed = JSON.parse(result.stdout);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.configuration.API_TOKEN, '<redacted>');
-  assert.equal(parsed.profile.profileName, 'cli-test');
+  assert.equal(result.status, 2);
+  const parsed = JSON.parse(result.stderr);
+  assert.equal(parsed.error.code, 'DEVCTL_CHECK_FAILED');
+  assert.equal(parsed.error.details.machineCode, 'WORKTREE_IDENTITY_UNAVAILABLE');
 });
 
-test('missing profile returns a stable typed error', (t) => {
+test('unregistered workspace returns a stable typed error', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-cli-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -62,7 +66,8 @@ test('missing profile returns a stable typed error', (t) => {
 
   assert.equal(result.status, 2);
   const parsed = JSON.parse(result.stderr);
-  assert.equal(parsed.error.code, 'DEVCTL_PROFILE_REQUIRED');
+  assert.equal(parsed.error.code, 'DEVCTL_CHECK_FAILED');
+  assert.equal(parsed.error.details.machineCode, 'WORKTREE_IDENTITY_UNAVAILABLE');
 });
 
 test('unknown commands return DEVCTL_UNSUPPORTED_MODE', () => {
