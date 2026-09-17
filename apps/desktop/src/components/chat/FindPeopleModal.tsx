@@ -171,12 +171,53 @@ export function FindPeopleModal({ open, onClose }: Props) {
       }
 
       if ((searchScope === 'federation' || searchScope === 'station') && activeFederationId) {
+        // #region debug-point A-E:station-scoped-search-request
+        void fetch('http://127.0.0.1:7780/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'station-scoped-search',
+            runId: 'pre-fix',
+            hypothesisId: 'A-E',
+            location: 'FindPeopleModal.tsx:handleSearch:request',
+            msg: '[DEBUG] Station-scoped search request',
+            data: {
+              searchScope,
+              activeFederationId,
+              selectedFederationId,
+              selectedStationId,
+              prefix: parsed.localPart || trimmed.replace(/^@/, ''),
+            },
+          }),
+        }).catch(() => {});
+        // #endregion
         const resp = await api.federationCatalogSearch({
           federation_id: activeFederationId,
           prefix: parsed.localPart || trimmed.replace(/^@/, ''),
           station_id: searchScope === 'station' ? selectedStationId : undefined,
           page_size: 20,
         });
+        // #region debug-point A-E:station-scoped-search-response
+        void fetch('http://127.0.0.1:7780/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'station-scoped-search',
+            runId: 'pre-fix',
+            hypothesisId: 'A-E',
+            location: 'FindPeopleModal.tsx:handleSearch:response',
+            msg: '[DEBUG] Station-scoped search response',
+            data: {
+              searchScope,
+              activeFederationId,
+              selectedStationId,
+              entries: (resp.entries || []).map((entry) => ({
+                actorPtid: entry.actorPtid,
+                homeStationPeerId: entry.homeStationPeerId,
+                visibility: entry.visibility,
+              })),
+            },
+          }),
+        }).catch(() => {});
+        // #endregion
         setResults((resp.entries || []).map(catalogEntryToSearchResult));
         return;
       }
@@ -193,6 +234,24 @@ export function FindPeopleModal({ open, onClose }: Props) {
         })),
       );
     } catch (e: unknown) {
+      // #region debug-point E:station-scoped-search-error
+      void fetch('http://127.0.0.1:7780/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'station-scoped-search',
+          runId: 'pre-fix',
+          hypothesisId: 'E',
+          location: 'FindPeopleModal.tsx:handleSearch:error',
+          msg: '[DEBUG] Find People search failed',
+          data: {
+            searchScope,
+            activeFederationId,
+            selectedStationId,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
         : t('chat.social.findPeople.searchFailed');
@@ -262,6 +321,25 @@ export function FindPeopleModal({ open, onClose }: Props) {
     federationId?: string,
     stationId?: string,
   ) => {
+    // #region debug-point B-C:station-scope-selection
+    void fetch('http://127.0.0.1:7780/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'station-scoped-search',
+        runId: 'pre-fix',
+        hypothesisId: 'B-C',
+        location: 'FindPeopleModal.tsx:handleScopeChange',
+        msg: '[DEBUG] Find People scope selected',
+        data: {
+          nextScope: scope,
+          federationId: federationId ?? '',
+          stationId: stationId ?? '',
+          previousFederationId: selectedFederationId,
+          previousStationId: selectedStationId,
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
     setSearchScope(scope);
     setSelectedStationId(stationId ?? '');
     setSearchError('');
