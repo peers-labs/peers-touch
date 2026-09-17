@@ -1,3 +1,4 @@
+use crate::application::capability_authority;
 use crate::application::security::redact_json_value;
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
@@ -10,7 +11,12 @@ use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
+use crate::model::agent::{
+    ConnectorResourceManifest, ConnectorResourceProjection, ConnectorResourceStatus,
+    SyncConnectorResourceManifestsRequest, SyncConnectorResourceManifestsResponse,
+};
 use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -22,6 +28,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProviderCatalogItem {
@@ -45,6 +53,14 @@ struct ProviderCatalogItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OAuthConnectionState {
+    #[serde(default)]
+    connection_id: String,
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    projected_revision: u64,
+    #[serde(default)]
+    owner_ptid: String,
     provider_id: String,
     provider_name: String,
     user_id: String,
@@ -56,6 +72,43 @@ struct OAuthConnectionState {
     expires_at: Option<String>,
     scopes: Vec<String>,
     status: String,
+    #[serde(default)]
+    projected_capabilities: Vec<ProjectedConnectorCapability>,
+    #[serde(default)]
+    revision_history: Vec<OAuthConnectionRevisionSnapshot>,
+    #[serde(default)]
+    revocation_idempotency_key: String,
+    #[serde(default)]
+    revocation_error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ProjectedConnectorCapability {
+    capability_id: String,
+    capability_version: String,
+    tool_name: String,
+    resource_id: String,
+    resource_version: String,
+    status: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct OAuthConnectionRevisionSnapshot {
+    connection_id: String,
+    revision: u64,
+    owner_ptid: String,
+    provider_id: String,
+    provider_name: String,
+    user_id: String,
+    user_name: String,
+    email: String,
+    avatar_url: String,
+    profile_url: String,
+    connected_at: String,
+    expires_at: Option<String>,
+    scopes: Vec<String>,
+    status: String,
+    projected_capabilities: Vec<ProjectedConnectorCapability>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,6 +122,15 @@ struct LoopbackSessionState {
 
 static LOOPBACK_SESSIONS: OnceLock<Mutex<HashMap<String, LoopbackSessionState>>> = OnceLock::new();
 static LOOPBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
+static CONNECTOR_PROJECTION_EPOCH: AtomicU64 = AtomicU64::new(1);
+
+pub fn connector_projection_epoch() -> u64 {
+    CONNECTOR_PROJECTION_EPOCH.load(Ordering::SeqCst)
+}
+
+fn advance_connector_projection_epoch() {
+    CONNECTOR_PROJECTION_EPOCH.fetch_add(1, Ordering::SeqCst);
+}
 
 fn loopback_sessions() -> &'static Mutex<HashMap<String, LoopbackSessionState>> {
     LOOPBACK_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -121,6 +183,7 @@ fn save_oauth_callback(
     input: OAuthCallbackInput,
     ts: Option<String>,
     sig: Option<String>,
+    connector_owner_ptid: Option<&str>,
 ) -> CmdResult<()> {
     let provider_id = input.provider.trim();
     if provider_id.is_empty() {
@@ -158,9 +221,48 @@ fn save_oauth_callback(
     let email = input.email.unwrap_or_default();
     let avatar_url = input.avatar_url.unwrap_or_default();
     let profile_url = input.profile_url.unwrap_or_default();
+    let previous = map.get(provider_id).cloned();
+    let mut revision_history = previous
+        .as_ref()
+        .map(|connection| connection.revision_history.clone())
+        .unwrap_or_default();
+    if let Some(snapshot) = previous.as_ref().and_then(executable_connection_revision) {
+        archive_connection_revision(&mut revision_history, snapshot);
+    }
+    let connection_id = previous
+        .as_ref()
+        .map(|connection| connection.connection_id.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("oauth_connection_{}", ulid::Ulid::new()));
+    let revision = previous
+        .as_ref()
+        .map(|connection| connection.revision)
+        .unwrap_or_default()
+        .saturating_add(1)
+        .max(1);
+    let projected_revision = previous
+        .as_ref()
+        .map(|connection| connection.projected_revision)
+        .unwrap_or_default();
+    let owner_ptid = connector_owner_ptid
+        .map(str::trim)
+        .filter(|value| value.starts_with("ptid:"))
+        .map(str::to_string)
+        .or_else(|| {
+            previous
+                .as_ref()
+                .map(|connection| connection.owner_ptid.clone())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_default();
     map.insert(
         provider_id.to_string(),
         OAuthConnectionState {
+            connection_id,
+            revision,
+            projected_revision,
+            owner_ptid,
             provider_id: provider_id.to_string(),
             provider_name,
             user_id: provider_user_id.clone(),
@@ -170,8 +272,12 @@ fn save_oauth_callback(
             profile_url: profile_url.clone(),
             connected_at: now,
             expires_at,
-            scopes: vec![],
+            scopes: normalized_scopes(input.scopes),
             status: "active".to_string(),
+            projected_capabilities: Vec::new(),
+            revision_history,
+            revocation_idempotency_key: String::new(),
+            revocation_error: String::new(),
         },
     );
     write_connections(&map)?;
@@ -188,45 +294,53 @@ fn save_oauth_callback(
         ts: ts.clone().unwrap_or_default(),
         sig: sig.clone().unwrap_or_default(),
     };
-    match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
-        "/actor/oauth-bridge",
-        &bridge_req,
-    ) {
-        Ok(bridge) => {
-            if !bridge.access_token.is_empty() {
-                let actor_ptid = bridge
-                    .actor_ref
-                    .as_ref()
-                    .map(|actor| actor.ptid.trim())
-                    .filter(|ptid| ptid.starts_with("ptid:"))
-                    .ok_or_else(|| {
-                        internal_error("OAuth bridge response missing canonical actor PTID")
-                    })?;
-                let account_id = auth_identity::upsert_oauth(
-                    actor_ptid,
-                    provider_id,
-                    provider_user_id.as_str(),
-                    user_name.as_str(),
-                    input.created_at.as_deref(),
-                    Some(email.as_str()),
-                    Some(avatar_url.as_str()),
-                    Some(profile_url.as_str()),
-                )
-                .map_err(internal_error)?;
-                session_vault::persist_raw_session_for_account(
-                    &account_id,
-                    actor_ptid,
-                    &bridge.access_token,
-                    SessionSource::OauthBridge,
-                )
-                .map_err(|error| internal_error(&error.to_string()))?;
+    if connector_owner_ptid.is_none() {
+        match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
+            "/actor/oauth-bridge",
+            &bridge_req,
+        ) {
+            Ok(bridge) => {
+                if !bridge.access_token.is_empty() {
+                    let actor_ptid = bridge
+                        .actor_ref
+                        .as_ref()
+                        .map(|actor| actor.ptid.trim())
+                        .filter(|ptid| ptid.starts_with("ptid:"))
+                        .ok_or_else(|| {
+                            internal_error("OAuth bridge response missing canonical actor PTID")
+                        })?;
+                    let account_id = auth_identity::upsert_oauth(
+                        actor_ptid,
+                        provider_id,
+                        provider_user_id.as_str(),
+                        user_name.as_str(),
+                        input.created_at.as_deref(),
+                        Some(email.as_str()),
+                        Some(avatar_url.as_str()),
+                        Some(profile_url.as_str()),
+                    )
+                    .map_err(internal_error)?;
+                    session_vault::persist_raw_session_for_account(
+                        &account_id,
+                        actor_ptid,
+                        &bridge.access_token,
+                        SessionSource::OauthBridge,
+                    )
+                    .map_err(|error| internal_error(&error.to_string()))?;
+                    let mut connections = read_connections()?;
+                    if let Some(connection) = connections.get_mut(provider_id) {
+                        connection.owner_ptid = actor_ptid.to_string();
+                    }
+                    write_connections(&connections)?;
+                }
             }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
+            Err(e) => {
+                tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
+            }
         }
     }
 
+    advance_connector_projection_epoch();
     Ok(())
 }
 
@@ -490,8 +604,37 @@ fn read_connections() -> CmdResult<HashMap<String, OAuthConnectionState>> {
     if content.trim().is_empty() {
         return Ok(HashMap::new());
     }
-    serde_json::from_str(&content)
-        .map_err(|err| internal_error(format!("failed to parse connections file: {err}")))
+    let mut connections: HashMap<String, OAuthConnectionState> = serde_json::from_str(&content)
+        .map_err(|err| internal_error(format!("failed to parse connections file: {err}")))?;
+    let mut migrated = false;
+    for connection in connections.values_mut() {
+        if connection.connection_id.trim().is_empty() {
+            connection.connection_id = format!("oauth_connection_{}", ulid::Ulid::new());
+            migrated = true;
+        }
+        if connection.revision == 0 {
+            connection.revision = 1;
+            migrated = true;
+        }
+        let existing_scopes = std::mem::take(&mut connection.scopes);
+        let scopes = normalized_scopes(existing_scopes.clone());
+        if scopes != existing_scopes {
+            migrated = true;
+        }
+        connection.scopes = scopes;
+        for revision in &mut connection.revision_history {
+            let existing_scopes = std::mem::take(&mut revision.scopes);
+            let scopes = normalized_scopes(existing_scopes.clone());
+            if scopes != existing_scopes {
+                migrated = true;
+            }
+            revision.scopes = scopes;
+        }
+    }
+    if migrated {
+        write_connections(&connections)?;
+    }
+    Ok(connections)
 }
 
 fn write_connections(connections: &HashMap<String, OAuthConnectionState>) -> CmdResult<()> {
@@ -501,6 +644,66 @@ fn write_connections(connections: &HashMap<String, OAuthConnectionState>) -> Cmd
     storage::write_string_atomic(&path, &content)
         .map_err(|err| internal_error(format!("failed to write connections file: {err:?}")))?;
     Ok(())
+}
+
+fn normalized_scopes(scopes: Vec<String>) -> Vec<String> {
+    let mut scopes = scopes
+        .into_iter()
+        .map(|scope| scope.trim().to_string())
+        .filter(|scope| !scope.is_empty())
+        .collect::<Vec<_>>();
+    scopes.sort();
+    scopes.dedup();
+    scopes
+}
+
+fn executable_connection_revision(
+    connection: &OAuthConnectionState,
+) -> Option<OAuthConnectionRevisionSnapshot> {
+    if connection.revision == 0
+        || connection.revision != connection.projected_revision
+        || connection.status != "active"
+    {
+        return None;
+    }
+    Some(connection_revision_snapshot(connection))
+}
+
+fn connection_revision_snapshot(
+    connection: &OAuthConnectionState,
+) -> OAuthConnectionRevisionSnapshot {
+    OAuthConnectionRevisionSnapshot {
+        connection_id: connection.connection_id.clone(),
+        revision: connection.revision,
+        owner_ptid: connection.owner_ptid.clone(),
+        provider_id: connection.provider_id.clone(),
+        provider_name: connection.provider_name.clone(),
+        user_id: connection.user_id.clone(),
+        user_name: connection.user_name.clone(),
+        email: connection.email.clone(),
+        avatar_url: connection.avatar_url.clone(),
+        profile_url: connection.profile_url.clone(),
+        connected_at: connection.connected_at.clone(),
+        expires_at: connection.expires_at.clone(),
+        scopes: connection.scopes.clone(),
+        status: connection.status.clone(),
+        projected_capabilities: connection.projected_capabilities.clone(),
+    }
+}
+
+fn archive_connection_revision(
+    history: &mut Vec<OAuthConnectionRevisionSnapshot>,
+    snapshot: OAuthConnectionRevisionSnapshot,
+) {
+    history.retain(|candidate| {
+        candidate.connection_id != snapshot.connection_id || candidate.revision != snapshot.revision
+    });
+    history.push(snapshot);
+    history.sort_by(|left, right| {
+        left.connection_id
+            .cmp(&right.connection_id)
+            .then_with(|| left.revision.cmp(&right.revision))
+    });
 }
 
 fn sanitize_provider_id(provider_id: &str) -> String {
@@ -532,6 +735,9 @@ fn mask_secret(secret: &str) -> String {
 
 fn safe_connection_json(conn: &OAuthConnectionState) -> Value {
     json!({
+        "connection_id": conn.connection_id,
+        "revision": conn.revision,
+        "projected_revision": conn.projected_revision,
         "provider_id": conn.provider_id,
         "provider_name": conn.provider_name,
         "user_id": conn.user_id,
@@ -539,6 +745,37 @@ fn safe_connection_json(conn: &OAuthConnectionState) -> Value {
         "email": conn.email,
         "avatar_url": conn.avatar_url,
         "profile_url": conn.profile_url,
+        "connected_at": conn.connected_at,
+        "expires_at": conn.expires_at,
+        "scopes": conn.scopes,
+        "status": conn.status,
+    })
+}
+
+fn safe_connection_revision_json(conn: &OAuthConnectionRevisionSnapshot) -> Value {
+    json!({
+        "connection_id": conn.connection_id,
+        "revision": conn.revision,
+        "provider_id": conn.provider_id,
+        "provider_name": conn.provider_name,
+        "user_id": conn.user_id,
+        "user_name": conn.user_name,
+        "email": conn.email,
+        "avatar_url": conn.avatar_url,
+        "profile_url": conn.profile_url,
+        "connected_at": conn.connected_at,
+        "expires_at": conn.expires_at,
+        "scopes": conn.scopes,
+        "status": conn.status,
+    })
+}
+
+fn safe_connection_revision_status_json(conn: &OAuthConnectionRevisionSnapshot) -> Value {
+    json!({
+        "connection_id": conn.connection_id,
+        "revision": conn.revision,
+        "provider_id": conn.provider_id,
+        "provider_name": conn.provider_name,
         "connected_at": conn.connected_at,
         "expires_at": conn.expires_at,
         "scopes": conn.scopes,
@@ -556,11 +793,31 @@ fn required_arg_string(arguments: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("{key} is required"))
 }
 
+fn required_arg_u64(arguments: &Value, key: &str) -> Result<u64, String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| format!("{key} is required"))
+}
+
 pub fn execute_oauth_connector_tool(
+    actor_ptid: &str,
+    capability_id: &str,
+    capability_version: &str,
     arguments: &Value,
     call_id: Option<&str>,
 ) -> Result<Value, String> {
-    let resource = required_arg_string(arguments, "resource")?;
+    let connector_id = required_arg_string(arguments, "connector_id")?;
+    let oauth_connection_id = required_arg_string(arguments, "oauth_connection_id")?;
+    let connection_revision = required_arg_u64(arguments, "connection_revision")?;
+    let resource_id = required_arg_string(arguments, "resource_id")?;
+    let resource_version = required_arg_string(arguments, "resource_version")?;
+    if required_arg_string(arguments, "capability_id")? != capability_id
+        || required_arg_string(arguments, "capability_version")? != capability_version
+    {
+        return Err("CONNECTOR_MANIFEST_STALE".to_string());
+    }
     let params = arguments
         .get("params")
         .map(redact_json_value)
@@ -571,51 +828,43 @@ pub fn execute_oauth_connector_tool(
             .map(|err| err.message)
             .unwrap_or_else(|| "failed to read OAuth connections".to_string())
     })?;
-
-    let output = match resource.as_str() {
-        "connections.list" => {
-            let items = connections
-                .values()
-                .filter(|conn| conn.status == "active")
-                .map(safe_connection_json)
-                .collect::<Vec<_>>();
-            json!({
-                "resource": resource,
-                "connections": items,
-            })
-        }
-        "connection.status" | "connection.profile" => {
-            let provider_id = required_arg_string(arguments, "provider_id")?;
-            let conn = connections
-                .get(&provider_id)
-                .ok_or_else(|| format!("OAuth connection not found for provider: {provider_id}"))?;
-            if conn.status != "active" {
-                return Err(format!(
-                    "OAuth connection is not active for provider: {provider_id}"
-                ));
-            }
-            json!({
-                "resource": resource,
-                "connection": safe_connection_json(conn),
-            })
-        }
-        other => {
-            return Err(format!(
-                "unsupported OAuth connector resource: {other}; supported resources are connections.list, connection.status, connection.profile"
-            ));
-        }
-    };
+    let connection = connections
+        .get(&connector_id)
+        .ok_or_else(|| "CONNECTOR_RESOURCE_REMOVED".to_string())?;
+    let revision = resolve_connector_execution_revision(
+        connection,
+        actor_ptid,
+        &oauth_connection_id,
+        connection_revision,
+    )?;
+    if connection_revision_expired(&revision)? {
+        return Err("CONNECTOR_OAUTH_EXPIRED".to_string());
+    }
+    let projected = revision
+        .projected_capabilities
+        .iter()
+        .find(|projected| {
+            projected.capability_id == capability_id
+                && projected.capability_version == capability_version
+                && projected.resource_id == resource_id
+                && projected.resource_version == resource_version
+        })
+        .ok_or_else(|| "CONNECTOR_MANIFEST_STALE".to_string())?;
+    if projected.status != ConnectorResourceStatus::Ready as i32 {
+        return Err(connector_status_error(projected.status).to_string());
+    }
+    let output = execute_connection_resource(&revision, &resource_id, params.clone())?;
 
     Ok(json!({
         "ok": true,
-        "toolName": "oauth_connector_call",
+        "toolName": projected.tool_name,
         "callId": call_id.unwrap_or_default(),
         "arguments": redact_json_value(arguments),
         "output": output,
         "params": params,
         "audit": {
-            "source": "builtin",
-            "toolName": "oauth_connector_call",
+            "source": "connector",
+            "toolName": projected.tool_name,
             "executionOwner": "desktop-rust",
             "approvalRequired": true,
             "secrets": "redacted",
@@ -624,15 +873,381 @@ pub fn execute_oauth_connector_tool(
     }))
 }
 
+fn resolve_connector_execution_revision(
+    connection: &OAuthConnectionState,
+    actor_ptid: &str,
+    oauth_connection_id: &str,
+    connection_revision: u64,
+) -> Result<OAuthConnectionRevisionSnapshot, String> {
+    if connection.owner_ptid != actor_ptid {
+        return Err("CONNECTOR_ACTOR_MISMATCH".to_string());
+    }
+    if connection.connection_id == oauth_connection_id && connection.revision == connection_revision
+    {
+        if connection.status != "active" {
+            return Err(connector_execution_error(&connection.status).to_string());
+        }
+        if connection.projected_revision != connection.revision {
+            return Err("CONNECTOR_MANIFEST_STALE".to_string());
+        }
+        return Ok(connection_revision_snapshot(connection));
+    }
+    connection
+        .revision_history
+        .iter()
+        .find(|candidate| {
+            candidate.owner_ptid == actor_ptid
+                && candidate.connection_id == oauth_connection_id
+                && candidate.revision == connection_revision
+                && candidate.status == "active"
+        })
+        .cloned()
+        .ok_or_else(|| "CONNECTOR_MANIFEST_STALE".to_string())
+}
+
+fn execute_connection_resource(
+    connection: &OAuthConnectionRevisionSnapshot,
+    resource_id: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match resource_id {
+        "connection.status" => Ok(json!({
+            "resource": resource_id,
+            "connection": safe_connection_revision_status_json(connection),
+            "params": params,
+        })),
+        "connection.profile" => Ok(json!({
+            "resource": resource_id,
+            "connection": safe_connection_revision_json(connection),
+            "params": params,
+        })),
+        _ => Err("CONNECTOR_RESOURCE_REMOVED".to_string()),
+    }
+}
+
+fn connector_execution_error(status: &str) -> &'static str {
+    match status {
+        "expired" => "CONNECTOR_OAUTH_EXPIRED",
+        "disconnected" => "CONNECTOR_DISCONNECTED",
+        "revoked" => "CONNECTOR_PROVIDER_REVOKED",
+        "revocation_unconfirmed" => "CONNECTOR_REVOCATION_UNCONFIRMED",
+        _ => "CONNECTOR_MANIFEST_STALE",
+    }
+}
+
+fn connector_status_error(status: i32) -> &'static str {
+    match ConnectorResourceStatus::try_from(status) {
+        Ok(ConnectorResourceStatus::Expired) => "CONNECTOR_OAUTH_EXPIRED",
+        Ok(ConnectorResourceStatus::ScopeDenied) => "CONNECTOR_SCOPE_DENIED",
+        Ok(ConnectorResourceStatus::Removed) => "CONNECTOR_RESOURCE_REMOVED",
+        Ok(ConnectorResourceStatus::Disconnected) => "CONNECTOR_DISCONNECTED",
+        Ok(ConnectorResourceStatus::Revoked) => "CONNECTOR_PROVIDER_REVOKED",
+        Ok(ConnectorResourceStatus::RevocationUnconfirmed) => "CONNECTOR_REVOCATION_UNCONFIRMED",
+        _ => "CONNECTOR_MANIFEST_STALE",
+    }
+}
+
+fn connection_expired(connection: &OAuthConnectionState) -> Result<bool, String> {
+    connection_revision_expired(&connection_revision_snapshot(connection))
+}
+
+fn connection_revision_expired(
+    connection: &OAuthConnectionRevisionSnapshot,
+) -> Result<bool, String> {
+    let Some(expires_at) = connection
+        .expires_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(false);
+    };
+    let expires_at = OffsetDateTime::parse(expires_at, &Rfc3339)
+        .map_err(|_| "CONNECTOR_EXPIRY_INVALID".to_string())?;
+    Ok(expires_at.unix_timestamp() <= chrono_like_now_unix())
+}
+
+fn connector_expiry_timestamp(
+    connection: &OAuthConnectionState,
+) -> Result<Option<prost_types::Timestamp>, String> {
+    let Some(expires_at) = connection
+        .expires_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let expires_at = OffsetDateTime::parse(expires_at, &Rfc3339)
+        .map_err(|_| "CONNECTOR_EXPIRY_INVALID".to_string())?;
+    Ok(Some(prost_types::Timestamp {
+        seconds: expires_at.unix_timestamp(),
+        nanos: expires_at.nanosecond() as i32,
+    }))
+}
+
+fn connector_connection_status(connection: &OAuthConnectionState) -> ConnectorResourceStatus {
+    match connection.status.as_str() {
+        "active" => ConnectorResourceStatus::Ready,
+        "expired" => ConnectorResourceStatus::Expired,
+        "disconnected" => ConnectorResourceStatus::Disconnected,
+        "revoked" => ConnectorResourceStatus::Revoked,
+        "revocation_unconfirmed" => ConnectorResourceStatus::RevocationUnconfirmed,
+        _ => ConnectorResourceStatus::ManifestStale,
+    }
+}
+
+fn connector_resource_projections(
+    connection: &OAuthConnectionState,
+) -> Vec<ConnectorResourceProjection> {
+    let profile_scopes = get_provider(&connection.provider_id)
+        .map(|provider| normalized_scopes(provider.scopes))
+        .unwrap_or_default();
+    vec![
+        ConnectorResourceProjection {
+            resource_id: "connection.status".to_string(),
+            resource_version: "connection-status".to_string(),
+            required_scopes: Vec::new(),
+            status: ConnectorResourceStatus::Ready as i32,
+        },
+        ConnectorResourceProjection {
+            resource_id: "connection.profile".to_string(),
+            resource_version: "connection-profile".to_string(),
+            required_scopes: profile_scopes,
+            status: ConnectorResourceStatus::Ready as i32,
+        },
+    ]
+}
+
+fn connector_sync_request(
+    connection: &OAuthConnectionState,
+) -> Result<SyncConnectorResourceManifestsRequest, String> {
+    Ok(SyncConnectorResourceManifestsRequest {
+        connector_id: connection.provider_id.clone(),
+        oauth_connection_id: connection.connection_id.clone(),
+        expected_connection_revision: connection.projected_revision,
+        connection_revision: connection.revision,
+        granted_scopes: connection.scopes.clone(),
+        connection_status: connector_connection_status(connection) as i32,
+        expires_at: connector_expiry_timestamp(connection)?,
+        resources: connector_resource_projections(connection),
+        idempotency_key: format!(
+            "connector-sync:{}:{}",
+            connection.connection_id, connection.revision
+        ),
+    })
+}
+
+fn apply_connector_sync_response(
+    connection: &mut OAuthConnectionState,
+    response: &SyncConnectorResourceManifestsResponse,
+) {
+    connection.projected_revision = connection.revision;
+    connection.projected_capabilities = projected_connector_capabilities(response);
+}
+
+fn reconcile_connector_station_head(
+    connection: &mut OAuthConnectionState,
+    current: &[ConnectorResourceManifest],
+) -> Result<(), String> {
+    let Some(first) = current.first() else {
+        return Ok(());
+    };
+    let current_revision = first.connection_revision;
+    let current_connection_id = first.oauth_connection_id.as_str();
+    if current.iter().any(|resource| {
+        resource.connection_revision != current_revision
+            || resource.oauth_connection_id != current_connection_id
+    }) {
+        return Err("CONNECTOR_STATION_HEAD_INCONSISTENT".to_string());
+    }
+    if current_connection_id != connection.connection_id && current_revision >= connection.revision
+    {
+        connection.projected_revision = current_revision;
+        connection.revision = current_revision
+            .checked_add(1)
+            .ok_or_else(|| "CONNECTOR_REVISION_EXHAUSTED".to_string())?;
+    }
+    Ok(())
+}
+
+pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<u8>> {
+    if !actor_ptid.starts_with("ptid:") || token.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "agent.connectorManifestSyncUnauthorized",
+            None,
+        );
+    }
+    let mut connections = match read_connections() {
+        Ok(connections) => connections,
+        Err(error) => return connector_sync_error(error),
+    };
+    let previous_contracts = projected_connector_contracts(&connections, actor_ptid);
+    let mut connector_ids = connections
+        .iter()
+        .filter(|(_, connection)| connection.owner_ptid == actor_ptid)
+        .map(|(connector_id, _)| connector_id.clone())
+        .collect::<Vec<_>>();
+    connector_ids.sort();
+
+    let mut merged = SyncConnectorResourceManifestsResponse::default();
+    for connector_id in connector_ids {
+        let connection = match connections.get_mut(&connector_id) {
+            Some(connection) => connection,
+            None => continue,
+        };
+        let station_resources =
+            match capability_authority::list_connector_manifest_records(&connector_id, token) {
+                Ok(resources) => resources,
+                Err(error) => {
+                    return error.into_app_result("agent.connectorManifestListFailed");
+                }
+            };
+        if let Err(error) = reconcile_connector_station_head(connection, &station_resources) {
+            return AppResult::fail(
+                ErrorCode::Conflict,
+                "agent.connectorManifestSyncFailed",
+                Some(json!({ "cause": error })),
+            );
+        }
+        if connection.status == "active" {
+            match connection_expired(connection) {
+                Ok(true) => {
+                    if let Some(snapshot) = executable_connection_revision(connection) {
+                        archive_connection_revision(&mut connection.revision_history, snapshot);
+                    }
+                    connection.status = "expired".to_string();
+                    connection.revision = connection.revision.saturating_add(1);
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    return AppResult::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.connectorExpiryInvalid",
+                        Some(json!({ "cause": error })),
+                    );
+                }
+            }
+        }
+        let request = match connector_sync_request(connection) {
+            Ok(request) => request,
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    "agent.connectorExpiryInvalid",
+                    Some(json!({ "cause": error })),
+                );
+            }
+        };
+        let response = match capability_authority::sync_connector_manifest_records(&request, token)
+        {
+            Ok(response) => response,
+            Err(error) => {
+                return error.into_app_result("agent.connectorManifestSyncFailed");
+            }
+        };
+        apply_connector_sync_response(connection, &response);
+        merged.manifests.extend(response.manifests);
+        merged
+            .capability_manifests
+            .extend(response.capability_manifests);
+    }
+    if let Err(error) = write_connections(&connections) {
+        return connector_sync_error(error);
+    }
+    if previous_contracts != projected_connector_contracts(&connections, actor_ptid) {
+        advance_connector_projection_epoch();
+    }
+    AppResult::success(merged.encode_to_vec())
+}
+
+fn connector_sync_error(error: AppResult<StubPayload>) -> AppResult<Vec<u8>> {
+    match error.error {
+        Some(error) => AppResult::fail(error.code, error.message, error.details),
+        None => AppResult::fail(
+            ErrorCode::InternalError,
+            "agent.connectorManifestSyncFailed",
+            None,
+        ),
+    }
+}
+
+fn projected_connector_capabilities(
+    response: &SyncConnectorResourceManifestsResponse,
+) -> Vec<ProjectedConnectorCapability> {
+    let manifests = response
+        .capability_manifests
+        .iter()
+        .map(|manifest| {
+            (
+                (manifest.capability_id.as_str(), manifest.version.as_str()),
+                manifest,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    response
+        .manifests
+        .iter()
+        .flat_map(|resource| {
+            resource.tool_manifests.iter().filter_map(|reference| {
+                let manifest = manifests.get(&(
+                    reference.capability_id.as_str(),
+                    reference.capability_version.as_str(),
+                ))?;
+                Some(ProjectedConnectorCapability {
+                    capability_id: reference.capability_id.clone(),
+                    capability_version: reference.capability_version.clone(),
+                    tool_name: manifest.source_instance_id.clone(),
+                    resource_id: resource.resource_id.clone(),
+                    resource_version: resource.resource_version.clone(),
+                    status: resource.status,
+                })
+            })
+        })
+        .collect()
+}
+
+pub fn connector_capability_contracts(actor_ptid: &str) -> Result<Vec<(String, String)>, String> {
+    let connections = read_connections().map_err(|error| {
+        error
+            .error
+            .map(|error| error.message)
+            .unwrap_or_else(|| "CONNECTOR_STATE_UNAVAILABLE".to_string())
+    })?;
+    Ok(projected_connector_contracts(&connections, actor_ptid))
+}
+
+fn projected_connector_contracts(
+    connections: &HashMap<String, OAuthConnectionState>,
+    actor_ptid: &str,
+) -> Vec<(String, String)> {
+    let mut contracts = connections
+        .values()
+        .filter(|connection| {
+            connection.owner_ptid == actor_ptid
+                && connection.status == "active"
+                && connection.projected_revision == connection.revision
+                && !connection_expired(connection).unwrap_or(true)
+        })
+        .flat_map(|connection| connection.projected_capabilities.iter())
+        .filter(|capability| capability.status == ConnectorResourceStatus::Ready as i32)
+        .map(|capability| {
+            (
+                capability.capability_id.clone(),
+                capability.capability_version.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    contracts.sort();
+    contracts.dedup();
+    contracts
+}
+
 pub fn oauth2_list_providers() -> AppResult<StubPayload> {
-    let connections = try_cmd!(read_connections());
     let mut out = Vec::new();
     for p in provider_catalog() {
         let (client_id, _, has_yaml) = try_cmd!(read_credentials(&p.id));
-        let connected = connections
-            .get(&p.id)
-            .map(|c| c.status == "active")
-            .unwrap_or(false);
         out.push(json!({
             "id": p.id,
             "name": p.name,
@@ -644,7 +1259,7 @@ pub fn oauth2_list_providers() -> AppResult<StubPayload> {
             "enabled": p.enabled,
             "status": p.status,
             "has_credentials": has_yaml && !client_id.is_empty(),
-            "connected": connected,
+            "connected": false,
             "callback_url": p.callback_url,
             "auth_hosts": [],
             "environments": p.environments,
@@ -754,6 +1369,7 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
 pub fn oauth2_start_loopback(
     input: OAuthLoopbackStartInput,
     i18n: I18nService,
+    actor_ptid: &str,
 ) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
@@ -791,6 +1407,7 @@ pub fn oauth2_start_loopback(
 
     let session_id_for_thread = session_id.clone();
     let provider_id_for_thread = provider_id.to_string();
+    let actor_ptid_for_thread = actor_ptid.to_string();
     thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut buffer = [0_u8; 8192];
@@ -854,9 +1471,20 @@ pub fn oauth2_start_loopback(
                         avatar_url: params.get("avatar_url").cloned(),
                         profile_url: params.get("profile_url").cloned(),
                         expires_at: params.get("expires_at").cloned(),
+                        scopes: params
+                            .get("scope")
+                            .or_else(|| params.get("scopes"))
+                            .map(|value| {
+                                value
+                                    .split(|character| character == ' ' || character == ',')
+                                    .map(str::to_string)
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     },
                     params.get("ts").cloned(),
                     params.get("sig").cloned(),
+                    Some(&actor_ptid_for_thread),
                 ) {
                     Ok(_) => {
                         update_loopback_session(
@@ -962,15 +1590,21 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
 }
 
 pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
-    try_cmd!(save_oauth_callback(input, None, None));
+    try_cmd!(save_oauth_callback(input, None, None, None));
     success_payload("oauth2_handle_callback", json!({ "status":"ok" }))
 }
 
-pub fn oauth2_list_connections() -> AppResult<StubPayload> {
+pub fn oauth2_list_connections(actor_ptid: &str) -> AppResult<StubPayload> {
     let map = try_cmd!(read_connections());
     let mut out = Vec::new();
-    for conn in map.into_values() {
+    for conn in map
+        .into_values()
+        .filter(|connection| connection.owner_ptid == actor_ptid)
+    {
         out.push(json!({
+            "connection_id": conn.connection_id,
+            "revision": conn.revision,
+            "projected_revision": conn.projected_revision,
             "provider_id": conn.provider_id,
             "provider_name": conn.provider_name,
             "user_id": conn.user_id,
@@ -987,7 +1621,7 @@ pub fn oauth2_list_connections() -> AppResult<StubPayload> {
     success_payload("oauth2_list_connections", json!(out))
 }
 
-pub fn oauth2_get_connection(input: OAuthIdInput) -> AppResult<StubPayload> {
+pub fn oauth2_get_connection(actor_ptid: &str, input: OAuthIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -996,9 +1630,15 @@ pub fn oauth2_get_connection(input: OAuthIdInput) -> AppResult<StubPayload> {
     let Some(conn) = map.get(id) else {
         return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
     };
+    if conn.owner_ptid != actor_ptid {
+        return AppResult::fail(ErrorCode::Forbidden, "agent.errors.forbiddenActor", None);
+    }
     success_payload(
         "oauth2_get_connection",
         json!({
+            "connection_id": conn.connection_id,
+            "revision": conn.revision,
+            "projected_revision": conn.projected_revision,
             "provider_id": conn.provider_id,
             "provider_name": conn.provider_name,
             "user_id": conn.user_id,
@@ -1014,17 +1654,75 @@ pub fn oauth2_get_connection(input: OAuthIdInput) -> AppResult<StubPayload> {
     )
 }
 
-pub fn oauth2_disconnect(input: OAuthIdInput) -> AppResult<StubPayload> {
+pub fn oauth2_disconnect(
+    actor_ptid: &str,
+    token: &str,
+    input: OAuthIdInput,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
     let mut map = try_cmd!(read_connections());
-    map.remove(input.id.trim());
-    try_cmd!(write_connections(&map));
-    success_payload("oauth2_disconnect", json!({ "status":"ok" }))
+    let Some(current) = map.get(input.id.trim()) else {
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
+    };
+    if current.owner_ptid != actor_ptid {
+        return AppResult::fail(ErrorCode::Forbidden, "agent.errors.forbiddenActor", None);
+    }
+    let mut disconnected = current.clone();
+    if disconnected.status != "revocation_unconfirmed" {
+        if let Some(snapshot) = executable_connection_revision(&disconnected) {
+            archive_connection_revision(&mut disconnected.revision_history, snapshot);
+        }
+        disconnected.revocation_idempotency_key = format!(
+            "connector-revoke:{}:{}",
+            disconnected.connection_id, disconnected.revision,
+        );
+        disconnected.revocation_error = "CONNECTOR_PROVIDER_REVOKE_UNCONFIRMED".to_string();
+        disconnected.status = "revocation_unconfirmed".to_string();
+        disconnected.revision = disconnected.revision.saturating_add(1);
+    }
+    let request = match connector_sync_request(&disconnected) {
+        Ok(request) => request,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "agent.connectorExpiryInvalid",
+                Some(json!({ "cause": error })),
+            );
+        }
+    };
+    let response = match capability_authority::sync_connector_manifest_records(&request, token) {
+        Ok(response) => response,
+        Err(error) => {
+            return error.into_app_result("agent.connectorManifestSyncFailed");
+        }
+    };
+    apply_connector_sync_response(&mut disconnected, &response);
+    let revocation_error = disconnected.revocation_error.clone();
+    let revocation_idempotency_key = disconnected.revocation_idempotency_key.clone();
+    map.insert(input.id.trim().to_string(), disconnected);
+    if let Err(error) = write_connections(&map) {
+        return match connector_sync_error(error).error {
+            Some(error) => AppResult::fail(error.code, error.message, error.details),
+            None => internal_error("agent.connectorManifestSyncFailed"),
+        };
+    }
+    advance_connector_projection_epoch();
+    success_payload(
+        "oauth2_disconnect",
+        json!({
+            "status": "revocation_unconfirmed",
+            "provider_revoke": {
+                "status": "unconfirmed",
+                "error_code": revocation_error,
+                "idempotency_key": revocation_idempotency_key,
+            }
+        }),
+    )
 }
 
-pub fn oauth2_refresh_token(input: OAuthIdInput) -> AppResult<StubPayload> {
+pub fn oauth2_refresh_token(actor_ptid: &str, input: OAuthIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -1033,28 +1731,60 @@ pub fn oauth2_refresh_token(input: OAuthIdInput) -> AppResult<StubPayload> {
     let Some(conn) = map.get_mut(id) else {
         return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
     };
+    if conn.owner_ptid != actor_ptid {
+        return AppResult::fail(ErrorCode::Forbidden, "agent.errors.forbiddenActor", None);
+    }
+    if matches!(
+        conn.status.as_str(),
+        "disconnected" | "revoked" | "revocation_unconfirmed"
+    ) {
+        return AppResult::fail(
+            ErrorCode::Conflict,
+            "agent.errors.connectorRevocationUnconfirmed",
+            None,
+        );
+    }
+    if let Some(snapshot) = executable_connection_revision(conn) {
+        archive_connection_revision(&mut conn.revision_history, snapshot);
+    }
     let now = chrono_like_now_unix();
     let new_expires = unix_to_rfc3339(now + 3600);
     conn.expires_at = Some(new_expires);
     conn.status = "active".to_string();
+    conn.revision = conn.revision.saturating_add(1);
+    conn.projected_capabilities.clear();
+    conn.revocation_idempotency_key.clear();
+    conn.revocation_error.clear();
     try_cmd!(write_connections(&map));
+    advance_connector_projection_epoch();
     success_payload("oauth2_refresh_token", json!({ "status":"ok" }))
 }
 
-pub fn oauth2_call_resource(input: OAuthResourceInput) -> AppResult<StubPayload> {
+pub fn oauth2_call_resource(actor_ptid: &str, input: OAuthResourceInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
     if input.resource.trim().is_empty() {
         return invalid_argument("resource is required");
     }
-    let result = match execute_oauth_connector_tool(
-        &json!({
-            "provider_id": input.id.trim(),
-            "resource": input.resource.trim(),
-            "params": input.params.unwrap_or_else(|| json!({}))
-        }),
-        None,
+    let connections = try_cmd!(read_connections());
+    let Some(connection) = connections.get(input.id.trim()) else {
+        return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
+    };
+    if connection.owner_ptid != actor_ptid {
+        return AppResult::fail(ErrorCode::Forbidden, "agent.errors.forbiddenActor", None);
+    }
+    if connection.status != "active" {
+        return AppResult::fail(
+            ErrorCode::Conflict,
+            connector_execution_error(&connection.status),
+            None,
+        );
+    }
+    let result = match execute_connection_resource(
+        &connection_revision_snapshot(connection),
+        input.resource.trim(),
+        input.params.unwrap_or_else(|| json!({})),
     ) {
         Ok(result) => result,
         Err(error) => return internal_error(error),
@@ -1158,6 +1888,7 @@ mod tests {
             expires_at: Some("2026-06-17T01:00:00Z".to_string()),
             scopes: vec!["read:user".to_string()],
             status: "active".to_string(),
+            ..Default::default()
         };
 
         let serialized = safe_connection_json(&conn).to_string();
@@ -1166,5 +1897,145 @@ mod tests {
         assert!(!serialized.contains("access_token"));
         assert!(!serialized.contains("refresh_token"));
         assert!(!serialized.contains("client_secret"));
+    }
+
+    #[test]
+    fn connector_dispatch_first_uses_pinned_archived_revision_bits_ut() {
+        let capability = ProjectedConnectorCapability {
+            capability_id: format!("connector.resource.{}", "a".repeat(64)),
+            capability_version: "version-1".to_string(),
+            tool_name: "connector_resource_aaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            resource_id: "connection.profile".to_string(),
+            resource_version: "connection-profile".to_string(),
+            status: ConnectorResourceStatus::Ready as i32,
+        };
+        let mut connection = OAuthConnectionState {
+            connection_id: "oauth-connection-1".to_string(),
+            revision: 1,
+            projected_revision: 1,
+            owner_ptid: "ptid:person:owner".to_string(),
+            provider_id: "github".to_string(),
+            provider_name: "GitHub".to_string(),
+            user_id: "u1".to_string(),
+            user_name: "octo".to_string(),
+            email: "octo@example.test".to_string(),
+            avatar_url: String::new(),
+            profile_url: "https://example.test/octo".to_string(),
+            connected_at: "2026-06-17T00:00:00Z".to_string(),
+            expires_at: Some("2099-06-17T01:00:00Z".to_string()),
+            scopes: vec!["read:user".to_string()],
+            status: "active".to_string(),
+            projected_capabilities: vec![capability.clone()],
+            ..Default::default()
+        };
+        let pinned = executable_connection_revision(&connection)
+            .expect("active projected revision must be executable");
+        archive_connection_revision(&mut connection.revision_history, pinned);
+        connection.revision = 2;
+        connection.projected_revision = 2;
+        connection.status = "revocation_unconfirmed".to_string();
+        connection.projected_capabilities = vec![ProjectedConnectorCapability {
+            status: ConnectorResourceStatus::RevocationUnconfirmed as i32,
+            ..capability.clone()
+        }];
+
+        let archived = resolve_connector_execution_revision(
+            &connection,
+            "ptid:person:owner",
+            "oauth-connection-1",
+            1,
+        )
+        .expect("dispatch committed before disconnect must keep its pinned revision");
+        let output = execute_connection_resource(&archived, "connection.status", json!({}))
+            .expect("archived status resource must execute");
+        let serialized = output.to_string();
+        assert!(serialized.contains("\"revision\":1"));
+        assert!(!serialized.contains("octo@example.test"));
+        assert_eq!(
+            resolve_connector_execution_revision(
+                &connection,
+                "ptid:person:owner",
+                "oauth-connection-1",
+                2,
+            )
+            .expect_err("current disconnected revision must reject"),
+            "CONNECTOR_REVOCATION_UNCONFIRMED",
+        );
+        assert_eq!(
+            resolve_connector_execution_revision(
+                &connection,
+                "ptid:person:other",
+                "oauth-connection-1",
+                1,
+            )
+            .expect_err("cross-actor archived revision must reject"),
+            "CONNECTOR_ACTOR_MISMATCH",
+        );
+    }
+
+    #[test]
+    fn connector_new_local_connection_advances_station_head_bits_ut() {
+        let mut connection = OAuthConnectionState {
+            connection_id: "oauth-connection-new".to_string(),
+            revision: 1,
+            provider_id: "github".to_string(),
+            ..Default::default()
+        };
+        let current = vec![ConnectorResourceManifest {
+            oauth_connection_id: "oauth-connection-old".to_string(),
+            connection_revision: 7,
+            ..Default::default()
+        }];
+
+        reconcile_connector_station_head(&mut connection, &current)
+            .expect("new local connection must advance the Station head");
+
+        assert_eq!(connection.projected_revision, 7);
+        assert_eq!(connection.revision, 8);
+    }
+
+    #[test]
+    fn connector_unprojected_revision_is_not_advertised_bits_ut() {
+        let mut connections = HashMap::from([(
+            "github".to_string(),
+            OAuthConnectionState {
+                connection_id: "oauth-connection-1".to_string(),
+                revision: 2,
+                projected_revision: 1,
+                owner_ptid: "ptid:person:owner".to_string(),
+                provider_id: "github".to_string(),
+                status: "active".to_string(),
+                projected_capabilities: vec![ProjectedConnectorCapability {
+                    capability_id: format!(
+                        "connector.resource.{}",
+                        "a".repeat(64),
+                    ),
+                    capability_version: "version-1".to_string(),
+                    status: ConnectorResourceStatus::Ready as i32,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        )]);
+
+        assert!(projected_connector_contracts(
+            &connections,
+            "ptid:person:owner",
+        )
+        .is_empty());
+        connections.get_mut("github").unwrap().projected_revision = 2;
+        assert_eq!(
+            projected_connector_contracts(
+                &connections,
+                "ptid:person:owner",
+            )
+            .len(),
+            1,
+        );
+        assert!(projected_connector_contracts(
+            &connections,
+            "ptid:person:other",
+        )
+        .is_empty());
     }
 }

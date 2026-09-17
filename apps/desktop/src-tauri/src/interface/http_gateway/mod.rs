@@ -3806,6 +3806,19 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_capability_authority::list_manifests(input, &token))
         }
+        "agent_connector_manifest_list" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_connector_manifests(
+                input, &token,
+            ))
+        }
         "agent_home_projection_get" => {
             let input = match parse_args::<app_home::EncodedRequestInput>(args) {
                 Ok(v) => v,
@@ -5299,34 +5312,63 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_oauth2::oauth2_handle_callback(input))
         }
-        "oauth2_list_connections" => to_json(app_oauth2::oauth2_list_connections()),
+        "oauth2_list_connections" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_list_connections(&actor_ptid)),
+            Err(error) => error,
+        },
+        "oauth2_sync_connector_manifests" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, token)) => {
+                to_json(app_oauth2::sync_connector_manifests(&actor_ptid, &token))
+            }
+            Err(error) => error,
+        },
         "oauth2_get_connection" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_get_connection(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_get_connection(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_disconnect" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_disconnect(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, token)) => {
+                    to_json(app_oauth2::oauth2_disconnect(&actor_ptid, &token, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_refresh_token" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_refresh_token(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_refresh_token(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_call_resource" => {
             let input = match parse_args::<OAuthResourceInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_call_resource(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_call_resource(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_reload" => to_json(app_oauth2::oauth2_reload()),
         "oauth2_get_page" => {
@@ -5341,7 +5383,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_start_loopback(input, state.i18n.clone()))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_start_loopback(
+                    input,
+                    state.i18n.clone(),
+                    &actor_ptid,
+                )),
+                Err(error) => error,
+            }
         }
         "oauth2_poll_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {

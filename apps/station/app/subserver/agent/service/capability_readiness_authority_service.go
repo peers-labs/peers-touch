@@ -219,9 +219,10 @@ func (s *CapabilityAuthorityService) ResolveReadiness(
 	clientCapabilities := selectedClientCapabilities(clientSession)
 	readiness := make([]*model.CapabilityReadiness, 0, len(bindings))
 	bindingRevisions := []string{fmt.Sprintf("agent:%s:%d", agentID, agentVersion)}
+	connectionRevisionSet := make(map[string]struct{})
 	for i := range bindings {
 		binding := &bindings[i]
-		state, reason, err := s.resolveBindingReadiness(
+		state, reason, connectionRevision, err := s.resolveBindingReadiness(
 			ctx, binding, agentVersion, runtimeResolution, clientCapabilities,
 			clientSession != nil,
 		)
@@ -232,6 +233,9 @@ func (s *CapabilityAuthorityService) ResolveReadiness(
 			bindingRevisions,
 			fmt.Sprintf("binding:%s:%d", binding.BindingID, binding.Revision),
 		)
+		if connectionRevision != "" {
+			connectionRevisionSet[connectionRevision] = struct{}{}
+		}
 		readiness = append(readiness, &model.CapabilityReadiness{
 			CapabilityId:      binding.CapabilityID,
 			CapabilityVersion: binding.CapabilityVersion,
@@ -246,35 +250,43 @@ func (s *CapabilityAuthorityService) ResolveReadiness(
 	sort.Slice(readiness, func(i, j int) bool {
 		return readiness[i].GetCapabilityId() < readiness[j].GetCapabilityId()
 	})
+	connectionRevisions := make([]string, 0, len(connectionRevisionSet)+1)
+	for revision := range connectionRevisionSet {
+		connectionRevisions = append(connectionRevisions, revision)
+	}
 
 	capabilities := proto.Clone(modelCapabilities).(*model.RuntimeCapabilitySnapshot)
 	capabilities.SnapshotId = runtimeSnapshotID
 	snapshot := &model.CapabilityReadinessSnapshot{
 		SnapshotId: readinessAuthoritySnapshotID(
-			ptid, agentID, runtimeSnapshotID, bindingRevisions, readiness,
+			ptid, agentID, runtimeSnapshotID, bindingRevisions,
+			connectionRevisions, readiness,
 			clientSession.GetSessionId(), now,
 		),
-		Ptid:              ptid,
-		AgentId:           agentID,
-		RuntimeSnapshotId: runtimeSnapshotID,
-		ModelCapabilities: capabilities,
-		BindingRevisions:  bindingRevisions,
-		Capabilities:      readiness,
-		CreatedAt:         timestamppb.New(now),
-		ExpiresAt:         timestamppb.New(now.Add(5 * time.Minute)),
+		Ptid:                ptid,
+		AgentId:             agentID,
+		RuntimeSnapshotId:   runtimeSnapshotID,
+		ModelCapabilities:   capabilities,
+		BindingRevisions:    bindingRevisions,
+		ConnectionRevisions: connectionRevisions,
+		Capabilities:        readiness,
+		CreatedAt:           timestamppb.New(now),
+		ExpiresAt:           timestamppb.New(now.Add(5 * time.Minute)),
 	}
 	if clientSession != nil {
 		sessionID := clientSession.GetSessionId()
 		snapshot.SelectedClientSessionId = &sessionID
-		snapshot.ConnectionRevisions = []string{
+		snapshot.ConnectionRevisions = append(
+			snapshot.ConnectionRevisions,
 			fmt.Sprintf(
 				"client-session:%s:%d:%s",
 				sessionID,
 				clientSession.GetLeaseRevision(),
 				clientSession.GetConnectionId(),
 			),
-		}
+		)
 	}
+	sort.Strings(snapshot.ConnectionRevisions)
 	return s.StoreReadinessSnapshot(ctx, snapshot)
 }
 
@@ -285,14 +297,14 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 	runtimeResolution map[string]model.RuntimeCapabilityResolution,
 	clientCapabilities map[string]model.CapabilityPermissionState,
 	clientSessionSelected bool,
-) (model.CapabilityReadinessState, string, error) {
+) (model.CapabilityReadinessState, string, string, error) {
 	if binding.AgentVersion != agentVersion {
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			"binding_agent_revision_stale", nil
+			"binding_agent_revision_stale", "", nil
 	}
 	if !binding.Enabled {
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			bindingDisabledReasonCode, nil
+			bindingDisabledReasonCode, "", nil
 	}
 	var manifest persistence.CapabilityManifest
 	err := s.db.WithContext(ctx).Where(
@@ -302,49 +314,67 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 	).First(&manifest).Error
 	if err == gorm.ErrRecordNotFound {
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNKNOWN,
-			"manifest_missing", nil
+			"manifest_missing", "", nil
 	}
 	if err != nil {
-		return 0, "", capabilityInternal("failed to load capability manifest", err)
+		return 0, "", "", capabilityInternal("failed to load capability manifest", err)
+	}
+	connectionRevision := ""
+	if model.CapabilitySourceKind(manifest.SourceKind) ==
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR {
+		state, reason, revision, err := connectorReadinessForCapability(
+			s.db.WithContext(ctx),
+			binding.Ptid,
+			binding.CapabilityID,
+			binding.CapabilityVersion,
+			s.now(),
+		)
+		if err != nil {
+			return 0, "", "", err
+		}
+		connectionRevision = revision
+		if state != model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY {
+			return state, reason, revision, nil
+		}
 	}
 	if manifest.RetiredAt != nil {
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			"manifest_retired", nil
+			"manifest_retired", connectionRevision, nil
 	}
 	switch model.CapabilityAvailability(manifest.Availability) {
 	case model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNSPECIFIED:
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNKNOWN,
-			"manifest_availability_unknown", nil
+			"manifest_availability_unknown", connectionRevision, nil
 	case model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED:
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			"manifest_blocked", nil
+			"manifest_blocked", connectionRevision, nil
 	case model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE:
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-			"manifest_unavailable", nil
+			"manifest_unavailable", connectionRevision, nil
 	case model.CapabilityAvailability_CAPABILITY_AVAILABILITY_DEGRADED:
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_DEGRADED,
-			manifestDegradedReasonCode, nil
+			manifestDegradedReasonCode, connectionRevision, nil
 	}
 	var requiredCapabilities []string
 	if err := json.Unmarshal(
 		[]byte(manifest.RequiredCapabilitiesJSON),
 		&requiredCapabilities,
 	); err != nil {
-		return 0, "", capabilityInternal("decode required runtime capabilities", err)
+		return 0, "", "", capabilityInternal("decode required runtime capabilities", err)
 	}
 	for _, required := range requiredCapabilities {
 		resolution, ok := runtimeResolution[required]
 		if !ok || (resolution != model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_NATIVE &&
 			resolution != model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_BRIDGED) {
 			return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-				runtimeCapabilityUnavailableReasonCode, nil
+				runtimeCapabilityUnavailableReasonCode, connectionRevision, nil
 		}
 	}
 	if model.ToolExecutionOwner(manifest.ExecutionOwner) ==
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY {
 		if !clientSessionSelected {
 			return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-				"client_session_required", nil
+				"client_session_required", connectionRevision, nil
 		}
 		permission, ok := clientCapabilities[manifest.CapabilityID]
 		if !ok {
@@ -352,11 +382,11 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 		}
 		if !ok || permission != model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_GRANTED {
 			return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-				"client_capability_unavailable", nil
+				"client_capability_unavailable", connectionRevision, nil
 		}
 	}
 	return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
-		"capability_ready", nil
+		"capability_ready", connectionRevision, nil
 }
 
 func capabilityReadinessAdmissionError(
@@ -405,6 +435,7 @@ func readinessAuthoritySnapshotID(
 	agentID string,
 	runtimeSnapshotID string,
 	bindingRevisions []string,
+	connectionRevisions []string,
 	readiness []*model.CapabilityReadiness,
 	clientSessionID string,
 	now time.Time,
@@ -414,6 +445,7 @@ func readinessAuthoritySnapshotID(
 		agentID,
 		runtimeSnapshotID,
 		strings.Join(bindingRevisions, ","),
+		strings.Join(connectionRevisions, ","),
 		clientSessionID,
 		now.UTC().Format(time.RFC3339Nano),
 	}

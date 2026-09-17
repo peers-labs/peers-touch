@@ -592,6 +592,8 @@ pub struct OAuthCallbackInput {
     pub avatar_url: Option<String>,
     pub profile_url: Option<String>,
     pub expires_at: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

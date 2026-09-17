@@ -133,6 +133,7 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
         expected_tool_result: str,
         api_key: str,
         terminal_content: str,
+        tool_name_prefix: str = "",
     ) -> None:
         super().__init__(("127.0.0.1", 0), _ProviderFixtureHandler)
         self.tool_name = tool_name
@@ -140,6 +141,8 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
         self.expected_tool_result = expected_tool_result
         self.api_key = api_key
         self.terminal_content = terminal_content
+        self.tool_name_prefix = tool_name_prefix
+        self.selected_tool_name = ""
         self.request_lock = threading.Lock()
         self.requests: list[dict[str, Any]] = []
 
@@ -151,6 +154,22 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
     def snapshot(self) -> list[dict[str, Any]]:
         with self.request_lock:
             return [dict(request) for request in self.requests]
+
+    def resolve_tool_name(self, tool_names: list[str]) -> str:
+        with self.request_lock:
+            if self.selected_tool_name:
+                return self.selected_tool_name
+            if self.tool_name:
+                self.selected_tool_name = self.tool_name
+            else:
+                matches = sorted(
+                    name
+                    for name in tool_names
+                    if name.startswith(self.tool_name_prefix)
+                )
+                if matches:
+                    self.selected_tool_name = matches[0]
+            return self.selected_tool_name
 
 
 class _ProviderFixtureHandler(BaseHTTPRequestHandler):
@@ -208,6 +227,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                     name = str(function.get("name") or "")
                     if name:
                         tool_names.append(name)
+        selected_tool_name = self.fixture.resolve_tool_name(tool_names)
         request_number = self.fixture.record_request(
             {
                 "path": self.path,
@@ -215,6 +235,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                 "model": str(payload.get("model") or ""),
                 "messageRoles": message_roles,
                 "toolNames": tool_names,
+                "selectedToolName": selected_tool_name,
                 "hasToolResult": "tool" in message_roles,
                 "hasExpectedToolResult": any(
                     self.fixture.expected_tool_result
@@ -229,7 +250,8 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
         )
         if (
             payload.get("stream") is not True
-            or self.fixture.tool_name not in tool_names
+            or not selected_tool_name
+            or selected_tool_name not in tool_names
             or self.headers.get("Authorization")
             != f"Bearer {self.fixture.api_key}"
         ):
@@ -270,7 +292,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                             "id": f"provider-call-{request_number}",
                             "type": "function",
                             "function": {
-                                "name": self.fixture.tool_name,
+                                "name": selected_tool_name,
                                 "arguments": json.dumps(
                                     self.fixture.tool_arguments,
                                     separators=(",", ":"),
@@ -308,6 +330,7 @@ class OpenAIProviderFixture:
         api_key: str = FIXTURE_API_KEY,
         terminal_content: str = "Governed tool execution completed.",
         thread_name: str = "mca-j03-provider-fixture",
+        tool_name_prefix: str = "",
     ) -> None:
         self.server = _ProviderFixtureServer(
             tool_name=tool_name,
@@ -315,6 +338,7 @@ class OpenAIProviderFixture:
             expected_tool_result=expected_tool_result,
             api_key=api_key,
             terminal_content=terminal_content,
+            tool_name_prefix=tool_name_prefix,
         )
         self.started = False
         self.thread = threading.Thread(

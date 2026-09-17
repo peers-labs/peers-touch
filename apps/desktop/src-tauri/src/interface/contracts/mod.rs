@@ -319,6 +319,8 @@ pub struct OAuthCallbackInput {
     pub ts: Option<String>,
     /// HMAC signature from Station relay for oauth-bridge verification
     pub sig: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

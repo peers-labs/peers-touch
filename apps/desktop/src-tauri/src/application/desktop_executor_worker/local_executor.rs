@@ -1,6 +1,6 @@
 use super::fenced_executor::{CapabilityContract, CapabilityExecutor};
 use super::resource_registry::LocalResource;
-use crate::application::{mcp, tools};
+use crate::application::{mcp, oauth2, tools};
 use crate::contracts::McpExecuteToolInput;
 use crate::model::agent::ClientCapabilityRequest;
 use serde_json::Value;
@@ -37,7 +37,8 @@ impl LocalCapabilityExecutor {
                     | "clipboard.write"
                     | "shell.execute"
                     | "mcp.invoke"
-            ) {
+            ) && !is_connector_capability_id(&contract.capability_id)
+            {
                 return Err(format!(
                     "unsupported local capability contract: {}",
                     contract.capability_id
@@ -155,12 +156,32 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                     &request.tool_call_id,
                 )?
             }
+            capability_id if is_connector_capability_id(capability_id) => {
+                record_side_effect_start()?;
+                oauth2::execute_oauth_connector_tool(
+                    &self.actor_ptid,
+                    capability_id,
+                    &request.schema_version,
+                    &arguments,
+                    Some(&request.tool_call_id),
+                )?
+            }
             _ => return Err("CLIENT_CAPABILITY_NOT_REGISTERED".to_string()),
         };
         redact_local_locators(&mut result, resources);
         serde_json::to_vec(&result)
             .map_err(|_| "CLIENT_CAPABILITY_RESULT_ENCODING_FAILED".to_string())
     }
+}
+
+fn is_connector_capability_id(capability_id: &str) -> bool {
+    let Some(hash) = capability_id.strip_prefix("connector.resource.") else {
+        return false;
+    };
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn execute_builtin(
@@ -325,5 +346,34 @@ mod tests {
         assert!(!encoded.contains("/private/device/alice/workspace"));
         assert!(encoded.contains("resource-1/file.txt"));
         assert!(encoded.contains("resource-1/key"));
+    }
+
+    #[test]
+    fn connector_contracts_require_station_derived_capability_ids() {
+        let capability_id = format!("connector.resource.{}", "a".repeat(64));
+        let executor = LocalCapabilityExecutor::new(
+            "ptid:person:test",
+            [CapabilityContract {
+                capability_id: capability_id.clone(),
+                schema_version: "manifest-version".to_string(),
+                max_argument_bytes: 1024,
+                max_result_bytes: 1024,
+                supports_external_idempotency: false,
+            }],
+        )
+        .expect("Station-derived Connector capability should register");
+        assert!(executor.contract(&capability_id).is_some());
+
+        let invalid = LocalCapabilityExecutor::new(
+            "ptid:person:test",
+            [CapabilityContract {
+                capability_id: "connector.github".to_string(),
+                schema_version: "1".to_string(),
+                max_argument_bytes: 1024,
+                max_result_bytes: 1024,
+                supports_external_idempotency: false,
+            }],
+        );
+        assert!(invalid.is_err());
     }
 }

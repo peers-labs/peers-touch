@@ -35,12 +35,12 @@
   "checks": [
     {
       "id": "connector-focused",
-      "command": "pnpm --dir apps/desktop exec vitest run src/store/agentConnectors.test.ts src/store/agentCapabilities.test.ts src/runtimes/toolRuntime.test.ts && (cd apps/station && go test ./app/subserver/agent/service -run 'Connector|Capability|Tool')",
+      "command": "(cd apps/desktop/src-tauri && cargo test --bin peers-touch-desktop 'application::oauth2::tests::' && cargo test --bin peers-touch-desktop 'application::desktop_executor_worker::supervisor::tests::browser_surface_advertises_only_connector_capabilities') && pnpm --dir apps/desktop exec tsc --noEmit && pnpm --dir apps/desktop exec vitest run src/acceptance/agentAcceptanceHarness.test.ts src/store/agentConnectors.test.ts src/store/agentCapabilities.test.ts src/runtimes/agentCapabilityRuntime.test.ts src/runtimes/toolRuntime.test.ts && (cd apps/station && go test ./app/subserver/agent/service -run 'Connector|Capability|Tool' -count=1) && python3 -m unittest tooling.acceptance.gates.agent.connector_invocation_development_test tooling.acceptance.gates.agent.governed_tool_development_test tooling.acceptance.tests.test_provisioner_runtime.ProvisionerBlockingTests.test_agent_v2_connector_provisions_profile_two_single_native_client",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "connector-native-journey",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mca-v2-j05 --gate agent-v2-connector-invocation-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/connector_invocation_development.py",
       "verificationClass": "FUNCTIONAL_CHECK"
     }
   ],
@@ -55,7 +55,7 @@
     "Do not duplicate OAuth credential ownership in Agent configuration",
     "Disconnect and invoke races must preserve pinned revisions and idempotency"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
+  "updatedAt": "2026-09-17T07:20:59Z",
   "durableEvidence": []
 }
 ```

@@ -20,6 +20,7 @@ import {
   type AgentAttachmentRefInput,
   type AgentCapabilityNegativeControlFact,
   type AgentRuntimeBudgetInput,
+  type OAuth2Connection,
   type MCPServerItem,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
@@ -38,7 +39,9 @@ import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
+import { useAgentConnectorStore } from '../../store/agentConnectors';
 import { useMCPStore } from '../../store/mcp';
+import { useOAuth2Store } from '../../store/oauth2';
 import {
   AgentTurnStatus,
   FailoverReason,
@@ -49,12 +52,14 @@ import {
   CapabilityApprovalPolicy,
   CapabilityOperationStatus,
   CapabilitySourceKind,
+  ConnectorResourceStatus,
   CreateKnowledgeResourceDescriptorRequestSchema,
   KnowledgeResourceKind,
   TombstoneKnowledgeResourceDescriptorRequestSchema,
   type AgentCapabilityBinding,
   type CapabilityOperation,
   type CapabilityManifest,
+  type ConnectorResourceManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
 import { registerAcceptanceHarness } from '../registry';
 import {
@@ -2020,6 +2025,12 @@ interface McpLifecycleDevelopmentInput {
   toolName?: string;
   expectedResult?: string;
   state?: McpLifecycleDevelopmentState;
+}
+
+interface ConnectorInvocationDevelopmentInput {
+  sampleId: string;
+  providerBaseUrl: string;
+  connectorId: string;
 }
 
 function toolStatusName(value: unknown): string {
@@ -22165,6 +22176,602 @@ async function runMcpLifecycleDevelopmentJourney(
   }
 }
 
+async function completeConnectorOAuthFixture(input: {
+  connectorId: string;
+  sampleId: string;
+  scopes: string[];
+  expiresAt: string;
+}): Promise<OAuth2Connection> {
+  const currentUser = useSessionStore.getState().currentUser;
+  if (!currentUser?.actorPtid) {
+    throw new Error('agent.acceptance.connectorActorMissing');
+  }
+  const loopback = await api.oauth2StartLoopback(
+    input.connectorId,
+    'acceptance',
+  );
+  const authorizeUrl = new URL(loopback.auth_url);
+  const returnTo = authorizeUrl.searchParams.get('return_to');
+  if (!returnTo) {
+    throw new Error('agent.acceptance.connectorLoopbackMissing');
+  }
+  const callback = new URL(returnTo);
+  callback.searchParams.set('provider', input.connectorId);
+  callback.searchParams.set(
+    'provider_user_id',
+    `mca-j05-${input.sampleId}`,
+  );
+  callback.searchParams.set('username', `mca-j05-${input.sampleId}`);
+  callback.searchParams.set(
+    'display_name',
+    `Connector fixture ${input.sampleId}`,
+  );
+  callback.searchParams.set(
+    'email',
+    currentUser.email || `mca-j05-${input.sampleId}@example.test`,
+  );
+  callback.searchParams.set('scope', input.scopes.join(' '));
+  callback.searchParams.set('expires_at', input.expiresAt);
+  try {
+    await fetch(callback.toString(), {
+      cache: 'no-store',
+      mode: 'no-cors',
+    });
+  } catch {
+    // A no-CORS response may be opaque; the poll result is authoritative.
+  }
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    const result = await api.oauth2PollLoopback(loopback.session_id);
+    if (result.completed) {
+      if (result.status !== 'completed') {
+        throw new Error(
+          `agent.acceptance.connectorLoopbackFailed:${result.error ?? result.status}`,
+        );
+      }
+      await useAgentConnectorStore.getState().loadConnectors();
+      const connection = useOAuth2Store.getState().connections.find(
+        (candidate) => candidate.provider_id === input.connectorId,
+      );
+      if (!connection) {
+        throw new Error('agent.acceptance.connectorConnectionMissing');
+      }
+      return connection;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('agent.acceptance.connectorLoopbackTimedOut');
+}
+
+async function connectorDevelopmentFixture(
+  agentId: string,
+  connectorId: string,
+): Promise<{
+  fixture: FoundationToolFixture;
+  resource: ConnectorResourceManifest;
+}> {
+  const connectorStore = useAgentConnectorStore.getState();
+  await connectorStore.loadConnectors();
+  const resource = useAgentConnectorStore.getState().resourceManifests.find(
+    (candidate) =>
+      candidate.connectorId === connectorId
+      && candidate.resourceId === 'connection.status'
+      && candidate.status === ConnectorResourceStatus.READY,
+  );
+  if (!resource || resource.toolManifests.length !== 1) {
+    throw new Error('agent.acceptance.connectorResourceManifestMissing');
+  }
+  const reference = resource.toolManifests[0];
+  const [manifests, bindings] = await Promise.all([
+    api.listCapabilityManifests([CapabilitySourceKind.CONNECTOR]),
+    api.listAgentCapabilityBindings(agentId),
+  ]);
+  const manifest = manifests.find((candidate) =>
+    candidate.capabilityId === reference.capabilityId
+    && candidate.version === reference.capabilityVersion
+    && candidate.sourceKind === CapabilitySourceKind.CONNECTOR
+    && !candidate.retiredAt);
+  if (!manifest || !manifest.sourceInstanceId.startsWith('connector_resource_')) {
+    throw new Error('agent.acceptance.connectorCapabilityManifestMissing');
+  }
+  const binding = bindings.find((candidate) =>
+    candidate.capabilityId === manifest.capabilityId
+    && candidate.capabilityVersion === manifest.version
+    && candidate.enabled
+    && !candidate.tombstonedAt) ?? null;
+  return {
+    fixture: {
+      manifest,
+      binding,
+      toolName: manifest.sourceInstanceId,
+      arguments: {
+        params: {
+          sample: 'mca-v2-j05',
+        },
+      },
+    },
+    resource,
+  };
+}
+
+async function waitForConnectorToolSession(
+  agentId: string,
+  fixture: FoundationToolFixture,
+): Promise<FoundationToolTurnSession> {
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < 90_000) {
+    try {
+      const session = await resolveFoundationToolTurnSession();
+      const readiness = await api.getAgentCapabilityReadiness({
+        agent_id: agentId,
+        client_capability_session_id: session.capabilitySessionId,
+      });
+      if (readiness.capabilities.some((capability) =>
+        capability.capability_id === fixture.manifest.capabilityId
+        && capability.capability_version === fixture.manifest.version
+        && isAgentCapabilityReady(capability))) {
+        return session;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw Object.assign(
+    new Error('agent.acceptance.connectorCapabilitySessionUnavailable'),
+    { cause: lastError },
+  );
+}
+
+function connectorResourceEvidence(
+  resource: ConnectorResourceManifest,
+): Record<string, unknown> {
+  return {
+    connectorId: resource.connectorId,
+    connectionRevision: resource.connectionRevision.toString(),
+    resourceId: resource.resourceId,
+    resourceVersion: resource.resourceVersion,
+    scopes: [...resource.scopes],
+    status: resource.status,
+    capabilityRefs: resource.toolManifests.map((reference) => ({
+      capabilityId: reference.capabilityId,
+      capabilityVersion: reference.capabilityVersion,
+    })),
+  };
+}
+
+async function runConnectorInvocationDevelopmentJourney(
+  input: ConnectorInvocationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.connectorProviderUrlInvalid');
+  }
+  const connectorId = input.connectorId.trim();
+  if (!connectorId) {
+    throw new Error('agent.acceptance.connectorIdMissing');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let disposableAgent:
+    NonNullable<ReturnType<typeof selectedAgent>> | null = null;
+  let disposableAgentId = '';
+  let conversationId = '';
+  let turn: FoundationToolTurn | null = null;
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    connectorDisabled: false,
+    conversationDeleted: false,
+    disposableAgentDeleted: false,
+    fixtureModelDeleted: false,
+    fixtureProviderDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    const connected = await completeConnectorOAuthFixture({
+      connectorId,
+      sampleId: `${input.sampleId}-connected`,
+      scopes: ['read:user', 'user:email'],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    runtimeFixture = await createGovernedToolRuntimeFixture(
+      'connector-invocation',
+      providerUrl.toString(),
+    );
+    disposableAgent = await agentStore.createAgent({
+      name: `connector-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Connector ${input.sampleId}`,
+      description: 'V2-J05 Connector invocation Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    disposableAgentId = disposableAgent.id || disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'Connector Agent Profile',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    )?.click();
+    await useAgentConnectorStore.getState().loadConnectors();
+    await useAgentConnectorStore.getState().bindConnector(
+      disposableAgentId,
+      connectorId,
+    );
+    const initial = await connectorDevelopmentFixture(
+      disposableAgentId,
+      connectorId,
+    );
+    if (!initial.fixture.binding) {
+      throw new Error('agent.acceptance.connectorBindingReadbackMissing');
+    }
+    const capabilitySession = await waitForConnectorToolSession(
+      disposableAgentId,
+      initial.fixture,
+    );
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: initial.fixture,
+      sampleId: input.sampleId,
+      label: 'connector-invocation-development',
+      onConversationCreated: (createdConversationId) => {
+        conversationId = createdConversationId;
+      },
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.connectorApprovalInvalid');
+    }
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'Connector ToolCall native receiver',
+      30_000,
+    );
+    const toolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.connectorReceiverMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'Connector ToolCall approval control',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve || approve.disabled) {
+      throw new Error('agent.acceptance.connectorApprovalUnavailable');
+    }
+    approve.click();
+    await waitFor(
+      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+      'Connector ToolCall decision acknowledgement',
+      30_000,
+    );
+    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
+    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
+      throw new Error('agent.acceptance.connectorDecisionRejected');
+    }
+    const replayedDecision = await api.submitAgentToolDecision(
+      decisionAttempt.input,
+    );
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'Connector ToolCall settlement',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'Connector ToolCall replay',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'Connector ToolCall terminal receiver projection',
+      30_000,
+    );
+    const sourceFact = source.facts[0];
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      sourceFact,
+    );
+    const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+    const sourceHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const replayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const terminalReceiverVisible = Boolean(
+      toolCallElement.getClientRects().length,
+    );
+
+    const firstDisconnect = await api.oauth2Disconnect(connectorId);
+    const replayedDisconnect = await api.oauth2Disconnect(connectorId);
+    await useAgentConnectorStore.getState().loadConnectors();
+    const disconnected = useOAuth2Store.getState().connections.find(
+      (candidate) => candidate.provider_id === connectorId,
+    );
+    const disconnectedResources = useAgentConnectorStore.getState()
+      .resourceManifests
+      .filter((resource) => resource.connectorId === connectorId);
+
+    const reconnected = await completeConnectorOAuthFixture({
+      connectorId,
+      sampleId: `${input.sampleId}-reconnected`,
+      scopes: ['read:user', 'user:email'],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const rebound = await connectorDevelopmentFixture(
+      disposableAgentId,
+      connectorId,
+    );
+    const reboundBinding = rebound.fixture.binding;
+    if (!reboundBinding) {
+      throw new Error('agent.acceptance.connectorRebindingMissing');
+    }
+    const conversationReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'reconnected Connector Agent Profile',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    )?.click();
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-connector="${connectorId}"]`,
+        )?.getClientRects().length,
+      ),
+      'reconnected Connector row',
+      30_000,
+    );
+    const connectorRow = document.querySelector<HTMLElement>(
+      `[data-pt-agent-connector="${connectorId}"]`,
+    );
+    const manifestEvidence = connectorResourceEvidence(initial.resource);
+    const providerRevoke = firstDisconnect.provider_revoke;
+    const assertions = {
+      oauthConnectionProjected:
+        connected.status === 'active'
+        && connected.revision > 0
+        && connected.projected_revision === connected.revision,
+      resourceManifestVersionedAndCredentialFree:
+        initial.resource.connectionRevision === BigInt(connected.revision)
+        && initial.resource.resourceId === 'connection.status'
+        && initial.resource.resourceVersion.length > 0
+        && !/(access_token|refresh_token|client_secret)/i.test(
+          stableJson(manifestEvidence),
+        ),
+      bindingAndPolicyReadBack:
+        initial.fixture.binding.enabled
+        && initial.fixture.binding.approvalPolicy
+          === CapabilityApprovalPolicy.MANUAL,
+      governedInvocationPersistedOnce:
+        stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1,
+      nativeReceiverVisible:
+        receiverProjection?.status === 'success'
+        && receiverProjection.pending === false
+        && terminalReceiverVisible,
+      decisionAndStationReplayEqual:
+        decisionAttempt.response.decision_id
+          === replayedDecision.decision_id
+        && sourceHash === replayHash,
+      providerRevokeUnconfirmedAndIdempotent:
+        firstDisconnect.status === 'revocation_unconfirmed'
+        && providerRevoke.status === 'unconfirmed'
+        && providerRevoke.error_code
+          === 'CONNECTOR_PROVIDER_REVOKE_UNCONFIRMED'
+        && providerRevoke.idempotency_key.length > 0
+        && replayedDisconnect.provider_revoke.idempotency_key
+          === providerRevoke.idempotency_key,
+      disconnectDisabledEveryResource:
+        disconnected?.status === 'revocation_unconfirmed'
+        && disconnectedResources.length > 0
+        && disconnectedResources.every((resource) =>
+          resource.status === ConnectorResourceStatus.REVOCATION_UNCONFIRMED),
+      reconnectRebasedBinding:
+        reconnected.status === 'active'
+        && reconnected.revision > connected.revision
+        && reconnected.projected_revision === reconnected.revision
+        && reboundBinding.bindingId === initial.fixture.binding.bindingId
+        && reboundBinding.capabilityVersion
+          === rebound.fixture.manifest.version
+        && reboundBinding.approvalPolicy
+          === CapabilityApprovalPolicy.MANUAL
+        && reboundBinding.enabled,
+      connectorSurfaceVisible: Boolean(connectorRow?.getClientRects().length),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.connectorInvocationAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      assertions,
+      'receiver-dom': {
+        visible: true,
+        toolCallId,
+        status: receiverProjection?.status ?? '',
+        connectorVisible: Boolean(connectorRow?.getClientRects().length),
+      },
+      'station-readback': {
+        entityKind: 'connector-tool-call-lineage',
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        binding: initial.fixture.binding,
+        reboundBinding,
+        fact: stationFact,
+        sourceHash,
+        replayHash,
+        messages: conversationReadback.messages,
+      },
+      'oauth-resource-manifest': {
+        ...manifestEvidence,
+        scopesHash: await sha256Hex(stableJson(initial.resource.scopes)),
+      },
+      'provider-revoke': {
+        providerId: connectorId,
+        status: providerRevoke.status,
+        errorCode: providerRevoke.error_code,
+        idempotencyKeyHash: await sha256Hex(
+          providerRevoke.idempotency_key,
+        ),
+      },
+      'side-effect-count': {
+        counterId: await sha256Hex(toolCallId),
+        count: sideEffectCount,
+        maximum: 1,
+      },
+      replay: {
+        sourceHash,
+        replayHash,
+        equal: sourceHash === replayHash,
+      },
+      recovery: {
+        disconnected,
+        disconnectedResources: disconnectedResources.map(
+          connectorResourceEvidence,
+        ),
+        reconnected,
+        reboundResource: connectorResourceEvidence(rebound.resource),
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      const connection = useOAuth2Store.getState().connections.find(
+        (candidate) => candidate.provider_id === connectorId,
+      );
+      if (connection?.status === 'active') {
+        await api.oauth2Disconnect(connectorId);
+      }
+      cleanup.connectorDisabled = true;
+      if (conversationId) {
+        await cleanupFoundationToolConversation(
+          conversationId,
+          turn?.turnId ?? '',
+        );
+        cleanup.conversationDeleted = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (runtimeFixture) {
+        await api.deleteModel(
+          runtimeFixture.providerId,
+          runtimeFixture.modelId,
+        );
+        cleanup.fixtureModelDeleted = true;
+        await api.deleteProvider(runtimeFixture.providerId);
+        cleanup.fixtureProviderDeleted = true;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        !priorSelection
+        || useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.connectorInvocationCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.connectorInvocationCaptureMissing');
+  }
+  const cleanupComplete = Object.values(cleanup).every(Boolean);
+  if (!cleanupComplete) {
+    throw new Error('agent.acceptance.connectorInvocationCleanupIncomplete');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'connectorInvocationAssertions'),
+      cleanupComplete,
+    },
+    cleanup: {
+      ...cleanup,
+      status: 'clean',
+    },
+  }) as Record<string, unknown>;
+}
+
 async function runGovernedToolDevelopmentJourney(input: {
   sampleId: string;
   providerBaseUrl: string;
@@ -23318,6 +23925,12 @@ export function installAcceptanceHarness(): void {
 
     async runMcpLifecycleDevelopment(input: McpLifecycleDevelopmentInput) {
       return runMcpLifecycleDevelopmentJourney(input);
+    },
+
+    async runConnectorInvocationDevelopment(
+      input: ConnectorInvocationDevelopmentInput,
+    ) {
+      return runConnectorInvocationDevelopmentJourney(input);
     },
 
     async runCapabilityIncompatibleDevelopment({

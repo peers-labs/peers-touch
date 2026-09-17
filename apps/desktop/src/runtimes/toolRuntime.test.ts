@@ -432,6 +432,38 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('projects Connector terminal errors to typed localized recovery', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-connector',
+        toolCalls: [{
+          toolCallId: 'tool-call-connector',
+          toolName: 'connector_resource_1234567890abcdef12345678',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.FAILED,
+          decisionRevision: 1n,
+          errorCode: 'CONNECTOR_REVOCATION_UNCONFIRMED',
+        }],
+      },
+    });
+
+    await expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-connector',
+      toolCalls: [{
+        id: 'tool-call-connector',
+        name: 'connector_resource_1234567890abcdef12345678',
+        pending: true,
+        status: 'pending',
+      }],
+    }])).resolves.toBe(true);
+
+    expect(toolRuntime.getProjection('tool-call-connector')).toMatchObject({
+      status: 'error',
+      pending: false,
+      error: 'agent.errors.connectorRevocationUnconfirmed',
+    });
+  });
+
   it('reconciles an unknown side effect as a distinct fail-closed state', async () => {
     exportAgentTurnDiagnostics.mockResolvedValue({
       replay: {

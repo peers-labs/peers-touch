@@ -8,6 +8,7 @@ use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
+use crate::application::oauth2;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityConstraints, CapabilityPermissionState, ClientCapability,
@@ -377,29 +378,31 @@ struct ActiveWorker {
     pull_cursor: u64,
     surface: ClientSurface,
     paused: bool,
+    connector_projection_epoch: u64,
 }
 
 impl ActiveWorker {
     fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
-        let contracts = local_contracts(surface);
-        let (executor, ledger, resources, operation_ledger, operation_executor) = if surface
-            == ClientSurface::Desktop
-        {
+        let contracts = local_contracts(surface, &context.actor_ptid)?;
+        let (executor, ledger, resources) = if !contracts.is_empty() {
             let executor = LocalCapabilityExecutor::new(&context.actor_ptid, contracts.clone())?;
             let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
             let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
-            let operation_ledger = OperationLedger::open(&context.actor_ptid, &context.device_id)?;
-            let operation_executor = McpLifecycleExecutor::new(&context.actor_ptid)?;
             recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
+            (Some(executor), Some(ledger), Some(resources))
+        } else {
+            (None, None, None)
+        };
+        let (operation_ledger, operation_executor) = if surface == ClientSurface::Desktop {
             (
-                Some(executor),
-                Some(ledger),
-                Some(resources),
-                Some(operation_ledger),
-                Some(operation_executor),
+                Some(OperationLedger::open(
+                    &context.actor_ptid,
+                    &context.device_id,
+                )?),
+                Some(McpLifecycleExecutor::new(&context.actor_ptid)?),
             )
         } else {
-            (None, None, None, None, None)
+            (None, None)
         };
         let transport = CapabilityStationTransport::new(
             &context.station_url,
@@ -422,6 +425,7 @@ impl ActiveWorker {
             pull_cursor: 0,
             surface,
             paused: false,
+            connector_projection_epoch: oauth2::connector_projection_epoch(),
         })
     }
 
@@ -442,7 +446,7 @@ impl ActiveWorker {
             LeaseTickDecision::Renew => self.renew()?,
             LeaseTickDecision::Pull => {}
         }
-        if self.surface == ClientSurface::Browser {
+        if self.executor.is_none() {
             return Ok(());
         }
 
@@ -459,23 +463,20 @@ impl ActiveWorker {
             .executor
             .as_ref()
             .ok_or_else(|| "CLIENT_CAPABILITY_EXECUTOR_UNAVAILABLE".to_string())?;
-        let operation_ledger = self
-            .operation_ledger
-            .as_ref()
-            .ok_or_else(|| "CAPABILITY_OPERATION_LEDGER_UNAVAILABLE".to_string())?;
-        let operation_executor = self
-            .operation_executor
-            .as_ref()
-            .ok_or_else(|| "CAPABILITY_OPERATION_EXECUTOR_UNAVAILABLE".to_string())?;
-        CapabilityOperationWorker::new(
-            &self.context.station_url,
-            &self.context.device_id,
-            &self.lease.capability_session_id,
-            operation_ledger,
-            operation_executor,
-            &transport,
-        )
-        .tick_at(now_ms)?;
+        if let (Some(operation_ledger), Some(operation_executor)) = (
+            self.operation_ledger.as_ref(),
+            self.operation_executor.as_ref(),
+        ) {
+            CapabilityOperationWorker::new(
+                &self.context.station_url,
+                &self.context.device_id,
+                &self.lease.capability_session_id,
+                operation_ledger,
+                operation_executor,
+                &transport,
+            )
+            .tick_at(now_ms)?;
+        }
         let response = transport.pull(
             &self.lease.capability_session_id,
             self.pull_cursor,
@@ -754,7 +755,7 @@ fn emit_lease_expired_control_from_worker(
             return Err("GFE1_LEASE_EXPIRY_NOT_REACHED".to_string());
         }
 
-        let contracts = local_contracts(worker.surface);
+        let contracts = local_contracts(worker.surface, &worker.context.actor_ptid)?;
         let replacement = {
             let transport = worker.transport()?;
             transport.register(advertisement(&worker.context, &contracts, worker.surface))?
@@ -956,11 +957,18 @@ fn reconcile_workers(
         let identity_changed = workers
             .get(&account_id)
             .is_some_and(|worker| !worker.same_identity(&context));
-        if identity_changed {
+        let connector_projection_changed = workers.get(&account_id).is_some_and(|worker| {
+            worker.connector_projection_epoch != oauth2::connector_projection_epoch()
+        });
+        if identity_changed || connector_projection_changed {
             stop_worker(
                 workers,
                 &account_id,
-                ClientCapabilityLeaseRevokeReason::StationSwitch,
+                if identity_changed {
+                    ClientCapabilityLeaseRevokeReason::StationSwitch
+                } else {
+                    ClientCapabilityLeaseRevokeReason::AdminPolicy
+                },
             );
             enrollment_backoff.remove(&account_id);
         }
@@ -1095,31 +1103,52 @@ fn advertisement(
     }
 }
 
-fn local_contracts(surface: ClientSurface) -> Vec<CapabilityContract> {
-    if surface == ClientSurface::Browser {
-        return Vec::new();
+fn local_contracts(
+    surface: ClientSurface,
+    actor_ptid: &str,
+) -> Result<Vec<CapabilityContract>, String> {
+    let mut contracts = Vec::new();
+    if surface == ClientSurface::Desktop {
+        contracts.extend(
+            [
+                "filesystem.read",
+                "filesystem.list",
+                "clipboard.read",
+                "clipboard.write",
+                "shell.execute",
+                "mcp.invoke",
+            ]
+            .into_iter()
+            .map(|capability_id| CapabilityContract {
+                capability_id: capability_id.to_string(),
+                schema_version: if capability_id == "mcp.invoke" {
+                    "2".to_string()
+                } else {
+                    "1".to_string()
+                },
+                max_argument_bytes: MAX_ARGUMENT_BYTES,
+                max_result_bytes: MAX_RESULT_BYTES as usize,
+                supports_external_idempotency: false,
+            }),
+        );
     }
-    [
-        "filesystem.read",
-        "filesystem.list",
-        "clipboard.read",
-        "clipboard.write",
-        "shell.execute",
-        "mcp.invoke",
-    ]
-    .into_iter()
-    .map(|capability_id| CapabilityContract {
-        capability_id: capability_id.to_string(),
-        schema_version: if capability_id == "mcp.invoke" {
-            "2".to_string()
-        } else {
-            "1".to_string()
-        },
-        max_argument_bytes: MAX_ARGUMENT_BYTES,
-        max_result_bytes: MAX_RESULT_BYTES as usize,
-        supports_external_idempotency: false,
-    })
-    .collect()
+    contracts.extend(
+        oauth2::connector_capability_contracts(actor_ptid)?
+            .into_iter()
+            .map(|(capability_id, schema_version)| CapabilityContract {
+                capability_id,
+                schema_version,
+                max_argument_bytes: MAX_ARGUMENT_BYTES,
+                max_result_bytes: MAX_RESULT_BYTES as usize,
+                supports_external_idempotency: false,
+            }),
+    );
+    contracts.sort_by(|left, right| {
+        left.capability_id
+            .cmp(&right.capability_id)
+            .then_with(|| left.schema_version.cmp(&right.schema_version))
+    });
+    Ok(contracts)
 }
 
 fn resource_kinds(capability_id: &str) -> Vec<String> {
@@ -1341,7 +1370,7 @@ mod tests {
 
     #[test]
     fn local_capability_advertisement_has_no_unimplemented_replay_claim() {
-        let contracts = local_contracts(ClientSurface::Desktop);
+        let contracts = local_contracts(ClientSurface::Desktop, "ptid:person:test").unwrap();
         assert!(contracts
             .iter()
             .all(|contract| !contract.supports_external_idempotency));
@@ -1349,8 +1378,8 @@ mod tests {
     }
 
     #[test]
-    fn browser_surface_advertises_no_desktop_execution_capabilities() {
-        let contracts = local_contracts(ClientSurface::Browser);
+    fn browser_surface_advertises_only_connector_capabilities() {
+        let contracts = local_contracts(ClientSurface::Browser, "ptid:person:test").unwrap();
         assert!(contracts.is_empty());
         assert_eq!(ClientSurface::Browser.platform(), ClientPlatform::Browser);
         assert_eq!(ClientSurface::Browser.connection_prefix(), "browser");

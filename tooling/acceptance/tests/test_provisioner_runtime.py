@@ -1370,6 +1370,86 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-mcp-", cleanup[0])
 
+    def test_agent_v2_connector_provisions_profile_two_single_native_client(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            deployment_environment="station-2",
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._two_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="sha256:j05-development-diff",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_V2_CONNECTOR_NATIVE_WEBDRIVER_PORT": "28445",
+            },
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "agent-v2-connector-invocation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.profile_resolved, "two")
+        self.assertEqual(manifest.services, {"station": attestation})
+        self.assertEqual(len(manifest.clients), 1)
+        native = manifest.clients[0]
+        self.assertEqual(native.runtime, "native-tauri")
+        self.assertEqual(native.actor, "bob")
+        self.assertEqual(native.profile, "agent-v2-connector-native")
+        self.assertEqual(native.webdriver_port, 28445)
+        self.assertIn("pt-agent-v2-connector-", native.storage_root)
+        self.assertEqual(
+            manifest.credential_refs,
+            ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+        )
+        profile_lease.assert_called_once_with(
+            "station-2",
+            (
+                "acceptance:agent-v2-connector-invocation-e2e:"
+                f"{manifest.run_id}"
+            ),
+        )
+        source_lease.assert_called_once_with(
+            "station-2",
+            (
+                "acceptance:agent-v2-connector-invocation-e2e:"
+                f"{manifest.run_id}"
+            ),
+        )
+        cleanup = provisioner.cleanup()
+        self.assertEqual(len(cleanup), 1)
+        self.assertIn("pt-agent-v2-connector-", cleanup[0])
+
     def test_agent_v2_binding_rejects_non_two_profile(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"

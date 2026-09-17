@@ -4,7 +4,7 @@
 > **Branch**: feat/p0-streaming-runtime-message-actions
 > **Workspace ID**: 65e7b6da4dc9be85
 > **Initial HEAD**: dcf0813ea23d73256cf21173d75516b6c36f68b4
-> **Expected HEAD**: 25a7983a93a0d681dcb9867d892f430dd6d24e16
+> **Expected HEAD**: 8923dd7331a263fe1dc69b921d14a386ae13d596
 > **Worktree-set Digest**: 35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb
 
 ## Plan Package
@@ -19,7 +19,7 @@
     "branch": "feat/p0-streaming-runtime-message-actions",
     "workspaceId": "65e7b6da4dc9be85",
     "initialHead": "dcf0813ea23d73256cf21173d75516b6c36f68b4",
-    "expectedHead": "25a7983a93a0d681dcb9867d892f430dd6d24e16",
+    "expectedHead": "8923dd7331a263fe1dc69b921d14a386ae13d596",
     "worktreeSetDigest": "35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb"
   },
   "workClass": "product-behavior",
@@ -108,9 +108,7 @@
       "id": "MCA-J03",
       "workstreamId": "MCA-J03",
       "path": "tasks/MCA-J03.md",
-      "dependsOn": [
-        "MCA-J02"
-      ],
+      "dependsOn": ["MCA-J02"],
       "status": "done",
       "blocker": null
     },
@@ -118,29 +116,27 @@
       "id": "MCA-J04",
       "workstreamId": "MCA-J04",
       "path": "tasks/MCA-J04.md",
-      "dependsOn": [
-        "MCA-J03"
-      ],
-      "status": "in_progress",
-      "blocker": null
+      "dependsOn": ["MCA-J03"],
+      "status": "blocked",
+      "blocker": {
+        "code": "PROFILE_UNAVAILABLE",
+        "owner": "local-dev-control-plane",
+        "evidenceRef": "/Users/bytedance/Documents/Projects/peers-touch/env/peers-touch/two/profile.env.example"
+      }
     },
     {
       "id": "MCA-J05",
       "workstreamId": "MCA-J05",
       "path": "tasks/MCA-J05.md",
-      "dependsOn": [
-        "MCA-J03"
-      ],
-      "status": "pending",
+      "dependsOn": ["MCA-J03"],
+      "status": "in_progress",
       "blocker": null
     },
     {
       "id": "MCA-J06",
       "workstreamId": "MCA-J06",
       "path": "tasks/MCA-J06.md",
-      "dependsOn": [
-        "MCA-J02"
-      ],
+      "dependsOn": ["MCA-J02"],
       "status": "pending",
       "blocker": null
     },
@@ -148,9 +144,7 @@
       "id": "MCA-X3",
       "workstreamId": "MCA-X3",
       "path": "tasks/MCA-X3.md",
-      "dependsOn": [
-        "MCA-J02"
-      ],
+      "dependsOn": ["MCA-J02"],
       "status": "pending",
       "blocker": null
     },
@@ -216,6 +210,7 @@
       "agent-v2-capability-binding-e2e",
       "agent-v2-governed-tool-loop-e2e",
       "agent-v2-mcp-lifecycle-e2e",
+      "agent-native-connector-lifecycle-e2e",
       "agent-v2-connector-invocation-e2e",
       "agent-v2-evaluation-lab-e2e",
       "agent-marketplace-catalog-e2e"
@@ -230,6 +225,7 @@
     "agent-v2-capability-binding-e2e",
     "agent-v2-governed-tool-loop-e2e",
     "agent-v2-mcp-lifecycle-e2e",
+    "agent-native-connector-lifecycle-e2e",
     "agent-v2-connector-invocation-e2e",
     "agent-v2-evaluation-lab-e2e",
     "agent-marketplace-catalog-e2e"
@@ -243,6 +239,7 @@
     "agent-v2-capability-binding-e2e",
     "agent-v2-governed-tool-loop-e2e",
     "agent-v2-mcp-lifecycle-e2e",
+    "agent-native-connector-lifecycle-e2e",
     "agent-v2-connector-invocation-e2e",
     "agent-v2-evaluation-lab-e2e",
     "agent-marketplace-catalog-e2e"

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -784,6 +785,16 @@ func toolProposalMatchesRecord(
 	resourceRefs, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		&model.ClientCapabilityRequest{ResourceRefs: proposed.ResourceRefs},
 	)
+	argumentsMatch := record.ArgumentsHash == hashBytes(proposed.Arguments) &&
+		string(record.BoundedArguments) == string(proposed.Arguments)
+	if isConnectorResourceToolName(proposed.ToolName) {
+		argumentsMatch = connectorProposalMatchesPinned(
+			proposed.Arguments,
+			record.BoundedArguments,
+			record.CapabilityID,
+			record.ManifestVersion,
+		)
+	}
 	return err == nil &&
 		record.ActorID == proposal.ActorID &&
 		record.TurnID == proposal.TurnID &&
@@ -797,9 +808,58 @@ func toolProposalMatchesRecord(
 		record.BindingRevision == proposed.BindingRevision &&
 		record.ReadinessSnapID == proposal.ReadinessSnapshotID &&
 		record.ExecutionOwner == toolExecutionOwnerStorageValue(proposed.ExecutionOwner) &&
-		record.ArgumentsHash == hashBytes(proposed.Arguments) &&
-		string(record.BoundedArguments) == string(proposed.Arguments) &&
+		argumentsMatch &&
 		string(record.ResourceRefs) == string(resourceRefs)
+}
+
+func connectorProposalMatchesPinned(
+	proposed []byte,
+	pinned []byte,
+	capabilityID string,
+	capabilityVersion string,
+) bool {
+	var proposedObject map[string]json.RawMessage
+	if err := json.Unmarshal(proposed, &proposedObject); err != nil {
+		return false
+	}
+	for key := range proposedObject {
+		if key != "params" {
+			return false
+		}
+	}
+	var pinnedObject map[string]json.RawMessage
+	if err := json.Unmarshal(pinned, &pinnedObject); err != nil {
+		return false
+	}
+	var pinnedCapabilityID string
+	var pinnedCapabilityVersion string
+	if err := json.Unmarshal(pinnedObject["capability_id"], &pinnedCapabilityID); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(
+		pinnedObject["capability_version"],
+		&pinnedCapabilityVersion,
+	); err != nil {
+		return false
+	}
+	if pinnedCapabilityID != capabilityID ||
+		pinnedCapabilityVersion != capabilityVersion {
+		return false
+	}
+	proposedParams := proposedObject["params"]
+	if len(proposedParams) == 0 {
+		proposedParams = json.RawMessage(`{}`)
+	}
+	pinnedParams := pinnedObject["params"]
+	return jsonSemanticEqual(proposedParams, pinnedParams)
+}
+
+func jsonSemanticEqual(left []byte, right []byte) bool {
+	var leftValue interface{}
+	var rightValue interface{}
+	return json.Unmarshal(left, &leftValue) == nil &&
+		json.Unmarshal(right, &rightValue) == nil &&
+		reflect.DeepEqual(leftValue, rightValue)
 }
 
 func proposalDecisionFromRecord(record *persistence.ToolCall) ProposalDecision {
@@ -964,6 +1024,26 @@ func (s *ToolDispatchService) SubmitDecision(
 		}
 		if request.GetApproved() &&
 			call.ExecutionOwner == persistence.ToolOwnerClientCapability {
+			connectorError, err := connectorApprovalAvailabilityTx(tx, &call, now)
+			if err != nil {
+				return err
+			}
+			if connectorError != nil {
+				response = decisionRejection(
+					request,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_CONNECTOR_UNAVAILABLE,
+				)
+				response.OutcomeError = connectorError
+				return persistDecisionAcknowledgementTx(
+					tx,
+					actorID,
+					request,
+					response,
+					canonicalHash,
+					call.DecisionRevision,
+					now,
+				)
+			}
 			available, err := clientExecutorAvailableTx(tx, &call, now)
 			if err != nil {
 				return err
@@ -2114,6 +2194,10 @@ func (s *ToolDispatchService) proposeCallTx(
 	}
 	risk := authorization.Risk
 	policy := authorization.Policy
+	boundedArguments := authorization.BoundedArguments
+	if boundedArguments == nil {
+		boundedArguments = call.Arguments
+	}
 	status := persistence.ToolCallStatusApproved
 	approved := true
 	reason := "auto_approved_low_risk"
@@ -2145,10 +2229,10 @@ func (s *ToolDispatchService) proposeCallTx(
 		ToolCallID:        call.ToolCallID,
 		CapabilityID:      call.CapabilityID,
 		SchemaVersion:     call.SchemaVersion,
-		BoundedArguments:  append([]byte(nil), call.Arguments...),
+		BoundedArguments:  append([]byte(nil), boundedArguments...),
 		ResourceRefs:      resourceRefs,
-		ArgumentsHash:     hashBytes(call.Arguments),
-		RedactedArguments: redactArguments(string(call.Arguments)),
+		ArgumentsHash:     hashBytes(boundedArguments),
+		RedactedArguments: redactArguments(string(boundedArguments)),
 		RiskClass:         string(risk),
 		ApprovalPolicy:    string(policy),
 		ManifestID:        authorization.ManifestID,
@@ -2194,7 +2278,7 @@ func (s *ToolDispatchService) proposeCallTx(
 	return ProposalDecision{
 		ToolCallID:       call.ToolCallID,
 		ToolName:         call.ToolName,
-		Arguments:        string(call.Arguments),
+		Arguments:        string(boundedArguments),
 		ApprovalID:       approvalID,
 		DecisionRevision: row.DecisionRevision,
 		ExpiresAt:        deadline,
@@ -2214,6 +2298,7 @@ type toolCapabilityAuthorization struct {
 	ExecutionOwner      model.ToolExecutionOwner
 	Risk                ToolRiskLevel
 	Policy              ToolPolicy
+	BoundedArguments    []byte
 }
 
 func resolveToolCapabilityAuthorizationTx(
@@ -2281,6 +2366,23 @@ func resolveToolCapabilityAuthorizationTx(
 	if executionOwner == model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED ||
 		executionOwner != call.ExecutionOwner {
 		return nil, invalidToolState("capability execution owner is stale or invalid")
+	}
+	boundedArguments := append([]byte(nil), call.Arguments...)
+	if model.CapabilitySourceKind(manifest.SourceKind) ==
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR {
+		var pinErr error
+		boundedArguments, _, pinErr = pinConnectorInvocationTx(
+			tx,
+			proposal.ActorID,
+			call.ToolName,
+			call.CapabilityID,
+			call.SchemaVersion,
+			call.Arguments,
+			now,
+		)
+		if pinErr != nil {
+			return nil, pinErr
+		}
 	}
 
 	var snapshotRecord persistence.CapabilityReadinessSnapshot
@@ -2350,6 +2452,7 @@ func resolveToolCapabilityAuthorizationTx(
 		ExecutionOwner:      executionOwner,
 		Risk:                ToolRiskLevel(manifest.RiskClass),
 		Policy:              policy,
+		BoundedArguments:    boundedArguments,
 	}, nil
 }
 

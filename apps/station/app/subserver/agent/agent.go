@@ -328,6 +328,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		capabilityAuthoritySvc,
 		capabilityReadinessSvc,
 	)
+	connectorManifestHandlers := handler.NewConnectorManifestHandlers(
+		service.NewConnectorManifestService(s.agentDB, capabilityAuthoritySvc),
+	)
 	operationSvc := service.NewCapabilityOperationService(s.agentDB)
 	operationSvc.SetCapabilityProofService(proofSvc)
 	operationHandlers := handler.NewCapabilityOperationHandlers(operationSvc)
@@ -401,6 +404,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-capability-binding-list", "/agent/capability/binding/list", server.POST, capabilityAuthorityHandlers.HandleListBindings, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-upsert", "/agent/capability/binding/upsert", server.POST, capabilityAuthorityHandlers.HandleUpsertBinding, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-delete", "/agent/capability/binding/delete", server.POST, capabilityAuthorityHandlers.HandleDeleteBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-connector-manifest-sync", "/agent/connector/manifest/sync", server.POST, connectorManifestHandlers.HandleSync, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-connector-manifest-list", "/agent/connector/manifest/list", server.POST, connectorManifestHandlers.HandleList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-create", "/agent/knowledge/descriptor/create", server.POST, knowledgeDescriptorHandlers.HandleCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-update", "/agent/knowledge/descriptor/update", server.POST, knowledgeDescriptorHandlers.HandleUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-list", "/agent/knowledge/descriptor/list", server.POST, knowledgeDescriptorHandlers.HandleList, logIDWrapper, jwtWrapper),

@@ -354,6 +354,7 @@ export function reduceToolProjection(
   if (event.event === 'tool_result') {
     if (!current) return state;
     const error = stringValue(data, 'error', 'errorCode', 'error_code');
+    const localizedError = connectorErrorLocaleKey(error) || error;
     const result = stringValue(data, 'content', 'result');
     const delegationResults = current.toolName === 'delegate_task'
       ? parseDelegationResults(result)
@@ -362,10 +363,10 @@ export function reduceToolProjection(
       ...state,
       [toolCallId]: {
         ...current,
-        status: error ? 'error' : 'success',
+        status: localizedError ? 'error' : 'success',
         pending: false,
         result,
-        error: error || undefined,
+        error: localizedError || undefined,
         delegationResults: delegationResults.length > 0
           ? delegationResults
           : current.delegationResults,
@@ -518,7 +519,20 @@ function diagnosticToolError(
   if (fact.status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT) {
     return 'agent.errors.toolUnknownSideEffect';
   }
-  return fact.errorCode || source.error;
+  return connectorErrorLocaleKey(fact.errorCode) || fact.errorCode || source.error;
+}
+
+function connectorErrorLocaleKey(errorCode: string): string | undefined {
+  const localeKeys: Record<string, string> = {
+    CONNECTOR_OAUTH_EXPIRED: 'agent.errors.connectorOAuthExpired',
+    CONNECTOR_SCOPE_DENIED: 'agent.errors.connectorScopeDenied',
+    CONNECTOR_RESOURCE_REMOVED: 'agent.errors.connectorResourceRemoved',
+    CONNECTOR_MANIFEST_STALE: 'agent.errors.connectorManifestStale',
+    CONNECTOR_DISCONNECTED: 'agent.errors.connectorDisconnected',
+    CONNECTOR_PROVIDER_REVOKED: 'agent.errors.connectorProviderRevoked',
+    CONNECTOR_REVOCATION_UNCONFIRMED: 'agent.errors.connectorRevocationUnconfirmed',
+  };
+  return localeKeys[errorCode];
 }
 
 function sameToolProjection(

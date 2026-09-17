@@ -11,6 +11,8 @@ const BINDING_LIST_PATH: &str = "/sub-agent/agent/capability/binding/list";
 const BINDING_UPSERT_PATH: &str = "/sub-agent/agent/capability/binding/upsert";
 const BINDING_DELETE_PATH: &str = "/sub-agent/agent/capability/binding/delete";
 const READINESS_PATH: &str = "/sub-agent/agent/capability/readiness";
+const CONNECTOR_MANIFEST_SYNC_PATH: &str = "/sub-agent/agent/connector/manifest/sync";
+const CONNECTOR_MANIFEST_LIST_PATH: &str = "/sub-agent/agent/connector/manifest/list";
 const OPERATION_CANCEL_PATH: &str = "/sub-agent/agent/capability/operation/cancel";
 const OPERATION_GET_PATH: &str = "/sub-agent/agent/capability/operation/get";
 const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
@@ -160,6 +162,51 @@ pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<
         token,
         "agent.capabilityReadinessFailed",
     )
+}
+
+pub fn list_connector_manifests(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ListConnectorResourceManifestsRequest,
+        agent::ListConnectorResourceManifestsResponse,
+    >(
+        CONNECTOR_MANIFEST_LIST_PATH,
+        input,
+        token,
+        "agent.connectorManifestListFailed",
+        "agent.connectorManifestRequestInvalid",
+    )
+}
+
+pub(crate) fn sync_connector_manifest_records(
+    request: &agent::SyncConnectorResourceManifestsRequest,
+    token: &str,
+) -> Result<agent::SyncConnectorResourceManifestsResponse, station_client::StationClientError> {
+    station_client::request_proto(
+        Method::POST,
+        CONNECTOR_MANIFEST_SYNC_PATH,
+        token,
+        None,
+        Some(request),
+    )
+}
+
+pub(crate) fn list_connector_manifest_records(
+    connector_id: &str,
+    token: &str,
+) -> Result<Vec<agent::ConnectorResourceManifest>, station_client::StationClientError> {
+    station_client::request_proto::<
+        agent::ListConnectorResourceManifestsRequest,
+        agent::ListConnectorResourceManifestsResponse,
+    >(
+        Method::POST,
+        CONNECTOR_MANIFEST_LIST_PATH,
+        token,
+        None,
+        Some(&agent::ListConnectorResourceManifestsRequest {
+            connector_id: connector_id.trim().to_string(),
+        }),
+    )
+    .map(|response| response.manifests)
 }
 
 pub fn cancel_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {

@@ -94,6 +94,8 @@ import type {
   CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
   CapabilitySourceKind,
   CreateKnowledgeResourceDescriptorRequest,
+  ConnectorResourceManifest,
+  ListConnectorResourceManifestsRequest,
   ListKnowledgeResourceDescriptorsRequest,
   StartCapabilityOperationResponse,
   TakeOverCapabilityCleanupRequest,
@@ -118,11 +120,14 @@ import {
   ImportAgentPackageResponseSchema,
   ListAgentCapabilityBindingsResponseSchema,
   ListCapabilityManifestsResponseSchema,
+  ListConnectorResourceManifestsRequestSchema,
+  ListConnectorResourceManifestsResponseSchema,
   ListKnowledgeResourceDescriptorsRequestSchema,
   ListKnowledgeResourceDescriptorsResponseSchema,
   ReconcileCapabilityOperationRequestSchema,
   ReconcileCapabilityOperationResponseSchema,
   StartCapabilityOperationResponseSchema,
+  SyncConnectorResourceManifestsResponseSchema,
   TakeOverCapabilityCleanupRequestSchema,
   TakeOverCapabilityCleanupResponseSchema,
   TakeOverCapabilityOperationRequestSchema,
@@ -2083,6 +2088,9 @@ export interface OAuth2ProviderDetail {
 }
 
 export interface OAuth2Connection {
+  connection_id: string;
+  revision: number;
+  projected_revision: number;
   provider_id: string;
   provider_name: string;
   user_id: string;
@@ -2093,7 +2101,16 @@ export interface OAuth2Connection {
   connected_at: string;
   expires_at?: string;
   scopes: string[];
-  status: 'active' | 'expired' | 'error';
+  status: 'active' | 'expired' | 'disconnected' | 'revoked' | 'revocation_unconfirmed' | 'error';
+}
+
+export interface OAuthDisconnectResult {
+  status: 'revoked' | 'revocation_unconfirmed';
+  provider_revoke: {
+    status: 'revoked' | 'unconfirmed';
+    error_code: string;
+    idempotency_key: string;
+  };
 }
 
 export interface SimulateLoginStart {
@@ -4194,6 +4211,7 @@ export interface OAuthCallbackInput {
   avatar_url?: string;
   profile_url?: string;
   expires_at?: string;
+  scopes?: string[];
 }
 
 export interface AccountUpsertOAuthInput {
@@ -5921,6 +5939,21 @@ export const api = {
       { sourceKinds: [...sourceKinds] },
     ).then((response) => response.manifests),
 
+  syncOAuthConnectorManifests: () =>
+    invokeRustProto(
+      'oauth2_sync_connector_manifests',
+      SyncConnectorResourceManifestsResponseSchema,
+    ),
+
+  listConnectorResourceManifests: (
+    request: ListConnectorResourceManifestsRequest,
+  ): Promise<ConnectorResourceManifest[]> => invokeRustProtoRequest(
+    'agent_connector_manifest_list',
+    ListConnectorResourceManifestsRequestSchema,
+    ListConnectorResourceManifestsResponseSchema,
+    request,
+  ).then((response) => response.manifests),
+
   listAgentCapabilityBindings: (agentId: string) =>
     invokeRustProto(
       'agent_capability_binding_list',
@@ -6496,7 +6529,10 @@ export const api = {
     invokeRustDataFromStatus<OAuthIdInput, OAuth2Connection>('oauth2_get_connection', { id }),
 
   oauth2Disconnect: (id: string) =>
-    invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_disconnect', { id }),
+    invokeRustDataFromStatus<OAuthIdInput, OAuthDisconnectResult>(
+      'oauth2_disconnect',
+      { id },
+    ),
 
   oauth2RefreshToken: (id: string) =>
     invokeRustDataFromStatus<OAuthIdInput, { status: string }>('oauth2_refresh_token', { id }),
