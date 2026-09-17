@@ -59,8 +59,18 @@
     "Do not copy LobeHub hosted commercial marketplace or Community behavior",
     "Do not accept source-provided trust labels without verification"
   ],
-  "updatedAt": "2026-09-17T13:29:06Z",
+  "updatedAt": "2026-09-17T14:36:30Z",
   "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:d3c8e7c5e799481c066ccee8a3e656fecb566fc4;tree:e7223c766cc97d0eb7959274245b8f9999411afb;station-agent:pass;catalog-generator:pass;proto:7/7;rust:20-pass;python:14-pass;typescript:pass;eslint:pass;station-api-ownership:pass;agent-contracts:39-valid;dev-control-plane:75-pass"
+    },
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:6a756ebd6d0a12d8a42b5fdceedcd71b949df426;tree:1033eb909e3f9b1bbfad9d60a45127840642de1a;station-agent:pass;catalog-generator:pass;proto:7/7;rust:20-pass;python:14-pass;typescript:pass;eslint:pass;station-api-ownership:pass;agent-contracts:39-valid"
+    },
     {
       "verificationClass": "SOURCE_CHECK",
       "result": "PASS",
@@ -97,8 +107,9 @@ the product into a hosted commercial marketplace.
 - Focused X3 checks pass. The broader Desktop wrapper remains red only on 12
   pre-existing Mobile social-runtime-boundary violations outside this Task
   write set.
-- Source checkpoint:
-  `e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d`.
+- Source checkpoint: `d3c8e7c5e799481c066ccee8a3e656fecb566fc4`.
+- The integrated PR source also passes all 75 Dev Control Plane and Windows
+  lock contract tests.
 - The exact-source native Journey is `BLOCKED/UNPROVEN`: Profile `two` cannot
   authorize deployment while its canonical env definition is dirty.
 - The X3 Journey now carries a transparent four-step Station proxy contract:

@@ -270,7 +270,7 @@
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate dev-runtime multi-instance isolation: per-worktree port offsets, PID files, bundle IDs, and proto ownership without launching processes."
+      "description": "Validate dev-runtime multi-instance isolation: machine-registry slots, OS-held leases, reviewed profile resolution, PID files, bundle IDs, and proto ownership without launching processes."
     },
     "desktop-dev-runtime-multi-instance": {
       "command": "python3 tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",
