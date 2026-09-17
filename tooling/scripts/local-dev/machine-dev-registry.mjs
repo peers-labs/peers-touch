@@ -202,14 +202,14 @@ function gitValue(root, args, field, code = 'WORKTREE_IDENTITY_UNAVAILABLE') {
 export function captureWorkspace(workspaceRoot = repoRoot) {
   let canonicalRoot;
   try {
-    canonicalRoot = realpathSync(workspaceRoot);
+    canonicalRoot = realpathSync.native(workspaceRoot);
   } catch (error) {
     fail('WORKTREE_IDENTITY_UNAVAILABLE', 'workspace root is unavailable', {
       root: workspaceRoot,
       cause: String(error),
     });
   }
-  const gitRoot = realpathSync(
+  const gitRoot = realpathSync.native(
     gitValue(canonicalRoot, ['rev-parse', '--show-toplevel'], 'Git worktree root'),
   );
   if (gitRoot !== canonicalRoot) {
