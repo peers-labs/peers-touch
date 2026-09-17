@@ -55,12 +55,17 @@
     "Do not keep client-only terminal operation truth",
     "Unknown side effects block automatic repeat and cleanup failure remains visible"
   ],
-  "updatedAt": "2026-09-17T05:28:37Z",
+  "updatedAt": "2026-09-17T21:29:37Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
       "result": "PASS",
       "ref": "apps/desktop:tsc-pass;apps/desktop:vitest:31-pass;apps/desktop:rust-mcp-operation-tests-pass;apps/station:capability-operation-tests-pass;tooling/acceptance:j04-and-provisioner-tests-13-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:2294b920e4bbbce6de75a7b503a2d338b1f57db1;profile:two;station:station-two;runtime:native-tauri;artifact:/Users/bytedance/.peers-touch/dev/workspaces/a534541b87e49abf/workflow/MCA-V2-ALIGNMENT-J04/artifacts/20260917T212729015496Z/result.json"
     }
   ]
 }
@@ -83,4 +88,6 @@ lineage, Agent binding, and real ToolCall continuation.
   and process/port/secret cleanup assertions.
 - Focused source verification passes across Desktop Rust/TypeScript, Station
   Go, MCP store/runtime Vitest, and Development runner/provisioner tests.
-- The post-checkpoint exact-source Native Journey remains pending.
+- Exact-source Profile `two` Native verification passes at
+  `2294b920e4bbbce6de75a7b503a2d338b1f57db1`, with Station running the same
+  commit and clean process, port, provider bridge, fixture, and client cleanup.
