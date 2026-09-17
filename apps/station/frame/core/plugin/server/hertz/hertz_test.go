@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/route/param"
 )
 
 func TestRequestLogPathUsesMatchedRouteTemplate(t *testing.T) {
@@ -102,6 +103,34 @@ func TestRequestHeaderExposesContentLength(t *testing.T) {
 
 	if got := request.Header()["Content-Length"]; got != "4" {
 		t.Fatalf("content length = %q, want 4", got)
+	}
+}
+
+func TestHertzRequestVariantsExposeRouteParams(t *testing.T) {
+	ctx := &app.RequestContext{
+		Params: param.Params{
+			{Key: "federation_id", Value: "federation-1"},
+		},
+	}
+	requests := map[string]interface {
+		GetHertzContext() interface{}
+	}{
+		"direct":       &hertzRequest{ctx: ctx},
+		"with-context": &hertzRequestWithContext{ctx: ctx},
+	}
+
+	for name, request := range requests {
+		t.Run(name, func(t *testing.T) {
+			native, ok := request.GetHertzContext().(interface {
+				Param(string) string
+			})
+			if !ok {
+				t.Fatal("native request context does not expose route parameters")
+			}
+			if got := native.Param("federation_id"); got != "federation-1" {
+				t.Fatalf("federation_id = %q, want federation-1", got)
+			}
+		})
 	}
 }
 

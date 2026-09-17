@@ -370,6 +370,11 @@ func (r *hertzRequest) BodyStream() io.Reader {
 	return bytes.NewReader(r.ctx.Request.Body())
 }
 
+// GetHertzContext returns the underlying Hertz RequestContext.
+func (r *hertzRequest) GetHertzContext() interface{} {
+	return r.ctx
+}
+
 // hertzRequestWithContext adapts Hertz RequestContext to server.Request
 // and implements hertzContextGetter to provide access to the underlying Hertz context
 type hertzRequestWithContext struct {
