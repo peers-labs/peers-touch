@@ -22,11 +22,13 @@ package persistence
 // 2026-08-14 — Added EcosystemAgentGroup, EcosystemTopicComment, EcosystemCustomPlugin for M11 localStorage→Station migration.
 // 2026-08-16 — Added AgentThread for R11 durable conversation Thread (sub-conversation) support.
 // 2026-08-16 — Added AgentTask for O3 user-created single-agent task lifecycle (localStorage→Station).
+// 2026-09-17 — Added AgentPackageImportReceipt for atomic package import replay.
 // 2026-09-17 — Added the Station-owned Evaluation aggregate and removed the
 // legacy ecosystem evaluation dataset authority.
 func AllModels() []interface{} {
 	return []interface{}{
 		&Agent{},
+		&AgentPackageImportReceipt{},
 		&CapabilityManifest{},
 		&CapabilityManifestCommand{},
 		&AgentCapabilityBinding{},

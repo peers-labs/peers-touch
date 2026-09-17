@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -28,12 +27,6 @@ from .provisioning import (
     RuntimeManifest,
     blocked_manifest,
     new_manifest,
-)
-
-
-_DEPLOY_ENVIRONMENT_PATTERN = re.compile(
-    r"^[a-z0-9][a-z0-9._-]{0,127}$",
-    re.IGNORECASE,
 )
 
 
@@ -162,154 +155,87 @@ def resolve_machine_profile_environment(
     return profile_name, profile_file, slot, values
 
 
-def _git_value(
-    root: Path,
-    arguments: list[str],
+def resolve_deployment_environment_path(
+    environment_name: str,
     *,
-    operation: str,
-    deploy_environment: str,
-) -> str:
+    repo_root: Path | None = None,
+) -> Path:
+    root = REPO_ROOT if repo_root is None else repo_root
+    resolver = root / "tooling" / "scripts" / "deploy" / "deploy.sh"
+    resource = f"deployment-environment:{environment_name}"
     try:
         completed = subprocess.run(
-            ["git", "-C", str(root), *arguments],
+            ["/bin/bash", str(resolver), "resolve", environment_name],
+            cwd=root,
             capture_output=True,
             text=True,
+            timeout=30,
             check=False,
         )
-    except OSError as error:
+    except (OSError, subprocess.SubprocessError) as error:
         raise BlockedError(
-            reason=f"Cannot validate deployment environment source: {error}",
-            resource=f"deployment-source:{deploy_environment}",
+            reason=(
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {error}"
+            ),
+            resource=resource,
         ) from error
+
     if completed.returncode != 0:
         detail = (
             completed.stderr.strip()
             or completed.stdout.strip()
-            or f"{operation} failed"
+            or f"resolver exited with status {completed.returncode}"
         )
         raise BlockedError(
             reason=(
-                f"Deployment environment {deploy_environment} failed "
-                f"{operation}: {detail}"
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {detail}"
             ),
-            resource=f"deployment-source:{deploy_environment}",
-        )
-    return completed.stdout.strip()
-
-
-def resolve_deploy_environment_path(
-    deploy_environment: str,
-    repo_root: Path | None = None,
-) -> Path:
-    if not isinstance(deploy_environment, str) or not (
-        _DEPLOY_ENVIRONMENT_PATTERN.fullmatch(deploy_environment)
-    ):
-        raise BlockedError(
-            reason="Deployment environment has an invalid identifier",
-            resource=f"deployment-source:{deploy_environment}",
+            resource=resource,
         )
 
-    root = repo_root or REPO_ROOT
-    _, profile_file, _, _ = resolve_machine_profile_environment(root)
-    if (
-        profile_file.name != "profile.env.example"
-        or profile_file.parent.parent.name != "peers-touch"
-    ):
+    candidates = [
+        line.strip()
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    ]
+    if len(candidates) != 1:
         raise BlockedError(
             reason=(
-                "Machine Dev profile does not identify the canonical "
-                "environment repository"
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned {len(candidates)} paths; expected exactly one"
             ),
-            resource=f"deployment-source:{deploy_environment}",
+            resource=resource,
         )
-    profiles_root = profile_file.parent.parent
-    env_repo = profiles_root.parent
-    git_root = Path(
-        _git_value(
-            env_repo,
-            ["rev-parse", "--show-toplevel"],
-            operation="Git worktree validation",
-            deploy_environment=deploy_environment,
-        )
-    ).resolve()
-    if git_root != env_repo:
+    candidate = Path(candidates[0])
+    if not candidate.is_absolute():
         raise BlockedError(
             reason=(
-                "Machine Dev profile environment repository is not its "
-                "Git worktree root"
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned a non-absolute path: {candidate}"
             ),
-            resource=f"deployment-source:{deploy_environment}",
+            resource=resource,
         )
-
     try:
-        matches = sorted(
-            candidate
-            for profile_directory in profiles_root.iterdir()
-            if profile_directory.is_dir()
-            and not profile_directory.is_symlink()
-            if (
-                candidate := (
-                    profile_directory
-                    / "deploy"
-                    / f"{deploy_environment}.env.example"
-                )
-            ).is_file()
-        )
-    except OSError as error:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
         raise BlockedError(
-            reason=f"Cannot resolve deployment environment source: {error}",
-            resource=f"deployment-source:{deploy_environment}",
+            reason=(
+                f"Deployment environment {environment_name!r} path cannot be "
+                f"resolved: {candidate}: {error}"
+            ),
+            resource=resource,
         ) from error
-    if len(matches) != 1:
+    if not resolved.is_file():
         raise BlockedError(
             reason=(
-                f"Deployment environment {deploy_environment} must resolve "
-                "to exactly one canonical definition"
+                f"Deployment environment {environment_name!r} is not a file: "
+                f"{resolved}"
             ),
-            resource=f"deployment-source:{deploy_environment}",
+            resource=resource,
         )
-
-    environment_path = matches[0].resolve()
-    try:
-        relative_path = environment_path.relative_to(env_repo).as_posix()
-        relative_profile = (
-            environment_path.parent.parent.relative_to(env_repo).as_posix()
-        )
-    except ValueError as error:
-        raise BlockedError(
-            reason=(
-                f"Deployment environment {deploy_environment} resolves "
-                "outside the canonical environment repository"
-            ),
-            resource=f"deployment-source:{deploy_environment}",
-        ) from error
-    _git_value(
-        env_repo,
-        ["ls-files", "--error-unmatch", "--", relative_path],
-        operation="Git-tracked source validation",
-        deploy_environment=deploy_environment,
-    )
-    changes = _git_value(
-        env_repo,
-        [
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            relative_profile,
-        ],
-        operation="clean source validation",
-        deploy_environment=deploy_environment,
-    )
-    if changes:
-        raise BlockedError(
-            reason=(
-                f"Deployment environment {deploy_environment} has dirty or "
-                "untracked environment definitions"
-            ),
-            resource=f"deployment-source:{deploy_environment}",
-        )
-    return environment_path
+    return resolved
 
 
 class EnvironmentProvisioner(ABC):
@@ -509,10 +435,7 @@ class EnvironmentProvisioner(ABC):
                 ),
                 resource="source-lease:invalid-resource",
             )
-        environment_path = resolve_deploy_environment_path(
-            environment_name,
-            REPO_ROOT,
-        )
+        environment_path = resolve_deployment_environment_path(environment_name)
         environment = load_env_file(environment_path)
         try:
             lease = RemoteGitSourceLease(

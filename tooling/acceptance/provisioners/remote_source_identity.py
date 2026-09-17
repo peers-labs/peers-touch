@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import shlex
 
-from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import PROTOCOL_SOURCE_PATHS
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import (
     load_env_file,
-    resolve_deploy_environment_path,
+    resolve_deployment_environment_path,
 )
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
@@ -17,10 +16,7 @@ from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 def resolve_remote_source_identity(
     deploy_environment: str,
 ) -> tuple[str, str, str]:
-    environment_path = resolve_deploy_environment_path(
-        deploy_environment,
-        REPO_ROOT,
-    )
+    environment_path = resolve_deployment_environment_path(deploy_environment)
     environment = load_env_file(environment_path)
     host = environment.get("PT_DEPLOY_HOST", "")
     user = environment.get("PT_DEPLOY_USER", "")

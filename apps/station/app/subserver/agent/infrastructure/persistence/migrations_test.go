@@ -21,6 +21,22 @@ func (legacyToolReceiptAttempt) TableName() string {
 	return "agent_tool_receipt_attempts"
 }
 
+func TestAllModelsIncludesAgentPackageImportReceipt(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:agent-all-models?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(AllModels()...); err != nil {
+		t.Fatalf("migrate production Agent models: %v", err)
+	}
+	if !db.Migrator().HasTable(&AgentPackageImportReceipt{}) {
+		t.Fatal("production Agent models omit agent_package_import_receipts")
+	}
+}
+
 func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	parsed, err := schema.Parse(
 		&ToolCall{},

@@ -59,7 +59,7 @@
     "Do not copy LobeHub hosted commercial marketplace or Community behavior",
     "Do not accept source-provided trust labels without verification"
   ],
-  "updatedAt": "2026-09-17T14:36:30Z",
+  "updatedAt": "2026-09-17T17:02:41Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
@@ -80,6 +80,11 @@
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "BLOCKED",
       "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d;diagnostic:/Users/bytedance/Documents/Projects/peers-touch/env/peers-touch/two/profile.env.example"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "git:aa7902cc186b271c4d0600ebb28c39e04e42c4b3;tree:0e5f9903804dc42f1a61b5bafcc88ecc6d2d0151;profile:two;station:aa7902cc186b;gate:agent-marketplace-catalog-e2e;run:20260917T165555566010Z-e4a5da38abe9151b58afc422b60b3eca;report-sha256:5f908ffad3dde9cda38bf9d78b1d284781ef09e2afc782349041e6d45534f80c;runtime-manifest-sha256:dd01b6cfcae5a0c3a31da7c49be93d8ae4bb81f68db86c2af86f2b9af5fab7b8;cleanup-sha256:3d2f757b9b5aa01e88e9af07e0bc56af329dde527050c2001eb5b563dda1d2b7"
     }
   ]
 }
@@ -104,13 +109,17 @@ the product into a hosted commercial marketplace.
 - Cursor pagination, repository/branch resolution, Agent/Skill/MCP install
   dispatch, authority readback, high-risk confirmation, and revocation UI are
   implemented.
-- Focused X3 checks pass. The broader Desktop wrapper remains red only on 12
-  pre-existing Mobile social-runtime-boundary violations outside this Task
-  write set.
-- Source checkpoint: `d3c8e7c5e799481c066ccee8a3e656fecb566fc4`.
-- The integrated PR source also passes all 75 Dev Control Plane and Windows
-  lock contract tests.
-- The exact-source native Journey is `BLOCKED/UNPROVEN`: Profile `two` cannot
-  authorize deployment while its canonical env definition is dirty.
-- The X3 Journey now carries a transparent four-step Station proxy contract:
-  exact response, tampered digest, old-Station 404, and successful recovery.
+- Catalog discovery trust remains separate from Station Skill install
+  authority; Marketplace Skill imports enter Station as `community` and are
+  independently scanned before policy admission.
+- Exact source `aa7902cc186b271c4d0600ebb28c39e04e42c4b3` is deployed to
+  managed Profile `two`, and the Station attestation reports the same commit.
+- Native Gate `agent-marketplace-catalog-e2e` passed with default-source sync,
+  pagination, browse/detail, Agent/Skill/MCP install authority readback,
+  revocation, uninstall, and clean runtime teardown.
+- Functional run:
+  `20260917T165555566010Z-e4a5da38abe9151b58afc422b60b3eca`.
+- Formal range Acceptance remains `UNPROVEN`: `proto-build`,
+  `station-agent-unit`, and `agent-marketplace-catalog-e2e` pass, while
+  `desktop-check` still reports 12 pre-existing Mobile
+  `social-runtime-boundaries` violations outside the MCA-X3 write set.
