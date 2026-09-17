@@ -1,5 +1,8 @@
 use super::fenced_executor::{CapabilityContract, ExecutionLease, FencedExecutor};
 use super::local_executor::LocalCapabilityExecutor;
+use super::mcp_operation_executor::McpLifecycleExecutor;
+use super::operation_ledger::OperationLedger;
+use super::operation_worker::CapabilityOperationWorker;
 use super::receipt_ledger::{ReceiptLedger, ToolCallSideEffectCount};
 use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
@@ -9,7 +12,8 @@ use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityConstraints, CapabilityPermissionState, ClientCapability,
     ClientCapabilityAdvertisement, ClientCapabilityLease, ClientCapabilityLeaseRevokeReason,
-    ClientPlatform,
+    ClientPlatform, TakeOverCapabilityCleanupRequest, TakeOverCapabilityCleanupResponse,
+    TakeOverCapabilityOperationRequest, TakeOverCapabilityOperationResponse,
 };
 use crate::state::AppState;
 use serde::Serialize;
@@ -91,6 +95,12 @@ pub struct CapabilityWorkerSnapshot {
     pub local_side_effect_count: u64,
     pub tool_call_side_effect_counts: Vec<ToolCallSideEffectCount>,
     pub expires_at_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapabilityOperationTarget {
+    pub device_id: String,
+    pub capability_session_id: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -257,6 +267,57 @@ impl CapabilityWorkerSupervisor {
             .map_err(|_| "client capability supervisor snapshot lock poisoned".to_string())
     }
 
+    pub fn operation_target(&self, actor_ptid: &str) -> Result<CapabilityOperationTarget, String> {
+        self.snapshot()?
+            .into_iter()
+            .filter(|worker| {
+                worker.actor_ptid == actor_ptid
+                    && worker.platform == ClientPlatform::Desktop as i32
+                    && worker.capability_ids.iter().any(|id| id == "mcp.invoke")
+            })
+            .max_by_key(|worker| worker.expires_at_ms)
+            .map(|worker| CapabilityOperationTarget {
+                device_id: worker.device_id,
+                capability_session_id: worker.capability_session_id,
+            })
+            .ok_or_else(|| "MCP_CLIENT_CAPABILITY_SESSION_UNAVAILABLE".to_string())
+    }
+
+    pub fn take_over_operation(
+        &self,
+        actor_ptid: &str,
+        mut request: TakeOverCapabilityOperationRequest,
+    ) -> Result<TakeOverCapabilityOperationResponse, String> {
+        let target = self.operation_target(actor_ptid)?;
+        request.target_device_id = target.device_id;
+        request.capability_session_id = target.capability_session_id;
+        let context = self.context_for_actor(actor_ptid)?;
+        context.transport()?.take_over_operation(request)
+    }
+
+    pub fn take_over_cleanup(
+        &self,
+        actor_ptid: &str,
+        mut request: TakeOverCapabilityCleanupRequest,
+    ) -> Result<TakeOverCapabilityCleanupResponse, String> {
+        let target = self.operation_target(actor_ptid)?;
+        request.target_device_id = target.device_id;
+        request.capability_session_id = target.capability_session_id;
+        let context = self.context_for_actor(actor_ptid)?;
+        context.transport()?.take_over_cleanup(request)
+    }
+
+    fn context_for_actor(&self, actor_ptid: &str) -> Result<WorkerContext, String> {
+        let session = self
+            .state
+            .sessions
+            .snapshot_all()
+            .into_iter()
+            .find(|session| session.actor.ptid == actor_ptid)
+            .ok_or_else(|| "authenticated actor session is unavailable".to_string())?;
+        worker_context(&self.state, session)
+    }
+
     pub fn emit_negative_control(
         &self,
         control: RequestedCapabilityNegativeControl,
@@ -292,12 +353,27 @@ struct WorkerContext {
     signing_key: ed25519_dalek::SigningKey,
 }
 
+impl WorkerContext {
+    fn transport(&self) -> Result<CapabilityStationTransport<'_>, String> {
+        CapabilityStationTransport::new(
+            &self.station_url,
+            &self.actor_ptid,
+            &self.device_id,
+            &self.token,
+            &self.signing_key_id,
+            &self.signing_key,
+        )
+    }
+}
+
 struct ActiveWorker {
     context: WorkerContext,
     lease: ClientCapabilityLease,
     ledger: Option<ReceiptLedger>,
     resources: Option<ResourceRegistry>,
     executor: Option<LocalCapabilityExecutor>,
+    operation_ledger: Option<OperationLedger>,
+    operation_executor: Option<McpLifecycleExecutor>,
     pull_cursor: u64,
     surface: ClientSurface,
     paused: bool,
@@ -306,14 +382,24 @@ struct ActiveWorker {
 impl ActiveWorker {
     fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
         let contracts = local_contracts(surface);
-        let (executor, ledger, resources) = if surface == ClientSurface::Desktop {
-            let executor = LocalCapabilityExecutor::new(contracts.clone())?;
+        let (executor, ledger, resources, operation_ledger, operation_executor) = if surface
+            == ClientSurface::Desktop
+        {
+            let executor = LocalCapabilityExecutor::new(&context.actor_ptid, contracts.clone())?;
             let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
             let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
+            let operation_ledger = OperationLedger::open(&context.actor_ptid, &context.device_id)?;
+            let operation_executor = McpLifecycleExecutor::new(&context.actor_ptid)?;
             recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
-            (Some(executor), Some(ledger), Some(resources))
+            (
+                Some(executor),
+                Some(ledger),
+                Some(resources),
+                Some(operation_ledger),
+                Some(operation_executor),
+            )
         } else {
-            (None, None, None)
+            (None, None, None, None, None)
         };
         let transport = CapabilityStationTransport::new(
             &context.station_url,
@@ -328,6 +414,8 @@ impl ActiveWorker {
         Ok(Self {
             ledger,
             resources,
+            operation_ledger,
+            operation_executor,
             context,
             lease,
             executor,
@@ -371,6 +459,23 @@ impl ActiveWorker {
             .executor
             .as_ref()
             .ok_or_else(|| "CLIENT_CAPABILITY_EXECUTOR_UNAVAILABLE".to_string())?;
+        let operation_ledger = self
+            .operation_ledger
+            .as_ref()
+            .ok_or_else(|| "CAPABILITY_OPERATION_LEDGER_UNAVAILABLE".to_string())?;
+        let operation_executor = self
+            .operation_executor
+            .as_ref()
+            .ok_or_else(|| "CAPABILITY_OPERATION_EXECUTOR_UNAVAILABLE".to_string())?;
+        CapabilityOperationWorker::new(
+            &self.context.station_url,
+            &self.context.device_id,
+            &self.lease.capability_session_id,
+            operation_ledger,
+            operation_executor,
+            &transport,
+        )
+        .tick_at(now_ms)?;
         let response = transport.pull(
             &self.lease.capability_session_id,
             self.pull_cursor,
@@ -1005,7 +1110,11 @@ fn local_contracts(surface: ClientSurface) -> Vec<CapabilityContract> {
     .into_iter()
     .map(|capability_id| CapabilityContract {
         capability_id: capability_id.to_string(),
-        schema_version: "1".to_string(),
+        schema_version: if capability_id == "mcp.invoke" {
+            "2".to_string()
+        } else {
+            "1".to_string()
+        },
         max_argument_bytes: MAX_ARGUMENT_BYTES,
         max_result_bytes: MAX_RESULT_BYTES as usize,
         supports_external_idempotency: false,
@@ -1015,7 +1124,7 @@ fn local_contracts(surface: ClientSurface) -> Vec<CapabilityContract> {
 
 fn resource_kinds(capability_id: &str) -> Vec<String> {
     match capability_id {
-        "filesystem.read" | "filesystem.list" | "shell.execute" | "mcp.invoke" => {
+        "filesystem.read" | "filesystem.list" | "shell.execute" => {
             vec!["workspace".to_string()]
         }
         _ => Vec::new(),

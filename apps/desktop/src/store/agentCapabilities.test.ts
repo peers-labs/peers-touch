@@ -43,7 +43,7 @@ import { projectAgentComposerReadiness } from './agentCapabilityReadiness';
 
 const mcpManifest = create(CapabilityManifestSchema, {
   capabilityId: 'mcp.invoke',
-  version: '1',
+  version: '2',
   sourceKind: CapabilitySourceKind.MCP,
   sourceInstanceId: 'local-mcp',
 });
@@ -159,7 +159,7 @@ describe('agent capability authority store', () => {
       bindingId: 'binding-mcp',
       agentId: 'agent-1',
       capabilityId: 'mcp.invoke',
-      capabilityVersion: '1',
+      capabilityVersion: '2',
       enabled: true,
       approvalPolicy: CapabilityApprovalPolicy.MANUAL,
       expectedAgentVersion: 8n,

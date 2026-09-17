@@ -17,9 +17,9 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-pub fn tools_list_entries() -> Result<Vec<Value>, String> {
+pub fn tools_list_entries(actor_ptid: &str) -> Result<Vec<Value>, String> {
     let mut tools = builtin_tool_registry_entries();
-    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries() {
+    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries(actor_ptid) {
         tools.append(&mut mcp_tools);
     }
     if let Ok(mut plugin_tools) = plugins::plugin_tool_registry_entries() {
@@ -28,9 +28,9 @@ pub fn tools_list_entries() -> Result<Vec<Value>, String> {
     Ok(tools)
 }
 
-pub fn tools_list() -> AppResult<StubPayload> {
+pub fn tools_list(actor_ptid: &str) -> AppResult<StubPayload> {
     let mut tools = builtin_tool_registry_entries();
-    match mcp::mcp_tool_registry_entries() {
+    match mcp::mcp_tool_registry_entries(actor_ptid) {
         Ok(mut mcp_tools) => tools.append(&mut mcp_tools),
         Err(error) => {
             tracing::error!(error = %error, "Failed to project MCP tools into tool registry");

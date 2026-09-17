@@ -885,7 +885,7 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 pub fn skills_market_install(
-    _actor_ptid: &str,
+    actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -937,7 +937,14 @@ pub fn skills_market_install(
             );
         }
         "mcp" => {
-            return install_mcp_market_package(target_agent_id, market_id, skill, source, content);
+            return install_mcp_market_package(
+                actor_ptid,
+                target_agent_id,
+                market_id,
+                skill,
+                source,
+                content,
+            );
         }
         "plugin" => {
             return install_plugin_market_package(
@@ -1081,6 +1088,7 @@ fn install_plugin_market_package(
 }
 
 fn install_mcp_market_package(
+    actor_ptid: &str,
     target_agent_id: String,
     market_id: String,
     skill: MarketSkill,
@@ -1101,7 +1109,7 @@ fn install_mcp_market_package(
             )
         }
     };
-    let result = mcp::mcp_create_server(McpCreateInput { data: server });
+    let result = mcp::mcp_create_server(actor_ptid, McpCreateInput { data: server });
     let Some(payload) = result.data else {
         return result;
     };
@@ -1218,9 +1226,12 @@ pub fn skills_market_uninstall(
     }
 
     if package_type == "mcp" {
-        let result = mcp::mcp_delete_server(McpNameInput {
-            name: record.skill_id.clone(),
-        });
+        let result = mcp::mcp_delete_server(
+            actor_ptid,
+            McpNameInput {
+                name: record.skill_id.clone(),
+            },
+        );
         if !result.ok {
             return result;
         }

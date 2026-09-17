@@ -55,8 +55,19 @@
     "Do not drop live ToolCall projection while the authoritative assistant message is temporarily unkeyed",
     "Do not continue the model before an authoritative terminal result"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-17T03:20:34Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "apps/desktop:tsc-pass;apps/desktop:vitest:35-pass;apps/desktop:rust-acceptance-check-pass;apps/station:tool-capability-operation-tests-pass;tooling/acceptance:j03-tests-8-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "workspace://65e7b6da4dc9be85/workflow/MCA-V2-ALIGNMENT-J03/artifacts/20260917T031534729626Z/result.json"
+    }
+  ]
 }
 ```
 
@@ -67,15 +78,19 @@ deterministic sanctioned fixture.
 
 ## Current Snapshot
 
-- Governance metadata, approval hydration, and unkeyed-message reconciliation
-  fixes are implemented in the current dirty source.
-- Focused tests, TypeScript, and production build previously passed.
+- Governance metadata, approval hydration, unkeyed-message reconciliation,
+  Station ToolCall message readback, and terminal disclosure interaction are
+  implemented at checkpoint `25a7983a93a0d681dcb9867d892f430dd6d24e16`.
+- Focused Desktop, Station, Rust, and runner checks pass.
 - The dedicated Development runner uses a source-attested OpenAI-compatible
-  provider fixture through the production provider boundary; the formal
-  86-tuple Gate remains owned by MCA-A01.
+  provider fixture through the production provider boundary and seeds/restores
+  a deterministic native clipboard fixture.
+- Exact-source V2-J03 functional evidence passes on Profile `two`, Slot `1`,
+  including authoritative receiver DOM, Station lineage, replay equality,
+  exactly one side effect/result/continuation, and clean resource restoration.
+- The formal 86-tuple Gate remains owned by MCA-A01.
 - Timeout/disconnect taxonomy and retry-command lineage remain
   `DESIGN_AMENDMENT_REQUIRED` and are not invented by this slice.
-- Post-fix exact-source native functional evidence remains unproven.
 
 ## Concurrency Decision
 

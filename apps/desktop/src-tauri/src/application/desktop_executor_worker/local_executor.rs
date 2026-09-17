@@ -8,12 +8,19 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct LocalCapabilityExecutor {
+    actor_ptid: String,
     contracts: HashMap<String, CapabilityContract>,
     execution_attempts: AtomicU64,
 }
 
 impl LocalCapabilityExecutor {
-    pub fn new(contracts: impl IntoIterator<Item = CapabilityContract>) -> Result<Self, String> {
+    pub fn new(
+        actor_ptid: &str,
+        contracts: impl IntoIterator<Item = CapabilityContract>,
+    ) -> Result<Self, String> {
+        if !actor_ptid.starts_with("ptid:") {
+            return Err("local capability executor requires an actor PTID".to_string());
+        }
         let mut indexed = HashMap::new();
         for contract in contracts {
             if contract.capability_id.trim().is_empty()
@@ -50,6 +57,7 @@ impl LocalCapabilityExecutor {
             }
         }
         Ok(Self {
+            actor_ptid: actor_ptid.to_string(),
             contracts: indexed,
             execution_attempts: AtomicU64::new(0),
         })
@@ -140,6 +148,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
             "mcp.invoke" => {
                 record_side_effect_start()?;
                 execute_mcp(
+                    &self.actor_ptid,
                     arguments,
                     workspace_root,
                     &allowed_roots,
@@ -172,6 +181,7 @@ fn execute_builtin(
 }
 
 fn execute_mcp(
+    actor_ptid: &str,
     arguments: Value,
     workspace_root: Option<&str>,
     allowed_roots: &[String],
@@ -189,14 +199,17 @@ fn execute_mcp(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "CLIENT_CAPABILITY_MCP_TOOL_REQUIRED".to_string())?;
-    let execution = mcp::mcp_execute_tool(McpExecuteToolInput {
-        server_name: server_name.to_string(),
-        tool_name: tool_name.to_string(),
-        arguments: arguments.get("arguments").cloned(),
-        call_id: Some(tool_call_id.to_string()),
-        workspace_root: workspace_root.map(str::to_string),
-        allowed_roots: Some(allowed_roots.to_vec()),
-    });
+    let execution = mcp::mcp_execute_tool(
+        actor_ptid,
+        McpExecuteToolInput {
+            server_name: server_name.to_string(),
+            tool_name: tool_name.to_string(),
+            arguments: arguments.get("arguments").cloned(),
+            call_id: Some(tool_call_id.to_string()),
+            workspace_root: workspace_root.map(str::to_string),
+            allowed_roots: Some(allowed_roots.to_vec()),
+        },
+    );
     if !execution.ok {
         return Err("CLIENT_CAPABILITY_EXECUTION_FAILED".to_string());
     }
@@ -231,7 +244,7 @@ fn redact_local_locators(value: &mut Value, resources: &[LocalResource]) {
 fn requires_local_resource(capability_id: &str) -> bool {
     matches!(
         capability_id,
-        "filesystem.read" | "filesystem.list" | "shell.execute" | "mcp.invoke"
+        "filesystem.read" | "filesystem.list" | "shell.execute"
     )
 }
 
@@ -266,16 +279,19 @@ mod tests {
         assert!(requires_local_resource("filesystem.read"));
         assert!(requires_local_resource("filesystem.list"));
         assert!(requires_local_resource("shell.execute"));
-        assert!(requires_local_resource("mcp.invoke"));
+        assert!(!requires_local_resource("mcp.invoke"));
         assert!(!requires_local_resource("clipboard.read"));
 
-        let executor = LocalCapabilityExecutor::new([CapabilityContract {
-            capability_id: "filesystem.read".to_string(),
-            schema_version: "1".to_string(),
-            max_argument_bytes: 1024,
-            max_result_bytes: 1024,
-            supports_external_idempotency: false,
-        }])
+        let executor = LocalCapabilityExecutor::new(
+            "ptid:person:test",
+            [CapabilityContract {
+                capability_id: "filesystem.read".to_string(),
+                schema_version: "1".to_string(),
+                max_argument_bytes: 1024,
+                max_result_bytes: 1024,
+                supports_external_idempotency: false,
+            }],
+        )
         .unwrap();
         let request = ClientCapabilityRequest {
             capability_id: "filesystem.read".to_string(),

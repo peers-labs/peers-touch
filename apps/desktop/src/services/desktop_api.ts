@@ -95,17 +95,24 @@ import type {
   CapabilitySourceKind,
   CreateKnowledgeResourceDescriptorRequest,
   ListKnowledgeResourceDescriptorsRequest,
+  StartCapabilityOperationResponse,
+  TakeOverCapabilityCleanupRequest,
+  TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
   UpdateKnowledgeResourceDescriptorRequest,
 } from '../gen/proto/domain/agent/capability_pb';
 import {
   AgentCapabilityBindingSchema,
   AgentPackageDocumentSchema,
+  CancelCapabilityOperationRequestSchema,
+  CancelCapabilityOperationResponseSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
   DeleteAgentCapabilityBindingResponseSchema,
   ExportAgentPackageRequestSchema,
   ExportAgentPackageResponseSchema,
+  GetCapabilityOperationRequestSchema,
+  GetCapabilityOperationResponseSchema,
   GetCapabilityReadinessResponseSchema,
   ImportAgentPackageRequestSchema,
   ImportAgentPackageResponseSchema,
@@ -113,6 +120,13 @@ import {
   ListCapabilityManifestsResponseSchema,
   ListKnowledgeResourceDescriptorsRequestSchema,
   ListKnowledgeResourceDescriptorsResponseSchema,
+  ReconcileCapabilityOperationRequestSchema,
+  ReconcileCapabilityOperationResponseSchema,
+  StartCapabilityOperationResponseSchema,
+  TakeOverCapabilityCleanupRequestSchema,
+  TakeOverCapabilityCleanupResponseSchema,
+  TakeOverCapabilityOperationRequestSchema,
+  TakeOverCapabilityOperationResponseSchema,
   TombstoneKnowledgeResourceDescriptorRequestSchema,
   TombstoneKnowledgeResourceDescriptorResponseSchema,
   UpdateKnowledgeResourceDescriptorRequestSchema,
@@ -1716,10 +1730,20 @@ export interface MCPServerItem {
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
-  status?: 'unknown' | 'connected' | 'failed';
+  status?: 'unknown' | 'pending' | 'connected' | 'disconnected' | 'cancelled' | 'timed_out' | 'failed' | 'unknown_side_effect';
   lastTestedAt?: string;
   lastError?: string;
+  operationId?: string;
+  operationKind?: McpLifecycleOperationKind;
 }
+
+export type McpLifecycleOperationKind =
+  | 'install'
+  | 'configure'
+  | 'test'
+  | 'connect'
+  | 'reconnect'
+  | 'uninstall';
 
 export interface MCPServerRecord {
   name: string;
@@ -1730,11 +1754,15 @@ export interface MCPServerRecord {
   command: string;
   args: string[];
   env: Record<string, string>;
+  envKeys?: string[];
   url: string;
   headers: Record<string, string>;
+  headersKeys?: string[];
   authType: string;
   authToken: string;
+  hasAuthToken?: boolean;
   authAccessToken: string;
+  hasAuthAccessToken?: boolean;
   configSchema: Record<string, unknown>;
   settings: Record<string, string>;
   metaAvatar: string;
@@ -1743,10 +1771,12 @@ export interface MCPServerRecord {
   homepage: string;
   repository: string;
   enabled: boolean;
-  status?: 'unknown' | 'connected' | 'failed';
+  status?: MCPServerItem['status'];
   lastTestedAt?: string;
   lastError?: string;
   tools?: string[];
+  operationId?: string;
+  operationKind?: McpLifecycleOperationKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -2492,34 +2522,10 @@ export interface McpToggleInput {
   enabled: boolean;
 }
 
-export interface McpExecuteToolInput {
-  server_name: string;
-  tool_name: string;
-  arguments?: Record<string, unknown>;
-  call_id?: string;
-  workspace_root?: string;
-  allowed_roots?: string[];
-}
-
-export interface McpToolExecutionResult {
-  ok: boolean;
-  serverName: string;
-  toolName: string;
-  callId: string;
-  arguments: Record<string, unknown>;
-  durationMs: number;
-  output?: unknown;
-  error?: string;
-  audit: {
-    source: 'mcp';
-    serverName: string;
-    toolName: string;
-    transport: 'stdio' | 'http' | 'sse';
-    workspaceRoot?: string;
-    allowedRootCount?: number;
-    policyDecision?: 'allow' | 'deny';
-    executedAt: string;
-  };
+export interface McpLifecycleOperationInput {
+  name: string;
+  operation_kind: McpLifecycleOperationKind;
+  idempotency_key?: string;
 }
 
 export interface AgentToolDecisionIntentInput {
@@ -5703,31 +5709,142 @@ export const api = {
     invokeRustDataFromStatus<McpNameInput, MCPServerRecord>('mcp_get_server', { name }),
 
   createMCPServer: (data: Partial<MCPServerRecord>) =>
-    invokeRustDataFromStatus<McpCreateInput, { ok: boolean; name: string }>('mcp_create_server', { data }),
+    invokeRustProto<McpCreateInput, StartCapabilityOperationResponse>(
+      'mcp_create_server',
+      StartCapabilityOperationResponseSchema,
+      { data },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   updateMCPServer: (name: string, data: Partial<MCPServerRecord>) =>
-    invokeRustDataFromStatus<McpUpdateInput, { ok: boolean }>('mcp_update_server', { name, data }),
+    invokeRustProto<McpUpdateInput, StartCapabilityOperationResponse>(
+      'mcp_update_server',
+      StartCapabilityOperationResponseSchema,
+      { name, data },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   deleteMCPServer: (name: string) =>
-    invokeRustDataFromStatus<McpNameInput, { ok: boolean }>('mcp_delete_server', { name }),
+    invokeRustProto<McpNameInput, StartCapabilityOperationResponse>(
+      'mcp_delete_server',
+      StartCapabilityOperationResponseSchema,
+      { name },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
   toggleMCPServer: (name: string, enabled: boolean) =>
-    invokeRustDataFromStatus<McpToggleInput, { ok: boolean }>('mcp_toggle_server', { name, enabled }),
+    invokeRustProto<McpToggleInput, StartCapabilityOperationResponse>(
+      'mcp_toggle_server',
+      StartCapabilityOperationResponseSchema,
+      { name, enabled },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
 
-  testMCPServer: (name: string) =>
-    invokeRustDataFromStatus<McpNameInput, { ok: boolean; error?: string; tools?: string[] }>('mcp_test_server', { name }),
-
-  executeMCPTool: (
-    serverName: string,
-    toolName: string,
-    args: Record<string, unknown>,
-    callId?: string,
+  startMCPLifecycleOperation: (
+    name: string,
+    operationKind: McpLifecycleOperationKind,
+    idempotencyKey?: string,
   ) =>
-    invokeRustDataFromStatus<McpExecuteToolInput, McpToolExecutionResult>('mcp_execute_tool', {
-      server_name: serverName,
-      tool_name: toolName,
-      arguments: args,
-      call_id: callId,
+    invokeRustProto<McpLifecycleOperationInput, StartCapabilityOperationResponse>(
+      'mcp_start_lifecycle_operation',
+      StartCapabilityOperationResponseSchema,
+      {
+        name,
+        operation_kind: operationKind,
+        idempotency_key: idempotencyKey,
+      },
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  getCapabilityOperation: (operationId: string) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_get',
+      GetCapabilityOperationRequestSchema,
+      GetCapabilityOperationResponseSchema,
+      create(GetCapabilityOperationRequestSchema, { operationId }),
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  cancelCapabilityOperation: (
+    operationId: string,
+    expectedRevision: number | bigint,
+    idempotencyKey: string,
+  ) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_cancel',
+      CancelCapabilityOperationRequestSchema,
+      CancelCapabilityOperationResponseSchema,
+      create(CancelCapabilityOperationRequestSchema, {
+        operationId,
+        expectedRevision: BigInt(expectedRevision),
+        idempotencyKey,
+      }),
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  reconcileCapabilityOperation: (operationId: string, afterSequence = 0n) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_reconcile',
+      ReconcileCapabilityOperationRequestSchema,
+      ReconcileCapabilityOperationResponseSchema,
+      create(ReconcileCapabilityOperationRequestSchema, {
+        operationId,
+        afterSequence,
+      }),
+    ),
+
+  takeOverCapabilityOperation: (request: TakeOverCapabilityOperationRequest) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_takeover',
+      TakeOverCapabilityOperationRequestSchema,
+      TakeOverCapabilityOperationResponseSchema,
+      request,
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
+    }),
+
+  takeOverCapabilityOperationCleanup: (request: TakeOverCapabilityCleanupRequest) =>
+    invokeRustProtoRequest(
+      'agent_capability_operation_cleanup_takeover',
+      TakeOverCapabilityCleanupRequestSchema,
+      TakeOverCapabilityCleanupResponseSchema,
+      request,
+    ).then((response) => {
+      if (!response.operation) {
+        throw new Error('agent.capabilityOperationResponseMissing');
+      }
+      return response.operation;
     }),
 
   executeGuardedCanvasTurnOnce: (input: AgentExecuteTurnInput) =>

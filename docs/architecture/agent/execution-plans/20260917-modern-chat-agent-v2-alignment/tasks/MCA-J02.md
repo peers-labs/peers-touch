@@ -55,8 +55,19 @@
     "Do not mark a capability ready from installation or connection labels alone",
     "Preserve immutable historical snapshots when manifests or Agents are deleted"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-17T00:41:51Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "apps/desktop:tsc-pass;apps/desktop:vitest:89-pass;apps/station:capability-tests-pass;tooling/acceptance:j02-tests-9-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "workspace://65e7b6da4dc9be85/workflow/MCA-V2-ALIGNMENT-J02/artifacts/20260916T225645270058Z/result.json"
+    }
+  ]
 }
 ```
 
@@ -78,7 +89,9 @@ and readiness authorities.
   before execution are implemented in the current source.
 - The J02 functional check uses one exact-source Native Development Journey;
   the 69-tuple formal Gate remains isolated to MCA-A01.
-- Current exact-source functional and formal evidence remains to be produced.
+- Exact-source V2-J02 functional evidence passes at checkpoint
+  `0cd4a977040cac9a36fb73cd91aed95fba3a7c2d`; aggregate formal proof remains
+  owned by MCA-A01.
 
 ## Concurrency Decision
 

@@ -826,11 +826,11 @@ func TestCapabilityToolManifestSeedUsesCanonicalExecutionRequirements(t *testing
 		JSONSchema:  json.RawMessage(`{"type":"object"}`),
 	}).manifest
 	if mcp.GetCapabilityId() != "mcp.invoke" ||
-		mcp.GetVersion() != "1" ||
+		mcp.GetVersion() != "2" ||
 		len(mcp.GetRequiredRuntimeCapabilities()) != 0 ||
 		mcp.GetAvailability() !=
-			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE {
-		t.Fatalf("MCP must stay canonically unavailable before W4: %+v", mcp)
+			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
+		t.Fatalf("MCP must be available after the J04 lifecycle cutover: %+v", mcp)
 	}
 }
 
@@ -1193,7 +1193,7 @@ func TestCapabilityOperationStartAndCancelAreAtomicAndIdempotent(t *testing.T) {
 	if err := authority.db.Create(&persistence.ClientCapabilityLease{
 		SessionID: "session-1", ActorID: "ptid:person:owner", AuthSessionID: "auth-1",
 		DeviceID: "device-1", ConnectionID: "connection-1", LeaseID: "capability-lease-1",
-		LeaseRevision: 1, LeasePayload: []byte{1}, ExpiresAt: now.Add(time.Minute),
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t), ExpiresAt: now.Add(time.Minute),
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed capability lease: %v", err)
@@ -1287,7 +1287,7 @@ func TestCapabilityOperationRejectsActorAndRevisionMismatch(t *testing.T) {
 	if err := authority.db.Create(&persistence.ClientCapabilityLease{
 		SessionID: "session-1", ActorID: "ptid:person:owner", AuthSessionID: "auth-1",
 		DeviceID: "device-1", ConnectionID: "connection-1", LeaseID: "lease-1",
-		LeaseRevision: 1, LeasePayload: []byte{1}, ExpiresAt: now.Add(time.Minute),
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t), ExpiresAt: now.Add(time.Minute),
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed lease: %v", err)
@@ -1406,7 +1406,7 @@ func TestCapabilityOperationTakeoverIncrementsIndependentFences(t *testing.T) {
 	if err := db.Create(&persistence.ClientCapabilityLease{
 		SessionID: "session-2", ActorID: "ptid:person:owner", AuthSessionID: "auth-2",
 		DeviceID: "device-2", ConnectionID: "connection-2", LeaseID: "capability-lease-2",
-		LeaseRevision: 1, LeasePayload: []byte{1}, ExpiresAt: now.Add(5 * time.Minute),
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t), ExpiresAt: now.Add(5 * time.Minute),
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed takeover capability lease: %v", err)
@@ -1435,6 +1435,148 @@ func TestCapabilityOperationTakeoverIncrementsIndependentFences(t *testing.T) {
 		ctx, "ptid:person:owner", oldEvent,
 	); !isCapabilityError(err, errcode.AgentVersionConflict) {
 		t.Fatalf("old business fence was accepted: %v", err)
+	}
+}
+
+func TestCapabilityOperationTakeoverRequiresCompatibleCapabilityLease(t *testing.T) {
+	operations, db, created, now := newCapabilityOperationTestFixture(
+		t,
+		"operation-takeover-capability",
+	)
+	if err := db.Create(&persistence.ClientCapabilityLease{
+		SessionID: "session-2", ActorID: "ptid:person:owner", AuthSessionID: "auth-2",
+		DeviceID: "device-2", ConnectionID: "connection-2", LeaseID: "capability-lease-2",
+		LeaseRevision: 1,
+		LeasePayload: operationCapabilityLeasePayloadFor(
+			t,
+			"clipboard.read",
+			"1",
+		),
+		ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed incompatible takeover capability lease: %v", err)
+	}
+	operations.now = func() time.Time {
+		return now.Add(defaultOperationLeaseTTL + time.Second)
+	}
+
+	_, err := operations.TakeOver(
+		context.Background(),
+		"ptid:person:owner",
+		&model.TakeOverCapabilityOperationRequest{
+			OperationId: created.GetOperationId(), ExpectedRevision: created.GetRevision(),
+			TargetDeviceId: "device-2", CapabilitySessionId: "session-2",
+		},
+	)
+	if !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+		t.Fatalf("expected incompatible capability lease rejection, got %v", err)
+	}
+}
+
+func TestCapabilityOperationTakeoverDoesNotTrustCallerIdempotencyAfterSideEffect(t *testing.T) {
+	operations, db, created, now := newCapabilityOperationTestFixture(
+		t,
+		"operation-takeover-side-effect",
+	)
+	running, _, err := operations.ReportEvent(
+		context.Background(),
+		"ptid:person:owner",
+		capabilityOperationEventRequest(
+			created,
+			1,
+			model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RUNNING,
+		),
+	)
+	if err != nil {
+		t.Fatalf("report running operation: %v", err)
+	}
+	if err := db.Create(&persistence.ClientCapabilityLease{
+		SessionID: "session-2", ActorID: "ptid:person:owner", AuthSessionID: "auth-2",
+		DeviceID: "device-2", ConnectionID: "connection-2", LeaseID: "capability-lease-2",
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t),
+		ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed takeover capability lease: %v", err)
+	}
+	operations.now = func() time.Time {
+		return now.Add(defaultOperationLeaseTTL + time.Second)
+	}
+
+	taken, err := operations.TakeOver(
+		context.Background(),
+		"ptid:person:owner",
+		&model.TakeOverCapabilityOperationRequest{
+			OperationId: created.GetOperationId(), ExpectedRevision: running.GetRevision(),
+			TargetDeviceId: "device-2", CapabilitySessionId: "session-2",
+			ExternalIdempotencyKey: "caller-asserted-key",
+		},
+	)
+	if err != nil {
+		t.Fatalf("fence ambiguous operation: %v", err)
+	}
+	if taken.GetStatus() !=
+		model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_SETTLING_CLEANUP ||
+		taken.GetDesiredTerminalOutcome() !=
+			model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_UNKNOWN_SIDE_EFFECT {
+		t.Fatalf("caller idempotency bypassed unknown-side-effect fencing: %+v", taken)
+	}
+}
+
+func TestCapabilityOperationLeaseExpiryProjectsDisconnectedBeforeDeadline(t *testing.T) {
+	operations, db, created, now := newCapabilityOperationTestFixture(
+		t,
+		"operation-lease-disconnect",
+	)
+	if err := db.Create(&persistence.ClientCapabilityLease{
+		SessionID: "session-2", ActorID: "ptid:person:owner", AuthSessionID: "auth-2",
+		DeviceID: "device-2", ConnectionID: "connection-2", LeaseID: "capability-lease-2",
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t),
+		ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed takeover capability lease: %v", err)
+	}
+	operations.now = func() time.Time {
+		return now.Add(defaultOperationLeaseTTL + time.Second)
+	}
+
+	count, err := operations.SweepExecutorLeaseDisconnects(context.Background())
+	if err != nil {
+		t.Fatalf("sweep disconnected operation lease: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("disconnected operations = %d, want 1", count)
+	}
+	projected, err := operations.Get(
+		context.Background(),
+		"ptid:person:owner",
+		created.GetOperationId(),
+	)
+	if err != nil {
+		t.Fatalf("read disconnected operation: %v", err)
+	}
+	if projected.GetStatus() !=
+		model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISCONNECTED ||
+		projected.GetError().GetCode() !=
+			model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_DISCONNECTED ||
+		!projected.GetError().GetRetryable() {
+		t.Fatalf("unexpected disconnected operation projection: %+v", projected)
+	}
+	taken, err := operations.TakeOver(
+		context.Background(),
+		"ptid:person:owner",
+		&model.TakeOverCapabilityOperationRequest{
+			OperationId: created.GetOperationId(), ExpectedRevision: projected.GetRevision(),
+			TargetDeviceId: "device-2", CapabilitySessionId: "session-2",
+		},
+	)
+	if err != nil {
+		t.Fatalf("take over disconnected operation: %v", err)
+	}
+	if taken.GetStatus() !=
+		model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISPATCHED ||
+		taken.GetError() != nil || taken.GetProgressPercent() != 0 ||
+		taken.GetResultRef() != "" {
+		t.Fatalf("takeover retained stale terminal projection: %+v", taken)
 	}
 }
 
@@ -1886,7 +2028,7 @@ func newCapabilityOperationTestFixture(
 	if err := authority.db.Create(&persistence.ClientCapabilityLease{
 		SessionID: "session-1", ActorID: "ptid:person:owner", AuthSessionID: "auth-1",
 		DeviceID: "device-1", ConnectionID: "connection-1", LeaseID: "capability-lease-1",
-		LeaseRevision: 1, LeasePayload: []byte{1}, ExpiresAt: now.Add(5 * time.Minute),
+		LeaseRevision: 1, LeasePayload: operationCapabilityLeasePayload(t), ExpiresAt: now.Add(5 * time.Minute),
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed fixture capability lease: %v", err)
@@ -1919,4 +2061,33 @@ func capabilityOperationEventRequest(
 		CapabilitySessionId: operation.GetCapabilitySessionId(),
 		ExecutorLeaseId:     operation.GetExecutorLeaseId(),
 	}
+}
+
+func operationCapabilityLeasePayload(t *testing.T) []byte {
+	t.Helper()
+	manifest := capabilityAuthorityTestManifest()
+	return operationCapabilityLeasePayloadFor(
+		t,
+		manifest.GetCapabilityId(),
+		manifest.GetVersion(),
+	)
+}
+
+func operationCapabilityLeasePayloadFor(
+	t *testing.T,
+	capabilityID string,
+	version string,
+) []byte {
+	t.Helper()
+	payload, err := proto.Marshal(&model.ClientCapabilityLease{
+		Capabilities: []*model.ClientCapability{{
+			CapabilityId:  capabilityID,
+			SchemaVersion: version,
+			Permission:    model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_GRANTED,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("encode capability operation lease payload: %v", err)
+	}
+	return payload
 }

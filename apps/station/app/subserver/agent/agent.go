@@ -49,14 +49,15 @@ type ossFileServiceProvider interface {
 }
 
 type agentSubServer struct {
-	opts            *Options
-	addrs           []string
-	status          server.Status
-	jwtWrapper      server.Wrapper
-	turnService     *service.TurnService
-	chatTaskService *service.ChatTaskService
-	deviceKeys      *touchactor.DeviceStore
-	agentDB         *gorm.DB
+	opts             *Options
+	addrs            []string
+	status           server.Status
+	jwtWrapper       server.Wrapper
+	turnService      *service.TurnService
+	chatTaskService  *service.ChatTaskService
+	operationService *service.CapabilityOperationService
+	deviceKeys       *touchactor.DeviceStore
+	agentDB          *gorm.DB
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -146,7 +147,9 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 			}
 		}
 		if !s.turnService.RunExecutionWorker(s.turnService.RunToolContinuationWorker) ||
-			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) {
+			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) ||
+			(s.operationService != nil &&
+				!s.turnService.RunExecutionWorker(s.operationService.RunDeadlineSweeper)) {
 			_ = s.turnService.StopExecutionLifecycle(context.Background())
 			return fmt.Errorf("start Agent execution workers: lifecycle is stopping")
 		}
@@ -325,6 +328,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		capabilityAuthoritySvc,
 		capabilityReadinessSvc,
 	)
+	operationSvc := service.NewCapabilityOperationService(s.agentDB)
+	operationSvc.SetCapabilityProofService(proofSvc)
+	operationHandlers := handler.NewCapabilityOperationHandlers(operationSvc)
 	knowledgeDescriptorSvc := service.NewKnowledgeResourceService(s.agentDB, capabilityAuthoritySvc)
 	knowledgeDescriptorHandlers := handler.NewKnowledgeDescriptorHandlers(knowledgeDescriptorSvc)
 	agentPackageHandlers := handler.NewAgentPackageHandlers(
@@ -354,6 +360,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	s.turnService = turnSvc
 	s.chatTaskService = chatTaskSvc
+	s.operationService = operationSvc
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -381,6 +388,14 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-capability-requests-pull", "/agent/capability/requests/pull", server.POST, turnHandlers.HandlePullClientCapabilityRequests, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-receipt", "/agent/capability/receipt", server.POST, turnHandlers.HandleSubmitClientCapabilityReceipt, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-receipt-recover", "/agent/capability/receipt/recover", server.POST, turnHandlers.HandleSubmitClientCapabilityRecoveryReceipt, logIDWrapper),
+		server.NewTypedHandler("agent-capability-operation-start", "/agent/capability/operation/start", server.POST, operationHandlers.HandleStart, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-cancel", "/agent/capability/operation/cancel", server.POST, operationHandlers.HandleCancel, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-get", "/agent/capability/operation/get", server.POST, operationHandlers.HandleGet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-event", "/agent/capability/operation/event", server.POST, operationHandlers.HandleReportEvent, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-pull", "/agent/capability/operation/pull", server.POST, operationHandlers.HandlePull, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-reconcile", "/agent/capability/operation/reconcile", server.POST, operationHandlers.HandleReconcile, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-takeover", "/agent/capability/operation/takeover", server.POST, operationHandlers.HandleTakeOver, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-operation-cleanup-takeover", "/agent/capability/operation/cleanup/takeover", server.POST, operationHandlers.HandleTakeOverCleanup, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-manifest-list", "/agent/capability/manifest/list", server.POST, capabilityAuthorityHandlers.HandleListManifests, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-manifest-retire", "/agent/capability/manifest/retire", server.POST, capabilityAuthorityHandlers.HandleRetireManifest, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-list", "/agent/capability/binding/list", server.POST, capabilityAuthorityHandlers.HandleListBindings, logIDWrapper, jwtWrapper),

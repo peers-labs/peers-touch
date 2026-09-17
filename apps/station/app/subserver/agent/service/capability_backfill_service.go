@@ -852,12 +852,12 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	case definition.Name == "local_mcp":
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
+		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
 		capabilityID = "mcp.invoke"
 		requiredRuntimeCapabilities = nil
-		version = "1"
+		version = "2"
 	case definition.Name == "oauth_connector_call":
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
@@ -1001,7 +1001,8 @@ func bindingFromManifest(
 		enabled:           enabled,
 		approvalPolicy:    manifest.GetDefaultApprovalPolicy(),
 		reconcileVersion: manifest.GetSourceKind() ==
-			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL,
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL ||
+			manifest.GetCapabilityId() == "mcp.invoke",
 	}
 }
 

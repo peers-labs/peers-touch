@@ -20,6 +20,7 @@ import {
   type AgentAttachmentRefInput,
   type AgentCapabilityNegativeControlFact,
   type AgentRuntimeBudgetInput,
+  type MCPServerItem,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
   type StreamEvent,
@@ -37,6 +38,7 @@ import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
+import { useMCPStore } from '../../store/mcp';
 import {
   AgentTurnStatus,
   FailoverReason,
@@ -45,11 +47,13 @@ import {
 } from '../../gen/proto/domain/agent/agent_pb';
 import {
   CapabilityApprovalPolicy,
+  CapabilityOperationStatus,
   CapabilitySourceKind,
   CreateKnowledgeResourceDescriptorRequestSchema,
   KnowledgeResourceKind,
   TombstoneKnowledgeResourceDescriptorRequestSchema,
   type AgentCapabilityBinding,
+  type CapabilityOperation,
   type CapabilityManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
 import { registerAcceptanceHarness } from '../registry';
@@ -1988,6 +1992,34 @@ const foundationForbiddenActorReceiverResources = new Map<string, string>();
 interface FoundationToolTurnSession {
   capabilitySessionId: string;
   facts: Record<string, unknown>;
+}
+
+type McpLifecycleDevelopmentPhase = 'prepare' | 'recover' | 'cleanup';
+
+interface McpLifecycleDevelopmentState {
+  agentId: string;
+  agentName: string;
+  providerId: string;
+  modelId: string;
+  serverName: string;
+  conversationId: string;
+  turnId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+  operationIds: Record<string, string>;
+}
+
+interface McpLifecycleDevelopmentInput {
+  phase: McpLifecycleDevelopmentPhase;
+  sampleId: string;
+  serverName: string;
+  providerBaseUrl?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  toolName?: string;
+  expectedResult?: string;
+  state?: McpLifecycleDevelopmentState;
 }
 
 function toolStatusName(value: unknown): string {
@@ -15524,12 +15556,13 @@ async function createGovernedToolRuntimeFixture(
   baseUrl: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const requestedProviderId = `mca-j03-${suffix}`;
+  const purposeKey = purpose.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+  const requestedProviderId = `mca-${purposeKey}-${suffix}`;
   const modelId = `model-${suffix}`;
   const created = await api.createProvider({
     id: requestedProviderId,
     name: requestedProviderId,
-    description: `V2-J03 ${purpose}`,
+    description: `Development ${purpose}`,
     base_url: baseUrl,
     api_key: 'mca-j03-fixture-key',
   });
@@ -21202,6 +21235,936 @@ async function runCapabilityAdmissionRejection(input: {
   }
 }
 
+const MCP_TERMINAL_OPERATION_STATUSES = new Set<CapabilityOperationStatus>([
+  CapabilityOperationStatus.SUCCEEDED,
+  CapabilityOperationStatus.CANCELLED,
+  CapabilityOperationStatus.TIMED_OUT,
+  CapabilityOperationStatus.FAILED,
+  CapabilityOperationStatus.CLEANUP_FAILED,
+  CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT,
+]);
+
+function mcpOperationStatusName(status: CapabilityOperationStatus): string {
+  switch (status) {
+    case CapabilityOperationStatus.PENDING:
+      return 'pending';
+    case CapabilityOperationStatus.DISPATCHED:
+      return 'dispatched';
+    case CapabilityOperationStatus.RUNNING:
+      return 'running';
+    case CapabilityOperationStatus.DISCONNECTED:
+      return 'disconnected';
+    case CapabilityOperationStatus.RECONNECTING:
+      return 'reconnecting';
+    case CapabilityOperationStatus.CANCELLING:
+      return 'cancelling';
+    case CapabilityOperationStatus.SETTLING_CLEANUP:
+      return 'settling_cleanup';
+    case CapabilityOperationStatus.SUCCEEDED:
+      return 'succeeded';
+    case CapabilityOperationStatus.CANCELLED:
+      return 'cancelled';
+    case CapabilityOperationStatus.TIMED_OUT:
+      return 'timed_out';
+    case CapabilityOperationStatus.FAILED:
+      return 'failed';
+    case CapabilityOperationStatus.CLEANUP_FAILED:
+      return 'cleanup_failed';
+    case CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT:
+      return 'unknown_side_effect';
+    default:
+      return 'unspecified';
+  }
+}
+
+function mcpOperationEvidence(
+  operation: CapabilityOperation,
+): Record<string, unknown> {
+  return evidenceValue({
+    operationId: operation.operationId,
+    idempotencyKey: operation.idempotencyKey,
+    payloadHash: operation.payloadHash,
+    capabilityId: operation.capabilityId,
+    capabilityVersion: operation.capabilityVersion,
+    targetDeviceId: operation.targetDeviceId,
+    capabilitySessionId: operation.capabilitySessionId,
+    executorLeaseId: operation.executorLeaseId,
+    operationKind: operation.operationKind,
+    status: mcpOperationStatusName(operation.status),
+    attempt: operation.attempt,
+    attemptEpoch: operation.attemptEpoch,
+    fencingToken: operation.fencingToken,
+    revision: operation.revision,
+    lastEventSequence: operation.lastEventSequence,
+    desiredTerminalOutcome: mcpOperationStatusName(
+      operation.desiredTerminalOutcome,
+    ),
+    cleanupLeaseId: operation.cleanupLeaseId,
+    cleanupEpoch: operation.cleanupEpoch,
+    cleanupFencingToken: operation.cleanupFencingToken,
+    progressPercent: operation.progressPercent,
+    resultRef: operation.resultRef,
+    error: operation.error
+      ? {
+          code: operation.error.code,
+          retryable: operation.error.retryable,
+          recoveryAction: operation.error.recoveryAction,
+        }
+      : null,
+    cleanupOutcome: operation.cleanupOutcome,
+    dispatchSequence: operation.dispatchSequence,
+  }) as Record<string, unknown>;
+}
+
+function currentMcpOperation(
+  serverName: string,
+  description: string,
+): CapabilityOperation {
+  const operation = useMCPStore.getState().operationsByServer[serverName];
+  if (!operation?.operationId) {
+    throw new Error(
+      `agent.acceptance.mcpOperationMissing:${description}`,
+    );
+  }
+  return operation;
+}
+
+async function waitForMcpOperation(
+  serverName: string,
+  operationId: string,
+  expected: ReadonlySet<CapabilityOperationStatus>,
+  description: string,
+  timeoutMs = 60_000,
+): Promise<CapabilityOperation> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const operation = await api.getCapabilityOperation(operationId);
+    useMCPStore.setState((state) => ({
+      operationsByServer: {
+        ...state.operationsByServer,
+        [serverName]: operation,
+      },
+    }));
+    if (expected.has(operation.status)) return operation;
+    if (MCP_TERMINAL_OPERATION_STATUSES.has(operation.status)) {
+      throw new Error(
+        `agent.acceptance.mcpOperationUnexpectedTerminal:${description}:`
+        + mcpOperationStatusName(operation.status),
+      );
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function waitForMcpServer(
+  serverName: string,
+  predicate: (server: MCPServerItem) => boolean,
+  description: string,
+  timeoutMs = 60_000,
+): Promise<MCPServerItem> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    await useMCPStore.getState().loadServers();
+    const server = useMCPStore.getState().servers.find(
+      (candidate) => candidate.name === serverName,
+    );
+    if (server && predicate(server)) return server;
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function mcpOperationReplayEvidence(
+  operationId: string,
+): Promise<Record<string, unknown>> {
+  const source = await api.reconcileCapabilityOperation(operationId, 0n);
+  const replay = await api.reconcileCapabilityOperation(operationId, 0n);
+  if (!source.operation || !replay.operation) {
+    throw new Error('agent.acceptance.mcpOperationReadbackMissing');
+  }
+  const project = (
+    value: typeof source,
+  ): Record<string, unknown> => ({
+    operation: mcpOperationEvidence(value.operation!),
+    events: evidenceValue(value.events),
+  });
+  const sourceProjection = project(source);
+  const replayProjection = project(replay);
+  const sourceHash = await sha256Hex(stableJson(sourceProjection));
+  const replayHash = await sha256Hex(stableJson(replayProjection));
+  if (sourceHash !== replayHash) {
+    throw new Error('agent.acceptance.mcpOperationReplayMismatch');
+  }
+  return {
+    sourceHash,
+    replayHash,
+    operation: sourceProjection.operation,
+    events: sourceProjection.events,
+  };
+}
+
+async function mcpToolFixture(
+  agentId: string,
+  serverName: string,
+  toolName: string,
+): Promise<FoundationToolFixture> {
+  const [manifests, bindings] = await Promise.all([
+    api.listCapabilityManifests([CapabilitySourceKind.MCP]),
+    api.listAgentCapabilityBindings(agentId),
+  ]);
+  const manifest = manifests.find((candidate) =>
+    candidate.sourceKind === CapabilitySourceKind.MCP
+    && candidate.sourceInstanceId === 'local_mcp'
+    && candidate.capabilityId === 'mcp.invoke'
+    && candidate.version === '2');
+  if (!manifest) {
+    throw new Error('agent.acceptance.mcpCapabilityManifestMissing');
+  }
+  const binding = bindings.find((candidate) =>
+    candidate.capabilityId === manifest.capabilityId
+    && candidate.capabilityVersion === manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return {
+    manifest,
+    binding,
+    toolName: 'local_mcp',
+    arguments: {
+      server_name: serverName,
+      tool_name: toolName,
+      arguments: { sample: 'mca-v2-j04' },
+    },
+  };
+}
+
+async function navigateToMcpSettings(serverName: string): Promise<void> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+    resource: 'settings',
+    id: 'mcp',
+  });
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-mcp-server]'),
+    ).some((element) =>
+      element.dataset.ptMcpServer === serverName
+      && element.getClientRects().length > 0),
+    `MCP server ${serverName} to be visible`,
+    30_000,
+  );
+}
+
+function mcpReceiverSnapshot(
+  serverName: string,
+): Record<string, unknown> {
+  const card = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-mcp-server]'),
+  ).find((element) => element.dataset.ptMcpServer === serverName);
+  const operation = card?.querySelector<HTMLElement>(
+    '[data-pt-mcp-operation-status]',
+  );
+  return {
+    visible: Boolean(card?.getClientRects().length),
+    serverName,
+    operationId: operation?.dataset.ptMcpOperationId ?? '',
+    status: operation?.dataset.ptMcpOperationStatus ?? '',
+  };
+}
+
+async function cleanupMcpLifecycleDevelopmentState(
+  state: McpLifecycleDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  let uninstallOperation: Record<string, unknown> | null = null;
+  let conversationDeleted = !state.conversationId;
+  let serverRemoved = false;
+  let agentDeleted = !state.agentId;
+  let fixtureModelDeleted = !state.providerId || !state.modelId;
+  let fixtureProviderDeleted = !state.providerId;
+
+  if (state.conversationId) {
+    try {
+      await cleanupFoundationToolConversation(
+        state.conversationId,
+        state.turnId,
+      );
+      clearFoundationLocalConversationProjection(state.conversationId);
+      conversationDeleted = true;
+    } catch (error) {
+      failures.push(`conversation:${observedErrorCode(error)}`);
+    }
+  }
+
+  try {
+    const store = useMCPStore.getState();
+    await store.loadServers();
+    const existing = useMCPStore.getState().servers.find(
+      (server) => server.name === state.serverName,
+    );
+    if (existing) {
+      const active = useMCPStore.getState().operationsByServer[state.serverName];
+      if (
+        active
+        && !MCP_TERMINAL_OPERATION_STATUSES.has(active.status)
+      ) {
+        await useMCPStore.getState().cancelOperation(state.serverName);
+        await waitForMcpOperation(
+          state.serverName,
+          active.operationId,
+          new Set([CapabilityOperationStatus.CANCELLED]),
+          'MCP cleanup cancellation',
+        );
+      }
+      await useMCPStore.getState().deleteServer(state.serverName);
+      const uninstall = currentMcpOperation(
+        state.serverName,
+        'MCP uninstall',
+      );
+      const settled = await waitForMcpOperation(
+        state.serverName,
+        uninstall.operationId,
+        new Set([CapabilityOperationStatus.SUCCEEDED]),
+        'MCP uninstall',
+      );
+      uninstallOperation = mcpOperationEvidence(settled);
+      await useMCPStore.getState().loadServers();
+    }
+    serverRemoved = !useMCPStore.getState().servers.some(
+      (server) => server.name === state.serverName,
+    );
+    if (!serverRemoved) failures.push('server:still-present');
+  } catch (error) {
+    failures.push(`server:${observedErrorCode(error)}`);
+  }
+
+  if (state.agentId) {
+    try {
+      await api.deleteAgent(state.agentId);
+      await useAgentStore.getState().loadAgents();
+      agentDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        agentDeleted = true;
+      } else {
+        failures.push(`agent:${observedErrorCode(error)}`);
+      }
+    }
+  }
+
+  if (state.providerId && state.modelId) {
+    try {
+      await api.deleteModel(state.providerId, state.modelId);
+      fixtureModelDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        fixtureModelDeleted = true;
+      } else {
+        failures.push(`model:${observedErrorCode(error)}`);
+      }
+    }
+  }
+  if (state.providerId) {
+    try {
+      await api.deleteProvider(state.providerId);
+      fixtureProviderDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        fixtureProviderDeleted = true;
+      } else {
+        failures.push(`provider:${observedErrorCode(error)}`);
+      }
+    }
+  }
+
+  try {
+    if (state.priorSelection) {
+      useAgentStore.getState().setSelectedAgent(state.priorSelection);
+      useAgentStore.getState().setAgentSurface(
+        state.priorSelection,
+        state.priorSurface,
+      );
+      await api.setSelectedAgent(state.priorSelection);
+    }
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  } catch (error) {
+    failures.push(`selection:${observedErrorCode(error)}`);
+  }
+
+  return {
+    status: (
+      failures.length === 0
+      && conversationDeleted
+      && serverRemoved
+      && agentDeleted
+      && fixtureModelDeleted
+      && fixtureProviderDeleted
+        ? 'clean'
+        : 'failed'
+    ),
+    conversationDeleted,
+    serverRemoved,
+    agentDeleted,
+    fixtureModelDeleted,
+    fixtureProviderDeleted,
+    selectionRestored:
+      !state.priorSelection
+      || useAgentStore.getState().selectedAgent === state.priorSelection,
+    uninstallOperation,
+    failures,
+  };
+}
+
+async function prepareMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  if (
+    !input.providerBaseUrl
+    || !input.command
+    || !input.args
+    || !input.env
+    || !input.toolName
+    || !input.expectedResult
+  ) {
+    throw new Error('agent.acceptance.mcpDevelopmentInputIncomplete');
+  }
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.mcpProviderUrlInvalid');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const state: McpLifecycleDevelopmentState = {
+    agentId: '',
+    agentName: '',
+    providerId: '',
+    modelId: '',
+    serverName: input.serverName,
+    conversationId: '',
+    turnId: '',
+    priorSelection,
+    priorSurface,
+    operationIds: {},
+  };
+  let primaryError: unknown = null;
+
+  try {
+    useMCPStore.getState().reset();
+    await useMCPStore.getState().loadServers();
+    if (useMCPStore.getState().servers.some(
+      (server) => server.name === input.serverName,
+    )) {
+      throw new Error('agent.acceptance.mcpFixtureServerAlreadyExists');
+    }
+
+    await useMCPStore.getState().createServer({
+      name: input.serverName,
+      title: `MCP lifecycle ${input.sampleId}`,
+      description: 'V2-J04 disposable stdio MCP fixture',
+      type: 'stdio',
+      command: input.command,
+      args: input.args,
+      env: input.env,
+      enabled: true,
+    });
+    const installStarted = currentMcpOperation(
+      input.serverName,
+      'MCP install',
+    );
+    state.operationIds.install = installStarted.operationId;
+    const install = await waitForMcpOperation(
+      input.serverName,
+      installStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP install',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'disconnected',
+      'MCP install projection',
+    );
+
+    await useMCPStore.getState().testServer(input.serverName);
+    const testStarted = currentMcpOperation(input.serverName, 'MCP test');
+    state.operationIds.test = testStarted.operationId;
+    const test = await waitForMcpOperation(
+      input.serverName,
+      testStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP test',
+    );
+    const testedServer = await waitForMcpServer(
+      input.serverName,
+      (server) =>
+        server.status === 'connected'
+        && server.toolCount > 0,
+      'MCP tested connection',
+    );
+
+    await useMCPStore.getState().toggleServer(input.serverName, false);
+    const disconnectStarted = currentMcpOperation(
+      input.serverName,
+      'MCP disconnect',
+    );
+    state.operationIds.disconnect = disconnectStarted.operationId;
+    const disconnect = await waitForMcpOperation(
+      input.serverName,
+      disconnectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP disconnect',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => !server.enabled && server.status === 'disconnected',
+      'MCP disconnected projection',
+    );
+
+    await useMCPStore.getState().toggleServer(input.serverName, true);
+    const connectStarted = currentMcpOperation(
+      input.serverName,
+      'MCP connect',
+    );
+    state.operationIds.connect = connectStarted.operationId;
+    const connect = await waitForMcpOperation(
+      input.serverName,
+      connectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP connect',
+    );
+    const connectedServer = await waitForMcpServer(
+      input.serverName,
+      (server) => server.enabled && server.status === 'connected',
+      'MCP connected projection',
+    );
+    await navigateToMcpSettings(input.serverName);
+    const connectedReceiver = mcpReceiverSnapshot(input.serverName);
+
+    const runtimeFixture = await createGovernedToolRuntimeFixture(
+      'mcp-lifecycle',
+      providerUrl.toString(),
+    );
+    state.providerId = runtimeFixture.providerId;
+    state.modelId = runtimeFixture.modelId;
+    const disposableAgent = await agentStore.createAgent({
+      name: `mcp-lifecycle-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `MCP lifecycle ${input.sampleId}`,
+      description: 'V2-J04 MCP lifecycle Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    state.agentId = disposableAgent.id || disposableAgent.name;
+    state.agentName = disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const toolFixture = await mcpToolFixture(
+      state.agentId,
+      input.serverName,
+      input.toolName,
+    );
+    const binding = await updateFoundationToolPolicy(
+      disposableAgent,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    const [bindingReadback, readiness] = await Promise.all([
+      api.listAgentCapabilityBindings(state.agentId),
+      api.getAgentCapabilityReadiness({
+        agent_id: state.agentId,
+        client_capability_session_id: capabilitySession.capabilitySessionId,
+      }),
+    ]);
+    const authoritativeBinding = bindingReadback.find(
+      (candidate) => candidate.bindingId === binding.bindingId,
+    );
+    const readyCapability = readiness.capabilities.find(
+      (candidate) =>
+        candidate.capability_id === toolFixture.manifest.capabilityId
+        && candidate.capability_version === toolFixture.manifest.version,
+    );
+
+    const turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: toolFixture,
+      sampleId: input.sampleId,
+      label: 'mcp-lifecycle-development',
+      onConversationCreated: (conversationId) => {
+        state.conversationId = conversationId;
+      },
+    });
+    state.turnId = turn.turnId;
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const settled = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'MCP ToolCall settlement',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    const toolFact = settled.facts[0];
+    const toolCallId = String(
+      evidenceField(toolFact, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'MCP ToolCall native receiver projection',
+      30_000,
+    );
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'MCP ToolCall native receiver',
+      30_000,
+    );
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      toolFact,
+    );
+    const stationFact = diagnosticToolCase(toolFact, sideEffectCount);
+    const conversationReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+
+    await useMCPStore.getState().testServer(input.serverName);
+    const blockedStarted = currentMcpOperation(
+      input.serverName,
+      'MCP cancellable test',
+    );
+    state.operationIds.cancel = blockedStarted.operationId;
+    const running = await waitForMcpOperation(
+      input.serverName,
+      blockedStarted.operationId,
+      new Set([CapabilityOperationStatus.RUNNING]),
+      'MCP cancellable test to run',
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    await useMCPStore.getState().cancelOperation(input.serverName);
+    const cancelled = await waitForMcpOperation(
+      input.serverName,
+      blockedStarted.operationId,
+      new Set([CapabilityOperationStatus.CANCELLED]),
+      'MCP cancellation',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'cancelled',
+      'MCP cancelled projection',
+    );
+    await navigateToMcpSettings(input.serverName);
+    const cancelledReceiver = mcpReceiverSnapshot(input.serverName);
+
+    await useMCPStore.getState().retryOperation(input.serverName);
+    const retryStarted = currentMcpOperation(input.serverName, 'MCP retry');
+    state.operationIds.retry = retryStarted.operationId;
+    const retry = await waitForMcpOperation(
+      input.serverName,
+      retryStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP retry',
+    );
+    const retryServer = await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'connected',
+      'MCP retry projection',
+    );
+    const retryReceiver = mcpReceiverSnapshot(input.serverName);
+
+    const operationReplayEntries = await Promise.all(
+      Object.entries(state.operationIds).map(async ([name, operationId]) => [
+        name,
+        await mcpOperationReplayEvidence(operationId),
+      ] as const),
+    );
+    const operationReplay = Object.fromEntries(operationReplayEntries);
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const toolLineage = evidenceRecord(
+      stationFact.lineage,
+      'mcpToolLineage',
+    );
+    const lifecycleOperations = {
+      install: mcpOperationEvidence(install),
+      test: mcpOperationEvidence(test),
+      disconnect: mcpOperationEvidence(disconnect),
+      connect: mcpOperationEvidence(connect),
+      running: mcpOperationEvidence(running),
+      cancelled: mcpOperationEvidence(cancelled),
+      retry: mcpOperationEvidence(retry),
+    };
+    const assertions = {
+      manifestAndConfigurationVisible:
+        toolFixture.manifest.sourceKind === CapabilitySourceKind.MCP
+        && toolFixture.manifest.sourceInstanceId === 'local_mcp'
+        && toolFixture.manifest.capabilityId === 'mcp.invoke'
+        && connectedReceiver.visible === true
+        && connectedReceiver.status === 'connected',
+      installTestConnectSucceeded:
+        install.status === CapabilityOperationStatus.SUCCEEDED
+        && test.status === CapabilityOperationStatus.SUCCEEDED
+        && disconnect.status === CapabilityOperationStatus.SUCCEEDED
+        && connect.status === CapabilityOperationStatus.SUCCEEDED
+        && testedServer.toolCount > 0
+        && connectedServer.status === 'connected',
+      authoritativeBindingReady:
+        authoritativeBinding?.revision === binding.revision
+        && authoritativeBinding.enabled
+        && authoritativeBinding.approvalPolicy
+          === CapabilityApprovalPolicy.AUTO
+        && Boolean(readyCapability && isAgentCapabilityReady(readyCapability)),
+      governedMcpInvocationSucceeded:
+        receiverProjection?.status === 'success'
+        && stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1
+        && JSON.stringify(conversationReadback.messages)
+          .includes(input.expectedResult),
+      cancellationVisibleAndTerminal:
+        cancelled.status === CapabilityOperationStatus.CANCELLED
+        && cancelledReceiver.visible === true
+        && cancelledReceiver.status === 'cancelled',
+      retryRestoredConnection:
+        retry.status === CapabilityOperationStatus.SUCCEEDED
+        && retryServer.status === 'connected'
+        && retryReceiver.status === 'connected',
+      stationReplayEqual:
+        Object.values(operationReplay).every((value) => {
+          const replay = evidenceRecord(value, 'mcpOperationReplay');
+          return replay.sourceHash === replay.replayHash;
+        }),
+      toolLineageComplete:
+        [
+          toolLineage.toolCallId,
+          toolLineage.manifestId,
+          toolLineage.bindingId,
+          toolLineage.executionClaimId,
+          toolLineage.sideEffectReceiptId,
+          toolLineage.resultId,
+          toolLineage.continuationId,
+        ].every((value) => typeof value === 'string' && value.length > 0),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.mcpLifecycleAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    return evidenceValue({
+      phase: 'prepared',
+      state,
+      assertions,
+      'receiver-dom': {
+        connected: connectedReceiver,
+        toolCall: {
+          visible: Boolean(
+            document.querySelector<HTMLElement>(toolCallSelector)
+              ?.getClientRects().length,
+          ),
+          toolCallId,
+          status: receiverProjection?.status ?? '',
+        },
+        cancelled: cancelledReceiver,
+        retried: retryReceiver,
+      },
+      'station-readback': {
+        entityKind: 'mcp-lifecycle-and-tool-call',
+        readinessSnapshotId: readiness.snapshot_id,
+        runtimeSnapshotId: readiness.runtime_snapshot_id,
+        binding: authoritativeBinding,
+        toolFact: stationFact,
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+      },
+      'executor-receipts': {
+        operations: lifecycleOperations,
+        toolLineage,
+      },
+      replay: operationReplay,
+    }) as Record<string, unknown>;
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanup = await cleanupMcpLifecycleDevelopmentState(state);
+  if (cleanup.status !== 'clean') {
+    throw Object.assign(
+      new Error('agent.acceptance.mcpLifecycleCleanupFailed'),
+      { primaryError, cleanup },
+    );
+  }
+  throw primaryError;
+}
+
+async function recoverMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  const state = input.state;
+  if (!state || state.serverName !== input.serverName) {
+    throw new Error('agent.acceptance.mcpRecoveryStateInvalid');
+  }
+  let primaryError: unknown = null;
+  let capture: Record<string, unknown> | null = null;
+  let cleanup: Record<string, unknown> | null = null;
+  try {
+    useMCPStore.getState().reset();
+    const disconnected = await waitForMcpServer(
+      state.serverName,
+      (server) =>
+        server.status === 'disconnected'
+        && server.lastError === 'MCP_RUNTIME_RESTARTED',
+      'MCP restart reconciliation',
+    );
+    await navigateToMcpSettings(state.serverName);
+    const disconnectedReceiver = mcpReceiverSnapshot(state.serverName);
+    const terminalReadbackEntries = await Promise.all(
+      Object.entries(state.operationIds).map(async ([name, operationId]) => [
+        name,
+        await mcpOperationReplayEvidence(operationId),
+      ] as const),
+    );
+    const terminalReadback = Object.fromEntries(terminalReadbackEntries);
+    const bindingReadback = (
+      await api.listAgentCapabilityBindings(state.agentId)
+    ).find((binding) =>
+      binding.capabilityId === 'mcp.invoke'
+      && binding.capabilityVersion === '2'
+      && !binding.tombstonedAt);
+
+    await useMCPStore.getState().reconnectServer(state.serverName);
+    const reconnectStarted = currentMcpOperation(
+      state.serverName,
+      'MCP reconnect',
+    );
+    state.operationIds.reconnect = reconnectStarted.operationId;
+    const reconnect = await waitForMcpOperation(
+      state.serverName,
+      reconnectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP reconnect',
+    );
+    const reconnected = await waitForMcpServer(
+      state.serverName,
+      (server) => server.status === 'connected',
+      'MCP reconnect projection',
+    );
+    const reconnectedReceiver = mcpReceiverSnapshot(state.serverName);
+    const reconnectReplay = await mcpOperationReplayEvidence(
+      reconnect.operationId,
+    );
+    const assertions = {
+      restartInvalidatedConnection:
+        disconnected.status === 'disconnected'
+        && disconnected.lastError === 'MCP_RUNTIME_RESTARTED'
+        && disconnectedReceiver.visible === true
+        && disconnectedReceiver.status === 'disconnected',
+      priorOperationsRemainTerminal:
+        Object.values(terminalReadback).every((value) => {
+          const replay = evidenceRecord(value, 'mcpTerminalReadback');
+          const operation = evidenceRecord(
+            replay.operation,
+            'mcpTerminalOperation',
+          );
+          return [
+            'succeeded',
+            'cancelled',
+            'timed_out',
+            'failed',
+            'cleanup_failed',
+            'unknown_side_effect',
+          ].includes(String(operation.status ?? ''))
+            && replay.sourceHash === replay.replayHash;
+        }),
+      bindingSurvivedRestart:
+        Boolean(bindingReadback?.enabled)
+        && bindingReadback?.capabilityId === 'mcp.invoke',
+      reconnectRestoredConnection:
+        reconnect.status === CapabilityOperationStatus.SUCCEEDED
+        && reconnected.status === 'connected'
+        && reconnectedReceiver.status === 'connected'
+        && reconnectReplay.sourceHash === reconnectReplay.replayHash,
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.mcpRecoveryAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      phase: 'recovered',
+      assertions,
+      'receiver-dom': {
+        disconnected: disconnectedReceiver,
+        reconnected: reconnectedReceiver,
+      },
+      'station-readback': {
+        entityKind: 'mcp-lifecycle-recovery',
+        terminalOperations: terminalReadback,
+        reconnect: reconnectReplay,
+        binding: bindingReadback,
+      },
+      'executor-receipts': {
+        reconnect: mcpOperationEvidence(reconnect),
+      },
+      replay: {
+        terminalOperations: terminalReadback,
+        reconnect: reconnectReplay,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    cleanup = await cleanupMcpLifecycleDevelopmentState(state);
+  }
+  if (cleanup.status !== 'clean') {
+    throw Object.assign(
+      new Error('agent.acceptance.mcpLifecycleCleanupFailed'),
+      { primaryError, cleanup },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.mcpRecoveryCaptureMissing');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'mcpRecoveryAssertions'),
+      cleanupComplete: true,
+    },
+    cleanup,
+  }) as Record<string, unknown>;
+}
+
+async function runMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  switch (input.phase) {
+    case 'prepare':
+      return prepareMcpLifecycleDevelopmentJourney(input);
+    case 'recover':
+      return recoverMcpLifecycleDevelopmentJourney(input);
+    case 'cleanup': {
+      if (!input.state) {
+        throw new Error('agent.acceptance.mcpCleanupStateInvalid');
+      }
+      return cleanupMcpLifecycleDevelopmentState(input.state);
+    }
+    default:
+      throw new Error('agent.acceptance.mcpDevelopmentPhaseInvalid');
+  }
+}
+
 async function runGovernedToolDevelopmentJourney(input: {
   sampleId: string;
   providerBaseUrl: string;
@@ -22351,6 +23314,10 @@ export function installAcceptanceHarness(): void {
         sampleId,
         providerBaseUrl,
       });
+    },
+
+    async runMcpLifecycleDevelopment(input: McpLifecycleDevelopmentInput) {
+      return runMcpLifecycleDevelopmentJourney(input);
     },
 
     async runCapabilityIncompatibleDevelopment({

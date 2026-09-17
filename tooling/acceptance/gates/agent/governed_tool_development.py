@@ -125,8 +125,21 @@ def require_mapping(value: object, label: str) -> Mapping[str, Any]:
 class _ProviderFixtureServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        tool_name: str,
+        tool_arguments: Mapping[str, Any],
+        expected_tool_result: str,
+        api_key: str,
+        terminal_content: str,
+    ) -> None:
         super().__init__(("127.0.0.1", 0), _ProviderFixtureHandler)
+        self.tool_name = tool_name
+        self.tool_arguments = dict(tool_arguments)
+        self.expected_tool_result = expected_tool_result
+        self.api_key = api_key
+        self.terminal_content = terminal_content
         self.request_lock = threading.Lock()
         self.requests: list[dict[str, Any]] = []
 
@@ -204,21 +217,21 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                 "toolNames": tool_names,
                 "hasToolResult": "tool" in message_roles,
                 "hasExpectedToolResult": any(
-                    FIXTURE_CLIPBOARD_TEXT
+                    self.fixture.expected_tool_result
                     in str(message.get("content") or "")
                     for message in tool_result_messages
                 ),
                 "authorizationPresent": (
                     self.headers.get("Authorization")
-                    == f"Bearer {FIXTURE_API_KEY}"
+                    == f"Bearer {self.fixture.api_key}"
                 ),
             }
         )
         if (
             payload.get("stream") is not True
-            or FIXTURE_TOOL_NAME not in tool_names
+            or self.fixture.tool_name not in tool_names
             or self.headers.get("Authorization")
-            != f"Bearer {FIXTURE_API_KEY}"
+            != f"Bearer {self.fixture.api_key}"
         ):
             self.send_error(422)
             return
@@ -232,7 +245,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                     "choices": [{
                         "index": 0,
                         "delta": {
-                            "content": "Governed tool execution completed.",
+                            "content": self.fixture.terminal_content,
                         },
                         "finish_reason": None,
                     }],
@@ -257,8 +270,12 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                             "id": f"provider-call-{request_number}",
                             "type": "function",
                             "function": {
-                                "name": FIXTURE_TOOL_NAME,
-                                "arguments": "{}",
+                                "name": self.fixture.tool_name,
+                                "arguments": json.dumps(
+                                    self.fixture.tool_arguments,
+                                    separators=(",", ":"),
+                                    sort_keys=True,
+                                ),
                             },
                         }],
                     },
@@ -282,12 +299,27 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
 
 
 class OpenAIProviderFixture:
-    def __init__(self) -> None:
-        self.server = _ProviderFixtureServer()
+    def __init__(
+        self,
+        *,
+        tool_name: str = FIXTURE_TOOL_NAME,
+        tool_arguments: Mapping[str, Any] | None = None,
+        expected_tool_result: str = FIXTURE_CLIPBOARD_TEXT,
+        api_key: str = FIXTURE_API_KEY,
+        terminal_content: str = "Governed tool execution completed.",
+        thread_name: str = "mca-j03-provider-fixture",
+    ) -> None:
+        self.server = _ProviderFixtureServer(
+            tool_name=tool_name,
+            tool_arguments=tool_arguments or {},
+            expected_tool_result=expected_tool_result,
+            api_key=api_key,
+            terminal_content=terminal_content,
+        )
         self.started = False
         self.thread = threading.Thread(
             target=self.server.serve_forever,
-            name="mca-j03-provider-fixture",
+            name=thread_name,
             daemon=True,
         )
 
@@ -316,7 +348,12 @@ class OpenAIProviderFixture:
 
 
 class RemoteProviderBridge:
-    def __init__(self, deployment_environment: str) -> None:
+    def __init__(
+        self,
+        deployment_environment: str,
+        *,
+        artifact_prefix: str = "mca-j03-provider",
+    ) -> None:
         environment_path = (
             ROOT
             / ".local"
@@ -349,6 +386,7 @@ class RemoteProviderBridge:
         self.remote_pid = 0
         self.remote_pid_path = ""
         self.remote_log_path = ""
+        self.artifact_prefix = artifact_prefix
 
     def _remote_endpoint_ready(self) -> bool:
         probe = self.transport.run_argv(
@@ -382,8 +420,8 @@ class RemoteProviderBridge:
             timeout=15,
         )
         token = "".join(character for character in run_id if character.isalnum())
-        self.remote_pid_path = f"/tmp/mca-j03-provider-{token}.pid"
-        self.remote_log_path = f"/tmp/mca-j03-provider-{token}.log"
+        self.remote_pid_path = f"/tmp/{self.artifact_prefix}-{token}.pid"
+        self.remote_log_path = f"/tmp/{self.artifact_prefix}-{token}.log"
         encoded_script = base64.b64encode(
             REMOTE_TCP_BRIDGE.encode("utf-8")
         ).decode("ascii")

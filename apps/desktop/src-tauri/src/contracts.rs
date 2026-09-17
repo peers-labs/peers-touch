@@ -451,6 +451,14 @@ pub struct McpExecuteToolInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpLifecycleOperationInput {
+    pub name: String,
+    pub operation_kind: String,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CronIdInput {
     pub id: String,
 }

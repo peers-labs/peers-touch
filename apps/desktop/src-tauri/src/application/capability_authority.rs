@@ -11,6 +11,9 @@ const BINDING_LIST_PATH: &str = "/sub-agent/agent/capability/binding/list";
 const BINDING_UPSERT_PATH: &str = "/sub-agent/agent/capability/binding/upsert";
 const BINDING_DELETE_PATH: &str = "/sub-agent/agent/capability/binding/delete";
 const READINESS_PATH: &str = "/sub-agent/agent/capability/readiness";
+const OPERATION_CANCEL_PATH: &str = "/sub-agent/agent/capability/operation/cancel";
+const OPERATION_GET_PATH: &str = "/sub-agent/agent/capability/operation/get";
+const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
 const KNOWLEDGE_DESCRIPTOR_CREATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/create";
 const KNOWLEDGE_DESCRIPTOR_UPDATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/update";
 const KNOWLEDGE_DESCRIPTOR_LIST_PATH: &str = "/sub-agent/agent/knowledge/descriptor/list";
@@ -156,6 +159,42 @@ pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<
         },
         token,
         "agent.capabilityReadinessFailed",
+    )
+}
+
+pub fn cancel_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::CancelCapabilityOperationRequest,
+        agent::CancelCapabilityOperationResponse,
+    >(
+        OPERATION_CANCEL_PATH,
+        input,
+        token,
+        "agent.capabilityOperationCancelFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn get_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<agent::GetCapabilityOperationRequest, agent::GetCapabilityOperationResponse>(
+        OPERATION_GET_PATH,
+        input,
+        token,
+        "agent.capabilityOperationGetFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn reconcile_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ReconcileCapabilityOperationRequest,
+        agent::ReconcileCapabilityOperationResponse,
+    >(
+        OPERATION_RECONCILE_PATH,
+        input,
+        token,
+        "agent.capabilityOperationReconcileFailed",
+        "agent.capabilityOperationRequestInvalid",
     )
 }
 
