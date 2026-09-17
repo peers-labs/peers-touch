@@ -5,7 +5,9 @@ import unittest
 from tooling.acceptance.core import REPO_ROOT
 from tooling.acceptance.gates.chat.lifecycle_onboarding import (
     GATE_ID,
+    ONBOARDING_REQUIRED_ASSERTIONS,
     accepted_conversation_id,
+    counterparty_requests,
     matching_requests,
 )
 from tooling.acceptance.gates.chat.lifecycle_onboarding_e2e import (
@@ -79,11 +81,58 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             )
         )
 
+    def test_counterparty_history_includes_both_directions_only_for_one_ptid(
+        self,
+    ) -> None:
+        snapshot = {
+            "requests": [
+                {
+                    "id": "outgoing",
+                    "senderPtid": "ptid:alice",
+                    "receiverPtid": "ptid:bob",
+                },
+                {
+                    "id": "incoming",
+                    "senderPtid": "ptid:bob",
+                    "receiverPtid": "ptid:alice",
+                },
+                {
+                    "id": "other",
+                    "senderPtid": "ptid:carol",
+                    "receiverPtid": "ptid:alice",
+                },
+            ],
+        }
+
+        self.assertEqual(
+            [
+                request["id"]
+                for request in counterparty_requests(
+                    snapshot,
+                    viewer_ptid="ptid:alice",
+                    peer_ptid="ptid:bob",
+                )
+            ],
+            ["outgoing", "incoming"],
+        )
+
     def test_onboarding_is_a_current_profile_gate_variant(self) -> None:
         self.assertTrue(is_current_profile_gate(GATE_ID))
         self.assertEqual(
             journey_for_gate(GATE_ID),
             "onboarding-first-message",
+        )
+        self.assertIn(
+            "native_account_resume_without_credentials",
+            ONBOARDING_REQUIRED_ASSERTIONS,
+        )
+        self.assertIn(
+            "friend_request_history_consolidated_selectable",
+            ONBOARDING_REQUIRED_ASSERTIONS,
+        )
+        self.assertIn(
+            "station_identity_human_readable_copyable",
+            ONBOARDING_REQUIRED_ASSERTIONS,
         )
 
     def test_onboarding_validator_requires_distinct_retry_and_shared_direct(self) -> None:
@@ -122,6 +171,22 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             "data-chat-contact-message",
         ):
             self.assertIn(selector, source)
+        for contract in (
+            "prove_additional_journey_assertions",
+            "_restart_and_resume_account",
+            "data-login-email",
+            "data-login-password",
+            'input[inputmode="numeric"]',
+        ):
+            self.assertIn(contract, source)
+        shared_runner = (
+            REPO_ROOT
+            / "tooling/acceptance/gates/chat/native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "self.prove_additional_journey_assertions()",
+            shared_runner,
+        )
 
     def test_find_people_uses_canonical_pending_and_station_scope(self) -> None:
         source = (
@@ -155,9 +220,27 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             'data-chat-friend-request-action="accept"',
             'data-chat-friend-request-action="reject"',
             "data-chat-friend-request-error",
+            "data-chat-friend-request-attempt-count",
+            "personContactSelection",
             "error.chat.conversationActionFailed",
         ):
             self.assertIn(marker, source)
+        detail_source = (
+            REPO_ROOT
+            / "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
+        ).read_text(encoding="utf-8")
+        for marker in (
+            "data-chat-contact-detail-home-station-name",
+            "station-peer-id",
+            "actor-ptid",
+        ):
+            self.assertIn(marker, detail_source)
+        profile_source = (
+            REPO_ROOT
+            / "apps/desktop/src/components/profile/PublicProfileCard.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("data-chat-profile-technical-details", profile_source)
+        self.assertIn("data-chat-profile-copy", profile_source)
 
         provisioner = (
             REPO_ROOT

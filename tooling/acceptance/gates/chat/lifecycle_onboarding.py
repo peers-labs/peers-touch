@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     async_harness,
@@ -41,6 +42,9 @@ ONBOARDING_REQUIRED_ASSERTIONS = {
     "friend_request_accepted_visible",
     "relationship_converged",
     "direct_conversation_singleton",
+    "native_account_resume_without_credentials",
+    "friend_request_history_consolidated_selectable",
+    "station_identity_human_readable_copyable",
 }
 
 SELECTORS = {
@@ -73,6 +77,26 @@ def matching_requests(
         and request.get("senderPtid") == sender_ptid
         and request.get("receiverPtid") == receiver_ptid
         and request.get("status") == status
+    ]
+
+
+def counterparty_requests(
+    snapshot: dict[str, Any],
+    *,
+    viewer_ptid: str,
+    peer_ptid: str,
+) -> list[dict[str, Any]]:
+    requests = snapshot.get("requests")
+    if not isinstance(requests, list):
+        return []
+    return [
+        request
+        for request in requests
+        if isinstance(request, dict)
+        and {
+            request.get("senderPtid"),
+            request.get("receiverPtid"),
+        } == {viewer_ptid, peer_ptid}
     ]
 
 
@@ -127,6 +151,124 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
         if not isinstance(value, dict):
             raise GateError(f"{actor} onboarding snapshot is invalid")
         return value
+
+    @staticmethod
+    def _resume_surface(client: TauriSession) -> dict[str, Any] | None:
+        value = client.execute_script(
+            """
+            return {
+              authenticatedShell: Boolean(document.querySelector('[data-page]')),
+              emailPrompt: Boolean(document.querySelector('[data-login-email]')),
+              passwordPrompt: Boolean(document.querySelector('[data-login-password]')),
+              pinPrompt: Boolean(document.querySelector('input[inputmode="numeric"]')),
+            };
+            """
+        )
+        return value if isinstance(value, dict) else None
+
+    def _restart_and_resume_account(self, actor: str) -> dict[str, Any]:
+        predecessor = self.clients[actor]
+        expected_ptid = self.ptids[actor]
+        expected_device_id = self.device_ids[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=("alice", "bob").index(actor),
+                window_count=2,
+            ),
+        )
+        self.runtime_instances.append(client)
+        self.client_lifecycles.register(client, expected_ptid)
+        self.client_lifecycles.transfer_preserved_session(
+            predecessor,
+            client,
+        )
+        self.client_lifecycles.mark_live(client)
+        self.register_driver(client)
+
+        def resumed() -> dict[str, Any] | None:
+            try:
+                hydration = async_harness(
+                    client,
+                    "hydrateActiveActor",
+                    {},
+                    timeout=10,
+                )
+                surface = self._resume_surface(client)
+            except Exception:
+                return None
+            actor_ptid = str((hydration or {}).get("actorPtid") or "")
+            if (
+                actor_ptid != expected_ptid
+                or not isinstance(surface, dict)
+                or surface.get("authenticatedShell") is not True
+                or surface.get("emailPrompt") is True
+                or surface.get("passwordPrompt") is True
+                or surface.get("pinPrompt") is True
+            ):
+                return None
+            return {
+                "actorPtid": actor_ptid,
+                "surface": surface,
+            }
+
+        evidence = wait_until(
+            resumed,
+            f"{actor} native account session resume",
+            timeout=STEP_TIMEOUT,
+        )
+        device = wait_until(
+            lambda: (
+                current
+                if (
+                    isinstance(
+                        current := async_harness(
+                            client,
+                            "getRealtimeDevice",
+                            {},
+                        ),
+                        dict,
+                    )
+                    and current.get("active") is True
+                    and current.get("actorPtid") == expected_ptid
+                    and current.get("deviceId") == expected_device_id
+                )
+                else None
+            ),
+            f"{actor} resumed messaging device",
+            timeout=STEP_TIMEOUT,
+        )
+        self.client_lifecycles.mark_authenticated(client)
+        self.clients[actor] = client
+        return {
+            **evidence,
+            "deviceId": str(device.get("deviceId") or ""),
+        }
+
+    def prove_additional_journey_assertions(self) -> None:
+        evidence = {
+            actor: self.step(
+                "account.resume",
+                lambda actor=actor: self._restart_and_resume_account(actor),
+                actor,
+            )
+            for actor in ("alice", "bob")
+        }
+        self.report.runtime["accountResume"] = evidence
+        self.assert_condition(
+            "native_account_resume_without_credentials",
+            all(
+                item.get("actorPtid") == self.ptids[actor]
+                and item.get("deviceId") == self.device_ids[actor]
+                and item.get("surface", {}).get("authenticatedShell") is True
+                and item.get("surface", {}).get("emailPrompt") is False
+                and item.get("surface", {}).get("passwordPrompt") is False
+                and item.get("surface", {}).get("pinPrompt") is False
+                for actor, item in evidence.items()
+            ),
+            json.dumps(evidence, sort_keys=True),
+        )
 
     def _wait_snapshot(
         self,
@@ -554,6 +696,7 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             const row = rows.at(-1);
             if (!row) return null;
             return {
+              rowCount: rows.length,
               requestId:
                 row.getAttribute('data-chat-friend-request-id') || '',
               status:
@@ -562,6 +705,12 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
                 row.getAttribute(
                   'data-chat-friend-request-direction'
                 ) || '',
+              attemptCount:
+                row.getAttribute(
+                  'data-chat-friend-request-attempt-count'
+                ) || '',
+              role: row.getAttribute('role') || '',
+              tabIndex: row.getAttribute('tabindex') || '',
               acceptVisible: Boolean(
                 row.querySelector(
                   '[data-chat-friend-request-action="accept"]'
@@ -581,6 +730,78 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             selector,
         )
         return value if isinstance(value, dict) else None
+
+    def _select_request_profile(
+        self,
+        client: TauriSession,
+        *,
+        peer_ptid: str,
+        direction: str,
+        status: int,
+    ) -> dict[str, Any]:
+        selector = (
+            f'[data-chat-friend-request-peer-ptid={json.dumps(peer_ptid)}]'
+            f'[data-chat-friend-request-direction={json.dumps(direction)}]'
+            f'[data-chat-friend-request-status="{status}"]'
+        )
+        client.find_element(selector, 10).click()
+        detail_selector = (
+            f'[data-chat-contact-detail-peer-ptid={json.dumps(peer_ptid)}]'
+        )
+        client.find_element(detail_selector, 10)
+        details = client.find_element(
+            "[data-chat-profile-technical-details]",
+            10,
+        )
+        initially_open = details.get_attribute("open") is not None
+        client.find_element(
+            "[data-chat-profile-technical-details] summary",
+            10,
+        ).click()
+        return wait_until(
+            lambda: client.execute_script(
+                """
+                const detail = document.querySelector(arguments[0]);
+                const technical = document.querySelector(
+                  '[data-chat-profile-technical-details]'
+                );
+                if (!detail || !technical?.open) return null;
+                return {
+                  kind:
+                    detail.getAttribute(
+                      'data-chat-contact-detail-kind'
+                    ) || '',
+                  peerPtid:
+                    detail.getAttribute(
+                      'data-chat-contact-detail-peer-ptid'
+                    ) || '',
+                  stationName:
+                    detail.getAttribute(
+                      'data-chat-contact-detail-home-station-name'
+                    ) || '',
+                  stationPeerId:
+                    detail.getAttribute(
+                      'data-chat-contact-detail-home-station-peer-id'
+                    ) || '',
+                  attemptCount:
+                    detail.getAttribute(
+                      'data-chat-contact-detail-request-attempt-count'
+                    ) || '',
+                  detailsInitiallyOpen: arguments[1],
+                  detailsOpen: Boolean(technical.open),
+                  copyFields: Array.from(
+                    technical.querySelectorAll('[data-chat-profile-copy]')
+                  ).map((item) => (
+                    item.getAttribute('data-chat-profile-copy') || ''
+                  )),
+                };
+                """,
+                detail_selector,
+                initially_open,
+            ),
+            "selectable request profile with expanded identity details",
+            timeout=STEP_TIMEOUT,
+        )
 
     def _decide_request(
         self,
@@ -710,6 +931,41 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
                 sort_keys=True,
             ),
         )
+        rejected_profile = self.step(
+            "relationship.rejected-profile",
+            lambda: self._select_request_profile(
+                self.clients[sender],
+                peer_ptid=self.ptids[receiver],
+                direction="outgoing",
+                status=3,
+            ),
+            sender,
+        )
+        self.assert_condition(
+            "terminal_request_profile_selectable",
+            rejected_profile.get("kind") == "person"
+            and rejected_profile.get("peerPtid") == self.ptids[receiver]
+            and int(rejected_profile.get("attemptCount") or 0)
+            == len(counterparty_requests(
+                sender_rejected,
+                viewer_ptid=self.ptids[sender],
+                peer_ptid=self.ptids[receiver],
+            )),
+            json.dumps(rejected_profile, sort_keys=True),
+        )
+        self.assert_condition(
+            "station_identity_human_readable_copyable",
+            bool(rejected_profile.get("stationName"))
+            and rejected_profile.get("stationName")
+            != rejected_profile.get("stationPeerId")
+            and rejected_profile.get("detailsInitiallyOpen") is False
+            and rejected_profile.get("detailsOpen") is True
+            and {
+                "actor-ptid",
+                "station-peer-id",
+            }.issubset(set(rejected_profile.get("copyFields") or [])),
+            json.dumps(rejected_profile, sort_keys=True),
+        )
 
         retry = self.step(
             "relationship.retry",
@@ -766,6 +1022,27 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
                 {
                     "receiver": accepted,
                     "sender": sender_accepted_row,
+                },
+                sort_keys=True,
+            ),
+        )
+        self.assert_condition(
+            "friend_request_history_consolidated_selectable",
+            sender_accepted_row.get("rowCount") == 1
+            and int(sender_accepted_row.get("attemptCount") or 0)
+            == len(counterparty_requests(
+                snapshots[0],
+                viewer_ptid=self.ptids[sender],
+                peer_ptid=self.ptids[receiver],
+            ))
+            and int(sender_accepted_row.get("attemptCount") or 0) >= 2
+            and sender_accepted_row.get("role") == "button"
+            and sender_accepted_row.get("tabIndex") == "0"
+            and rejected_profile.get("kind") == "person",
+            json.dumps(
+                {
+                    "acceptedRow": sender_accepted_row,
+                    "rejectedProfile": rejected_profile,
                 },
                 sort_keys=True,
             ),
