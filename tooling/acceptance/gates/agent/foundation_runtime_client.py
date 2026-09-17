@@ -1204,7 +1204,7 @@ class FoundationRuntimeClient:
                 f"{self.spec.runtime} harness {method} failed: {error}"
             ) from error
 
-    def configure_station(self, *, timeout: float = 60) -> None:
+    def configure_station(self, *, timeout: float = 60) -> dict[str, Any]:
         result = self.harness(
             "configureStation",
             {"stationUrl": self._station_url},
@@ -1215,10 +1215,12 @@ class FoundationRuntimeClient:
             or result.get("configured") is not True
             or result.get("activeUrl") != self._station_url
             or result.get("peerIdAvailable") is not True
+            or not str(result.get("activeStationPeerId") or "").strip()
         ):
             raise FoundationClientError(
                 f"{self.spec.runtime} Station configuration failed: {result}"
             )
+        return dict(result)
 
     def prepare_foundation_f06(
         self,

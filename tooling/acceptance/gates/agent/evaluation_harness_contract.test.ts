@@ -80,6 +80,12 @@ test('J06 harness exposes phased recovery, isolation, and cleanup', () => {
   assert.match(harness, /schedulerClaim/);
 });
 
+test('shared Station binding returns the canonical active peer identity', () => {
+  assert.match(harness, /const activeStationPeerId = \(/);
+  assert.match(harness, /activeStationPeerId,/);
+  assert.match(harness, /peerIdAvailable: Boolean\(activeStationPeerId\)/);
+});
+
 test('J06 Acceptance does not use the legacy Evaluation store', () => {
   const j06Start = harness.indexOf('const EVALUATION_SELECTORS');
   const j06End = harness.indexOf(

@@ -535,7 +535,6 @@ def seed_actor_identity(
     role: str,
     target_root: Path,
     station_url: str,
-    station_peer_id: str,
 ) -> bool:
     fixture = IDENTITY_FIXTURE_ROOT / role
     if not fixture.exists():
@@ -553,13 +552,6 @@ def seed_actor_identity(
     )
     source = fixture / "actor-identity"
     _validate_identity_root(source)
-    _validate_identity_key(
-        _stable_identity_key_path(
-            source,
-            station_peer_id,
-            str(metadata["actorId"]),
-        )
-    )
     require(not target_root.exists(), f"{role} identity target already exists")
     target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copytree(source, target_root, symlinks=False)
@@ -631,7 +623,7 @@ def authenticate_client(
     account: str,
     password: str,
 ) -> dict[str, Any]:
-    client.configure_station(timeout=60)
+    station = client.configure_station(timeout=60)
     login = client.harness(
         "loginWithPassword",
         {"account": account, "password": password},
@@ -649,7 +641,10 @@ def authenticate_client(
         and navigation.get("navigated") is True,
         f"Native Agent navigation failed for {account}",
     )
-    return dict(login)
+    return {
+        **dict(login),
+        "stationPeerId": station["activeStationPeerId"],
+    }
 
 
 def _clients_from_manifest(
@@ -870,11 +865,6 @@ def main() -> int:
             runtime_manifest.to_dict(),
             profile_env,
         )
-        station = runtime_manifest.services.get("station")
-        require(
-            station is not None and bool(station.runtime_identity),
-            "J06 Station runtime identity is unavailable",
-        )
         provider_fixture.start()
         provider_fixture_started = True
         provider_base_url = provider_bridge.start(
@@ -887,7 +877,6 @@ def main() -> int:
                 role,
                 client.actor_identity_root,
                 profile_env["PT_STATION_URL"],
-                station.runtime_identity,
             )
             client.start()
             login = authenticate_client(
@@ -901,7 +890,7 @@ def main() -> int:
                     client.actor_identity_root,
                     profile_env["PT_STATION_URL"],
                     str(login["actorId"]),
-                    station.runtime_identity,
+                    str(login["stationPeerId"]),
                 ),
                 "reused": reused,
             }

@@ -25488,18 +25488,19 @@ export function installAcceptanceHarness(): void {
       const activeEntry = registry.entries.find(
         (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
       );
-      const peerIdAvailable = Boolean(
-        activeEntry?.peer_id?.trim() || probed.peer_id?.trim(),
+      const activeStationPeerId = (
+        activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
       );
 
       return {
         configured:
           activeUrl === expectedUrl
           && activeEntry?.online === true
-          && peerIdAvailable,
+          && Boolean(activeStationPeerId),
         activeUrl,
         online: activeEntry?.online === true,
-        peerIdAvailable,
+        peerIdAvailable: Boolean(activeStationPeerId),
+        activeStationPeerId,
       };
     },
 
