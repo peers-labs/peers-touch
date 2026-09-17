@@ -791,6 +791,7 @@ function acquireRegistryLock(lockFile, timeoutMs = REGISTRY_LOCK_TIMEOUT_MS) {
 }
 
 function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
   let fd;
   try {
     fd = openSync(directory, 'r');
