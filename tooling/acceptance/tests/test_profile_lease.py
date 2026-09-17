@@ -122,10 +122,14 @@ class ProfileLeaseTests(unittest.TestCase):
             finally:
                 held.release()
 
-    def test_deploy_script_uses_shared_profile_lease(self) -> None:
+    def test_deploy_script_uses_machine_station_lease_and_legacy_relay_lease(self) -> None:
         source = (
             REPO_ROOT / "tooling" / "scripts" / "deploy" / "deploy.sh"
         ).read_text(encoding="utf-8")
+        self.assertIn('[[ "$PT_DEPLOY_ROLE" == "station" ]]', source)
+        self.assertIn("machine-dev.mjs", source)
+        self.assertIn("verify-held", source)
+        self.assertIn("--resource-kind station.deploy", source)
         self.assertIn("PT_PROFILE_LEASE_HELD", source)
         self.assertIn("tooling.acceptance.core.lease", source)
         self.assertIn('--resource "$env_name"', source)

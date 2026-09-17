@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
@@ -24,6 +25,7 @@ const (
 	conversationCommandProposalVersion = uint32(1)
 	maxCommandProposalLifetime         = 5 * time.Minute
 	maxProposalClockSkew               = 30 * time.Second
+	maxFederatedTypingRecipients       = 256
 )
 
 // ReceiverConfig binds the three Conversation payload receivers to their
@@ -36,6 +38,8 @@ type ReceiverConfig struct {
 	AuthorityResults   AuthorityResultPort
 	DeviceDeliveries   DeviceDeliveryPort
 	DeliveryReceipts   DeliveryReceiptPort
+	ReadCursors        ReadCursorPort
+	Typing             interactionapp.FederatedTypingReceiver
 	Sender             *Sender
 	Clock              federationdelivery.Clock
 }
@@ -49,6 +53,8 @@ type Receiver struct {
 	authorityResults   AuthorityResultPort
 	deviceDeliveries   DeviceDeliveryPort
 	deliveryReceipts   DeliveryReceiptPort
+	readCursors        ReadCursorPort
+	typing             interactionapp.FederatedTypingReceiver
 	sender             *Sender
 	clock              federationdelivery.Clock
 }
@@ -63,6 +69,7 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		config.AuthorityResults == nil ||
 		config.DeviceDeliveries == nil ||
 		config.DeliveryReceipts == nil ||
+		config.ReadCursors == nil ||
 		config.Sender == nil ||
 		config.Clock == nil {
 		return nil, federationdelivery.NewError(
@@ -79,6 +86,8 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		authorityResults:   config.AuthorityResults,
 		deviceDeliveries:   config.DeviceDeliveries,
 		deliveryReceipts:   config.DeliveryReceipts,
+		readCursors:        config.ReadCursors,
+		typing:             config.Typing,
 		sender:             config.Sender,
 		clock:              config.Clock,
 	}, nil
@@ -101,6 +110,8 @@ func RegisterReceivers(
 		federationdelivery.PayloadKindConversationAuthorityResult,
 		federationdelivery.PayloadKindConversationDeviceDelivery,
 		federationdelivery.PayloadKindConversationDeliveryReceipt,
+		federationdelivery.PayloadKindConversationTyping,
+		federationdelivery.PayloadKindConversationReadCursor,
 	} {
 		if _, exists := registry.Lookup(kind); exists {
 			return federationdelivery.NewError(
@@ -140,13 +151,34 @@ func RegisterReceivers(
 	); err != nil {
 		return err
 	}
-	return federationdelivery.RegisterProtoReceiver(
+	if err := federationdelivery.RegisterProtoReceiver(
 		registry,
 		federationdelivery.PayloadKindConversationDeliveryReceipt,
 		func() *chatmodel.DeviceConsumptionReceipt {
 			return &chatmodel.DeviceConsumptionReceipt{}
 		},
 		receiver.receiveDeliveryReceipt,
+	); err != nil {
+		return err
+	}
+	if err := federationdelivery.RegisterProtoReceiver(
+		registry,
+		federationdelivery.PayloadKindConversationReadCursor,
+		func() *chatmodel.FederatedConversationReadCursor {
+			return &chatmodel.FederatedConversationReadCursor{}
+		},
+		receiver.receiveReadCursor,
+	); err != nil {
+		return err
+	}
+
+	return federationdelivery.RegisterEphemeralProtoReceiver(
+		registry,
+		federationdelivery.PayloadKindConversationTyping,
+		func() *chatmodel.FederatedConversationTypingSignal {
+			return &chatmodel.FederatedConversationTypingSignal{}
+		},
+		receiver.receiveTyping,
 	)
 }
 
@@ -204,6 +236,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		ctx,
 		transaction,
 		proposal.GetActorPtid(),
+		frame.GetSourceStationPeerId(),
 		proposal.GetActorDeviceId(),
 		proposal.GetActorSigningKeyId(),
 	)
@@ -475,6 +508,102 @@ func (r *Receiver) receiveDeliveryReceipt(
 			err,
 		)
 	case replay:
+		return federationdelivery.DuplicateResult(), nil
+	default:
+		return federationdelivery.AcceptedResult(), nil
+	}
+}
+
+func (r *Receiver) receiveReadCursor(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	cursor *chatmodel.FederatedConversationReadCursor,
+	frame *federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return federationdelivery.Result{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"receive Conversation read cursor",
+			fmt.Errorf("transaction-bound database is required"),
+		)
+	}
+	if err := validateCanonicalFramePayload(frame, cursor); err != nil ||
+		validateReadCursorFrame(cursor, frame, r.localStationPeerID) != nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorInvalidFrame,
+		), nil
+	}
+	err := r.readCursors.ApplyReadCursor(
+		ctx,
+		transaction,
+		proto.Clone(cursor).(*chatmodel.FederatedConversationReadCursor),
+		frame.GetSourceStationPeerId(),
+	)
+	switch {
+	case errors.Is(err, ErrReadCursorConflict):
+		return federationdelivery.PayloadHashConflictResult(), nil
+	case errors.Is(err, ErrReadCursorRejected):
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorDomainRejected,
+		), nil
+	case err != nil:
+		return federationdelivery.Result{}, fmt.Errorf(
+			"conversation Federation: apply read cursor: %w",
+			err,
+		)
+	default:
+		return federationdelivery.AcceptedResult(), nil
+	}
+}
+
+func (r *Receiver) receiveTyping(
+	ctx context.Context,
+	signal *chatmodel.FederatedConversationTypingSignal,
+	frame *federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	if r.typing == nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorUnsupportedPayload,
+		), nil
+	}
+	if err := validateCanonicalFramePayload(frame, signal); err != nil ||
+		validateTypingFrame(signal, frame, r.localStationPeerID) != nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorInvalidFrame,
+		), nil
+	}
+	applicationSignal, err := typingSignalFromWire(signal)
+	if err != nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorInvalidFrame,
+		), nil
+	}
+	result, err := r.typing.ReceiveFederatedTyping(
+		ctx,
+		valueobject.StationID(frame.GetSourceStationPeerId()),
+		applicationSignal,
+	)
+	switch {
+	case interactionapp.IsCode(err, interactionapp.ErrorCodeQuotaExceeded):
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorOverloaded,
+		), nil
+	case interactionapp.IsCode(err, interactionapp.ErrorCodeStalePulse):
+		return federationdelivery.DuplicateResult(), nil
+	case interactionapp.IsCode(err, interactionapp.ErrorCodeIdempotencyConflict):
+		return federationdelivery.PayloadHashConflictResult(), nil
+	case interactionapp.IsCode(err, interactionapp.ErrorCodeInvalidArgument),
+		interactionapp.IsCode(err, interactionapp.ErrorCodeUnauthorized),
+		interactionapp.IsCode(err, interactionapp.ErrorCodeIntegrityFailed):
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorDomainRejected,
+		), nil
+	case err != nil:
+		return federationdelivery.Result{}, fmt.Errorf(
+			"conversation Federation: receive typing: %w",
+			err,
+		)
+	case result.Duplicate:
 		return federationdelivery.DuplicateResult(), nil
 	default:
 		return federationdelivery.AcceptedResult(), nil
@@ -965,6 +1094,146 @@ func validateDeliveryReceiptFrame(
 	}
 
 	return nil
+}
+
+func validateReadCursorFrame(
+	cursor *chatmodel.FederatedConversationReadCursor,
+	frame *federationdelivery.Frame,
+	localStationPeerID string,
+) error {
+	if cursor == nil ||
+		cursor.GetFormatVersion() != conversationReadCursorVersion ||
+		cursor.GetReader() == nil ||
+		cursor.GetFederationId() == "" ||
+		cursor.GetConversationId() == "" ||
+		cursor.GetAuthorityStationPeerId() != localStationPeerID ||
+		cursor.GetAuthorityEpoch() == 0 ||
+		cursor.GetReader().GetPtid() == "" ||
+		cursor.GetReader().GetDeviceId() == "" ||
+		cursor.GetReaderHomeStationPeerId() == "" ||
+		cursor.GetLastReadSequence() <= 0 {
+		return fmt.Errorf("read cursor is incomplete")
+	}
+	payloadID, err := ReadCursorPayloadID(cursor)
+	if err != nil {
+		return err
+	}
+	if frame.GetPayloadKind() !=
+		federationdelivery.PayloadKindConversationReadCursor ||
+		frame.GetSourceStationPeerId() != cursor.GetReaderHomeStationPeerId() ||
+		frame.GetTargetStationPeerId() != cursor.GetAuthorityStationPeerId() ||
+		frame.GetPayloadId() != payloadID ||
+		frame.GetIdempotencyKey() != readCursorFrameDomain+":"+payloadID ||
+		frame.GetOrderingKey() != readCursorOrderingKey(cursor) ||
+		frame.GetOrderingSequence() != cursor.GetLastReadSequence() {
+		return fmt.Errorf("read cursor frame binding is invalid")
+	}
+
+	return nil
+}
+
+func validateTypingFrame(
+	signal *chatmodel.FederatedConversationTypingSignal,
+	frame *federationdelivery.Frame,
+	localStationPeerID string,
+) error {
+	if signal == nil ||
+		signal.GetFormatVersion() != conversationTypingVersion ||
+		signal.GetFederationId() == "" ||
+		signal.GetConversationId() == "" ||
+		signal.GetAuthorityStationPeerId() == "" ||
+		signal.GetAuthorityEpoch() <= 0 ||
+		signal.GetSender() == nil ||
+		signal.GetSender().GetActor() == nil ||
+		signal.GetSender().GetActor().GetPtid() == "" ||
+		signal.GetSender().GetDeviceId() == "" ||
+		signal.GetSenderHomeStationPeerId() == "" ||
+		signal.GetPulseGeneration() == 0 ||
+		signal.GetExpiresAt() == nil ||
+		!signal.GetExpiresAt().IsValid() ||
+		len(signal.GetRecipientActorPtids()) > maxFederatedTypingRecipients {
+		return fmt.Errorf("typing signal is incomplete")
+	}
+	if frame == nil ||
+		frame.GetTargetStationPeerId() != localStationPeerID ||
+		frame.GetOrderingSequence() != 0 ||
+		frame.GetPayloadId() != typingPayloadID(signal) ||
+		frame.GetIdempotencyKey() != typingFrameDomain+":"+frame.GetPayloadId() ||
+		frame.GetOrderingKey() != conversationOrderingKey(
+			typingFrameDomain,
+			signal.GetConversationId(),
+		) ||
+		frame.GetExpiresAt() == nil ||
+		!frame.GetExpiresAt().AsTime().Equal(signal.GetExpiresAt().AsTime()) {
+		return fmt.Errorf("typing frame binding is invalid")
+	}
+	switch signal.GetPhase() {
+	case chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION:
+		if frame.GetSourceStationPeerId() != signal.GetSenderHomeStationPeerId() ||
+			frame.GetTargetStationPeerId() != signal.GetAuthorityStationPeerId() ||
+			len(signal.GetRecipientActorPtids()) != 0 {
+			return fmt.Errorf("typing authority admission route is invalid")
+		}
+	case chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT:
+		if frame.GetSourceStationPeerId() != signal.GetAuthorityStationPeerId() ||
+			len(signal.GetRecipientActorPtids()) == 0 {
+			return fmt.Errorf("typing Home fan-out route is invalid")
+		}
+	default:
+		return fmt.Errorf("typing phase is invalid")
+	}
+	previous := ""
+	for _, recipient := range signal.GetRecipientActorPtids() {
+		if strings.TrimSpace(recipient) == "" ||
+			recipient != strings.TrimSpace(recipient) ||
+			(previous != "" && recipient <= previous) {
+			return fmt.Errorf("typing recipients are not canonical")
+		}
+		previous = recipient
+	}
+
+	return nil
+}
+
+func typingSignalFromWire(
+	signal *chatmodel.FederatedConversationTypingSignal,
+) (interactionapp.FederatedTypingSignal, error) {
+	phase := interactionapp.FederatedTypingPhase(0)
+	switch signal.GetPhase() {
+	case chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION:
+		phase = interactionapp.FederatedTypingPhaseAuthorityAdmission
+	case chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT:
+		phase = interactionapp.FederatedTypingPhaseHomeFanout
+	default:
+		return interactionapp.FederatedTypingSignal{}, fmt.Errorf("typing phase is invalid")
+	}
+	recipients := make(
+		[]valueobject.PTID,
+		0,
+		len(signal.GetRecipientActorPtids()),
+	)
+	for _, recipient := range signal.GetRecipientActorPtids() {
+		recipients = append(recipients, valueobject.PTID(recipient))
+	}
+
+	return interactionapp.FederatedTypingSignal{
+		Phase:            phase,
+		FederationID:     valueobject.FederationID(signal.GetFederationId()),
+		ConversationID:   valueobject.ConversationID(signal.GetConversationId()),
+		AuthorityStation: valueobject.StationID(signal.GetAuthorityStationPeerId()),
+		AuthorityEpoch:   valueobject.AuthorityEpoch(signal.GetAuthorityEpoch()),
+		Sender: valueobject.Endpoint{
+			Actor:  valueobject.PTID(signal.GetSender().GetActor().GetPtid()),
+			Device: valueobject.DeviceID(signal.GetSender().GetDeviceId()),
+		},
+		SenderHomeStation: valueobject.StationID(
+			signal.GetSenderHomeStationPeerId(),
+		),
+		Generation: signal.GetPulseGeneration(),
+		ExpiresAt:  signal.GetExpiresAt().AsTime().UTC(),
+		IsTyping:   signal.GetIsTyping(),
+		Recipients: recipients,
+	}, nil
 }
 
 func validateCanonicalFramePayload(

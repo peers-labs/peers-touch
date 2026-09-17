@@ -24,6 +24,24 @@ Format: `v<MAJOR>.<MINOR>.<PATCH>`
 
 ## Release Workflow
 
+### 0. Run Explicit Full Acceptance
+
+A release request is explicit authorization for the current formal plan's full
+Acceptance matrix. Before versioning or tagging:
+
+```bash
+python3 tooling/scripts/execution-plan.py \
+  --plan <completed-execution-plan> \
+  --require-complete
+python3 tooling/scripts/acceptance-run.py \
+  --execution-plan <completed-execution-plan> \
+  --full
+```
+
+Do not infer release intent from a completed plan, merged PR, available runtime
+environment, or version-like commit. A failed, blocked, or unproven full
+Acceptance run stops release creation.
+
 ### 1. Determine Version Bump
 
 ```bash
@@ -159,5 +177,6 @@ gh release create "v<X>.<Y>.<Z+1>" \
 - **Never** create a release without a tag
 - **Never** delete or move an existing release tag
 - **Never** release without reviewing the changelog
+- **Never** release without explicit user intent and a passed full Acceptance run
 - **Never** skip version numbers (go sequentially)
 - **Never** release directly from a feature branch — only from `main`

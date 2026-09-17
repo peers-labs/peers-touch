@@ -1,83 +1,127 @@
 #!/usr/bin/env bash
-# env.sh — Load current worktree's active dev profile
+# env.sh — Resolve current worktree configuration from the machine registry
 # Sourced (not executed) by other local-dev scripts.
 #
 # Profile resolution:
-#   1. PT_DEV_PROFILE_FILE env var (explicit override)
-#   2. Profile name from the worktree-specific active symlink
-#   3. Canonical profile from the sibling env repo
-#   4. Worktree-active local profile when no canonical env profile exists
+#   1. Canonical worktree root -> workspaceId
+#   2. Authoritative machine registry binding
+#   3. Reviewed canonical profile from the sibling env repo
+#   4. Machine-owned slot and derived local ports
 #
-# Env repo discovery: sibling convention — env repo at $PROJECT_ROOT/../env
-#
-# Pids/logs/data are scoped by profile name so multiple profiles
-# can coexist when .local/ is shared across worktrees.
+# Acceptance runtime-manifest overrides remain contained, but the worktree must
+# still have an authoritative machine registration and slot allocation.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
+ENV_REPO="$(cd "$PROJECT_ROOT/.." && pwd)/env"
+export PT_ENV_REPO="$ENV_REPO"
+MACHINE_DEV_SCRIPT="$SCRIPT_DIR/machine-dev.mjs"
 
-WORKTREE_ID="$(basename "$PROJECT_ROOT")"
-export WORKTREE_ID
+if ! resolved_exports="$(
+  node "$MACHINE_DEV_SCRIPT" resolve \
+    --workspace-root "$PROJECT_ROOT" \
+    --env-repo "$ENV_REPO" \
+    --format shell
+)"; then
+  echo "[ERROR] Machine Dev Control Plane resolution failed."
+  echo "        Register explicitly with make env-register; no profile or slot fallback is allowed."
+  exit 1
+fi
+eval "$resolved_exports"
 
 PROFILE_FILE="${PT_DEV_PROFILE_FILE:-}"
+PROFILE_FROM_MACHINE=0
 
-if [[ -z "$PROFILE_FILE" ]]; then
-  ACTIVE_PROFILE="$LOCAL_DEV_DIR/active/$WORKTREE_ID.env"
-  if [[ ! -L "$ACTIVE_PROFILE" ]]; then
-    echo "[ERROR] No worktree-specific active profile for '$WORKTREE_ID'."
-    echo "        Run: make profiles"
-    echo "        Then: make profile <name>"
-    local_env_repo="$(cd "$PROJECT_ROOT/.." && pwd)/env"
-    if [[ -d "$local_env_repo/peers-touch" ]]; then
-      echo "        Available (from env repo):"
-      ls -d "$local_env_repo/peers-touch"/*/ 2>/dev/null | xargs -I{} basename {} | grep -v '0-tpl' | sed 's/^/          /'
-    fi
+if [[ -n "$PROFILE_FILE" ]]; then
+  if [[ "${PT_DEV_PROFILE_FILE_AUTHORITY:-}" != "acceptance-runtime-manifest" ]]; then
+    echo "[ERROR] PT_DEV_PROFILE_FILE requires acceptance-runtime-manifest authority."
     exit 1
   fi
-
-  active_target="$(readlink "$ACTIVE_PROFILE")"
-  active_filename="$(basename "$active_target")"
-  if [[ "$active_filename" != *.env ]]; then
-    echo "[ERROR] Active profile target must end in .env: $active_target"
+  runtime_profile_root="${PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT:-}"
+  if [[ -z "$runtime_profile_root" || "$runtime_profile_root" != /* ]]; then
+    echo "[ERROR] PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT must be an absolute path."
     exit 1
   fi
-  PROFILE_NAME="${active_filename%.env}"
+  if ! PROFILE_FILE="$(python3 - "$PROFILE_FILE" "$runtime_profile_root" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
 
-  ENV_REPO="$(cd "$PROJECT_ROOT/.." && pwd)/env"
-
-  if [[ -f "$ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example" ]]; then
-    PROFILE_FILE="$ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example"
-  elif [[ -f "$ACTIVE_PROFILE" ]]; then
-    PROFILE_FILE="$ACTIVE_PROFILE"
-  else
-    echo "[ERROR] Profile '${PROFILE_NAME}' not found."
-    echo "        Checked: $ENV_REPO/peers-touch/${PROFILE_NAME}/profile.env.example"
-    echo "        Checked: $ACTIVE_PROFILE"
-    if [[ -d "$ENV_REPO/peers-touch" ]]; then
-      echo ""
-      echo "        Available profiles in env repo:"
-      ls -d "$ENV_REPO/peers-touch"/*/ 2>/dev/null | xargs -I{} basename {} | grep -v '0-tpl' | sed 's/^/          /'
-    fi
+profile = Path(sys.argv[1]).expanduser().resolve(strict=True)
+root = Path(sys.argv[2]).expanduser().resolve(strict=True)
+metadata = profile.lstat()
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
+    raise SystemExit(1)
+if profile.parent != root:
+    raise SystemExit(1)
+sys.stdout.write(f"{profile}\n")
+PY
+  )"; then
+    echo "[ERROR] PT_DEV_PROFILE_FILE must be an owned regular file directly under the declared Acceptance runtime profile root."
     exit 1
   fi
+else
+  PROFILE_FILE="$PT_MACHINE_PROFILE_FILE"
+  PROFILE_FROM_MACHINE=1
 fi
 
 # shellcheck disable=SC1090
+profile_allexport_enabled=0
+case "$-" in
+  *a*) profile_allexport_enabled=1 ;;
+esac
+set -a
 source "$PROFILE_FILE"
+if [[ "$profile_allexport_enabled" -eq 0 ]]; then
+  set +a
+fi
 
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"
 
-if [[ -n "${PROFILE_NAME:-}" && "$PT_DEV_PROFILE" != "$PROFILE_NAME" ]]; then
-  echo "[ERROR] Active profile identity mismatch: selected=$PROFILE_NAME declared=$PT_DEV_PROFILE"
+if [[ "$PROFILE_FROM_MACHINE" == "1" ]] \
+  && [[ "$PT_DEV_PROFILE" != "$PT_MACHINE_PROFILE" ]]; then
+  echo "[ERROR] Machine binding and profile definition identities do not match."
   exit 1
 fi
 
+for tool_bin in \
+  "${PT_GO_BIN:-}" \
+  "${PT_PYTHON_BIN:-}" \
+  "${PT_NODE_BIN:-}" \
+  "${PT_NPM_BIN:-}" \
+  "${PT_PROTOC_BIN:-}"; do
+  if [[ -n "$tool_bin" && ":$PATH:" != *":$tool_bin:"* ]]; then
+    PATH="$tool_bin:$PATH"
+  fi
+done
+export PATH
+
+if [[ -n "${PT_MACHINE_WORKSPACE_ID:-}" ]]; then
+  # Machine allocation owns local ports. Profile slot/port values are legacy
+  # topology observations and cannot override the workspace binding.
+  export PT_DEV_SLOT="$PT_MACHINE_SLOT"
+  export PT_DESKTOP_APP_GATEWAY_PORT="$PT_MACHINE_DESKTOP_APP_GATEWAY_PORT"
+  export PT_DESKTOP_APP_WEB_PORT="$PT_MACHINE_DESKTOP_APP_WEB_PORT"
+  export PT_DESKTOP_WEB_GATEWAY_PORT="$PT_MACHINE_DESKTOP_WEB_GATEWAY_PORT"
+  export PT_DESKTOP_WEB_WEB_PORT="$PT_MACHINE_DESKTOP_WEB_WEB_PORT"
+  export PT_MOBILE_WEB_PORT="$PT_MACHINE_MOBILE_WEB_PORT"
+
+  if [[ "${PT_STATION_MODE:-}" == "local" || "${PT_STATION_MODE:-}" == "compose" ]]; then
+    export PT_STATION_PORT="$((18080 + PT_DEV_SLOT * 100))"
+    export PT_STATION_URL="http://127.0.0.1:${PT_STATION_PORT}"
+  fi
+fi
+
+WORKTREE_ID="${PT_MACHINE_WORKSPACE_ID:-$(basename "$PROJECT_ROOT")}"
 export PROJECT_ROOT
 export LOCAL_DEV_DIR
-export PT_DEV_PIDS="$LOCAL_DEV_DIR/pids/$PT_DEV_PROFILE"
-export PT_DEV_LOGS="$LOCAL_DEV_DIR/logs/$PT_DEV_PROFILE"
-export PT_DEV_DATA="$LOCAL_DEV_DIR/data/$PT_DEV_PROFILE"
+export WORKTREE_ID
+RUNTIME_ROOT="${PT_MACHINE_WORKSPACE_STATE_ROOT:-$LOCAL_DEV_DIR}/runtime/$PT_DEV_PROFILE"
+export PT_DEV_PIDS="$RUNTIME_ROOT/pids"
+export PT_DEV_LOGS="$RUNTIME_ROOT/logs"
+export PT_DEV_DATA="$RUNTIME_ROOT/data"
 
 mkdir -p "$PT_DEV_PIDS" "$PT_DEV_LOGS" "$PT_DEV_DATA"

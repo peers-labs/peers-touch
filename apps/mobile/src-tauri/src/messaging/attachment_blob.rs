@@ -1,5 +1,8 @@
-use messaging_core::attachment::{ATTACHMENT_CHUNK_SIZE, ATTACHMENT_MAX_PLAINTEXT_SIZE};
-use messaging_core::ports::AttachmentBlob;
+use secure_content_core::object::{
+    OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE,
+    OBJECT_MAX_PLAINTEXT_SIZE as ATTACHMENT_MAX_PLAINTEXT_SIZE,
+};
+use secure_content_core::ports::ObjectBlob as AttachmentBlob;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};

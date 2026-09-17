@@ -116,6 +116,13 @@ type DeviceDirectory interface {
 	) ([]domain.DeviceRoute, error)
 }
 
+type ActorHomeStationDirectory interface {
+	ResolveActorHomeStationPeerID(
+		ctx context.Context,
+		actorPTID string,
+	) (string, error)
+}
+
 type DeviceInboxPort interface {
 	EnqueueDirectKeyExchange(
 		ctx context.Context,
@@ -161,6 +168,7 @@ type CanonicalService struct {
 	directStore  DirectMaterialStore
 	mlsStore     MLSMaterialStore
 	devices      DeviceDirectory
+	actorHomes   ActorHomeStationDirectory
 	deviceInbox  DeviceInboxPort
 	federation   FederationPort
 	clock        Clock
@@ -172,6 +180,7 @@ func NewCanonicalService(
 	directStore DirectMaterialStore,
 	mlsStore MLSMaterialStore,
 	devices DeviceDirectory,
+	actorHomes ActorHomeStationDirectory,
 	deviceInbox DeviceInboxPort,
 	federation FederationPort,
 	clock Clock,
@@ -181,6 +190,7 @@ func NewCanonicalService(
 	if directStore == nil ||
 		mlsStore == nil ||
 		devices == nil ||
+		actorHomes == nil ||
 		deviceInbox == nil ||
 		federation == nil ||
 		clock == nil ||
@@ -197,6 +207,7 @@ func NewCanonicalService(
 		directStore:  directStore,
 		mlsStore:     mlsStore,
 		devices:      devices,
+		actorHomes:   actorHomes,
 		deviceInbox:  deviceInbox,
 		federation:   federation,
 		clock:        clock,
@@ -303,6 +314,13 @@ func (s *CanonicalService) FetchDirectKeyBundles(
 	)
 	if err != nil {
 		return nil, wrapDependencyError(fetchDirectOperation, err)
+	}
+	if homeStationID != s.localStation {
+		return validatedFederatedDirectKeyBundles(
+			bundles,
+			actorPTID,
+			targetDeviceID,
+		)
 	}
 	return validatedDirectKeyBundles(bundles, routes, actorPTID)
 }
@@ -420,6 +438,30 @@ func validatedDirectKeyBundles(
 		result = append(result, bundle.Clone())
 	}
 	return result, nil
+}
+
+func validatedFederatedDirectKeyBundles(
+	bundles []domain.DirectKeyBundle,
+	actorPTID string,
+	targetDeviceID string,
+) ([]domain.DirectKeyBundle, error) {
+	actorPTID = strings.TrimSpace(actorPTID)
+	targetDeviceID = strings.TrimSpace(targetDeviceID)
+	routes := make([]domain.DeviceRoute, 0, len(bundles))
+	for _, bundle := range bundles {
+		if bundle.Device.ActorPTID != actorPTID ||
+			(targetDeviceID != "" &&
+				bundle.Device.DeviceID != targetDeviceID) {
+			return nil, domain.NewError(
+				domain.ErrorCodeConflict,
+				fetchDirectOperation,
+				"bundle.device",
+				"does not match the authenticated Federation request",
+			)
+		}
+		routes = append(routes, domain.DeviceRoute{Endpoint: bundle.Device})
+	}
+	return validatedDirectKeyBundles(bundles, routes, actorPTID)
 }
 
 func (s *CanonicalService) ReplenishDirectOneTimePreKeys(
@@ -595,7 +637,7 @@ func (s *CanonicalService) FetchMLSKeyPackage(
 		if err := validateFederatedReservation(
 			fetchMLSOperation,
 			*reservation,
-			routes,
+			actorPTID,
 			homeStationID,
 		); err != nil {
 			return nil, err
@@ -1069,6 +1111,14 @@ func (s *CanonicalService) requireLocalActiveEndpoint(
 ) (domain.DeviceRoute, error) {
 	route, err := s.resolveActiveDevice(ctx, operation, endpoint)
 	if err != nil {
+		if domain.IsCode(err, domain.ErrorCodeNotFound) {
+			return domain.DeviceRoute{}, domain.NewError(
+				domain.ErrorCodeUnauthorized,
+				operation,
+				"device",
+				"endpoint is not active",
+			)
+		}
 		return domain.DeviceRoute{}, err
 	}
 	if route.HomeStationID != s.localStation {
@@ -1134,6 +1184,47 @@ func (s *CanonicalService) resolveActorRoutes(
 			"exceeds the length limit",
 		)
 	}
+	homeStationID, err := s.actorHomes.ResolveActorHomeStationPeerID(
+		ctx,
+		actorPTID,
+	)
+	if err != nil {
+		return nil, "", wrapDependencyError(operation, err)
+	}
+	homeStationID = strings.TrimSpace(homeStationID)
+	if homeStationID == "" || len(homeStationID) > domain.MaxStationIDBytes {
+		return nil, "", domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"home_station_peer_id",
+			"Actor Identity returned an invalid Home Station",
+		)
+	}
+	if requestedHomeStationID != "" &&
+		requestedHomeStationID != homeStationID {
+		return nil, "", domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"home_station_peer_id",
+			"does not match the Actor Identity route",
+		)
+	}
+	if homeStationID != s.localStation {
+		if targetDeviceID == "" {
+			return nil, homeStationID, nil
+		}
+		route := domain.DeviceRoute{
+			Endpoint: domain.Endpoint{
+				ActorPTID: actorPTID,
+				DeviceID:  targetDeviceID,
+			},
+			HomeStationID: homeStationID,
+		}
+		if err := route.Validate(operation); err != nil {
+			return nil, "", err
+		}
+		return []domain.DeviceRoute{route}, homeStationID, nil
+	}
 
 	var routes []domain.DeviceRoute
 	if targetDeviceID != "" {
@@ -1168,7 +1259,6 @@ func (s *CanonicalService) resolveActorRoutes(
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].Endpoint.Key() < routes[j].Endpoint.Key()
 	})
-	homeStationID := ""
 	seenDevices := make(map[string]struct{}, len(routes))
 	for _, route := range routes {
 		if err := route.Validate(operation); err != nil {
@@ -1191,9 +1281,7 @@ func (s *CanonicalService) resolveActorRoutes(
 			)
 		}
 		seenDevices[route.Endpoint.DeviceID] = struct{}{}
-		if homeStationID == "" {
-			homeStationID = route.HomeStationID
-		} else if route.HomeStationID != homeStationID {
+		if route.HomeStationID != homeStationID {
 			return nil, "", domain.NewError(
 				domain.ErrorCodeConflict,
 				operation,
@@ -1201,15 +1289,6 @@ func (s *CanonicalService) resolveActorRoutes(
 				"active actor devices disagree on Home Station ownership",
 			)
 		}
-	}
-	if requestedHomeStationID != "" &&
-		requestedHomeStationID != homeStationID {
-		return nil, "", domain.NewError(
-			domain.ErrorCodeConflict,
-			operation,
-			"home_station_peer_id",
-			"does not match the active device directory",
-		)
 	}
 	return routes, homeStationID, nil
 }
@@ -1272,7 +1351,7 @@ func validateFetchedDirectBundles(
 func validateFederatedReservation(
 	operation string,
 	reservation domain.MLSKeyPackageReservation,
-	routes []domain.DeviceRoute,
+	actorPTID string,
 	homeStationID string,
 ) error {
 	if err := reservation.Validate(operation); err != nil {
@@ -1287,17 +1366,15 @@ func validateFederatedReservation(
 			"does not prove one-time consumption by the target Home Station",
 		)
 	}
-	for _, route := range routes {
-		if reservation.Target == route.Endpoint {
-			return nil
-		}
+	if reservation.Target.ActorPTID != strings.TrimSpace(actorPTID) {
+		return domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"reservation.target",
+			"does not match the authenticated Federation request",
+		)
 	}
-	return domain.NewError(
-		domain.ErrorCodeConflict,
-		operation,
-		"reservation.target",
-		"is not an active requested endpoint",
-	)
+	return nil
 }
 
 func validateClaimedReservation(

@@ -25,6 +25,12 @@ var (
 	ErrDeliveryReceiptConflict = errors.New(
 		"delivery receipt conflicts with Conversation authority state",
 	)
+	ErrReadCursorRejected = errors.New(
+		"read cursor was rejected by Conversation authority",
+	)
+	ErrReadCursorConflict = errors.New(
+		"read cursor conflicts with Conversation authority state",
+	)
 )
 
 // VerifiedActorDeviceKeyResolver reads identity-owned signing-key projections.
@@ -35,6 +41,7 @@ type VerifiedActorDeviceKeyResolver interface {
 		ctx context.Context,
 		transaction federationdelivery.Transaction,
 		actorPTID string,
+		expectedHomeStationPeerID string,
 		deviceID string,
 		signingKeyID string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
@@ -93,6 +100,17 @@ type AuthorityResultPort interface {
 		originatingCommandSHA256 []byte,
 		sourceAuthorityStationPeerID string,
 	) (bool, error)
+}
+
+// ReadCursorPort applies an actor-scoped cursor at the Conversation authority.
+// The source Home Station is supplied only from the authenticated Federation frame.
+type ReadCursorPort interface {
+	ApplyReadCursor(
+		ctx context.Context,
+		transaction federationdelivery.Transaction,
+		cursor *chatmodel.FederatedConversationReadCursor,
+		sourceHomeStationPeerID string,
+	) error
 }
 
 // DeviceDeliveryPort atomically applies an authority event to the follower

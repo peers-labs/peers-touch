@@ -5,7 +5,9 @@ from __future__ import annotations
 import errno
 import importlib.util
 import json
+import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -28,15 +30,27 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def script_command(path: Path, *args: str) -> list[str]:
+    prefix: list[str] = []
+    if os.name == "nt":
+        bash = shutil.which("bash") or "C:/Program Files/Git/bin/bash.exe"
+        prefix.append(bash)
+    return [*prefix, str(path), *args]
+
+
 @contextmanager
 def temporary_git_directory() -> Iterator[Path]:
     root = Path(tempfile.mkdtemp())
     try:
         yield root
     finally:
+        def remove_readonly(function, path, _error):
+            os.chmod(path, stat.S_IWRITE)
+            function(path)
+
         for attempt in range(20):
             try:
-                shutil.rmtree(root)
+                shutil.rmtree(root, onexc=remove_readonly)
                 break
             except OSError as error:
                 if error.errno != errno.ENOTEMPTY or attempt == 19:
@@ -466,33 +480,33 @@ class RouteRangeTests(unittest.TestCase):
             )
 
             completed = subprocess.run(
-                [
-                    str(ROUTE_SCRIPT),
+                script_command(
+                    ROUTE_SCRIPT,
                     "--range",
                     f"{base}...HEAD",
-                ],
+                ),
                 cwd=root,
                 check=True,
                 text=True,
                 capture_output=True,
             )
             knowledge_completed = subprocess.run(
-                [
-                    str(KNOWLEDGE_SCRIPT),
+                script_command(
+                    KNOWLEDGE_SCRIPT,
                     "--range",
                     f"{base}...HEAD",
-                ],
+                ),
                 cwd=root,
                 check=False,
                 text=True,
                 capture_output=True,
             )
             hard_rules_completed = subprocess.run(
-                [
-                    str(HARD_RULES_SCRIPT),
+                script_command(
+                    HARD_RULES_SCRIPT,
                     "--range",
                     f"{base}...HEAD",
-                ],
+                ),
                 cwd=root,
                 check=True,
                 text=True,

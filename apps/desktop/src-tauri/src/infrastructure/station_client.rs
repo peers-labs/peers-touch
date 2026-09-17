@@ -15,7 +15,19 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 3] = ["resource_id", "expected_revision", "actual_revision"];
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 11] = [
+    "resource_kind",
+    "resource_id",
+    "terminal_status",
+    "expected_revision",
+    "actual_revision",
+    "session_id",
+    "lease_id",
+    "expired_at",
+    "operation",
+    "field",
+    "reason",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StationTransportPolicy {
@@ -170,7 +182,15 @@ impl StationClientError {
 
 impl fmt::Display for StationClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        let error_code = self
+            .details
+            .as_ref()
+            .and_then(|details| details.get("error_code"))
+            .and_then(Value::as_str);
+        match error_code {
+            Some(code) => write!(f, "{} [code={}]", self.message, code),
+            None => write!(f, "{}", self.message),
+        }
     }
 }
 
@@ -711,6 +731,52 @@ where
     )
 }
 
+pub(crate) fn request_peers_proto_no_body_for_device_at<Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    device_id: &str,
+) -> Result<Payload, StationClientError>
+where
+    Payload: Message + Default,
+{
+    let envelope: PeersResponse = request_proto_for_device_at::<(), PeersResponse>(
+        station_url,
+        method,
+        path,
+        token,
+        query,
+        None,
+        device_id,
+    )?;
+    if envelope.code != "200" {
+        return Err(StationClientError::new(
+            StationClientErrorKind::InvalidResponse,
+            format!("Station returned Peers error code {}", envelope.code),
+            Some(serde_json::json!({
+                "code": envelope.code,
+                "message": envelope.msg,
+            })),
+        ));
+    }
+    let any = envelope.data.ok_or_else(|| {
+        StationClientError::new(
+            StationClientErrorKind::InvalidResponse,
+            "station response missing data envelope",
+            None,
+        )
+    })?;
+    Payload::decode(any.value.as_slice()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode envelope payload: {error}"),
+            None,
+        )
+    })
+}
+
 pub(crate) fn request_proto_for_device_at<Req, Payload>(
     station_url: &str,
     method: Method,
@@ -759,6 +825,7 @@ where
             )
         })?;
     let status = response.status();
+    let headers = headers_to_json(response.headers());
     let bytes = response.bytes().map_err(|error| {
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -768,7 +835,19 @@ where
     })?;
     if !status.is_success() {
         let body = String::from_utf8_lossy(&bytes).to_string();
-        return Err(build_error_for_status(status.as_u16(), path, &body));
+        tracing::warn!(
+            path = %path,
+            status = status.as_u16(),
+            elapsed_ms = start.elapsed().as_millis(),
+            body = %body,
+            "← station FAIL (profile-scoped proto)",
+        );
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &body,
+            Some(&headers),
+        ));
     }
     tracing::debug!(
         path = %path,
@@ -934,7 +1013,27 @@ pub(crate) fn request_json_with_policy(
     body: Option<Value>,
     policy: StationTransportPolicy,
 ) -> Result<Value, StationClientError> {
-    let url = format!("{}{}", station_base_url(), path);
+    request_json_with_policy_base_url(
+        &station_base_url(),
+        method,
+        path,
+        token,
+        query,
+        body,
+        policy,
+    )
+}
+
+fn request_json_with_policy_base_url(
+    base_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+    policy: StationTransportPolicy,
+) -> Result<Value, StationClientError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     tracing::debug!(method = %method, path = %path, policy = ?policy, "→ station (json)");
 
     let start = std::time::Instant::now();
@@ -973,12 +1072,18 @@ pub(crate) fn request_json_with_policy(
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
+    let headers = headers_to_json(resp.headers());
 
     if !status.is_success() {
         let code = status.as_u16();
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let result: Value = resp.json().map_err(|e| {
@@ -1534,9 +1639,16 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 
 #[cfg(test)]
 mod tests {
-    use super::{build_error_for_status_with_headers, StationTransportPolicy};
+    use super::{
+        build_error_for_status_with_headers, request_json_with_policy_base_url,
+        StationTransportPolicy,
+    };
     use crate::error::ErrorCode;
+    use reqwest::Method;
     use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
     use std::time::Duration;
 
     #[test]
@@ -1586,6 +1698,23 @@ mod tests {
     }
 
     #[test]
+    fn station_error_display_includes_typed_error_code() {
+        let error = build_error_for_status_with_headers(
+            400,
+            "/conversation/direct",
+            "",
+            Some(&json!({
+                "x-peers-error-code": "CONVERSATION_INVALID_ARGUMENT",
+            })),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "station returned 400 :  [code=CONVERSATION_INVALID_ARGUMENT]"
+        );
+    }
+
+    #[test]
     fn typed_station_error_details_survive_json_transport() {
         let headers = json!({
             "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
@@ -1593,9 +1722,13 @@ mod tests {
             "x-peers-error-retryable": "true",
             "x-peers-error-terminal": "true",
             "x-peers-error-details": r#"{
+                "resource_kind":"agent",
                 "resource_id":"agent-1",
                 "expected_revision":"7",
                 "actual_revision":"8",
+                "operation":"application.prepare_group",
+                "field":"home_station",
+                "reason":"is not an active Federation Station",
                 "ignored_string":"not-safe",
                 "ignored_number":9
             }"#,
@@ -1614,11 +1747,172 @@ mod tests {
         assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
         assert_eq!(details["retryable"], "true");
         assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_kind"], "agent");
         assert_eq!(details["resource_id"], "agent-1");
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
+        assert_eq!(details["operation"], "application.prepare_group");
+        assert_eq!(details["field"], "home_station");
+        assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn lifecycle_terminal_mutation_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "LIFECYCLE_TERMINAL_MUTATION",
+            "x-peers-error-locale-key": "agent.errors.lifecycleTerminalMutation",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_id":"turn-1",
+                "terminal_status":"completed",
+                "private_detail":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/turn/cancel",
+            "{\"error\":\"terminal mutation\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent turn cancel failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "LIFECYCLE_TERMINAL_MUTATION");
+        assert_eq!(
+            details["locale_key"],
+            "agent.errors.lifecycleTerminalMutation"
+        );
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "turn-1");
+        assert_eq!(details["terminal_status"], "completed");
+        assert!(details.get("private_detail").is_none());
+    }
+
+    #[test]
+    fn json_request_path_preserves_lifecycle_stale_version_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind JSON error fixture");
+        let address = listener
+            .local_addr()
+            .expect("read JSON error fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept JSON error request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read JSON error request");
+            let body = r#"{"code":409,"error":"[LIFECYCLE_STALE_VERSION] agent.errors.lifecycleStaleVersion"}"#;
+            let response = format!(
+                "HTTP/1.1 409 Conflict\r\n\
+                 Content-Type: application/json\r\n\
+                 Content-Length: {}\r\n\
+                 X-Peers-Error-Code: LIFECYCLE_STALE_VERSION\r\n\
+                 X-Peers-Error-Locale-Key: agent.errors.lifecycleStaleVersion\r\n\
+                 X-Peers-Error-Retryable: true\r\n\
+                 X-Peers-Error-Terminal: true\r\n\
+                 X-Peers-Error-Details: {{\"resource_id\":\"conversation-1\",\"expected_revision\":\"7\",\"actual_revision\":\"8\",\"private\":\"must-not-cross\"}}\r\n\
+                 Connection: close\r\n\
+                 \r\n\
+                 {body}",
+                body.len(),
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write JSON error response");
+        });
+
+        let error = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/sub-agent/agent/message/edit-resend",
+            "fixture-token",
+            None,
+            Some(json!({"conversation_id": "conversation-1"})),
+            StationTransportPolicy::TurnExecution,
+        )
+        .expect_err("stale revision must remain an error");
+        server.join().expect("join JSON error fixture");
+
+        let result = error.into_app_result::<serde_json::Value>("agent_edit_and_resend failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "LIFECYCLE_STALE_VERSION");
+        assert_eq!(details["locale_key"], "agent.errors.lifecycleStaleVersion");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "conversation-1");
+        assert_eq!(details["expected_revision"], "7");
+        assert_eq!(details["actual_revision"], "8");
+        assert!(details.get("private").is_none());
+    }
+
+    #[test]
+    fn lease_expiry_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "CLIENT_LEASE_EXPIRED",
+            "x-peers-error-locale-key": "agent.errors.clientLeaseExpired",
+            "x-peers-error-retryable": "true",
+            "x-peers-error-terminal": "false",
+            "x-peers-error-details": r#"{
+                "session_id":"capability-session-expired",
+                "lease_id":"lease-expired",
+                "expired_at":"2026-09-15T03:00:00Z",
+                "device_signing_key_id":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/capability/requests/pull",
+            "{\"error\":\"lease expired\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Capability pull failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "CLIENT_LEASE_EXPIRED");
+        assert_eq!(details["locale_key"], "agent.errors.clientLeaseExpired");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "false");
+        assert_eq!(details["session_id"], "capability-session-expired");
+        assert_eq!(details["lease_id"], "lease-expired");
+        assert_eq!(details["expired_at"], "2026-09-15T03:00:00Z");
+        assert!(details.get("device_signing_key_id").is_none());
+    }
+
+    #[test]
+    fn forbidden_actor_station_error_preserves_exact_resource_identity() {
+        let headers = json!({
+            "x-peers-error-code": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "x-peers-error-locale-key": "agent.errors.forbiddenActor",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_kind":"conversation",
+                "resource_id":"conversation-owned-by-bob",
+                "owner_ptid":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            403,
+            "/sub-agent/agent/turn/execute",
+            "{\"error\":\"forbidden\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent turn rejected");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Forbidden);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "OWNERSHIP_FORBIDDEN_ACTOR");
+        assert_eq!(details["locale_key"], "agent.errors.forbiddenActor");
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_kind"], "conversation");
+        assert_eq!(details["resource_id"], "conversation-owned-by-bob");
+        assert!(details.get("owner_ptid").is_none());
     }
 
     #[test]

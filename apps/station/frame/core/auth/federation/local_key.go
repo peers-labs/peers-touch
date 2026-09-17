@@ -56,6 +56,11 @@ type LocalKey struct {
 	// freshly generated. Useful for the dashboard "key age"
 	// surface and for the rotation finalizer.
 	GeneratedAt time.Time
+
+	// UpdatedAt is the persisted slot-transition time. For the
+	// previous slot this is the rotation time that starts the
+	// bounded dual-sign grace window.
+	UpdatedAt time.Time
 }
 
 // IsZero reports whether the LocalKey is the empty value. Used

@@ -1,229 +1,253 @@
 ---
 name: pt-dev-workflow
-description: "Drives Peers-Touch work from planning through implementation and PR delivery. Invoke for complete development tasks requiring stage tracking."
+description: >-
+  Runs one non-trivial Peers-Touch development lifecycle from verified intake
+  through resource declaration, stage dispatch, product-functional proof,
+  Acceptance promotion, delivery, and resource release.
 stage: orchestrator
 requires: []
-produces: ["completed task with merged PR"]
+produces: ["closed Development Run", "durable workflow state", "bounded delivery claim"]
 ---
 
-# Dev Workflow — Stage Orchestrator
+# Dev Workflow
 
-This skill is the **single entry point** for any non-trivial development task.
-It detects the current stage, dispatches to the correct skill, tracks progress,
-and manages cross-session continuity.
+This is the single entry point for non-trivial Peers-Touch development.
 
-## Stage Pipeline
+It is the application service for one Development Run. It coordinates owners,
+state transitions, authorization, and cleanup. It does not absorb specialist
+methodologies.
 
-```
-PRODUCT → DESIGN → PLAN → EXECUTE → DELIVER
-```
+Architecture source:
+`docs/architecture/development-workflow/README.md`.
 
-Each stage has a dedicated skill, a gate, and an artifact. See AGENTS.md §13.5
-for the authoritative dispatch table. This skill's job is to **detect + dispatch
-+ track**, not to perform the work of individual stages.
+## Responsibility Boundary
 
----
+| Concern | Owner |
+|---|---|
+| Route into this workflow | `pt-god-view` |
+| Product Journey and visible states | `pt-product-design-methodology` |
+| Architecture boundaries and contracts | `pt-architecture-design-methodology` |
+| Vertical dependency plan model | `pt-architecture-execution-methodology` |
+| Plan Package persistence and initial `active_work` registration | `pt-plan-and-document` |
+| Ready/Parked selection and concurrency lanes | `pt-trae-goal-orchestrator` |
+| Whether a proposed action may run | `pt-execution-plan-guardian` |
+| Plan/Task/Session/`active_work` mutation order | `pt-dev-workflow` through their owning commands |
+| Status projection | read-only `pt-context-anchor` |
+| Formal product proof | Acceptance owning Skills |
+| Delivery review | commit, PR, quality, completion, and review Skills |
 
-## 1. Entry Point
+The scheduler proposes **what runs**. The Guardian decides **whether that
+proposed action may run**. Dev Workflow performs the allowed action and
+persists the result. No other Skill may duplicate this RUN loop.
 
-This skill is invoked by `pt-god-view` after it determines the stage and either
-classifies new pre-plan work or selects tracked work. For tracked work, it receives:
+## Invoke When
 
-- The execution plan path
-- The current stage
-- The current step
+- Starting or resuming a non-trivial implementation, migration, refactor, bug
+  closure, verification, or delivery.
+- A read-only discussion is about to perform its first write or acquire a
+  runtime resource.
+- A tracked Development Run must continue, close, or recover.
 
-It then dispatches to the stage-specific skill (§3) and manages progress tracking (§5).
+Do not use for status-only projection or a trivial text-only correction.
 
-If invoked directly by the user (without god-view), it assumes the user knows
-what they want to do and proceeds with task classification (§2).
+## Run Lifecycle
 
----
-
-## 2. Task Classification
-
-| Signal | Starting stage | Rationale |
-|--------|---------------|-----------|
-| User requests a new product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Needs product outcome, experience, and acceptance contract |
-| User requests Acceptance Infra optimization or audit | CROSS-STAGE via `pt-acceptance-infra-engineering` | Framework responsibility must remain separate from business injection |
-| User requests business Domain Acceptance injection or proof | CROSS-STAGE via `pt-acceptance-engineering` | Product contracts and runtime evidence own the closure |
-| Product contract accepted; user mentions new architecture / boundary / ownership / protocol | DESIGN | Needs architecture methodology |
-| Product and architecture accepted; user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
-| Plan exists and is accepted, user says "start coding" / "do it" | EXECUTE | Plan already passed review |
-| Code is done, user says "PR" / "submit" / "deliver" | DELIVER | Needs commit + PR |
-| Single-file bug fix / cosmetic tweak / "just fix X" | EXECUTE (via `pt-small-fix-discipline`) | Skip PRODUCT+DESIGN+PLAN |
-
-If ambiguous, ask whether this is a new product/capability, a new architecture
-decision, or implementation of something already accepted and planned.
-
----
-
-## 3. Stage Dispatch
-
-Invoke by the classified stage. For tracked work, `active_work.stage` must agree
-with that classification:
-
-### Stage: PRODUCT
-
-```
-Invoke: pt-product-design-methodology
-Also:   pt-prototype-design (when UI/interaction is material)
-Gate:   Product review passes; required prototype is confirmed or explicitly blocked
-Output: Product definition, benchmark disposition, experience/state contracts,
-        acceptance matrix, and optional executable prototype
-Next:   → DESIGN
+```text
+INTAKE
+  -> DECLARED
+  -> PRODUCT
+  -> DESIGN
+  -> PLAN_MODEL
+  -> PLAN_PERSISTED
+  -> EXECUTING
+  -> FUNCTIONAL_PASS
+  -> ACCEPTANCE
+  -> DELIVER
+  -> RELEASED
 ```
 
-### Stage: DESIGN
+A stage may be skipped only when its owning Skill proves it is unnecessary.
+Never enter broad Acceptance while a required Journey is not
+`FUNCTIONAL_PASS`.
 
-```
-Invoke: pt-architecture-design-methodology
-Gate:   Architecture review prompt generated + review passes
-Output: docs/architecture/<module>/ (design.md, decisions.md, etc.)
-Next:   → PLAN
-```
+## 1. Intake And Binding
 
-### Stage: PLAN
+Before mutation:
 
-```
-Invoke: pt-architecture-execution-methodology (dependency analysis)
-Then:   pt-plan-and-document (落盘 + review prompt generation)
-Gate:   Plan review prompt generated + review passes
-Output: execution-plans/<plan>.md + active_work registration
-Next:   → EXECUTE
-```
+1. Bind one explicitly selected worktree. Never infer it from a Skill path,
+   branch name, plan path, or nearby repository.
+2. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
+   expected HEAD, and worktree-set digest with
+   `tooling/scripts/verify-worktree-binding.py`.
+3. Resolve user intent, authorization envelope, existing accepted sources, and
+   whether the work is tracked.
+4. Preserve unrelated dirty files. Never switch branches or worktrees
+   implicitly.
 
-### Stage: EXECUTE
-
-```
-Invoke: pt-execution-plan-guardian (keeps work on plan rails)
-Also:   pt-read-before-edit (before any file edit)
-        pt-desktop-runtime-projections (if touching Desktop kernel)
-Gate:   All completion criteria in plan checked + pt-completion-auditor passes
-Output: Code + tests + evidence
-Next:   → DELIVER
-```
-
-### Stage: DELIVER
-
-```
-Invoke: pt-github-commit (standardized commits)
-Then:   pt-github-pr (create PR with template)
-Then:   pt-github-review (self-review or request review)
-Gate:   PR merged
-Output: Merged PR
-Next:   → complete
-```
-
----
-
-## 4. Gate Protocol
-
-Every stage gate follows the same pattern:
-
-1. Generate a structured review prompt (per skill's template)
-2. Present prompt to user
-3. User decides: send to reviewer, iterate, or accept
-4. If review returns "needs modification" → iterate within current stage
-5. If review passes → move to the next stage; update `active_work.stage` only
-   when a registered plan row exists
-
-**Agent MUST NOT auto-advance past a gate.** Gate passage requires either:
-- User explicitly says "pass" / "approved" / "move on"
-- A review result says "通过" / "有条件通过" (conditions resolved)
-
----
-
-## 5. Progress Tracking
-
-### active_work registry (project_memory.md)
-
-Maintained as a table — one row per in-flight task:
-
-```markdown
-## active_work
-
-| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
-| 1 | docs/.../20260723-phase1-station-api.md | EXECUTE | Step 1 | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-23 |
-```
-
-**Update rules:**
-- PRODUCT/DESIGN work without a formal execution plan has no row and no Context Anchor
-- Plan creation → capture and verify the selected worktree once, then register
-  the repo-relative plan path with `stage: PLAN`, branch, `workspace_id`,
-  immutable `initial_head`, initially equal `expected_head`, and
-  `worktree_set_digest`
-- Stage transition → update `stage` + `current_step`
-- Session end → update `last_session`
-- All phases complete → set `stage: complete`
-- Branch merged with remaining phases → update `branch` to merge target
-- User says "close this" → set `stage: complete`
-- Stale (>14 days idle) → ask user on next session
-- Resume/context compaction → verify persisted identity; never recapture it as a
-  replacement baseline
-- Explicitly authorized commit/rebase/merge → refresh only `expected_head`
-- Explicitly requested worktree operation → refresh only
-  `worktree_set_digest`
-
-Capture and verification use
-`tooling/scripts/verify-worktree-binding.py`. Its `workspaceId` output maps to
-`workspace_id`, and its worktree-set digest maps to
-`worktree_set_digest`. Missing identity stops with
-`WORKTREE_IDENTITY_UNAVAILABLE`; drift stops with
+Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
 `WORKTREE_IDENTITY_MISMATCH`.
 
-### Execution plan status table
+## 2. Public Resource Declaration
 
-Each execution plan has an "Implementation Status" table at the bottom.
-Update individual step status as work progresses:
+Before the first write or runtime acquisition:
 
-```markdown
-| Step | Status | Completed | Notes |
-|------|--------|-----------|-------|
-| Step 1 | ✅ done | 2026-07-23 | commit abc123 |
-| Step 2 | 🔄 in progress | — | |
-| Step 3 | ⬜ pending | — | |
+```bash
+make dev-start \
+  WORK_ITEM=<stable-id> \
+  PURPOSE='<short purpose>' \
+  SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
+  RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]' \
+  [JOURNEY=<id>] [SESSION=<id>]
 ```
 
----
+Rules:
 
-## 6. Cross-Session Resume
+- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
+- Run `make dev-update` before expanding scope/resources and after an
+  authorized commit, merge, or rebase changes source HEAD.
+- Different worktrees on different branches may overlap with
+  `SOURCE_OVERLAP_WARNING`; same-workspace overlap, same-branch parallel
+  writes, and exclusive runtime overlap return
+  `RESOURCE_DECLARATION_CONFLICT`.
+- A declaration is public intent, not a runtime lease or operation
+  authorization.
 
-When resuming a previous session:
+## 3. Dispatch Stages
 
-1. Read `active_work` from project memory
-2. Read the referenced execution plan
-3. Invoke `pt-context-anchor` and verify actual worktree identity against the
-   persisted branch, `workspace_id`, `expected_head`, and
-   `worktree_set_digest`
-4. Reconcile the plan status table with `active_work`
-5. Emit the required fenced chat projection
-6. Dispatch to the correct stage skill
+Invoke the owning Skill and consume its typed output:
 
-**Key principle**: The execution plan's status table is ground truth for "what's done".
-Project memory's `active_work` is just an index pointing to it.
+| Stage | Owner output required |
+|---|---|
+| PRODUCT | accepted Journey/state/acceptance contract |
+| DESIGN | accepted ownership/contracts/failure semantics |
+| PLAN model | accepted vertical dependency model |
+| PLAN persistence | validated Plan Package and `active_work` locator |
+| EXECUTE | scheduler proposal plus Guardian policy decision |
+| ACCEPTANCE | formal evidence for required scope |
+| DELIVER | reviewed commit/PR result |
 
----
+Dev Workflow owns transition order, not stage content. It never edits a
+specialist's answer in place to bypass a blocked gate.
 
-## 7. Skill Dependencies (Dispatch Map)
+## 4. Tracked Execution Loop
 
-| Stage | Primary skill | Supporting skills |
-|-------|--------------|-------------------|
-| PRODUCT | `pt-product-design-methodology` | `pt-prototype-design`, `pt-plan-and-document` (document routing only) |
-| DESIGN | `pt-architecture-design-methodology` | `pt-plan-and-document` (for doc落盘) |
-| PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | `pt-context-anchor` after plan registration |
-| EXECUTE | `pt-execution-plan-guardian` | `pt-context-anchor`, `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |
-| DELIVER | `pt-github-commit` + `pt-github-pr` + `pt-github-review` | `pt-quality-check` |
+For an accepted Plan Package:
 
----
+1. Validate the package and resolve its current Task.
+2. Verify `active_work.current_task_id`, `current_task_path`, and `dev_state`
+   against the manifest and Development Session.
+3. Ask `pt-trae-goal-orchestrator` for the bounded Ready/Parked schedule and
+   concurrency lanes.
+4. Submit each proposed action to `pt-execution-plan-guardian`.
+5. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
+6. Record the first actionable failure in the Session and stop that action.
+7. Persist meaningful results in owner order:
+   - Session transition/evidence;
+   - Task snapshot and manifest lifecycle through `planctl`;
+   - `active_work` locator/binding projection.
+8. Recompute the schedule until the current Task closes or only a hard boundary
+   remains.
+9. Invoke read-only `pt-context-anchor` when a user-facing projection is due.
 
-## 8. Anti-Patterns
+The Guardian cannot execute, schedule, mutate a plan, or update tracking.
+The scheduler cannot admit work outside accepted sources or mutate durable
+state. The Anchor cannot repair state.
 
-- **Skip a gate** — never advance to next stage without explicit gate passage
-- **Premature active_work** — never create a placeholder row before a formal plan exists
-- **Untracked planned execution** — after plan creation, never execute without a matching `active_work` row
-- **Forget to update status** — every step completion / stage transition must be recorded
-- **Resume without reading plan** — always re-read execution plan status table before continuing
-- **Invoke stage skill without context** — always tell the skill what plan you're executing and what step you're on
-- **Self-approve a review** — agent generates prompts, user decides whether to send; agent never marks its own review as "passed"
+## 5. Product-Functional Fence
+
+For product-facing work:
+
+```text
+REPRODUCE
+  -> IMPLEMENT ROOT CAUSE
+  -> FOCUSED CHECKS
+  -> AUTHORIZED CHECKPOINT
+  -> EXACT-SOURCE DEPLOY
+  -> REAL JOURNEY
+  -> FUNCTIONAL_PASS
+```
+
+- Use the real required runtime and receiver perspective.
+- On failure, return the first actionable failure to implementation.
+- Park an external/authorization edge without blocking independent ready work.
+- Focused source checks, Gate count, coverage, and test count cannot establish
+  `FUNCTIONAL_PASS`.
+- Do not run broad Acceptance, Gap Detector, Completion Auditor,
+  cross-platform matrices, or submit pipelines before `FUNCTIONAL_PASS`.
+
+## 6. Amendments
+
+When execution finds drift:
+
+- undefined Journey/visible state -> `PRODUCT_AMENDMENT_REQUIRED`;
+- undefined ownership/protocol/failure semantic -> `DESIGN_AMENDMENT_REQUIRED`;
+- accepted semantics but stale inventory/dependency/deliverable mapping ->
+  `PLAN_AMENDMENT_REQUIRED`.
+
+Dev Workflow routes the amendment to its owner. `pt-plan-and-document` persists
+an accepted updated plan model. The Guardian and scheduler never self-amend the
+Plan Package.
+
+## 7. Acceptance Promotion
+
+After `FUNCTIONAL_PASS`:
+
+1. Select scenarios from product states, architecture risks, and changed
+   failure semantics. Do not require a canned success/network/timeout/invalid/
+   cancellation matrix.
+2. Reuse the same Journey and provisioning adapters.
+3. Use `pt-acceptance-engineering` for missing business injection.
+4. Run formal Acceptance on final exact source.
+5. Keep every required but unrun Gate explicitly `UNPROVEN`.
+
+`PROVEN` is reserved for formal Acceptance evidence. Development Session
+records remain diagnostics.
+
+## 8. Delivery And Close
+
+After required proof:
+
+1. Run completion and quality review for the named scope.
+2. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
+3. Stop/release owned runtime resources.
+4. Run:
+
+```bash
+make dev-release WORK_ITEM=<id> [SESSION=<id>]
+```
+
+5. Persist final owner state, then emit the read-only Context Anchor.
+
+A checkpoint commit is source identity, not delivery approval. Push, PR,
+deploy, destructive reset, and history rewrite remain separate
+authorizations.
+
+## Resume
+
+On resume, verify the persisted binding, run `make dev-check`, validate the
+Plan Package, reconcile current Task/Session/`active_work`, then resume the
+earliest legal action. Do not pause merely to print the Anchor.
+
+## Verification
+
+- One Development Run owns the lifecycle.
+- Public declaration preceded mutation and was released at closure.
+- Scheduler, Guardian, persistence, and projection boundaries remained
+  separate.
+- Required Journey has current exact-source functional evidence.
+- Required formal proof and unproven scope are explicit.
+- Durable state was updated only through its owner.
+
+## Anti-Patterns
+
+Never:
+
+- add another complete-development orchestrator;
+- let God View execute or persist workflow state;
+- let the scheduler or Guardian mutate the Plan Package;
+- let Context Anchor repair `active_work`;
+- write before declaration or outside declared scope;
+- diagnose product behavior with broad Acceptance;
+- copy one Journey into separate Development and Acceptance implementations;
+- claim readiness from static checks or stale proof;
+- leave declarations or owned runtime resources active after closure.

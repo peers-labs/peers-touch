@@ -56,6 +56,8 @@ pub struct CapabilityNegativeControlStationFact {
     pub endpoint: &'static str,
     pub request_sent: bool,
     pub response_received: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_hash: Option<String>,
     pub command_error_code: Option<String>,
     pub http_status: Option<u16>,
     pub transport_error_kind: Option<&'static str>,
@@ -302,14 +304,14 @@ impl<'a> CapabilityStationTransport<'a> {
                 .ok_or_else(|| "AS_F10_CROSS_DEVICE_SESSION_UNAVAILABLE".to_string())?,
             _ => capability_session_id,
         };
-        let mut request = self.signed_pull_request(target_session_id)?;
+        let mut request = self.signed_pull_request(target_session_id, 0, 1)?;
         match control {
             CapabilityNegativeControl::Unauthorized => {
                 let result = station_client::request_proto_no_auth_at::<
                     _,
                     PullClientCapabilityRequestsResponse,
                 >(self.station_url, Method::POST, PULL_PATH, &request);
-                Ok(negative_control_station_fact(result))
+                Ok(negative_control_station_fact(result, None))
             }
             CapabilityNegativeControl::SignatureTamper => {
                 let proof = request
@@ -334,34 +336,52 @@ impl<'a> CapabilityStationTransport<'a> {
                         Some(&request),
                         self.device_id,
                     ),
+                    None,
                 ))
             }
             CapabilityNegativeControl::CrossDevice => Ok(negative_control_station_fact(
-                station_client::request_proto_for_device_at::<
-                    _,
-                    PullClientCapabilityRequestsResponse,
-                >(
-                    self.station_url,
-                    Method::POST,
-                    PULL_PATH,
-                    self.token,
-                    None,
-                    Some(&request),
-                    self.device_id,
-                ),
+                self.send_signed_pull_request(&request),
+                None,
             )),
         }
+    }
+
+    pub fn emit_expired_lease_pull_replay(
+        &self,
+        capability_session_id: &str,
+        after_sequence: u64,
+        limit: u32,
+    ) -> Result<
+        (
+            CapabilityNegativeControlStationFact,
+            CapabilityNegativeControlStationFact,
+        ),
+        String,
+    > {
+        let request = self.signed_pull_request(capability_session_id, after_sequence, limit)?;
+        let request_hash = encoded_message_hash(&request);
+        let source = negative_control_station_fact(
+            self.send_signed_pull_request(&request),
+            Some(request_hash.clone()),
+        );
+        let replay = negative_control_station_fact(
+            self.send_signed_pull_request(&request),
+            Some(request_hash),
+        );
+        Ok((source, replay))
     }
 
     fn signed_pull_request(
         &self,
         capability_session_id: &str,
+        after_sequence: u64,
+        limit: u32,
     ) -> Result<PullClientCapabilityRequestsRequest, String> {
         let mut request = PullClientCapabilityRequestsRequest {
             capability_session_id: capability_session_id.to_string(),
             device_id: self.device_id.to_string(),
-            after_sequence: 0,
-            limit: 1,
+            after_sequence,
+            limit,
             command_proof: None,
         };
         request.command_proof = Some(self.sign_command(
@@ -369,6 +389,21 @@ impl<'a> CapabilityStationTransport<'a> {
             &request_without_pull_proof(&request),
         )?);
         Ok(request)
+    }
+
+    fn send_signed_pull_request(
+        &self,
+        request: &PullClientCapabilityRequestsRequest,
+    ) -> Result<PullClientCapabilityRequestsResponse, StationClientError> {
+        station_client::request_proto_for_device_at(
+            self.station_url,
+            Method::POST,
+            PULL_PATH,
+            self.token,
+            None,
+            Some(request),
+            self.device_id,
+        )
     }
 
     fn submit_active(
@@ -602,12 +637,14 @@ fn validate_command_response(error_code: i32, operation: &str) -> Result<(), Str
 
 fn negative_control_station_fact(
     result: Result<PullClientCapabilityRequestsResponse, StationClientError>,
+    request_hash: Option<String>,
 ) -> CapabilityNegativeControlStationFact {
     match result {
         Ok(response) => CapabilityNegativeControlStationFact {
             endpoint: PULL_PATH,
             request_sent: true,
             response_received: true,
+            request_hash,
             command_error_code: Some(command_error_code_name(response.error_code)),
             http_status: Some(200),
             transport_error_kind: None,
@@ -617,6 +654,7 @@ fn negative_control_station_fact(
             endpoint: PULL_PATH,
             request_sent: true,
             response_received: matches!(error.kind, StationClientErrorKind::HttpStatus(_)),
+            request_hash,
             command_error_code: None,
             http_status: match error.kind {
                 StationClientErrorKind::HttpStatus(status) => Some(status),
@@ -626,6 +664,10 @@ fn negative_control_station_fact(
             station_error_details: error.details,
         },
     }
+}
+
+fn encoded_message_hash(message: &impl Message) -> String {
+    hex::encode(Sha256::digest(message.encode_to_vec()))
 }
 
 fn command_error_code_name(value: i32) -> String {
@@ -671,5 +713,39 @@ fn now_timestamp() -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: duration.as_secs().min(i64::MAX as u64) as i64,
         nanos: duration.subsec_nanos() as i32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expired_lease_replay_reuses_the_exact_signed_pull_request() {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7_u8; 32]);
+        let transport = CapabilityStationTransport::new(
+            "https://station.test",
+            "ptid:test",
+            "device-1",
+            "token",
+            "signing-key-1",
+            &signing_key,
+        )
+        .unwrap();
+
+        let request = transport
+            .signed_pull_request("expired-session", 17, 32)
+            .unwrap();
+        let replay = request.clone();
+
+        assert_eq!(request.capability_session_id, "expired-session");
+        assert_eq!(request.after_sequence, 17);
+        assert_eq!(request.limit, 32);
+        assert_eq!(request.encode_to_vec(), replay.encode_to_vec());
+        assert_eq!(
+            encoded_message_hash(&request),
+            encoded_message_hash(&replay)
+        );
+        assert_eq!(encoded_message_hash(&request).len(), 64);
     }
 }

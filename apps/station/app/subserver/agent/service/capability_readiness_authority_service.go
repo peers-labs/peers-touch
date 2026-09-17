@@ -34,6 +34,8 @@ type CapabilityAuthorityReadinessService struct {
 	now                func() time.Time
 }
 
+const runtimeCapabilityUnavailableReasonCode = "runtime_capability_unavailable"
+
 func NewCapabilityAuthorityReadinessService(
 	authority *CapabilityAuthorityService,
 	agents *AgentService,
@@ -331,7 +333,7 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 		if !ok || (resolution != model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_NATIVE &&
 			resolution != model.RuntimeCapabilityResolution_RUNTIME_CAPABILITY_RESOLUTION_BRIDGED) {
 			return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-				"runtime_capability_unavailable", nil
+				runtimeCapabilityUnavailableReasonCode, nil
 		}
 	}
 	if model.ToolExecutionOwner(manifest.ExecutionOwner) ==
@@ -351,6 +353,23 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 	}
 	return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		"capability_ready", nil
+}
+
+func runtimeCapabilityReadinessError(
+	snapshot *model.CapabilityReadinessSnapshot,
+) error {
+	for _, readiness := range snapshot.GetCapabilities() {
+		if readiness.GetState() !=
+			model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE ||
+			readiness.GetReasonCode() != runtimeCapabilityUnavailableReasonCode {
+			continue
+		}
+		return errcode.NewRuntimeIncompatibleCapability(
+			strings.TrimSpace(readiness.GetCapabilityId()),
+			runtimeCapabilityUnavailableReasonCode,
+		)
+	}
+	return nil
 }
 
 func runtimeCapabilityResolution(

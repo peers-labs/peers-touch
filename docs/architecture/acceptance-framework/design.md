@@ -1,8 +1,8 @@
 # Acceptance Framework — 架构设计
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+> **Version**: v1.2
+> **Created**: 2026-06-03 | **Updated**: 2026-09-13
 
 
 > **Owner**: Architecture Team
@@ -21,6 +21,8 @@
 7. **No silent gap** — 缺少 Acceptance contract、runtime resource、evidence 或责任边界时必须输出结构化 gap 并保持 `UNPROVEN`，不得临场绕过。
 8. **Ephemeral authority stays ephemeral** — process-local capability只通过受控
    child inheritance存在，不进入durable manifest、environment secret、文件或网络。
+9. **Impact is not scheduling** — Registry只产生保守影响投影；正式Execution
+   Plan的当前closure决定本次执行。Evidence latest pointer不得充当工作状态。
 
 ### 1.1 Runtime Provisioning 扩展证据账本
 
@@ -108,10 +110,15 @@
                                          ▼
 ┌──────────────────┐      ┌────────────────────────────┐
 │ Feature Contract │◄────►│       Impact Registry       │
-│ truth/surface/   │      │ path -> feature -> gates    │
+│ truth/surface/   │      │ path -> feature -> candidates│
 │ negative/gates   │      └──────────────┬─────────────┘
-└────────┬─────────┘                     │ selected gates
+└────────┬─────────┘                     │ drift validation
          │                               ▼
+         │                 ┌────────────────────────────┐
+         │                 │ Formal Plan / current closure│
+         │                 └──────────────┬─────────────┘
+         │                                │ scheduled gates
+         │                                ▼
          │                 ┌────────────────────────────┐
          │                 │       Gate Execution        │
          │                 │ local / fedp5 / desktop     │
@@ -429,6 +436,14 @@ domain-neutral contracts组成：
 | `EvidenceWriter` | redaction、atomic file write、manifest finalize和typed errors |
 | `EvidenceReader` | 从`ArtifactRef`或atomic latest pointer读取并验证identity/hash |
 | `EvidenceCleanup` | 在lock与retention policy下删除eligible closed runs |
+
+本机默认root由Machine Dev Control Plane拥有：
+
+```text
+~/.peers-touch/dev/acceptance
+```
+
+正式产品Application Support namespace不得承载Acceptance evidence。
 
 ```text
 Repository (code/schema/template/fixture only)

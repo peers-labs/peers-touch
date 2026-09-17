@@ -399,6 +399,54 @@ describe('chatRuntime Agent turn recovery', () => {
     });
   });
 
+  it('preserves a failed recovery across same-process teardown and bootstrap', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    const basePayload = {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+    });
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connection_lost',
+      data: { turnId: 'turn-1', seq: 1, recoveryHandoff: true },
+    });
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+    const failed =
+      useAgentTurnRecoveryStore.getState().active['conversation-1'];
+    await flushAgentTurnRecoveryPersistence();
+
+    chatRuntime.teardown();
+    mocks.replayControllers.length = 0;
+    mocks.replayInputs.length = 0;
+    mocks.replayOnEvents.length = 0;
+    mocks.replayOnErrors.length = 0;
+    mocks.readValue.mockResolvedValueOnce({
+      'conversation-1': failed,
+    });
+    chatRuntime.install();
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    expect(mocks.replayInputs).toHaveLength(0);
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'RECOVERY_FAILED',
+      recoveryEpoch: failed.recoveryEpoch,
+    });
+  });
+
   it('publishes source-bound replay metadata without making it a second state input', async () => {
     mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
     const observed: unknown[] = [];
@@ -487,6 +535,53 @@ describe('chatRuntime Agent turn recovery', () => {
         content: 'authoritative replay text',
       },
     );
+  });
+
+  it('does not recreate recovery after connected reconciliation closes the turn', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    const basePayload = {
+      streamId: 'stream-1',
+      ptid: 'ptid:person:alice',
+      streamGeneration: 10,
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+    });
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connection_lost',
+      data: { turnId: 'turn-1', seq: 1, recoveryHandoff: true },
+    });
+    expect(mocks.replayOnEvents).toHaveLength(1);
+    mocks.reconcileRecoveredTurn.mockImplementationOnce(async () => {
+      useAgentTurnRecoveryStore.getState().clear(
+        'conversation-1',
+        'turn-1',
+      );
+    });
+    mocks.applyRecoveredTurnEvent.mockClear();
+
+    mocks.replayOnEvents[0]({
+      event: 'connected',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 5,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(mocks.applyRecoveredTurnEvent).not.toHaveBeenCalled();
+    expect(mocks.write).toHaveBeenLastCalledWith('agent-turn-recovery', {});
   });
 
   it('closes recovery on a terminal event after catch-up reaches the live tail', async () => {
@@ -790,7 +885,7 @@ describe('chatRuntime Agent turn recovery', () => {
         turnId: 'turn-1',
         conversationId: 'conversation-1',
         status: 'running',
-        seq: 7,
+        seq: 4,
     }));
     await Promise.resolve();
 
@@ -804,12 +899,12 @@ describe('chatRuntime Agent turn recovery', () => {
 
     expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
       phase: 'CONNECTED',
-      cursor: 7,
+      cursor: 4,
     });
     expect(result).toMatchObject({
       source: 'station-snapshot-reconcile',
       status: 'running',
-      sequence: 7,
+      sequence: 4,
       terminal: false,
       terminalStatus: null,
     });

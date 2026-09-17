@@ -9,14 +9,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ENVS_DIR="$PROJECT_ROOT/.local/deploy/envs"
+DEPLOY_SCRIPT="$PROJECT_ROOT/tooling/scripts/deploy/deploy.sh"
+ENV_REPO="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
 DOCKERFILE="tooling/docker/builder-base.Dockerfile"
 IMAGE_TAG="peers-station-builder:go1.24.6"
 
 build_on_host() {
   local env_file="$1"
   local env_name
-  env_name="$(basename "$env_file" .env)"
+  env_name="$(basename "$env_file" .env.example)"
 
   # shellcheck source=/dev/null
   source "$env_file"
@@ -50,16 +51,24 @@ EOF
 target="${1:-}"
 
 if [[ -n "$target" ]]; then
-  env_file="$ENVS_DIR/$target.env"
-  if [[ ! -f "$env_file" ]]; then
-    echo "[ERROR] Env file not found: $env_file"
+  if ! env_file="$(PT_ENV_REPO="$ENV_REPO" "$DEPLOY_SCRIPT" resolve "$target")"; then
     exit 1
   fi
   build_on_host "$env_file"
 else
-  for env_file in "$ENVS_DIR"/*.env; do
-    build_on_host "$env_file" || true
-  done
+  if [[ ! -d "$ENV_REPO/peers-touch" ]] \
+    || ! git -C "$ENV_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "[ERROR] Reviewed environment repository is unavailable: $ENV_REPO"
+    exit 1
+  fi
+  while IFS= read -r relative; do
+    env_name="$(basename "$relative" .env.example)"
+    env_file="$(PT_ENV_REPO="$ENV_REPO" "$DEPLOY_SCRIPT" resolve "$env_name")"
+    build_on_host "$env_file"
+  done < <(
+    git -C "$ENV_REPO" ls-files \
+      'peers-touch/*/deploy/*.env.example' | sort
+  )
 fi
 
 echo ""

@@ -108,7 +108,10 @@ class NativeInteractionContractsTest(unittest.TestCase):
         gateway = self.source(
             "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
         )
-        self.assertIn('#[cfg(feature = "acceptance-webdriver")]', store)
+        self.assertIn(
+            '#[cfg(any(test, feature = "acceptance-webdriver"))]',
+            store,
+        )
         self.assertIn("acceptance_interaction_snapshot", store)
         self.assertIn('#[cfg(feature = "acceptance-webdriver")]', gateway)
         self.assertIn("messaging_acceptance_interaction_snapshot", gateway)
@@ -604,33 +607,33 @@ class ContactMessageResilienceTest(unittest.TestCase):
         )
 
         group_kind_pos = src.find("kind: 'group'")
-        friend_kind_pos = src.find("kind: 'friend'")
         self.assertGreater(
             group_kind_pos, 0,
             "group row double-click must pass kind: 'group' so the page can distinguish "
             "group navigation from friend navigation",
         )
-        self.assertGreater(
-            friend_kind_pos, 0,
-            "friend row double-click must pass kind: 'friend' so the page can distinguish "
-            "friend navigation from group navigation",
+        self.assertIn(
+            "const selection = friendContactSelection(",
+            src,
+            "friend row must use the shared PTID-keyed contact selection",
         )
-        self.assertNotEqual(
-            group_kind_pos, friend_kind_pos,
-            "group and friend double-click handlers must be distinct",
+        self.assertIn(
+            "onDoubleClick={() => onStartChat?.(selection)}",
+            src,
+            "friend row double-click must route the exact shared identity selection",
         )
 
         first_dc = double_clicks[0]
         second_dc = double_clicks[1]
         first_kind = src.find("kind:", first_dc, second_dc)
-        second_kind = src.find("kind:", second_dc)
         self.assertGreater(
             first_kind, first_dc,
             "the first onDoubleClick handler must invoke onStartChat with a kind",
         )
         self.assertGreater(
-            second_kind, second_dc,
-            "the second onDoubleClick handler must invoke onStartChat with a kind",
+            src.find("onStartChat?.(selection)", second_dc),
+            second_dc,
+            "the second onDoubleClick handler must invoke the typed friend selection",
         )
 
         page = self.source("apps/desktop/src/pages/SocialChatPage.tsx")

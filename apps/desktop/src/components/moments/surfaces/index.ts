@@ -38,6 +38,7 @@ export {
   SocialThreadSection,
 } from './SocialThreadSurface';
 export type {
+  SocialThreadDividerProps,
   SocialThreadSurfaceProps,
   SocialThreadHeaderProps,
   SocialThreadBodyProps,
@@ -52,3 +53,6 @@ export type {
   SocialEmptyKind,
   SocialEmptyStateProps,
 } from './SocialEmptyState';
+
+export { SocialPrivateState } from './SocialPrivateState';
+export type { SocialPrivateStateProps } from './SocialPrivateState';

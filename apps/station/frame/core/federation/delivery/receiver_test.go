@@ -112,6 +112,172 @@ func TestReceiverAtomicallyDispatchesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestReceiverRunsPostCommitCallbacksOnlyAfterDurableCommit(t *testing.T) {
+	t.Run("committed callback observes durable state and surfaces failure", func(t *testing.T) {
+		fixture := newFrameFixture(t)
+		db, repository := newSQLiteRepository(t, fixture.clock)
+		if err := db.AutoMigrate(&domainRecord{}); err != nil {
+			t.Fatalf("migrate domain test table: %v", err)
+		}
+		frame := fixture.stringFrame(
+			t,
+			"post-commit-frame",
+			"post-commit-idempotency",
+			"post-commit",
+		)
+		callbackFailure := errors.New("injected post-commit failure")
+		callbackCount := 0
+		callbackSawCommittedState := false
+
+		result, err := repository.Receive(
+			context.Background(),
+			frame,
+			fixture.clock.Now(),
+			func(
+				ctx context.Context,
+				tx delivery.Transaction,
+				frame *delivery.Frame,
+			) (delivery.Result, error) {
+				if err := tx.DB().WithContext(ctx).Create(&domainRecord{
+					ID:    frame.FrameId,
+					Value: frame.PayloadId,
+				}).Error; err != nil {
+					return delivery.Result{}, err
+				}
+				registrar, ok := tx.(delivery.AfterCommitRegistrar)
+				if !ok {
+					t.Fatal("delivery transaction does not support post-commit callbacks")
+				}
+				if err := registrar.AfterCommit(func(callbackContext context.Context) error {
+					callbackCount++
+					var count int64
+					if queryErr := db.WithContext(callbackContext).
+						Model(&domainRecord{}).
+						Where("id = ?", frame.FrameId).
+						Count(&count).Error; queryErr != nil {
+						return queryErr
+					}
+					callbackSawCommittedState = count == 1
+
+					return callbackFailure
+				}); err != nil {
+					return delivery.Result{}, err
+				}
+
+				return delivery.AcceptedResult(), nil
+			},
+		)
+		if result != delivery.AcceptedResult() ||
+			!errors.Is(err, callbackFailure) {
+			t.Fatalf("post-commit result = %+v, error = %v", result, err)
+		}
+		if callbackCount != 1 || !callbackSawCommittedState {
+			t.Fatalf(
+				"post-commit callback count=%d sawCommitted=%t",
+				callbackCount,
+				callbackSawCommittedState,
+			)
+		}
+		var inboxCount, domainCount int64
+		if err := db.Model(&delivery.InboxRecord{}).Count(&inboxCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&domainRecord{}).Count(&domainCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if inboxCount != 1 || domainCount != 1 {
+			t.Fatalf(
+				"committed rows inbox=%d domain=%d",
+				inboxCount,
+				domainCount,
+			)
+		}
+
+		replay, err := repository.Receive(
+			context.Background(),
+			frame,
+			fixture.clock.Now(),
+			func(
+				context.Context,
+				delivery.Transaction,
+				*delivery.Frame,
+			) (delivery.Result, error) {
+				t.Fatal("exact replay redispatched the committed frame")
+				return delivery.Result{}, nil
+			},
+		)
+		if err != nil || replay != delivery.DuplicateResult() || callbackCount != 1 {
+			t.Fatalf(
+				"post-commit replay = %+v, error=%v callbacks=%d",
+				replay,
+				err,
+				callbackCount,
+			)
+		}
+	})
+
+	t.Run("rolled back callback is discarded", func(t *testing.T) {
+		fixture := newFrameFixture(t)
+		db, repository := newSQLiteRepository(t, fixture.clock)
+		if err := db.AutoMigrate(&domainRecord{}); err != nil {
+			t.Fatalf("migrate domain test table: %v", err)
+		}
+		callbackCount := 0
+		result, err := repository.Receive(
+			context.Background(),
+			fixture.stringFrame(
+				t,
+				"post-commit-rollback-frame",
+				"post-commit-rollback-idempotency",
+				"post-commit-rollback",
+			),
+			fixture.clock.Now(),
+			func(
+				ctx context.Context,
+				tx delivery.Transaction,
+				frame *delivery.Frame,
+			) (delivery.Result, error) {
+				if err := tx.DB().WithContext(ctx).Create(&domainRecord{
+					ID:    frame.FrameId,
+					Value: frame.PayloadId,
+				}).Error; err != nil {
+					return delivery.Result{}, err
+				}
+				registrar := tx.(delivery.AfterCommitRegistrar)
+				if err := registrar.AfterCommit(func(context.Context) error {
+					callbackCount++
+					return nil
+				}); err != nil {
+					return delivery.Result{}, err
+				}
+
+				return delivery.RetryableResult(delivery.FrameErrorOverloaded), nil
+			},
+		)
+		if err != nil ||
+			result != delivery.RetryableResult(delivery.FrameErrorOverloaded) {
+			t.Fatalf("rollback result = %+v, error=%v", result, err)
+		}
+		if callbackCount != 0 {
+			t.Fatalf("rollback executed %d post-commit callbacks", callbackCount)
+		}
+		var inboxCount, domainCount int64
+		if err := db.Model(&delivery.InboxRecord{}).Count(&inboxCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&domainRecord{}).Count(&domainCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if inboxCount != 0 || domainCount != 0 {
+			t.Fatalf(
+				"rollback retained rows inbox=%d domain=%d",
+				inboxCount,
+				domainCount,
+			)
+		}
+	})
+}
+
 func TestReceiverRejectsPayloadAndFrameIdentityConflictsBeforeDispatch(t *testing.T) {
 	fixture := newFrameFixture(t)
 	db, repository := newSQLiteRepository(t, fixture.clock)
@@ -311,6 +477,94 @@ func TestReceiverPersistsUnsupportedPayloadAsTerminalReceipt(t *testing.T) {
 	if receipt.Disposition != delivery.DispositionTerminal ||
 		receipt.ErrorCode != delivery.FrameErrorUnsupportedPayload {
 		t.Fatalf("terminal receipt = %+v", receipt)
+	}
+}
+
+func TestReceiverDispatchesEphemeralWithoutRowsAndDropsOverload(t *testing.T) {
+	fixture := newFrameFixture(t)
+	db, repository := newSQLiteRepository(t, fixture.clock)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	registry := delivery.NewRegistry()
+	if err := delivery.RegisterEphemeralProtoReceiver(
+		registry,
+		delivery.PayloadKindConversationTyping,
+		func() *wrapperspb.StringValue {
+			return &wrapperspb.StringValue{}
+		},
+		func(
+			_ context.Context,
+			payload *wrapperspb.StringValue,
+			_ *delivery.Frame,
+		) (delivery.Result, error) {
+			if payload.GetValue() == "blocking" {
+				started <- struct{}{}
+				<-release
+			}
+
+			return delivery.AcceptedResult(), nil
+		},
+	); err != nil {
+		t.Fatalf("register ephemeral receiver: %v", err)
+	}
+	receiver, err := delivery.NewReceiver(delivery.ReceiverConfig{
+		Policy:               fixture.policy,
+		Verifier:             fixture.verifier,
+		Registry:             registry,
+		UnitOfWork:           repository,
+		Clock:                fixture.clock,
+		MaxEphemeralInFlight: 1,
+	})
+	if err != nil {
+		t.Fatalf("create receiver: %v", err)
+	}
+	blocking := fixture.signedFrame(
+		t,
+		"typing-blocking",
+		"typing-blocking",
+		delivery.PayloadKindConversationTyping,
+		"typing-blocking",
+		wrapperspb.String("blocking"),
+	)
+	completed := make(chan delivery.Result, 1)
+	go func() {
+		result, receiveErr := receiver.Receive(context.Background(), blocking)
+		if receiveErr != nil {
+			t.Errorf("receive blocking typing: %v", receiveErr)
+		}
+		completed <- result
+	}()
+	<-started
+
+	overload := fixture.signedFrame(
+		t,
+		"typing-overload",
+		"typing-overload",
+		delivery.PayloadKindConversationTyping,
+		"typing-overload",
+		wrapperspb.String("overload"),
+	)
+	result, err := receiver.Receive(context.Background(), overload)
+	if err != nil {
+		t.Fatalf("receive overload typing: %v", err)
+	}
+	if result != delivery.TerminalResult(delivery.FrameErrorOverloaded) {
+		t.Fatalf("overload result = %+v", result)
+	}
+	close(release)
+	if result = <-completed; result != delivery.AcceptedResult() {
+		t.Fatalf("ephemeral result = %+v", result)
+	}
+
+	var inboxCount, outboxCount int64
+	if err := db.Model(&delivery.InboxRecord{}).Count(&inboxCount).Error; err != nil {
+		t.Fatalf("count inbox: %v", err)
+	}
+	if err := db.Model(&delivery.OutboxRecord{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox: %v", err)
+	}
+	if inboxCount != 0 || outboxCount != 0 {
+		t.Fatalf("ephemeral rows inbox=%d outbox=%d", inboxCount, outboxCount)
 	}
 }
 

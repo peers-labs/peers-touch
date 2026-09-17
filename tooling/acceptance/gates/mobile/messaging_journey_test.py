@@ -18,6 +18,7 @@ class FakeMessagingNetwork:
         self.messages: dict[str, list[dict[str, Any]]] = {}
         self.typing: dict[str, dict[str, dict[str, Any]]] = {}
         self.friend_requests: list[dict[str, Any]] = []
+        self.actors: dict[str, MessagingActor] = {}
         self.sequence = 0
 
     def add_conversation(
@@ -57,6 +58,12 @@ class FakeMessagingSession:
         self.login_emails: list[str] = []
         self.lifecycle_restart_count = 0
         self.social_runtime_active = False
+        self.scope_bootstrap_reads_per_refresh = 0
+        self.scope_bootstrap_reads_remaining = 0
+        self.runtime_phase = "ACTIVE"
+        self.lifecycle_scope_phases: list[str] = []
+        self.messaging_projection_reads_while_bootstrapping = 0
+        self.network.actors[actor.ptid] = actor
 
     def call_action(
         self,
@@ -105,15 +112,39 @@ class FakeMessagingSession:
                 "conversationId": conversation_id,
                 "state": "projected",
             }
+        if action == "social.people.search":
+            query = str(body["query"])
+            federation_id = str(body["federationId"])
+            if federation_id != "federation-1":
+                raise AssertionError("unexpected explicit Federation identity")
+            return [
+                {
+                    "ptid": actor.ptid,
+                    "federationId": federation_id,
+                    "homeStationPeerId": actor.station_peer_id,
+                }
+                for actor in self.network.actors.values()
+                if actor.federated_handle == query
+            ]
         if action == "social.request.send":
             if not self.social_runtime_active:
                 raise GateError("mobile.social.runtimeUnavailable")
+            receiver = self.network.actors[str(body["receiverPtid"])]
+            if body["receiverHomeStationPeerId"] != receiver.station_peer_id:
+                raise AssertionError("receiver Home Station identity mismatch")
+            if body["federationId"] != "federation-1":
+                raise AssertionError("receiver Federation identity mismatch")
             self.network.sequence += 1
             self.network.friend_requests.append(
                 {
                     "requestId": f"request-{self.network.sequence}",
+                    "federationId": body["federationId"],
                     "senderPtid": self.actor.ptid,
                     "receiverPtid": body["receiverPtid"],
+                    "senderHomeStationPeerId": self.actor.station_peer_id,
+                    "receiverHomeStationPeerId": body[
+                        "receiverHomeStationPeerId"
+                    ],
                     "status": 1,
                 }
             )
@@ -142,6 +173,8 @@ class FakeMessagingSession:
             return self._social_projection()
         if action == "messaging.createGroup":
             conversation_id = str(body["conversationId"])
+            if body.get("federationId") != self.actor.federation_id:
+                raise AssertionError("Group Federation identity mismatch")
             self.network.add_conversation(
                 conversation_id,
                 kind=2,
@@ -276,6 +309,8 @@ class FakeMessagingSession:
                 "commandState": "idle",
             }
         if action == "messaging.projection.read":
+            if self.runtime_phase != "ACTIVE":
+                self.messaging_projection_reads_while_bootstrapping += 1
             return {
                 "runtime": {
                     "active": True,
@@ -296,11 +331,40 @@ class FakeMessagingSession:
         if action == "lifecycle.restart":
             self.lifecycle_restart_count += 1
             return {"requested": True, "scope": "webview"}
+        if action == "lifecycle.scope.read":
+            if self.scope_bootstrap_reads_remaining > 0:
+                self.scope_bootstrap_reads_remaining -= 1
+                self.runtime_phase = "BOOTSTRAPPING"
+                actor_ptid = None
+                runtime_station_peer_id = None
+                launch_state = "app-boot"
+            else:
+                self.runtime_phase = "ACTIVE"
+                actor_ptid = self.actor.ptid
+                runtime_station_peer_id = self.actor.station_peer_id
+                launch_state = "shell"
+            self.lifecycle_scope_phases.append(self.runtime_phase)
+            return {
+                "generation": self.lifecycle_restart_count,
+                "phase": self.runtime_phase,
+                "launchState": launch_state,
+                "activeStationPeerId": self.actor.station_peer_id,
+                "activeActorPtid": actor_ptid,
+                "runtimeStationPeerId": runtime_station_peer_id,
+            }
         raise AssertionError(f"unexpected action: {action}")
 
     def refresh_webview(self) -> None:
         self.refresh_count += 1
         self.social_runtime_active = True
+        self.scope_bootstrap_reads_remaining = (
+            self.scope_bootstrap_reads_per_refresh
+        )
+        self.runtime_phase = (
+            "BOOTSTRAPPING"
+            if self.scope_bootstrap_reads_remaining > 0
+            else "ACTIVE"
+        )
 
     def switch_to_app_webview(self, timeout: float = 30.0) -> str:
         del timeout
@@ -350,6 +414,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id="station-primary",
             ptid="ptid:alice",
             account_ref="station-account:alice@p.t",
+            federated_handle="@alice@station-primary.example",
+            federation_id="federation-1",
         )
         self.receiver = MessagingActor(
             client_id="sim-android",
@@ -358,6 +424,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id="station-secondary",
             ptid="ptid:bob",
             account_ref="station-account:bob@p.t",
+            federated_handle="@bob@station-secondary.example",
+            federation_id="federation-1",
         )
         self.sender_session = FakeMessagingSession(self.network, self.sender)
         self.receiver_session = FakeMessagingSession(
@@ -398,6 +466,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
     def test_authentication_resolves_canonical_station_account_reference(
         self,
     ) -> None:
+        self.sender_session.scope_bootstrap_reads_per_refresh = 1
         self.journey.authenticate(
             self.sender_session,
             self.sender,
@@ -408,6 +477,10 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(self.sender_session.lifecycle_restart_count, 1)
         self.assertEqual(self.sender_session.refresh_count, 1)
         self.assertTrue(self.sender_session.social_runtime_active)
+        self.assertEqual(
+            self.sender_session.lifecycle_scope_phases,
+            ["BOOTSTRAPPING", "ACTIVE"],
+        )
 
     def test_authentication_rejects_non_station_account_reference(self) -> None:
         malformed = MessagingActor(
@@ -417,6 +490,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id=self.sender.station_peer_id,
             ptid=self.sender.ptid,
             account_ref="fixture:alice",
+            federated_handle=self.sender.federated_handle,
+            federation_id=self.sender.federation_id,
         )
 
         with self.assertRaisesRegex(GateError, "must be Station-owned"):
@@ -431,13 +506,17 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(self.sender_session.lifecycle_restart_count, 0)
         self.assertEqual(self.sender_session.refresh_count, 0)
 
-    def test_chat_contacts_covers_direct_group_attachment_and_restart(self) -> None:
+    def test_chat_contacts_waits_for_authenticated_runtime_after_restart(
+        self,
+    ) -> None:
         self.journey.authenticate(self.sender_session, self.sender, password="1")
         self.journey.authenticate(
             self.receiver_session,
             self.receiver,
             password="1",
         )
+        self.receiver_session.lifecycle_scope_phases.clear()
+        self.receiver_session.scope_bootstrap_reads_per_refresh = 1
 
         result = self.journey.run_chat_contacts(
             sender_session=self.sender_session,
@@ -454,6 +533,19 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             self.assertTrue(result[kind]["interactionReadback"])
             self.assertTrue(result[kind]["receiptReadback"])
         self.assertEqual(self.receiver_session.refresh_count, 3)
+        self.assertEqual(
+            self.receiver_session.lifecycle_scope_phases,
+            [
+                "BOOTSTRAPPING",
+                "ACTIVE",
+                "BOOTSTRAPPING",
+                "ACTIVE",
+            ],
+        )
+        self.assertEqual(
+            self.receiver_session.messaging_projection_reads_while_bootstrapping,
+            0,
+        )
 
     def test_authentication_rejects_wrong_fixture_identity(self) -> None:
         wrong = MessagingActor(
@@ -463,6 +555,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id=self.sender.station_peer_id,
             ptid="ptid:other",
             account_ref=self.sender.account_ref,
+            federated_handle=self.sender.federated_handle,
+            federation_id=self.sender.federation_id,
         )
 
         with self.assertRaisesRegex(GateError, "does not match"):

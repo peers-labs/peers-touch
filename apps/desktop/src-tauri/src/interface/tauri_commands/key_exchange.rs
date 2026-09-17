@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{State, Window};
 
-use crate::application::key_exchange::{device_install, wire};
-use crate::application::session_resolver;
+use crate::application::key_exchange::wire;
 use crate::contracts::{KeyExchangeFetchInput, KeyExchangeUploadInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -14,23 +15,76 @@ use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use reqwest::Method;
 use ulid::Ulid;
 
-fn token_from_state(
-    state: &State<'_, Arc<AppState>>,
-    window: &Window,
-) -> Result<String, AppResult<StubPayload>> {
-    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
-    if token.trim().is_empty() {
+pub(crate) struct ActiveKeyExchangeContext {
+    pub(crate) token: String,
+    pub(crate) actor_ptid: String,
+    pub(crate) device_id: String,
+}
+
+pub(crate) fn active_key_exchange_context_for_account<T: Serialize>(
+    state: &AppState,
+    account_id: &str,
+    actor_ptid: &str,
+    token: &str,
+) -> Result<ActiveKeyExchangeContext, AppResult<T>> {
+    if token.trim().is_empty() || actor_ptid.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "authentication required",
+            "authenticated profile is incomplete",
             None,
         ));
     }
-    Ok(token)
+    let engine = state
+        .messaging_engines
+        .get(account_id)
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging profile engine is not active",
+                None,
+            )
+        })?;
+    if engine.endpoint().ptid != actor_ptid {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "messaging endpoint actor does not match authenticated actor",
+            None,
+        ));
+    }
+    Ok(ActiveKeyExchangeContext {
+        token: token.to_string(),
+        actor_ptid: engine.endpoint().ptid.clone(),
+        device_id: engine.endpoint().device_id.clone(),
+    })
 }
 
-fn actor_ptid_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
-    session_resolver::ptid_for_window(state.inner(), window)
+pub(crate) fn active_key_exchange_context<T: Serialize>(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<ActiveKeyExchangeContext, AppResult<T>> {
+    let session = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    active_key_exchange_context_for_account(
+        state.inner(),
+        &session.account_id,
+        &session.actor.ptid,
+        &session.jwt,
+    )
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyPackageUploadInput {
+    pub device_id: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyPackageFetchInput {
+    pub ptid: String,
+    pub home_station_peer_id: Option<String>,
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -46,27 +100,22 @@ pub fn key_exchange_upload_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_ptid = match actor_ptid_from_state(&state, &window) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "Authentication required — please log in",
-                None,
-            );
-        }
+    let context = match active_key_exchange_context(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
     };
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
-        Ok(s) => s,
-        Err(e) => {
-            return AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None);
-        }
-    };
-    station_client::set_device_id(device_id.clone());
+    let ActiveKeyExchangeContext {
+        token,
+        actor_ptid,
+        device_id,
+    } = context;
+    if device_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "messaging profile device is not active",
+            None,
+        );
+    }
     if input.opk_ids.len() != input.opk_pubs.len() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -75,7 +124,7 @@ pub fn key_exchange_upload_bundle(
         );
     }
     let req = kemodel::UploadDirectKeyBundleRequest {
-        device: Some(actor_device_ref(actor_ptid, device_id)),
+        device: Some(actor_device_ref(actor_ptid, device_id.clone())),
         identity_key_public: input.ik_pub,
         signed_pre_key_id: input.spk_id,
         signed_pre_key_public: input.spk_pub,
@@ -88,7 +137,7 @@ pub fn key_exchange_upload_bundle(
             .collect(),
         supported_wire_versions: vec![1],
     };
-    match station_client::request_proto::<
+    match station_client::request_proto_for_device::<
         kemodel::UploadDirectKeyBundleRequest,
         kemodel::UploadDirectKeyBundleResponse,
     >(
@@ -97,6 +146,7 @@ pub fn key_exchange_upload_bundle(
         &token,
         None,
         Some(&req),
+        &device_id,
     ) {
         Ok(_r) => to_stub("key_exchange_upload_bundle", json!({})),
         Err(e) => e.into_app_result("Station request failed"),
@@ -109,29 +159,18 @@ pub fn key_exchange_fetch_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_ptid = match actor_ptid_from_state(&state, &window) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => {
-            return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-        }
+    let context = match active_key_exchange_context(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
     };
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    let ActiveKeyExchangeContext {
+        token,
+        actor_ptid,
+        device_id,
+    } = context;
     if input.ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "ptid is required", None);
     }
-    let device_id = match device_install::get_or_create_device_id(&actor_ptid) {
-        Ok(device_id) => device_id,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("device_id: {error}"),
-                None,
-            );
-        }
-    };
     let req = kemodel::FetchDirectKeyBundlesRequest {
         actor: Some(actor_ref(input.ptid)),
         target_device_id: input.device_id.unwrap_or_default(),
@@ -187,4 +226,164 @@ pub fn key_exchange_fetch_bundle(
         "key_exchange_fetch_bundle",
         json!({ "bundles": bundles_json }),
     )
+}
+
+#[tauri::command]
+pub fn keypackage_upload(
+    input: KeyPackageUploadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let context = match active_key_exchange_context::<Value>(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
+    };
+    execute_keypackage_upload(context, input)
+}
+
+pub(crate) fn execute_keypackage_upload(
+    context: ActiveKeyExchangeContext,
+    input: KeyPackageUploadInput,
+) -> AppResult<Value> {
+    if input.device_id != context.device_id {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "MLS KeyPackage device does not match the active Messaging endpoint",
+            None,
+        );
+    }
+    let key_package = match B64.decode(input.data.as_bytes()) {
+        Ok(value) => value,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid MLS KeyPackage encoding: {error}"),
+                None,
+            );
+        }
+    };
+    let request = kemodel::UploadMlsKeyPackageRequest {
+        device: Some(actor_device_ref(
+            context.actor_ptid,
+            context.device_id.clone(),
+        )),
+        key_package,
+    };
+    match station_client::request_proto_for_device::<
+        kemodel::UploadMlsKeyPackageRequest,
+        kemodel::UploadMlsKeyPackageResponse,
+    >(
+        Method::POST,
+        "/key-exchange/mls/key-package/upload",
+        &context.token,
+        None,
+        Some(&request),
+        &context.device_id,
+    ) {
+        Ok(response) => AppResult::success(json!({
+            "package_id": response.package_id,
+            "key_package_sha256": B64.encode(response.key_package_sha256),
+        })),
+        Err(error) => error.into_app_result("MLS KeyPackage upload failed"),
+    }
+}
+
+#[tauri::command]
+pub fn keypackage_fetch(
+    input: KeyPackageFetchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let context = match active_key_exchange_context::<Value>(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
+    };
+    execute_keypackage_fetch(context, input)
+}
+
+pub(crate) fn execute_keypackage_fetch(
+    context: ActiveKeyExchangeContext,
+    input: KeyPackageFetchInput,
+) -> AppResult<Value> {
+    if input.ptid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "peer PTID is required", None);
+    }
+    let request = kemodel::FetchMlsKeyPackageRequest {
+        actor: Some(actor_ref(input.ptid)),
+        home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+        request_id: Ulid::new().to_string(),
+        requester: Some(actor_device_ref(
+            context.actor_ptid,
+            context.device_id.clone(),
+        )),
+    };
+    let response = match station_client::request_proto_for_device::<
+        kemodel::FetchMlsKeyPackageRequest,
+        kemodel::FetchMlsKeyPackageResponse,
+    >(
+        Method::POST,
+        "/key-exchange/mls/key-package/fetch",
+        &context.token,
+        None,
+        Some(&request),
+        &context.device_id,
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("MLS KeyPackage fetch failed"),
+    };
+    let reservation = match response.reservation {
+        Some(reservation) => Some(reservation),
+        None if response.available => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Station returned an available MLS KeyPackage without a reservation",
+                None,
+            );
+        }
+        None => None,
+    };
+    AppResult::success(json!({
+        "available": response.available,
+        "device_id": reservation
+            .as_ref()
+            .and_then(|item| item.target.as_ref())
+            .map(|target| target.device_id.as_str())
+            .unwrap_or(""),
+        "data": reservation
+            .as_ref()
+            .map(|item| B64.encode(&item.key_package)),
+        "home_station_peer_id": response.home_station_peer_id,
+    }))
+}
+
+#[tauri::command]
+pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
+    let context = match active_key_exchange_context::<Value>(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
+    };
+    execute_keypackage_count(context)
+}
+
+pub(crate) fn execute_keypackage_count(context: ActiveKeyExchangeContext) -> AppResult<Value> {
+    let request = kemodel::CountMlsKeyPackagesRequest {
+        device: Some(actor_device_ref(
+            context.actor_ptid,
+            context.device_id.clone(),
+        )),
+    };
+    match station_client::request_proto_for_device::<
+        kemodel::CountMlsKeyPackagesRequest,
+        kemodel::CountMlsKeyPackagesResponse,
+    >(
+        Method::GET,
+        "/key-exchange/mls/key-package/count",
+        &context.token,
+        None,
+        Some(&request),
+        &context.device_id,
+    ) {
+        Ok(response) => AppResult::success(json!({ "count": response.count })),
+        Err(error) => error.into_app_result("MLS KeyPackage count failed"),
+    }
 }

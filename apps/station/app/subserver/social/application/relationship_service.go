@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -202,6 +203,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorPTID string
 			FollowedAt:        timestamppb.New(follow.CreatedAt),
 			FederatedHandle:   federatedHandleOf(follow.Follower),
 			HomeStationDomain: homeStationDomainOf(follow.Follower),
+			HomeStationPeerId: homeStationPeerIDOf(follow.Follower),
 		}
 		followers = append(followers, follower)
 	}
@@ -274,6 +276,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorPTID string
 			FollowedAt:        timestamppb.New(follow.CreatedAt),
 			FederatedHandle:   federatedHandleOf(follow.Following),
 			HomeStationDomain: homeStationDomainOf(follow.Following),
+			HomeStationPeerId: homeStationPeerIDOf(follow.Following),
 		}
 		logger.Info(ctx, "Following user", "actorPtid", f.ActorPtid, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
@@ -328,7 +331,14 @@ func federatedHandleOf(a *db.Actor) string {
 	if a == nil {
 		return ""
 	}
-	return a.FederatedHandle
+	handle := strings.TrimSpace(a.FederatedHandle)
+	if handle == "" || strings.HasPrefix(handle, "@") {
+		return handle
+	}
+	if !strings.Contains(handle, "@") {
+		return ""
+	}
+	return "@" + handle
 }
 
 // homeStationDomainOf returns the DNS-style HTTP origin (no scheme)
@@ -338,4 +348,13 @@ func homeStationDomainOf(a *db.Actor) string {
 		return ""
 	}
 	return a.HomeStationDomain
+}
+
+// homeStationPeerIDOf returns the authoritative Station routing identity.
+// Empty remains a valid projection for legacy rows pending backfill.
+func homeStationPeerIDOf(a *db.Actor) string {
+	if a == nil {
+		return ""
+	}
+	return a.HomeStationPeerID
 }

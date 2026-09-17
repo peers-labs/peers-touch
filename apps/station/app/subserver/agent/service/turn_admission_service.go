@@ -219,12 +219,7 @@ func (s *TurnAdmissionService) Admit(
 			return admissionInternal("count queued turns", countErr)
 		}
 		if pendingCount >= int64(turnQueueCapacity) {
-			return errcode.New(
-				errcode.AgentQueueFull,
-				http.StatusTooManyRequests,
-				"agent.errors.queueFull",
-				nil,
-			)
+			return errcode.NewQueueFull(conversation.ID, turnQueueCapacity)
 		}
 		var maxSequence uint64
 		if sequenceErr := tx.Model(&persistence.TurnQueueEntry{}).

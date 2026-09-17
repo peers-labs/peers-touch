@@ -98,7 +98,11 @@ class AgentEventProtocolTest(unittest.TestCase):
         self.assertIn("runtimeBudgetExhaustionReason", service)
         self.assertIn("AgentToolBudgetExhausted", coverage)
         self.assertIn("case 'error'", handler)
-        self.assertIn("terminalStatus: 'failed'", handler)
+        self.assertIn(
+            "terminalStatus: interrupted ? 'interrupted' : 'failed'",
+            handler,
+        )
+        self.assertIn("isAgentLifecycleInterruptedError", handler)
 
     def test_budget_notice_on_chat_message(self) -> None:
         source = _read("apps/desktop/src/components/messages/AssistantMessage.tsx")

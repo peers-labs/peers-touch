@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
+	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -451,20 +454,49 @@ func (s *subServer) handlePrepareMembership(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	actors, err := s.composition.CommandService.CommandRouteActors(
+		ctx,
+		conversationID,
+		requester.Actor,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	actors = uniqueProductionActors(append(actors, change.Actor))
+	manifests, err := s.composition.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	verifiedRoutes, err := productionEndpointRoutesFromManifests(
+		manifests,
+		actors,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	manifestSetHash, manifestStateHash, err := productionEndpointManifestSetHashes(
+		manifests,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	plan, err := s.composition.CommandService.PrepareMembership(
 		ctx,
 		command.PrepareMembershipRequest{
-			ConversationID: conversationID,
-			Requester:      requester,
-			Changes:        []entity.MembershipChange{change},
-			TTL:            defaultAuthorityPlanTTL,
+			ConversationID:    conversationID,
+			Requester:         requester,
+			Changes:           []entity.MembershipChange{change},
+			VerifiedRoutes:    verifiedRoutes,
+			ManifestSetHash:   manifestSetHash,
+			ManifestStateHash: manifestStateHash,
+			TTL:               defaultAuthorityPlanTTL,
 		},
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
 
-	return s.productionMembershipPlanResponse(ctx, plan)
+	return s.productionMembershipPlanResponse(plan, manifests), nil
 }
 
 func (s *subServer) handleSubmitAuthorityCommand(
@@ -533,8 +565,21 @@ func (s *subServer) handleSubmitAuthorityCommand(
 			err,
 		), nil
 	}
-	if mapped.Membership == nil {
-		mapped.VerifiedRoutes = verifiedRoutes
+	mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
+		s.composition.productionSubmitCommandRoutes(
+			ctx,
+			plan,
+			mapped.Membership != nil,
+			verifiedRoutes,
+		)
+	if err != nil {
+		return productionCommandRejection(
+			ctx,
+			s,
+			wireCommand,
+			verifiedRoutes,
+			err,
+		), nil
 	}
 	result, err := s.composition.CommandService.Submit(ctx, mapped)
 	if err != nil {
@@ -853,6 +898,23 @@ func (s *subServer) handleSubmitTyping(
 		return nil, err
 	}
 	response, err := s.composition.InteractionHandler.SubmitTyping(
+		ctx,
+		authenticated,
+		request,
+	)
+
+	return response, mapProductionConversationError(ctx, err)
+}
+
+func (s *subServer) handleResolveCommandResults(
+	ctx context.Context,
+	request *chatmodel.ResolveConversationCommandResultsRequest,
+) (*chatmodel.ResolveConversationCommandResultsResponse, error) {
+	authenticated, _, err := authenticatedConversationActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.CommandResultHandler.Resolve(
 		ctx,
 		authenticated,
 		request,
@@ -1223,17 +1285,9 @@ func (s *subServer) productionGroupPlanResponse(
 }
 
 func (s *subServer) productionMembershipPlanResponse(
-	ctx context.Context,
 	plan entity.AuthorityPlan,
-) (*chatmodel.PrepareConversationMembershipResponse, error) {
-	manifests, err := s.composition.productionEndpointManifests(
-		ctx,
-		productionPlanActors(plan),
-	)
-	if err != nil {
-		return nil, err
-	}
-
+	manifests []*actormodel.ActorEndpointManifest,
+) *chatmodel.PrepareConversationMembershipResponse {
 	return &chatmodel.PrepareConversationMembershipResponse{
 		AuthorityPlanId:        string(plan.ID),
 		ExpiresAt:              timestamppb.New(plan.ExpiresAt.UTC()),
@@ -1249,7 +1303,7 @@ func (s *subServer) productionMembershipPlanResponse(
 		ReservedKeyPackages:    productionPlanKeyPackageReservations(plan),
 		EndpointManifests:      manifests,
 		AuthorityPlanSha256:    plan.Hash.Bytes(),
-	}, nil
+	}
 }
 
 func (c *ProductionComposition) productionEndpointManifests(
@@ -1365,6 +1419,46 @@ func (c *ProductionComposition) productionEndpointRoutes(
 		return nil, err
 	}
 	return productionEndpointRoutesFromManifests(manifests, actors)
+}
+
+func (c *ProductionComposition) productionAuthorityPlanRoutes(
+	ctx context.Context,
+	plan entity.AuthorityPlan,
+) ([]ports.EndpointRoute, valueobject.Hash, error) {
+	actors := productionPlanActors(plan)
+	manifests, err := c.productionEndpointManifests(ctx, actors)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	routes, err := productionEndpointRoutesFromManifests(manifests, actors)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	_, stateHash, err := productionEndpointManifestSetHashes(manifests)
+	if err != nil {
+		return nil, valueobject.Hash{}, err
+	}
+	return routes, stateHash, nil
+}
+
+func (c *ProductionComposition) productionSubmitCommandRoutes(
+	ctx context.Context,
+	plan *entity.AuthorityPlan,
+	membership bool,
+	commandRoutes []ports.EndpointRoute,
+) ([]ports.EndpointRoute, valueobject.Hash, error) {
+	if !membership {
+		return commandRoutes, valueobject.Hash{}, nil
+	}
+	if plan == nil {
+		return nil, valueobject.Hash{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"production_http.submit_command_routes",
+			"authority_plan",
+			"is required for a membership transition",
+		)
+	}
+	return c.productionAuthorityPlanRoutes(ctx, *plan)
 }
 
 func (c *ProductionComposition) productionCommandRoutes(
@@ -1871,8 +1965,20 @@ func productionEndpointUnion(
 
 func productionPlanActors(plan entity.AuthorityPlan) []valueobject.PTID {
 	actors := make(map[valueobject.PTID]struct{})
+	if plan.Requester.Actor != "" {
+		actors[plan.Requester.Actor] = struct{}{}
+	}
 	for _, change := range plan.Changes {
 		actors[change.Actor] = struct{}{}
+	}
+	for _, endpoint := range append(
+		append(
+			[]valueobject.Endpoint(nil),
+			plan.PreEndpoints...,
+		),
+		plan.PostEndpoints...,
+	) {
+		actors[endpoint.Actor] = struct{}{}
 	}
 	result := make([]valueobject.PTID, 0, len(actors))
 	for actor := range actors {
@@ -2050,22 +2156,120 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
+	deliveryCode := deliveryapp.CodeOf(err)
+	switch deliveryCode {
+	case deliveryapp.ErrorCodeInvalidArgument:
+		return productionDeviceInboxHandlerError(
+			http.StatusBadRequest,
+			"invalid Device Inbox request",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeUnauthorized:
+		return productionDeviceInboxHandlerError(
+			http.StatusForbidden,
+			"Device Inbox operation is not authorized",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeItemNotFound:
+		return productionDeviceInboxHandlerError(
+			http.StatusNotFound,
+			"Device Inbox item was not found",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeConsumerFenced,
+		deliveryapp.ErrorCodeItemOwnerMismatch,
+		deliveryapp.ErrorCodeItemNotHead,
+		deliveryapp.ErrorCodeItemNotClaimed,
+		deliveryapp.ErrorCodePayloadHashMismatch,
+		deliveryapp.ErrorCodeIdempotencyConflict,
+		deliveryapp.ErrorCodeLeaseExpired:
+		return productionDeviceInboxHandlerError(
+			http.StatusConflict,
+			"Device Inbox state conflicts with the request",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeQuotaExceeded:
+		return productionDeviceInboxHandlerError(
+			http.StatusTooManyRequests,
+			"Device Inbox quota exceeded",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodePersistence:
+		return productionDeviceInboxHandlerError(
+			http.StatusServiceUnavailable,
+			"Device Inbox persistence is unavailable",
+			deliveryCode,
+			err,
+		)
+	}
+	interactionCode := interactionapp.CodeOf(err)
+	switch interactionCode {
+	case interactionapp.ErrorCodeInvalidArgument:
+		return productionInteractionHandlerError(
+			http.StatusBadRequest,
+			"invalid Conversation interaction request",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeUnauthorized:
+		return productionInteractionHandlerError(
+			http.StatusForbidden,
+			"Conversation interaction is not authorized",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeStalePulse,
+		interactionapp.ErrorCodeIdempotencyConflict,
+		interactionapp.ErrorCodeIntegrityFailed:
+		return productionInteractionHandlerError(
+			http.StatusConflict,
+			"Conversation interaction conflicts with committed state",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeQuotaExceeded:
+		return productionInteractionHandlerError(
+			http.StatusTooManyRequests,
+			"Conversation interaction quota exceeded",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodePersistence:
+		return productionInteractionHandlerError(
+			http.StatusServiceUnavailable,
+			"Conversation interaction persistence is unavailable",
+			interactionCode,
+			err,
+		)
+	}
 	code := conversationdomain.CodeOf(err)
 	switch code {
 	case conversationdomain.ErrorCodeInvalidArgument,
 		conversationdomain.ErrorCodeDeliverySetMismatch,
 		conversationdomain.ErrorCodeUnsupportedTransition:
-		return server.BadRequestWithCause("invalid Conversation request", err)
+		return productionConversationHandlerError(
+			http.StatusBadRequest,
+			"invalid Conversation request",
+			code,
+			err,
+		)
 	case conversationdomain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusForbidden,
 			"Conversation operation is not authorized",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeNotFound:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusNotFound,
 			"Conversation was not found",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeCommandConflict,
@@ -2086,15 +2290,17 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		conversationdomain.ErrorCodeFederationInactive,
 		conversationdomain.ErrorCodeInactive,
 		conversationdomain.ErrorCodeReadOnly:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusConflict,
 			"Conversation state conflicts with the request",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeActorKeyUnavailable:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusServiceUnavailable,
 			"Conversation identity dependency is unavailable",
+			code,
 			err,
 		)
 	default:
@@ -2102,4 +2308,76 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionDeviceInboxHandlerError(
+	status int,
+	message string,
+	code deliveryapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *deliveryapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
+}
+
+func productionInteractionHandlerError(
+	status int,
+	message string,
+	code interactionapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *interactionapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
+}
+
+func productionConversationHandlerError(
+	status int,
+	message string,
+	code conversationdomain.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *conversationdomain.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -48,6 +50,114 @@ func (uuidGenerator) NewID() string {
 
 type actorDeviceDirectory struct {
 	store *touchactor.DeviceStore
+}
+
+type actorHomeStationCapability interface {
+	ResolveActorHomeStationPeerID(
+		context.Context,
+		string,
+	) (string, error)
+}
+
+type actorSigningKeyCapability interface {
+	ResolveVerifiedActorDeviceSigningKey(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+	ResolveRetainedActorDeviceSigningKey(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+}
+
+type actorSigningKeyResolver struct{}
+
+func (actorSigningKeyResolver) ResolveVerifiedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorSigningKeyCapability)
+	if !ok || provider == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_signing_key.resolve",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	return provider.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		strings.TrimSpace(actorPTID),
+		strings.TrimSpace(deviceID),
+		strings.TrimSpace(signingKeyID),
+	)
+}
+
+func (actorSigningKeyResolver) ResolveRetainedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorSigningKeyCapability)
+	if !ok || provider == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_signing_key.resolve_retained",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	return provider.ResolveRetainedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		strings.TrimSpace(actorPTID),
+		strings.TrimSpace(deviceID),
+		strings.TrimSpace(signingKeyID),
+	)
+}
+
+type actorHomeStationDirectory struct{}
+
+func (actorHomeStationDirectory) ResolveActorHomeStationPeerID(
+	ctx context.Context,
+	actorPTID string,
+) (string, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorHomeStationCapability)
+	if !ok || provider == nil {
+		return "", domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_home_station.resolve",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	homeStationID, err := provider.ResolveActorHomeStationPeerID(
+		ctx,
+		strings.TrimSpace(actorPTID),
+	)
+	if err != nil {
+		return "", domain.WrapError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_home_station.resolve",
+			fmt.Errorf("resolve Actor Home Station: %w", err),
+		)
+	}
+	return strings.TrimSpace(homeStationID), nil
 }
 
 func newActorDeviceDirectory(db *gorm.DB) *actorDeviceDirectory {

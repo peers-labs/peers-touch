@@ -74,7 +74,7 @@ func (r *privatePostRepo) Create(ctx context.Context, p *domain.Post) error {
 // reconstruct `Audience.actor_ptids` for the wire response.
 func (r *privatePostRepo) GetByID(ctx context.Context, id uint64, viewerPTID string) (*domain.Post, error) {
 	var row db.SocialPrivatePost
-	err := r.db.WithContext(ctx).
+	err := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("id = ? AND deleted_at IS NULL", id).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -140,7 +140,7 @@ func (r *privatePostRepo) Delete(ctx context.Context, id uint64, authorPTID stri
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).
+	return r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Model(&db.SocialPrivatePost{}).
 		Where("id = ? AND author_id = ? AND deleted_at IS NULL", id, authorID).
 		Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
@@ -154,7 +154,7 @@ func (r *privatePostRepo) ListByFollowingForViewer(ctx context.Context, viewerPT
 	if err != nil {
 		return nil, err
 	}
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("author_id IN ? AND audience_kind = ? AND deleted_at IS NULL",
 			followedAuthorIDs, model.Audience_FOLLOWERS.String())
 	if !c.IsZero() {
@@ -172,7 +172,7 @@ func (r *privatePostRepo) ListSelfByAuthor(ctx context.Context, authorPTID strin
 	if err != nil {
 		return nil, err
 	}
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("author_id = ? AND audience_kind = ? AND deleted_at IS NULL",
 			authorID, model.Audience_SELF.String())
 	if !c.IsZero() {
@@ -186,7 +186,7 @@ func (r *privatePostRepo) ListSelfByAuthor(ctx context.Context, authorPTID strin
 }
 
 func (r *privatePostRepo) ListByCircleForViewer(ctx context.Context, viewerPTID string, circleID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("audience_kind = ? AND audience_target_id = ? AND deleted_at IS NULL",
 			model.Audience_CIRCLE.String(), circleID)
 	if !c.IsZero() {
@@ -203,7 +203,7 @@ func (r *privatePostRepo) ListByCirclesForViewer(ctx context.Context, viewerPTID
 	if len(circleIDs) == 0 {
 		return nil, nil
 	}
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("audience_kind = ? AND audience_target_id IN ? AND deleted_at IS NULL",
 			model.Audience_CIRCLE.String(), circleIDs)
 	if !c.IsZero() {
@@ -217,7 +217,7 @@ func (r *privatePostRepo) ListByCirclesForViewer(ctx context.Context, viewerPTID
 }
 
 func (r *privatePostRepo) ListByGroupForViewer(ctx context.Context, viewerPTID string, groupID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("audience_kind = ? AND audience_target_id = ? AND deleted_at IS NULL",
 			model.Audience_GROUP.String(), groupID)
 	if !c.IsZero() {
@@ -234,7 +234,7 @@ func (r *privatePostRepo) ListByGroupsForViewer(ctx context.Context, viewerPTID 
 	if len(groupIDs) == 0 {
 		return nil, nil
 	}
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("audience_kind = ? AND audience_target_id IN ? AND deleted_at IS NULL",
 			model.Audience_GROUP.String(), groupIDs)
 	if !c.IsZero() {
@@ -271,7 +271,7 @@ func (r *privatePostRepo) ListByAuthorVisibleTo(ctx context.Context, authorPTID,
 		return nil, err
 	}
 	authorID, viewerID := ids[0], ids[1]
-	q := r.db.WithContext(ctx).
+	q := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Where("author_id = ? AND deleted_at IS NULL", authorID)
 	if authorID != viewerID {
 		q = q.Where("audience_kind <> ?", model.Audience_SELF.String())
@@ -287,14 +287,14 @@ func (r *privatePostRepo) ListByAuthorVisibleTo(ctx context.Context, authorPTID,
 }
 
 func (r *privatePostRepo) UpdateCommentsCount(ctx context.Context, id uint64, delta int64) (int64, error) {
-	if err := r.db.WithContext(ctx).
+	if err := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Model(&db.SocialPrivatePost{}).
 		Where("id = ?", id).
 		Update("comments_count", gorm.Expr("MAX(0, COALESCE(comments_count,0) + ?)", delta)).Error; err != nil {
 		return 0, err
 	}
 	var count int64
-	err := r.db.WithContext(ctx).
+	err := r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Model(&db.SocialPrivatePost{}).
 		Select("comments_count").
 		Where("id = ?", id).
@@ -303,10 +303,20 @@ func (r *privatePostRepo) UpdateCommentsCount(ctx context.Context, id uint64, de
 }
 
 func (r *privatePostRepo) UpdateReactionsCount(ctx context.Context, id uint64, snapshotJSON string) error {
-	return r.db.WithContext(ctx).
+	return r.legacyPrivateRows(r.db.WithContext(ctx)).
 		Model(&db.SocialPrivatePost{}).
 		Where("id = ?", id).
 		Update("reactions_count_json", snapshotJSON).Error
+}
+
+func (r *privatePostRepo) legacyPrivateRows(query *gorm.DB) *gorm.DB {
+	if r.db.Migrator().HasColumn(
+		&db.SocialPrivateContentPost{},
+		"content_id",
+	) {
+		return query.Where("(content_id IS NULL OR content_id = '')")
+	}
+	return query
 }
 
 // hydrate fills CUSTOM_* posts with their grants in a single round-trip

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -314,6 +315,69 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
                 scheduler.unregistered,
             )
 
+    def test_stop_actor_preserves_durable_state_outside_control_directory(
+        self,
+    ) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            actor_root = root / "actors" / "run-1" / "alice"
+            storage_root = root / "state" / "run-1" / "alice"
+            log_path = actor_root / "logs" / "desktop.log"
+            storage_file = storage_root / "chat.main.db"
+            storage_file.parent.mkdir(parents=True)
+            storage_file.write_text("durable", encoding="utf-8")
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text("actor log", encoding="utf-8")
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker._write_json(
+                broker.lease_path,
+                {
+                    "artifactKind": "windows-desktop-broker-lease",
+                    "runId": "run-1",
+                    "desktopUser": "administrator",
+                    "expiresAtEpoch": 2_000,
+                    "actors": {
+                        "alice": {
+                            "taskName": "PeersTouch-Acceptance-run-1-actor-alice",
+                            "processId": 42,
+                            "webdriverPort": 4645,
+                            "gatewayPort": 3230,
+                            "storageRoot": str(storage_root),
+                            "logPath": str(log_path),
+                            "statePath": str(actor_root / "state.json"),
+                            "profile": "chat-native-alice",
+                        }
+                    },
+                },
+            )
+
+            with (
+                patch.object(broker, "_stop_process"),
+                patch.object(broker, "_process_alive", return_value=False),
+                patch.object(broker, "_port_listening", return_value=False),
+            ):
+                result = broker.stop_actor(
+                    {
+                        "runId": "run-1",
+                        "actor": "alice",
+                        "preserveState": True,
+                    }
+                )
+
+            self.assertTrue(result["storageReleased"])
+            self.assertTrue(storage_file.is_file())
+            self.assertFalse(actor_root.exists())
+            lease = json.loads(
+                broker.lease_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(lease["actors"], {})
+
     def test_actor_control_directory_is_scoped_by_run(self) -> None:
         scheduler = _RecordingScheduler()
         with tempfile.TemporaryDirectory() as directory:
@@ -344,9 +408,83 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
                 )
 
             self.assertTrue(
-                (root / "actors" / "run-1" / "alice" / "launch.json").is_file()
+                (root / "actors" / "run-1" / "alice" / "control" / "launch.json").is_file()
             )
             self.assertFalse((root / "actors" / "alice").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows path contract")
+    def test_restart_preserves_nested_storage_and_final_stop_removes_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = WindowsDesktopBroker(
+                Path(directory) / "runtime",
+                desktop_user="administrator",
+                scheduler=_RecordingScheduler(),
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+            actor_root = broker.root / "actors" / "run-1" / "client"
+            storage = actor_root / "storage"
+            storage.mkdir(parents=True)
+            session = storage / "session.bin"
+            session.write_bytes(b"preserved-session")
+            payload = {
+                "runId": "run-1",
+                "actor": "client",
+                "executable": r"C:\runtime\desktop.exe",
+                "storageRoot": str(storage),
+                "logPath": str(actor_root / "logs" / "desktop.log"),
+                "webdriverPort": 4645,
+                "gatewayPort": 3230,
+            }
+            with (
+                patch.object(broker, "_wait_for_state",
+                             return_value={"status": "RUNNING", "processId": 42}),
+                patch.object(broker, "_stop_process"),
+                patch.object(broker, "_process_alive", return_value=False),
+                patch.object(broker, "_port_listening", return_value=False),
+            ):
+                broker.launch_actor(payload)
+                result = broker.stop_actor({
+                    "runId": "run-1", "actor": "client", "preserveState": True,
+                })
+                self.assertTrue(result["storageReleased"])
+                self.assertEqual(session.read_bytes(), b"preserved-session")
+                self.assertFalse((actor_root / "control").exists())
+                broker.launch_actor(payload)
+                self.assertEqual(session.read_bytes(), b"preserved-session")
+                broker.stop_actor({"runId": "run-1", "actor": "client"})
+                self.assertFalse(actor_root.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows path contract")
+    def test_failed_relaunch_retains_storage_for_lease_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = WindowsDesktopBroker(
+                Path(directory) / "runtime",
+                desktop_user="administrator",
+                scheduler=_RecordingScheduler(),
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+            actor_root = broker.root / "actors" / "run-1" / "client"
+            storage = actor_root / "storage"
+            storage.mkdir(parents=True)
+            session = storage / "session.bin"
+            session.write_bytes(b"preserved-session")
+            with patch.object(broker, "_wait_for_state", side_effect=BrokerError("launch failed")):
+                with self.assertRaisesRegex(BrokerError, "launch failed"):
+                    broker.launch_actor({
+                        "runId": "run-1",
+                        "actor": "client",
+                        "executable": r"C:\runtime\desktop.exe",
+                        "storageRoot": str(storage),
+                        "logPath": str(actor_root / "logs" / "desktop.log"),
+                        "webdriverPort": 4645,
+                        "gatewayPort": 3230,
+                    })
+            self.assertEqual(session.read_bytes(), b"preserved-session")
+            self.assertFalse((actor_root / "control").exists())
+            broker.cleanup({"runId": "run-1"})
+            self.assertFalse(broker.root.exists())
 
     def test_adapter_worker_binds_synced_source_before_import(self) -> None:
         worker = WindowsDesktopBroker._adapter_worker_script()

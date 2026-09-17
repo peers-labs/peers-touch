@@ -345,10 +345,11 @@ class WindowsDesktopBroker:
             raise BrokerError("actor arguments must be strings")
 
         actor_root = self.root / "actors" / run_id / actor
-        request_path = actor_root / "launch.json"
-        worker_path = actor_root / "worker.ps1"
-        state_path = actor_root / "state.json"
-        actor_root.mkdir(parents=True, exist_ok=False)
+        control_root = actor_root / "control"
+        request_path = control_root / "launch.json"
+        worker_path = control_root / "worker.ps1"
+        state_path = control_root / "state.json"
+        control_root.mkdir(parents=True, exist_ok=False)
         request = {
             "executable": executable,
             "arguments": arguments,
@@ -393,7 +394,7 @@ class WindowsDesktopBroker:
             try:
                 self.scheduler.unregister(task_name)
             finally:
-                self._remove_tree(actor_root)
+                self._remove_tree(control_root)
             raise
 
         actors[actor] = {
@@ -461,7 +462,7 @@ class WindowsDesktopBroker:
         if not preserve_state:
             shutil.rmtree(Path(str(actor_state["storageRoot"])), ignore_errors=True)
         actor_root = self.root / "actors" / str(lease["runId"]) / actor
-        self._remove_tree(actor_root)
+        self._remove_tree(actor_root / "control" if preserve_state else actor_root)
         actors.pop(actor, None)
         self._write_json(self.lease_path, lease)
         return {
@@ -872,6 +873,12 @@ try:
         process_id = int(payload["processId"])
         result = adapter.reveal_file_chooser_location_to_process(
             process_id
+        ).to_dict()
+    elif operation == "select_file_chooser_path_to_process":
+        process_id = int(payload["processId"])
+        result = adapter.select_file_chooser_path_to_process(
+            process_id,
+            str(payload["path"]),
         ).to_dict()
     elif operation == "focused_control":
         result = adapter.focused_control(int(payload["processId"])).to_dict()

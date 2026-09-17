@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const AGENT_V2_PROTO_FILES: &[&str] = &[
     "domain/agent/agent.proto",
@@ -10,8 +11,52 @@ const AGENT_V2_PROTO_FILES: &[&str] = &[
 ];
 
 fn main() {
+    emit_source_commit();
     tauri_build::build();
     compile_protos();
+}
+
+fn emit_source_commit() {
+    println!("cargo:rerun-if-env-changed=PT_BUILD_SOURCE_COMMIT");
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut git_inputs = vec!["HEAD".to_string()];
+    if let Some(symbolic_ref) = git_stdout(&repo_root, &["symbolic-ref", "--quiet", "HEAD"]) {
+        git_inputs.push(symbolic_ref);
+    }
+    git_inputs.push("packed-refs".to_string());
+
+    for git_input in git_inputs {
+        if let Some(path) = git_stdout(&repo_root, &["rev-parse", "--git-path", &git_input]) {
+            let path = PathBuf::from(path);
+            let path = if path.is_absolute() {
+                path
+            } else {
+                repo_root.join(path)
+            };
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+    let commit = std::env::var("PT_BUILD_SOURCE_COMMIT")
+        .ok()
+        .or_else(|| git_stdout(&repo_root, &["rev-parse", "HEAD"]))
+        .unwrap_or_else(|| "0000000000000000000000000000000000000000".to_string());
+    assert!(
+        commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "Desktop build source commit is invalid"
+    );
+    println!("cargo:rustc-env=PT_BUILD_SOURCE_COMMIT={commit}");
+}
+
+fn git_stdout(repo_root: &Path, args: &[&str]) -> Option<String> {
+    Command::new("git")
+        .args(args)
+        .current_dir(repo_root)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Compile proto definitions used by the Desktop BFF layer.
@@ -53,6 +98,9 @@ fn compile_protos() {
         "domain/launcher/launcher.proto",
         "domain/message/conversation.proto",
         "domain/activity/activity.proto",
+        "domain/secure_content/content.proto",
+        "domain/secure_content/prekey.proto",
+        "domain/secure_content/object.proto",
         "domain/ai_chat/chat.proto",
         "domain/ai_chat/provider.proto",
         "domain/ai_chat/ai_models.proto",
@@ -65,6 +113,7 @@ fn compile_protos() {
         "domain/social/poll.proto",
         "domain/social/relationship.proto",
         "domain/social/circle.proto",
+        "domain/social/private_content.proto",
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/realtime/event.proto",
@@ -74,6 +123,7 @@ fn compile_protos() {
         "domain/federation/federation_discovery.proto",
         "domain/federation/federation_projection_service.proto",
         "domain/federation/delivery.proto",
+        "domain/federation/profile.proto",
         "domain/recovery/recovery.proto",
     ]
     .iter()

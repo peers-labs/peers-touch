@@ -596,8 +596,8 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / remote authority commit proven; read-cursor queue projection locally corrected | Windows Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at exact source `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves distinct Station binding, Direct create/reopen, canonical Group genesis, Bob's remote authority commit, bidirectional transcript/thread projection, and authority reaction sequence 5. Bob's lane 7 canonical `ActorReadCursor` was rejected because Desktop and portable Messaging Core expected a retired `read:` event prefix instead of the payload SHA-256 identity produced by Conversation. The shared decoder correction and four local Chat Gates pass; cleanup is `DONE/PROVEN`, while complete Product Closure and PostgreSQL contention remain `UNPROVEN` pending checkpoint commit, exact-source deployment, and rerun. |
-| CA-W7 Completion/docs/knowledge audit | pending | — |
+| CA-W6 Runtime Acceptance | available runtime scope passed / physical Mobile unproven | W8A, W8B, and W8C are `PASS/DONE/PROVEN`. Exact-source aggregate run `20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa` at `7906691afdcd788d5a9ee9cca24fb679f2559f41` passes ordered Social and Chat/Contacts simulator Journeys plus cleanup on `four` and `fiveArm`. The simulator reports intentionally remain `PARTIAL/UNPROVEN` for physical-device, authoritative-history, forced-event-loss, native background/foreground, tab-remount, and full MS-AG04/MS-AG06 scope. `mobile-native-social-convergence-e2e` and `mobile-native-chat-contacts-e2e` were not run and remain `UNPROVEN`. |
+| CA-W7 Completion/docs/knowledge audit | audit complete / plan readiness partial | Station API ownership, Messaging contract, Desktop/Mobile checks, zero-reference scans, docs/knowledge reconciliation, Gap Detector, and Quality Evidence are complete. Quality report `20260915T062221948784Z-185b20265fab7a733e7996069f0c8798` has zero blocking gaps and is ready for code review. Gap Detector correctly prevents full Mobile product or `PLAN_COMPLETE` claims because physical Mobile Gates remain unrun and simulator Gates do not emit `DONE/PROVEN`. |
 
 ## 14. Risks And Escalation
 
@@ -1090,3 +1090,1292 @@ CA-W6 remains `PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source
 deployment to station-four, station-five, and sixwin, and a Product
 Closure-only rerun. Dependent Windows Gates and PostgreSQL contention remain
 deferred.
+
+PR `#111` merged as `2d54851f95994d717928105aca6470c30adf3657`.
+The post-merge function-first continuation checkpoint is
+`eb0c803afde939ca678f9bafccf0efdc7d4efe32` in `peers-group-chat`;
+`peers-chat-high-chat` remains clean at `7c7575001` and must be reconciled to
+the exact checkpoint before the next Native launch.
+CA-W6 resumes under Development Workflow function-first ordering: after
+exact-source deployment, the W8A submitted-command entrypoint and W8B Native
+typing runner each execute first as one bounded product-functional journey.
+Their formal validators and catalog Gates run only after the corresponding
+journey reaches `FUNCTIONAL_PASS`; a first actionable failure returns to the
+owning implementation and focused checks rather than starting a broader
+Acceptance matrix.
+Profiles `chat-native-four` and `chat-native-five` are healthy at build
+`1db3461b354a`, but the accepted Local Development Control Plane now rejects
+their next deployment because the corresponding definitions in the external
+`env` repository are not Git-tracked. This is an Environment Owner boundary:
+do not bypass `make profile`/`make station`, invoke `deploy.sh` directly, or
+mint an authorization file.
+
+Once the Environment Owner tracks those existing profiles, deploy the current
+MR HEAD to both Stations and resume W8A with Alice's exact retained tuple:
+
+```text
+conversation: direct-060c1c0291de8a853548f6b289895557
+message:      01M2B43C1WNPRK9JHACMFZ4DA4
+command:      01M2B43C65M3QRQVK529SZTMSS
+outcome:      terminal_superseded
+```
+
+The dedicated Gate must run with its explicit acceptance-only fixture
+authorization and the existing W8A Alice/Bob storage roots. CA-W6 then
+continues through W8B federated typing and the remaining Social-before-Chat /
+Contacts runtime cells. CA-W7 remains pending until those runtime obligations
+are proved or explicitly retained as `UNPROVEN`.
+
+The Owner subsequently selected canonical `four` and `fiveArm` instead of the
+untracked `chat-native-four/five` profiles. Both reviewed deploy definitions
+were committed in env repository checkpoint `55b4985`. `four` now attests
+`2c95f8d14f15`, while `fiveArm` fails the deliberate CA-W5 schema guard because
+its empty retained `conversations` table still includes legacy `current_seq`.
+The shared `:18080` reset prohibition remains in force; W8A is parked until an
+owner-approved data operation or another accepted topology makes `fiveArm`
+canonical-schema healthy.
+
+The Owner then authorized the exact canonical `four`/`fiveArm` execution path.
+The only permitted `fiveArm` recovery is an empty-schema clean-slate operation:
+stop the Station, prove every `conversation*` table has zero rows, preserve a
+schema-only backup, transactionally drop only that empty Conversation table
+family, and restart the exact source. Any non-empty table aborts the operation.
+This does not authorize a database-volume reset or mutation of non-Conversation
+state.
+
+After that scoped operation exposed stale device ownership on canonical `four`,
+the Owner explicitly authorized a full reset of both canonical development
+environments with no data preservation. Reset scope is limited to the
+`pt-station` Compose project's `pg_data` and `peers_data` volumes on each
+declared host. Both Stations and Native client identities must be rebuilt from
+the same exact source afterward. The historical W8A command tuple is retired;
+runtime closure requires a newly created exact tuple rather than a continuity
+claim across the authorized reset.
+
+Both canonical Stations subsequently reached exact source
+`b5f42f721d0c6635eba74e4d4df55c62429287e2`. W8A run
+`20260913T163733726022Z-1a649100132ca245d99b69a50f0f30cc`
+then reached `FUNCTIONAL_PASS` with generated command
+`01M2DT76RX52W4J6G9T8GS1BN3` and message
+`01M2DT76MBCG8W64K2TX0A5FJX`. The command converged to committed authority
+truth and delivered sender/receiver projections, and cleanup passed. The
+first catalog result remained `PARTIAL/UNPROVEN` solely because the shared
+validator assumed the base `direct-delivered-receipt` journey and distinct
+client profiles instead of deriving those rules from the W8A current-profile
+Gate. The Acceptance-only correction is checkpointed in
+`638679c0e54a2c657fa208cff390210d6fa47322`; its focused tests pass.
+
+Final W8A Gate
+`20260913T164933497898Z-87194509f71e18677704f12aea7e5805`
+is `PASS/DONE/PROVEN` on that exact source. Its fresh exact tuple is command
+`01M2DTWRTS6JBMBSN4WTKSHX5Q`, message
+`01M2DTWRQ7FVRJ24EZRQB3V7X9`, and command SHA-256
+`ff08c0830a46ccbe7344870484acc17db1f4c693c2b7576946feaa6aede40acb`.
+CA-W6 now advances to W8B federated typing before the remaining
+Social-before-Chat/Contacts runtime cells.
+
+W8B preflight then found a stale business-injection mapping in the Native Chat
+Provisioner: stable service IDs `station-four` and `station-five` still resolved
+the retired `chat-native-four/five` profile names. The correction retains the
+stable Runtime Manifest service IDs while selecting canonical
+`four` / `station-four` and `fiveArm` / `station-five-arm`. The 58-test
+provisioning model suite and Python compilation pass. This does not change
+Conversation or Federation ownership; it only restores the plan-approved
+environment binding required for the W8B functional journey.
+
+The preflight also exposed a mechanical authorization gap: the destructive
+Fixture contract could authorize only the active profile, but W8B binds actors
+to two approved protected-port Stations in one run. The reset owner now accepts
+the exact deployment-environment allowlist
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm`, mutually
+exclusive with the single-profile authorization. Each target still must match
+its reviewed URL origin, host, Compose project, containers, and PostgreSQL
+volume before mutation. This projects the Owner's existing two-environment
+reset decision; it does not authorize any additional Station.
+
+Initial W8B run
+`20260913T170741743805Z-9709474e3fb32082d62e4187644731d2`
+is `BLOCKED/UNPROVEN` before Fixture mutation because the isolated reset child
+receives the reviewed deployment name without a redundant Station URL
+argument. The authorization owner now derives the exact Station origin from
+that deployment's reviewed health URL and revalidates all existing target
+identity fields. The focused reset suite passes 20/20; no W8B product behavior
+is claimed from the blocked run.
+
+Exact-source W8B run
+`20260913T171324341841Z-e084a3bc6581dc49f375c28c34f86113`
+then reached all three isolated Native clients and failed at the first product
+action because the Gate omitted the required `federationId` from
+`createDirectConversation`. Cleanup passed. The Chat business adapter now
+resolves one Federation shared by each Native journey's participating clients
+and passes that stable ID to every programmatic Direct or Group creation. The
+161-test focused Native suite passes; no default-Federation fallback is added.
+
+W8B run
+`20260913T172916171669Z-08cced18a98560673115310c4a9e1725`
+proved the shared-Federation adapter correction and reached the first
+cross-Station Direct creation. Station `four` request
+`799bbec1-632a-4c22-a7ea-1328f9264c51` failed with
+`transport_unavailable: no direct or relay route is available`; all Native and
+Provisioner cleanup passed. Both canonical Stations are exact-source and
+healthy at the HTTP layer, but Federation health reports
+`peers=0/1 connected=0 seeds=0/0`, with no bootstrap node and relay client
+disabled. The next CA-W6 action is therefore the existing
+service-coordination owner: mount canonical `four` and `fiveArm` to the shared
+Federation relay/bootstrap fabric and require ready DHT plus live relay mounts
+before rerunning the bounded W8B product journey. Conversation remains the
+sole Chat authority; no default Federation, direct-route fallback, remote
+Actor shadow row, or weakened Gate is permitted.
+
+After both canonical Stations reached ready DHT and live relay mounts,
+exact-source run
+`20260913T175848391418Z-3b5935130122198e6f2c2136d44e63ee`
+reached the real Direct typing action. Alice's submission was accepted, but Bob
+never projected active typing. The Authority's Conversation snapshot contained
+Bob's verified active member device and Home Station, while the local Actor
+Identity device table intentionally contained only Alice. The production typing
+route adapter incorrectly queried that local-only table, selected no remote
+recipient, and emitted no `HOME_FANOUT` frame. The correction resolves typing
+routes through the existing signed Actor endpoint-manifest capability and keeps
+remote devices out of local Actor truth. Focused Conversation tests pass;
+W8B remains `UNPROVEN` until the corrected exact source reaches
+`FUNCTIONAL_PASS` and the formal Gate passes.
+
+Corrected-source macOS run
+`20260913T182125546615Z-35457b8cb2e21fce52d06f9a497d196e`
+was `BLOCKED/UNPROVEN` before product execution because another declared Goal's
+Native Desktop process retained the global foreground. The independent Linux
+retry `20260913T182722850347Z-3ee750b6db838f8fde0a74a3af71df57`
+then exposed an NDR infrastructure regression: the Linux provisioner remained
+registered while its declared image/control directory was absent. The missing
+files are restored from their last reviewed source and focused runtime,
+provisioning, and Acceptance Infra boundary tests pass. Neither run changes
+the CA-W6 product proof state.
+
+Subsequent Linux preflight repaired the repository's broken pnpm peer snapshots,
+reclaimed only Docker build cache after whole-host disk accounting found
+`/data00` full, and preserved the public `hostKeySha256` runtime attestation
+through structured evidence redaction. Exact-source run
+`20260913T191930463781Z-d79f99f73123baed02b21b7a1b4f70c8`
+then reached the fully attested Linux cell and all three Native clients at
+`d0e71cfc5579f50fc903b1d26457d9d4624e8ff4`. Its first Direct typing request
+was rejected before Authority admission because the Linux client clock was
+approximately 25 seconds ahead of both Stations: a five-second expiry appeared
+approximately 30 seconds in the future. The accepted interaction policy already
+declares one minute of `MaximumFutureClockSkew`, but typing submission and
+federated signal validation ignored it. The owner-layer correction now applies
+that accepted bound at both validation hops without changing Conversation
+ownership, persistence, or Federation QoS. Focused interaction, race-enabled
+interaction, complete Conversation, and Go style checks pass. CA-W6 remains
+`UNPROVEN` until the corrected exact-source W8B journey succeeds.
+
+Exact-source Linux run
+`20260913T193744123578Z-eab0d94c15b1d61ed948a3977deba835`
+then proved Direct typing start and explicit stop at Bob in 51 ms each. The
+next immediate start was accepted by the HTTP API but suppressed by the
+ephemeral pulse ledger because its minimum-interval rule did not distinguish a
+real `false -> true` transition from a repeated active heartbeat. CA-W6 remains
+`UNPROVEN`. The owner-layer correction now makes explicit state transitions
+eligible immediately while preserving generation fences, stop priority,
+bounded memory, and zero durable writes. Focused, race-enabled, complete
+Conversation, and Go style checks pass.
+
+Exact-source Linux run
+`20260913T195024793204Z-4a1b87d2b764219f6f23c903a2876abf`
+then passed Direct start/stop, send-clear, and blur-clear before the Gate tried
+to create an Alice-Charlie Direct solely as a session-switch target.
+Production correctly denied that unrelated Direct because the authorized
+fixture establishes only the Alice-Bob friendship. The Gate correction reuses
+its already-required three-member Group as the alternate session; no Social
+relationship, Conversation authorization, or product behavior is weakened.
+
+Exact-source Linux run
+`20260913T200454558427Z-b3ff47afc56c7e699932520f250be3ce`
+reached all three authenticated Native clients at
+`47fa9efe15df5f39b4d53f4cbfcbb38258c614d9`, then failed before Direct
+lifecycle proof when the required three-member Group was prepared. Station
+`four` request `0f682ff7-4185-4c32-a221-9379af09d746` failed with
+`actor_identity.resolve_actor_home_station: home_station_peer_id: is not
+available from Actor Identity`. Readback proves the Fixture materialized Alice
+locally and Bob remotely on `four` but omitted Charlie's actual `fiveArm`
+identity route. The nearby Direct bundle 403 belongs to independent background
+Direct-session loading and is not the Group failure.
+
+The accepted Alice/Bob/Charlie contact baseline already requires every
+cross-Station participant to be materialized at each observing Station. This
+is therefore a Fixture owner correction: seed every declared cross-Station
+actor pair and preserve remote Actor row identity when the same remote peer is
+seeded for multiple local actors. Conversation continues to require Actor
+Identity-owned Home Station routing and signed endpoint manifests; no fallback
+route, remote Actor device row, or Social policy weakening is permitted.
+The combined Fixture owner, reset, Native runtime contract, and
+interaction-static regression cohort passes 118 tests; CA-W6 remains
+`PARTIAL/UNPROVEN` pending the clean exact-source W8B rerun.
+
+Exact-source Linux run
+`20260913T202839608169Z-ba24c341d2887a86c03ffdf9dc1b96a6`
+then proved Group preparation and creation with the complete three-actor
+Fixture baseline. The first recipient `syncGroup` observed the accepted
+temporary `conversation_members_unavailable` projection state, but the W8B
+runner treated it as terminal. The Gate now requires bounded reconciliation to
+the exact Alice/Bob/Charlie member set before typing assertions, matching the
+existing Group/MLS journey without weakening timeout or permanent-failure
+behavior. Cleanup and exact-source Linux attestation passed; CA-W6 remains
+`PARTIAL/UNPROVEN`.
+
+Exact-source Linux run
+`20260913T203959427403Z-c037f553f13e623df00b8f40cde9c419`
+proved the bounded Group projection reconciliation and resumed Direct typing,
+including start and stop. It then failed in the Gate's zero-write readback
+before further product assertions because the diagnostic SQL queried removed
+`conversation_read_cursors.reader_ptid`; the canonical schema stores `ptid`.
+The evidence helper must read and order by `ptid`, retaining the external JSON
+field `readerPtid`. Runtime attestation and cleanup passed; CA-W6 remains
+`PARTIAL/UNPROVEN`.
+
+Exact-source Linux run
+`20260913T205014307722Z-e8e9ca6e38c5ba98f4aec6166d5cc96a`
+passed all Direct and Group typing lifecycle assertions through disconnect,
+then failed at `removeGroupMember`. Station `four` returned
+`CONVERSATION_INVALID_ARGUMENT` from membership preparation because that path
+still enumerated the authority-local `actor_devices` table. The committed
+Group contained Alice, Bob, and Charlie, but the local device table correctly
+contained only Alice.
+
+Accepted MP-D19 requires send, genesis, and membership preparation to consume
+signed Home Station endpoint manifests. The owner-layer correction passes
+server-resolved verified routes into membership prepare and submit, binds
+manifest set and stable-state hashes into the Authority Plan, and removes
+authority-local remote-device lookup from this path. It adds no remote Actor
+device row and no routing fallback. Cleanup and exact-source attestation
+passed; CA-W6 remains `PARTIAL/UNPROVEN`.
+
+The source correction now uses one signed-manifest submit-route owner for both
+local HTTP and forwarded Federation commands. DDD regression proves
+Alice-local/Bob-and-Charlie-manifest-only Group membership removal with zero
+remote Actor device rows, and proves changed manifest stable state supersedes
+the plan with zero Conversation mutation. The complete Conversation suite,
+race suite, `go vet`, Go style, and `git diff --check` pass. CA-W6 remains
+`PARTIAL/UNPROVEN` until this checkpoint is deployed and the bounded W8B Native
+journey reaches `FUNCTIONAL_PASS`.
+
+Exact-source W8B run
+`20260913T212936487149Z-ed835cb01d6862ff711e0845bd9588a1`
+passes the complete Direct/Group typing lifecycle, Group member removal, and
+zero-write checks. Its only remaining failure is the Desktop device-revocation
+request omitting the current window-scoped device identity; that source path is
+parked behind the active MCA Desktop write claim. Independent W8C run
+`20260913T214114429384Z-d22427d1bb8cdca1049d82a01a1d32ee`
+then exposed pair-specific fixture Federations and a missing same-Station
+accepted relationship projection. The Fixture correction now shares one
+deterministic Federation across the bound actor set and seeds every directed
+relationship without creating local remote-cache rows. Its 120 focused tests
+pass; CA-W6 remains `PARTIAL/UNPROVEN` pending exact-source reruns.
+
+W8C retry
+`20260913T220152092562Z-1854af5aca651bec0ef38d27e710f70f`
+failed closed during Fixture provisioning because its post-write check still
+counted only the current pair's Stations. The check now validates the complete
+bound Station set and its derived cardinality; no product runtime claim is made
+from this pre-client failure.
+
+Exact-source W8C run
+`20260913T220857646292Z-22e49e67e2f67982b2c5c03b8ae2a433`
+at `1f30fb6522e0821579fb08c422df43c5b3fa7c1c` proves the complete shared
+Federation fixture, all three Native clients, and the default friendship
+projection. Its first identity-parity assertion then fails because the same
+Bob PTID projects as `bob@host` through Alice's remote cache and
+`@bob@host` through Charlie's local Actor row. The Social relationship wire
+owner currently returns the routing-normalized cache value unchanged despite
+the canonical `@user@host` wire contract. Cleanup is `DONE/PROVEN`; CA-W6
+remains `PARTIAL/UNPROVEN` pending the owner-layer projection correction,
+focused regression, exact-source deployment, and bounded W8C rerun.
+
+The Social relationship projection correction now preserves empty legacy
+values, rejects malformed local-only values, and adds the missing leading `@`
+only when projecting a routing-normalized `user@host` value onto the canonical
+wire contract. The focused application race suite, complete Social race suite,
+`go vet`, Go style, 52-test W8C Fixture/runner cohort, and `git diff --check`
+pass. The existing W8C `friendship.identity_parity` assertion remains the
+product regression Gate; CA-W6 still requires checkpoint deployment and the
+bounded exact-source rerun.
+
+Exact-source W8C run
+`20260913T222630465438Z-dafc69d1f5d7c5fae174abfa28bab614`
+at `8126b05ab63353664cb3faba14857064279256bc` proves the canonical
+relationship-handle correction: identity metadata and avatar parity, selected
+contact routing, and existing-friend search pass across all three Native
+clients. It then times out at `mls.readiness` because Desktop
+`keypackage_count` omits the current window-scoped `X-Device-ID`; Station
+correctly returns `401 authenticated Key Exchange device required`. Runtime and
+Provisioner cleanup are `DONE/PROVEN`. This Desktop-owned correction is parked
+behind the same active MCA Desktop write claim as the W8B revoke fix; CA-W6
+remains `PARTIAL/UNPROVEN`.
+
+The owner audit confirms that `keypackage_count` must resolve the current
+window's Messaging engine, verify that its endpoint PTID matches the
+authenticated session actor, send canonical
+`CountMlsKeyPackagesRequest.device`, and bind the same endpoint device ID as
+`X-Device-ID`. Adding only a header or using process-global device state would
+remain invalid. The legacy Desktop KeyPackage upload/fetch adapters require the
+same canonical endpoint review, while the production
+`StationMlsKeyPackageTransport` already sends a canonical request and matching
+device header. Declaration expansion failed closed with
+`RESOURCE_DECLARATION_CONFLICT` on MCA workspace `65e7b6da4dc9be85`;
+neither Desktop path may be edited until that owner releases or hands off the
+claim.
+
+PR #111's archived head was already an ancestor of this branch. The published
+post-merge Agent continuation
+`7b548118441b1b3909baa54aca027a109a86e555` was integrated by merge commit
+`09f073e0c11ec2dce8e3f9e2f6e1b0f40554044f` without rewriting either
+history. Semantic reconciliation preserved Conversation's monotonic
+member-history cursor, the complete shared-Federation fixture, canonical
+`four`/`fiveArm` service bindings, and all later CA-W6 evidence while admitting
+the Agent recovery, endpoint-scoped revoke, peer-key readiness, devctl, and
+completed Windows evidence.
+
+Checkpoint `579ca4924c3cfeb74d553ff0c652989a4682ba18` removes the stale MLS
+KeyPackage commands from the Conversation adapter and routes upload, fetch,
+and count through Key Exchange. Tauri and HTTP Gateway now resolve the
+authenticated window/account Messaging endpoint, verify its PTID, send the
+canonical protobuf endpoint identity, and bind the matching `X-Device-ID`.
+Device revoke rejects a caller device that differs from the active Messaging
+endpoint. Desktop tests, Rust compilation, the focused Chat/provisioning
+cohort, Conversation/Agent race suites, and devctl ledger tests pass. CA-W6
+still requires exact-source W8B/W8C deployment and Native reruns.
+
+Exact-source W8B run
+`20260913T232407335289Z-09e7de4d91b4f783b9c1bdf1e3ce86ca`
+at `309f421133295ae49e3e2690853124462cfa54fe` passed two-Station
+provisioning, three Native client authentication, and shared-Federation
+selection. It then failed at the newly integrated Direct peer-key readiness
+probe because the probe omitted Bob's attested Home Station ID and Alice's
+Station correctly returned `404`. Cleanup is `DONE/PROVEN`.
+
+The peer-key readiness correction now carries the peer client's
+runtime-attested Station identity through the Chat Harness into the canonical
+Key Exchange fetch. It retains the readiness fence and does not infer routes
+from display fields or introduce a fallback. Focused Chat/provisioning tests,
+Desktop tests, Rust compilation, and Python compilation pass; CA-W6 remains
+`PARTIAL/UNPROVEN` pending checkpoint deployment and the W8B/W8C reruns.
+
+Exact-source W8B run
+`20260913T234025297971Z-4865bcb672111d68a4314cbfdb93d33b`
+at `74a0135b8a9e3ff26dac3576a81fbfd7737a5579` proves both Station
+attestations, three Native client authentications, and the complete shared
+Federation fixture. It then fails at Direct peer-key readiness even though
+Alice supplies Bob's attested Home Station ID. The Key Exchange route resolver
+still attempts to enumerate Bob through Alice's local Actor Device directory
+when `target_device_id` is empty, so the no-shadow-device topology returns
+`404` before Federation. Cleanup is `DONE/PROVEN`.
+
+CA-W6 mechanically admits the owner-layer correction already implied by AO-D02
+and AO-D05: after Actor Identity resolves a remote Home Station, all-active
+Direct and MLS key fetches delegate endpoint enumeration to that authenticated
+Home Station. The source Station neither creates nor requires remote Actor
+Device rows and validates the federated result by actor plus any explicit
+target device. Focused Key Exchange service/Federation regressions, checkpoint
+deployment, and the bounded exact-source W8B rerun remain required.
+
+The canonical Key Exchange service now implements that routing contract.
+Remote all-active-device Direct and MLS reads bypass the source Station's local
+Actor Device directory, delegate endpoint selection to the authenticated target
+Home Station, and retain source-side validation of actor identity, any explicit
+device constraint, canonical key material, duplicate endpoints, and irreversible
+MLS consumption. The Key Exchange race suite, focused `go vet`, Go style, and
+`git diff --check` pass. CA-W6 remains `PARTIAL/UNPROVEN` until this source is
+checkpointed, deployed to `four` and `fiveArm`, and the bounded W8B journey
+passes.
+
+Exact-source W8B run
+`20260914T000309707403Z-c776902fe848cc9d8c9236b9ec1f437a`
+at `08e13a19e4c2e91e5c97411a3c866a8e25d98af4` is
+`PASS/DONE/PROVEN`. Both Stations attest the exact checkpoint; all three
+Native clients authenticate; Direct and Group typing lifecycle, send/blur/
+switch/disconnect clearing, removed-member rejection, revoked-device
+rejection, and zero durable typing writes all pass. Runtime and Provisioner
+cleanup are complete. CA-W6 now advances serially to the exact-source W8C
+Group/MLS journey before the Social-before-Chat/Contacts cells.
+
+Exact-source W8C run
+`20260914T001708329983Z-f3bc5aff5c7a5eef6ec66deedfad4aea`
+at `3ec14ada443728f440ea88b565df44c787c41144` proves identity/avatar
+parity, MLS readiness, visible three-member Group creation, encrypted delivery
+to both remote members, and restart recovery. Conversation Authority then
+commits Charlie's removal at sequence three, but Alice and Bob retain the stale
+three-member projection until the Gate times out. Cleanup is `DONE/PROVEN`;
+CA-W6 remains `PARTIAL/UNPROVEN`.
+
+Runtime readback identifies two contract-preservation defects. The Station
+federation decoder reconstructs the committed membership event without
+`mls_commit_sha256`, so canonical re-sealing rejects the event and remote
+delivery retries after target HTTP `500`. Independently, portable MLS inbound
+processing supplies no authority snapshot projection for an ordinary
+sender/recipient membership commit, so Desktop commits epochs without replacing
+`messaging_conversation_members`.
+
+CA-W6 mechanically admits the owner-layer remediation already defined by the
+canonical post-state contract: Station preserves every membership-event hash
+field across federation wire round-trip; portable Messaging Core derives the
+complete authoritative member projection for retained endpoints and the
+sender; Desktop atomically replaces conversation metadata and members with the
+MLS transition commit. The removed endpoint retains the existing retirement
+path. Focused Station, Messaging Core, and Desktop regressions, checkpoint
+deployment, and the bounded W8C rerun remain required.
+
+The remediation passes source verification: the complete Conversation package
+race suite, all 119 portable Messaging Core tests, the two Desktop
+sender/recipient atomic-member-replacement regressions, Desktop binary
+compilation, both Rust formatting checks, Go formatting, `go vet`, and
+`git diff --check` pass. The repository-wide Go style script remains red on its
+existing missing-doc-comment backlog; the new exported regression has the
+required comment. This is `SOURCE_CHECK` only. CA-W6 remains
+`PARTIAL/UNPROVEN` pending exact-source deployment to `four` and `fiveArm` and
+the bounded W8C Native rerun.
+
+Checkpoint `23002bf18d6d316901b9ede4f19bb3bd21124890` was deployed to
+`four` and `fiveArm`. Stable exact-source run
+`20260914T114014299344Z-aa87d8f750cbbe4100c3ebff501b0889`
+passes identity/avatar/contact parity, visible three-member Group creation,
+encrypted delivery, Bob restart recovery, and Alice's sender-side Charlie
+removal. It times out only while waiting for Bob's retained-recipient
+projection; cleanup is complete.
+
+Durable readback proves authority sequence three and Alice's queue item are
+committed and acknowledged. `fiveArm` remains at follower sequence two with no
+sequence-three event or queue item, while both sequence-three remote frames
+remain in the `four` Federation outbox as `retry_wait /
+transport_unavailable`. Target logs show that every retry reaches
+`/federation/delivery` on `fiveArm` and receives HTTP `500`.
+
+The remaining failure is owned by Conversation follower projection. The
+canonical `ConversationAuthoritySnapshot` carries complete active public state
+but intentionally omits historical member/device join sequences. Production
+wire decoding therefore synthesized the transition sequence for every active
+endpoint, and exact entity comparison rejected retained endpoints that joined
+at sequence one. The correction validates the complete actor, role, endpoint,
+Home Station, active-state, scope, epoch, and hash-chain contract as
+duplicate-safe sets, then preserves retained lifecycle metadata and derives
+new lifecycle metadata by applying the committed changes.
+
+Focused add/remove lifecycle regressions, including forged Home Station
+rejection, pass. The complete Conversation race suite, focused `go vet`, Go
+formatting, and `git diff --check` pass. The repository-wide Go style script
+remains red only on its recorded missing-doc-comment backlog. This is
+`SOURCE_CHECK`; checkpoint, exact-source deployment, and the bounded W8C Native
+rerun remain required before CA-W6 can advance.
+
+Follower lifecycle checkpoint
+`13d867e8fb17d7dd3c3c83d411be25a158af73ee` was deployed to `four`
+and `fiveArm`; both live Stations attested that exact source. Native run
+`20260914T122113394691Z-416c2c7dc23f80a5595eb90f8f9e06c2`
+then passed the complete W8C three-client Group/MLS journey, including Bob's
+retained-recipient Charlie-removal projection and deterministic cleanup.
+Runtime-cell run `20260914T122244856541Z-9962e22c0179720b`
+attests the clean source-bound binary, and final cell state is `CLEANED`.
+W8C is `PASS/DONE/PROVEN`.
+
+CA-W6 now advances to the Social-before-Chat/Contacts simulator cells. The
+current Mobile Social provisioner still reads both Station bindings from one
+active aggregate profile and rejects `--station-profile`; canonical profiles
+`four` and `fiveArm` intentionally contain only their own Station binding.
+Persisting a synthetic aggregate profile would violate the Development
+environment boundary. The mechanical remediation is therefore to admit the
+existing run-scoped `--station-profile` contract for
+`mobile-social-simulator`, resolve `station-primary=four` and
+`station-secondary=fiveArm` in memory, and reject missing, unexpected,
+duplicate, non-remote, or identity-mismatched bindings. The first bounded
+attempt reached reset target verification and then exposed a stale
+`PT_RELAY_DEPLOY_ENV=relay` value in both Station profiles; no such deployment
+source exists and the configured Relay endpoint is unavailable. The same
+run-scoped contract must therefore accept one explicit Relay profile, read only
+its Relay endpoint/deployment fields, and must not activate that profile's
+Station. The approved tuple is `station-primary=four`,
+`station-secondary=fiveArm`, and `relay=two`; profile `two` contributes only
+the Relay binding and no third Station is in scope.
+Focused Provisioner/runner tests, an exact-source checkpoint, Station
+attestation, and the two ordered CA-W6 simulator Gates remain required.
+
+The first source-bound Social simulator attempt with the complete runtime tuple
+passed Station/Relay binding, reset authorization, service attestation, SDK,
+NDK, AVD, simulator, and Chromedriver preflight, then exposed two source
+closure gaps before product actions. Mobile still referenced the retired
+optional `join_projection` / `genesis_projection` fields after Messaging Core
+made `authority_projection` mandatory, and static-bundle mode skipped Tauri's
+normal `gen/apple/assets` staging before `xcodebuild`.
+
+The mechanical remediation aligns Mobile with the proven Desktop transaction:
+recipient and sender MLS commits require the complete authority projection,
+atomically replace Conversation metadata and members, and retain the existing
+join-checkpoint retirement behavior. The Mobile simulator Provisioner now
+copies the verified web output into the Xcode-owned generated assets directory
+and registers deterministic reverse cleanup. Mobile MLS tests pass 4/4, Mobile
+Rust compilation passes, Provisioner tests pass 12/12, combined Mobile
+Provisioner/runtime tests pass 68/68, and acceptance-run tests pass 73/73. The
+full Mobile Rust suite reaches 85/87; two unrelated attachment descriptor
+fixtures remain red and are not changed by this remediation. Exact-source
+checkpoint, Station attestation, iOS/Android builds, and the ordered simulator
+Gates remain required.
+
+Exact-source Social simulator attempt
+`20260914T132626608953Z-df4ca6adc31d9a1e391423c36cc43ca8`
+at `da962507a310fc4d97c650d8c48c9e3f6b75f3fc` passes the complete
+service, reset, SDK/NDK, simulator, Chromedriver, web, iOS, and Android build
+frontier, then blocks before product actions because both Mobile simulator
+Provisioners call the Actor Fixture owner with `(station_url, role, password)`
+instead of `(station_url, deployment_environment, role)`. Cleanup succeeds,
+including both devices and generated iOS assets. The owner-adapter correction
+now passes 37 focused simulator tests and Mobile Rust compilation; checkpoint
+and rerun remain required.
+
+Instrumented Social simulator run
+`20260914T135235549631Z-33933357851deea5b7e8beaac91a1209`
+reaches authenticated product execution and proves the next CA-W6 defect is
+owned by Mobile native Station-origin policy. The authenticated session enters
+both Messaging and Social, and the Social controller starts, but Messaging
+rejects the canonical non-loopback `http` development Station as
+`mobile messaging Station origin is not canonical`. The post-login webview
+restart then waits behind the failed Messaging dependency, so the Harness
+correctly observes no stable Social runtime. OAuth cleanup independently
+rejects the same origin.
+
+This is a mechanical remediation under accepted MS-D10/MS-D11 and the Mobile
+acceptance-environment contract: debug/acceptance builds may use canonical HTTP
+development Stations, while release builds remain HTTPS-only. CA-W6 admits one
+shared native Station-origin value policy consumed by Station identity,
+Messaging, and OAuth, replacing their divergent validators. Focused Rust tests
+must prove canonicalization, debug HTTP admission, release-policy HTTP
+rejection, and credential/path/query/fragment rejection before the product
+Journey is rerun. This does not introduce an HTTP fallback, alter Station
+identity pinning, or weaken release transport policy.
+
+After the origin correction, run
+`20260914T141131185081Z-a75b10422e5a2b8e805495776e4c4bcd`
+proves both Mobile clients activate Messaging and Social and that every
+post-login runtime teardown succeeds. The Journey then reaches
+`social.request.send` and exposes an incomplete adapter payload: it supplies
+only `receiverPtid`, while the production Contacts flow obtains and requires
+`receiverHomeStationPeerId` plus `federationId` from the canonical federated
+actor search result. CA-W6 mechanically admits a production-backed
+`social.people.search` Harness action and requires the Journey to resolve the
+fixture actor by canonical federated handle, validate the returned PTID and
+Home Station identity, and pass the returned Federation ID to the unchanged
+Social command. Fixture-synthesized Federation IDs and direct Station data
+injection are forbidden.
+
+The production-backed Social search correction reaches signed cross-Station
+Friend Request delivery in run
+`20260914T155708096534Z-0fefcce11b5b7d8cf327d47fecdeca22`.
+The sender durably accepts the command and retries its shared-Federation frame,
+but the receiver returns retryable `OVERLOADED` before Social authority
+persistence. Receiver `fiveArm` logs prove every attempt resolves the sender's
+signed Home Station profile with HTTP 200 and then fails on
+`actor_devices.actor_acct` `NOT NULL` while persisting the verified remote
+device key. Direct two-way locator and resolver probes pass, so neither DHT
+absence nor profile wire negotiation owns this failure.
+
+This is an Actor Identity ownership violation in the Social adapter. Social
+calls the legacy `touch/actor.DeviceStore.UpsertVerifiedRemote` directly,
+bypassing the canonical Actor Identity capability and its current persistence
+model. CA-W6 mechanically admits the owner-layer correction required by AO-D02
+and the Actor Identity boundary: Social delegates exact remote device-key
+resolution to the Actor Identity capability inside the existing Federation
+transaction, Actor Identity alone hydrates and persists the verified profile,
+and Social only validates the returned key against the command. Filling legacy
+columns in Social, relaxing `NOT NULL`, or adding a fallback store is
+forbidden. Focused Actor Identity/Social race and vet checks, checkpoint
+deployment, and the same receiver-perspective Journey rerun are required.
+
+The owner-layer correction is implemented: the Social transaction now exposes
+the shared Federation transaction contract and delegates remote device-key
+resolution to the canonical Actor Identity subserver capability. Actor Identity
+performs profile revalidation and persistence in that transaction; Social
+retains only signature validation and no longer calls
+`DeviceStore.UpsertVerifiedRemote`. The Social/Actor Identity race suites,
+focused `go vet`, Go style, Mobile Rust Station-origin/OAuth/Messaging checks,
+Mobile web typecheck, 20 focused Mobile tests, and 49 focused Journey/
+Provisioner tests pass. A broader filtered Mobile Rust run still exposes the
+two pre-existing attachment descriptor fixture failures and is not used as
+evidence for this correction. CA-W6 remains `PARTIAL/UNPROVEN` pending a clean
+checkpoint, exact-source deployment to `four` and `fiveArm`, and the same
+receiver-perspective Social Journey.
+
+Checkpoint `6a6ea5eb6dcf4b9edc6b07e40f3359269f6cf8d1` was deployed
+exactly to `four` and `fiveArm`. The first bounded rerun was blocked before
+Fixture mutation because the operator command omitted the already authorized
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm`; the
+corrected invocation reached `FIXTURE_READY`. Run
+`20260914T162805862103Z-64658655ad958949eeb2c0af33a96a90` then failed
+before authentication readback when the iOS refresh path selected the previous
+WebView document during navigation: its pre-refresh Harness inventory was
+visible, but the subsequent `social.projection.read` observed
+`acceptance.mobile.actionUnavailable`.
+
+This is a generic simulator-driver lifecycle defect, not missing Social
+injection. The mechanical Acceptance Infra correction records the current
+WebView document time origin before refresh and accepts the post-refresh
+WebView only after that identity changes and the Harness inventory is present.
+It does not add a delay, weaken required-action checks, retry a business
+action, or alter Mobile product lifecycle semantics. Focused simulator driver
+tests must prove that a stale pre-refresh document is rejected before the
+Social Journey reruns.
+
+WebView-rebinding checkpoint
+`d99dea349fcc46b69b0c7d66cec25f6be1423dd4` was deployed to both
+Stations. Run
+`20260914T163611195734Z-37c751b57c3e2c460af8b02b0f7a0744`
+passed the refreshed-document boundary and again reached receiver delivery. The
+previous `actor_acct` persistence failure is absent, proving that Social no
+longer writes the legacy Actor Device projection, but the receiver still
+returns retryable `OVERLOADED`.
+
+Live readback during the next bounded reproduction showed one local device on
+each Station, a sender outbox retrying the Social frame, and no remote Actor
+cache or receiver command/inbox row. The Actor Identity capability therefore
+fails before hydration because its old method first inferred the remote Home
+Station from a pre-existing local projection. That is incompatible with the
+accepted cold-receiver path, where the authenticated Federation frame is the
+Home Station claim and no remote shadow Actor is required.
+
+CA-W6 mechanically extends the internal Actor Identity key-resolution
+capability with an explicit expected Home Station peer ID. Social passes the
+command's frame-authenticated source Station; Conversation passes its
+frame-authenticated source Station. Actor Identity validates that value,
+rejects conflicts with any established device route, and can hydrate a cold
+receiver directly from the signed locator/profile chain. Focused coverage must
+prove cold hydration without a `touch_actor` remote row and fail closed when a
+persisted key conflicts with the expected Home Station.
+
+Checkpoint `ed97ded5a9de41219fba75f83ce1b87d2b323a35` implements that
+cold-receiver capability and is deployed exactly to `four` and `fiveArm`.
+Exact-source run
+`20260914T172112484885Z-4b9b6bfdf6b1244eb8f221962cd711a5`
+clears the prior `actor_acct`, `OVERLOADED`, and stale-WebView boundaries:
+SEND reaches `fiveArm`, Bob's ACCEPT endpoint returns HTTP 200, and the
+accepted result returns to `four` through `/federation/delivery` with HTTP 200.
+The first remaining product failure is Alice's missing Direct Conversation.
+
+Live change-only database capture during run
+`20260914T180646012493Z-3c40e3f379af7f4497aa55a737b466de`
+proves the ACCEPT frame is not misaddressed. Its source and target are the
+attested `fiveArm` Station, its ordering sequence is 2, and its outbox attempt
+count advances while the row remains `retry_wait / transport_unavailable`.
+The SEND result frame from `fiveArm` to `four` is already delivered. CA-W6
+therefore admits a bounded shared-Federation diagnostic to distinguish a
+same-Station receiver failure from stale local-route classification; Mobile
+and Social target selection remain unchanged. This diagnostic is serial with
+the same Social Journey because both use the shared Station databases and
+simulator fixture.
+
+Run `20260914T180123805553Z-48c6437cc7e742b1197d57abc272bd7d`
+did not reach Social commands because the existing intermittent
+`mobile.lifecycle.teardownIncomplete` race recurred. That independent
+recoverable defect remains in the CA-W6 queue, but it does not replace the
+earlier post-accept convergence evidence.
+
+Shared-Federation instrumentation at checkpoint
+`8fe015f275e8feea134f0b3920cc0730e529dc85` in run
+`20260914T181714592514Z-b3d56f896eb2b2d0220be28d15ee18f8`
+resolves the ACCEPT ambiguity.
+The frame source, target, and runtime local Station ID all equal the attested
+`fiveArm` identity and the router reports `isLocal=true`; stale self-route
+classification is rejected. The same-Station receiver instead returns
+`social.resolve_relationship_projection_actors: actor PTID ... is not
+registered locally`.
+
+The failure is owned by Social relationship persistence.
+`federatedFriendRequestTransaction.PutRelationship` first writes the
+hash-bound PTID relationship projection, then requires both PTIDs to resolve
+through local `touch_actor` rows so it can mirror the accepted edge into the
+numeric `follows` table. On a cold receiver the sender is intentionally remote,
+so this forbidden shadow-Actor dependency rolls back the complete ACCEPT
+transaction. CA-W6 mechanically admits the owner-layer correction: persist the
+accepted edge in Social's PTID-native `friend_chat_friendships` truth store
+alongside `social_relationship_projections`, without synthesizing a remote
+Actor row or weakening policy. Focused regression must remove the remote Actor
+row and prove ACCEPT, both actor-local relationship projections, and the Direct
+effect.
+
+The Social persistence correction now replaces the numeric `follows` mirror
+with an idempotent PTID-native `friend_chat_friendships` write in the same
+transaction as the accepted-event projection. An existing accepted edge
+replays safely; any conflicting block or relationship status fails closed.
+The cross-Station regression deletes each remote `touch_actor` row before SEND,
+then proves ACCEPT, both actor-local friendship projections, accepted-event
+convergence, and the durable Direct effect. The focused regression, complete
+Social race suite, Actor Identity and Conversation race suites, focused
+`go vet`, Go style, and `git diff --check` pass. Exact-source checkpoint,
+deployment, and the same receiver-perspective Journey remain required.
+
+Checkpoint `b4bad26b49a0972f9f6abb17bc4571b1f97a8896` was deployed
+exactly to `four` and `fiveArm`. Exact-source run
+`20260914T183051787153Z-a191af536e16885a10fcd344c2905f85`
+clears the accepted-relationship and Direct Conversation boundary. The
+self-targeted ACCEPT frame returns a successful local disposition, and
+Conversation frames are emitted to the remote Station. The next first
+actionable product failure is `sim-android typing projection did not converge
+before timeout`.
+
+CA-W6 admits one bounded diagnostic for this later typing boundary. The sender
+typing action returned successfully and shared Federation selected both the
+local authority-admission route and the remote Home fan-out route. The
+remaining hypotheses are receiver Home delivery rejection, publication without
+a live Bob SSE subscriber, Mobile SSE decode/dispatch loss, or projection-key
+drift. Instrumentation is limited to those Station ephemeral-publication and
+Mobile realtime-ingress observation points. Business behavior remains
+unchanged until runtime evidence selects the owner-layer correction.
+
+Concurrency Decision: hybrid. Read-only evidence and source audits may run in
+parallel. Instrumentation, checkpoint integration, deployment to `four` and
+`fiveArm`, and the shared simulator Journey remain serial because they mutate
+or consume the same Station binaries, profiles, databases, and Mobile fixture.
+CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains pending.
+
+Instrumented run
+`20260914T184820972545Z-1059580805530d7bafc1f022035b73e2`
+rejects a Conversation or Federation delivery defect. The remote typing frame
+returns `disposition=1`, `errorCode=0`, and `error=<nil>`. The receiver Home
+Station then publishes Bob's typing event with `subscriberCount=0` and
+`deliveredCount=0`. Both Mobile WebViews repeatedly fail their realtime fetch
+before receiving an HTTP response.
+
+The shared Station CORS preflight allowed `Authorization` but omitted the
+canonical `/events/stream` request header `X-Device-ID`; the architecture also
+reserves `Last-Event-ID` for device-scoped resume. Browser enforcement
+therefore rejected the stream before the GET reached Station. CA-W6
+mechanically admits the shared HTTP-boundary correction: include both canonical
+realtime headers in `Access-Control-Allow-Headers`, with a focused middleware
+regression. This does not change Conversation authority, event persistence,
+Federation routing, or production HTTPS policy. Focused Hertz/EventBus/
+Federation race tests, focused `go vet`, Mobile TypeScript, and
+`git diff --check` pass. Checkpoint deployment and the same product Journey
+remain required.
+
+Checkpoint `cdc4475df9cfbdf18357db8131667f47c74bf860` was deployed
+exactly to `four` and `fiveArm`; live preflight on both Stations permits
+`X-Device-ID` and `Last-Event-ID`. Exact-source run
+`20260914T190022110735Z-4d6915e6c865080b561b84f8e531bdf6`
+then proves end-to-end typing: both WebViews establish HTTP 200 streams,
+`fiveArm` publishes the pulse to two live Bob subscribers, and Android decodes
+and stores `typing=true` under the exact Direct conversation and Alice PTID.
+
+The first remaining product failure advances to Bob's read acknowledgement.
+After Bob durably consumes and acknowledges the message and submits its
+delivery receipt successfully, `fiveArm` returns HTTP 404 for
+`POST /conversation/read-cursor`. The Home Station holds a valid follower
+projection, but the current read-cursor application path delegates directly to
+the authority-only repository. CA-W6 admits the missing cross-Station
+Conversation read-cursor transport only if it preserves the accepted
+actor-scoped monotonic cursor, Home-Station client boundary, Conversation
+authority ownership, typed shared-Federation delivery, and idempotent durable
+retry semantics. The exact protocol and implementation shape must be derived
+from the existing authority-command, delivery-receipt, and follower-projection
+contracts before mutation.
+
+The derived correction adds one durable typed
+`CONVERSATION_READ_CURSOR` Federation payload. A client continues to submit
+only to its Home Station. An active follower Home validates the local reader
+endpoint and follower authority projection, then atomically enqueues the signed
+cursor frame without writing a second cursor. The Conversation Authority
+validates the authenticated source Home Station, Federation and authority
+scope, reader endpoint, monotonic sequence bound, canonical payload identity,
+and ordering tuple before advancing the existing authority-owned actor cursor
+inside the shared Federation inbox transaction. Existing Device Inbox cursor
+projection remains the only fan-out path. Exact replay is duplicate-safe and a
+lower cursor is a monotonic no-op; no direct client-to-authority call, route
+alias, remote Actor shadow row, or second truth store is permitted.
+
+Independent read-only review initially held the correction on two P1 defects:
+an actor-only ordered lane collided when distinct devices or authority epochs
+submitted the same sequence, and the authority wake could publish before the
+outer Federation inbox transaction committed. The corrected transport scopes
+each ordered lane by Conversation, authority Station and epoch, reader PTID,
+and reader device while preserving one actor-scoped monotonic authority cursor.
+Shared Federation transactions now expose a generic post-commit registrar;
+Conversation authority commands and read cursors register wake-only callbacks
+through that boundary, discard them on rollback, and surface callback failure
+only after durable inbox and domain state commit. Regression coverage proves
+same-sequence multi-device and cross-epoch enqueue, stale-epoch rejection
+followed by current-epoch acceptance, post-commit visibility, rollback
+discard, exact replay, and notification-failure propagation. Follow-up review
+reports no P0/P1 findings. Full Conversation and shared Federation race suites,
+focused `go vet`, Go style, deterministic Go/Desktop/Mobile proto generation,
+Desktop TypeScript, Mobile web/build/Rust/iOS-project checks, and
+`git diff --check` pass. This remains `SOURCE_CHECK`; exact-source checkpoint,
+deployment to `four` and `fiveArm`, and the same Social product Journey are
+still required before `FUNCTIONAL_PASS`.
+
+Checkpoint `e1530af125c2df42d8f396ff5dd4840deb3877bd` was deployed
+exactly to `four` and `fiveArm`. After correcting local SDK/NDK and reset
+authorization inputs, run
+`20260914T195858428454Z-69210f6dfb2bf214f20a50dde988ca99`
+reaches the read-cursor path and no longer returns the follower-side 404.
+The typed payload reaches the Conversation Authority, but the sender observes
+HTTP 500 and the iOS read projection times out.
+
+Instrumented checkpoint `46a34a9dd1410793386a3ae3ea555632312866f8`
+in run
+`20260914T203821867939Z-09d584b5d43a6ba831c0f62458223623`
+proves the authority projection, Federation ID, Station/epoch binding, and
+source Home membership all validate. Cursor application then fails before
+mutation because the generic local route lookup requires remote Bob to exist
+as an authority-local Actor Device row. That requirement contradicts the
+accepted signed endpoint-manifest route boundary and the no-shadow-Actor rule.
+
+The owner-layer correction keeps local read-cursor submission unchanged and
+adds an explicit authority application path for an authenticated remote Home.
+Production resolves the current signed endpoint manifests through the existing
+Conversation route owner, then the command service revalidates the complete
+route snapshot against the locked Conversation actor/Home set and verifies the
+reader endpoint belongs to the frame-authenticated Home Station. Cursor truth
+and Device Inbox fan-out remain in the existing authority transaction; no
+remote Actor shadow row, client-supplied route, or second cursor store is
+introduced. Focused and complete Conversation/Federation race suites, focused
+`go vet`, Go style, and `git diff --check` pass. A focused independent review
+reports no P0/P1 findings. Exact-source checkpoint, deployment, and the same
+Social Journey rerun remain required.
+
+Checkpoint `a6ae2f48a84cc109368a210d99d3f8e49dc4d006` was deployed
+exactly to `four` and `fiveArm`. Social simulator run
+`20260914T205140644944Z-9efff5c20f71cf145d35527bed7d9923`
+then reached receiver-perspective `FUNCTIONAL_PASS`: typing converged in 18 ms,
+message delivery in 1915 ms, read receipt in 723 ms, and cleanup passed. This
+closes the ordered Social functional prerequisite but does not prove the
+physical-device cells.
+
+The following exact-source Chat/Contacts run
+`20260914T205436809375Z-2dc0d3f505a364e40d2943b01ef80fe7`
+advanced to its first remaining product failure: receiver attachment delivery
+did not converge. Instrumented checkpoint
+`09f4cd10f6c81de87bca2abe550c828076e5192f` proves attachment staging
+completes, durable send returns `state=draft` with no command ID, the worker
+wake succeeds, message-draft preparation and command dispatch remain idle, and
+the receiver Device Inbox remains at cursor/lane head `1/1`. The attachment
+upload worker reports intermittent progress without surfacing its typed result;
+the cadence matches retry backoff. CA-W6 therefore admits one instrumentation-
+only diagnostic at the Mobile attachment transfer owner to capture the exact
+transfer progress, persisted state, attempt count, retry deadline, and typed
+error code before any behavioral correction.
+
+Concurrency Decision: serial for this remediation. The Mobile attachment
+store, worker lifecycle, simulator fixture, `four`/`fiveArm` deployments, and
+the bounded Chat/Contacts Journey are shared mutable resources. Read-only
+source and evidence inspection may run in parallel, but instrumentation,
+owner-layer correction, focused regression, checkpoint, deployment, and the
+functional rerun must remain ordered. CA-W6 is `PARTIAL/UNPROVEN`; CA-W7 stays
+pending until the Chat/Contacts Journey reaches `FUNCTIONAL_PASS`.
+
+Diagnostic run
+`20260914T212556991446Z-5696bdfc2ef8f3047e81d55ab8899a12`
+at source `809be1328d99e1a900363aeaa836c1d66cf0d7f3` confirms the
+attachment upload begins and uploads its only chunk. The persisted Mobile
+transfer then enters `RetryWait` with a complete chunk bitmap, generation one,
+a descriptor commitment, and `RETRY_LATER`; six attempts follow the bounded
+backoff policy. Authority Station access logs show every matching completion
+request returns HTTP 200, including exact replays. The remaining failure is
+therefore inside the Mobile local completion transaction, after successful
+authority completion and before the descriptor makes the draft eligible. The
+next diagnostic records that transaction's exact error without changing
+transfer behavior.
+
+Diagnostic run
+`20260915T011951396799Z-2d1789b78b9b356bfd0f1bb37eab9573`
+at source `2633d39410d245052cd613594da9c6127bb79ad0` confirms the
+local rejection is `mobile messaging attachment completion media type
+mismatch`. The ciphertext descriptor correctly uses the canonical
+`application/octet-stream` media type, while the durable draft retains the
+original plaintext attachment media type (`text/plain`) inside encrypted
+private metadata. The Mobile store incorrectly compared those intentionally
+different fields before persisting the descriptor. CA-W6 admits the owner-layer
+correction: retain the draft row existence/fencing check, remove the invalid
+cross-layer MIME equality, and add a regression proving plaintext MIME remains
+private while the public ciphertext descriptor remains octet-stream.
+
+The Mobile owner-layer correction is implemented. The focused attachment-draft
+regression now passes, the complete Mobile Rust library suite passes 91/91, and
+`pnpm mobile:check` passes its wire/runtime boundaries, TypeScript, production
+build, Rust check, and iOS project inspection. Debug instrumentation remains
+active with `runId=post-fix`; checkpoint, exact-source simulator execution, and
+receiver-perspective evidence remain required before `FUNCTIONAL_PASS`.
+
+Checkpoint `a7ee0f05e1ded0d395aa250d94f324d144e2522a` was deployed
+exactly to `four` and `fiveArm`. Post-fix Chat/Contacts run
+`20260915T013009076126Z-e57e2cb9ed27f21a215eccec78524821`
+advances past attachment delivery, proving the Mobile MIME-boundary correction
+in the receiver projection. The next product-visible failure is receiver
+attachment open: `fiveArm` accepts the local object GET and forwards it through
+shared Federation `OpenPeerStream`, but authority Station `four` returns HTTP
+400 from `/federation/conversation/attachments/objects/:object_id`; `fiveArm`
+then surfaces HTTP 500 to Mobile. The status class excludes attachment claims
+(403) and Range parsing (416), so CA-W6 mechanically admits one bounded
+instrumentation-only diagnostic at the authority GET entry to distinguish a
+missing/corrupt metadata header from an object path-versus-metadata mismatch.
+The existing serial Concurrency Decision remains valid because the Station
+object stream, `four`/`fiveArm` deployments, simulator fixture, and rerun are
+shared mutable resources. CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains
+pending until the receiver-open Journey reaches `FUNCTIONAL_PASS`.
+
+Instrumented checkpoint `ac9e00fec82690bbd1cdbd576b221ef77dfec5ad`
+was deployed exactly to `four` and `fiveArm`. Run
+`20260915T015724802744Z-f66857957b3229dee6fb5d969f69a5f4`
+reproduces the same receiver-open timeout after `FIXTURE_READY`; attachment
+delivery still converges and cleanup passes. Mobile records five bounded
+download attempts entering `RetryWait` with `RETRY_LATER`. Authority `four`
+returns HTTP 400 in 2-3 ms for each federated object GET, while receiver Home
+`fiveArm` logs only `peer returned HTTP 400`. The authority cannot reach the
+local Debug Server, so the entry probes do not distinguish metadata decode
+from path binding. Source inspection exposes the next diagnostic boundary:
+shared Federation `peerClient.Open` drains and discards the existing non-2xx
+response body before wrapping the status. CA-W6 therefore admits one
+diagnostic-only change to preserve that bounded error body in the returned
+error chain. This changes no status, retry classification, route, claim,
+storage, or success-path behavior.
+
+Diagnostic checkpoint `008b14aa8650aeb787dc671f3aeb812ac11d0665`
+was deployed exactly to both Stations. Run
+`20260915T020929574463Z-15b4fab465a88e7da113cf19d28276f1`
+again reaches the receiver-open boundary and cleanup passes. The preserved
+authority response is `{"code":400,"error":"invalid Conversation request"}`.
+That body is emitted only by the Conversation domain error mapper after
+attachment metadata, object path, signed claims, and Range parsing have
+completed, so the three transport-entry hypotheses are rejected. The same
+response carries typed `X-Peers-Error-Code` and `X-Peers-Error-Details`
+headers, but the peer client still omits them from its error chain. CA-W6
+admits one final diagnostic-only refinement to include those bounded headers
+and identify the exact owner-layer operation, field, and reason before any
+behavioral correction.
+
+Diagnostic checkpoint `d11a0bd1ff39fc48b6f2b8110dc1c183fa76d6a1`
+was deployed exactly to both Stations. Run
+`20260915T022051068995Z-07fc86aa04fcf6acb5e9c93b7446d9f4`
+returns the exact typed authority failure:
+`CONVERSATION_INVALID_ARGUMENT`, `operation=valueobject.validate`,
+`field=conversation_id`, `reason=is required`. Mobile alone encodes the
+attachment conversation scope as a `conversation_id` query parameter, while
+the canonical Station handler and Desktop transport require
+`X-Peers-Conversation-ID`. The receiver Home therefore constructs a federated
+request with an empty Conversation ID. CA-W6 admits the Mobile transport owner
+fix: remove the non-canonical query parameter, emit the canonical header, and
+add request-construction regression coverage matching Desktop. Station must
+not gain a compatibility query read or fallback.
+
+The Mobile transport owner fix is implemented: attachment object requests now
+send `X-Peers-Conversation-ID` and no longer encode the Conversation identity
+as a query parameter. The focused
+`attachment_download_request_uses_canonical_conversation_header` regression
+passes and asserts the canonical URL plus Conversation, Authority, ETag, and
+Range headers. Exact-source checkpoint, deployment, and the same receiver-open
+Journey remain required before `FUNCTIONAL_PASS`.
+
+Header-fix checkpoint `9ceaf88338283201df057ecf4498e6e6995fa5ca`
+was deployed exactly to both Stations. Run
+`20260915T023108381775Z-aaef0221857b9a6792bf70beff7bea3e`
+eliminates the 400 and advances into attachment authorization. Authority
+`four` now reports `attachment.download: device: is not active for the
+authenticated actor`: the local attachment path incorrectly applies its
+authority-local Actor Device lookup to Bob, whose device truth is owned by the
+signed remote Home `fiveArm`. CA-W6 admits the owner-layer correction already
+required by MP-D23: keep local client downloads behind authority-local active
+device checks, add an explicit verified-remote-Home application path that
+relies on the authenticated peer assertion, and retain the immutable
+event-time recipient grant as the sole object ACL. No remote Actor shadow row,
+current-membership lookup, client-to-authority call, or fallback is permitted.
+Focused application, HTTP adapter, and production composition regressions must
+prove both the local-device rejection and remote verified-Home success before
+the next exact-source Journey.
+
+The verified-remote-Home attachment path is implemented. Local downloads still
+require an authority-local active device; federated downloads require a
+distinct validated source Home, consume the already verified peer identity,
+and authorize object access only through the immutable actor grant. The
+focused service/HTTP/production tests, complete Conversation race suite,
+focused `go vet`, and `git diff --check` pass. Exact-source checkpoint,
+deployment, and the same receiver-open Journey remain required.
+
+Exact-source run
+`20260915T024817046059Z-02438b918aa56a901996efd98e44bed8`
+at checkpoint `e29cf628c76ab04a3cb070a1baee1b98ed510578` proves the
+cross-Station receiver attachment-open path end to end: authority `four` and
+Home `fiveArm` both return HTTP 206, the Mobile transfer reaches `Complete`,
+and `messaging.attachment.open` returns `ready`. The first product-visible
+failure advances to sender reaction readback.
+
+Instrumented exact-source run
+`20260915T031126378304Z-a32f72c840e74f16baf99d50d97c8fa4`
+at `e3653ea5b4d60010f4226af133082b2cb07e40ac` confirms the next
+owner-layer defect. Bob prepares command `01M2HGWKR86GM2YD6N3Q2G5M8H`
+against authority sequence 2 with distinct Home and Authority Station
+identities, but Mobile submits the raw local-authority `command` envelope.
+Bob's Home rejects it before durable Federation admission with
+`STALE_DELIVERY_PLAN`, no `current_plan`, no forwarding acceptance, and no
+event. The resulting `missing_stale_plan` is therefore a secondary Mobile
+decode symptom, not the command failure owner.
+
+AO-D07 already defines the correction and Desktop proves the implementation
+shape: Mobile must use raw `ChatCommand` only when Home is the authority;
+otherwise it must derive the active follower public head, construct the
+canonical D-17 actor-device-signed proposal from its enrolled device signing
+identity, and submit that proposal to its Home for durable Federation
+admission. No client-to-authority shortcut, unsigned remote command, fallback
+read, or Station compatibility branch is permitted. Focused Mobile transport
+and engine regressions, exact-source deployment, and the same Chat/Contacts
+Journey remain required before `FUNCTIONAL_PASS`.
+
+The Mobile D-17 path is implemented. Command dispatch reconstructs the active
+enrolled device signing identity, binds it to the current Home Station, and
+selects raw command submission only for a local authority. A remote authority
+requires an active follower public head and produces the canonical signed
+proposal with exact command hash, command kind, authority epoch, and bounded
+lifetime. The focused Mobile transport cohort passes 9/9, Mobile Rust
+compilation passes, formatting is clean, and `git diff --check` passes. The
+instrumentation remains active with `runId=post-fix`; checkpoint, exact-source
+deployment, and the same receiver-perspective Journey remain required.
+
+The D-17 checkpoint moves the Journey to canonical command-result consumption.
+Run `20260915T040712892524Z-f11746bb7b061223aadf8898cc07bd3e`
+at `f08c6bb408ae4bce925d00ea91ce60f19579b906` shows the accepted
+authority event on the preceding Device Inbox lane item, then a valid
+`COMMAND_RESULT` item at lane sequence 4. Instrumentation decodes payload type
+4, submission state `ACCEPTED`, the matching command identity, and a present
+authority event before the portable consumer rejects the otherwise valid item
+as unsupported.
+
+CA-W6 therefore mechanically admits the missing client consumer cut already
+required by AO-D07 and MP-D03/MP-D04: portable Messaging Core must validate and
+dispatch `COMMAND_RESULT`, while the Mobile SQLCipher adapter atomically
+settles command/outbox/attempt and logical-intent state together with the
+consumption marker and fenced lane cursor. Accepted results must not replace
+the separately ordered authority-event projection; terminal membership
+results must also discard durable and in-memory pending MLS transitions. The
+portable processor, Mobile repository implementation, and runtime composition
+are implemented. Focused Core command-result tests pass 2/2, the Mobile atomic
+accepted-result test passes, Mobile Rust compilation passes, and
+`git diff --check` passes. Exact-source checkpoint, deployment, and the same
+Journey remain required.
+
+Two independent read-only reviews then found four pre-checkpoint issues, all
+closed in the same hard cut. Mobile claim replay now refreshes only identical
+unconsumed items to an equal or newer consumer epoch and rejects stale epoch
+downgrades. The portable processor validates the canonical Station
+`CommandResultItemID` tuple before local mutation. Delayed terminal membership
+results carry the exact transition ID into lifecycle cleanup, so an older
+result cannot discard a newer pending transition. Finally, Desktop's duplicate
+command-result processor and contract types are deleted; Desktop and Mobile
+both consume the shared Core implementation through platform persistence
+ports. Desktop and Mobile Rust compilation pass, the complete Messaging Core
+suite passes 121/121, the complete Mobile library suite passes 97/97, Core
+command-result tests pass 4/4, the MLS matching-cleanup regression passes, and
+Mobile accepted-result plus claim-replay tests pass. A final read-only
+rereview reports no remaining P0/P1 finding.
+
+Checkpoint `88d2142082802954735510aa5a881ae327a1aabd` was deployed
+exactly to `four` and `fiveArm`. Run
+`20260915T044506794348Z-5241254715052208207c19bbf081dd7b`
+proves the canonical `COMMAND_RESULT` item is decoded and atomically consumed
+with no error; later lane items continue through sequences 5, 6, and 7. The
+same Chat/Contacts Journey then advances through reaction, edit, read receipt,
+and search before its first remaining failure,
+`acceptance.mobile.activeMessagingSessionRequired`, during restart readback.
+
+Instrumented checkpoint `247153f474102b3f07e52bd41faef4985c8f4a2e`
+and run `20260915T045420869706Z-e1ba86cf959a6a07486b55f2a775100a`
+locate that failure at the shared Journey readiness boundary. The in-document
+`lifecycle.restart` returns only after the graph is `ACTIVE`, the exact Station
+and actor session are restored, and every runtime is ready. The Driver then
+refreshes the WebView document. Harness inventory becomes visible while the new
+document is still `BOOTSTRAPPING`, auth has no active session, and Messaging is
+pending; `messaging.projection.read` executes immediately and fails. Auth
+restores the same Station-bound actor session approximately 90 ms later.
+Session persistence, Station selection, and product runtime restoration are
+therefore not the defect.
+
+CA-W6 mechanically admits the missing post-refresh readiness barrier in the
+shared Mobile Messaging Journey. After switching to the refreshed app WebView,
+the Journey must poll the existing `lifecycle.scope.read` action until
+`phase=ACTIVE`, `activeStationPeerId` and `runtimeStationPeerId` both equal the
+receiver Home Station, and `activeActorPtid` equals the receiver PTID. Only
+then may it perform the unchanged durable message readback. The correction
+must not add a fixed delay, retry a business action, weaken projection
+assertions, or change Mobile auth/session behavior. A focused fake-session
+regression must expose `BOOTSTRAPPING` before `ACTIVE` and prove no Messaging
+projection read occurs before readiness.
+
+Concurrency Decision: serial. The Journey and fake regression share one
+readiness contract, and checkpoint, `four`/`fiveArm` deployment, and the
+simulator Journey consume the same source and runtime resources. CA-W6 remains
+`PARTIAL/UNPROVEN`; CA-W7 remains pending until the same receiver-perspective
+Journey reaches `FUNCTIONAL_PASS`.
+
+The shared Journey correction is implemented. Its post-refresh barrier polls
+the existing lifecycle scope and requires the exact `ACTIVE` Station/actor
+runtime before the unchanged Messaging projection readback. The fake-session
+regression exposes `BOOTSTRAPPING -> ACTIVE` for both Direct and Group restart
+paths and proves no Messaging projection read occurs while bootstrapping.
+Messaging Journey plus Social wrapper tests pass 10/10, the adjacent Station
+lifecycle cohort passes 3/3, Python compilation passes, and
+`git diff --check` passes. This is `FOCUSED_PASS`; checkpoint, exact-source
+deployment, and the same Chat/Contacts Journey remain required.
+
+Checkpoint `f82dcc867f8e7725528f63124b7433d24b3577fd` was deployed
+exactly to `four` and `fiveArm`; run
+`20260915T051116696601Z-66b0059055be45a90d6513fd4a59455f`
+then passes the Direct restart readback that previously failed, proving the
+new readiness barrier in the receiver runtime. The first remaining product
+failure advances to Group creation:
+`acceptance.mobile.invalidInput:messaging.createGroup.federationId`.
+The canonical Mobile action already requires an explicit Federation ID, and
+the Journey owns the exact actor Federation identity but omits it from the
+Group request. CA-W6 mechanically admits the Journey-only correction to pass
+`sender.federation_id` and to make the fake production-action boundary reject
+a missing or mismatched Federation. No product contract, authority path, or
+runtime behavior changes. The focused Journey and Social wrapper cohort passes
+10/10, Python compilation passes, and `git diff --check` passes.
+
+Checkpoint `a8498e0ee615b73f53ee16cbea1e56a2eca6d3b5` was deployed
+exactly to `four` and `fiveArm`. Run
+`20260915T051942975658Z-a89c0949931c1c09998492290d39c883`
+passes the canonical Group action input and both Direct restart checks, then
+times out waiting for the sender Group projection. Existing transport
+instrumentation identifies command `01M2HR904PYKKEV83CC80JGHR0` as an
+epoch-zero, authority-plan-bound membership transition sent to the generic
+`/conversation/command` path; the authority returns reject code 21 with no
+event. The canonical `/conversation/command` path requires an existing
+Conversation, so the rejection is expected for not-yet-created Group state.
+
+AO-D07.2 requires prepared Group genesis to submit its exact `ChatCommand`
+through `POST /conversation/group`; established membership transitions and all
+ordinary commands remain on `POST /conversation/command`. Desktop already
+implements and tests this discriminator. CA-W6 therefore admits the missing
+Mobile transport parity correction: recognize only an epoch `0 -> 1`
+membership transition with a non-empty authority plan ID/hash as Group genesis,
+submit it to the canonical Group creation route, and validate both returned
+Group identity and committed event binding before the outbox marks success.
+No new route, fallback, or alternative owner is permitted.
+
+The Mobile route hard cut is implemented in parity with Desktop. Focused
+transport tests pass 12/12, including epoch-zero Group selection, established
+membership routing, and Group/event response binding; Mobile Rust compilation,
+formatting, Journey tests, Python compilation, and `git diff --check` pass.
+This is `FOCUSED_PASS`; exact-source checkpoint, two-Station deployment, and
+the same Chat/Contacts Journey remain required.
+
+Checkpoint `caa25aaeffecda220b1852679e37824e6e9b1171` was deployed
+exactly to `four` and `fiveArm`. Chat/Contacts run
+`20260915T053408334229Z-e4575473fde232fe01afd55b7b97192c`
+reaches receiver-perspective `FUNCTIONAL_PASS` for both Direct and Group:
+attachment delivery/open, reaction, edit, read receipt, search, and restart
+readback all pass, as does deterministic cleanup. The ordered final Social run
+`20260915T053922542452Z-e74f374063b569f2bd4bba59f00b477e`
+also passes typing, message delivery, read receipt, and cleanup at the same
+source.
+
+The combined Acceptance run then reproduced the known intermittent post-login
+activation race: Social run
+`20260915T054950878270Z-8e513e3cdab6f7d42206804e1b702c2a`
+timed out waiting for the iOS Social runtime, while the following Chat/Contacts
+run `20260915T055241597000Z-0e92362c33cfea8ac5051fc81b12724b`
+again passed the complete Direct and Group journey. The remaining Social
+failure is the same missing post-refresh readiness barrier in
+`_activate_authenticated_shell`: it polls a business projection immediately
+after WebView refresh instead of first requiring the exact authenticated
+lifecycle scope. CA-W6 admits reusing the existing `ACTIVE` Station/actor
+barrier before Social activation polling, with a focused `BOOTSTRAPPING`
+regression. Product auth, teardown, and Social semantics remain unchanged.
+
+The shared post-refresh barrier now guards both post-login activation and
+message restart readback. The focused Messaging Journey, Social wrapper, and
+Station lifecycle cohort passes 13/13, Python compilation passes, and
+`git diff --check` passes. This is `FOCUSED_PASS`; the ordered exact-source
+Social and Chat/Contacts Gates must be rerun before CA-W6 closure.
+
+Checkpoint `7906691afdcd788d5a9ee9cca24fb679f2559f41` was deployed
+exactly to both Stations. Final aggregate run
+`20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa`
+passes all five executed Gates: Acceptance plan self-check, Acceptance Infra
+validation, runtime-provisioning self-check, ordered Social convergence, and
+Chat/Contacts. Social run
+`20260915T060726558597Z-a705288aad979787d7092cd5b8264696`
+proves typing, message delivery, read receipt, and cleanup; Chat/Contacts run
+`20260915T061015388672Z-587953e6525171492cf434c752f5a1a0`
+proves complete Direct and Group attachment, interaction, receipt, search, and
+restart readback with cleanup. Mobile Rust passes 100/100 and
+`pnpm mobile:check` passes. Both simulator reports remain intentionally
+`PARTIAL/UNPROVEN` outside their observed scope, and the Gap Detector keeps
+`mobile-native-social-convergence-e2e` plus
+`mobile-native-chat-contacts-e2e` `UNPROVEN`; no physical-device claim is made.
+
+CA-W7 source audit begins at the same checkpoint. `station-api-ownership` run
+`20260915T061431374292Z-3e771d7483fc33111747d8ba25f3e2e4`
+and `station-messaging-unit` run
+`20260915T061443576272Z-2630828747c78fe01a2da7922b678796`
+pass. `messaging-platform-contract` exposes two stale Gate assumptions: it
+still opens deleted Desktop `messaging/command_result.rs` after portable Core
+became the sole processor, and still requires MLS Key Exchange route literals
+inside HTTP Gateway after the Key Exchange Tauri owner absorbed them. CA-W7
+admits a Gate-only reconciliation to assert the portable owner, deleted
+duplicate, current Desktop composition, Key Exchange owner routes, and
+wrapper delegation without reintroducing either retired implementation.
+
+The Gate reconciliation now reads portable Core
+`inbox/command_result.rs`, asserts Desktop composition through
+`CommandResultProcessor`, and fails if the deleted Desktop duplicate returns.
+It verifies MLS Key Exchange route literals at the Tauri Key Exchange owner,
+HTTP Gateway delegation to those owner functions, and the retained DKX owner
+without requiring duplicated route strings in the wrapper. The complete
+Messaging Platform contract passes 22/22, Desktop TypeScript checks pass,
+Python compilation passes, and `git diff --check` passes.
+
+CA-W7 zero-reference checks report no production Station `/messaging/*` or
+`/envelope/*` route references, no superseded Conversation command/event
+symbols, and no retired Station Messaging, flat Conversation engine, or
+Desktop command-result owner paths. `station-api-ownership` remains the
+machine-readable authority for all target-absent routes and Station truth
+stores. The existing operational pitfall
+`docs/knowledge/pitfalls/public-api-owner-must-follow-resource-domain.md`
+already records the split-brain root cause, mitigation, and detection commands;
+no duplicate knowledge entry is added.
+
+The final exact-source simulator aggregate at
+`7906691afdcd788d5a9ee9cca24fb679f2559f41` is
+`20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa`.
+All five executed Gates pass and both runtime cleanups are complete.
+Gap Detector reports only the accepted evidence boundary: both physical
+Mobile Gates are unrun, and the simulator Gates intentionally emit
+`PASS/PARTIAL/UNPROVEN` rather than physical `DONE/PROVEN`. Quality Evidence
+`20260915T062221948784Z-185b20265fab7a733e7996069f0c8798`
+reports zero blocking gaps and five review gaps, all tied to that explicit
+native/physical proof boundary.
+
+The CA-W7 local aggregate also exposed an Evidence Store conflict while
+persisting the Messaging contract log under the current tool-host credential
+environment. The command itself was rerun directly and passes 22/22; Desktop
+TypeScript, Station ownership, and Station Messaging tests also pass. This
+artifact-writer conflict is recorded as a tooling evidence limitation, not
+converted into a product failure or silently treated as a passed immutable
+artifact.
+
+Final plan judgment: all source, selected Desktop Native, simulator-functional,
+cleanup, ownership, documentation, knowledge, and quality work available in
+the declared environment is complete. The plan remains `PARTIAL/UNPROVEN`,
+not `PLAN_COMPLETE`, because the two required physical Mobile Gates are
+unavailable and the accepted simulator contracts explicitly do not substitute
+for them.
+
+PR `#112` delivery reconciliation records master as an explicit parent at
+`e049dcc63b6188ff9b9b0b919b78f4679b964daf`. The merged master commit
+`2d54851f95994d717928105aca6470c30adf3657` has the same tree
+`8896b79375f4a712abdcf3c1c3526d482fa9d081` as original PR `#111` head
+`6b62f80381e2afbf0e2a91e96f74b0129a5d1471`, which is already an ancestor of
+the current branch. The ancestry merge therefore changes no source blob and
+does not discard either side's implementation.
+
+Post-reconciliation focused verification passes: Messaging Platform contract
+22/22, Station API ownership with zero diagnostics, the Station
+Conversation/Federation/Key Exchange cohort, Desktop checks, Mobile Rust
+100/100, and the complete Mobile check. Submit-time quality evidence
+`20260915T064344619279Z-52116fde5209c3f123b2d15b6ad97850` reports zero
+blocking gaps. The first submit attempt stopped only because covered review
+documents had advanced beyond the recorded freshness digest; review confirmed
+that the drift contains NDR evidence/scope updates and navigation to the
+already-covered `devctl` architecture, with no change to review semantics.

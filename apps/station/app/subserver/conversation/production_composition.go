@@ -9,18 +9,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
+	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
+	reconciliationinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/reconciliation"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	keyexchangemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
@@ -40,13 +43,6 @@ const (
 	defaultProductionQueueAttempts           = 8
 	defaultProductionQueueRetryInitial       = time.Second
 	defaultProductionQueueRetryMaximum       = time.Minute
-	defaultProductionAttachmentUploadTTL     = 24 * time.Hour
-	defaultProductionAttachmentObjectTTL     = 24 * time.Hour
-	defaultProductionAttachmentVerifyLease   = time.Hour
-	defaultProductionAttachmentCleanupLease  = 5 * time.Minute
-	defaultProductionAttachmentActive        = 4
-	defaultProductionAttachmentParts         = 4
-	defaultProductionAttachmentCleanupBatch  = 100
 	defaultProductionTypingPulseInterval     = 3 * time.Second
 	defaultProductionTypingTTL               = 10 * time.Second
 	defaultProductionTypingClockSkew         = time.Minute
@@ -66,6 +62,10 @@ type ProductionRealtime interface {
 // initialized before Federation.
 type ProductionFederationRuntime interface {
 	RegisterReceivers(sharedfederation.ReceiverRegistrar) error
+	DeliverConversationTyping(
+		context.Context,
+		*federationdelivery.Frame,
+	) (federationdelivery.Result, error)
 	CallPeer(context.Context, sharedfederation.PeerCall) error
 	OpenPeerStream(
 		context.Context,
@@ -152,9 +152,10 @@ type ProductionComposition struct {
 	AttachmentService  *attachmentapp.Service
 	InteractionService *interactionapp.Service
 
-	DeviceInboxHandler *conversationhttp.DeviceInboxHandler
-	AttachmentHandler  *conversationhttp.AttachmentHandler
-	InteractionHandler *conversationhttp.InteractionHandler
+	DeviceInboxHandler   *conversationhttp.DeviceInboxHandler
+	CommandResultHandler *conversationhttp.CommandResultHandler
+	AttachmentHandler    *conversationhttp.AttachmentHandler
+	InteractionHandler   *conversationhttp.InteractionHandler
 
 	DeliveryRepository   *deliveryinfra.Repository
 	AttachmentRepository *attachmentinfra.Repository
@@ -167,6 +168,7 @@ type ProductionComposition struct {
 	database               *gorm.DB
 	localStation           valueobject.StationID
 	clock                  productionClock
+	realtime               ProductionRealtime
 	deviceInboxLimits      deliveryapp.QueueLimits
 	transactionalAdapters  *ProductionTransactionalAdapterFactory
 	federationSender       *conversationfederation.Sender
@@ -228,13 +230,13 @@ func DefaultProductionCompositionConfig(
 			MaxRetryDelay:  defaultProductionQueueRetryMaximum,
 		},
 		AttachmentPolicy: attachmentapp.Policy{
-			UploadTTL:               defaultProductionAttachmentUploadTTL,
-			UnattachedObjectTTL:     defaultProductionAttachmentObjectTTL,
-			VerificationLeaseTTL:    defaultProductionAttachmentVerifyLease,
-			CleanupLeaseTTL:         defaultProductionAttachmentCleanupLease,
-			MaximumActiveUploads:    defaultProductionAttachmentActive,
-			MaximumConcurrentParts:  defaultProductionAttachmentParts,
-			MaximumCleanupBatchSize: defaultProductionAttachmentCleanupBatch,
+			UploadTTL:               securecontent.MaximumUploadTTL,
+			UnattachedObjectTTL:     securecontent.MaximumUnattachedObjectTTL,
+			VerificationLeaseTTL:    securecontent.MaximumVerificationLeaseTTL,
+			CleanupLeaseTTL:         securecontent.MaximumCleanupLeaseTTL,
+			MaximumActiveUploads:    securecontent.MaximumActiveUploadCount,
+			MaximumConcurrentParts:  securecontent.MaximumConcurrentPartCount,
+			MaximumCleanupBatchSize: securecontent.MaximumCleanupBatchSize,
 		},
 		InteractionPolicy: interactionapp.Policy{
 			MinimumPulseInterval:   defaultProductionTypingPulseInterval,
@@ -306,6 +308,25 @@ func NewProductionComposition(
 	if err != nil {
 		return nil, fmt.Errorf("compose Conversation query service: %w", err)
 	}
+	reconciliationReader, err := reconciliationinfra.NewReader(
+		config.Database,
+		eventSealer,
+		string(config.LocalStationID),
+		config.Clock,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command reconciliation reader: %w", err)
+	}
+	reconciliationService, err := reconciliationapp.NewService(reconciliationReader)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command reconciliation service: %w", err)
+	}
+	commandResultHandler, err := conversationhttp.NewCommandResultHandler(
+		reconciliationService,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command-result handler: %w", err)
+	}
 
 	identityDirectory := &productionIdentityDirectory{db: config.Database}
 	deliveryRepository, err := deliveryinfra.NewRepository(
@@ -367,6 +388,12 @@ func NewProductionComposition(
 		clock:        config.Clock,
 		localStation: config.LocalStationID,
 	}
+	readCursorForwarder := &productionReadCursorForwarder{
+		database:     config.Database,
+		sender:       adapterFactory.federationSender,
+		clock:        config.Clock,
+		localStation: config.LocalStationID,
+	}
 	receiptCommitter := &productionDeliveryReceiptCommitter{
 		database:     config.Database,
 		adapters:     adapterFactory,
@@ -377,6 +404,7 @@ func NewProductionComposition(
 		queryService,
 		productionInteractionDeviceDirectory{identity: identityDirectory},
 		commandService,
+		readCursorForwarder,
 		receiptCommitter,
 		receiptForwarder,
 		config.Realtime,
@@ -401,6 +429,7 @@ func NewProductionComposition(
 		AttachmentService:     attachmentService,
 		InteractionService:    interactionService,
 		DeviceInboxHandler:    deviceInboxHandler,
+		CommandResultHandler:  commandResultHandler,
 		AttachmentHandler:     attachmentHandler,
 		InteractionHandler:    interactionHandler,
 		DeliveryRepository:    deliveryRepository,
@@ -412,6 +441,7 @@ func NewProductionComposition(
 		database:              config.Database,
 		localStation:          config.LocalStationID,
 		clock:                 config.Clock,
+		realtime:              config.Realtime,
 		deviceInboxLimits:     config.DeviceInboxLimits,
 		transactionalAdapters: adapterFactory,
 		federationSender:      adapterFactory.federationSender,
@@ -467,7 +497,7 @@ func migrateProductionConversationSchema(
 	database *gorm.DB,
 ) error {
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.AutoMigrate(
+		if err := tx.AutoMigrate(
 			&persistence.ConversationModel{},
 			&persistence.ConversationMemberModel{},
 			&persistence.ConversationMemberDeviceModel{},
@@ -490,7 +520,10 @@ func migrateProductionConversationSchema(
 			&attachmentinfra.ObjectModel{},
 			&attachmentinfra.GrantModel{},
 			&attachmentinfra.AuditModel{},
-		)
+		); err != nil {
+			return err
+		}
+		return deliveryinfra.MigrateCommandResultItemIdentities(ctx, tx)
 	})
 	if err != nil {
 		return fmt.Errorf("migrate canonical Conversation production schema: %w", err)
@@ -710,6 +743,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -722,6 +756,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
+		expectedHomeStationPeerID,
 		deviceID,
 		signingKeyID,
 	)

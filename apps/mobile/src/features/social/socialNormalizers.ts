@@ -166,7 +166,18 @@ export function federationViewToResult(view: FederationResolveView): ActorSearch
   const profile = view.profile;
   if (!profile) return null;
   const record = profile as Record<string, unknown>;
-  const id = String(profile.ptid ?? '');
+  const identityCandidates = [
+    profile.ref?.ptid,
+    profile.peersTouch?.networkId,
+    profile.peers_touch?.network_id,
+    profile.ptid,
+    profile.id,
+  ];
+  const id = String(
+    identityCandidates.find(
+      (value) => typeof value === 'string' && value.startsWith('ptid:'),
+    ) ?? '',
+  );
   const username = String(profile.username ?? profile.preferredUsername ?? profile.preferred_username ?? '');
   const displayName = String(profile.displayName ?? profile.display_name ?? username);
   const avatar = String(profile.avatar ?? '');

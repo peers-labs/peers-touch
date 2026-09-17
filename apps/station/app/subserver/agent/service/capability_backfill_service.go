@@ -73,6 +73,7 @@ type capabilityBindingSeed struct {
 	enabled           bool
 	approvalPolicy    model.CapabilityApprovalPolicy
 	preservePolicy    bool
+	reconcileVersion  bool
 }
 
 type legacyAgentChatConfig struct {
@@ -845,6 +846,7 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	approval := model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO
 	secretBoundary := "station"
 	capabilityID := "tool:" + definition.Name
+	requiredRuntimeCapabilities := []string{"native-tools"}
 	version := ""
 	switch {
 	case definition.Name == "local_mcp":
@@ -854,6 +856,7 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
 		capabilityID = "mcp.invoke"
+		requiredRuntimeCapabilities = nil
 		version = "1"
 	case definition.Name == "oauth_connector_call":
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR
@@ -861,41 +864,48 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
+		requiredRuntimeCapabilities = nil
 	case strings.HasPrefix(definition.Name, "local_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
 		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
+		requiredRuntimeCapabilities = nil
 		if mappedID := capabilityIDForTool(definition.Name); mappedID != "" {
 			capabilityID = mappedID
 			version = "1"
 		}
 	}
 	if version == "" {
-		version = shortCapabilityHash(
+		versionParts := []string{
 			definition.Name,
 			definition.Description,
 			string(definition.JSONSchema),
 			strconv.Itoa(int(sourceKind)),
-		)
+		}
+		if sourceKind == model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL {
+			versionParts = append(versionParts, strings.Join(requiredRuntimeCapabilities, ","))
+		}
+		version = shortCapabilityHash(versionParts...)
 	}
 	return capabilityManifestSeed{
 		source:   "builtin_tool",
 		sourceID: definition.Name,
 		manifest: &model.CapabilityManifest{
-			CapabilityId:          capabilityID,
-			Version:               version,
-			SourceKind:            sourceKind,
-			SourceInstanceId:      definition.Name,
-			DisplayMetadata:       &model.CapabilityDisplayMetadata{Name: definition.Name, Description: definition.Description},
-			InputSchemaRef:        "inline-sha256:" + capabilityHash(string(definition.JSONSchema)),
-			OutputSchemaRef:       "schema://agent/tool-result/text",
-			ExecutionOwner:        owner,
-			RiskClass:             "tool",
-			DefaultApprovalPolicy: approval,
-			SecretBoundary:        secretBoundary,
-			Availability:          availability,
+			CapabilityId:                capabilityID,
+			Version:                     version,
+			SourceKind:                  sourceKind,
+			SourceInstanceId:            definition.Name,
+			DisplayMetadata:             &model.CapabilityDisplayMetadata{Name: definition.Name, Description: definition.Description},
+			InputSchemaRef:              "inline-sha256:" + capabilityHash(string(definition.JSONSchema)),
+			OutputSchemaRef:             "schema://agent/tool-result/text",
+			ExecutionOwner:              owner,
+			RequiredRuntimeCapabilities: requiredRuntimeCapabilities,
+			RiskClass:                   "tool",
+			DefaultApprovalPolicy:       approval,
+			SecretBoundary:              secretBoundary,
+			Availability:                availability,
 		},
 	}
 }
@@ -990,6 +1000,8 @@ func bindingFromManifest(
 		capabilityVersion: manifest.GetVersion(),
 		enabled:           enabled,
 		approvalPolicy:    manifest.GetDefaultApprovalPolicy(),
+		reconcileVersion: manifest.GetSourceKind() ==
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL,
 	}
 }
 
@@ -1058,16 +1070,39 @@ func upsertBackfillBinding(
 	}
 	if existing.Ptid != record.Ptid ||
 		existing.AgentID != record.AgentID ||
-		existing.CapabilityID != record.CapabilityID ||
-		existing.CapabilityVersion != record.CapabilityVersion {
+		existing.CapabilityID != record.CapabilityID {
 		return false, fmt.Errorf("binding identity conflict")
 	}
-	if seed.preservePolicy {
+	if !seed.preservePolicy && (existing.Enabled != record.Enabled ||
+		existing.ApprovalPolicy != record.ApprovalPolicy) {
+		return false, fmt.Errorf("binding identity conflict")
+	}
+	if existing.AgentVersion != record.AgentVersion {
+		return false, fmt.Errorf("binding identity conflict")
+	}
+	if existing.CapabilityVersion == record.CapabilityVersion {
 		return false, nil
 	}
-	if existing.Enabled != record.Enabled ||
-		existing.ApprovalPolicy != record.ApprovalPolicy {
+	if !seed.reconcileVersion {
 		return false, fmt.Errorf("binding identity conflict")
+	}
+	update := tx.Model(&persistence.AgentCapabilityBinding{}).
+		Where(
+			"binding_id = ? AND revision = ? AND capability_version = ? AND tombstoned_at IS NULL",
+			existing.BindingID,
+			existing.Revision,
+			existing.CapabilityVersion,
+		).
+		Updates(map[string]interface{}{
+			"capability_version": record.CapabilityVersion,
+			"revision":           existing.Revision + 1,
+			"updated_at":         now,
+		})
+	if update.Error != nil {
+		return false, update.Error
+	}
+	if update.RowsAffected != 1 {
+		return false, fmt.Errorf("binding changed during manifest version reconciliation")
 	}
 	return false, nil
 }

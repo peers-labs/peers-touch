@@ -6,8 +6,10 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +46,7 @@ const (
 
 var productionProposalLocks sync.Map
 var productionDeliveryReceiptLocks [256]sync.Mutex
+var productionReadCursorLocks [256]sync.Mutex
 
 // RegisterFederationReceivers binds the four Conversation payload receivers
 // exactly once before the shared Federation runtime is sealed.
@@ -61,6 +64,26 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 	if err != nil {
 		return err
 	}
+	typingSender, err := conversationfederation.NewTypingSender(
+		c.federationSender,
+		shared.Federation,
+	)
+	if err != nil {
+		return err
+	}
+	typingService, err := c.InteractionService.BindFederatedTyping(
+		productionTypingRouteDirectory{
+			composition: c,
+		},
+		typingSender,
+	)
+	if err != nil {
+		return err
+	}
+	typingHandler, err := conversationhttp.NewInteractionHandler(typingService)
+	if err != nil {
+		return err
+	}
 	receiver, err := conversationfederation.NewReceiver(
 		conversationfederation.ReceiverConfig{
 			LocalStationPeerID: shared.Federation.LocalStationPeerID(),
@@ -70,6 +93,8 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 			AuthorityResults:   &productionAuthorityResultPort{composition: c},
 			DeviceDeliveries:   &productionDeviceDeliveryPort{composition: c},
 			DeliveryReceipts:   &productionDeliveryReceiptPort{composition: c},
+			ReadCursors:        &productionReadCursorPort{composition: c},
+			Typing:             typingService,
 			Sender:             c.federationSender,
 			Clock:              c.clock,
 		},
@@ -110,6 +135,8 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 	if err != nil {
 		return err
 	}
+	c.InteractionService = typingService
+	c.InteractionHandler = typingHandler
 	c.federationRegistered = true
 
 	return nil
@@ -174,7 +201,10 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return conversationfederation.AuthorityCommandOutcome{}, err
 	}
-	boundService, err := p.composition.CommandService.BindUnitOfWork(boundUnitOfWork)
+	boundService, err := p.composition.bindFederationCommandService(
+		transaction,
+		boundUnitOfWork,
+	)
 	if err != nil {
 		return conversationfederation.AuthorityCommandOutcome{}, err
 	}
@@ -252,8 +282,15 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
 	}
-	if mapped.Membership == nil {
-		mapped.VerifiedRoutes = verifiedRoutes
+	mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
+		p.composition.productionSubmitCommandRoutes(
+			ctx,
+			plan,
+			mapped.Membership != nil,
+			verifiedRoutes,
+		)
+	if err != nil {
+		return productionAuthorityRejection(wireCommand, err), nil
 	}
 	commandHash, err := valueobject.NewHash(proposal.GetCommandSha256())
 	if err != nil {
@@ -377,7 +414,18 @@ func (p *productionAuthorityResultPort) ApplyAuthorityResult(
 		return false, err
 	}
 	payloadHash := valueobject.HashBytes(payload)
-	itemID := "conversation-command-result:" + payloadHash.String()
+	recipient := valueobject.Endpoint{
+		Actor:  valueobject.PTID(proposal.GetActorPtid()),
+		Device: valueobject.DeviceID(proposal.GetActorDeviceId()),
+	}
+	itemID, err := deliveryinfra.CommandResultItemID(
+		recipient,
+		valueobject.ConversationID(result.GetConversationId()),
+		valueobject.CommandID(result.GetCommandId()),
+	)
+	if err != nil {
+		return false, err
+	}
 	var existing deliveryinfra.DeviceQueueItemModel
 	existingErr := transaction.DB().WithContext(ctx).
 		Where(
@@ -419,10 +467,7 @@ func (p *productionAuthorityResultPort) ApplyAuthorityResult(
 		ConversationID: valueobject.ConversationID(result.GetConversationId()),
 		EventID:        eventID,
 		EventSequence:  eventSequence,
-		Recipient: valueobject.Endpoint{
-			Actor:  valueobject.PTID(proposal.GetActorPtid()),
-			Device: valueobject.DeviceID(proposal.GetActorDeviceId()),
-		},
+		Recipient:      recipient,
 		IdempotencyKey: itemID,
 		PayloadKind:    ports.DeviceInboxPayloadCommandResult,
 		OpaquePayload:  payload,
@@ -575,6 +620,24 @@ type productionDeliveryReceiptForwarder struct {
 	sender       *conversationfederation.Sender
 	clock        federationdelivery.Clock
 	localStation valueobject.StationID
+}
+
+type productionReadCursorForwarder struct {
+	database     *gorm.DB
+	sender       *conversationfederation.Sender
+	clock        federationdelivery.Clock
+	localStation valueobject.StationID
+}
+
+type productionFederationPostCommitPublisher struct {
+	registrar federationdelivery.AfterCommitRegistrar
+	delegate  ports.PostCommitPublisher
+}
+
+type productionFederatedReadCursorAdvancer struct {
+	service    *command.Service
+	readerHome valueobject.StationID
+	routes     []ports.EndpointRoute
 }
 
 type productionDeliveryReceiptCommitter struct {
@@ -905,6 +968,203 @@ func (f *productionDeliveryReceiptForwarder) ForwardDeliveryReceipt(
 	return replay, nil
 }
 
+func (f *productionReadCursorForwarder) ForwardReadCursor(
+	ctx context.Context,
+	authority valueobject.StationID,
+	federationID valueobject.FederationID,
+	authorityEpoch valueobject.AuthorityEpoch,
+	request interactionapp.ReadCursorRequest,
+) (bool, error) {
+	if f == nil || f.database == nil || f.sender == nil || f.clock == nil ||
+		f.localStation == "" {
+		return false, fmt.Errorf(
+			"forward Conversation read cursor: dependencies are incomplete",
+		)
+	}
+	wire, err := productionReadCursorToWire(
+		request,
+		federationID,
+		authority,
+		authorityEpoch,
+		f.localStation,
+	)
+	if err != nil {
+		return false, err
+	}
+	payload, err := deterministicProductionProto(wire)
+	if err != nil {
+		return false, err
+	}
+	payloadID, err := conversationfederation.ReadCursorPayloadID(wire)
+	if err != nil {
+		return false, err
+	}
+	lockDigest := sha256.Sum256([]byte(payloadID))
+	lock := &productionReadCursorLocks[lockDigest[0]]
+	lock.Lock()
+	defer lock.Unlock()
+
+	var replay bool
+	err = f.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			lockID := productionAdvisoryLockID(
+				"conversation-read-cursor:" + payloadID,
+			)
+			if err := tx.Exec(
+				"SELECT pg_advisory_xact_lock(?)",
+				lockID,
+			).Error; err != nil {
+				return fmt.Errorf(
+					"lock Conversation read cursor: %w",
+					err,
+				)
+			}
+		}
+		var existing federationdelivery.OutboxRecord
+		existingErr := tx.Where(
+			"source_station_peer_id = ? AND payload_kind = ? AND payload_id = ?",
+			string(f.localStation),
+			int32(federationdelivery.PayloadKindConversationReadCursor),
+			payloadID,
+		).First(&existing).Error
+		if existingErr == nil {
+			var frame federationdelivery.Frame
+			if err := proto.Unmarshal(existing.FrameBytes, &frame); err != nil {
+				return err
+			}
+			if frame.GetPayloadKind() !=
+				federationdelivery.PayloadKindConversationReadCursor ||
+				frame.GetTargetStationPeerId() != string(authority) ||
+				frame.GetPayloadId() != payloadID ||
+				frame.GetOrderingSequence() != int64(request.Sequence) ||
+				!bytes.Equal(frame.GetOpaquePayload(), payload) {
+				return interactionapp.NewError(
+					interactionapp.ErrorCodeIdempotencyConflict,
+					"production_federation.forward_read_cursor",
+					"cursor",
+					"already identifies different read cursor bytes",
+				)
+			}
+			replay = true
+
+			return nil
+		}
+		if !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+			return existingErr
+		}
+		outbox, err := federationdelivery.NewGORMRepository(tx, f.clock)
+		if err != nil {
+			return err
+		}
+		result, err := f.sender.EnqueueReadCursor(
+			ctx,
+			outbox,
+			string(authority),
+			wire,
+		)
+		if err != nil {
+			return err
+		}
+		replay = result.Duplicate
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, federationdelivery.ErrPayloadHashConflict) {
+			return false, interactionapp.NewError(
+				interactionapp.ErrorCodeIdempotencyConflict,
+				"production_federation.forward_read_cursor",
+				"cursor",
+				"already identifies different read cursor bytes",
+			)
+		}
+		return false, fmt.Errorf(
+			"forward Conversation read cursor to authority %s: %w",
+			authority,
+			err,
+		)
+	}
+
+	return replay, nil
+}
+
+func (p *productionFederationPostCommitPublisher) NotifyCommitted(
+	ctx context.Context,
+	deliveries []ports.CommittedDelivery,
+) error {
+	if p == nil || p.registrar == nil || p.delegate == nil || ctx == nil {
+		return fmt.Errorf(
+			"defer Conversation Federation wake: dependencies are incomplete",
+		)
+	}
+	pending := append([]ports.CommittedDelivery(nil), deliveries...)
+
+	return p.registrar.AfterCommit(func(callbackContext context.Context) error {
+		callbackErr := p.delegate.NotifyCommitted(callbackContext, pending)
+		// #region debug-point O-P:read-cursor-post-commit-wake
+		if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "O-P", "location": "apps/station/app/subserver/conversation/production_federation.go:productionFederationPostCommitPublisher.NotifyCommitted", "msg": "[DEBUG] Conversation Federation post-commit wake completed", "data": map[string]any{"deliveryCount": len(pending), "contextError": fmt.Sprint(callbackContext.Err()), "error": fmt.Sprint(callbackErr)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+			go func() {
+				response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+				if response != nil {
+					_ = response.Body.Close()
+				}
+			}()
+		}
+		// #endregion
+		return callbackErr
+	})
+}
+
+func (c *ProductionComposition) bindFederationCommandService(
+	transaction federationdelivery.Transaction,
+	unitOfWork ports.UnitOfWork,
+) (*command.Service, error) {
+	if c == nil || transaction == nil || unitOfWork == nil || c.realtime == nil {
+		return nil, fmt.Errorf(
+			"bind Conversation Federation command service: dependencies are incomplete",
+		)
+	}
+	registrar, ok := transaction.(federationdelivery.AfterCommitRegistrar)
+	if !ok {
+		return nil, fmt.Errorf(
+			"bind Conversation Federation command service: post-commit registrar is required",
+		)
+	}
+	bound, err := c.CommandService.BindUnitOfWork(unitOfWork)
+	if err != nil {
+		return nil, err
+	}
+
+	return bound.BindPostCommitPublisher(
+		&productionFederationPostCommitPublisher{
+			registrar: registrar,
+			delegate:  c.realtime,
+		},
+	)
+}
+
+func (a *productionFederatedReadCursorAdvancer) AdvanceReadCursor(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	sequence valueobject.Sequence,
+) (command.ReadCursorResult, error) {
+	if a == nil || a.service == nil || a.readerHome == "" {
+		return command.ReadCursorResult{}, fmt.Errorf(
+			"advance federated Conversation read cursor: dependencies are incomplete",
+		)
+	}
+
+	return a.service.AdvanceReadCursorFromVerifiedHome(
+		ctx,
+		conversationID,
+		reader,
+		a.readerHome,
+		sequence,
+		a.routes,
+	)
+}
+
 type productionDeliveryReceiptPort struct {
 	composition *ProductionComposition
 }
@@ -1011,6 +1271,141 @@ func (p *productionDeliveryReceiptPort) ApplyDeliveryReceipt(
 	}
 }
 
+type productionReadCursorPort struct {
+	composition *ProductionComposition
+}
+
+func (p *productionReadCursorPort) ApplyReadCursor(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	wire *chatmodel.FederatedConversationReadCursor,
+	sourceHomeStationPeerID string,
+) error {
+	if p == nil || p.composition == nil ||
+		transaction == nil || transaction.DB() == nil {
+		return fmt.Errorf(
+			"apply Conversation read cursor: dependencies are incomplete",
+		)
+	}
+	request, federationID, authority, authorityEpoch, err :=
+		productionReadCursorFromWire(wire, sourceHomeStationPeerID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", conversationfederation.ErrReadCursorRejected, err)
+	}
+	boundUnitOfWork, err := p.composition.UnitOfWork.Bind(transaction.DB())
+	if err != nil {
+		return err
+	}
+	boundQuery, err := query.NewService(boundUnitOfWork)
+	if err != nil {
+		return err
+	}
+	view, err := boundQuery.Get(ctx, request.ConversationID, request.Reader.Actor)
+	// #region debug-point N:read-cursor-authority-view
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.view", "msg": "[DEBUG] Conversation read cursor authority view resolved", "data": map[string]any{"conversationId": request.ConversationID, "sourceHomeStationPeerId": sourceHomeStationPeerID, "viewError": fmt.Sprint(err), "viewSource": fmt.Sprint(view.Source), "viewFederationId": view.Conversation.FederationID, "expectedFederationId": federationID, "viewAuthority": view.Conversation.AuthorityStation, "expectedAuthority": authority, "viewAuthorityEpoch": view.Conversation.AuthorityEpoch, "expectedAuthorityEpoch": authorityEpoch}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	if err != nil ||
+		view.Source != query.SourceAuthority ||
+		view.Conversation.FederationID != federationID ||
+		view.Conversation.AuthorityStation != authority ||
+		authority != p.composition.localStation ||
+		view.Conversation.AuthorityEpoch != authorityEpoch {
+		return fmt.Errorf(
+			"%w: cursor does not target the local Conversation authority",
+			conversationfederation.ErrReadCursorRejected,
+		)
+	}
+	active, err := (productionFederationMembershipProjection{}).IsActiveStation(
+		ctx,
+		transaction,
+		string(federationID),
+		sourceHomeStationPeerID,
+	)
+	// #region debug-point N:read-cursor-federation-membership
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.membership", "msg": "[DEBUG] Conversation read cursor Federation membership resolved", "data": map[string]any{"conversationId": request.ConversationID, "sourceHomeStationPeerId": sourceHomeStationPeerID, "active": active, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	if err != nil {
+		return err
+	}
+	if !active {
+		return fmt.Errorf(
+			"%w: cursor source Station is not active in the Conversation federation",
+			conversationfederation.ErrReadCursorRejected,
+		)
+	}
+	boundCommand, err := p.composition.bindFederationCommandService(
+		transaction,
+		boundUnitOfWork,
+	)
+	if err != nil {
+		return err
+	}
+	verifiedRoutes, err := p.composition.productionCommandRoutes(
+		ctx,
+		boundCommand,
+		request.ConversationID,
+		request.Reader.Actor,
+	)
+	if err != nil {
+		return err
+	}
+	boundService, err := p.composition.InteractionService.BindReadCursorAuthorityPorts(
+		boundQuery,
+		productionInteractionDeviceDirectory{
+			identity: &productionIdentityDirectory{db: transaction.DB()},
+		},
+		&productionFederatedReadCursorAdvancer{
+			service:    boundCommand,
+			readerHome: request.SourceStation,
+			routes:     verifiedRoutes,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	result, err := boundService.SubmitReadCursor(ctx, request)
+	// #region debug-point N-Q:read-cursor-authority-apply
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N-Q", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.submit", "msg": "[DEBUG] Conversation authority read cursor application completed", "data": map[string]any{"conversationId": request.ConversationID, "readerPtid": request.Reader.Actor, "readerDeviceId": request.Reader.Device, "sequence": request.Sequence, "error": fmt.Sprint(err), "postCommitError": fmt.Sprint(result.Result.PostCommitError), "resultSequence": result.Result.Cursor.Sequence}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	if err == nil && result.Result.PostCommitError != nil {
+		return result.Result.PostCommitError
+	}
+	if err == nil {
+		return nil
+	}
+	switch interactionapp.CodeOf(err) {
+	case interactionapp.ErrorCodeIdempotencyConflict:
+		return fmt.Errorf("%w: %v", conversationfederation.ErrReadCursorConflict, err)
+	case interactionapp.ErrorCodeInvalidArgument,
+		interactionapp.ErrorCodeUnauthorized,
+		interactionapp.ErrorCodeIntegrityFailed:
+		return fmt.Errorf("%w: %v", conversationfederation.ErrReadCursorRejected, err)
+	default:
+		return err
+	}
+}
+
 func productionDeliveryReceiptToWire(
 	receipt interactionapp.DeliveryReceipt,
 ) (*chatmodel.DeviceConsumptionReceipt, error) {
@@ -1033,6 +1428,89 @@ func productionDeliveryReceiptToWire(
 		PayloadSha256: receipt.PayloadHash.Bytes(),
 		ConsumedAt:    timestamppb.New(receipt.ConsumedAt.UTC()),
 	}, nil
+}
+
+func productionReadCursorToWire(
+	request interactionapp.ReadCursorRequest,
+	federationID valueobject.FederationID,
+	authority valueobject.StationID,
+	authorityEpoch valueobject.AuthorityEpoch,
+	readerHome valueobject.StationID,
+) (*chatmodel.FederatedConversationReadCursor, error) {
+	if request.ConversationID == "" ||
+		request.Reader.Validate() != nil ||
+		request.Sequence == 0 ||
+		federationID == "" ||
+		authority == "" ||
+		authorityEpoch == 0 ||
+		readerHome == "" {
+		return nil, fmt.Errorf(
+			"encode Conversation read cursor: cursor is incomplete",
+		)
+	}
+	return &chatmodel.FederatedConversationReadCursor{
+		FormatVersion:          1,
+		FederationId:           string(federationID),
+		ConversationId:         string(request.ConversationID),
+		AuthorityStationPeerId: string(authority),
+		AuthorityEpoch:         uint64(authorityEpoch),
+		Reader: &chatmodel.CryptoEndpoint{
+			Ptid:     string(request.Reader.Actor),
+			DeviceId: string(request.Reader.Device),
+		},
+		ReaderHomeStationPeerId: string(readerHome),
+		LastReadSequence:        int64(request.Sequence),
+	}, nil
+}
+
+func productionReadCursorFromWire(
+	wire *chatmodel.FederatedConversationReadCursor,
+	sourceHomeStationPeerID string,
+) (
+	interactionapp.ReadCursorRequest,
+	valueobject.FederationID,
+	valueobject.StationID,
+	valueobject.AuthorityEpoch,
+	error,
+) {
+	if wire == nil ||
+		wire.GetFormatVersion() != 1 ||
+		wire.GetReader() == nil ||
+		wire.GetReaderHomeStationPeerId() != sourceHomeStationPeerID ||
+		wire.GetAuthorityEpoch() == 0 ||
+		wire.GetLastReadSequence() <= 0 {
+		return interactionapp.ReadCursorRequest{}, "", "", 0,
+			fmt.Errorf("decode Conversation read cursor: cursor is incomplete")
+	}
+	conversationID, err := valueobject.NewConversationID(wire.GetConversationId())
+	if err != nil {
+		return interactionapp.ReadCursorRequest{}, "", "", 0, err
+	}
+	reader, err := valueobject.NewEndpoint(
+		wire.GetReader().GetPtid(),
+		wire.GetReader().GetDeviceId(),
+	)
+	if err != nil {
+		return interactionapp.ReadCursorRequest{}, "", "", 0, err
+	}
+	federationID, err := valueobject.NewFederationID(wire.GetFederationId())
+	if err != nil {
+		return interactionapp.ReadCursorRequest{}, "", "", 0, err
+	}
+	authority, err := valueobject.NewStationID(wire.GetAuthorityStationPeerId())
+	if err != nil {
+		return interactionapp.ReadCursorRequest{}, "", "", 0, err
+	}
+	return interactionapp.ReadCursorRequest{
+			ConversationID: conversationID,
+			Reader:         reader,
+			Sequence:       valueobject.Sequence(wire.GetLastReadSequence()),
+			SourceStation:  valueobject.StationID(sourceHomeStationPeerID),
+		},
+		federationID,
+		authority,
+		valueobject.AuthorityEpoch(wire.GetAuthorityEpoch()),
+		nil
 }
 
 func productionDeliveryReceiptFromWire(
@@ -1673,6 +2151,7 @@ func productionFactFromWire(
 				FromMembershipEpoch: transition.GetFromMembershipEpoch(),
 				FromMlsEpoch:        transition.GetFromMlsEpoch(),
 				ToMlsEpoch:          transition.GetToMlsEpoch(),
+				MlsCommitSha256:     append([]byte(nil), transition.GetMlsCommitSha256()...),
 				LeaveIntentId:       transition.GetLeaveIntentId(),
 			},
 		}

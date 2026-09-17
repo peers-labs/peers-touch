@@ -218,6 +218,18 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "projection.federation_id.trim().is_empty()",
             desktop_lifecycle,
         )
+        self.assertIn(
+            "request_proto_for_device::<",
+            desktop_lifecycle,
+        )
+        self.assertIn(
+            "ListConversationsRequest",
+            desktop_lifecycle,
+        )
+        self.assertNotIn(
+            "request_json_auth_with_device_id",
+            desktop_lifecycle,
+        )
         self.assertNotIn(
             "if !self.store.conversation_projections()?.is_empty()",
             desktop_engine,
@@ -296,8 +308,8 @@ class MessagingPlatformContractTest(unittest.TestCase):
         desktop_consumer = (
             ROOT / "apps/desktop/src-tauri/src/messaging/consumer.rs"
         ).read_text(encoding="utf-8")
-        desktop_command_result = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/command_result.rs"
+        portable_command_result = (
+            ROOT / "packages/messaging-core/src/inbox/command_result.rs"
         ).read_text(encoding="utf-8")
         production_federation = (
             ROOT
@@ -406,12 +418,22 @@ class MessagingPlatformContractTest(unittest.TestCase):
             desktop_consumer,
         )
         self.assertIn(
+            "CommandResultProcessor::new",
+            desktop_consumer,
+        )
+        self.assertIn(
             "commit_command_result",
-            desktop_command_result,
+            portable_command_result,
         )
         self.assertIn(
             "discard_pending_transition",
-            desktop_command_result,
+            portable_command_result,
+        )
+        self.assertFalse(
+            (
+                ROOT
+                / "apps/desktop/src-tauri/src/messaging/command_result.rs"
+            ).exists(),
         )
         self.assertIn(
             "existingConversationProposalReplay",
@@ -644,19 +666,32 @@ class MessagingPlatformContractTest(unittest.TestCase):
             mls_transport,
         )
 
-        canonical_routes = (
+        mls_routes = (
             "/key-exchange/mls/key-package/upload",
             "/key-exchange/mls/key-package/fetch",
             "/key-exchange/mls/key-package/count",
-            "/key-exchange/dkx/send",
         )
-        for relative_path in (
-            "interface/http_gateway/mod.rs",
-            "interface/tauri_commands/conversation.rs",
+        key_exchange_commands = (
+            desktop_rust / "interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        for route in mls_routes:
+            self.assertIn(f'"{route}"', key_exchange_commands)
+
+        gateway = (
+            desktop_rust / "interface/http_gateway/mod.rs"
+        ).read_text(encoding="utf-8")
+        for command in (
+            "execute_keypackage_upload",
+            "execute_keypackage_fetch",
+            "execute_keypackage_count",
         ):
-            source = (desktop_rust / relative_path).read_text(encoding="utf-8")
-            for route in canonical_routes:
-                self.assertIn(f'"{route}"', source)
+            self.assertIn(command, gateway)
+
+        conversation_commands = (
+            desktop_rust / "interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"/key-exchange/dkx/send"', conversation_commands)
+        self.assertIn('"/key-exchange/dkx/send"', gateway)
 
     def test_profile_engine_owns_lifecycle_and_fresh_key_activation(self) -> None:
         messaging = ROOT / "apps/desktop/src-tauri/src/messaging"
@@ -771,6 +806,59 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "message MessagingFederationFrame",
             conversation_federation,
         )
+
+    def test_submitted_command_reconciliation_uses_canonical_truth(self) -> None:
+        api = (CHAT_PROTO / "conversation_api.proto").read_text(encoding="utf-8")
+        conversation_root = ROOT / "apps/station/app/subserver/conversation"
+        production_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in conversation_root.rglob("*.go")
+            if not path.name.endswith("_test.go")
+        )
+
+        self.assertIn("message ConversationCommandResultRef", api)
+        self.assertIn("bytes command_sha256 = 3;", api)
+        self.assertIn("message ResolveConversationCommandResultsRequest", api)
+        self.assertIn("message ResolveConversationCommandResultsResponse", api)
+        self.assertIn(
+            "CONVERSATION_COMMAND_RESOLUTION_STATE_HOME_PENDING = 1;",
+            api,
+        )
+        self.assertIn(
+            "CONVERSATION_COMMAND_RESOLUTION_STATE_NOT_FOUND = 4;",
+            api,
+        )
+        self.assertNotIn("/conversation/command-proposal/result", production_source)
+        self.assertNotIn("conversation_command_proposal_results", production_source)
+
+    def test_cross_station_typing_is_ephemeral_federation_payload(self) -> None:
+        api = (CHAT_PROTO / "conversation_api.proto").read_text(encoding="utf-8")
+        delivery = (
+            ROOT / "model/domain/federation/delivery.proto"
+        ).read_text(encoding="utf-8")
+        persistence_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "apps/station/app/subserver/conversation/infrastructure/persistence"
+            ).rglob("*.go")
+            if not path.name.endswith("_test.go")
+        )
+
+        self.assertIn("message FederatedConversationTypingSignal", api)
+        self.assertIn(
+            "FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION = 1;",
+            api,
+        )
+        self.assertIn(
+            "FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT = 2;",
+            api,
+        )
+        self.assertIn(
+            "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING = 8;",
+            delivery,
+        )
+        self.assertNotIn("ConversationTypingModel", persistence_sources)
+        self.assertNotIn("conversation_typing", persistence_sources)
 
     def test_inter_station_messaging_control_plane_uses_protobuf(self) -> None:
         frame = (

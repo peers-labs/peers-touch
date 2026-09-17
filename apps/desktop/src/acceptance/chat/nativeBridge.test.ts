@@ -38,10 +38,19 @@ function logoutResponse(): AuthSessionResponse {
   };
 }
 
+function lifecycleDependencies() {
+  return {
+    createRestorableCommand: vi.fn(),
+    prepareSubmittedCommand: vi.fn(),
+    resumeMessagingLifecycle: vi.fn(),
+  };
+}
+
 describe('nativeAcceptanceBridge', () => {
   it('logs out the matching Tauri-window actor before applying lifecycle cleanup', async () => {
     const calls: string[] = [];
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => ACTOR_PTID,
       markLocalIdentityAction: () => calls.push('mark'),
       logoutWindowSession: async (actorPtid) => {
@@ -70,6 +79,7 @@ describe('nativeAcceptanceBridge', () => {
   it('fails closed before logout when the requested actor does not own the window', async () => {
     const logoutWindowSession = vi.fn();
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => 'ptid:v1:actor:bob',
       markLocalIdentityAction: vi.fn(),
       logoutWindowSession,
@@ -92,6 +102,7 @@ describe('nativeAcceptanceBridge', () => {
     const evidence = snapshot();
     const readInteractionSnapshot = vi.fn().mockResolvedValue(evidence);
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => ACTOR_PTID,
       markLocalIdentityAction: vi.fn(),
       logoutWindowSession: vi.fn(),
@@ -123,6 +134,7 @@ describe('nativeAcceptanceBridge', () => {
   it('rejects incomplete snapshot identity without invoking Rust', async () => {
     const readInteractionSnapshot = vi.fn();
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => ACTOR_PTID,
       markLocalIdentityAction: vi.fn(),
       logoutWindowSession: vi.fn(),
@@ -145,6 +157,93 @@ describe('nativeAcceptanceBridge', () => {
     expect(readInteractionSnapshot).not.toHaveBeenCalled();
   });
 
+  it('prepares an exact submitted command before resuming its lifecycle', async () => {
+    const evidence = snapshot();
+    const prepareSubmittedCommand = vi.fn().mockResolvedValue({
+      actorPtid: ACTOR_PTID,
+      snapshot: evidence,
+    });
+    const resumeMessagingLifecycle = vi.fn().mockResolvedValue({
+      actorPtid: ACTOR_PTID,
+      activated: true,
+    });
+    const bridge = createNativeAcceptanceBridge({
+      activeActorPtid: () => ACTOR_PTID,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      prepareSubmittedCommand,
+      createRestorableCommand: vi.fn(),
+      resumeMessagingLifecycle,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
+    });
+
+    await expect(
+      bridge.prepareSubmittedCommand({
+        actorPtid: ACTOR_PTID,
+        conversationId: ' conversation-1 ',
+        messageId: ' message-1 ',
+        commandId: ' command-1 ',
+      }),
+    ).resolves.toEqual({ actorPtid: ACTOR_PTID, snapshot: evidence });
+    expect(prepareSubmittedCommand).toHaveBeenCalledWith({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      commandId: 'command-1',
+    });
+    await expect(
+      bridge.resumeMessagingLifecycle({ actorPtid: ACTOR_PTID }),
+    ).resolves.toEqual({ actorPtid: ACTOR_PTID, activated: true });
+    expect(resumeMessagingLifecycle).toHaveBeenCalledWith(ACTOR_PTID);
+  });
+
+  it('creates a restorable command for a canonical actor and conversation', async () => {
+    const evidence = snapshot();
+    const createRestorableCommand = vi.fn().mockResolvedValue({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      commandId: 'command-1',
+      snapshot: evidence,
+    });
+    const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
+      activeActorPtid: () => ACTOR_PTID,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      createRestorableCommand,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
+    });
+
+    await expect(
+      bridge.createRestorableCommand({
+        actorPtid: ACTOR_PTID,
+        conversationId: ' conversation-1 ',
+        plaintext: ' recover me ',
+      }),
+    ).resolves.toMatchObject({
+      messageId: 'message-1',
+      commandId: 'command-1',
+    });
+    expect(createRestorableCommand).toHaveBeenCalledWith({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      plaintext: 'recover me',
+    });
+  });
+
   it('routes bounded readbacks through the matching Tauri-window actor', async () => {
     const messages: MessagingProjection[] = [];
     const conversations: MessagingConversationProjection[] = [];
@@ -158,6 +257,7 @@ describe('nativeAcceptanceBridge', () => {
       clearedAtUnixMs: 0,
     };
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => ACTOR_PTID,
       markLocalIdentityAction: vi.fn(),
       logoutWindowSession: vi.fn(),
@@ -195,6 +295,7 @@ describe('nativeAcceptanceBridge', () => {
       actorPtid: '',
     };
     const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
       activeActorPtid: () => null,
       markLocalIdentityAction: vi.fn(),
       logoutWindowSession: vi.fn(),

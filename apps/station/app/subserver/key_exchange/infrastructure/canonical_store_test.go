@@ -30,6 +30,114 @@ func (e postgresStateError) SQLState() string {
 	return e.code
 }
 
+func TestCanonicalDirectInventoryRequiresCompleteBundle(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:missing-bundle",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+
+	if _, err := store.CountDirectOneTimePreKeys(ctx, device); !domain.IsCode(
+		err,
+		domain.ErrorCodeNotFound,
+	) {
+		t.Fatalf("missing bundle count error = %v", err)
+	}
+	if err := store.ReplenishDirectOneTimePreKeys(
+		ctx,
+		device,
+		[]domain.DirectOneTimePreKey{{
+			KeyID:     1,
+			PublicKey: bytes.Repeat([]byte{31}, 32),
+		}},
+	); !domain.IsCode(err, domain.ErrorCodeNotFound) {
+		t.Fatalf("missing bundle replenish error = %v", err)
+	}
+
+	if err := store.db.Create(&IdentityKeyModel{
+		ActorPtid:         device.ActorPTID,
+		DeviceID:          device.DeviceID,
+		IdentityKeyPub:    bytes.Repeat([]byte{10}, 32),
+		KeyFingerprint:    "identity",
+		PublishedAtUnixMs: 1,
+		SupportedVersions: "1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CountDirectOneTimePreKeys(ctx, device); !domain.IsCode(
+		err,
+		domain.ErrorCodeNotFound,
+	) {
+		t.Fatalf("bundle without signed pre-key count error = %v", err)
+	}
+}
+
+func TestCanonicalDirectReplenishmentReplayDoesNotReactivateConsumedKey(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:replenishment-replay",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	bundle := canonicalDirectBundle(device, 20)
+	bundle.OneTimePreKeys = []domain.DirectOneTimePreKey{
+		{KeyID: 1, PublicKey: bytes.Repeat([]byte{31}, 32)},
+		{KeyID: 2, PublicKey: bytes.Repeat([]byte{32}, 32)},
+	}
+	if err := store.UploadDirectBundle(ctx, bundle, now); err != nil {
+		t.Fatalf("upload Direct bundle: %v", err)
+	}
+	fetched, err := store.FetchDirectBundles(
+		ctx,
+		testDestructiveReadIdentity("consume-before-replenishment-replay", device),
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		now.Add(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("consume Direct one-time pre-key: %v", err)
+	}
+	if len(fetched) != 1 ||
+		len(fetched[0].OneTimePreKeys) != 1 ||
+		fetched[0].OneTimePreKeys[0].KeyID != 1 {
+		t.Fatalf("unexpected consumed Direct bundle: %+v", fetched)
+	}
+
+	replenishment := []domain.DirectOneTimePreKey{
+		{KeyID: 1, PublicKey: bytes.Repeat([]byte{31}, 32)},
+		{KeyID: 3, PublicKey: bytes.Repeat([]byte{33}, 32)},
+	}
+	for attempt := range 2 {
+		if err := store.ReplenishDirectOneTimePreKeys(
+			ctx,
+			device,
+			replenishment,
+		); err != nil {
+			t.Fatalf("replay Direct replenishment attempt %d: %v", attempt+1, err)
+		}
+	}
+
+	var consumed OneTimePreKeyModel
+	if err := store.db.Where(
+		"actor_ptid = ? AND device_id = ? AND opk_id = ?",
+		device.ActorPTID,
+		device.DeviceID,
+		1,
+	).First(&consumed).Error; err != nil {
+		t.Fatalf("read consumed Direct one-time pre-key: %v", err)
+	}
+	if !consumed.Consumed {
+		t.Fatal("replayed Direct replenishment reactivated a consumed one-time pre-key")
+	}
+	if count, err := store.CountDirectOneTimePreKeys(ctx, device); err != nil {
+		t.Fatalf("count Direct one-time pre-keys after replay: %v", err)
+	} else if count != 2 {
+		t.Fatalf("available Direct one-time pre-key count = %d, want 2", count)
+	}
+}
+
 func TestCanonicalDirectUploadRollsBackOnConflictingOneTimeKey(t *testing.T) {
 	device := domain.Endpoint{
 		ActorPTID: "ptid:rollback",

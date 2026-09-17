@@ -197,6 +197,18 @@ func TestRuntimeAdmissionResolveRejectsDisabledProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for disabled provider, got nil")
 	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentRuntimeUnavailable ||
+		bizErr.HTTPStatus != 503 ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeUnavailable) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeUnavailableLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["runtime_kind"] != "direct_model" ||
+		bizErr.Payload.GetDetails()["reason_code"] != "provider_disabled" {
+		t.Fatalf("disabled provider payload = %+v", bizErr)
+	}
 }
 
 func TestRuntimeAdmissionResolveRejectsMissingCredential(t *testing.T) {
@@ -693,6 +705,10 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	}
 	if models[0].ID != "test-model" {
 		t.Fatalf("expected test-model, got %s", models[0].ID)
+	}
+	if !models[0].Capabilities["streaming"] ||
+		!models[0].Capabilities["native-tools"] {
+		t.Fatalf("available model dropped runtime capabilities: %+v", models[0])
 	}
 }
 

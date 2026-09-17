@@ -1,21 +1,33 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"testing"
+
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 type typedHandlerTestRequest struct {
 	headers map[string]string
 	body    []byte
+	path    string
 }
 
 func (r *typedHandlerTestRequest) Context() context.Context  { return context.Background() }
 func (r *typedHandlerTestRequest) Header() map[string]string { return r.headers }
 func (r *typedHandlerTestRequest) Method() Method            { return POST }
-func (r *typedHandlerTestRequest) Path() string              { return "/test" }
-func (r *typedHandlerTestRequest) Body() []byte              { return r.body }
+func (r *typedHandlerTestRequest) Path() string {
+	if r.path != "" {
+		return r.path
+	}
+	return "/test"
+}
+func (r *typedHandlerTestRequest) Body() []byte { return r.body }
 
 type typedHandlerTestResponse struct {
 	headers map[string]string
@@ -88,4 +100,240 @@ func TestTypedHandlerWritesStructuredHandlerError(t *testing.T) {
 		string(response.body) != string(expectedBody) {
 		t.Fatalf("unexpected structured response: %+v", response)
 	}
+}
+
+func TestStrictTypedHandlerRejectsUnknownJSONFields(t *testing.T) {
+	called := false
+	handler := NewStrictTypedHandler(
+		"strict-request",
+		"/test",
+		POST,
+		func(
+			context.Context,
+			*chat.FriendChatMessage,
+		) (*chat.FriendChatMessage, error) {
+			called = true
+			return &chat.FriendChatMessage{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		headers: map[string]string{"Content-Type": "application/json"},
+		body: []byte(
+			`{"ulid":"01TEST000000000000TEST","unknown_field":"forbidden"}`,
+		),
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("strict typed handler invoked business logic for an unknown field")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("strict typed status = %d, want 400", response.status)
+	}
+}
+
+func TestStrictTypedHandlerRejectsUnknownProtobufFields(t *testing.T) {
+	called := false
+	handler := NewStrictTypedHandler(
+		"strict-protobuf-request",
+		"/test",
+		POST,
+		func(
+			context.Context,
+			*chat.FriendChatMessage,
+		) (*chat.FriendChatMessage, error) {
+			called = true
+			return &chat.FriendChatMessage{}, nil
+		},
+	)
+	body, err := proto.Marshal(&chat.FriendChatMessage{
+		Ulid: "01TEST000000000000TEST",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = protowire.AppendTag(body, 999, protowire.VarintType)
+	body = protowire.AppendVarint(body, 1)
+	request := &typedHandlerTestRequest{
+		headers: map[string]string{"Content-Type": "application/protobuf"},
+		body:    body,
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("strict typed handler invoked business logic for unknown protobuf")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("strict typed status = %d, want 400", response.status)
+	}
+}
+
+func TestStrictTypedHandlerRejectsUnknownQueryFields(t *testing.T) {
+	called := false
+	handler := NewStrictTypedHandler(
+		"strict-query-request",
+		"/test",
+		GET,
+		func(
+			context.Context,
+			*chat.FriendChatMessage,
+		) (*chat.FriendChatMessage, error) {
+			called = true
+			return &chat.FriendChatMessage{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		path: "/test?ulid=01TEST000000000000TEST&unknown_field=forbidden",
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("strict typed handler invoked business logic for unknown query")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("strict typed status = %d, want 400", response.status)
+	}
+}
+
+func TestStrictTypedHandlerRejectsQueryAlongsideBody(t *testing.T) {
+	called := false
+	handler := NewStrictTypedHandler(
+		"strict-body-query-request",
+		"/test",
+		POST,
+		func(
+			context.Context,
+			*chat.FriendChatMessage,
+		) (*chat.FriendChatMessage, error) {
+			called = true
+			return &chat.FriendChatMessage{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		headers: map[string]string{"Content-Type": "application/json"},
+		body:    []byte(`{"ulid":"01TEST000000000000TEST"}`),
+		path:    "/test?unknown_field=forbidden",
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("strict typed handler ignored query data beside the body")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("strict typed status = %d, want 400", response.status)
+	}
+}
+
+func TestStrictTypedHandlerRejectsQueryOnlyPost(t *testing.T) {
+	called := false
+	handler := NewStrictTypedHandler(
+		"strict-query-only-post",
+		"/test",
+		POST,
+		func(
+			context.Context,
+			*chat.FriendChatMessage,
+		) (*chat.FriendChatMessage, error) {
+			called = true
+			return &chat.FriendChatMessage{}, nil
+		},
+	)
+	request := &typedHandlerTestRequest{
+		path: "/test?ulid=01TEST000000000000TEST",
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+
+	if err := handler.Handler()(
+		context.Background(),
+		request,
+		response,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("strict POST accepted a query-only control message")
+	}
+	if response.status != http.StatusBadRequest {
+		t.Fatalf("strict typed status = %d, want 400", response.status)
+	}
+}
+
+func TestHTTPWrapperAdapterPreservesStreamingBody(t *testing.T) {
+	streaming := &typedStreamingRequest{
+		typedHandlerTestRequest: &typedHandlerTestRequest{
+			headers: map[string]string{"Content-Length": "4"},
+		},
+		reader: bytes.NewBufferString("body"),
+	}
+	response := &typedHandlerTestResponse{headers: map[string]string{}}
+	wrapper := HTTPWrapperAdapter(func(
+		_ context.Context,
+		next http.Handler,
+	) http.Handler {
+		return next
+	})
+	endpoint := wrapper(func(
+		_ context.Context,
+		request Request,
+		_ Response,
+	) error {
+		body, err := io.ReadAll(request.(StreamingRequest).BodyStream())
+		if err != nil {
+			return err
+		}
+		if string(body) != "body" {
+			t.Fatalf("streamed body = %q", body)
+		}
+		return nil
+	})
+
+	if err := endpoint(context.Background(), streaming, response); err != nil {
+		t.Fatal(err)
+	}
+	if streaming.bodyCalled {
+		t.Fatal("HTTP wrapper buffered the streaming request through Body")
+	}
+}
+
+type typedStreamingRequest struct {
+	*typedHandlerTestRequest
+	reader     io.Reader
+	bodyCalled bool
+}
+
+func (r *typedStreamingRequest) Body() []byte {
+	r.bodyCalled = true
+	return nil
+}
+
+func (r *typedStreamingRequest) BodyStream() io.Reader {
+	return r.reader
 }

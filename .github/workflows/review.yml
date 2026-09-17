@@ -17,10 +17,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Configure Acceptance artifact root
         run: |
           echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
+
+      - name: Require completed execution plan
+        run: python3 tooling/scripts/execution-plan.py --ci --require-complete
+
+      - name: Validate Acceptance workflow contracts
+        run: |
+          python3 -m pip install -r tooling/acceptance/requirements.txt
+          python3 -m unittest tooling.acceptance.tests.test_execution_plan
+          python3 tooling/scripts/acceptance-plan-test.py
+          python3 tooling/scripts/acceptance-run-test.py
 
       - name: Run review framework gates
         run: |

@@ -4,18 +4,24 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	actoridentityapplication "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
+	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
+	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -36,6 +42,123 @@ var productionManifestTestTime = time.Date(
 	0,
 	time.UTC,
 )
+
+func TestProductionConversationHandlerErrorExposesTypedContext(t *testing.T) {
+	cause := conversationdomain.NewError(
+		conversationdomain.ErrorCodeInvalidArgument,
+		"aggregate.rehydrate",
+		"snapshot",
+		"must contain members and member devices",
+	)
+	mapped := productionConversationHandlerError(
+		http.StatusBadRequest,
+		"invalid Conversation request",
+		conversationdomain.ErrorCodeInvalidArgument,
+		cause,
+	)
+
+	if mapped.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", mapped.Code, http.StatusBadRequest)
+	}
+	if got := mapped.Headers["X-Peers-Error-Code"]; got != "CONVERSATION_INVALID_ARGUMENT" {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(mapped.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "aggregate.rehydrate" ||
+		details["field"] != "snapshot" ||
+		details["reason"] != "must contain members and member devices" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(mapped, cause) {
+		t.Fatal("mapped error did not retain its domain cause")
+	}
+}
+
+func TestMapProductionConversationErrorPreservesInteractionContext(t *testing.T) {
+	cause := interactionapp.NewError(
+		interactionapp.ErrorCodeIntegrityFailed,
+		"delivery_receipt_recorder.record",
+		"conversation_member_devices",
+		"is missing a required delivery endpoint",
+	)
+	mapped := mapProductionConversationError(context.Background(), cause)
+	handlerError, ok := mapped.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+	}
+	if handlerError.Code != http.StatusConflict {
+		t.Fatalf(
+			"status = %d, want %d",
+			handlerError.Code,
+			http.StatusConflict,
+		)
+	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got !=
+		string(interactionapp.ErrorCodeIntegrityFailed) {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerError.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "delivery_receipt_recorder.record" ||
+		details["field"] != "conversation_member_devices" ||
+		details["reason"] != "is missing a required delivery endpoint" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(handlerError, cause) {
+		t.Fatal("mapped error did not retain its interaction cause")
+	}
+}
+
+func TestMapProductionConversationErrorPreservesDeviceInboxContext(t *testing.T) {
+	cause := deliveryapp.NewError(
+		deliveryapp.ErrorCodeUnauthorized,
+		"delivery.claim",
+		"device",
+		"is not active for the authenticated actor",
+	)
+	mapped := mapProductionConversationError(context.Background(), cause)
+	handlerError, ok := mapped.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+	}
+	if handlerError.Code != http.StatusForbidden {
+		t.Fatalf(
+			"status = %d, want %d",
+			handlerError.Code,
+			http.StatusForbidden,
+		)
+	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got !=
+		string(deliveryapp.ErrorCodeUnauthorized) {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerError.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "delivery.claim" ||
+		details["field"] != "device" ||
+		details["reason"] != "is not active for the authenticated actor" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(handlerError, cause) {
+		t.Fatal("mapped error did not retain its Device Inbox cause")
+	}
+}
 
 type productionManifestTestClock struct {
 	now time.Time
@@ -126,6 +249,7 @@ func (productionManifestTestActorCapabilities) ResolveVerifiedActorDeviceSigning
 	string,
 	string,
 	string,
+	string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
 	return nil, errors.New("device signing key resolution is outside this test")
 }
@@ -140,6 +264,15 @@ func (productionManifestTestRuntime) RegisterReceivers(
 	federationruntime.ReceiverRegistrar,
 ) error {
 	return errors.New("receiver registration is outside this test")
+}
+
+func (productionManifestTestRuntime) DeliverConversationTyping(
+	context.Context,
+	*federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	return federationdelivery.Result{}, errors.New(
+		"typing delivery is outside this test",
+	)
 }
 
 func (r productionManifestTestRuntime) CallPeer(
@@ -243,6 +376,74 @@ func TestProductionEndpointRoutesUseSignedRemoteManifest(t *testing.T) {
 			routesByActor[alice] != productionManifestTestLocalStation ||
 			routesByActor[bob] != productionManifestTestRemoteStation {
 			t.Fatalf("resolved routes = %+v", routes)
+		}
+
+		typingRoutes, err := (productionTypingRouteDirectory{
+			composition: server.composition,
+		}).ListActiveEndpoints(
+			context.Background(),
+			[]valueobject.PTID{alice, bob},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		typingRoutesByActor := make(
+			map[valueobject.PTID]valueobject.StationID,
+			len(typingRoutes),
+		)
+		for _, route := range typingRoutes {
+			typingRoutesByActor[route.Endpoint.Actor] = route.HomeStation
+		}
+		if len(typingRoutes) != 2 ||
+			typingRoutesByActor[alice] != productionManifestTestLocalStation ||
+			typingRoutesByActor[bob] != productionManifestTestRemoteStation {
+			t.Fatalf("typing routes = %+v", typingRoutes)
+		}
+	})
+
+	t.Run("membership submit refreshes the plan actor manifests", func(t *testing.T) {
+		server := newProductionManifestTestServer(
+			alice,
+			bob,
+			localManifest,
+			validRemoteManifest,
+			remotePrivateKey.Public().(ed25519.PublicKey),
+		)
+		aliceEndpoint := valueobject.Endpoint{
+			Actor:  alice,
+			Device: "alice-device",
+		}
+		bobEndpoint := valueobject.Endpoint{
+			Actor:  bob,
+			Device: "bob-device",
+		}
+		plan := entity.AuthorityPlan{
+			Requester: aliceEndpoint,
+			Changes: []entity.MembershipChange{{
+				Action: entity.MembershipActionRemoveActor,
+				Actor:  bob,
+			}},
+			PreEndpoints:  []valueobject.Endpoint{aliceEndpoint, bobEndpoint},
+			PostEndpoints: []valueobject.Endpoint{aliceEndpoint},
+		}
+
+		routes, stateHash, err := server.composition.productionSubmitCommandRoutes(
+			context.Background(),
+			&plan,
+			true,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, expectedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, validRemoteManifest},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(routes) != 2 || stateHash != expectedStateHash {
+			t.Fatalf("membership submit routes = %+v, state hash = %x", routes, stateHash)
 		}
 	})
 

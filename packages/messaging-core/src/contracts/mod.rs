@@ -127,6 +127,25 @@ pub struct DeliveryReceiptReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandResultDisposition {
+    Accepted,
+    Failed(String),
+    Superseded(String),
+}
+
+pub struct CommandResultReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub disposition: CommandResultDisposition,
+    pub consumed_at_unix_ms: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ActorReadReceiveCommit<'a> {
     pub item_id: &'a str,
@@ -288,7 +307,8 @@ pub struct MlsTransitionReceiveCommit<'a> {
     pub to_membership_epoch: i64,
     pub from_mls_epoch: i64,
     pub to_mls_epoch: i64,
-    pub join_projection: Option<&'a MlsConversationProjection>,
+    pub authority_projection: &'a MlsConversationProjection,
+    pub allow_join_checkpoint: bool,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -309,7 +329,7 @@ pub struct MlsSenderTransitionReceiveCommit<'a> {
     pub session_state: &'a [u8],
     pub membership_epoch: i64,
     pub mls_epoch: i64,
-    pub genesis_projection: Option<&'a MlsConversationProjection>,
+    pub authority_projection: &'a MlsConversationProjection,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,

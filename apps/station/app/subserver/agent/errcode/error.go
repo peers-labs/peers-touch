@@ -13,45 +13,74 @@ import (
 type Code string
 
 const (
-	AgentInvalidRequest            Code = "AGENT_4001"
-	AgentUnauthorized              Code = "AGENT_4002"
-	AgentNotFound                  Code = "AGENT_4004"
-	AgentVersionConflict           Code = "AGENT_4009"
-	AgentIdempotencyConflict       Code = "IDEMPOTENCY_CONFLICT"
-	AgentInvalidSourceState        Code = "INVALID_SOURCE_STATE"
-	AgentActiveDependency          Code = "ACTIVE_DEPENDENCY"
-	AgentQueueFull                 Code = "ADMISSION_QUEUE_FULL"
-	AgentAttachmentRejected        Code = "CONTEXT_ATTACHMENT_REJECTED"
-	AgentToolApprovalDenied        Code = "TOOL_APPROVAL_DENIED"
-	AgentToolApprovalExpired       Code = "TOOL_APPROVAL_EXPIRED"
-	AgentClientExecutorUnavailable Code = "CLIENT_EXECUTOR_UNAVAILABLE"
-	AgentToolBudgetExhausted       Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	AgentContextOverflow           Code = "CONTEXT_OVERFLOW"
-	AgentLifecycleCancelled        Code = "LIFECYCLE_CANCELLED"
-	AgentProviderCredentialMissing Code = "PROVIDER_CREDENTIAL_MISSING"
-	AgentProviderFailed            Code = "AGENT_5001"
-	AgentCompressionFailed         Code = "AGENT_5002"
-	AgentDelegationFailed          Code = "AGENT_5003"
-	AgentCredentialFailed          Code = "AGENT_5004"
-	AgentProviderDisabled          Code = "AGENT_5005"
-	AgentSecurityViolation         Code = "AGENT_4003"
-	AgentInternal                  Code = "AGENT_5000"
+	AgentInvalidRequest                Code = "AGENT_4001"
+	AgentUnauthorized                  Code = "AGENT_4002"
+	AgentNotFound                      Code = "AGENT_4004"
+	AgentVersionConflict               Code = "AGENT_4009"
+	AgentIdempotencyConflict           Code = "IDEMPOTENCY_CONFLICT"
+	AgentInvalidSourceState            Code = "INVALID_SOURCE_STATE"
+	AgentActiveDependency              Code = "ACTIVE_DEPENDENCY"
+	AgentOwnershipForbiddenActor       Code = "OWNERSHIP_FORBIDDEN_ACTOR"
+	AgentQueueFull                     Code = "ADMISSION_QUEUE_FULL"
+	AgentAttachmentRejected            Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentRuntimeUnavailable            Code = "RUNTIME_UNAVAILABLE"
+	AgentRuntimeIncompatibleCapability Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
+	AgentToolUnknown                   Code = "TOOL_UNKNOWN"
+	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
+	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
+	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
+	AgentClientLeaseExpired            Code = "CLIENT_LEASE_EXPIRED"
+	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
+	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
+	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
+	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
+	AgentLifecycleStaleVersion         Code = "LIFECYCLE_STALE_VERSION"
+	AgentLifecycleTerminalMutation     Code = "LIFECYCLE_TERMINAL_MUTATION"
+	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
+	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
+	AgentProviderTimeout               Code = "PROVIDER_TIMEOUT"
+	AgentProviderFailed                Code = "AGENT_5001"
+	AgentCompressionFailed             Code = "AGENT_5002"
+	AgentDelegationFailed              Code = "AGENT_5003"
+	AgentCredentialFailed              Code = "AGENT_5004"
+	AgentProviderDisabled              Code = "AGENT_5005"
+	AgentSecurityViolation             Code = "AGENT_4003"
+	AgentInternal                      Code = "AGENT_5000"
 
 	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
-	AgentAdmissionDuplicateConflictLocaleKey   = "agent.errors.duplicateConflict"
-	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
-	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
-	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
-	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
-	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
-	AgentClientExecutorUnavailableLocaleKey    = "agent.errors.executorUnavailable"
-	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
-	AgentContextOverflowLocaleKey              = "agent.errors.contextOverflow"
-	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
-	AgentProviderCredentialMissingLocaleKey    = "agent.errors.providerCredentialMissing"
+	AgentAdmissionDuplicateConflictLocaleKey    = "agent.errors.duplicateConflict"
+	AgentCanvasSingleAgentNotReadyLocaleKey     = "agent.errors.canvasSingleAgentNotReady"
+	AgentCanvasSingleAgentNotReadyRequiredGate  = "agent-v2-kernel-foundation-e2e"
+	AgentQueueFullLocaleKey                     = "agent.errors.queueFull"
+	AgentOwnershipForbiddenActorLocaleKey       = "agent.errors.forbiddenActor"
+	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
+	AgentRuntimeUnavailableLocaleKey            = "agent.errors.runtimeUnavailable"
+	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
+	AgentToolUnknownLocaleKey                   = "agent.errors.toolUnknown"
+	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
+	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
+	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
+	AgentClientLeaseExpiredLocaleKey            = "agent.errors.clientLeaseExpired"
+	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
+	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
+	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
+	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
+	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
+	AgentLifecycleStaleVersionLocaleKey         = "agent.errors.lifecycleStaleVersion"
+	AgentLifecycleTerminalMutationLocaleKey     = "agent.errors.lifecycleTerminalMutation"
+	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
+	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
+	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
+	AgentProviderTimeoutLocaleKey               = "agent.errors.providerTimeout"
 )
+
+const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
+
+const AgentClientInvalidResourceReferenceLocaleKey = "agent.errors.invalidResourceReference"
 
 const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
 
@@ -97,6 +126,44 @@ func NewCanvasSingleAgentNotReady() *BizError {
 	}
 }
 
+func NewOwnershipForbiddenActor(resourceKind, resourceID string) *BizError {
+	return &BizError{
+		Code:       AgentOwnershipForbiddenActor,
+		HTTPStatus: http.StatusForbidden,
+		Message:    AgentOwnershipForbiddenActorLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentOwnershipForbiddenActorLocaleKey,
+			ErrorType: string(AgentOwnershipForbiddenActor),
+			LocaleKey: AgentOwnershipForbiddenActorLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_kind": resourceKind,
+				"resource_id":   resourceID,
+			},
+		},
+	}
+}
+
+func NewQueueFull(conversationID string, capacity uint32) *BizError {
+	return &BizError{
+		Code:       AgentQueueFull,
+		HTTPStatus: http.StatusTooManyRequests,
+		Message:    AgentQueueFullLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentQueueFullLocaleKey,
+			ErrorType: string(AgentQueueFull),
+			LocaleKey: AgentQueueFullLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"conversation_id": conversationID,
+				"capacity":        strconv.FormatUint(uint64(capacity), 10),
+			},
+		},
+	}
+}
+
 func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 	return &BizError{
 		Code:       AgentAttachmentRejected,
@@ -111,6 +178,124 @@ func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 			Details: map[string]string{
 				"attachment_id": attachmentID,
 				"reason_code":   reasonCode,
+			},
+		},
+	}
+}
+
+func NewRuntimeUnavailable(runtimeKind, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeUnavailable,
+		HTTPStatus: http.StatusServiceUnavailable,
+		Message:    AgentRuntimeUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeUnavailableLocaleKey,
+			ErrorType: string(AgentRuntimeUnavailable),
+			LocaleKey: AgentRuntimeUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"runtime_kind": runtimeKind,
+				"reason_code":  reasonCode,
+			},
+		},
+	}
+}
+
+func NewProviderRateLimit(providerID string, retryAfterMS int64) *BizError {
+	if retryAfterMS < 0 {
+		retryAfterMS = 0
+	}
+	return &BizError{
+		Code:       AgentProviderRateLimit,
+		HTTPStatus: http.StatusTooManyRequests,
+		Message:    AgentProviderRateLimitLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderRateLimitLocaleKey,
+			ErrorType: string(AgentProviderRateLimit),
+			LocaleKey: AgentProviderRateLimitLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id":    providerID,
+				"retry_after_ms": strconv.FormatInt(retryAfterMS, 10),
+			},
+		},
+	}
+}
+
+func NewProviderModelUnavailable(providerID, modelID string) *BizError {
+	return &BizError{
+		Code:       AgentProviderModelUnavailable,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentProviderModelUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderModelUnavailableLocaleKey,
+			ErrorType: string(AgentProviderModelUnavailable),
+			LocaleKey: AgentProviderModelUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
+			},
+		},
+	}
+}
+
+func NewProviderTimeout(providerID, modelID string, deadline time.Time) *BizError {
+	return &BizError{
+		Code:       AgentProviderTimeout,
+		HTTPStatus: http.StatusGatewayTimeout,
+		Message:    AgentProviderTimeoutLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderTimeoutLocaleKey,
+			ErrorType: string(AgentProviderTimeout),
+			LocaleKey: AgentProviderTimeoutLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
+				"deadline":    deadline.UTC().Format(time.RFC3339Nano),
+			},
+		},
+	}
+}
+
+func NewRuntimeIncompatibleCapability(capabilityID, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeIncompatibleCapability,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentRuntimeIncompatibleCapabilityLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeIncompatibleCapabilityLocaleKey,
+			ErrorType: string(AgentRuntimeIncompatibleCapability),
+			LocaleKey: AgentRuntimeIncompatibleCapabilityLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"capability_id": capabilityID,
+				"reason_code":   reasonCode,
+			},
+		},
+	}
+}
+
+func NewToolUnknown(toolID, toolVersion string) *BizError {
+	return &BizError{
+		Code:       AgentToolUnknown,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentToolUnknownLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentToolUnknownLocaleKey,
+			ErrorType: string(AgentToolUnknown),
+			LocaleKey: AgentToolUnknownLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"tool_id":      toolID,
+				"tool_version": toolVersion,
 			},
 		},
 	}
@@ -158,6 +343,44 @@ func NewClientExecutorUnavailablePayload(targetDeviceID, capabilityID string) *m
 	}
 }
 
+func NewClientLeaseExpired(sessionID, leaseID string, expiredAt time.Time) *BizError {
+	return NewClientLeaseExpiredFromPayload(&model.ErrorPayload{
+		Error:     AgentClientLeaseExpiredLocaleKey,
+		ErrorType: string(AgentClientLeaseExpired),
+		LocaleKey: AgentClientLeaseExpiredLocaleKey,
+		Retryable: true,
+		Terminal:  false,
+		Details: map[string]string{
+			"session_id": sessionID,
+			"lease_id":   leaseID,
+			"expired_at": expiredAt.UTC().Format(time.RFC3339Nano),
+		},
+	})
+}
+
+func NewClientLeaseExpiredFromPayload(payload *model.ErrorPayload) *BizError {
+	return &BizError{
+		Code:       AgentClientLeaseExpired,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentClientLeaseExpiredLocaleKey,
+		Payload:    payload,
+	}
+}
+
+func NewClientInvalidResourceReferencePayload(resourceKind, resourceRefHash string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentClientInvalidResourceReferenceLocaleKey,
+		ErrorType: string(AgentClientInvalidResourceReference),
+		LocaleKey: AgentClientInvalidResourceReferenceLocaleKey,
+		Retryable: false,
+		Terminal:  true,
+		Details: map[string]string{
+			"resource_kind":     resourceKind,
+			"resource_ref_hash": resourceRefHash,
+		},
+	}
+}
+
 func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorPayload {
 	return &model.ErrorPayload{
 		Error:     AgentLifecycleCancelledLocaleKey,
@@ -168,6 +391,60 @@ func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorP
 		Details: map[string]string{
 			"resource_kind": resourceKind,
 			"resource_id":   resourceID,
+		},
+	}
+}
+
+func NewLifecycleInterruptedPayload(turnID, reasonCode string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentLifecycleInterruptedLocaleKey,
+		ErrorType: string(AgentLifecycleInterrupted),
+		LocaleKey: AgentLifecycleInterruptedLocaleKey,
+		Retryable: true,
+		Terminal:  true,
+		Details: map[string]string{
+			"turn_id":     turnID,
+			"reason_code": reasonCode,
+		},
+	}
+}
+
+func NewLifecycleStaleVersion(resourceID string, expectedRevision, actualRevision uint64) *BizError {
+	return &BizError{
+		Code:       AgentLifecycleStaleVersion,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentLifecycleStaleVersionLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentLifecycleStaleVersionLocaleKey,
+			ErrorType: string(AgentLifecycleStaleVersion),
+			LocaleKey: AgentLifecycleStaleVersionLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_id":       resourceID,
+				"expected_revision": strconv.FormatUint(expectedRevision, 10),
+				"actual_revision":   strconv.FormatUint(actualRevision, 10),
+			},
+		},
+	}
+}
+
+// NewLifecycleTerminalMutation rejects mutation of an already-terminal resource.
+func NewLifecycleTerminalMutation(resourceID, terminalStatus string) *BizError {
+	return &BizError{
+		Code:       AgentLifecycleTerminalMutation,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentLifecycleTerminalMutationLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentLifecycleTerminalMutationLocaleKey,
+			ErrorType: string(AgentLifecycleTerminalMutation),
+			LocaleKey: AgentLifecycleTerminalMutationLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_id":     resourceID,
+				"terminal_status": terminalStatus,
+			},
 		},
 	}
 }
@@ -186,6 +463,29 @@ func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
 			Details: map[string]string{
 				"limit_tokens":  strconv.FormatUint(limitTokens, 10),
 				"actual_tokens": strconv.FormatUint(actualTokens, 10),
+			},
+		},
+	}
+}
+
+// NewContextInvalidReference returns the typed rejection for retired inline
+// context syntax without exposing the reference token to clients.
+func NewContextInvalidReference(referenceKind, referenceToken string) *BizError {
+	referenceHash := sha256.Sum256([]byte(referenceToken))
+
+	return &BizError{
+		Code:       AgentContextInvalidReference,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentContextInvalidReferenceLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentContextInvalidReferenceLocaleKey,
+			ErrorType: string(AgentContextInvalidReference),
+			LocaleKey: AgentContextInvalidReferenceLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"reference_kind": referenceKind,
+				"reference_hash": fmt.Sprintf("%x", referenceHash),
 			},
 		},
 	}

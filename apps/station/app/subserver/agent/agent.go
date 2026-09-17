@@ -311,6 +311,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	toolDispatchSvc := service.NewToolDispatchService()
 	toolDispatchSvc.SetCapabilityProofService(proofSvc)
+	toolDispatchSvc.SetConversationService(convSvc)
 	capabilityAuthoritySvc := service.NewCapabilityAuthorityService(s.agentDB)
 	capabilityAuthoritySvc.SetEventBus(eventBus)
 	capabilityReadinessSvc := service.NewCapabilityAuthorityReadinessService(

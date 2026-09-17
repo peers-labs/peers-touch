@@ -39,6 +39,49 @@ describe('IM service boundary', () => {
       },
     })
   })
+
+  it('decodes Station device protobuf JSON before exposing typed devices', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        devices: [{
+          ref: {
+            actor: {
+              ptid: 'ptid:alice',
+              acct: 'alice@p.t',
+              kind: 'ACTOR_KIND_PERSON',
+            },
+            device_id: 'device-alice',
+          },
+          status: 'ACTOR_DEVICE_STATUS_ACTIVE',
+          label: 'Desktop',
+          profile_version: '1',
+        }],
+      },
+    })
+
+    const devices = await imServiceV1.device.list()
+
+    expect(devices[0]?.ref?.deviceId).toBe('device-alice')
+    expect(devices[0]?.status).toBe(2)
+    expect(devices[0]?.profileVersion).toBe(1n)
+  })
+
+  it('binds device revocation to the observed profile version', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {},
+    })
+
+    await imServiceV1.device.revoke('device-alice', 7n)
+
+    expect(invokeMock).toHaveBeenCalledWith('device_revoke', {
+      input: {
+        device_id: 'device-alice',
+        observed_profile_version: 7,
+      },
+    })
+  })
 })
 
 describe('normalizeConversationEvents', () => {

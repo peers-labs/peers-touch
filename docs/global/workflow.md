@@ -40,7 +40,56 @@ PR review, but write scope remains bound to the active worktree.
 
 ---
 
-## 3) Route Acceptance work by ownership
+## 3) Declare development resources
+
+Read-only investigation may happen before declaration. Before the first
+repository write or runtime acquisition for any non-trivial task:
+
+```bash
+make dev-start \
+  WORK_ITEM=<stable-id> \
+  PURPOSE='<purpose>' \
+  SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
+  RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]'
+```
+
+Rules:
+
+- The command atomically publishes intent to
+  `~/.peers-touch/dev/work.json`, checks cross-worktree conflicts, and reads the
+  declaration back.
+- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
+- Use `make dev-update` before growing source or runtime scope.
+- Refresh the declared source HEAD with `make dev-update` after an authorized
+  commit, rebase or merge.
+- Use `make dev-status-all` to inspect all worktree declarations.
+- A declaration is public intent, not a Profile/Station lease or operation
+  authorization.
+- Completion, cancellation and abandonment require
+  `make dev-release WORK_ITEM=<id>`.
+
+Architecture source:
+`docs/architecture/development-workflow/README.md`.
+
+### Development Skill responsibility chain
+
+```text
+pt-god-view routes
+  -> pt-dev-workflow owns one Development Run
+  -> pt-trae-goal-orchestrator schedules WHAT is ready
+  -> pt-execution-plan-guardian decides whether one proposed action MAY run
+  -> pt-dev-workflow executes and persists through owner commands
+  -> pt-context-anchor renders read-only status
+```
+
+`pt-architecture-execution-methodology` defines the vertical dependency model;
+`pt-plan-and-document` only persists the accepted model. Router, scheduler,
+policy guard, and status projection do not write Plan/Task/Session/
+`active_work` state.
+
+---
+
+## 4) Route Acceptance work by ownership
 
 Before changing Acceptance code, classify responsibility:
 
@@ -67,7 +116,7 @@ Architecture source:
 
 ---
 
-## 4) Use correct paths
+## 5) Use correct paths
 
 - Desktop: `apps/desktop`
 - Mobile Android: `apps/mobile/android`
@@ -78,17 +127,35 @@ Architecture source:
 
 ---
 
-## 5) Implementation sequence
+## 6) Product-first implementation sequence
 
-1. Define/adjust contracts (`model/domain` or desktop tauri contracts)
-2. Implement backend/station or tauri command layer
-3. Connect frontend/store and pages
-4. Add/adjust tests
-5. Run verification commands
+For every dependency-ready workstream:
+
+1. Bind one product Journey or class-specific functional boundary.
+2. Reproduce once and record the first actionable failure.
+3. Define/adjust contracts (`model/domain` or Desktop Tauri contracts).
+4. Implement the root correction at the owning layer.
+5. Connect consumers and UI.
+6. Run focused unit/type/contract checks.
+7. Create an authorized checkpoint commit when exact-source runtime is needed.
+8. Deploy/start through Local Dev Control Plane and Make.
+9. Run the real Journey:
+   - `FAIL` → return the first failure to implementation;
+   - `BLOCKED` → park the environment or authorization edge;
+   - `PASS` → record `FUNCTIONAL_PASS`.
+10. Only after `FUNCTIONAL_PASS`, promote the same Journey into formal
+    Acceptance and run final exact-source proof.
+
+Acceptance scenarios are selected from product states, receiver outcomes,
+changed failure semantics, and concrete architecture risks. Do not impose a
+generic success/network/timeout/invalid/cancellation matrix on every closure.
+
+Before `FUNCTIONAL_PASS`, do not run coverage, Gap Detector, Completion Auditor,
+cross-platform matrices, submit pipeline, or unrelated broad Gate bundles.
 
 ---
 
-## 6) Verification commands
+## 7) Verification commands
 
 ### Desktop
 
@@ -124,14 +191,31 @@ go test ./...
 
 ---
 
-## 7) Completion criteria
+## 8) Verification classes
+
+| Class | Meaning |
+|---|---|
+| `SOURCE_CHECK` | unit, typecheck, build, or focused contract check |
+| `STRUCTURAL_CHECK` | source, registry, schema, or static relation |
+| `UX_REVIEW` | prototype or screenshot contract |
+| `FUNCTIONAL_CHECK` | exact-source real product Journey |
+| `ACCEPTANCE_PROOF` | formal capability proof |
+
+Only `FUNCTIONAL_CHECK` supports “this Journey works”. `PROVEN` is reserved for
+formal Acceptance.
+
+---
+
+## 9) Completion criteria
 
 Only mark task done when:
 - Implementation is complete
 - Relevant lint/check passes
 - Build succeeds
 - Tests pass
-- Functional path is verified
+- Required exact-source Journeys have `FUNCTIONAL_CHECK`
+- Required formal capabilities have `ACCEPTANCE_PROOF`
+- Public resource declaration and runtime leases are released
 
 Suggested report format:
 

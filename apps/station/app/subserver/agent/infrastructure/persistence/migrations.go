@@ -315,6 +315,9 @@ func MigrateFencedClientExecution(db *gorm.DB) error {
 		if err := migrateToolDispatchOutboxColumns(tx); err != nil {
 			return err
 		}
+		if err := migrateToolReceiptAttemptColumns(tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(&ReceiptRecoveryCredential{}, &ClientCapabilityCommand{}); err != nil {
 			return fmt.Errorf("migrate fenced client execution ledgers: %w", err)
 		}
@@ -455,6 +458,36 @@ func migrateToolCallColumns(tx *gorm.DB) error {
 		if err := tx.Migrator().AddColumn(&ToolCall{}, field); err != nil {
 			return fmt.Errorf("add agent_tool_calls.%s: %w", column, err)
 		}
+	}
+	return nil
+}
+
+func migrateToolReceiptAttemptColumns(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&ToolReceiptAttempt{}) {
+		return nil
+	}
+	columnTypes, err := tx.Migrator().ColumnTypes(&ToolReceiptAttempt{})
+	if err != nil {
+		return fmt.Errorf("inspect agent_tool_receipt_attempts columns: %w", err)
+	}
+	for _, columnType := range columnTypes {
+		if columnType.Name() != "status" {
+			continue
+		}
+		length, bounded := columnType.Length()
+		if bounded && length >= 64 {
+			return nil
+		}
+		if err := tx.Migrator().AlterColumn(
+			&ToolReceiptAttempt{},
+			"Status",
+		); err != nil {
+			return fmt.Errorf(
+				"expand agent_tool_receipt_attempts.status: %w",
+				err,
+			)
+		}
+		return nil
 	}
 	return nil
 }

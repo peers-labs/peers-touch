@@ -148,6 +148,21 @@ capabilities:
       - peers_touch.model.chat.v1.ConversationCommand
       - peers_touch.model.chat.v1.CommittedConversationEvent
 
+  - id: chat.command.results
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/command/results }
+    request_proto: peers_touch.model.chat.v1.ResolveConversationCommandResultsRequest
+    response_proto: peers_touch.model.chat.v1.ResolveConversationCommandResultsResponse
+    truth_stores: [conversation_command_receipts]
+    allowed_dependencies:
+      - conversation.delivery.read
+      - federation.delivery.read
+    forbidden_aliases:
+      - { method: GET, path: /conversation/command-proposal/result }
+    superseded_symbols: []
+
   - id: chat.group.genesis.prepare
     domain_owner: station.conversation
     truth_owner: conversation.authority
@@ -659,6 +674,30 @@ capabilities:
       - peers_touch.model.chat.v1.RevokeDeviceResponse
       - peers_touch.model.chat.v1.RevokeMessagingDeviceRequest
       - peers_touch.model.chat.v1.RevokeMessagingDeviceResponse
+
+  - id: key_exchange.content_prekey.publish
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.content_prekey_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/content-prekeys/publish }
+    request_proto: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest
+    response_proto: peers_touch.model.secure_content.v1.PublishContentPreKeysResponse
+    truth_stores: [key_exchange_content_prekey_pools, key_exchange_content_prekeys, key_exchange_content_prekey_publication_receipts]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: key_exchange.content_prekey.inventory
+    domain_owner: station.key_exchange
+    truth_owner: key_exchange.content_prekey_public_material
+    exposure: client
+    canonical_route: { method: POST, path: /key-exchange/content-prekeys/inventory }
+    request_proto: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest
+    response_proto: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse
+    truth_stores: [key_exchange_content_prekey_pools, key_exchange_content_prekeys]
+    allowed_dependencies: [actor.device_directory.read]
+    forbidden_aliases: []
+    superseded_symbols: []
 
   - id: key_exchange.direct_bundle.upload
     domain_owner: station.key_exchange

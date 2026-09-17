@@ -45,6 +45,17 @@ Every conclusion must be tied to:
 
 If a claim is not proven, mark it as `UNPROVEN`, not `PASS`.
 
+For non-trivial development work, also read
+`docs/architecture/development-workflow/README.md` and require:
+
+- a released or explicitly handed-off public resource declaration;
+- a named verification class for every reported result;
+- current exact-source `FUNCTIONAL_CHECK` for each required product Journey;
+- formal `ACCEPTANCE_PROOF` for every capability claimed proven.
+
+`SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`, test count, Gate count and
+prototype evidence cannot substitute for `FUNCTIONAL_CHECK`.
+
 ## Relationship To Existing Skills
 
 - `pt-execution-plan-guardian`: keeps work tied to plan and evidence while
@@ -68,6 +79,8 @@ Check the user's actual request and the current workstream.
 - Identify any "done" wording that is only backed by mock, mapper, docs, or
   local-only evidence.
 - Separate formal plan completion from conversation-local progress.
+- Verify the required Journey reached `FUNCTIONAL_PASS` before Acceptance was
+  expanded or executed.
 
 ### 2. Peers-Touch Architecture Fit
 
@@ -169,6 +182,9 @@ Check:
 - Old docs do not contradict new architecture.
 - The `active_work` row matches the actual worktree and branch, and agrees with
   the plan status table, tracking source, evidence, blockers, and next action.
+- Exactly one active formal plan matches the worktree, every closure is
+  complete before merge, and the plan's Acceptance Execution contract matches
+  the actual diff impact.
 - `active_work`, todos, dashboards, and chat projections do not claim progress
   stronger than the plan status table and repository evidence.
 - Acceptance Infra readiness is judged from `acceptance_core_self_validation`
@@ -296,6 +312,10 @@ End with the strongest accurate claim:
 - `Not ready`
 
 Choose the weakest claim that is fully supported by evidence.
+
+Before the claim, verify `make dev-status WORK_ITEM=<id>` shows the declaration
+released, or name the explicit handoff owner and expiry. A forgotten live
+declaration is a completion gap.
 
 ## Output Format
 

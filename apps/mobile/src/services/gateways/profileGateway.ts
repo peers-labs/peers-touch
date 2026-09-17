@@ -111,6 +111,9 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
         query: { handle },
       });
       if (!result.ok) return result;
+      // #region debug-point D:federation-resolve-shape
+      void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'D', location: 'apps/mobile/src/services/gateways/profileGateway.ts:resolveFederationHandle', msg: '[DEBUG] Federation resolve response shape', data: { viewKeys: Object.keys(result.data ?? {}).sort(), profileKeys: Object.keys(result.data?.profile ?? {}).sort(), refKeys: Object.keys(result.data?.profile?.ref ?? {}).sort(), peersTouchKeys: Object.keys(result.data?.profile?.peersTouch ?? result.data?.profile?.peers_touch ?? {}).sort() }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       return {
         ok: true,
         data: {

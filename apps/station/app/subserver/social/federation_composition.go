@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 const (
@@ -38,8 +41,36 @@ type conversationDirectPort struct {
 	resolve canonicalConversationDirectResolver
 }
 
+type actorDeviceKeyPort struct{}
+
 func newConversationDirectPort() conversationDirectPort {
 	return conversationDirectPort{resolve: resolveCanonicalConversationDirectProvider}
+}
+
+func (actorDeviceKeyPort) ResolveVerifiedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction delivery.Transaction,
+	actorPTID string,
+	expectedHomeStationPeerID string,
+	deviceID string,
+	signingKeyID string,
+) (*model.VerifiedActorDeviceSigningKey, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(infrastructure.FriendRequestActorKeyResolver)
+	if !ok || provider == nil {
+		return nil, errors.New(
+			"canonical Actor Identity device-key provider is unavailable",
+		)
+	}
+
+	return provider.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		actorPTID,
+		expectedHomeStationPeerID,
+		deviceID,
+		signingKeyID,
+	)
 }
 
 func (p conversationDirectPort) EnsureDirectConversation(
@@ -114,3 +145,4 @@ func sharedFederationRuntime() (*federationruntime.Runtime, error) {
 }
 
 var _ application.DirectConversationPort = conversationDirectPort{}
+var _ infrastructure.FriendRequestActorKeyResolver = actorDeviceKeyPort{}

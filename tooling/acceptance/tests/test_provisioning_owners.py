@@ -15,9 +15,10 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from tooling.acceptance.core.attestation import (
+    PROTOCOL_SOURCE_PATHS,
     produce_station_attestation,
     source_proto_digest,
     source_workspace_digest,
@@ -27,6 +28,7 @@ from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures import chat_native_reset
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
+    prepare_bound_friendships,
     produce_actor_manifest,
     produce_bound_actor_manifest,
     reset_fixture,
@@ -69,10 +71,19 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     root
                     / "apps/desktop/src/gen/proto/domain/test_pb.ts"
                 )
+                station_dashboard = (
+                    root
+                    / "apps/station/app/subserver/dashboard/web/src/api/client.ts"
+                )
                 proto.parent.mkdir(parents=True)
                 generated.parent.mkdir(parents=True)
+                station_dashboard.parent.mkdir(parents=True)
                 proto.write_text("syntax = \"proto3\";\n", encoding="utf-8")
                 generated.write_text("// generated\n", encoding="utf-8")
+                station_dashboard.write_text(
+                    "// not a protocol artifact\n",
+                    encoding="utf-8",
+                )
                 subprocess.run(
                     ["git", "add", "model", "apps"],
                     cwd=root,
@@ -85,6 +96,12 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     capture_output=True,
                 )
                 baseline = source_proto_digest(root)
+
+                station_dashboard.write_text(
+                    "// ordinary Station TypeScript changed\n",
+                    encoding="utf-8",
+                )
+                self.assertEqual(source_proto_digest(root), baseline)
 
                 untracked = (
                     root
@@ -164,9 +181,9 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertIn("\\.bare\\.git\\/", remote_command)
         self.assertIn("subprocess.check_output", remote_command)
         self.assertIn("ls-files", remote_command)
-        self.assertIn("model/domain", remote_command)
-        self.assertIn("apps/desktop/src/gen/proto", remote_command)
-        self.assertIn("apps/station", remote_command)
+        for pathspec in PROTOCOL_SOURCE_PATHS:
+            self.assertIn(pathspec, remote_command)
+        self.assertNotIn("x.endswith(b'.ts')", remote_command)
         self.assertNotIn("apps/mobile/ios", remote_command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
@@ -211,6 +228,57 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "SSH contract is invalid",
             ):
                 resolve_remote_source_identity("station-three")
+
+    def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-four.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-four",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="abcdef123456\nclean\nproto-digest\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = resolve_remote_source_identity("station-four")
+
+        self.assertEqual(identity, ("abcdef123456", "clean", "proto-digest"))
+        command = run.call_args.args[0]
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertFalse(
+            any(
+                argument.startswith("UserKnownHostsFile=")
+                for argument in command
+            )
+        )
 
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
@@ -513,7 +581,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         popen.return_value = process
         killpg.side_effect = ProcessLookupError()
 
-        reset_fixture("chat-native-acceptance", ("alice", "bob"))
+        reset_fixture(
+            "chat-native-acceptance",
+            ("alice", "bob"),
+            reset_authorized=True,
+        )
 
         arguments, options = popen.call_args
         self.assertEqual(
@@ -536,6 +608,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         self.assertTrue(options["start_new_session"])
         self.assertFalse(options["shell"])
         self.assertTrue(options["close_fds"])
+        self.assertEqual(options["env"]["CHAT_ACCEPTANCE_RESET"], "1")
         self.assertLessEqual(
             process.communicate.call_args.kwargs["timeout"],
             0.05,
@@ -659,6 +732,8 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
                 ),
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ):
                 manifest, path, reference = produce_actor_manifest(
                     environment_id="home-station",
@@ -722,8 +797,16 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 )
 
             self.assertEqual(verify.call_count, 2)
-            reset.assert_any_call("station-four", ["alice"])
-            reset.assert_any_call("station-five", ["bob"])
+            reset.assert_any_call(
+                "station-four",
+                ["alice"],
+                reset_authorized=True,
+            )
+            reset.assert_any_call(
+                "station-five",
+                ["bob"],
+                reset_authorized=True,
+            )
             self.assertEqual(
                 [call.args for call in resolve.call_args_list],
                 [
@@ -743,6 +826,107 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ["ptid:alice:four", "ptid:bob:five"],
             )
             run.close()
+
+    def test_bound_friendships_cover_every_cross_station_actor_pair(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        role_targets = {
+            "alice": ("http://station-four", "station-four"),
+            "bob": ("http://station-five", "station-five"),
+            "charlie": ("http://station-five", "station-five"),
+        }
+
+        def record(role: str, station: str) -> chat_native_reset.FixtureActorRecord:
+            return chat_native_reset.FixtureActorRecord(
+                ptid=f"ptid:{role}",
+                preferred_username=role,
+                name=role.title(),
+                summary="",
+                icon="",
+                image="",
+                url=f"https://{station}.example/actors/{role}",
+                federated_handle=f"@{role}@{station}.example",
+                home_station_peer_id=station,
+                home_station_domain=f"{station}.example",
+                visibility=1,
+                locator_seq=1,
+            )
+
+        records = {
+            "alice": record("alice", "station-four"),
+            "bob": record("bob", "station-five"),
+            "charlie": record("charlie", "station-five"),
+        }
+        by_account = {
+            ACTOR_ACCOUNTS[role]: value
+            for role, value in records.items()
+        }
+        actors = tuple(
+            ActorIdentity(
+                role=role,
+                account_ref=f"station-account:{ACTOR_ACCOUNTS[role]}",
+                ptid=value.ptid,
+            )
+            for role, value in records.items()
+        )
+
+        federation_members = tuple(records.values())
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
+            side_effect=lambda _station, _environment, account: by_account[account],
+        ) as read_actor, patch(
+            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
+        ) as seed_contact:
+            prepare_bound_friendships(role_targets, actors)
+
+        self.assertEqual(read_actor.call_count, 3)
+        self.assertEqual(
+            seed_contact.call_args_list,
+            [
+                call(
+                    "http://station-four",
+                    "station-four",
+                    records["alice"],
+                    records["bob"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-four",
+                    "station-four",
+                    records["alice"],
+                    records["charlie"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["bob"],
+                    records["alice"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["bob"],
+                    records["charlie"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["charlie"],
+                    records["alice"],
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    records["charlie"],
+                    records["bob"],
+                    federation_members,
+                ),
+            ],
+        )
 
 
 class ProfileActivationContractTests(unittest.TestCase):

@@ -9,7 +9,7 @@ import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui'
 import {
   CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
   Brain, X, RefreshCw, Wrench, Eye, Sparkles, Pencil,
-  Image, Globe, Video, Search,
+  Image, Globe, Video, Search, RadioTower,
 } from 'lucide-react';
 import { ProviderIcon } from './ProviderIcon';
 import { UpdateProviderModal } from './UpdateProviderModal';
@@ -122,7 +122,7 @@ export function ProviderDetail() {
   const [showAddModel, setShowAddModel] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
-  const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
+  const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
   const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyDirtyRef = useRef(false);
@@ -665,6 +665,9 @@ export function ProviderDetail() {
                     {m.type === 'embedding' && (
                       <Tag color="green" style={{ fontSize: 10, margin: 0 }}>{t('provider.model.embeddingTag')}</Tag>
                     )}
+                    {m.streaming && (
+                      <Tooltip title={t('provider.model.capability.streaming')}><RadioTower size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
+                    )}
                     {m.function_call && (
                       <Tooltip title={t('provider.model.capability.toolUse')}><Wrench size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
                     )}
@@ -699,7 +702,7 @@ export function ProviderDetail() {
                         type="text"
                         size="small"
                         icon={<Pencil size={14} />}
-                        onClick={() => setEditModel({ id: m.id, display_name: m.display_name, type: m.type, context_window: m.context_window, enabled: m.enabled, function_call: m.function_call, vision: m.vision, reasoning: m.reasoning, search: m.search, image_output: m.image_output, video: m.video })}
+                        onClick={() => setEditModel({ id: m.id, display_name: m.display_name, type: m.type, context_window: m.context_window, enabled: m.enabled, streaming: m.streaming, function_call: m.function_call, vision: m.vision, reasoning: m.reasoning, search: m.search, image_output: m.image_output, video: m.video })}
                         style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextSecondary }}
                       />
                     </Tooltip>
@@ -807,7 +810,7 @@ function AddModelModal({
   onClose: () => void;
   onAdd: (providerId: string, data: {
     id: string; display_name?: string; type?: string; context_window?: number;
-    function_call?: boolean; vision?: boolean; reasoning?: boolean;
+    streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean;
     search?: boolean; image_output?: boolean; video?: boolean;
   }) => Promise<void>;
 }) {
@@ -865,7 +868,7 @@ function AddModelModal({
         labelCol={{ span: 7 }}
         wrapperCol={{ span: 17 }}
         style={{ marginTop: 24 }}
-        initialValues={{ type: 'chat', context_window: 128000 }}
+        initialValues={{ type: 'chat', context_window: 128000, streaming: true }}
         labelAlign="left"
         colon={false}
       >
@@ -911,6 +914,14 @@ function AddModelModal({
 
         <Divider style={{ margin: '8px 0 16px', borderColor: token.colorBorderSecondary }} />
 
+        <Form.Item
+          name="streaming"
+          valuePropName="checked"
+          label={t('provider.addModel.supportStreaming')}
+          extra={t('provider.addModel.supportStreamingExtra')}
+        >
+          <Checkbox />
+        </Form.Item>
         <Form.Item
           name="function_call"
           valuePropName="checked"
@@ -995,9 +1006,9 @@ function EditModelModal({
   onSave,
 }: {
   open: boolean;
-  model: { id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null;
+  model: { id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null;
   onClose: () => void;
-  onSave: (data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
+  onSave: (data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
   const [form] = Form.useForm();
@@ -1016,6 +1027,7 @@ function EditModelModal({
         type: model.type || 'chat',
         context_window: ctx,
         enabled: model.enabled ?? true,
+        streaming: model.streaming ?? false,
         function_call: model.function_call ?? false,
         vision: model.vision ?? false,
         reasoning: model.reasoning ?? false,
@@ -1111,6 +1123,14 @@ function EditModelModal({
 
         <Divider style={{ margin: '8px 0 16px', borderColor: token.colorBorderSecondary }} />
 
+        <Form.Item
+          name="streaming"
+          valuePropName="checked"
+          label={t('provider.addModel.supportStreaming')}
+          extra={t('provider.addModel.supportStreamingExtra')}
+        >
+          <Checkbox />
+        </Form.Item>
         <Form.Item
           name="function_call"
           valuePropName="checked"

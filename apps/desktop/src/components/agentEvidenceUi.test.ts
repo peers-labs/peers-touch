@@ -14,7 +14,11 @@ import {
   projectBudgetNotice,
   reduceStreamEvent,
 } from '../store/streaming/handler';
-import type { AvailableModel } from '../services/desktop_api';
+import {
+  AGENT_ATTACHMENT_REJECTED_ERROR_TYPE,
+  AGENT_CONTEXT_LIMIT_ERROR_TYPE,
+  type AvailableModel,
+} from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
 import type { ExportTurnDiagnosticsResponse } from '../gen/proto/domain/agent/agent_pb';
 
@@ -73,26 +77,54 @@ describe('Agent evidence UI projections', () => {
       error: 'agent.errors.toolLoopBudgetExhausted',
       error_type: BUDGET_ERROR_TYPE,
       locale_key: 'agent.errors.toolLoopBudgetExhausted',
+      retryable: false,
+      terminal: true,
+      details: {
+        turn_id: 'turn-1',
+        budget_kind: 'tool_calls',
+        limit: '4',
+      },
+    };
+
+    expect(projectBudgetNotice(data)).toEqual({
+      kind: 'tool_calls',
+      turnId: 'turn-1',
+      limit: '4',
+      localeKey: 'agent.errors.toolLoopBudgetExhausted',
+    });
+    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }))
+      .toMatchObject({
+        budgetNotice: {
+          kind: 'tool_calls',
+          turnId: 'turn-1',
+          limit: '4',
+        },
+        resolution: {
+          type: 'inspectBudget',
+          turnId: 'turn-1',
+        },
+      });
+  });
+
+  it('does not infer budget recovery from a legacy terminal reason', () => {
+    expect(projectBudgetNotice({
+      error: 'agent.errors.toolLoopBudgetExhausted',
+      error_type: BUDGET_ERROR_TYPE,
+      locale_key: 'agent.errors.toolLoopBudgetExhausted',
+      retryable: false,
+      terminal: true,
       details: {
         reason: 'max_tool_calls_exhausted',
         limit: '4',
         consumed: '4',
       },
-    };
-
-    expect(projectBudgetNotice(data)).toMatchObject({
-      kind: 'tool_calls',
-      limit: '4',
-      consumed: '4',
-    });
-    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }).budgetNotice)
-      .toMatchObject({ kind: 'tool_calls' });
+    })).toBeUndefined();
   });
 
   it('preserves typed attachment rejection details on the receiver message', () => {
     const data = {
       error: 'agent.errors.attachmentRejected',
-      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      error_type: AGENT_ATTACHMENT_REJECTED_ERROR_TYPE,
       locale_key: 'agent.errors.attachmentRejected',
       retryable: false,
       terminal: true,
@@ -115,7 +147,7 @@ describe('Agent evidence UI projections', () => {
   it('projects typed context overflow details onto the receiver message', () => {
     const data = {
       error: 'agent.errors.contextOverflow',
-      error_type: 'CONTEXT_OVERFLOW',
+      error_type: AGENT_CONTEXT_LIMIT_ERROR_TYPE,
       locale_key: 'agent.errors.contextOverflow',
       retryable: false,
       terminal: true,
@@ -169,6 +201,7 @@ describe('Agent evidence UI projections', () => {
 
   it('keeps stable proof selectors on all four user-facing surfaces', () => {
     const assistant = readFileSync(new URL('./messages/AssistantMessage.tsx', import.meta.url), 'utf8');
+    const desktopApi = readFileSync(new URL('../services/desktop_api.ts', import.meta.url), 'utf8');
     const sources = readFileSync(new URL('./messages/SourceAttributionBadges.tsx', import.meta.url), 'utf8');
     const composer = readFileSync(new URL('./ChatInput.tsx', import.meta.url), 'utf8');
     const attachments = readFileSync(new URL('./composer/AttachmentStage.tsx', import.meta.url), 'utf8');
@@ -176,13 +209,32 @@ describe('Agent evidence UI projections', () => {
 
     expect(assistant).toContain('data-budget-notice');
     expect(assistant).toContain('data-pt-agent-message-error-text');
+    expect(assistant).toContain(
+      '<div data-pt-agent-message-error-text={message.error}>{presentedError}</div>',
+    );
     expect(assistant).toContain('data-pt-agent-terminal-status');
     expect(assistant).toContain('data-pt-agent-error-resource-kind');
     expect(assistant).toContain('data-pt-agent-error-resource-id');
+    expect(assistant).toContain('data-pt-agent-error-capability-id');
+    expect(assistant).toContain('data-pt-agent-error-turn-id');
+    expect(assistant).toContain('data-pt-agent-error-reason-code');
     expect(assistant).toContain('data-pt-agent-message-error-recovery');
     expect(assistant).toContain('data-pt-agent-message-error-recovery="reduce-context"');
+    expect(assistant).toContain("'choose-compatible-model'");
+    expect(assistant).toContain("'switch-account'");
     expect(assistant).toContain("'open-original'");
+    expect(assistant).toContain("'recover'");
     expect(assistant).toContain('handleOpenOriginal');
+    expect(assistant).toContain('handleChooseCompatibleModel');
+    expect(assistant).toContain("message.resolution!.type === 'recover'");
+    expect(assistant).toContain('await handleRetry()');
+    expect(assistant).toContain("setAgentSurface(activeAgent.name, 'profile')");
+    expect(assistant).toContain("resource: 'sessions'");
+    expect(assistant).toContain('<LogOut size={14} />');
+    expect(assistant).toContain('await identityRuntime.logout()');
+    expect(desktopApi).toContain("label: 'agent.recovery.chooseCompatibleModel'");
+    expect(desktopApi).toContain("label: 'agent.recovery.switchAccount'");
+    expect(desktopApi).toContain("label: 'agent.recovery.recover'");
     expect(assistant).toContain('agent.recovery.reduceContext');
     expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');

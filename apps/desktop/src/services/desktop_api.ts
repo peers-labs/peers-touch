@@ -890,6 +890,7 @@ export interface Session {
   agent_name: string;
   title: string;
   message_count: number;
+  version?: number;
   model_override?: string;
   created_at: string;
   updated_at: string;
@@ -1160,6 +1161,7 @@ export interface AvailableModel {
   type: string;
   context_window: number;
   enabled: boolean;
+  streaming?: boolean;
   function_call?: boolean;
   vision?: boolean;
   reasoning?: boolean;
@@ -1177,6 +1179,7 @@ interface AvailableModelWire {
   type?: unknown;
   context_window?: unknown;
   enabled?: unknown;
+  capabilities?: unknown;
 }
 
 export interface ProviderListItem {
@@ -1199,12 +1202,31 @@ export interface ModelItem {
   type: string;
   enabled: boolean;
   context_window: number;
+  streaming?: boolean;
   function_call?: boolean;
   vision?: boolean;
   reasoning?: boolean;
   search?: boolean;
   image_output?: boolean;
   video?: boolean;
+}
+
+export interface ProviderModelConfigInput {
+  display_name?: string;
+  type?: string;
+  context_window?: number;
+  enabled?: boolean;
+  streaming?: boolean;
+  function_call?: boolean;
+  vision?: boolean;
+  reasoning?: boolean;
+  search?: boolean;
+  image_output?: boolean;
+  video?: boolean;
+}
+
+export interface ProviderModelCreateData extends ProviderModelConfigInput {
+  id: string;
 }
 
 export interface ProviderDetail extends ProviderListItem {
@@ -2164,6 +2186,18 @@ export interface MessagingAcceptanceInteractionSnapshot {
   consumerEpoch: number;
 }
 
+export interface MessagingAcceptancePreparedCommand {
+  actorPtid: string;
+  snapshot: MessagingAcceptanceInteractionSnapshot;
+}
+
+export interface MessagingAcceptanceRestorableCommand
+  extends MessagingAcceptancePreparedCommand {
+  conversationId: string;
+  messageId: string;
+  commandId: string;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -2493,9 +2527,903 @@ export interface AgentTypedErrorPayload {
   details: Record<string, string>;
 }
 
+export type AgentTerminalMutationStatus =
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+
+export interface AgentErrorResolutionAction {
+  type:
+    | 'reauthCli'
+    | 'openProviderSettings'
+    | 'checkConnection'
+    | 'openOriginal'
+    | 'editQueue'
+    | 'selectRuntime'
+    | 'retryLater'
+    | 'retry'
+    | 'switchAccount'
+    | 'chooseCompatibleModel'
+    | 'chooseTool'
+    | 'inspectBudget'
+    | 'chooseResourceAgain'
+    | 'removeReference'
+    | 'reconcile'
+    | 'recover'
+    | 'reloadLatest'
+    | 'openResult';
+  cliId?: string;
+  providerId?: string;
+  modelId?: string;
+  existingCommandId?: string;
+  conversationId?: string;
+  capacity?: number;
+  runtimeKind?: string;
+  retryAfterMs?: number;
+  deadline?: string;
+  resourceKind?: string;
+  resourceRefHash?: string;
+  resourceId?: string;
+  referenceKind?: string;
+  referenceHash?: string;
+  capabilityId?: string;
+  toolId?: string;
+  toolVersion?: string;
+  budgetKind?: AgentRuntimeBudgetKind;
+  limit?: string;
+  sessionId?: string;
+  leaseId?: string;
+  expiredAt?: string;
+  turnId?: string;
+  reasonCode?: string;
+  expectedRevision?: number;
+  actualRevision?: number;
+  terminalStatus?: AgentTerminalMutationStatus;
+  label: string;
+}
+
+export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
+  'CONTEXT_ATTACHMENT_REJECTED';
+export const AGENT_QUEUE_FULL_ERROR_TYPE = 'ADMISSION_QUEUE_FULL';
+export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
+export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
+export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.runtimeUnavailable';
+export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
+export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
+  'agent.errors.providerRateLimit';
+export const AGENT_PROVIDER_MODEL_UNAVAILABLE_ERROR_TYPE =
+  'PROVIDER_MODEL_UNAVAILABLE';
+export const AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.providerModelUnavailable';
+export const AGENT_PROVIDER_TIMEOUT_ERROR_TYPE = 'PROVIDER_TIMEOUT';
+export const AGENT_PROVIDER_TIMEOUT_LOCALE_KEY =
+  'agent.errors.providerTimeout';
+export const AGENT_TOOL_UNKNOWN_ERROR_TYPE = 'TOOL_UNKNOWN';
+export const AGENT_TOOL_UNKNOWN_LOCALE_KEY = 'agent.errors.toolUnknown';
+export const AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE =
+  'TOOL_LOOP_BUDGET_EXHAUSTED';
+export const AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_LOCALE_KEY =
+  'agent.errors.toolLoopBudgetExhausted';
+export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
+export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
+export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
+  'agent.errors.contextInvalidReference';
+export const AGENT_INVALID_RESOURCE_REFERENCE_ERROR_TYPE =
+  'CLIENT_INVALID_RESOURCE_REFERENCE';
+export const AGENT_INVALID_RESOURCE_REFERENCE_LOCALE_KEY =
+  'agent.errors.invalidResourceReference';
+export const AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE =
+  'CLIENT_LEASE_EXPIRED';
+export const AGENT_CLIENT_LEASE_EXPIRED_LOCALE_KEY =
+  'agent.errors.clientLeaseExpired';
+export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
+export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
+export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
+  'RUNTIME_INCOMPATIBLE_CAPABILITY';
+export const AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY =
+  'agent.errors.incompatibleCapability';
+export const AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE = 'LIFECYCLE_INTERRUPTED';
+export const AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY =
+  'agent.errors.lifecycleInterrupted';
+export const AGENT_LIFECYCLE_STALE_VERSION_ERROR_TYPE =
+  'LIFECYCLE_STALE_VERSION';
+export const AGENT_LIFECYCLE_STALE_VERSION_LOCALE_KEY =
+  'agent.errors.lifecycleStaleVersion';
+export const AGENT_LIFECYCLE_TERMINAL_MUTATION_ERROR_TYPE =
+  'LIFECYCLE_TERMINAL_MUTATION';
+export const AGENT_LIFECYCLE_TERMINAL_MUTATION_LOCALE_KEY =
+  'agent.errors.lifecycleTerminalMutation';
+
+export type AgentForbiddenActorError = AgentTypedErrorPayload & {
+  details: {
+    resource_kind: string;
+    resource_id: string;
+  };
+};
+
+export type AgentQueueFullError = AgentTypedErrorPayload & {
+  details: {
+    conversation_id: string;
+    capacity: string;
+  };
+};
+
+export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    runtime_kind: string;
+    reason_code: string;
+  };
+};
+
+export type AgentProviderRateLimitError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    retry_after_ms: string;
+  };
+};
+
+export type AgentProviderModelUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
+  };
+};
+
+export type AgentProviderTimeoutError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
+    deadline: string;
+  };
+};
+
+export type AgentToolUnknownError = AgentTypedErrorPayload & {
+  details: {
+    tool_id: string;
+    tool_version: string;
+  };
+};
+
+export type AgentRuntimeBudgetKind =
+  | 'tool_calls'
+  | 'identical_tool_calls'
+  | 'wall_time'
+  | 'attempts'
+  | 'agent_steps'
+  | 'delegation_depth'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'attachments'
+  | 'cost';
+
+export type AgentToolLoopBudgetExhaustedError = AgentTypedErrorPayload & {
+  details: {
+    turn_id: string;
+    budget_kind: AgentRuntimeBudgetKind;
+    limit: string;
+  };
+};
+
+export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
+  details: {
+    capability_id: string;
+    reason_code: string;
+  };
+};
+
+export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
+  details: {
+    turn_id: string;
+    reason_code: string;
+  };
+};
+
+export type AgentLifecycleStaleVersionError = AgentTypedErrorPayload & {
+  details: {
+    resource_id: string;
+    expected_revision: string;
+    actual_revision: string;
+  };
+};
+
+export type AgentLifecycleTerminalMutationError = AgentTypedErrorPayload & {
+  details: {
+    resource_id: string;
+    terminal_status: AgentTerminalMutationStatus;
+  };
+};
+
+export type AgentInvalidReferenceError = AgentTypedErrorPayload & {
+  details: {
+    reference_kind: string;
+    reference_hash: string;
+  };
+};
+
+export type AgentInvalidResourceReferenceError = AgentTypedErrorPayload & {
+  details: {
+    resource_kind: string;
+    resource_ref_hash: string;
+  };
+};
+
+export type AgentClientLeaseExpiredError = AgentTypedErrorPayload & {
+  details: {
+    session_id: string;
+    lease_id: string;
+    expired_at: string;
+  };
+};
+
+const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
+  'resource_kind',
+  'resource_ref_hash',
+  'resource_id',
+  'conversation_id',
+  'capacity',
+  'runtime_kind',
+  'provider_id',
+  'model_id',
+  'deadline',
+  'retry_after_ms',
+  'tool_id',
+  'tool_version',
+  'expected_revision',
+  'actual_revision',
+  'terminal_status',
+  'capability_id',
+  'turn_id',
+  'budget_kind',
+  'limit',
+  'reason_code',
+  'reference_kind',
+  'reference_hash',
+  'session_id',
+  'lease_id',
+  'expired_at',
+] as const;
+
+const AGENT_INVALID_REFERENCE_KINDS = new Set([
+  'file',
+  'folder',
+  'url',
+  'diff',
+  'staged',
+  'git',
+]);
+const AGENT_CLIENT_RESOURCE_KINDS = new Set([
+  'file',
+  'folder',
+  'image',
+  'workspace',
+]);
+const AGENT_RUNTIME_BUDGET_KINDS = new Set<AgentRuntimeBudgetKind>([
+  'tool_calls',
+  'identical_tool_calls',
+  'wall_time',
+  'attempts',
+  'agent_steps',
+  'delegation_depth',
+  'input_tokens',
+  'output_tokens',
+  'attachments',
+  'cost',
+]);
+const AGENT_TERMINAL_MUTATION_STATUSES = new Set<AgentTerminalMutationStatus>([
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+]);
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+const RFC3339_UTC_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/u;
+
+function isFiniteRFC3339UTC(value: string): boolean {
+  const match = RFC3339_UTC_PATTERN.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, fraction = ''] = match;
+  const components = [year, month, day, hour, minute, second].map(Number);
+  const [yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] =
+    components;
+  const date = new Date(0);
+  date.setUTCFullYear(yearValue, monthValue - 1, dayValue);
+  date.setUTCHours(
+    hourValue,
+    minuteValue,
+    secondValue,
+    Number(fraction.padEnd(3, '0').slice(0, 3)),
+  );
+  return (
+    Number.isFinite(date.getTime())
+    && date.getUTCFullYear() === yearValue
+    && date.getUTCMonth() === monthValue - 1
+    && date.getUTCDate() === dayValue
+    && date.getUTCHours() === hourValue
+    && date.getUTCMinutes() === minuteValue
+    && date.getUTCSeconds() === secondValue
+  );
+}
+
+function agentTypedErrorBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+function agentTypedErrorDetails(
+  data: Record<string, unknown>,
+): Record<string, string> | undefined {
+  if (data.details && typeof data.details === 'object' && !Array.isArray(data.details)) {
+    const entries = Object.entries(data.details as Record<string, unknown>);
+    if (entries.some(([, value]) => typeof value !== 'string')) {
+      return undefined;
+    }
+    return Object.fromEntries(entries) as Record<string, string>;
+  }
+  return Object.fromEntries(
+    AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
+      .map((field) => [field, data[field]] as const)
+      .filter((entry): entry is [typeof AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS[number], string] => (
+        typeof entry[1] === 'string'
+      )),
+  );
+}
+
+export function projectAgentTypedErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  const errorType = typeof (data.error_type ?? data.errorType ?? data.error_code) === 'string'
+    ? String(data.error_type ?? data.errorType ?? data.error_code)
+    : '';
+  const localeKey = typeof (data.locale_key ?? data.localeKey) === 'string'
+    ? String(data.locale_key ?? data.localeKey)
+    : '';
+  const retryable = agentTypedErrorBoolean(data.retryable);
+  const terminal = agentTypedErrorBoolean(data.terminal);
+  if (!errorType || !localeKey || retryable === undefined || terminal === undefined) {
+    return undefined;
+  }
+  const details = agentTypedErrorDetails(data);
+  if (!details) {
+    return undefined;
+  }
+  return {
+    error: typeof data.error === 'string' ? data.error : localeKey,
+    error_type: errorType,
+    locale_key: localeKey,
+    retryable,
+    terminal,
+    details,
+  };
+}
+
+export function projectAgentTurnOutcomeErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  const outcome = data.outcome_error ?? data.outcomeError;
+  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+    return undefined;
+  }
+  return projectAgentTypedErrorPayload(outcome as Record<string, unknown>);
+}
+
+export function projectAgentTurnErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  if (data.outcome_error !== undefined || data.outcomeError !== undefined) {
+    return projectAgentTurnOutcomeErrorPayload(data);
+  }
+  return projectAgentTypedErrorPayload(data);
+}
+
+export function isAgentForbiddenActorError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentForbiddenActorError {
+  if (
+    error?.error_type !== AGENT_FORBIDDEN_ACTOR_ERROR_TYPE
+    || error.locale_key !== AGENT_FORBIDDEN_ACTOR_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_id'
+    && detailKeys[1] === 'resource_kind'
+    && error.details.resource_kind.trim().length > 0
+    && error.details.resource_id.trim().length > 0
+  );
+}
+
+export function isAgentQueueFullError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentQueueFullError {
+  if (
+    error?.error_type !== AGENT_QUEUE_FULL_ERROR_TYPE
+    || error.locale_key !== AGENT_QUEUE_FULL_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const capacity = Number(error.details.capacity);
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capacity'
+    && detailKeys[1] === 'conversation_id'
+    && error.details.conversation_id.trim().length > 0
+    && Number.isInteger(capacity)
+    && capacity > 0
+  );
+}
+
+export function isAgentRuntimeUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeUnavailableError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'runtime_kind'
+    && error.details.runtime_kind.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentProviderRateLimitError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderRateLimitError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const retryAfterMs = Number(error.details.retry_after_ms);
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'provider_id'
+    && detailKeys[1] === 'retry_after_ms'
+    && error.details.provider_id.trim().length > 0
+    && Number.isInteger(retryAfterMs)
+    && retryAfterMs >= 0
+  );
+}
+
+export function isAgentProviderModelUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderModelUnavailableError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_MODEL_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'model_id'
+    && detailKeys[1] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+  );
+}
+
+export function isAgentProviderTimeoutError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderTimeoutError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_TIMEOUT_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_TIMEOUT_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'deadline'
+    && detailKeys[1] === 'model_id'
+    && detailKeys[2] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+    && isFiniteRFC3339UTC(error.details.deadline)
+  );
+}
+
+export function isAgentToolUnknownError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentToolUnknownError {
+  if (
+    error?.error_type !== AGENT_TOOL_UNKNOWN_ERROR_TYPE
+    || error.locale_key !== AGENT_TOOL_UNKNOWN_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'tool_id'
+    && detailKeys[1] === 'tool_version'
+    && error.details.tool_id.trim().length > 0
+    && error.details.tool_version.trim().length > 0
+  );
+}
+
+export function isAgentToolLoopBudgetExhaustedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentToolLoopBudgetExhaustedError {
+  if (
+    error?.error_type !== AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE
+    || error.locale_key !== AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const limit = Number(error.details.limit);
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'budget_kind'
+    && detailKeys[1] === 'limit'
+    && detailKeys[2] === 'turn_id'
+    && error.details.turn_id.trim().length > 0
+    && AGENT_RUNTIME_BUDGET_KINDS.has(
+      error.details.budget_kind as AgentRuntimeBudgetKind,
+    )
+    && Number.isFinite(limit)
+    && limit > 0
+  );
+}
+
+export function isAgentIncompatibleCapabilityError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentIncompatibleCapabilityError {
+  if (
+    error?.error_type !== AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE
+    || error.locale_key !== AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capability_id'
+    && detailKeys[1] === 'reason_code'
+    && error.details.capability_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentLifecycleInterruptedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleInterruptedError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'turn_id'
+    && error.details.turn_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentInvalidReferenceError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentInvalidReferenceError {
+  if (
+    error?.error_type !== AGENT_INVALID_REFERENCE_ERROR_TYPE
+    || error.locale_key !== AGENT_INVALID_REFERENCE_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reference_hash'
+    && detailKeys[1] === 'reference_kind'
+    && AGENT_INVALID_REFERENCE_KINDS.has(error.details.reference_kind)
+    && SHA256_HEX_PATTERN.test(error.details.reference_hash)
+  );
+}
+
+export function isAgentInvalidResourceReferenceError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentInvalidResourceReferenceError {
+  if (
+    error?.error_type !== AGENT_INVALID_RESOURCE_REFERENCE_ERROR_TYPE
+    || error.locale_key !== AGENT_INVALID_RESOURCE_REFERENCE_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_kind'
+    && detailKeys[1] === 'resource_ref_hash'
+    && AGENT_CLIENT_RESOURCE_KINDS.has(error.details.resource_kind)
+    && SHA256_HEX_PATTERN.test(error.details.resource_ref_hash)
+  );
+}
+
+export function isAgentClientLeaseExpiredError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentClientLeaseExpiredError {
+  if (
+    error?.error_type !== AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE
+    || error.locale_key !== AGENT_CLIENT_LEASE_EXPIRED_LOCALE_KEY
+    || !error.retryable
+    || error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'expired_at'
+    && detailKeys[1] === 'lease_id'
+    && detailKeys[2] === 'session_id'
+    && error.details.session_id.trim().length > 0
+    && error.details.lease_id.trim().length > 0
+    && Number.isFinite(Date.parse(error.details.expired_at))
+  );
+}
+
+export function isAgentLifecycleStaleVersionError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleStaleVersionError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_STALE_VERSION_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_STALE_VERSION_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const expectedRevision = Number(error.details.expected_revision);
+  const actualRevision = Number(error.details.actual_revision);
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'actual_revision'
+    && detailKeys[1] === 'expected_revision'
+    && detailKeys[2] === 'resource_id'
+    && error.details.resource_id.trim().length > 0
+    && /^[1-9]\d*$/u.test(error.details.expected_revision)
+    && /^[1-9]\d*$/u.test(error.details.actual_revision)
+    && Number.isSafeInteger(expectedRevision)
+    && Number.isSafeInteger(actualRevision)
+    && actualRevision > expectedRevision
+  );
+}
+
+export function isAgentLifecycleTerminalMutationError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleTerminalMutationError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_TERMINAL_MUTATION_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_TERMINAL_MUTATION_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_id'
+    && detailKeys[1] === 'terminal_status'
+    && error.details.resource_id.trim().length > 0
+    && AGENT_TERMINAL_MUTATION_STATUSES.has(
+      error.details.terminal_status as AgentTerminalMutationStatus,
+    )
+  );
+}
+
+export function resolveAgentTypedErrorAction(
+  error: AgentTypedErrorPayload | null | undefined,
+): AgentErrorResolutionAction | undefined {
+  if (isAgentProviderTimeoutError(error)) {
+    return {
+      type: 'retry',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      deadline: error.details.deadline,
+      label: 'agent.recovery.retry',
+    };
+  }
+  if (isAgentProviderRateLimitError(error)) {
+    return {
+      type: 'retryLater',
+      providerId: error.details.provider_id,
+      retryAfterMs: Number(error.details.retry_after_ms),
+      label: 'agent.recovery.retryLater',
+    };
+  }
+  if (isAgentProviderModelUnavailableError(error)) {
+    return {
+      type: 'chooseCompatibleModel',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentToolUnknownError(error)) {
+    return {
+      type: 'chooseTool',
+      toolId: error.details.tool_id,
+      toolVersion: error.details.tool_version,
+      label: 'agent.recovery.chooseTool',
+    };
+  }
+  if (isAgentToolLoopBudgetExhaustedError(error)) {
+    return {
+      type: 'inspectBudget',
+      turnId: error.details.turn_id,
+      budgetKind: error.details.budget_kind,
+      limit: error.details.limit,
+      label: 'agent.recovery.inspectBudget',
+    };
+  }
+  if (isAgentRuntimeUnavailableError(error)) {
+    return {
+      type: 'selectRuntime',
+      runtimeKind: error.details.runtime_kind,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.selectRuntime',
+    };
+  }
+  if (isAgentQueueFullError(error)) {
+    return {
+      type: 'editQueue',
+      conversationId: error.details.conversation_id,
+      capacity: Number(error.details.capacity),
+      label: 'agent.recovery.editQueue',
+    };
+  }
+  if (isAgentForbiddenActorError(error)) {
+    return {
+      type: 'switchAccount',
+      resourceKind: error.details.resource_kind,
+      resourceId: error.details.resource_id,
+      label: 'agent.recovery.switchAccount',
+    };
+  }
+  if (isAgentIncompatibleCapabilityError(error)) {
+    return {
+      type: 'chooseCompatibleModel',
+      capabilityId: error.details.capability_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentLifecycleInterruptedError(error)) {
+    return {
+      type: 'recover',
+      turnId: error.details.turn_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.recover',
+    };
+  }
+  if (isAgentLifecycleStaleVersionError(error)) {
+    return {
+      type: 'reloadLatest',
+      resourceId: error.details.resource_id,
+      expectedRevision: Number(error.details.expected_revision),
+      actualRevision: Number(error.details.actual_revision),
+      label: 'agent.recovery.reloadLatest',
+    };
+  }
+  if (isAgentLifecycleTerminalMutationError(error)) {
+    return {
+      type: 'openResult',
+      resourceId: error.details.resource_id,
+      turnId: error.details.resource_id,
+      terminalStatus: error.details.terminal_status,
+      label: 'agent.recovery.openResult',
+    };
+  }
+  if (isAgentInvalidResourceReferenceError(error)) {
+    return {
+      type: 'chooseResourceAgain',
+      resourceKind: error.details.resource_kind,
+      resourceRefHash: error.details.resource_ref_hash,
+      label: 'agent.recovery.chooseResourceAgain',
+    };
+  }
+  if (isAgentClientLeaseExpiredError(error)) {
+    return {
+      type: 'reconcile',
+      sessionId: error.details.session_id,
+      leaseId: error.details.lease_id,
+      expiredAt: error.details.expired_at,
+      label: 'agent.recovery.reconcile',
+    };
+  }
+  if (isAgentInvalidReferenceError(error)) {
+    return {
+      type: 'removeReference',
+      referenceKind: error.details.reference_kind,
+      referenceHash: error.details.reference_hash,
+      label: 'agent.recovery.removeReference',
+    };
+  }
+  if (
+    error?.error_type === 'PROVIDER_CREDENTIAL_MISSING'
+    && error.details.provider_id
+  ) {
+    return {
+      type: 'openProviderSettings',
+      providerId: error.details.provider_id,
+      label: 'agent.recovery.configureCredential',
+    };
+  }
+  if (
+    error?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
+    && error.details.existing_command_id
+  ) {
+    return {
+      type: 'openOriginal',
+      existingCommandId: error.details.existing_command_id,
+      label: 'agent.recovery.openOriginal',
+    };
+  }
+  return undefined;
+}
+
+export function isAgentAttachmentRejectedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_ATTACHMENT_REJECTED_ERROR_TYPE;
+}
+
+export function isAgentContextOverflowError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_CONTEXT_LIMIT_ERROR_TYPE;
+}
+
 export interface AgentTurnStreamError extends Error {
   typedError?: AgentTypedErrorPayload;
-  resolution?: unknown;
+  resolution?: AgentErrorResolutionAction;
   errorDetail?: string;
   providerId?: string;
 }
@@ -2567,6 +3495,7 @@ export interface AgentTurnReplayStreamInput {
   conversation_id: string;
   turn_id: string;
   after_seq: number;
+  attempt_id?: string;
 }
 
 export interface AgentTurnReplayStreamCancelInput {
@@ -2577,11 +3506,13 @@ export function toAgentTurnReplayWireInput(input: Omit<AgentTurnReplayStreamInpu
   conversation_id: string;
   turn_id: string;
   afterSequence: number;
+  attempt_id?: string;
 } {
   return {
     conversation_id: input.conversation_id,
     turn_id: input.turn_id,
     afterSequence: input.after_seq,
+    ...(input.attempt_id ? { attempt_id: input.attempt_id } : {}),
   };
 }
 
@@ -2771,13 +3702,16 @@ export type AgentCapabilityNegativeControl =
   | 'unauthorized'
   | 'signatureTamper'
   | 'schemaMismatch'
-  | 'crossDevice';
+  | 'crossDevice'
+  | 'leasePause'
+  | 'leaseExpired';
 
 export interface AgentCapabilityNegativeControlFact {
   control: AgentCapabilityNegativeControl;
   availability: 'available' | 'unavailable';
   unavailableReason?: string;
   capabilitySessionIdHash: string;
+  workerPaused?: boolean;
   before: {
     localExecutionAttemptCount: number;
     localSideEffectCount: number;
@@ -2790,6 +3724,20 @@ export interface AgentCapabilityNegativeControlFact {
     httpStatus?: number;
     transportErrorKind?: string;
     stationErrorDetails?: Record<string, unknown>;
+    requestHash?: string;
+  };
+  sourceStation?: AgentCapabilityNegativeControlFact['station'];
+  replayStation?: AgentCapabilityNegativeControlFact['station'];
+  leaseTransition?: {
+    sourceCapabilitySessionIdHash: string;
+    sourceLeaseIdHash: string;
+    sourceLeaseRevision: number;
+    sourceExpiresAtMs: number;
+    currentCapabilitySessionIdHash: string;
+    currentLeaseIdHash: string;
+    currentExpiresAtMs: number;
+    currentLeaseRevision: number;
+    currentPullCursor: number;
   };
   after: {
     localExecutionAttemptCount: number;
@@ -4235,6 +5183,11 @@ export const api = {
         type: String(model.type || ''),
         context_window: Number(model.context_window || 0),
         enabled: Boolean(model.enabled),
+        streaming: modelCapabilityFlag(model, 'streaming'),
+        function_call: modelCapabilityFlag(model, 'native-tools'),
+        vision: modelCapabilityFlag(model, 'image-input'),
+        reasoning: modelCapabilityFlag(model, 'reasoning'),
+        image_output: modelCapabilityFlag(model, 'image-output'),
       }))
       : [];
     return { models, default: models[0]?.id || '' };
@@ -4281,17 +5234,17 @@ export const api = {
   deleteProvider: (id: string) =>
     invokeRustDataFromStatus<ProviderIdInput, { success: boolean }>('provider_delete', { id }),
 
-  addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) =>
+  addModel: (providerId: string, data: ProviderModelCreateData) =>
     invokeRustDataFromStatus<ProviderModelAddInput, { ok: boolean }>('model_add', {
       provider_id: providerId,
-      data,
+      data: withModelCapabilityConfig(data),
     }),
 
-  updateModel: (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) =>
+  updateModel: (providerId: string, modelId: string, data: ProviderModelConfigInput) =>
     invokeRustDataFromStatus<ProviderModelUpdateInput, { ok: boolean }>('model_update', {
       provider_id: providerId,
       model_id: modelId,
-      data,
+      data: withModelCapabilityConfig(data),
     }),
 
   deleteModel: (providerId: string, modelId: string) =>
@@ -4991,6 +5944,18 @@ export const api = {
   closeBrowserCapabilitySession: () =>
     invokeRustDataFromStatus<Record<string, never>, { state: string }>(
       'agent_browser_capability_session_close',
+      {},
+    ),
+
+  startAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_start',
+      {},
+    ),
+
+  stopAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_stop',
       {},
     ),
 
@@ -5722,6 +6687,53 @@ export const api = {
       command_id: input.commandId ?? '',
     }),
 
+  messagingAcceptancePrepareSubmittedCommand: (input: {
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+    commandId: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        message_id: string;
+        command_id: string;
+      },
+      MessagingAcceptancePreparedCommand
+    >('messaging_acceptance_prepare_submitted_command', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      command_id: input.commandId,
+    }),
+
+  messagingAcceptanceCreateRestorableCommand: (input: {
+    actorPtid: string;
+    conversationId: string;
+    plaintext: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        plaintext: string;
+      },
+      MessagingAcceptanceRestorableCommand
+    >('messaging_acceptance_create_restorable_command', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      plaintext: input.plaintext,
+    }),
+
+  messagingAcceptanceResumeLifecycle: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actorPtid: string; activated: boolean }
+    >('messaging_acceptance_resume_lifecycle', {
+      expected_actor_ptid: expectedActorPtid,
+    }),
+
   messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>
     invokeRustData<
       { expected_actor_ptid: string },
@@ -6238,8 +7250,9 @@ export interface AgentTurnSourceDelivery {
 }
 
 export interface AgentTurnStreamController extends AbortController {
+  readonly streamId: string;
   readonly streamGeneration: number;
-  disconnectTransport(): void;
+  disconnectTransport(): Promise<void>;
 }
 
 export interface ChatImageInput {
@@ -6287,6 +7300,44 @@ function parseJSONSafe(input?: string): Record<string, any> {
   try { return JSON.parse(input); } catch { return {}; }
 }
 
+function modelCapabilityFlags(model: unknown): Record<string, boolean> {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return {};
+  const capabilities = (model as Record<string, unknown>).capabilities;
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return {};
+  const flags = (capabilities as Record<string, unknown>).flags;
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return {};
+  return flags as Record<string, boolean>;
+}
+
+function modelCapabilityFlag(model: unknown, capabilityId: string): boolean {
+  return Boolean(modelCapabilityFlags(model)[capabilityId]);
+}
+
+function withModelCapabilityConfig<T extends ProviderModelConfigInput>(data: T): T & {
+  capabilities?: { flags: Record<string, boolean> };
+} {
+  const flags: Record<string, boolean> = {};
+  const assignments: Array<[keyof ProviderModelConfigInput, string]> = [
+    ['streaming', 'streaming'],
+    ['function_call', 'native-tools'],
+    ['vision', 'image-input'],
+    ['reasoning', 'reasoning'],
+    ['image_output', 'image-output'],
+  ];
+  for (const [field, capabilityId] of assignments) {
+    if (data[field] !== undefined) {
+      flags[capabilityId] = Boolean(data[field]);
+    }
+  }
+  if (Object.keys(flags).length === 0) {
+    return data;
+  }
+  return {
+    ...data,
+    capabilities: { flags },
+  };
+}
+
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
   return {
     id: item.id,
@@ -6322,11 +7373,12 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
         type: String(model?.type || 'chat'),
         enabled: Boolean(model?.enabled ?? true),
         context_window: Number(model?.context_window || 0),
-        function_call: Boolean(model?.function_call),
-        vision: Boolean(model?.vision),
-        reasoning: Boolean(model?.reasoning),
+        streaming: modelCapabilityFlag(model, 'streaming'),
+        function_call: modelCapabilityFlag(model, 'native-tools'),
+        vision: modelCapabilityFlag(model, 'image-input'),
+        reasoning: modelCapabilityFlag(model, 'reasoning'),
         search: Boolean(model?.search),
-        image_output: Boolean(model?.image_output),
+        image_output: modelCapabilityFlag(model, 'image-output'),
         video: Boolean(model?.video),
       } as ModelItem;
     })
@@ -6352,6 +7404,27 @@ function isHttpGatewayMode() {
 export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
 export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
+// #region debug-point J-M:lease-replay-fetch
+function reportLeaseReplayFetchDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'lease-approval-stall',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'desktop_api.ts:streamAgentTurnReplay',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 const FOUNDATION_F06_STREAM_PROBE_INPUT =
   'Write a detailed 2000-word numbered guide to durable event stream recovery.';
 const AGENT_REPLAY_CONTROL_EVENTS = new Set([
@@ -6402,12 +7475,72 @@ function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void>
   });
 }
 
+async function agentTurnHttpErrorData(
+  response: Response,
+): Promise<Record<string, unknown>> {
+  const bodyText = await response.text();
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      body = parsed as Record<string, unknown>;
+    }
+  } catch {
+    body = {};
+  }
+  let headerDetails: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(response.headers.get('x-peers-error-details') || '');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      headerDetails = parsed as Record<string, unknown>;
+    }
+  } catch {
+    headerDetails = {};
+  }
+  const details = Object.fromEntries(
+    AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
+      .map((field) => [field, headerDetails[field]] as const)
+      .filter((entry): entry is [typeof AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS[number], string] => (
+        typeof entry[1] === 'string'
+      )),
+  );
+  const errorType = response.headers.get('x-peers-error-code')
+    || (typeof body.error_type === 'string' ? body.error_type : '');
+  const localeKey = response.headers.get('x-peers-error-locale-key')
+    || (typeof body.locale_key === 'string' ? body.locale_key : '');
+  const retryable = agentTypedErrorBoolean(
+    response.headers.get('x-peers-error-retryable') ?? body.retryable,
+  );
+  const terminal = agentTypedErrorBoolean(
+    response.headers.get('x-peers-error-terminal') ?? body.terminal,
+  );
+  return {
+    type: 'error',
+    error: localeKey
+      || (typeof body.error === 'string' ? body.error : `Agent stream returned HTTP ${response.status}`),
+    ...(errorType ? { error_type: errorType } : {}),
+    ...(localeKey ? { locale_key: localeKey } : {}),
+    ...(retryable === undefined ? {} : { retryable }),
+    ...(terminal === undefined ? {} : { terminal }),
+    details,
+  };
+}
+
 async function consumeAgentSSE(
   response: Response,
   signal: AbortSignal,
   onFrame: (event: StreamEvent) => boolean,
+  onActivity?: (activity: 'heartbeat') => void,
 ): Promise<boolean> {
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    const data = await agentTurnHttpErrorData(response);
+    if (projectAgentTypedErrorPayload(data)) {
+      onFrame({ event: 'error', data });
+      return true;
+    }
+    throw new Error(String(data.error));
+  }
+  if (!response.body) {
     throw new Error(`Agent stream returned HTTP ${response.status}`);
   }
   const reader = response.body.getReader();
@@ -6433,17 +7566,31 @@ async function consumeAgentSSE(
       const frame = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
       const lines = frame.split('\n');
-      const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+      const eventLine = lines.find((line) => line.startsWith('event:'));
       const dataText = lines
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trimStart())
         .join('\n');
+      if (
+        !eventLine
+        && !dataText
+        && lines.every((line) => !line.trim() || line.startsWith(':'))
+      ) {
+        onActivity?.('heartbeat');
+        boundary = buffer.indexOf('\n\n');
+        continue;
+      }
+      const event = eventLine?.slice(6).trim() || 'message';
       let data: Record<string, unknown> = {};
       if (dataText) {
         const parsed = JSON.parse(dataText);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           data = parsed as Record<string, unknown>;
         }
+      }
+      if (signal.aborted) {
+        await reader.cancel();
+        return terminal;
       }
       terminal = onFrame({ event, data }) || terminal;
       if (signal.aborted) {
@@ -6463,7 +7610,10 @@ async function consumeAgentSSE(
 export function classifyAgentTurnTerminalEvent(
   event: StreamEvent,
 ): 'completed' | 'cancelled' | 'queued' | 'failed' | 'interrupted' | null {
-  if (event.event === 'error') return 'failed';
+  if (event.event === 'error') {
+    const outcome = projectAgentTurnOutcomeErrorPayload(event.data);
+    return isAgentLifecycleInterruptedError(outcome) ? 'interrupted' : 'failed';
+  }
   if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
   if (event.event === 'done') return 'completed';
   if (event.event === 'cancelled') return 'cancelled';
@@ -6479,54 +7629,27 @@ export function classifyAgentTurnTerminalEvent(
 export function agentTurnStreamErrorFromData(
   data: Record<string, unknown>,
 ): AgentTurnStreamError {
-  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
-    ? Object.fromEntries(
-        Object.entries(data.details as Record<string, unknown>)
-          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      )
-    : {};
-  const errorType = typeof data.error_type === 'string' ? data.error_type : '';
-  const localeKey = typeof data.locale_key === 'string' ? data.locale_key : '';
-  const typedError = (
-    errorType
-    && localeKey
-    && typeof data.retryable === 'boolean'
-    && typeof data.terminal === 'boolean'
-  )
-    ? {
-        error: typeof data.error === 'string' ? data.error : localeKey,
-        error_type: errorType,
-        locale_key: localeKey,
-        retryable: data.retryable,
-        terminal: data.terminal,
-        details,
-      }
-    : undefined;
+  const typedError = projectAgentTurnErrorPayload(data);
   const error = new Error(
     typedError?.locale_key
     || (typeof data.error === 'string' ? data.error : 'agent.error.streamFailed'),
   ) as AgentTurnStreamError;
   error.typedError = typedError;
-  if (data.resolution && typeof data.resolution === 'object') {
-    error.resolution = data.resolution;
-  } else if (
-    typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'
-    && typedError.details.provider_id
-  ) {
-    error.resolution = {
-      type: 'openProviderSettings',
-      providerId: typedError.details.provider_id,
-      label: 'agent.recovery.configureCredential',
-    };
-  } else if (
-    typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
-    && typedError.details.existing_command_id
-  ) {
-    error.resolution = {
-      type: 'openOriginal',
-      existingCommandId: typedError.details.existing_command_id,
-      label: 'agent.recovery.openOriginal',
-    };
+  const mappedResolution = resolveAgentTypedErrorAction(typedError);
+  if (mappedResolution) {
+    error.resolution = mappedResolution;
+  } else if (data.resolution && typeof data.resolution === 'object') {
+    const suppliedResolution = data.resolution as AgentErrorResolutionAction;
+    if (
+      suppliedResolution.type !== 'recover'
+      && suppliedResolution.type !== 'chooseResourceAgain'
+      && suppliedResolution.type !== 'removeReference'
+      && suppliedResolution.type !== 'retry'
+      && suppliedResolution.type !== 'reloadLatest'
+      && suppliedResolution.type !== 'openResult'
+    ) {
+      error.resolution = suppliedResolution;
+    }
   }
   if (typeof data.detail === 'string') error.errorDetail = data.detail;
   if (typeof data.providerId === 'string') {
@@ -6535,6 +7658,26 @@ export function agentTurnStreamErrorFromData(
     error.providerId = typedError.details.provider_id;
   }
   return error;
+}
+
+export function normalizeAgentTurnStreamError(error: unknown): AgentTurnStreamError {
+  if (error instanceof Error && 'typedError' in error) {
+    return error as AgentTurnStreamError;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (error && typeof error === 'object' && 'details' in error) {
+    const details = error.details;
+    if (details && typeof details === 'object' && !Array.isArray(details)) {
+      const normalized = agentTurnStreamErrorFromData({
+        ...(details as Record<string, unknown>),
+        error: message,
+      });
+      if (normalized.typedError) return normalized;
+    }
+  }
+  return error instanceof Error
+    ? error as AgentTurnStreamError
+    : new Error(message) as AgentTurnStreamError;
 }
 
 export function createAgentTurnSourceDelivery(
@@ -6683,6 +7826,10 @@ export function streamAgentTurn(
   const controller = new AbortController() as AgentTurnStreamController;
   const streamId = input.stream_id || createAgentTurnStreamId();
   const streamGeneration = nextAgentTurnStreamGeneration();
+  Object.defineProperty(controller, 'streamId', {
+    value: streamId,
+    enumerable: true,
+  });
   Object.defineProperty(controller, 'streamGeneration', {
     value: streamGeneration,
     enumerable: true,
@@ -6691,14 +7838,23 @@ export function streamAgentTurn(
   if (isHttpGatewayMode()) {
     const transportController = new AbortController();
     let transportDisconnectRequested = false;
+    let resolveTransportDisconnect = () => {};
+    let rejectTransportDisconnect = (_error: Error) => {};
+    const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+      resolveTransportDisconnect = resolve;
+      rejectTransportDisconnect = reject;
+    });
     const foundationFaultProbe =
       input.user_input === FOUNDATION_F06_STREAM_PROBE_INPUT;
     const foundationFaultProbeStartedAt = performance.now();
     Object.defineProperty(controller, 'disconnectTransport', {
       value: () => {
-        if (transportDisconnectRequested || controller.signal.aborted) return;
-        transportDisconnectRequested = true;
-        transportController.abort();
+        if (controller.signal.aborted) return Promise.resolve();
+        if (!transportDisconnectRequested) {
+          transportDisconnectRequested = true;
+          transportController.abort();
+        }
+        return transportDisconnectCompletion;
       },
       enumerable: true,
     });
@@ -6729,16 +7885,19 @@ export function streamAgentTurn(
         onEvent(projectedEvent);
         const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           onError(agentTurnStreamErrorFromData(projectedEvent.data));
           settled = true;
           return true;
         }
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
+          resolveTransportDisconnect();
           onDone();
-          settled = true;
-          return true;
-        }
-        if (terminal === 'interrupted') {
           settled = true;
           return true;
         }
@@ -6746,11 +7905,6 @@ export function streamAgentTurn(
       };
       controller.signal.addEventListener('abort', () => {
         transportController.abort();
-        if (turnId) {
-          api.cancelAgentTurn(turnId).catch((error) => {
-            log.warn('api', 'Browser Agent turn cancel failed', { error: String(error) });
-          });
-        }
       }, { once: true });
       try {
         const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
@@ -6779,9 +7933,6 @@ export function streamAgentTurn(
             });
           }
           if (controller.signal.aborted) {
-            if (turnId) {
-              await api.cancelAgentTurn(turnId);
-            }
             return;
           }
           terminal = await consumeAgentSSE(
@@ -6843,8 +7994,14 @@ export function streamAgentTurn(
                 : liveTransportError?.message || 'station_stream_closed',
             },
           });
+          resolveTransportDisconnect();
         }
       } catch (err: unknown) {
+        if (transportDisconnectRequested) {
+          rejectTransportDisconnect(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
         if (!controller.signal.aborted && !settled) {
           onError(err instanceof Error ? err : new Error(String(err)));
         }
@@ -6853,13 +8010,20 @@ export function streamAgentTurn(
     return controller;
   }
   let transportDisconnectRequested = false;
-  let disconnectNativeTransport = () => {
+  let resolveTransportDisconnect = () => {};
+  let rejectTransportDisconnect = (_error: Error) => {};
+  const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+    resolveTransportDisconnect = resolve;
+    rejectTransportDisconnect = reject;
+  });
+  let disconnectNativeTransport = (): Promise<void> => {
     transportDisconnectRequested = true;
+    return transportDisconnectCompletion;
   };
   Object.defineProperty(controller, 'disconnectTransport', {
     value: () => {
-      if (controller.signal.aborted) return;
-      disconnectNativeTransport();
+      if (controller.signal.aborted) return Promise.resolve();
+      return disconnectNativeTransport();
     },
     enumerable: true,
   });
@@ -6889,30 +8053,26 @@ export function streamAgentTurn(
       });
     };
     const disconnectTransport = () => {
-      if (!startCompleted || transportCancellationSent) return;
+      if (!startCompleted || transportCancellationSent) {
+        return transportDisconnectCompletion;
+      }
       transportCancellationSent = true;
       void api.disconnectAgentTurnStream(streamId).catch((error) => {
         log.warn('api', 'Agent turn transport disconnect failed', {
           streamId,
           error: String(error),
         });
+        rejectTransportDisconnect(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       });
+      return transportDisconnectCompletion;
     };
     disconnectNativeTransport = () => {
       transportDisconnectRequested = true;
-      disconnectTransport();
-    };
-    const cancelSemanticTurn = () => {
-      if (!capturedTurnId) return;
-      void api.cancelAgentTurn(capturedTurnId).catch((error) => {
-        log.warn('api', 'Agent turn cancel failed', {
-          turnId: capturedTurnId,
-          error: String(error),
-        });
-      });
+      return disconnectTransport();
     };
     const abortNativeStream = () => {
-      cancelSemanticTurn();
       cancelTransport();
       cleanup();
     };
@@ -6980,18 +8140,18 @@ export function streamAgentTurn(
         const payload = tauriEvent.payload;
         if (payload.streamId !== streamId) return;
         if (controller.signal.aborted) {
-          const abortedTurnId = typeof payload.data?.turnId === 'string'
-            ? payload.data.turnId
-            : typeof payload.data?.turn_id === 'string'
-              ? payload.data.turn_id
-              : '';
-          if (abortedTurnId) capturedTurnId = abortedTurnId;
-          cancelSemanticTurn();
           unlistenLive?.();
+          return;
+        }
+        if (
+          transportDisconnectRequested
+          && payload.event !== 'connection_lost'
+        ) {
           return;
         }
         forwardEvent(payload);
         if (payload.event === 'connection_lost' && payload.data?.recoveryHandoff === true) {
+          resolveTransportDisconnect();
           cleanup();
           return;
         }
@@ -6999,19 +8159,23 @@ export function streamAgentTurn(
           event: payload.event,
           data: payload.data || {},
         });
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
           settle();
         }
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onError(agentTurnStreamErrorFromData(payload.data || {}));
-          settle();
-        }
-        if (terminal === 'interrupted') {
           settle();
         }
       });
@@ -7031,12 +8195,45 @@ export function streamAgentTurn(
         return;
       }
       if (transportDisconnectRequested) {
-        disconnectTransport();
+        await disconnectTransport();
       }
     } catch (err: unknown) {
+      if (transportDisconnectRequested) {
+        rejectTransportDisconnect(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
       cleanup();
       if (!settled) {
-        onError(err instanceof Error ? err : new Error(String(err)));
+        const normalized = normalizeAgentTurnStreamError(err);
+        if (normalized.typedError) {
+          const sourceData: Record<string, unknown> = {
+            ...normalized.typedError,
+            conversationId: input.conversation_id,
+            agentId: input.agent_id,
+          };
+          const event: StreamEvent = {
+            event: 'error',
+            data: { ...sourceData, streamGeneration },
+            ptid: sourcePtid,
+            sourceDelivery: createAgentTurnSourceDelivery(
+              'error',
+              sourceData,
+              sourcePtid,
+              input.conversation_id,
+            ),
+          };
+          publishAgentTurnRuntimeEvent(
+            streamId,
+            streamGeneration,
+            sourcePtid,
+            input.conversation_id,
+            input.agent_id,
+            event,
+          );
+          onEvent(event);
+        }
+        onError(normalized);
       }
     }
   })();
@@ -7062,6 +8259,12 @@ export function streamAgentTurnReplay(
       ...event,
       data: { ...event.data, streamGeneration },
     };
+    // #region debug-point J-M:lease-replay-event
+    reportLeaseReplayFetchDebug('J-M', 'replay-event', {
+      eventType: projectedEvent.event,
+      sequence: event.data.seq ?? event.data.sequence ?? null,
+    });
+    // #endregion
     const terminalStatus = classifyAgentTurnTerminalEvent(projectedEvent);
     if (
       projectedEvent.event === 'catchup_done'
@@ -7080,6 +8283,13 @@ export function streamAgentTurnReplay(
   };
   const catchupDeadline = globalThis.setTimeout(() => {
     if (catchupEstablished || controller.signal.aborted) return;
+    // #region debug-point J-M:lease-replay-catchup-timeout
+    reportLeaseReplayFetchDebug('J-M', 'catchup-timeout', {
+      conversationId: input.conversation_id,
+      turnId: input.turn_id,
+      afterSequence: input.after_seq,
+    });
+    // #endregion
     reportReplayError(new Error('agent.error.replayCatchupTimeout'));
     controller.abort();
   }, AGENT_REPLAY_CATCHUP_TIMEOUT_MS);
@@ -7108,12 +8318,28 @@ export function streamAgentTurnReplay(
               attempt: attempt + 1,
             },
           });
+          // #region debug-point J-L:lease-replay-fetch-start
+          reportLeaseReplayFetchDebug('J-L', 'fetch-start', {
+            gatewayBase,
+            attempt: attempt + 1,
+            conversationId: input.conversation_id,
+            turnId: input.turn_id,
+            afterSequence: input.after_seq,
+          });
+          // #endregion
           const response = await fetch(`${gatewayBase}/agent/turn/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
             body: JSON.stringify(toAgentTurnReplayWireInput(input)),
             signal: controller.signal,
           });
+          // #region debug-point J-L:lease-replay-fetch-response
+          reportLeaseReplayFetchDebug('J-L', 'fetch-response', {
+            attempt: attempt + 1,
+            status: response.status,
+            ok: response.ok,
+          });
+          // #endregion
           deliverReplayEvent({
             event: 'replaying',
             ptid: sourcePtid,
@@ -7187,6 +8413,14 @@ export function streamAgentTurnReplay(
               deliverReplayEvent(sourceEvent);
             }
             return liveTailEstablished && terminalStatus !== null;
+          }, () => {
+            // #region debug-point F-H:lease-replay-heartbeat
+            reportLeaseReplayFetchDebug('F-H', 'stream-heartbeat', {
+              attempt: attempt + 1,
+              afterSequence: input.after_seq,
+              liveTailEstablished,
+            });
+            // #endregion
           });
           if (terminal || controller.signal.aborted) return;
           replayError = new Error(
@@ -7197,6 +8431,14 @@ export function streamAgentTurnReplay(
         } catch (error) {
           if (controller.signal.aborted) return;
           replayError = error instanceof Error ? error : new Error(String(error));
+          // #region debug-point J-M:lease-replay-fetch-error
+          reportLeaseReplayFetchDebug('J-M', 'fetch-error', {
+            attempt: attempt + 1,
+            errorName: replayError.name,
+            errorMessage: replayError.message,
+            liveTailEstablished,
+          });
+          // #endregion
         }
         if (liveTailEstablished && replayError) {
           reportReplayError(replayError);

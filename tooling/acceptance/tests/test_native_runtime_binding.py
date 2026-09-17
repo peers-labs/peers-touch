@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -15,10 +17,15 @@ from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native.base import MouseAction, NativeKey
 from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
+    LocalMacOSRuntimeBinding,
     WindowsNativeDesktopRuntimeBinding,
     resolve_native_desktop_runtime,
 )
-from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher, TauriSession
+from tooling.acceptance.drivers.tauri import (
+    MakeDesktopLauncher,
+    ProvisionedTauriLauncher,
+    TauriSession,
+)
 
 
 class SyntheticRemoteNativeLifecycle:
@@ -117,11 +124,15 @@ class SyntheticRemoteNativeLifecycle:
             "activate_process",
             "focused_control",
             "reveal_file_chooser_location_to_process",
+            "select_file_chooser_path_to_process",
         }:
             return {
                 "kind": (
                     "text-field"
-                    if operation == "reveal_file_chooser_location_to_process"
+                    if operation in {
+                        "reveal_file_chooser_location_to_process",
+                        "select_file_chooser_path_to_process",
+                    }
                     else "window"
                 ),
                 "actualFrontmostPid": payload["processId"],
@@ -221,10 +232,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         revealed_control = (
             binding.native_adapter.reveal_file_chooser_location_to_process(712)
         )
+        path_control = binding.native_adapter.select_file_chooser_path_to_process(
+            712,
+            r"C:\acceptance\fixture.png",
+        )
         activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
         self.assertIsNotNone(revealed_control)
         self.assertEqual(revealed_control.kind, "text-field")
+        self.assertIsNotNone(path_control)
+        self.assertEqual(path_control.kind, "text-field")
         self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
@@ -272,6 +289,19 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (
                 "execute_adapter",
                 (
+                    "select_file_chooser_path_to_process",
+                    {
+                        "processId": 712,
+                        "path": r"C:\acceptance\fixture.png",
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
                     "post_key_sequence_to_process",
                     {
                         "processId": 712,
@@ -309,6 +339,29 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             binding.native_file_sha256("alice", staged),
             "b" * 64,
+        )
+
+    def test_windows_clipboard_write_retries_one_broker_failure(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            r"C:\acceptance\actors\alice\fixture.png"
+        )
+        lifecycle.execute_adapter = Mock(
+            side_effect=[DriverError("broker timeout"), {}],
+        )
+        binding = WindowsNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+
+        binding.native_adapter.write_clipboard(b"replacement")
+
+        self.assertEqual(lifecycle.execute_adapter.call_count, 2)
+        lifecycle.execute_adapter.assert_called_with(
+            "write_clipboard",
+            {
+                "content": base64.b64encode(b"replacement").decode("ascii"),
+            },
         )
 
     def test_remote_binding_delegates_session_endpoint_and_cleanup(self) -> None:
@@ -503,6 +556,170 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             [call.args[0] for call in get_lifecycle.call_args_list],
             ["desktop-linux-native", "desktop-windows-native"],
+        )
+
+    def test_macos_development_binding_launches_through_make(self) -> None:
+        client = {
+            "worktree": str(Path.cwd()),
+            "webdriver_port": 4447,
+            "gateway_port": 3140,
+            "renderer_port": 3410,
+            "profile": "chat-native-alice",
+            "storage_root": "/tmp/chat-native-alice",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+            session = binding._create_session(
+                "alice",
+                client,
+                {
+                    "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                    "PT_ACCEPTANCE_WINDOW_COUNT": "2",
+                },
+            )
+
+        self.assertIsInstance(session.launcher, MakeDesktopLauncher)
+        self.assertEqual(session.launcher.worktree, Path.cwd())
+        self.assertEqual(session.launcher.port, 4447)
+        self.assertEqual(session.launcher.gateway_port, 3140)
+        self.assertEqual(session.launcher.renderer_port, 3410)
+        self.assertEqual(session.launcher.profile, "chat-native-alice")
+
+    def test_macos_cleanup_retains_persistent_client_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            ephemeral = root / "ephemeral"
+            persistent = root / "persistent"
+            ephemeral.mkdir()
+            persistent.mkdir()
+            (ephemeral / "state").write_text("temporary", encoding="utf-8")
+            (persistent / "state").write_text("durable", encoding="utf-8")
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
+            client_specs = {
+                "alice": {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3140,
+                    "renderer_port": 3410,
+                    "storage_root": str(persistent),
+                    "storage_lifecycle": "persistent",
+                },
+                "bob": {
+                    "webdriver_port": 4446,
+                    "gateway_port": 3141,
+                    "renderer_port": 3411,
+                    "storage_root": str(ephemeral),
+                    "storage_lifecycle": "ephemeral",
+                },
+            }
+
+            with patch(
+                "tooling.acceptance.drivers.native.runtime._wait_for",
+                return_value=True,
+            ):
+                cleanup = binding.finalize_cleanup([], client_specs)
+
+            self.assertTrue(persistent.is_dir())
+            self.assertEqual(
+                (persistent / "state").read_text(encoding="utf-8"),
+                "durable",
+            )
+            self.assertFalse(ephemeral.exists())
+            self.assertTrue(cleanup["storageReleased"])
+            self.assertTrue(cleanup["persistentStorageRetained"])
+            self.assertEqual(
+                cleanup["persistentStorageRoots"],
+                [str(persistent)],
+            )
+            self.assertEqual(
+                cleanup["releasedStorageRoots"],
+                [str(ephemeral)],
+            )
+
+    def test_macos_cleanup_rejects_unknown_storage_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = Path(temp_dir) / "unknown"
+            storage.mkdir()
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
+            client_specs = {
+                "alice": {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3140,
+                    "renderer_port": 3410,
+                    "storage_root": str(storage),
+                    "storage_lifecycle": "mystery",
+                },
+            }
+
+            with patch(
+                "tooling.acceptance.drivers.native.runtime._wait_for",
+                return_value=True,
+            ):
+                cleanup = binding.finalize_cleanup([], client_specs)
+
+            self.assertTrue(storage.is_dir())
+            self.assertFalse(cleanup["storageReleased"])
+            self.assertIn(
+                "invalid runtime client storage_lifecycle",
+                cleanup["storageErrors"][0]["error"],
+            )
+
+    def test_macos_development_binding_attests_running_make_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary = Path(temp_dir) / "peers-touch-desktop"
+            binary.write_bytes(b"native-binary")
+            launcher = MakeDesktopLauncher(
+                worktree=Path.cwd(),
+                port=4447,
+                gateway_port=3140,
+                renderer_port=3410,
+                profile="four",
+                storage_root=str(Path(temp_dir) / "storage"),
+            )
+            session = TauriSession(launcher)
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
+                binding._sessions_by_client["alice"] = session
+                with patch.object(
+                    launcher,
+                    "runtime_binary_path",
+                    return_value=binary,
+                ):
+                    identity = binding.binary_identity()
+
+        self.assertEqual(identity["path"], str(binary))
+        instances = json.loads(identity["instances"])
+        self.assertEqual(
+            instances,
+            [
+                {
+                    "path": str(binary),
+                    "sha256": hashlib.sha256(b"native-binary").hexdigest(),
+                }
+            ],
+        )
+        self.assertEqual(
+            identity["sha256"],
+            hashlib.sha256(
+                json.dumps(
+                    instances,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
         )
 
 

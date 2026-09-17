@@ -58,12 +58,12 @@ _DEFAULT_DEPLOY_ROOT = REPO_ROOT / ".local" / "deploy" / "envs"
 _DEFAULT_RUNTIME_ROOT = (
     "AppData/Local/PeersTouch/AcceptanceCells/desktop-windows-native"
 )
+_DEFAULT_CARGO_TARGET_ROOT = "pt-cache/desktop-windows-native"
 _BROKER_RELATIVE_PATH = (
     "tooling/acceptance/provisioners/windows_desktop_broker.py"
 )
-_BINARY_RELATIVE_PATH = (
-    "apps/desktop/src-tauri/target/debug/peers-touch-desktop.exe"
-)
+_BINARY_RELATIVE_PATH = "debug/peers-touch-desktop.exe"
+_BUILD_SCRIPT_RELATIVE_PATH = "tooling/scripts/windows-desktop-build.ps1"
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -154,6 +154,28 @@ def _windows_join(root: str, *parts: str) -> str:
     return str(PureWindowsPath(root, *parts))
 
 
+def _normalized_windows_path(path: str) -> PureWindowsPath:
+    normalized = str(PureWindowsPath(path))
+    if normalized.startswith("\\\\?\\UNC\\"):
+        normalized = "\\\\" + normalized[8:]
+    elif normalized.startswith("\\\\?\\"):
+        normalized = normalized[4:]
+    return PureWindowsPath(normalized)
+
+
+def _windows_verbatim_path(path: str) -> str:
+    normalized = str(_normalized_windows_path(path))
+    if normalized.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + normalized[2:]
+    return "\\\\?\\" + normalized
+
+
+def _windows_path_is_descendant(path: str, root: str) -> bool:
+    candidate = _normalized_windows_path(path)
+    parent = _normalized_windows_path(root)
+    return candidate != parent and parent in candidate.parents
+
+
 def _json_output(
     completed: subprocess.CompletedProcess[str],
     operation: str,
@@ -194,10 +216,13 @@ class WindowsCellProfile:
     runtime_root: str
     python_executable: str
     vsdevcmd_path: str
+    windows_sdk_root: str
+    windows_sdk_version: str
     perl_path: str
     protoc_path: str
     webdriver_port: int
     gateway_port: int
+    cargo_target_root: str = _DEFAULT_CARGO_TARGET_ROOT
     build_timeout_seconds: int = 3600
 
     @classmethod
@@ -249,6 +274,16 @@ class WindowsCellProfile:
                 "PT_ACCEPTANCE_CELL_VSDEVCMD",
                 "C:/BuildTools/Common7/Tools/VsDevCmd.bat",
             ),
+            windows_sdk_root=_required(
+                values,
+                "PT_ACCEPTANCE_CELL_WINDOWS_SDK_ROOT",
+                path,
+            ),
+            windows_sdk_version=_required(
+                values,
+                "PT_ACCEPTANCE_CELL_WINDOWS_SDK_VERSION",
+                path,
+            ),
             perl_path=values.get(
                 "PT_ACCEPTANCE_CELL_PERL",
                 "C:/Strawberry/perl/bin/perl.exe",
@@ -270,6 +305,10 @@ class WindowsCellProfile:
                 3230,
                 path,
             ),
+            cargo_target_root=values.get(
+                "PT_ACCEPTANCE_CELL_CARGO_TARGET_ROOT",
+                _DEFAULT_CARGO_TARGET_ROOT,
+            ),
             build_timeout_seconds=_positive_int(
                 values,
                 "PT_ACCEPTANCE_CELL_BUILD_TIMEOUT_SECONDS",
@@ -286,10 +325,23 @@ class WindowsCellProfile:
             raise ProvisioningError(
                 "Windows runtime-cell runtime root must be relative to remote home"
             )
+        cargo_target = PureWindowsPath(self.cargo_target_root)
+        if cargo_target.is_absolute() or ".." in cargo_target.parts:
+            raise ProvisioningError(
+                "Windows runtime-cell Cargo target root must be relative to remote home"
+            )
         vsdevcmd = PureWindowsPath(self.vsdevcmd_path)
         if not vsdevcmd.is_absolute():
             raise ProvisioningError(
                 "Windows runtime-cell VsDevCmd path must be drive-absolute"
+            )
+        if not PureWindowsPath(self.windows_sdk_root).is_absolute():
+            raise ProvisioningError(
+                "Windows runtime-cell SDK root must be drive-absolute"
+            )
+        if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", self.windows_sdk_version):
+            raise ProvisioningError(
+                "Windows runtime-cell SDK version must be numeric"
             )
         if not PureWindowsPath(self.perl_path).is_absolute():
             raise ProvisioningError(
@@ -322,6 +374,7 @@ class _ActorRuntime:
 class _EndpointRuntime:
     endpoint_id: str
     tunnel: SshTunnel
+    tunnel_pid: int
     local_port: int
     remote_port: int
     released: bool = False
@@ -451,7 +504,10 @@ class NativeDesktopWindowsProvisioner:
                 self.profile.webdriver_port,
                 self.profile.gateway_port,
             )
-            binary_path, binary_sha256 = self._build_binary(remote_source)
+            binary_path, binary_sha256 = self._build_binary(
+                remote_source,
+                remote_home,
+            )
             self._require_interactive_desktop(host)
             acquired = self._broker(
                 broker_path,
@@ -471,6 +527,10 @@ class NativeDesktopWindowsProvisioner:
                     "expiresAtEpoch": int(expires_at.timestamp()),
                     "remoteHome": remote_home,
                     "remoteSource": remote_source,
+                    "cargoTargetRoot": _windows_join(
+                        remote_home,
+                        self.profile.cargo_target_root,
+                    ),
                     "brokerRoot": broker_root,
                     "brokerPath": broker_path,
                     "binaryPath": binary_path,
@@ -766,15 +826,17 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 "orchestrator endpoint must declare an explicit port"
             )
+        remote_port = self.transport.available_remote_port()
         tunnel = self.transport.start_reverse_forward(
             local_port=port,
-            remote_port=port,
+            remote_port=remote_port,
         )
         runtime = _EndpointRuntime(
             endpoint_id=normalized,
             tunnel=tunnel,
+            tunnel_pid=tunnel.process_id,
             local_port=port,
-            remote_port=port,
+            remote_port=remote_port,
         )
         self._endpoints[normalized] = runtime
         return {
@@ -782,15 +844,15 @@ class NativeDesktopWindowsProvisioner:
             "url": urlunsplit(
                 (
                     parsed.scheme,
-                    f"127.0.0.1:{port}",
+                f"127.0.0.1:{remote_port}",
                     parsed.path,
                     parsed.query,
                     parsed.fragment,
                 )
             ),
-            "tunnelPid": tunnel.process_id,
+            "tunnelPid": runtime.tunnel_pid,
             "localPort": port,
-            "remotePort": port,
+            "remotePort": remote_port,
         }
 
     def release_endpoint(self, endpoint_id: str) -> dict[str, Any]:
@@ -824,7 +886,7 @@ class NativeDesktopWindowsProvisioner:
         self._endpoints.pop(endpoint_id, None)
         return {
             "endpointId": endpoint_id,
-            "tunnelPid": runtime.tunnel.process_id,
+            "tunnelPid": runtime.tunnel_pid,
             "localPort": runtime.local_port,
             "remotePort": runtime.remote_port,
             "released": True,
@@ -834,7 +896,7 @@ class NativeDesktopWindowsProvisioner:
         active = [
             {
                 "endpointId": endpoint_id,
-                "tunnelPid": runtime.tunnel.process_id,
+                "tunnelPid": runtime.tunnel_pid,
                 "localPort": runtime.local_port,
                 "remotePort": runtime.remote_port,
             }
@@ -921,13 +983,16 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 "Windows runtime-cell fixture source is invalid"
             )
-        digest = hashlib.sha256(local_source.read_bytes()).hexdigest()
+        source_identity = hashlib.sha256(
+            os.fsencode(local_source)
+        ).hexdigest()
+        content_digest = hashlib.sha256(local_source.read_bytes()).hexdigest()
         remote_path = _windows_join(
             str(state["brokerRoot"]),
             "actors",
             normalized,
             "fixtures",
-            digest,
+            source_identity,
             local_source.name,
         )
         self.transport.run_argv(
@@ -946,7 +1011,7 @@ class NativeDesktopWindowsProvisioner:
             check=True,
         )
         self.transport.copy_file(local_source, remote_path, timeout=60)
-        if self.actor_file_sha256(normalized, remote_path) != digest:
+        if self.actor_file_sha256(normalized, remote_path) != content_digest:
             raise ProvisioningError(
                 "Windows runtime-cell staged fixture digest mismatch"
             )
@@ -955,22 +1020,30 @@ class NativeDesktopWindowsProvisioner:
     def actor_file_sha256(self, actor: str, path: str) -> str:
         state = self._require_state()
         normalized = self._active_actor(actor)
-        candidate = PureWindowsPath(path)
-        actor_root = PureWindowsPath(
-            _windows_join(
-                str(state["brokerRoot"]),
-                "actors",
-                normalized,
-            )
+        candidate = _normalized_windows_path(path)
+        fixture_root = _windows_join(
+            str(state["brokerRoot"]),
+            "actors",
+            normalized,
+            "fixtures",
+        )
+        runtime_actor_root = _windows_join(
+            str(state["brokerRoot"]),
+            "actors",
+            str(state["runId"]),
+            normalized,
         )
         if (
             not candidate.is_absolute()
-            or candidate == actor_root
-            or actor_root not in candidate.parents
+            or not any(
+                _windows_path_is_descendant(str(candidate), root)
+                for root in (fixture_root, runtime_actor_root)
+            )
         ):
             raise ProvisioningError(
                 "Windows runtime-cell file is outside actor root"
             )
+        io_path = _windows_verbatim_path(str(candidate))
         completed = self.transport.run_argv(
             (
                 "powershell.exe",
@@ -979,7 +1052,7 @@ class NativeDesktopWindowsProvisioner:
                 "-Command",
                 (
                     "(Get-FileHash -Algorithm SHA256 -LiteralPath "
-                    f"'{str(candidate).replace(chr(39), chr(39) * 2)}').Hash"
+                    f"'{io_path.replace(chr(39), chr(39) * 2)}').Hash"
                 ),
             ),
             timeout=15,
@@ -1012,20 +1085,22 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 f"Windows runtime-cell actor {target!r} is active"
             )
-        source_path = _windows_join(
+        source_path = _windows_verbatim_path(_windows_join(
             str(state["brokerRoot"]),
             "actors",
+            str(state["runId"]),
             source,
             "storage",
             str(relative),
-        )
-        target_path = _windows_join(
+        ))
+        target_path = _windows_verbatim_path(_windows_join(
             str(state["brokerRoot"]),
             "actors",
+            str(state["runId"]),
             target,
             "storage",
             str(relative),
-        )
+        ))
         script = (
             "$ErrorActionPreference='Stop'; "
             f"if (Test-Path -LiteralPath '{target_path}') {{ "
@@ -1227,6 +1302,8 @@ class NativeDesktopWindowsProvisioner:
                     ),
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                 )
                 if created.returncode != 0:
@@ -1324,27 +1401,56 @@ class NativeDesktopWindowsProvisioner:
             deploy_path=request.deploy_path,
         )
 
-    def _build_binary(self, remote_source: str) -> tuple[str, str]:
-        binary_path = _windows_join(remote_source, _BINARY_RELATIVE_PATH)
-        command = (
-            f'call "{self.profile.vsdevcmd_path}" -arch=x64 && '
-            f'set "OPENSSL_SRC_PERL={self.profile.perl_path}" && '
-            f'set "PROTOC={self.profile.protoc_path}" && '
-            f'cd /d "{remote_source}" && '
-            "pnpm install --frozen-lockfile && "
-            'set "VITE_ACCEPTANCE_HARNESS=1" && '
-            "pnpm --dir apps/desktop run build && "
-            "cd apps\\desktop\\src-tauri && "
-            "set TAURI_CONFIG={\"app\":{\"withGlobalTauri\":true}} && "
-            "cargo build --locked --features acceptance-webdriver"
+    def _build_binary(
+        self,
+        remote_source: str,
+        remote_home: str,
+    ) -> tuple[str, str]:
+        cargo_target_root = _windows_join(
+            remote_home,
+            self.profile.cargo_target_root,
+        )
+        binary_path = _windows_join(
+            cargo_target_root,
+            _BINARY_RELATIVE_PATH,
+        )
+        build_script = _windows_join(
+            remote_source,
+            _BUILD_SCRIPT_RELATIVE_PATH,
         )
         completed = self.transport.run_argv(
-            ("cmd.exe", "/d", "/s", "/c", command),
+            (
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                build_script,
+                "-SourceRoot",
+                remote_source,
+                "-CargoTargetRoot",
+                cargo_target_root,
+                "-VsDevCmd",
+                self.profile.vsdevcmd_path,
+                "-WindowsSdkRoot",
+                self.profile.windows_sdk_root.rstrip("/\\"),
+                "-WindowsSdkVersion",
+                self.profile.windows_sdk_version.rstrip("/\\"),
+                "-PerlPath",
+                self.profile.perl_path,
+                "-ProtocPath",
+                self.profile.protoc_path,
+            ),
             timeout=self.profile.build_timeout_seconds,
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
+            detail = "\n".join(
+                output.strip()
+                for output in (completed.stdout, completed.stderr)
+                if output.strip()
+            )
             raise BlockedError(
                 reason=f"Windows Desktop build failed: {detail[-8000:]}",
                 resource="runtime-cell-binary:desktop-windows-native",
@@ -1384,6 +1490,12 @@ class NativeDesktopWindowsProvisioner:
             str(state["runId"]),
             actor,
         )
+        actor_state_root = _windows_join(
+            str(state["brokerRoot"]),
+            "state",
+            str(state["runId"]),
+            actor,
+        )
         return self._broker_from_state(
             state,
             "launch-actor",
@@ -1398,7 +1510,7 @@ class NativeDesktopWindowsProvisioner:
                 "webdriverPort": webdriver_port,
                 "gatewayPort": gateway_port,
                 "profile": profile,
-                "storageRoot": _windows_join(actor_root, "storage"),
+                "storageRoot": actor_state_root,
                 "logPath": _windows_join(actor_root, "logs", "desktop.log"),
             },
         )
@@ -1705,6 +1817,8 @@ class NativeDesktopWindowsProvisioner:
             ),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         ).stdout
         if not host_key:

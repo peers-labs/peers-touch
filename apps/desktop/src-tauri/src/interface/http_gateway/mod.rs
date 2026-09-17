@@ -8,12 +8,14 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -74,6 +76,35 @@ use ulid::Ulid;
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
+static IDENTITY_TRANSITION_WAITERS: AtomicUsize = AtomicUsize::new(0);
+static IDENTITY_TRANSITION_MAX_WAITERS: AtomicUsize = AtomicUsize::new(0);
+
+struct IdentityTransitionAttempt;
+
+impl IdentityTransitionAttempt {
+    fn enter() -> Self {
+        let waiters = IDENTITY_TRANSITION_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut observed = IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst);
+        while waiters > observed {
+            match IDENTITY_TRANSITION_MAX_WAITERS.compare_exchange(
+                observed,
+                waiters,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(actual) => observed = actual,
+            }
+        }
+        Self
+    }
+}
+
+impl Drop for IdentityTransitionAttempt {
+    fn drop(&mut self) {
+        IDENTITY_TRANSITION_WAITERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 struct GatewayRequestDiagnostics {
     active_workers_at_enqueue: usize,
@@ -81,10 +112,13 @@ struct GatewayRequestDiagnostics {
     queued_at_enqueue: usize,
 }
 
+const AGENT_STREAM_PREAMBLE: &[u8] = b": gateway-connected\n\n";
+
 struct AgentStreamBody<R> {
     inner: R,
     station_path: &'static str,
     closed: bool,
+    preamble_offset: usize,
 }
 
 impl<R> AgentStreamBody<R> {
@@ -93,12 +127,20 @@ impl<R> AgentStreamBody<R> {
             inner,
             station_path,
             closed: false,
+            preamble_offset: 0,
         }
     }
 }
 
 impl<R: Read> Read for AgentStreamBody<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.preamble_offset < AGENT_STREAM_PREAMBLE.len() {
+            let remaining = &AGENT_STREAM_PREAMBLE[self.preamble_offset..];
+            let read = remaining.len().min(buffer.len());
+            buffer[..read].copy_from_slice(&remaining[..read]);
+            self.preamble_offset += read;
+            return Ok(read);
+        }
         if self.closed {
             return Ok(0);
         }
@@ -122,6 +164,64 @@ impl<R: Read> Read for AgentStreamBody<R> {
             }
         }
     }
+}
+
+fn copy_agent_stream_body<R: Read, W: Write>(
+    body: &mut R,
+    writer: &mut W,
+    chunked: bool,
+) -> io::Result<()> {
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let read = body.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        if chunked {
+            write!(writer, "{read:x}\r\n")?;
+        }
+        writer.write_all(&buffer[..read])?;
+        if chunked {
+            writer.write_all(b"\r\n")?;
+        }
+        writer.flush()?;
+    }
+    if chunked {
+        writer.write_all(b"0\r\n\r\n")?;
+    }
+    writer.flush()
+}
+
+fn respond_agent_stream<R: Read>(
+    request: tiny_http::Request,
+    status: u16,
+    turn_id: Option<&str>,
+    mut body: R,
+) -> io::Result<()> {
+    let version = request.http_version().clone();
+    let chunked = version > tiny_http::HTTPVersion(1, 0);
+    let status_code = tiny_http::StatusCode(status);
+    let mut writer = request.into_writer();
+    write!(
+        writer,
+        "HTTP/{version} {status} {}\r\n",
+        status_code.default_reason_phrase()
+    )?;
+    writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
+    writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    writer.write_all(b"Access-Control-Allow-Origin: *\r\n")?;
+    writer.write_all(b"Access-Control-Expose-Headers: X-Agent-Turn-ID\r\n")?;
+    if let Some(turn_id) = turn_id {
+        write!(writer, "X-Agent-Turn-ID: {turn_id}\r\n")?;
+    }
+    if chunked {
+        writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
+    } else {
+        writer.write_all(b"Connection: close\r\n")?;
+    }
+    writer.write_all(b"\r\n")?;
+    writer.flush()?;
+    copy_agent_stream_body(&mut body, &mut writer, chunked)
 }
 
 // #region debug-point D-E:foundation-gateway-dispatch
@@ -247,6 +347,37 @@ fn report_foundation_fault_stream_debug(stage: &str, data: Value) {
         .and_then(|client| {
             client
                 .post("http://127.0.0.1:7783/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
+// #region debug-point J-M:lease-replay-gateway
+fn report_lease_replay_gateway_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "lease-approval-stall",
+        "runId": "post-fix",
+        "hypothesisId": "J-M",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7777/event")
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(payload.to_string())
                 .send()
@@ -535,7 +666,18 @@ fn handle_agent_stream_proxy(
         .flatten();
     let fault_request = std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true")
         && foundation_fault_stream_request(&body);
+    let lease_replay_request = station_path == "/sub-agent/agent/conversation/events";
     let stream_started_at = std::time::Instant::now();
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "request-received",
+            json!({
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
+    }
     if let Some((request_kind, queue_index)) = queue_request {
         report_foundation_queue_stream_debug(
             "stream-proxy-started",
@@ -589,6 +731,16 @@ fn handle_agent_stream_proxy(
     let upstream = match upstream {
         Ok(response) => response,
         Err(error) => {
+            if lease_replay_request {
+                report_lease_replay_gateway_debug(
+                    "upstream-error",
+                    json!({
+                        "elapsedMs": stream_started_at.elapsed().as_millis(),
+                        "isConnect": error.is_connect(),
+                        "isTimeout": error.is_timeout(),
+                    }),
+                );
+            }
             if fault_request {
                 report_foundation_fault_stream_debug(
                     "gateway-upstream-error",
@@ -607,20 +759,29 @@ fn handle_agent_stream_proxy(
         }
     };
     let status = upstream.status().as_u16();
-    let turn_id_header = upstream
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "upstream-admitted",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+            }),
+        );
+    }
+    let turn_id = upstream
         .headers()
         .get("x-agent-turn-id")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+        .map(str::to_owned);
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-upstream-admitted",
             json!({
                 "elapsedMs": stream_started_at.elapsed().as_millis(),
                 "status": status,
-                "turnIdPresent": turn_id_header.is_some(),
+                "turnIdPresent": turn_id.is_some(),
             }),
         );
     }
@@ -632,31 +793,25 @@ fn handle_agent_stream_proxy(
             json!({
                 "elapsedMs": stream_started_at.elapsed().as_millis(),
                 "status": status,
-                "turnIdPresent": turn_id_header.is_some(),
+                "turnIdPresent": turn_id.is_some(),
             }),
         );
     }
-    let mut response_headers = vec![
-        "Content-Type: text/event-stream; charset=utf-8"
-            .parse()
-            .unwrap(),
-        "Cache-Control: no-cache".parse().unwrap(),
-        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
-            .parse()
-            .unwrap(),
-        cors_origin(),
-    ];
-    if let Some(header) = turn_id_header {
-        response_headers.push(header);
-    }
-    let response = tiny_http::Response::new(
-        tiny_http::StatusCode(status),
-        response_headers,
+    let response_result = respond_agent_stream(
+        request,
+        status,
+        turn_id.as_deref(),
         AgentStreamBody::new(upstream, station_path),
-        None,
-        None,
     );
-    let response_result = request.respond(response);
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "stream-completed",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-stream-completed",
@@ -914,6 +1069,20 @@ fn gateway_access_context(state: &AppState) -> Result<(String, String, String), 
         return Err(to_json(unauthorized_error()));
     }
     Ok((session.account_id, session.actor.ptid, session.jwt))
+}
+
+fn gateway_key_exchange_context(
+    state: &AppState,
+) -> Result<crate::interface::tauri_commands::key_exchange::ActiveKeyExchangeContext, Value> {
+    let (account_id, actor_ptid, token) = gateway_access_context(state)?;
+    crate::interface::tauri_commands::key_exchange::
+        active_key_exchange_context_for_account::<Value>(
+            state,
+            &account_id,
+            &actor_ptid,
+            &token,
+        )
+        .map_err(to_json)
 }
 
 fn token_from_state(state: &AppState) -> Result<String, Value> {
@@ -1241,6 +1410,48 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: command.to_string(),
         status: data.to_string(),
+    })
+}
+
+fn station_list_payload(
+    entries: Vec<crate::infrastructure::station_registry::StationEntry>,
+    active_url: Option<String>,
+    binding: crate::application::station_binding::StationBindingState,
+) -> Value {
+    json!({
+        "entries": entries,
+        "active_url": active_url,
+        "binding": binding,
+    })
+}
+
+fn friend_request_projection(request: &model::social::SocialFriendRequest) -> Value {
+    json!({
+        "request_id": request.request_id.as_str(),
+        "sender_ptid": request
+            .sender
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "receiver_ptid": request
+            .receiver
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "state": request.state,
+        "federation_id": request.federation_id.as_str(),
+        "sender_home_station_peer_id":
+            request.sender_home_station_peer_id.as_str(),
+        "receiver_home_station_peer_id":
+            request.receiver_home_station_peer_id.as_str(),
+    })
+}
+
+fn relationship_projection(relationship: &model::social::Relationship) -> Value {
+    json!({
+        "target_actor_ptid": relationship.target_actor_ptid.as_str(),
+        "following": relationship.following,
+        "followed_by": relationship.followed_by,
     })
 }
 
@@ -2347,25 +2558,168 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::auth_validate_token(input, state))
         }
         "acceptance_current_session" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                Some(_) | None => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "authentication required",
-                        None,
-                    ));
-                }
-            };
+            let messaging_profile_matches = state
+                .messaging_engines
+                .profile_worker_token(&account_id)
+                .map(|worker_token| worker_token.as_deref() == Some(token.as_str()))
+                .unwrap_or(false);
             to_json(to_stub(
                 "acceptance_current_session",
                 json!({
                     "actor_ptid": actor_ptid,
-                    "token": token,
+                    "token_fingerprint": hex::encode(Sha256::digest(token.as_bytes())),
+                    "account_id": account_id,
+                    "messaging_profile_matches": messaging_profile_matches,
+                }),
+            ))
+        }
+        "acceptance_identity_transition_metrics" => {
+            if args.get("reset").and_then(Value::as_bool).unwrap_or(false) {
+                IDENTITY_TRANSITION_MAX_WAITERS.store(
+                    IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    Ordering::SeqCst,
+                );
+            }
+            to_json(to_stub(
+                "acceptance_identity_transition_metrics",
+                json!({
+                    "current_waiters": IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    "max_waiters": IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst),
+                }),
+            ))
+        }
+        "acceptance_federation_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let active_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ))
+                }
+            };
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(to_stub(
+                    "acceptance_federation_context",
+                    json!({
+                        "active_station_peer_id": active_station_peer_id,
+                        "federations": view
+                            .federations
+                            .iter()
+                            .map(|federation| json!({
+                                "federation_id": federation.federation_id,
+                                "name": federation.name,
+                                "status": federation.status,
+                            }))
+                            .collect::<Vec<_>>(),
+                    }),
+                )),
+                Err(error) => to_json(
+                    error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
+                ),
+            }
+        }
+        "social_get_relationship" => {
+            let input = match parse_args::<SocialGetRelationshipInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            if input.target_actor_ptid.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_actor_ptid is required",
+                    None,
+                ));
+            }
+            let query = vec![("target_actor_ptid", input.target_actor_ptid)];
+            let response =
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<Vec<u8>>("get relationship failed"))
+                    }
+                };
+            to_json(AppResult::success(response.encode_to_vec()))
+        }
+        "acceptance_friend_request_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let target_actor_ptid = string_arg(&args, "target_actor_ptid", "targetActorPtid");
+            let pending_query = vec![
+                (
+                    "state",
+                    (model::social::FriendRequestState::Pending as i32).to_string(),
+                ),
+                ("limit", "200".to_string()),
+                ("offset", "0".to_string()),
+            ];
+            let pending =
+                match station_client::request_proto::<
+                    (),
+                    model::social::ListSocialFriendRequestsResponse,
+                >(
+                    Method::GET,
+                    "/api/v1/social/friend-requests",
+                    &token,
+                    Some(&pending_query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance friend-request list failed",
+                        ))
+                    }
+                };
+            let relationship = if target_actor_ptid.is_empty() {
+                None
+            } else {
+                let query = vec![("target_actor_ptid", target_actor_ptid)];
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response.relationship.as_ref().map(relationship_projection),
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance relationship readback failed",
+                        ))
+                    }
+                }
+            };
+            to_json(to_stub(
+                "acceptance_friend_request_context",
+                json!({
+                    "pending_requests": pending
+                        .requests
+                        .iter()
+                        .map(friend_request_projection)
+                        .collect::<Vec<_>>(),
+                    "relationship": relationship,
                 }),
             ))
         }
@@ -2745,60 +3099,26 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            let provider_id = input.provider_id.trim();
-            let model_id = input
-                .data
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim();
-            let display_name = input
-                .data
-                .get("display_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim();
-            let context_window = input
-                .data
-                .get("context_window")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-            if model_id.is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "model id is required",
-                    None,
-                ));
-            }
-            match app_provider::station_api::create_model(
+            to_json(app_provider::model_add(
                 &token,
-                provider_id,
-                model_id,
-                display_name,
-                true,
-                context_window,
-            ) {
-                Ok(resp) => to_json(to_stub("model_add", resp)),
-                Err(e) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    &format!("{:?}", e),
-                    None,
-                )),
-            }
+                &input.provider_id,
+                &input.data,
+            ))
         }
         "model_update" => {
             let input = match parse_args::<ProviderModelUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let scope = match resolve_scope(state) {
-                Ok(s) => s,
+            let token = match token_from_state(state) {
+                Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "models module removed",
-                None,
+            to_json(app_provider::model_update(
+                &token,
+                &input.provider_id,
+                &input.model_id,
+                &input.data,
             ))
         }
         "model_delete" => {
@@ -3307,6 +3627,42 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_runtime_evidence::close_browser_capability_session(
                 supervisor.inner(),
             ))
+        }
+        "agent_client_executor_supervisor_start" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_client_executor_supervisor_start") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                app_runtime_evidence::set_client_executor_supervisor_available(
+                    supervisor.inner(),
+                    true,
+                ),
+            )
+        }
+        "agent_client_executor_supervisor_stop" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_client_executor_supervisor_stop") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                app_runtime_evidence::set_client_executor_supervisor_available(
+                    supervisor.inner(),
+                    false,
+                ),
+            )
         }
         "agent_runtime_activity_station" => {
             let input = match parse_args::<AgentRuntimeActivityInput>(args) {
@@ -4732,41 +5088,163 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "account_switch" => {
+            let acceptance_hold_ms = args
+                .get("acceptance_hold_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                .min(1_000);
+            #[cfg(feature = "acceptance-webdriver")]
+            let acceptance_fail_identity_commit = args
+                .get("acceptance_fail_identity_commit")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let input = match parse_args::<AccountIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let account_id = input.id.clone();
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
+            };
+            if acceptance_hold_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(acceptance_hold_ms));
+            }
+            let previous_identity_state = match crate::infrastructure::auth_identity::read_state() {
+                Ok(identity_state) => identity_state,
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            let previous_session = gateway_session(state);
+            let prevalidated = match app_auth::prepare_account_switch_session(&input.id) {
+                Ok(prevalidated) => prevalidated,
+                Err(error) => return to_json(error),
+            };
+            let prepared = match app_auth::acquire_account_switch_session(prevalidated) {
+                Ok(prepared) => prepared,
+                Err(error) => return to_json(error),
+            };
+            if let Err(error) = app_auth::persist_prepared_account_switch_session(&prepared) {
+                return to_json(error);
+            }
+            #[cfg(feature = "acceptance-webdriver")]
+            if acceptance_fail_identity_commit {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    "Failed to commit authenticated identity",
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
+                ));
+            }
+            let engine_existed = match state.messaging_engines.get(&prepared.account_id) {
+                Ok(engine) => engine.is_some(),
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            if let Err(error) = app_auth::prepare_messaging_profile(
+                state,
+                &prepared.account_id,
+                &prepared.actor_ptid,
+            ) {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to prepare messaging identity: {error}"),
+                    None,
+                ));
+            }
             let switched = app_account::account_switch(input);
             if !switched.ok {
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
                 return to_json(switched);
             }
-            let restored = app_auth::auth_restore_session(state);
-            let Some(session) = restored.data else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session is unavailable",
-                    None,
-                ));
+            let binding = match state.sessions.try_bind_exclusive(
+                crate::domain::identity::ActiveSession::new(
+                    HTTP_GATEWAY_SESSION_LABEL,
+                    prepared.account_id.clone(),
+                    crate::domain::identity::ActorRef::new_person(prepared.actor_ptid.clone()),
+                    prepared.token.clone(),
+                ),
+            ) {
+                Ok(binding) => binding,
+                Err(error) => {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to bind authenticated identity: {error}"),
+                        Some(json!({
+                            "command": "account_switch",
+                            "reason": "identity_commit_failed",
+                        })),
+                    ));
+                }
             };
-            let Some(actor_ptid) = session.actor_ptid else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account has no canonical actor PTID",
-                    None,
+            if let Err(error) = app_auth::activate_messaging_profile_worker(
+                state,
+                &prepared.account_id,
+                &prepared.token,
+            ) {
+                let _ = state.sessions.rollback_exclusive(binding);
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to activate messaging identity: {error}"),
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
                 ));
-            };
-            let Some(token) = session.session_token else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session token is unavailable",
-                    None,
-                ));
-            };
-            if let Err(error) = bind_gateway_session(state, account_id, actor_ptid, token) {
-                return error;
             }
-            to_json(switched)
+            if let Some(previous) = previous_session {
+                if previous.account_id != prepared.account_id {
+                    if let Err(error) =
+                        app_auth::deactivate_messaging_profile(state, &previous.account_id)
+                    {
+                        let _ = state.sessions.rollback_exclusive(binding);
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to detach previous messaging identity: {error}"),
+                            Some(json!({
+                                "command": "account_switch",
+                                "reason": "identity_commit_failed",
+                            })),
+                        ));
+                    }
+                }
+            }
+            let _ = binding.into_kicked();
+            to_json(AppResult::success(prepared.payload))
         }
         "account_upsert_oauth" => {
             let input = match parse_args::<AccountUpsertOAuthInput>(args) {
@@ -4792,6 +5270,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let input = match parse_args::<AccountUnlockInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
+            };
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
             };
             let result = app_account::account_unlock(input.clone());
             if !result.ok {
@@ -4829,24 +5318,115 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         None,
                     ));
                 };
+                let previous_identity_state =
+                    match crate::infrastructure::auth_identity::read_state() {
+                        Ok(identity_state) => identity_state,
+                        Err(error) => {
+                            return to_json(AppResult::<AuthSessionPayload>::fail(
+                                ErrorCode::InternalError,
+                                error,
+                                None,
+                            ))
+                        }
+                    };
+                let previous_session = gateway_session(state);
+                let engine_existed = match state.messaging_engines.get(&input.account_id) {
+                    Ok(engine) => engine.is_some(),
+                    Err(error) => {
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ))
+                    }
+                };
                 let session =
                     crate::domain::auth::session::from_station_response(actor_ptid, token.clone());
-                if let Err(error) = bind_gateway_session(
+                if let Err(error) = app_auth::prepare_messaging_profile(
                     state,
-                    input.account_id.clone(),
-                    session.actor_ptid.clone(),
-                    session.token.clone(),
-                ) {
-                    return error;
-                }
-                let _ = crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
                     &input.account_id,
-                    &input.pin,
-                    &token,
-                );
-                let _ = app_account::account_switch(AccountIdInput {
+                    &session.actor_ptid,
+                ) {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to prepare messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Err(error) =
+                    crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
+                        &input.account_id,
+                        &input.pin,
+                        &token,
+                    )
+                {
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ));
+                }
+                let switched = app_account::account_switch(AccountIdInput {
                     id: input.account_id.clone(),
                 });
+                if !switched.ok {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(switched);
+                }
+                let binding = match state.sessions.try_bind_exclusive(
+                    crate::domain::identity::ActiveSession::new(
+                        HTTP_GATEWAY_SESSION_LABEL,
+                        input.account_id.clone(),
+                        crate::domain::identity::ActorRef::new_person(session.actor_ptid.clone()),
+                        session.token.clone(),
+                    ),
+                ) {
+                    Ok(binding) => binding,
+                    Err(error) => {
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        if !engine_existed {
+                            let _ =
+                                app_auth::deactivate_messaging_profile(state, &input.account_id);
+                        }
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to bind authenticated identity: {error}"),
+                            None,
+                        ));
+                    }
+                };
+                if let Err(error) = app_auth::activate_messaging_profile_worker(
+                    state,
+                    &input.account_id,
+                    &session.token,
+                ) {
+                    let _ = state.sessions.rollback_exclusive(binding);
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to activate messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Some(previous) = previous_session {
+                    if previous.account_id != input.account_id {
+                        let _ = app_auth::deactivate_messaging_profile(state, &previous.account_id);
+                    }
+                }
+                let _ = binding.into_kicked();
                 let profile = crate::infrastructure::auth_identity::find_profile_by_actor_ptid(
                     &session.actor_ptid,
                 );
@@ -6283,10 +6863,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let reg = crate::infrastructure::station_client::station_registry();
             let entries = reg.list();
             let active = reg.active_url();
-            let payload = json!({
-                "entries": entries,
-                "active_url": active,
-            });
+            let payload = station_list_payload(
+                entries,
+                active,
+                crate::application::station_binding::service().state(),
+            );
             to_json(AppResult::success(StubPayload {
                 command: "station_list".into(),
                 status: serde_json::to_string(&payload).unwrap_or_default(),
@@ -6385,36 +6966,51 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
 
-        "keypackage_upload" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/key-exchange/mls/key-package/upload",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "data": args.get("data").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "key package upload",
-        ),
-        "keypackage_fetch" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/key-exchange/mls/key-package/fetch",
-            None,
-            Some(json!({
-                "ptid": args.get("ptid").and_then(|v| v.as_str()).unwrap_or(""),
-                "home_station_peer_id": args.get("home_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "key package fetch",
-        ),
-        "keypackage_count" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/key-exchange/mls/key-package/count",
-            None,
-            None,
-            "key package count",
-        ),
+        "keypackage_upload" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::key_exchange::KeyPackageUploadInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_upload(
+                    context, input,
+                ),
+            )
+        }
+        "keypackage_fetch" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::key_exchange::KeyPackageFetchInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_fetch(
+                    context, input,
+                ),
+            )
+        }
+        "keypackage_count" => {
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_count(context),
+            )
+        }
         "device_list" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
@@ -6423,16 +7019,45 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             "device list",
         ),
-        "device_revoke" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/device/revoke",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "device revoke",
-        ),
+        "device_revoke" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::conversation::DeviceRevokeInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            if input.device_id != context.device_id {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Forbidden,
+                    "revoked device does not match the active Messaging endpoint",
+                    None,
+                ));
+            }
+            let body = json!({
+                "device_id": input.device_id,
+                "observed_profile_version": input.observed_profile_version,
+            });
+            match crate::infrastructure::station_client::request_json_auth_with_device_id(
+                reqwest::Method::POST,
+                "/device/revoke",
+                &context.token,
+                None,
+                Some(&body),
+                &context.device_id,
+            ) {
+                Ok(response) => to_json(AppResult::success(response)),
+                Err(error) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("device revoke: {error}"),
+                    None,
+                )),
+            }
+        }
         "dkx_send" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
@@ -7224,7 +7849,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_hydrate" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7238,81 +7863,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let station_resp = match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::GET,
-                "/conversation/list",
-                &token,
-                None,
-                None::<&serde_json::Value>,
-            ) {
-                Ok(v) => v,
-                Err(e) => {
-                    return to_json(AppResult::<Value>::fail(
+            match crate::messaging::hydrate_projections_from_station(&engine, &token) {
+                Ok(count) => match engine.conversations() {
+                    Ok(conversations) => to_json(AppResult::success(json!({
+                        "hydrated": count,
+                        "total_station_conversations": conversations.len(),
+                    }))),
+                    Err(error) => to_json(AppResult::<Value>::fail(
                         ErrorCode::InternalError,
-                        &format!("station fetch: {}", e.message),
+                        error,
                         None,
-                    ))
-                }
-            };
-            let conversations_raw = station_resp
-                .get("conversations")
-                .and_then(|c| c.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let mut projections: Vec<crate::messaging::ConversationProjection> = Vec::new();
-            for conv in &conversations_raw {
-                let conv_id = conv
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let kind_str = conv.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                let kind_i32: i32 = if kind_str.contains("GROUP") { 2 } else { 1 };
-                let authority = conv
-                    .get("authority_station_peer_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let federation_id = conv
-                    .get("federation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
-                    continue;
-                }
-                projections.push(crate::messaging::ConversationProjection {
-                    conversation_id: conv_id.to_string(),
-                    authority_station_id: authority.to_string(),
-                    federation_id: federation_id.to_string(),
-                    kind: kind_i32,
-                    name: conv
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    owner_ptid: conv
-                        .get("owner_ptid")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    members: Vec::new(),
-                    membership_epoch: conv
-                        .get("membership_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    mls_epoch: conv
-                        .get("mls_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    active: true,
-                    updated_at_unix_ms: 0,
-                });
-            }
-            match engine.hydrate_conversation_projections(&projections) {
-                Ok(count) => to_json(AppResult::success(json!({
-                    "hydrated": count,
-                    "total_station_conversations": conversations_raw.len(),
-                }))),
+                    )),
+                },
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
@@ -7462,11 +8024,72 @@ mod tests {
         body.read_to_end(&mut received)
             .expect("upstream failure should terminate the downstream body");
 
-        assert_eq!(received, b"data: partial\n\n");
+        assert_eq!(received, b": gateway-connected\n\ndata: partial\n\n");
         assert_eq!(
             body.read(&mut [0_u8; 1])
                 .expect("terminated body should stay at EOF"),
             0
+        );
+    }
+
+    #[derive(Default)]
+    struct FlushRecordingWriter {
+        bytes: Vec<u8>,
+        flush_count: usize,
+    }
+
+    impl Write for FlushRecordingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flush_count += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn agent_stream_body_flushes_every_http_chunk() {
+        let upstream = ErrorAfterBody {
+            body: Cursor::new(b"data: partial\n\n".to_vec()),
+            failed: false,
+        };
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut writer = FlushRecordingWriter::default();
+
+        copy_agent_stream_body(&mut body, &mut writer, true)
+            .expect("chunked stream forwarding should complete");
+
+        assert_eq!(
+            writer.bytes,
+            b"15\r\n: gateway-connected\n\n\r\nf\r\ndata: partial\n\n\r\n0\r\n\r\n"
+        );
+        assert_eq!(writer.flush_count, 3);
+    }
+
+    #[test]
+    fn station_list_exposes_binding_state_to_browser_clients() {
+        let payload = station_list_payload(
+            Vec::new(),
+            Some("https://station.invalid".to_string()),
+            crate::application::station_binding::StationBindingState {
+                phase: crate::application::station_binding::StationBindingPhase::Bound,
+                selected_url: Some("https://station.invalid".to_string()),
+                bound_url: Some("https://station.invalid".to_string()),
+                target_url: None,
+                generation: 3,
+                error: None,
+            },
+        );
+        let binding = payload
+            .get("binding")
+            .and_then(Value::as_object)
+            .expect("station_list must expose the binding state");
+        assert!(
+            binding.get("phase").and_then(Value::as_str).is_some(),
+            "station_list binding must expose its phase: {binding:?}"
         );
     }
 
@@ -7557,8 +8180,21 @@ mod tests {
             Some("ptid:test:actor-http-gateway-test")
         );
         assert_eq!(
-            status.get("token").and_then(Value::as_str),
-            Some("token-http-gateway-test")
+            status.get("account_id").and_then(Value::as_str),
+            Some("account-http-gateway-test")
+        );
+        assert_eq!(
+            status
+                .get("token_fingerprint")
+                .and_then(Value::as_str)
+                .map(str::len),
+            Some(64)
+        );
+        assert_eq!(
+            status
+                .get("messaging_profile_matches")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 
@@ -7583,6 +8219,46 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn friend_request_acceptance_projection_preserves_canonical_identity() {
+        let request = model::social::SocialFriendRequest {
+            request_id: "request-1".to_string(),
+            sender: Some(model::actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                ..Default::default()
+            }),
+            receiver: Some(model::actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                ..Default::default()
+            }),
+            state: model::social::FriendRequestState::Pending as i32,
+            federation_id: "federation-1".to_string(),
+            sender_home_station_peer_id: "station-four".to_string(),
+            receiver_home_station_peer_id: "station-five".to_string(),
+            ..Default::default()
+        };
+        let request_json = friend_request_projection(&request);
+        assert_eq!(request_json["request_id"], "request-1");
+        assert_eq!(request_json["sender_ptid"], "ptid:alice");
+        assert_eq!(request_json["receiver_ptid"], "ptid:bob");
+        assert_eq!(request_json["sender_home_station_peer_id"], "station-four");
+        assert_eq!(
+            request_json["receiver_home_station_peer_id"],
+            "station-five"
+        );
+
+        let relationship = model::social::Relationship {
+            target_actor_ptid: "ptid:bob".to_string(),
+            following: true,
+            followed_by: true,
+            ..Default::default()
+        };
+        let relationship_json = relationship_projection(&relationship);
+        assert_eq!(relationship_json["target_actor_ptid"], "ptid:bob");
+        assert_eq!(relationship_json["following"], true);
+        assert_eq!(relationship_json["followed_by"], true);
     }
 
     #[test]

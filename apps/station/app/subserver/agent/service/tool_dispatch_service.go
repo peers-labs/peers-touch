@@ -19,6 +19,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -101,6 +102,7 @@ type ProposalDecision struct {
 type ToolDispatchService struct {
 	now             func() time.Time
 	capabilityProof *ClientCapabilityProofService
+	conversations   *ConversationService
 }
 
 func NewToolDispatchService() *ToolDispatchService {
@@ -109,6 +111,10 @@ func NewToolDispatchService() *ToolDispatchService {
 
 func (s *ToolDispatchService) SetCapabilityProofService(proof *ClientCapabilityProofService) {
 	s.capabilityProof = proof
+}
+
+func (s *ToolDispatchService) SetConversationService(conversations *ConversationService) {
+	s.conversations = conversations
 }
 
 func (s *ToolDispatchService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -508,22 +514,35 @@ func (s *ToolDispatchService) ProposeAuthorizedBatch(
 	ctx context.Context,
 	proposal ToolBatchProposal,
 ) ([]ProposalDecision, error) {
-	return s.proposeBatch(ctx, proposal)
+	decisions, _, err := s.proposeBatch(ctx, proposal, nil)
+	return decisions, err
+}
+
+func (s *ToolDispatchService) proposeAuthorizedBatchWithProjection(
+	ctx context.Context,
+	proposal ToolBatchProposal,
+	project func(*gorm.DB) error,
+) ([]ProposalDecision, bool, error) {
+	// Projection joins only new-batch admission; durable batch replay bypasses
+	// current mutable authority and reuses its pinned ToolCall records.
+	return s.proposeBatch(ctx, proposal, project)
 }
 
 func (s *ToolDispatchService) proposeBatch(
 	ctx context.Context,
 	proposal ToolBatchProposal,
-) ([]ProposalDecision, error) {
+	project func(*gorm.DB) error,
+) ([]ProposalDecision, bool, error) {
 	if err := validateToolBatchProposal(proposal); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var decisions []ProposalDecision
+	projected := false
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := s.now()
 		deadline := canonicalToolDeadline(proposal.Deadline)
@@ -569,27 +588,13 @@ func (s *ToolDispatchService) proposeBatch(
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return internalToolError("load existing tool batch", err)
 		}
-		if err := tx.Create(batch).Error; err != nil {
-			if !isUniqueViolation(err) {
-				return internalToolError("persist tool batch", err)
-			}
-			if loadErr := tx.Where(
-				"actor_id = ? AND turn_id = ? AND attempt_id = ? AND iteration = ?",
-				batch.ActorID,
-				batch.TurnID,
-				batch.AttemptID,
-				batch.Iteration,
-			).First(&existing).Error; loadErr != nil {
-				return internalToolError("load existing tool batch", loadErr)
-			}
-			var replayErr error
-			decisions, replayErr = loadToolBatchProposalReplayTx(tx, proposal, &existing)
-			return replayErr
-		}
 
 		var lease *model.ClientCapabilityLease
-		decisions = make([]ProposalDecision, 0, len(proposal.Calls))
-		for _, call := range proposal.Calls {
+		authorizations := make(
+			[]*toolCapabilityAuthorization,
+			len(proposal.Calls),
+		)
+		for index, call := range proposal.Calls {
 			authorization, err := resolveToolCapabilityAuthorizationTx(
 				tx,
 				proposal,
@@ -620,12 +625,41 @@ func (s *ToolDispatchService) proposeBatch(
 					"Station-owned tools cannot consume client resource references",
 				)
 			}
+			authorizations[index] = authorization
+		}
+		createBatch := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(batch)
+		if createBatch.Error != nil {
+			return internalToolError("persist tool batch", createBatch.Error)
+		}
+		if createBatch.RowsAffected == 0 {
+			if loadErr := tx.Where(
+				"actor_id = ? AND turn_id = ? AND attempt_id = ? AND iteration = ?",
+				batch.ActorID,
+				batch.TurnID,
+				batch.AttemptID,
+				batch.Iteration,
+			).First(&existing).Error; loadErr != nil {
+				return internalToolError("load existing tool batch", loadErr)
+			}
+			var replayErr error
+			decisions, replayErr = loadToolBatchProposalReplayTx(tx, proposal, &existing)
+			return replayErr
+		}
+		if project != nil {
+			if err := project(tx); err != nil {
+				return err
+			}
+			projected = true
+		}
+
+		decisions = make([]ProposalDecision, 0, len(proposal.Calls))
+		for index, call := range proposal.Calls {
 			decision, err := s.proposeCallTx(
 				tx,
 				proposal,
 				lease,
 				call,
-				authorization,
+				authorizations[index],
 				deadline,
 				now,
 			)
@@ -661,7 +695,10 @@ func (s *ToolDispatchService) proposeBatch(
 		}
 		return nil
 	})
-	return decisions, err
+	if err != nil {
+		return nil, false, err
+	}
+	return decisions, projected, nil
 }
 
 func loadToolBatchProposalReplayTx(
@@ -1076,25 +1113,84 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 	if limit <= 0 || limit > maxCapabilityPullLimit {
 		limit = maxCapabilityPullLimit
 	}
+	now := s.now()
 	var rows []persistence.ToolDispatchOutbox
+	var leaseExpiredError *errcode.BizError
+	var notifications []clientLeaseExpiredTurn
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, _, err := bindCapabilityCommandTx(
+		command, replayed, err := bindCapabilityCommandTx(
 			tx,
 			actorID,
 			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_REQUESTS,
 			verified,
-			s.now(),
-		); err != nil {
-			return err
-		}
-		lease, err := loadActiveCapabilityLeaseTx(
-			tx,
-			actorID,
-			request.GetCapabilitySessionId(),
-			s.now(),
+			now,
 		)
 		if err != nil {
 			return err
+		}
+		if replayed && len(command.ResponseRef) > 0 {
+			var payload model.ErrorPayload
+			if err := proto.Unmarshal(command.ResponseRef, &payload); err != nil {
+				return internalToolError("decode capability pull replay", err)
+			}
+			if payload.GetErrorType() != string(errcode.AgentClientLeaseExpired) {
+				return invalidToolState("capability pull replay response is invalid")
+			}
+			leaseExpiredError = errcode.NewClientLeaseExpiredFromPayload(&payload)
+			return nil
+		}
+
+		var leaseRow persistence.ClientCapabilityLease
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"session_id = ? AND actor_id = ?",
+				request.GetCapabilitySessionId(),
+				actorID,
+			).
+			First(&leaseRow).Error; err != nil {
+			return notFoundToolError("active capability lease", err)
+		}
+		if leaseRow.RevokedAt != nil {
+			return notFoundToolError("active capability lease", gorm.ErrRecordNotFound)
+		}
+		if !leaseRow.ExpiresAt.After(now) {
+			if leaseRow.DeviceID != deviceID {
+				return notFoundToolError("active capability lease", gorm.ErrRecordNotFound)
+			}
+			leaseExpiredError = errcode.NewClientLeaseExpired(
+				leaseRow.SessionID,
+				leaseRow.LeaseID,
+				leaseRow.ExpiresAt,
+			)
+			encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+				leaseExpiredError.Payload,
+			)
+			if err != nil {
+				return internalToolError("encode expired capability lease outcome", err)
+			}
+			if err := storeCapabilityCommandOutcomeTx(
+				tx,
+				command.CommandID,
+				0,
+				leaseRow.LeaseID,
+				leaseRow.LeaseRevision,
+				encoded,
+			); err != nil {
+				return err
+			}
+			notifications, err = s.appendClientLeaseExpiredEventsTx(
+				tx,
+				actorID,
+				leaseRow.SessionID,
+				leaseExpiredError.Payload,
+				now,
+			)
+			return err
+		}
+
+		var lease model.ClientCapabilityLease
+		if err := proto.Unmarshal(leaseRow.LeasePayload, &lease); err != nil {
+			return internalToolError("decode capability lease", err)
 		}
 		if lease.GetDeviceId() != deviceID {
 			return unauthorizedToolRequest(
@@ -1118,6 +1214,12 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 	if err != nil {
 		return nil, err
 	}
+	for _, notification := range notifications {
+		s.conversations.notifyTurnEvent(notification.conversationID, notification.turnID)
+	}
+	if leaseExpiredError != nil {
+		return nil, leaseExpiredError
+	}
 
 	response := &model.PullClientCapabilityRequestsResponse{}
 	for _, row := range rows {
@@ -1129,6 +1231,166 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 		response.LastSequence = row.DispatchSequence
 	}
 	return response, nil
+}
+
+type clientLeaseExpiredTurn struct {
+	conversationID string
+	turnID         string
+}
+
+func (s *ToolDispatchService) appendClientLeaseExpiredEventsTx(
+	tx *gorm.DB,
+	actorID string,
+	sessionID string,
+	outcome *model.ErrorPayload,
+	now time.Time,
+) ([]clientLeaseExpiredTurn, error) {
+	var calls []persistence.ToolCall
+	if err := tx.Where(
+		"actor_id = ? AND capability_session_id = ? AND status = ?",
+		actorID,
+		sessionID,
+		persistence.ToolCallStatusDispatchCommitted,
+	).
+		Order("turn_id ASC, attempt_id ASC, tool_call_id ASC").
+		Find(&calls).Error; err != nil {
+		return nil, internalToolError("load expired-lease pending tool calls", err)
+	}
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	if s.conversations == nil {
+		return nil, internalToolError(
+			"persist expired-lease turn event",
+			errors.New("conversation service is not configured"),
+		)
+	}
+
+	outcomeJSON, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(outcome)
+	if err != nil {
+		return nil, internalToolError("encode expired-lease turn outcome", err)
+	}
+	retryable := outcome.GetRetryable()
+	terminal := outcome.GetTerminal()
+	details := make(map[string]string, len(outcome.GetDetails()))
+	for key, value := range outcome.GetDetails() {
+		details[key] = value
+	}
+
+	seen := make(map[string]struct{}, len(calls))
+	notifications := make([]clientLeaseExpiredTurn, 0, len(calls))
+	for i := range calls {
+		key := calls[i].TurnID + "\x00" + calls[i].AttemptID
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		var batch persistence.ToolBatch
+		if err := tx.Where(
+			"id = ? AND actor_id = ? AND turn_id = ? AND attempt_id = ?",
+			calls[i].ToolBatchID,
+			actorID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+		).
+			First(&batch).Error; err != nil {
+			return nil, internalToolError("load expired-lease tool batch", err)
+		}
+		alreadyEmitted, err := hasClientLeaseExpiredEventTx(
+			tx,
+			batch.ConversationID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+			sessionID,
+			outcome.GetDetails()["lease_id"],
+		)
+		if err != nil {
+			return nil, internalToolError("load expired-lease turn event", err)
+		}
+		if alreadyEmitted {
+			continue
+		}
+		event := TurnEvent{
+			Type:           "progress",
+			TurnID:         calls[i].TurnID,
+			AttemptID:      calls[i].AttemptID,
+			ConversationID: batch.ConversationID,
+			AgentID:        batch.AgentID,
+			Stage:          "client_lease_expired",
+			Error:          outcome.GetError(),
+			ErrorType:      outcome.GetErrorType(),
+			LocaleKey:      outcome.GetLocaleKey(),
+			Retryable:      &retryable,
+			Terminal:       &terminal,
+			Details:        details,
+			OutcomeError:   outcomeJSON,
+		}
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return nil, internalToolError("encode expired-lease turn event", err)
+		}
+		if _, err := s.conversations.persistTurnEventTx(
+			tx,
+			batch.ConversationID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+			event.Type,
+			payload,
+			now,
+		); err != nil {
+			return nil, internalToolError("persist expired-lease turn event", err)
+		}
+		notifications = append(notifications, clientLeaseExpiredTurn{
+			conversationID: batch.ConversationID,
+			turnID:         calls[i].TurnID,
+		})
+	}
+	return notifications, nil
+}
+
+func hasClientLeaseExpiredEventTx(
+	tx *gorm.DB,
+	conversationID string,
+	turnID string,
+	attemptID string,
+	sessionID string,
+	leaseID string,
+) (bool, error) {
+	var turn persistence.AgentTurn
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND conversation_id = ?", turnID, conversationID).
+		First(&turn).Error; err != nil {
+		return false, err
+	}
+
+	var rows []persistence.TurnEvent
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"turn_id = ? AND attempt_id = ? AND event_type = ?",
+			turnID,
+			attemptID,
+			"progress",
+		).
+		Find(&rows).Error; err != nil {
+		return false, err
+	}
+	for i := range rows {
+		var event TurnEvent
+		if err := json.Unmarshal([]byte(rows[i].Payload), &event); err != nil {
+			return false, err
+		}
+		if event.Stage == "client_lease_expired" &&
+			event.ErrorType == string(errcode.AgentClientLeaseExpired) &&
+			event.Details["session_id"] == sessionID &&
+			event.Details["lease_id"] == leaseID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *ToolDispatchService) SubmitReceipt(
@@ -1969,39 +2231,51 @@ func resolveToolCapabilityAuthorizationTx(
 	}
 
 	var binding persistence.AgentCapabilityBinding
-	if err := tx.Where(
-		"binding_id = ? AND ptid = ? AND agent_id = ? AND tombstoned_at IS NULL",
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
+		"binding_id = ?",
 		bindingID,
-		proposal.ActorID,
-		proposal.AgentID,
 	).First(&binding).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, invalidToolState("capability binding is missing or not owned by the actor")
+			return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
 		}
 		return nil, internalToolError("load capability binding for tool dispatch", err)
 	}
-	if !binding.Enabled ||
-		binding.CapabilityID != call.CapabilityID ||
+	if binding.Ptid != proposal.ActorID ||
+		binding.AgentID != proposal.AgentID {
+		return nil, invalidToolState(
+			"capability binding is not owned by the admitted actor and Agent",
+		)
+	}
+	if binding.TombstonedAt != nil || !binding.Enabled {
+		return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
+	}
+	if binding.CapabilityID != call.CapabilityID ||
 		binding.CapabilityVersion != call.SchemaVersion ||
 		binding.Revision != call.BindingRevision {
-		return nil, invalidToolState("capability binding is disabled or stale")
+		return nil, invalidToolState("capability binding identity or revision is stale")
 	}
 
 	var manifest persistence.CapabilityManifest
-	if err := tx.Where(
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 		"capability_id = ? AND version = ?",
 		binding.CapabilityID,
 		binding.CapabilityVersion,
 	).First(&manifest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, invalidToolState("capability manifest is missing")
+			return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
 		}
 		return nil, internalToolError("load capability manifest for tool dispatch", err)
 	}
-	if manifest.RetiredAt != nil ||
-		model.CapabilityAvailability(manifest.Availability) !=
-			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
-		return nil, invalidToolState("capability manifest is retired or unavailable")
+	if manifest.RetiredAt != nil {
+		return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
+	}
+	if model.CapabilityAvailability(manifest.Availability) !=
+		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
+		return nil, invalidToolState("capability manifest is unavailable")
+	}
+	if (manifest.OwnerPtid != "" && manifest.OwnerPtid != proposal.ActorID) ||
+		manifest.SourceInstanceID != call.ToolName {
+		return nil, invalidToolState("capability manifest authority is stale")
 	}
 	executionOwner := model.ToolExecutionOwner(manifest.ExecutionOwner)
 	if executionOwner == model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED ||

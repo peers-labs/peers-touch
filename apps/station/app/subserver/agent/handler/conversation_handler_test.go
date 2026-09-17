@@ -101,12 +101,14 @@ func TestDecodeStreamTurnEventsRequestAcceptsProtoAndJSONFieldNames(t *testing.T
 		"proto field name": `{
 			"conversation_id":"conversation-1",
 			"turn_id":"turn-1",
-			"after_sequence":"17"
+			"after_sequence":"17",
+			"attempt_id":"attempt-1"
 		}`,
 		"JSON field name": `{
 			"conversationId":"conversation-1",
 			"turnId":"turn-1",
-			"afterSequence":"17"
+			"afterSequence":"17",
+			"attemptId":"attempt-1"
 		}`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -116,7 +118,8 @@ func TestDecodeStreamTurnEventsRequestAcceptsProtoAndJSONFieldNames(t *testing.T
 			}
 			if request.GetConversationId() != "conversation-1" ||
 				request.GetTurnId() != "turn-1" ||
-				request.GetAfterSequence() != 17 {
+				request.GetAfterSequence() != 17 ||
+				request.GetAttemptId() != "attempt-1" {
 				t.Fatalf("unexpected stream request: %+v", &request)
 			}
 		})

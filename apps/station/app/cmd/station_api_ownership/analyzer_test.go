@@ -51,7 +51,7 @@ const createRoute = routeBase + "/create"
 
 func handlers() {
 	// server.NewTypedHandler("comment-only", "/conversation/comment-only", server.POST, nil)
-	_ = server.NewTypedHandler[CreateRequest, CreateResponse](
+	_ = server.NewCanonicalProtobufHandler[CreateRequest, CreateResponse](
 		"conversation-create",
 		createRoute,
 		server.POST,

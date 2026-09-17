@@ -5,15 +5,18 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    ActorIdentity,
     BlockedError,
     BindingProofRecord,
     ClientBindingError,
@@ -156,8 +159,104 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
-        self.assertEqual(contract.fixtures, ())
-        self.assertEqual(contract.credentials, ())
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
+        self.assertTrue(contract.fixtures[0].authorization_required)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "env:CHAT_ACCEPTANCE_RESET",
+        )
+        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(contract.credentials[0].id, "chat-password")
+        self.assertEqual(
+            contract.credentials[0].source_ref,
+            "fixture:apps/station/app/conf/actor.yml#preset_users",
+        )
+        self.assertTrue(contract.credentials[0].required)
+        self.assertFalse(contract.credentials[0].generated_if_missing)
+        self.assertEqual(
+            [fixture.id for fixture in contract.fixtures],
+            ["chat-native-actors"],
+        )
+        self.assertEqual(
+            [credential.source_ref for credential in contract.credentials],
+            ["fixture:apps/station/app/conf/actor.yml#preset_users"],
+        )
+
+        from tooling.acceptance.provisioners.local_desktop_gateway import (
+            LocalDesktopGatewayProvisioner,
+        )
+
+        provisioner = LocalDesktopGatewayProvisioner(contract)
+        refs, values = provisioner.prepare_credentials()
+        self.assertEqual(refs, (contract.credentials[0].source_ref,))
+        self.assertEqual(values, {"chat-password": "1"})
+        self.assertEqual(provisioner.resolved_credential_values, ())
+
+    def test_local_desktop_gateway_starts_with_exact_acceptance_ports(self):
+        from tooling.acceptance.provisioners import local_desktop_gateway
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "local-desktop-gateway.yaml"
+        )
+        provisioner = local_desktop_gateway.LocalDesktopGatewayProvisioner(
+            contract
+        )
+        process = mock.Mock(pid=12345)
+        process.poll.return_value = None
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            mock.patch.object(
+                local_desktop_gateway.tempfile,
+                "mkdtemp",
+                return_value=str(Path(temp_dir) / "logs"),
+            ),
+            mock.patch.object(
+                local_desktop_gateway,
+                "write_current_artifact",
+            ),
+            mock.patch.object(
+                local_desktop_gateway.subprocess,
+                "Popen",
+                return_value=process,
+            ) as popen,
+            mock.patch.object(
+                provisioner,
+                "_gateway_ready",
+                return_value=True,
+            ),
+        ):
+            log_directory = Path(temp_dir) / "logs"
+            storage_parent = Path(temp_dir) / "storage"
+            log_directory.mkdir()
+            storage_parent.mkdir()
+            provisioner.register_cleanup(
+                "desktop-storage:run-id",
+                lambda: shutil.rmtree(storage_parent),
+            )
+            storage_root = provisioner._start_gateway(
+                "http://127.0.0.1:3430",
+                "run-id",
+                gateway_port=3430,
+                renderer_port=3610,
+                profile_name="four",
+                storage_parent=storage_parent,
+            )
+            storage_root.mkdir()
+            provisioner.cleanup()
+
+        launch_env = popen.call_args.kwargs["env"]
+        self.assertEqual(launch_env["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(launch_env["PT_GATEWAY_PORT"], "3430")
+        self.assertEqual(launch_env["PT_RENDERER_PORT"], "3610")
+        self.assertEqual(launch_env["PT_PROFILE"], "four-gateway-run-id")
+        self.assertEqual(
+            Path(launch_env["PEERS_STORAGE_ROOT"]),
+            storage_parent,
+        )
+        self.assertEqual(storage_root, storage_parent / "peers-touch")
+        self.assertFalse(storage_parent.exists())
 
     def test_load_native_tauri_contract(self):
         contract = EnvironmentContract.from_yaml(
@@ -175,6 +274,677 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(
             all(service.kind == "station" for service in contract.services.values())
         )
+
+    def test_native_tauri_services_use_canonical_profiles(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_embedded_webdriver,
+        )
+
+        self.assertEqual(
+            native_tauri_embedded_webdriver._SERVICE_PROFILES,
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
+        )
+
+    def test_load_native_tauri_current_profile_contract(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        self.assertEqual(contract.id, "native-tauri-current-profile")
+        self.assertEqual(set(contract.services), {"station"})
+        self.assertEqual(
+            {client.id for client in contract.clients},
+            {"alice", "bob"},
+        )
+        self.assertTrue(
+            all(
+                client.service_bindings["station"].service_id == "station"
+                for client in contract.clients
+            )
+        )
+        self.assertFalse(contract.fixtures[0].authorization_required)
+
+    def test_current_profile_actor_resolution_logs_out_discovery_session(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        login_response = mock.MagicMock()
+        login_response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "data": {
+                    "actor_ref": {"ptid": "ptid:alice"},
+                    "tokens": {"access_token": "session-token"},
+                }
+            }
+        ).encode("utf-8")
+        logout_response = mock.MagicMock()
+        with mock.patch.object(
+            native_tauri_current_profile.urllib.request,
+            "urlopen",
+            side_effect=[login_response, logout_response],
+        ) as urlopen:
+            actor = (
+                native_tauri_current_profile.NativeTauriCurrentProfileProvisioner
+                ._resolve_existing_actor(
+                    "http://station.example",
+                    "alice",
+                    "fixture-password",
+                )
+            )
+
+        self.assertEqual(actor.ptid, "ptid:alice")
+        self.assertEqual(actor.device_policy, "persistent-acceptance")
+        self.assertEqual(urlopen.call_count, 2)
+        logout_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(
+            logout_request.headers["Authorization"],
+            "Bearer session-token",
+        )
+
+    def test_current_profile_clients_use_actor_specific_storage_seeds(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        provisioner = (
+            native_tauri_current_profile.NativeTauriCurrentProfileProvisioner(
+                contract
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            alice_seed = root / "alice-seed"
+            bob_seed = root / "bob-seed"
+            (alice_seed / "peers-touch").mkdir(parents=True)
+            (bob_seed / "peers-touch").mkdir(parents=True)
+            (alice_seed / "peers-touch" / "identity-owner").write_text(
+                "alice",
+                encoding="utf-8",
+            )
+            (bob_seed / "peers-touch" / "identity-owner").write_text(
+                "bob",
+                encoding="utf-8",
+            )
+            for role, seed in (("alice", alice_seed), ("bob", bob_seed)):
+                database = (
+                    seed
+                    / "peers-touch"
+                    / "four-app"
+                    / "data"
+                    / "db"
+                    / "users"
+                    / role
+                    / "chat.main.db"
+                )
+                database.parent.mkdir(parents=True)
+                database.write_bytes(b"live-device-state")
+                device_id = (
+                    seed
+                    / "peers-touch"
+                    / "four-app"
+                    / "data"
+                    / "auth"
+                    / "sessions"
+                    / role
+                    / "device_id"
+                )
+                device_id.parent.mkdir(parents=True)
+                device_id.write_text("existing-device", encoding="utf-8")
+            alice_state = root / "alice-state"
+            bob_state = root / "bob-state"
+            actors = (
+                ActorIdentity(
+                    role="alice",
+                    account_ref="station-account:alice@p.t",
+                    ptid="ptid:alice",
+                    device_policy="persistent-acceptance",
+                ),
+                ActorIdentity(
+                    role="bob",
+                    account_ref="station-account:bob@p.t",
+                    ptid="ptid:bob",
+                    device_policy="persistent-acceptance",
+                ),
+            )
+            common_dir = root / "common"
+            client_worktrees = {
+                "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                    root=root / "peers-chat-high-chat",
+                    logical_name="peers-chat-high-chat",
+                    common_dir=common_dir,
+                    head="b" * 40,
+                    tree="c" * 40,
+                    clean=True,
+                ),
+                "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                    root=root / "peers-group-chat",
+                    logical_name="peers-group-chat",
+                    common_dir=common_dir,
+                    head="a" * 40,
+                    tree="c" * 40,
+                    clean=True,
+                ),
+            }
+            run_id = f"test-{root.name}"
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "PT_CHAT_NATIVE_STORAGE_SEEDS": (
+                            f"{alice_seed},{bob_seed}"
+                        ),
+                        "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS": (
+                            f"{alice_state},{bob_state}"
+                        ),
+                    },
+                ),
+                mock.patch.object(
+                    provisioner,
+                    "_port_available",
+                    return_value=True,
+                ),
+                mock.patch.object(
+                    provisioner,
+                    "_client_worktrees",
+                    return_value=client_worktrees,
+                ),
+            ):
+                clients = provisioner._clients(
+                    run_id=run_id,
+                    profile_name="four",
+                    profile_env={
+                        "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
+                        "PT_DESKTOP_APP_WEB_PORT": "3410",
+                    },
+                    slot=3,
+                    actors=actors,
+                )
+            try:
+                self.assertEqual(
+                    [
+                        (
+                            Path(client.storage_root)
+                            / "peers-touch"
+                            / "identity-owner"
+                        ).read_text(encoding="utf-8")
+                        for client in clients
+                    ],
+                    ["alice", "bob"],
+                )
+                self.assertEqual(
+                    [client.profile for client in clients],
+                    ["four-app", "four-app"],
+                )
+                self.assertEqual(
+                    [Path(client.worktree).name for client in clients],
+                    ["peers-chat-high-chat", "peers-group-chat"],
+                )
+                self.assertEqual(
+                    [client.storage_lifecycle for client in clients],
+                    ["persistent", "persistent"],
+                )
+                self.assertEqual(
+                    [Path(client.storage_root) for client in clients],
+                    [alice_state.resolve(), bob_state.resolve()],
+                )
+                self.assertTrue(
+                    (
+                        alice_seed
+                        / "peers-touch"
+                        / "four-app"
+                        / "data"
+                        / "db"
+                        / "users"
+                        / "alice"
+                        / "chat.main.db"
+                    ).is_file()
+                )
+                self.assertFalse(
+                    any(alice_state.rglob("chat.main.db*"))
+                )
+                self.assertFalse(
+                    any(alice_state.rglob("device_id"))
+                )
+                continuity = (
+                    alice_state / "peers-touch" / "continuity-marker"
+                )
+                continuity.write_text("preserved", encoding="utf-8")
+                with (
+                    mock.patch.dict(
+                        os.environ,
+                        {
+                            "PT_CHAT_NATIVE_STORAGE_SEEDS": (
+                                f"{alice_seed},{bob_seed}"
+                            ),
+                            "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS": (
+                                f"{alice_state},{bob_state}"
+                            ),
+                        },
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_port_available",
+                        return_value=True,
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_client_worktrees",
+                        return_value=client_worktrees,
+                    ),
+                ):
+                    repeated = provisioner._clients(
+                        run_id=f"{run_id}-repeat",
+                        profile_name="four",
+                        profile_env={
+                            "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
+                            "PT_DESKTOP_APP_WEB_PORT": "3410",
+                        },
+                        slot=3,
+                        actors=actors,
+                    )
+                self.assertEqual(
+                    [Path(client.storage_root) for client in repeated],
+                    [alice_state.resolve(), bob_state.resolve()],
+                )
+                self.assertEqual(
+                    continuity.read_text(encoding="utf-8"),
+                    "preserved",
+                )
+                with (
+                    mock.patch.dict(
+                        os.environ,
+                        {
+                            "PT_CHAT_NATIVE_STORAGE_SEEDS": (
+                                f"{alice_seed},{bob_seed}"
+                            ),
+                            "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS": (
+                                f"{alice_state},{bob_state}"
+                            ),
+                            "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE": "1",
+                            "CHAT_ACCEPTANCE_RESET": "1",
+                            "CHAT_ACCEPTANCE_RESET_PROFILE": "four",
+                        },
+                        clear=True,
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_port_available",
+                        return_value=True,
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_client_worktrees",
+                        return_value=client_worktrees,
+                    ),
+                ):
+                    reset = provisioner._clients(
+                        run_id=f"{run_id}-reset",
+                        profile_name="four",
+                        profile_env={
+                            "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
+                            "PT_DESKTOP_APP_WEB_PORT": "3410",
+                        },
+                        slot=3,
+                        actors=actors,
+                    )
+                self.assertEqual(
+                    [Path(client.storage_root) for client in reset],
+                    [alice_state.resolve(), bob_state.resolve()],
+                )
+                self.assertFalse(continuity.exists())
+                self.assertFalse(any(alice_state.rglob("chat.main.db*")))
+                self.assertFalse(any(alice_state.rglob("device_id")))
+            finally:
+                provisioner.cleanup()
+            self.assertTrue(alice_state.is_dir())
+            self.assertTrue(bob_state.is_dir())
+
+    def test_current_profile_persistent_reset_requires_exact_authorization(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE": "1",
+                "CHAT_ACCEPTANCE_RESET": "1",
+                "CHAT_ACCEPTANCE_RESET_PROFILE": "five",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "exact CHAT_ACCEPTANCE_RESET_PROFILE match",
+            ):
+                (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._persistent_storage_reset_authorized("four")
+                )
+
+    def test_current_profile_can_copy_retained_engine_state_without_session(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            storage = root / "storage"
+            database = (
+                seed
+                / "peers-touch"
+                / "four-app"
+                / "data"
+                / "db"
+                / "users"
+                / "alice"
+                / "chat.main.db"
+            )
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"retained-engine-state")
+            device_id = (
+                seed
+                / "peers-touch"
+                / "four-app"
+                / "data"
+                / "auth"
+                / "sessions"
+                / "alice"
+                / "device_id"
+            )
+            device_id.parent.mkdir(parents=True)
+            device_id.write_text("revoked-session-device", encoding="utf-8")
+
+            result = (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._persistent_storage(
+                    role="alice",
+                    actor=ActorIdentity(
+                        role="alice",
+                        account_ref="station-account:alice@p.t",
+                        ptid="ptid:alice",
+                        device_policy="persistent-acceptance",
+                    ),
+                    profile_name="four",
+                    worktree=(
+                        native_tauri_current_profile
+                        .ClientWorktreeIdentity(
+                            root=root / "peers-chat-high-chat",
+                            logical_name="peers-chat-high-chat",
+                            common_dir=root / "common",
+                            head="a" * 40,
+                            tree="b" * 40,
+                            clean=True,
+                        )
+                    ),
+                    seed_root=seed,
+                    storage_root=storage,
+                    run_id="retained-state",
+                    preserve_retained_engine_state=True,
+                )
+            )
+
+            self.assertEqual(result, storage)
+            self.assertEqual(
+                (
+                    storage
+                    / database.relative_to(seed)
+                ).read_bytes(),
+                b"retained-engine-state",
+            )
+            self.assertFalse(
+                (storage / device_id.relative_to(seed)).exists()
+            )
+            marker = json.loads(
+                (
+                    storage
+                    / native_tauri_current_profile
+                    .PERSISTENT_STORAGE_MARKER
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                marker["devicePolicy"],
+                "retained-engine-acceptance",
+            )
+
+    def test_current_profile_rejects_unknown_retained_engine_role(self) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                native_tauri_current_profile
+                .RETAINED_ENGINE_STATE_ROLES_ENV: "alice,mallory",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(BlockedError, "mallory"):
+                (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._retained_engine_state_roles()
+                )
+
+    def test_current_profile_defaults_to_each_worktree_storage_seed(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common_dir = root / "common"
+            identities = {}
+            for role, logical_name in (
+                ("alice", "peers-chat-high-chat"),
+                ("bob", "peers-group-chat"),
+            ):
+                worktree = root / logical_name
+                (
+                    worktree
+                    / ".local"
+                    / "dev"
+                    / "data"
+                    / "four"
+                    / "desktop-app"
+                    / "peers-touch"
+                ).mkdir(parents=True)
+                identities[role] = (
+                    native_tauri_current_profile.ClientWorktreeIdentity(
+                        root=worktree,
+                        logical_name=logical_name,
+                        common_dir=common_dir,
+                        head="a" * 40,
+                        tree="b" * 40,
+                        clean=True,
+                    )
+                )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "PT_CHAT_NATIVE_STORAGE_SEEDS": "",
+                    "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS": "",
+                },
+            ):
+                seeds = (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._storage_seeds("four", identities)
+                )
+                persistent_roots = (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._persistent_storage_roots("four", identities)
+                )
+
+        self.assertEqual(
+            [seed.parents[4].name for seed in seeds],
+            ["peers-chat-high-chat", "peers-group-chat"],
+        )
+        self.assertEqual(
+            [path.parents[6].name for path in persistent_roots],
+            ["peers-chat-high-chat", "peers-group-chat"],
+        )
+
+    def test_current_profile_rejects_mismatched_persistent_storage(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            storage = root / "storage"
+            (seed / "peers-touch").mkdir(parents=True)
+            (storage / "peers-touch").mkdir(parents=True)
+            (
+                storage
+                / native_tauri_current_profile.PERSISTENT_STORAGE_MARKER
+            ).write_text("{}\n", encoding="utf-8")
+
+            with self.assertRaises(BlockedError):
+                (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._persistent_storage(
+                        role="alice",
+                        actor=ActorIdentity(
+                            role="alice",
+                            account_ref="station-account:alice@p.t",
+                            ptid="ptid:alice",
+                            device_policy="persistent-acceptance",
+                        ),
+                        profile_name="four",
+                        worktree=(
+                            native_tauri_current_profile
+                            .ClientWorktreeIdentity(
+                                root=root / "peers-chat-high-chat",
+                                logical_name="peers-chat-high-chat",
+                                common_dir=root / "common",
+                                head="a" * 40,
+                                tree="b" * 40,
+                                clean=True,
+                            )
+                        ),
+                        seed_root=seed,
+                        storage_root=storage,
+                        run_id="test",
+                    )
+                )
+
+    def test_current_profile_rejects_same_client_worktree(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        shared = REPO_ROOT.resolve()
+        common_dir = shared.parent / ".git"
+        identities = {
+            "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=shared,
+                logical_name="peers-chat-high-chat",
+                common_dir=common_dir,
+                head="a" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+            "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=shared,
+                logical_name="peers-group-chat",
+                common_dir=common_dir,
+                head="b" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+        }
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "two distinct client worktrees",
+        ):
+            (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._validate_client_worktrees(identities)
+            )
+
+    def test_current_profile_rejects_unsynchronized_source_trees(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        if REPO_ROOT.name != "peers-group-chat":
+            self.skipTest("current-profile provisioner is group-chat owned")
+        common_dir = REPO_ROOT.parent / ".git"
+        identities = {
+            "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=REPO_ROOT.parent / "peers-chat-high-chat",
+                logical_name="peers-chat-high-chat",
+                common_dir=common_dir,
+                head="a" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+            "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=REPO_ROOT.resolve(),
+                logical_name="peers-group-chat",
+                common_dir=common_dir,
+                head="b" * 40,
+                tree="d" * 40,
+                clean=True,
+            ),
+        }
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "not synchronized",
+        ):
+            (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._validate_client_worktrees(identities)
+            )
+
+    def test_current_profile_rejects_incomplete_storage_seed_set(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        provisioner = (
+            native_tauri_current_profile.NativeTauriCurrentProfileProvisioner(
+                contract
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seeds = []
+            for index in range(3):
+                seed = root / f"seed-{index}"
+                (seed / "peers-touch").mkdir(parents=True)
+                seeds.append(str(seed))
+            with mock.patch.dict(
+                os.environ,
+                {"PT_CHAT_NATIVE_STORAGE_SEEDS": ",".join(seeds)},
+            ):
+                with self.assertRaises(BlockedError):
+                    provisioner._storage_seeds("four", {})
 
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(

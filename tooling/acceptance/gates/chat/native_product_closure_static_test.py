@@ -1561,20 +1561,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("control.frontmost", self.source)
         self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
+        self.assertIn("NativeKey.A,", self.source)
         self.assertIn(
-            "self.native_adapter.post_key_to_process(\n"
-            "            client.process_id or 0,\n"
-            "            NativeKey.A,\n"
-            "            modifiers=(NativeModifier.PRIMARY,),",
+            "self.native_adapter.select_file_chooser_path_to_process(",
             self.source,
         )
-        self.assertIn(
-            "client.process_id or 0,\n"
-            "            NativeKey.DELETE,\n"
-            "            private_source=True,",
-            self.source,
-        )
-        self.assertIn('control.value == ""', self.source)
+        self.assertNotIn("def location_field_cleared(", self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
             self.source,
@@ -1586,7 +1578,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
-            "revealed_control = "
             "self.native_adapter.reveal_file_chooser_location_to_process(",
             self.source,
         )
@@ -1604,13 +1595,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
             self.source,
         )
-        self.assertIn(
-            "self.native_adapter.post_key_to_process(\n"
-            "                client.process_id or 0,\n"
-            "                NativeKey.V,\n"
-            "                modifiers=(NativeModifier.PRIMARY,),",
-            self.source,
-        )
+        self.assertIn("NativeKey.V,", self.source)
         self.assertIn("NativeKey.ENTER", self.source)
         self.assertIn(
             '"Native Accessibility probe timed out"',
@@ -2042,12 +2027,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('self.report.runtime["cleanup"] = result', self.source)
 
-    def test_group_creation_waits_for_exact_projected_state_once(self) -> None:
+    def test_group_creation_tracks_accepted_pending_projection(self) -> None:
         self.assertIn(
             "trackPendingGroupCreation(conversationId, created.commandId);",
             self.create_group_modal,
         )
-        self.assertNotIn(
+        self.assertIn(
             "if (created.state === 'pending')",
             self.create_group_modal,
         )
@@ -2060,10 +2045,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.create_group_modal,
         )
         self.assertIn(
-            "t('chat.social.encryption.establishing')",
+            "t('chat.social.createGroup.accepted')",
             self.create_group_modal,
         )
-        self.assertEqual(self.create_group_modal.count("await loadGroups();"), 1)
+        self.assertIn("void loadGroups().then(() => {", self.create_group_modal)
+        self.assertNotIn("await loadGroups();", self.create_group_modal)
         self.assertNotIn("await loadSessions();", self.create_group_modal)
         browser_group_create = self.http_gateway[
             self.http_gateway.index('"messaging_create_group" => {'):
@@ -2179,10 +2165,22 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "data-chat-search-result-peer-ptid={conversation.peerPtid || ''}",
             self.chat_search_dropdown,
         )
-        self.assertIn("const profile = peerProfiles[peerId];", self.chat_session_list)
-        self.assertIn("|| profile?.display_name", self.chat_session_list)
-        self.assertIn("|| profile?.username", self.chat_session_list)
-        self.assertIn("|| peerId;", self.chat_session_list)
+        self.assertIn(
+            "const friendIdentities = useMemo(",
+            self.chat_session_list,
+        )
+        self.assertIn(
+            "projectChatFriendContacts({",
+            self.chat_session_list,
+        )
+        self.assertIn(
+            "conversationWithActorIdentity(conversation, identity)",
+            self.chat_session_list,
+        )
+        self.assertNotIn(
+            "const profile = peerProfiles[peerId];",
+            self.chat_session_list,
+        )
         self.assertIn(
             'data-chat-search-result-peer-ptid="{peer_ptid}"',
             self.source,

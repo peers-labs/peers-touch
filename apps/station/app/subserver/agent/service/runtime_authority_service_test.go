@@ -421,6 +421,231 @@ func TestProviderOutputOverrunPersistsAttemptUsage(t *testing.T) {
 	}
 }
 
+func TestProviderRateLimitTerminatesWithoutHiddenRetry(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_rate_limit",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-rate-limit",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &ProviderHTTPError{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       "rate limit",
+			Provider:   config.Provider,
+			RetryAfter: "2",
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderRateLimit ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderRateLimit) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderRateLimitLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["retry_after_ms"] != "2000" {
+		t.Fatalf("unexpected rate-limit payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"rate limit retried provider call: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+	if len(trace.ErrorClassified) != 1 ||
+		trace.ErrorClassified[0].Reason != domain.FailoverReasonRateLimit {
+		t.Fatalf("classified errors = %+v", trace.ErrorClassified)
+	}
+}
+
+func TestProviderModelUnavailableTerminatesWithoutHiddenFallback(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_model_unavailable",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-model-unavailable",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	config.FallbackModel = "fallback-model"
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &ProviderHTTPError{
+			StatusCode: http.StatusNotFound,
+			Body:       "model_not_found",
+			Provider:   config.Provider,
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderModelUnavailable ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderModelUnavailable) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderModelUnavailableLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["model_id"] != config.Model {
+		t.Fatalf("unexpected model-unavailable payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"model unavailable retried or fell back: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+}
+
+func TestProviderTimeoutTerminatesWithoutHiddenRetry(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_timeout",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-provider-timeout",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	config.FallbackModel = "fallback-model"
+	deadline := time.Date(2026, 9, 16, 1, 2, 3, 456000000, time.UTC)
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &providerTimeoutError{
+			Deadline: deadline,
+			Cause:    context.DeadlineExceeded,
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderTimeout ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderTimeout) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderTimeoutLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["model_id"] != config.Model ||
+		bizErr.Payload.GetDetails()["deadline"] != deadline.Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected provider-timeout payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"provider timeout retried or fell back: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+	if len(trace.ErrorClassified) != 1 ||
+		trace.ErrorClassified[0].Reason != domain.FailoverReasonTimeout {
+		t.Fatalf("classified errors = %+v", trace.ErrorClassified)
+	}
+}
+
 func TestProviderContextOverflowUsesGovernedCompressionAndReplacesLedger(t *testing.T) {
 	service, config, db := setupPinnedProviderExecution(
 		t,
@@ -1216,6 +1441,263 @@ func TestExecuteTurnRejectsUnsupportedRuntimeBeforeProviderOrToolExecution(t *te
 	)
 }
 
+func TestExecuteTurnRejectsRuntimeIncompatibleCapabilityBeforeProviderOrToolExecution(t *testing.T) {
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
+	db := openAdmissionTestDB(t, "runtime_incompatible_capability")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatalf("migrate runtime incompatibility tables: %v", err)
+	}
+	now := time.Now().UTC()
+	agent := &persistence.Agent{
+		ID:             "agent-incompatible",
+		Name:           "Incompatible Agent",
+		ProviderID:     "test-provider",
+		ModelName:      "test-model",
+		ThinkingMode:   string(domain.ThinkingModeDisabled),
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: "ptid:person:owner",
+		ConfigJSON:     `{"tools":["skills_list"]}`,
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("seed incompatible agent: %v", err)
+	}
+	if err := db.Create(&persistence.Conversation{
+		ID:         "conversation-incompatible",
+		AgentID:    agent.ID,
+		ActorPTID:  agent.OwnerActorPTID,
+		Title:      "Incompatible capability",
+		ProviderID: agent.ProviderID,
+		Status:     string(domain.ConversationStatusActive),
+		Version:    1,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}).Error; err != nil {
+		t.Fatalf("seed incompatible conversation: %v", err)
+	}
+	seedTestProvider(
+		t,
+		db,
+		agent.OwnerActorPTID,
+		agent.ProviderID,
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	seedTestModel(
+		t,
+		db,
+		agent.OwnerActorPTID,
+		agent.ProviderID,
+		agent.ModelName,
+		true,
+		128000,
+		`{"native-tools":false}`,
+	)
+
+	toolExecutions := 0
+	registry := NewToolRegistryService(nil, nil)
+	definitions := registry.Definitions([]string{"skills_list"})
+	if len(definitions) != 1 {
+		t.Fatalf("skills_list registry definition count = %d", len(definitions))
+	}
+	skillsList := *definitions[0]
+	skillsList.Handler = func(
+		context.Context,
+		*domain.ToolCallMeta,
+		json.RawMessage,
+	) (*domain.ToolResult, error) {
+		toolExecutions++
+		return &domain.ToolResult{Content: "unexpected"}, nil
+	}
+	registry.Register(&skillsList)
+
+	backfill := NewCapabilityBackfillService(db, registry)
+	if _, err := backfill.Run(context.Background()); err != nil {
+		t.Fatalf("backfill canonical capability manifests: %v", err)
+	}
+	var manifest persistence.CapabilityManifest
+	if err := db.Where(
+		"capability_id = ?",
+		"tool:skills_list",
+	).First(&manifest).Error; err != nil {
+		t.Fatalf("load skills_list capability manifest: %v", err)
+	}
+	var required []string
+	if err := json.Unmarshal(
+		[]byte(manifest.RequiredCapabilitiesJSON),
+		&required,
+	); err != nil {
+		t.Fatalf("decode skills_list runtime requirements: %v", err)
+	}
+	if len(required) != 1 || required[0] != "native-tools" {
+		t.Fatalf("skills_list runtime requirements = %v", required)
+	}
+
+	admission := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	readiness := NewCapabilityAuthorityReadinessService(
+		NewCapabilityAuthorityService(db),
+		NewAgentService(),
+		admission,
+	)
+	service := NewTurnService(
+		nil,
+		nil,
+		nil,
+		nil,
+		NewCompressionService(),
+		nil,
+		nil,
+		nil,
+		registry,
+		nil,
+		nil,
+		NewConversationService(),
+	)
+	service.SetAdmissionResolver(admission)
+	service.SetCapabilityReadiness(readiness)
+	service.SetAttachmentAdmissionService(NewAttachmentAdmissionService(nil))
+	providerCalls := 0
+	service.providerCall = func(
+		context.Context,
+		*ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		providerCalls++
+		return &ProviderCallResponse{Content: "unexpected"}, nil
+	}
+	var emitted []TurnEvent
+
+	_, err := service.ExecuteTurn(context.Background(), &TurnConfig{
+		AgentID:           agent.ID,
+		ActorID:           agent.OwnerActorPTID,
+		ConversationID:    "conversation-incompatible",
+		Identity:          "identity",
+		AgentConfigPrompt: "prompt",
+		Provider:          agent.ProviderID,
+		Model:             agent.ModelName,
+		ThinkingMode:      domain.ThinkingModeDisabled,
+		ContextWindowSize: 128000,
+		MaxRetries:        1,
+		EventSink: func(_ context.Context, event TurnEvent) {
+			emitted = append(emitted, event)
+		},
+	}, "question")
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("runtime incompatibility error = %T: %v", err, err)
+	}
+	if bizErr.Code != errcode.AgentRuntimeIncompatibleCapability ||
+		bizErr.HTTPStatus != http.StatusUnprocessableEntity ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeIncompatibleCapability) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["capability_id"] != "tool:skills_list" ||
+		bizErr.Payload.GetDetails()["reason_code"] != runtimeCapabilityUnavailableReasonCode {
+		t.Fatalf("runtime incompatibility payload = %+v", bizErr)
+	}
+	if providerCalls != 0 || toolExecutions != 0 {
+		t.Fatalf(
+			"runtime incompatibility executed downstream work: provider=%d tool=%d",
+			providerCalls,
+			toolExecutions,
+		)
+	}
+	if len(emitted) != 1 ||
+		emitted[0].Type != "error" ||
+		emitted[0].TurnID == "" ||
+		emitted[0].Seq <= 0 {
+		t.Fatalf("typed rejection event identity = %+v", emitted)
+	}
+
+	var readinessRecord persistence.CapabilityReadinessSnapshot
+	if err := db.First(&readinessRecord).Error; err != nil {
+		t.Fatalf("load rejected readiness snapshot: %v", err)
+	}
+	var readinessSnapshot model.CapabilityReadinessSnapshot
+	if err := proto.Unmarshal(readinessRecord.Payload, &readinessSnapshot); err != nil {
+		t.Fatalf("decode rejected readiness snapshot: %v", err)
+	}
+	assertCapabilityReadiness(
+		t,
+		&readinessSnapshot,
+		"tool:skills_list",
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+		runtimeCapabilityUnavailableReasonCode,
+	)
+
+	var turn persistence.AgentTurn
+	if err := db.First(&turn).Error; err != nil {
+		t.Fatalf("load rejected turn: %v", err)
+	}
+	if turn.Status != string(domain.TurnStatusFailed) ||
+		turn.ProviderAttemptCount != 0 {
+		t.Fatalf("rejected turn state = %+v", turn)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "turn_id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("load rejected turn attempt: %v", err)
+	}
+	if attempt.Status != string(domain.TurnStatusFailed) ||
+		attempt.ReadinessSnapshotID != readinessRecord.SnapshotID ||
+		len(attempt.RuntimeSnapshot) == 0 ||
+		attempt.RuntimeSnapshotHash == "" {
+		t.Fatalf("rejected attempt lost runtime/readiness authority: %+v", attempt)
+	}
+	assertNoPersistedToolExecution(t, db)
+
+	var eventRecord persistence.TurnEvent
+	if err := db.First(&eventRecord, "turn_id = ? AND event_type = ?", turn.ID, "error").Error; err != nil {
+		t.Fatalf("load rejected turn event: %v", err)
+	}
+	if eventRecord.EventSeq <= 0 || eventRecord.TurnID != turn.ID {
+		t.Fatalf("persisted rejection event identity = %+v", eventRecord)
+	}
+	var event TurnEvent
+	if err := json.Unmarshal([]byte(eventRecord.Payload), &event); err != nil {
+		t.Fatalf("decode rejected turn event: %v", err)
+	}
+	if event.Error != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		event.ErrorType != string(errcode.AgentRuntimeIncompatibleCapability) ||
+		event.LocaleKey != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		event.Retryable == nil ||
+		*event.Retryable ||
+		event.Terminal == nil ||
+		!*event.Terminal ||
+		len(event.Details) != 2 ||
+		event.Details["capability_id"] != "tool:skills_list" ||
+		event.Details["reason_code"] != runtimeCapabilityUnavailableReasonCode {
+		t.Fatalf("rejected turn event = %+v", event)
+	}
+	for name, expected := range map[string]struct {
+		model any
+		count int64
+	}{
+		"readiness snapshot": {model: &persistence.CapabilityReadinessSnapshot{}, count: 1},
+		"turn":               {model: &persistence.AgentTurn{}, count: 1},
+		"attempt":            {model: &persistence.TurnAttempt{}, count: 1},
+		"event":              {model: &persistence.TurnEvent{}, count: 1},
+		"message":            {model: &persistence.AgentMessage{}, count: 0},
+		"tool call":          {model: &persistence.ToolCall{}, count: 0},
+		"tool batch":         {model: &persistence.ToolBatch{}, count: 0},
+	} {
+		var count int64
+		if err := db.Model(expected.model).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != expected.count {
+			t.Fatalf("%s row count = %d, want %d", name, count, expected.count)
+		}
+	}
+}
+
 func TestExecuteTurnRejectsUnsupportedStreamingBeforeProviderOrToolExecution(t *testing.T) {
 	assertExecuteTurnRejectedWithoutExecution(
 		t,
@@ -1429,6 +1911,7 @@ func TestAuthorizedToolsRequireNativeToolCapabilityBeforeExecution(t *testing.T)
 func TestRuntimeBudgetDeadlineRejectsBeforeProviderExecution(t *testing.T) {
 	ctx, cancel := withRuntimeBudgetDeadline(
 		context.Background(),
+		"turn-expired-runtime-budget",
 		&model.RuntimeBudget{WallTimeMs: 1},
 		time.Now().Add(-time.Second),
 	)

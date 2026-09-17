@@ -12,18 +12,18 @@
 #   deploy.sh <env-name> [BRANCH=main]
 #   deploy.sh status <env-name>
 #   deploy.sh logs <env-name>
+#   deploy.sh resolve <env-name>
 # ─────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-ENVS_DIR="$PROJECT_ROOT/.local/deploy/envs"
 SOURCE_SYNC_SCRIPT="$SCRIPT_DIR/source-sync.sh"
 
 cmd="${1:-}"
 env_name="${2:-$cmd}"
 
-if [[ "$cmd" == "status" || "$cmd" == "logs" ]]; then
+if [[ "$cmd" == "status" || "$cmd" == "logs" || "$cmd" == "resolve" ]]; then
   env_name="${2:-}"
   if [[ -z "$env_name" ]]; then
     echo "[ERROR] Usage: deploy.sh $cmd <env-name>"
@@ -35,31 +35,56 @@ fi
 
 if [[ -z "$env_name" ]]; then
   echo "[ERROR] Usage: deploy.sh <env-name> [BRANCH=main]"
-  echo ""
-  echo "Available envs:"
-  if ls "$ENVS_DIR"/*.env >/dev/null 2>&1; then
-    for f in "$ENVS_DIR"/*.env; do
-      echo "  $(basename "$f" .env)"
-    done
-  else
-    echo "  (none)"
+  exit 1
+fi
+
+resolve_reviewed_deploy_env() {
+  local requested_name="$1"
+  local env_repo="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
+  if [[ ! "$requested_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+    echo "[ERROR] Invalid deploy environment name: $requested_name" >&2
+    return 1
   fi
+  if [[ ! -d "$env_repo/peers-touch" ]] \
+    || ! git -C "$env_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "[ERROR] Reviewed environment repository is unavailable: $env_repo" >&2
+    return 1
+  fi
+
+  local matches=()
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && matches+=("$candidate")
+  done < <(
+    find "$env_repo/peers-touch" -mindepth 3 -maxdepth 3 \
+      -type f -path "*/deploy/${requested_name}.env.example" -print | sort
+  )
+  if [[ "${#matches[@]}" -ne 1 ]]; then
+    echo "[ERROR] Deploy environment '$requested_name' must resolve to exactly one reviewed env-repository definition; found ${#matches[@]}." >&2
+    return 1
+  fi
+
+  local resolved="${matches[0]}"
+  local relative="${resolved#"$env_repo/"}"
+  local profile_dir
+  profile_dir="$(dirname "$(dirname "$relative")")"
+  if ! git -C "$env_repo" ls-files --error-unmatch "$relative" >/dev/null 2>&1; then
+    echo "[ERROR] Deploy environment '$requested_name' is not Git-tracked: $resolved" >&2
+    return 1
+  fi
+  if [[ -n "$(git -C "$env_repo" status --porcelain --untracked-files=all -- "$profile_dir")" ]]; then
+    echo "[ERROR] Deploy environment '$requested_name' has dirty or untracked topology under $profile_dir." >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+if ! ENV_FILE="$(resolve_reviewed_deploy_env "$env_name")"; then
   exit 1
 fi
-
-ENV_FILE="$ENVS_DIR/$env_name.env"
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "[ERROR] Env file not found: $ENV_FILE"
-  exit 1
-fi
-
-if [[ "$cmd" != "status" && "$cmd" != "logs" && "${PT_PROFILE_LEASE_HELD:-0}" != "1" ]]; then
-  cd "$PROJECT_ROOT"
-  exec env PT_PROFILE_LEASE_HELD=1 \
-    python3 -c 'from tooling.acceptance.core.lease import main; raise SystemExit(main())' \
-      --resource "$env_name" \
-      --owner "deploy:$env_name:${BRANCH:-default}" \
-      -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+if [[ "$cmd" == "resolve" ]]; then
+  printf '%s\n' "$ENV_FILE"
+  exit 0
 fi
 
 # Load deploy env
@@ -72,6 +97,36 @@ source "$ENV_FILE"
 : "${PT_DEPLOY_ROLE:?PT_DEPLOY_ROLE not set in $ENV_FILE}"
 
 BRANCH="${BRANCH:-${PT_DEPLOY_BRANCH:-main}}"
+
+if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
+  if [[ "$PT_DEPLOY_ROLE" == "station" ]]; then
+    machine_dev_script="$PROJECT_ROOT/tooling/scripts/local-dev/machine-dev.mjs"
+    env_repo="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
+    if [[ "${PT_MACHINE_LEASE_KIND:-}" == "station.deploy" ]] \
+      && [[ "${PT_MACHINE_LEASE_RESOURCE_ID:-}" == "$env_name" ]]; then
+      node "$machine_dev_script" verify-held \
+        --workspace-root "$PROJECT_ROOT" \
+        --resource-kind station.deploy \
+        --resource-id "$env_name" >/dev/null
+    else
+      exec node "$machine_dev_script" lease \
+        --workspace-root "$PROJECT_ROOT" \
+        --env-repo "$env_repo" \
+        --resource-kind station.deploy \
+        --resource-id "$env_name" \
+        --budget-seconds "${PT_STATION_LEASE_BUDGET_SECONDS:-1200}" \
+        -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+    fi
+  elif [[ "${PT_PROFILE_LEASE_HELD:-0}" != "1" ]]; then
+    cd "$PROJECT_ROOT"
+    exec env PT_PROFILE_LEASE_HELD=1 \
+      python3 -c 'from tooling.acceptance.core.lease import main; raise SystemExit(main())' \
+        --resource "$env_name" \
+        --owner "deploy:$env_name:${BRANCH:-default}" \
+        -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+  fi
+fi
+
 SSH_TARGET="${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}"
 SSH_OPTS=(
   -o BatchMode=yes

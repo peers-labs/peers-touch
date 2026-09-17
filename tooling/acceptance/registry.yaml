@@ -13,6 +13,7 @@
       },
       "require": [
         "proto-build",
+        "station-api-ownership",
         "station-messaging-unit",
         "messaging-platform-contract"
       ]
@@ -37,6 +38,7 @@
         ]
       },
       "require": [
+        "station-api-ownership",
         "station-messaging-unit",
         "messaging-platform-contract",
         "desktop-check"
@@ -49,7 +51,11 @@
       ],
       "when": {
         "paths": [
+          "packages/messaging-core/src/crypto/prekeys.rs",
+          "apps/desktop/src-tauri/src/messaging/prekeys.rs",
           "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src-tauri/src/messaging/direct_session.rs",
+          "apps/desktop/src-tauri/src/messaging/drain.rs",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
@@ -63,11 +69,23 @@
           "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder_test.go",
           "apps/station/app/subserver/conversation/interface/http/interaction.go",
           "apps/station/app/subserver/conversation/interface/http/interaction_test.go",
+          "apps/station/app/subserver/conversation/production_endpoint_manifest_test.go",
+          "apps/station/app/subserver/conversation/production_http.go",
           "apps/station/app/subserver/conversation/subserver.go",
+          "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
+          "apps/station/app/subserver/key_exchange/infrastructure/canonical_store_test.go",
+          "apps/station/app/subserver/key_exchange/canonical_api_test.go",
+          "tooling/acceptance/core/provisioning.py",
+          "tooling/acceptance/drivers/native/runtime.py",
+          "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+          "tooling/acceptance/environments/native-tauri-current-profile.yaml",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_submitted_command_recovery_entry.py",
+          "tooling/acceptance/gates/chat/native_submitted_command_recovery_e2e.py"
         ]
       },
       "require": [
@@ -75,7 +93,84 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
+        "chat-native-submitted-command-recovery-e2e",
         "chat-native-two-client-e2e"
+      ]
+    },
+    {
+      "id": "chat-friend-request-gateway-lifecycle",
+      "features": [
+        "chat-friend-request-gateway-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/station/app/subserver/social/handler.go",
+          "apps/station/app/subserver/social/domain/federated_friend_request.go",
+          "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+          "apps/station/frame/touch/actor/seed_dev_federation.go",
+          "tooling/acceptance/gates/chat/friend_request_gateway_e2e.py",
+          "tooling/acceptance/features/chat-friend-request-gateway-lifecycle.yaml"
+        ]
+      },
+      "require": [
+        "chat-friend-request-gateway-e2e"
+      ]
+    },
+    {
+      "id": "chat-native-friendship-projection",
+      "features": [
+        "chat-native-friendship-projection"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/social/relationship.proto",
+          "apps/station/frame/touch/federation/cache/doc.go",
+          "apps/station/frame/touch/federation/cache/cache.go",
+          "apps/station/frame/touch/federation/cache/cache_test.go",
+          "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+          "apps/station/app/subserver/social/application/relationship_service.go",
+          "apps/station/app/subserver/social/application/relationship_service_test.go",
+          "apps/desktop/src/store/federation.ts",
+          "apps/desktop/src/store/relationships.ts",
+          "apps/desktop/src/store/friendshipProjection.ts",
+          "apps/desktop/src/services/socialRealtime.ts",
+          "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+          "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src/acceptance/chat/harness.ts",
+          "apps/desktop/src/components/chat/useActiveSocialChatStore.ts",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+          "apps/desktop/src/components/chat/CreateGroupModal.test.ts",
+          "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
+          "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+          "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "apps/desktop/src/components/chat/ChatSearchDropdown.tsx",
+          "apps/desktop/src/components/chat/contactSelection.ts",
+          "apps/desktop/src/services/errorMappings/chatErrorMapping.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/profile/PublicProfileCard.tsx",
+          "apps/desktop/src/pages/SocialChatPage.tsx",
+          "packages/locales/en/chat.json",
+          "packages/locales/en/errors.json",
+          "packages/locales/zh-CN/chat.json",
+          "packages/locales/zh-CN/errors.json",
+          "packages/prototypes/desktop/features/social-chat/**",
+          "docs/architecture/social/prototype/README.md",
+          "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
+          "tooling/acceptance/features/chat-native-friendship-projection.yaml"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-group-mls-e2e"
       ]
     },
     {
@@ -188,16 +283,24 @@
           "tooling/acceptance/gates/chat/native_multi_device_runner.py",
           "tooling/acceptance/gates/chat/native_recovery_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_entry.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
           "tooling/acceptance/gates/chat/native_support.py",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",
+          "tooling/acceptance/environments/native-tauri-current-profile.yaml",
+          "tooling/acceptance/provisioners/native_tauri_current_profile.py",
           "apps/desktop/src/acceptance/chat/**",
-          "apps/desktop/src-tauri/src/application/profile/mod.rs"
+          "apps/desktop/src-tauri/src/application/profile/mod.rs",
+          "apps/desktop/src/components/common/SquareAvatar.tsx",
+          "apps/station/app/conf/actor.yml",
+          "apps/station/frame/touch/actor/seed.go"
         ]
       },
       "require": [
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",
         "chat-native-recovery-e2e",
@@ -322,6 +425,7 @@
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/stationRegistry.ts",
           "apps/desktop/src/runtimes/stationRuntime.ts",
+          "apps/desktop/src-tauri/src/application/federation/mod.rs",
           "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
           "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs"
         ]
@@ -424,6 +528,7 @@
       "require": [
         "mobile-contract-static",
         "mobile-simulator-access-e2e",
+        "mobile-simulator-runtime-lifecycle-e2e",
         "mobile-simulator-station-lifecycle-e2e",
         "mobile-ios-simulator-layout-accessibility-e2e"
       ]
@@ -471,7 +576,8 @@
           "apps/mobile/src/App.tsx",
           "apps/mobile/src/app/**",
           "apps/mobile/src/components/MobileShell.tsx",
-          "apps/mobile/src/runtimes/runtimeRegistry.ts"
+          "apps/mobile/src/runtimes/runtimeRegistry.ts",
+          "apps/mobile/src/runtimes/stationRuntime.ts"
         ]
       },
       "require": [
@@ -529,6 +635,9 @@
       "when": {
         "paths": [
           "apps/mobile/src/runtimes/commandRuntime.ts",
+          "apps/mobile/src/features/chat/chatCommands.ts",
+          "apps/mobile/src/features/social/contactCommands.ts",
+          "apps/mobile/src/pages/moments/MomentCommentsSection.tsx",
           "apps/mobile/src-tauri/src/runtime/command_ledger/**",
           "apps/mobile/src-tauri/src/runtime/draft_store/**",
           "apps/mobile/src-tauri/src/messaging/adapter.rs"
@@ -536,8 +645,28 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-hard-cut-static",
         "mobile-native-recovery-e2e",
         "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-service-bindings",
+      "features": [
+        "mobile-station-trust",
+        "mobile-access-gate-oauth",
+        "mobile-session-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/provisioners/mobile_service_bindings.py"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-native-access-e2e",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-simulator-station-lifecycle-e2e"
       ]
     },
     {
@@ -566,6 +695,8 @@
       "when": {
         "paths": [
           "apps/mobile/src/features/group/**",
+          "apps/mobile/src/features/chat/chatCommands.ts",
+          "apps/mobile/src/features/social/contactCommands.ts",
           "apps/mobile/src/services/gateways/socialGateway.ts",
           "apps/mobile/src/pages/ChatPage.tsx",
           "apps/mobile/src/pages/ContactsPage.tsx"
@@ -576,6 +707,61 @@
         "mobile-simulator-chat-contacts-e2e",
         "mobile-native-social-convergence-e2e",
         "mobile-native-chat-contacts-e2e"
+      ]
+    },
+    {
+      "id": "mobile-shared-social-projections",
+      "features": [
+        "mobile-chat-contacts-groups",
+        "mobile-moments-participation",
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/socialEventIngress.ts",
+          "apps/mobile/src/runtimes/socialProjectionRuntime.ts",
+          "apps/mobile/src/runtimes/runtimeRegistry.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-chat-contacts-e2e",
+        "mobile-native-moments-e2e",
+        "mobile-native-settings-e2e"
+      ]
+    },
+    {
+      "id": "mobile-moments-projection",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-moments-e2e"
+      ]
+    },
+    {
+      "id": "mobile-profile-projection",
+      "features": [
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/profileProjectionDescriptor.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-settings-e2e"
       ]
     },
     {
@@ -605,7 +791,8 @@
       ],
       "when": {
         "paths": [
-          "apps/mobile/src/pages/MomentsPage.tsx"
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/MomentCommentsSection.tsx"
         ]
       },
       "require": [
@@ -658,6 +845,7 @@
           "model/domain/agent/**",
           "apps/station/app/subserver/agent/**",
           "apps/desktop/src/acceptance/agent/**",
+          "apps/desktop/src/runtimes/chatRuntime*",
           "apps/desktop/src/runtimes/agentTopicRuntime.ts",
           "apps/desktop/src/services/chat-service.ts",
           "apps/desktop/src/store/streaming/**",
@@ -679,6 +867,7 @@
           "apps/desktop/src/components/GlobalOperationTray.tsx",
           "apps/desktop/src/components/OpStatusTray.tsx",
           "apps/desktop/src/kernel/identityRuntime.ts",
+          "apps/desktop/src/runtimes/chatRuntime*",
           "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/services/eventStream*",
           "apps/desktop/src/services/identityHandlers.ts",
@@ -703,6 +892,7 @@
         "paths": [
           "tooling/acceptance/**",
           "tooling/scripts/acceptance-*.py",
+          "tooling/scripts/execution-plan.py",
           "tooling/scripts/quality-evidence.py",
           "tooling/make/acceptance.mk",
           "tooling/scripts/review/route-change.sh",
@@ -714,6 +904,7 @@
       "require": [
         "acceptance-plan-self",
         "acceptance-infra-validation",
+        "acceptance-workflow-contract",
         "acceptance-runtime-provisioning-self"
       ]
     },

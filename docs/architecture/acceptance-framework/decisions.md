@@ -1,8 +1,8 @@
 # Acceptance Framework — 设计决策
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+> **Version**: v1.2
+> **Created**: 2026-06-03 | **Updated**: 2026-09-13
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -31,6 +31,7 @@
 | D-17 | Runtime Manifest 使用 typed services map 表达完整服务拓扑 | accepted |
 | D-18 | Client 通过 typed binding 引用 Runtime Manifest service | accepted |
 | D-19 | Cleanup后、run finalize前执行只读Evidence Finalizer | accepted |
+| D-20 | Formal Execution Plan owns Acceptance scheduling | accepted |
 
 ---
 
@@ -419,6 +420,8 @@ completion pipeline 的统一机器检查；不得复制多份判断规则。
 **Status**: accepted
 **Date**: 2026-08-17 | **Accepted**: 2026-08-17
 
+**Default root amended**: 2026-09-13 by LDCP-D07
+
 ### Context
 
 Acceptance runtime当前把plan、run、manifest、log、截图和validation report写到
@@ -440,13 +443,22 @@ artifact必须写入source tree之外的canonical artifact root：
 <root>/<workspace-id>/<gate-id>/<run-id>/
 ```
 
-`PT_ACCEPTANCE_ARTIFACT_ROOT`是可选override。未设置或空白时使用平台默认：
+`PT_ACCEPTANCE_ARTIFACT_ROOT`是CI和隔离测试的显式override。未设置或空白时，
+本机开发使用机器 Dev Control Plane 下的 canonical default：
 
-- macOS: `~/Library/Application Support/PeersTouch/acceptance`
-- Linux: `${XDG_STATE_HOME:-~/.local/state}/peers-touch/acceptance`
-- Windows: `%LOCALAPPDATA%\PeersTouch\acceptance`
+- macOS / Linux / other Unix: `~/.peers-touch/dev/acceptance`
+- Windows: `%USERPROFILE%\.peers-touch\dev\acceptance`
 
 CI必须显式override到CI artifact workspace。
+
+`~/Library/Application Support/PeersTouch/`及其它正式产品数据namespace禁止作为
+Acceptance artifact root。历史macOS root
+`~/Library/Application Support/PeersTouch/acceptance`只允许作为一次性迁移源；
+切换后禁止symlink、dual-write、dual-read或fallback。
+迁移只有在全部Git worktree证明新resolver contract、旧writer和live run归零、
+全部artifact完整性验证通过、旧目录删除并复验不存在后才完成。完成后live registry、
+active docs和runtime code必须删除legacy字段与迁移分支；只有closed ADR和不可执行的
+completion receipt可保留历史。
 
 `workspace-id`是canonical worktree path的SHA-256前16个小写hex字符。`gate-id`使用
 validated slug。`run-id`由UTC microsecond timestamp与128-bit cryptographic random
@@ -509,6 +521,7 @@ ALLOCATED -> ACTIVE -> FINALIZING -> DURABLE -> PUBLISHED -> CLOSED
 - concurrent Gates和多个worktree不再覆盖；
 - CI artifact collection可通过一个override root完成；
 - source digest不再被runtime写入扰动。
+- 产品Application Support namespace不再混入开发期证据。
 
 负面：
 
@@ -517,6 +530,7 @@ ALLOCATED -> ACTIVE -> FINALIZING -> DURABLE -> PUBLISHED -> CLOSED
 - default retain-all会增长磁盘，需要显式cleanup policy；
 - canonical path变化会产生新workspace-id，旧run不会自动迁移；
 - existing tracked runtime reports必须删除，不能继续作为产品proof。
+- 现有外部Evidence Store需要一次quiesce、完整性校验和atomic cutover。
 
 ### Review / Reversal Trigger
 
@@ -1574,3 +1588,41 @@ Acceptance Infra和Evidence Store的单一职责。
 
 如果所有业务cleanup evidence都能在Gate退出前由唯一owner安全产生，可移除该扩展；
 不得用提前proof或mutable finalized run代替。
+
+---
+
+## D-20: Formal Execution Plan Owns Acceptance Scheduling
+
+**Status**: accepted
+**Date**: 2026-09-12
+
+### Context
+
+Registry path matching currently returns every Gate relevant to a changed path,
+including expensive environment-backed proof. The runner historically consumed
+the latest generated Acceptance plan and, without a tier filter, executed every
+selected Gate. This conflated impact discovery, work scheduling, and release
+proof.
+
+### Decision
+
+The formal execution plan is the sole scheduling owner. It maps its existing
+closure IDs to immediate Gate IDs and declares separate completion and explicit
+full/release sets. Registry planning remains a conservative impact projection
+used to detect undeclared scope.
+
+Plain Acceptance execution resolves the one active formal plan for the current
+worktree and runs only its current closure. Completion and full execution use
+explicit commands; full execution requires explicit release/full-test user
+intent.
+
+### Consequences
+
+- No Acceptance-specific iteration or active-plan state is introduced.
+- Latest Evidence Store pointers cannot select current work.
+- Broad Registry rules can request coverage without automatically launching
+  every expensive environment.
+- Plan creation and review must expose Gate IDs, environments, timing, and
+  estimated cost before implementation.
+- A changed path that implies an undeclared Gate fails with
+  `ACCEPTANCE_PLAN_DRIFT`.

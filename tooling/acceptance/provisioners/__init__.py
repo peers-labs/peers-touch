@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from tooling.acceptance.core import (
     EnvironmentContract,
     EnvironmentProvisioner,
@@ -17,9 +19,13 @@ from .mobile_simulator import (
     MobileStationLifecycleSimulatorProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
+from .native_desktop_macos import NativeDesktopMacOSProvisioner
 from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
+)
+from .native_tauri_current_profile import (
+    NativeTauriCurrentProfileProvisioner,
 )
 
 
@@ -38,19 +44,45 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
         MobileStationLifecycleSimulatorProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
+    NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
 }
 
 _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
+    "desktop-macos-native": NativeDesktopMacOSProvisioner,
     "desktop-linux-native": NativeDesktopLinuxProvisioner,
     "desktop-windows-native": NativeDesktopWindowsProvisioner,
 }
 
 
-def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
+def get_provisioner(
+    contract: EnvironmentContract,
+    *,
+    station_profiles: Mapping[str, str] | None = None,
+    service_profiles: Mapping[str, str] | None = None,
+) -> EnvironmentProvisioner:
     provisioner_class = _PROVISIONERS.get(contract.id)
     if provisioner_class is None:
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
+        )
+    if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
+    if provisioner_class is MobileSocialSimulatorProvisioner:
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+            service_profiles=service_profiles,
+        )
+    if station_profiles or service_profiles:
+        raise ProvisioningError(
+            f"environment {contract.id!r} does not accept runtime profile bindings"
         )
     return provisioner_class(contract)
 
@@ -79,8 +111,10 @@ __all__ = [
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "NativeDesktopLinuxProvisioner",
+    "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
+    "NativeTauriCurrentProfileProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",
 ]

@@ -7,18 +7,11 @@ use crate::infrastructure::station_client::{self, StationClientError};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationProvider {
     pub id: String,
-    pub actor_ptid: String,
     pub name: String,
-    pub display_name: String,
-    pub base_url: String,
-    pub protocol: String,
-    pub runtime_kind: String,
-    pub cli_command: String,
+    #[serde(default)]
     pub enabled: bool,
     #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
-    #[serde(default)]
-    pub config: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +22,10 @@ pub struct StationModel {
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub context_window: i32,
+    #[serde(default)]
+    pub capabilities: Option<Value>,
     #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
 }
@@ -109,14 +106,12 @@ pub fn get_providers(token: &str, _scope: &str) -> Result<Vec<StationProvider>, 
         Some(&json!({})),
     )?;
 
-    let providers: Vec<StationProvider> = serde_json::from_value(
+    serde_json::from_value(
         resp.get("providers")
             .cloned()
             .unwrap_or(Value::Array(vec![])),
     )
-    .unwrap_or_default();
-
-    Ok(providers)
+    .map_err(|e| StationApiError::Internal(format!("decode providers: {}", e)))
 }
 
 pub fn get_provider(token: &str, provider_id: &str) -> Result<Value, StationApiError> {
@@ -175,14 +170,18 @@ pub fn create_model(
     display_name: &str,
     enabled: bool,
     context_window: i32,
+    capabilities: Option<&Value>,
 ) -> Result<Value, StationApiError> {
-    let body = json!({
+    let mut body = json!({
         "provider_id": provider_id,
         "model_id": model_id,
         "display_name": display_name,
         "enabled": enabled,
         "context_window": context_window,
     });
+    if let Some(value) = capabilities {
+        body["capabilities"] = value.clone();
+    }
     Ok(station_client::request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/create",
@@ -299,6 +298,8 @@ pub fn update_model(
     version: i64,
     display_name: Option<&str>,
     enabled: Option<bool>,
+    context_window: Option<i32>,
+    capabilities: Option<&Value>,
 ) -> Result<StationModel, StationApiError> {
     let mut body = json!({
         "provider_id": provider_id,
@@ -310,6 +311,12 @@ pub fn update_model(
     }
     if let Some(v) = enabled {
         body["enabled"] = json!(v);
+    }
+    if let Some(v) = context_window {
+        body["context_window"] = json!(v);
+    }
+    if let Some(value) = capabilities {
+        body["capabilities"] = value.clone();
     }
 
     let resp = station_client::request_json_auth(
@@ -458,18 +465,15 @@ mod tests {
             assert_eq!(status.version, 2);
 
             let provider: StationProvider = serde_json::from_value(serde_json::json!({
-                "id": "provider-record",
-                "actor_ptid": "ptid:v1:actor",
-                "name": "ark",
-                "display_name": "Ark",
-                "base_url": "https://provider.example/v1",
-                "protocol": "openai-compatible",
-                "runtime_kind": "http",
-                "cli_command": "",
+                "id": "ark",
+                "name": "Ark",
                 "enabled": true,
                 "version": version.clone(),
             }))
             .expect("decode provider");
+            assert_eq!(provider.id, "ark");
+            assert_eq!(provider.name, "Ark");
+            assert!(provider.enabled);
             assert_eq!(provider.version, 2);
 
             let model: StationModel = serde_json::from_value(serde_json::json!({

@@ -1,111 +1,110 @@
 ---
 name: "pt-context-anchor"
-description: "Synchronizes verified tracked-work state, progress delta, execution topology, conflict controls, critical path, and evidence-backed ETA into a copyable chat anchor. Invoke for resume, status, handoff, blockers, stage changes, or session close."
+description: "Reads verified tracked-work sources and renders one copyable chat projection for status, resume, handoff, blockers, readiness, or close. It never repairs or mutates workflow state."
 stage: "cross-stage"
-requires: ["formal execution plan and active_work entry for tracked work"]
-produces: ["synchronized active_work state", "verified chat Context Anchor"]
+requires: ["valid Plan Package", "matching active_work locator", "verified worktree identity"]
+produces: ["verified read-only Context Anchor"]
 ---
 
 # Context Anchor
 
+Context Anchor is a read-only projection adapter.
+
+```text
+durable owner state -> validate -> project to chat
+```
+
+It does not synchronize, repair, or write durable state.
+
 ## Invoke When
 
-- Resuming, switching, reporting, handing off, or closing tracked work.
-- A tracked worktree, branch, stage, step, evidence state, blocker, or decision changes.
-- The user requests a Context Anchor or continuation prompt for tracked work.
-- Before context compaction or session close while tracked work remains active.
+- Reporting tracked-work status, progress, blocker, readiness, handoff, or
+  close.
+- Preparing for context compaction.
+- A resume needs a verified projection before or after continued execution.
 
-Do not invoke for standalone work or PRODUCT/DESIGN discussion that has no
-formal execution plan and no `active_work` entry.
+Do not invoke before a formal plan and matching `active_work` row exist.
 
-## Core Rule
+## Boundary
 
-A Context Anchor is a normalized projection contract for tracked work, not a
-separate durable state document.
+This Skill may read:
 
-It is materialized in two places only:
+- the matching `active_work` row;
+- compact Plan Package `plan.md`;
+- the manifest's current Task Slice;
+- matching Development `session.json`;
+- referenced durable evidence;
+- verified Git/worktree identity;
+- scheduler lane state supplied by the current Development Run.
 
-1. `active_work` in `project_memory.md` stores the durable locator and
-   current-state index.
-2. Chat carries the complete copyable human-readable projection.
+It must not:
 
-Execution plans and tracking artifacts remain the durable sources for scope,
-status details, and evidence. They MUST NOT contain a `## Context Anchor`
-section. Chat, todos, and dashboards are projections and never become truth
-sources.
+- update `active_work`;
+- change Plan Package or Task lifecycle;
+- append Session events;
+- recompute or persist a scheduler queue;
+- acquire resources or execute work;
+- infer missing facts from chat;
+- write a `## Context Anchor` section into any repository document.
 
-Anchor generation must not pause or replace execution. When the user asks to
-resume work, verify and synchronize the Anchor internally, continue the
-dependency-ready work, and emit the Anchor only in the final status, blocker,
-handoff, readiness, or close response.
+When sources disagree, return `CONTEXT_PROJECTION_STALE` with the mismatched
+fields and their owning writer. `pt-dev-workflow` coordinates repair through
+the owner, then invokes this Skill again.
 
-If no readable formal plan or matching `active_work` entry exists, do not
-invent an Anchor. Continue through PRODUCT/DESIGN/PLAN using the owning skills;
-`pt-plan-and-document` registers tracked work only after creating the plan.
+## Source Ownership
 
-## Field Ownership
-
-Resolve each field from its owner instead of applying one global precedence:
-
-| Field | Owner |
+| Projected field | Read owner |
 |---|---|
-| Worktree, branch, and `workspaceId` | Worktree binding verifier and actual Git state |
-| Initial HEAD, expected HEAD, and worktree-set digest | Persisted `active_work` binding, verified against actual Git state |
-| Product and architecture decisions | Accepted source documents |
-| Plan path, stage, current step, blocked flag, last session | `active_work` |
-| Main task and scope | Formal execution plan |
-| Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
-| Overall progress ratio | Count of done/total workstreams from the plan status table; must not be guessed |
-| Completed delta | Plan/tracking changes since the previous emitted Anchor |
-| Ready queue and critical path | Formal plan dependency graph and current evidence |
-| Execution mode and lanes | The execution guardian's Concurrency Decision plus live, backend-addressable agent state |
-| Conflict controls | Reserved write sets, shared-file owner, dependency barriers, and reconcile owner from the plan/tracking source |
-| ETA | Remaining critical-path units and observed throughput; use `unknown` when evidence is insufficient |
-| Evidence | Named commands and repository evidence |
-| Chat Anchor | Projection of the sources above |
+| Worktree, branch, `workspaceId` | verified Git binding |
+| Initial/expected HEAD and worktree-set digest | persisted binding |
+| Main task, scope, architecture/product decisions | accepted sources |
+| Stage and tracked locator | `active_work` |
+| Task lifecycle/current Task/dependencies | Plan Package manifest |
+| Current transition and first failure | Development Session |
+| Completed delta and evidence | Task snapshot plus referenced evidence |
+| Ready queue, lanes, conflict controls, critical path | scheduler output backed by the current graph |
+| Overall progress | `done` manifest Tasks / total Tasks |
+| ETA | remaining critical path plus observed throughput |
 
-Any disagreement blocks progress reporting until reconciled. Never choose the
-most convenient value or reconstruct state from conversation memory.
+No global precedence rule exists. Each field comes from its owner.
 
-## Required Active Work Schema
+## Active Work Locator
+
+Tracked work uses:
 
 ```markdown
 ## active_work
 
-| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
-| 1 | docs/.../execution-plans/example.md | EXECUTE | Step 2 | feat/example | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | YYYY-MM-DD |
+| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
+|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
 ```
 
-Rules:
+Validation rules:
 
-- `plan` is repository-relative and must resolve to a formal execution plan.
-- A row is created only after the plan file exists.
-- `branch`, `workspace_id`, `expected_head`, and `worktree_set_digest` must
-  match verified Git state.
-- `initial_head` is immutable. On initial registration, `expected_head` equals
-  `initial_head`.
-- Resume and context compaction verify persisted identity. They never replace
-  the persisted baseline by capturing current Git state again.
-- A legacy row missing any binding field cannot resume. It may be migrated
-  exactly once only after the user explicitly authorizes that row's migration
-  and identifies its worktree. Require the recorded plan to exist and the
-  recorded branch to match, capture the current identity once, then atomically
-  append an immutable `active_work_binding_migrations` audit row and populate
-  `workspace_id`, `initial_head`, `expected_head`, and
-  `worktree_set_digest`; both HEAD fields equal the captured HEAD. Missing
-  authorization, mismatch, ambiguity, or partial persistence returns
-  `WORKTREE_IDENTITY_UNAVAILABLE`. This is an explicit baseline migration, not
-  resume recapture.
-- `stage`, `current_step`, and `blocked` must agree with the plan/tracking state.
-- `blocked=false` while any source-defined Ready Queue action, active
-  diagnostic, admissible root-cause fix, or mechanical plan amendment remains.
-- `blocked=true` requires the execution skill's fixed-point exhaustion proof:
-  the Ready Queue is empty, every remaining item is parked behind a hard
-  governance or unavailable external-resource boundary, and the repeated
-  blocker lifecycle threshold is satisfied.
-- One parked action never makes the whole tracked work blocked.
-- Completed work remains addressable with `stage: complete` until explicitly archived.
+- `plan` resolves to package `plan.md`.
+- `current_task_id/current_task_path` mirror the manifest or are both `NONE`.
+- `dev_state` mirrors `session.json` or is `NONE`.
+- branch, workspace, expected HEAD, and digest match verified Git state.
+- initial HEAD is immutable.
+- one workspace has at most one non-complete row.
+- `blocked=true` requires an empty Ready Queue and source-backed exhaustion.
+
+The Anchor reports a mismatch; it never rewrites the row.
+
+## Read Procedure
+
+1. Select exactly one matching non-complete `active_work` row.
+2. Verify the persisted worktree binding. Do not recapture a new baseline.
+3. Run `planctl validate` and `planctl current`.
+4. Read compact `plan.md`, only `current_task_path`, and matching
+   `session.json`.
+5. Validate each projected field against its owner.
+6. Use `unknown` for ETA when critical-path or throughput evidence is
+   insufficient.
+7. Render one final chat block.
+
+Do not scan archive files, every Task body, raw command logs, or conversation
+history.
 
 ## Required Chat Projection
 
@@ -124,9 +123,9 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Overall progress**: <done>/<total> workstreams (<percentage>%)
 - **Completed since previous anchor**:
 - **Ready queue**:
-- **Execution mode / lanes**: <parallel, serial, or hybrid; active and queued lanes>
-- **Conflict controls**: <write-set owners, shared-file owner, barriers, reconcile owner>
-- **Critical path / ETA**: <remaining critical path and evidence-backed range, or `unknown`>
+- **Execution mode / lanes**:
+- **Conflict controls**:
+- **Critical path / ETA**:
 - **Progress**:
 - **Action and reason**:
 - **Evidence**:
@@ -136,126 +135,49 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 ```
 ````
 
-The block is mandatory for tracked-work status, resume, handoff, progress,
-blocker, readiness, and session-close responses. It must be the final section
-of the response.
+The block is the final section of tracked status/handoff responses. Render the
+worktree as `<worktree-name> (<repo-root>)`; never persist a user-home absolute
+path.
 
-Render the worktree as `<worktree-name> (<repo-root>)`, for example
-`peers-social (<repo-root>)`, and include the verified branch, `workspaceId`,
-both full HEAD values, and worktree-set digest. A bare `<repo-root>` is
-ambiguous and invalid. Do not split, quote, render as a table, wrap in a widget,
-persist a user-home absolute path, or omit identity, evidence, next action, or
-tracking document.
+## Resume Behavior
 
-## Workflow
+For status-only requests, emit the projection and stop.
 
-### 1. Resolve Tracked Work
+For `continue`/`resume`, projection must not pause execution. `pt-dev-workflow`
+continues first and invokes this Skill at the next meaningful report boundary.
 
-1. Read `active_work`.
-2. Select the matching non-complete row.
-3. Open its formal plan and linked tracking source.
-4. Stop if the row is missing, ambiguous, or points to a missing plan.
+## Output Errors
 
-### 2. Verify Physical Context
+- `TRACKED_WORK_NOT_FOUND`
+- `TRACKED_WORK_AMBIGUOUS`
+- `WORKTREE_IDENTITY_UNAVAILABLE`
+- `WORKTREE_IDENTITY_MISMATCH`
+- `PLAN_PACKAGE_INVALID`
+- `CONTEXT_PROJECTION_STALE`
 
-For a new tracked-work row, capture once from the explicitly selected worktree
-root, persist all binding fields, and immediately verify them:
-
-```bash
-python3 tooling/scripts/verify-worktree-binding.py \
-  --root '<absolute-root>' \
-  --capture
-
-python3 tooling/scripts/verify-worktree-binding.py \
-  --root '<absolute-root>' \
-  --branch '<branch>' \
-  --workspace-id '<workspaceId>' \
-  --head '<expected-head>' \
-  --worktree-set-digest '<digest>'
-```
-
-Both commands run with the selected root as their actual working directory.
-Each materialized value is one POSIX shell-safe argument.
-For resume, handoff, or context compaction, skip capture and verify the persisted
-branch, `workspace_id`, `expected_head`, and `worktree_set_digest` directly.
-The verified root, branch, and `workspaceId` must match the selected work.
-Preserve unrelated dirty files. Persist repository paths as `<repo-root>` or
-repo-relative paths, never a developer or CI home-directory path.
-Unavailable identity stops with `WORKTREE_IDENTITY_UNAVAILABLE`; any root,
-branch, workspace, expected HEAD, or worktree-set mismatch stops with
-`WORKTREE_IDENTITY_MISMATCH`.
-
-### 3. Derive And Reconcile
-
-1. Read objective and scope from the plan.
-2. Read progress and evidence from its status table or tracking source.
-3. Read the plan dependency graph and the current Concurrency Decision.
-4. Reconcile the live agent registry by identity and backend reachability.
-   Listed but backend-unaddressable entries are stale metadata and cannot be
-   reported as active lanes.
-5. Compare those facts with `active_work`.
-6. Reconcile stale fields and recompute the source-owned Ready/Parked frontier
-   before reporting or executing.
-7. Keep `blocked=false` when any legal action remains; mark absent proof
-   `UNPROVEN` without converting one blocked action into a Goal-level block.
-8. Derive ETA only from remaining critical-path units and observed throughput;
-   otherwise write `unknown`.
-
-### 4. Synchronize Meaningful Changes
-
-After a step, stage, branch, blocker, decision, or evidence change:
-
-1. Update the plan status table or tracking evidence first.
-2. Update `active_work` to match.
-3. Update current-session todos if used.
-4. Emit the chat projection when reporting to the user.
-
-Anchor synchronization never completes a task by itself.
-
-### 5. Handoff And Resume
-
-At handoff, record the last completed evidence, exact current action, one
-dependency-ready next action, blockers, and decisions. At resume, verify Git
-state and reconcile sources before continuing from that next action.
-
-## Integration
-
-- `pt-plan-and-document` creates the formal plan, then registers `active_work`.
-- `pt-god-view` resolves tracked work through `active_work`.
-- `pt-execution-plan-guardian` updates plan/tracking evidence before Anchor state.
-- `pt-completion-auditor` verifies Anchor claims against repository evidence.
-- `pt-dev-workflow` synchronizes stage transitions and handoffs.
+Each error names the mismatched field and owning writer.
 
 ## Verification
 
-- Frontmatter name matches `pt-context-anchor`.
-- A matching `active_work` row and readable plan exist before Anchor output.
-- The execution plan contains no `## Context Anchor` section.
-- Actual Git root, branch, `workspaceId`, expected HEAD, and worktree-set digest
-  were verified against the persisted binding; initial HEAD remained unchanged.
-- Progress and evidence match plan/tracking sources.
+- The Plan Package and matching locator exist.
+- Git identity matches persisted binding.
+- `planctl current`, current Task, Session, and `active_work` agree.
+- Completed delta, Ready queue, Execution mode / lanes, Conflict controls, and
+  Critical path / ETA are source-backed.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
-- The chat Anchor is one final fenced `markdown` block.
-- `git diff --check -- tooling/skills AGENTS.md` passes.
+- No file, registry, plan, Session, or runtime state was mutated.
+- The response ends with one fenced chat projection.
 
 ## Anti-Patterns
 
 Never:
 
-- create an Anchor before a formal plan and `active_work` row exist;
-- write a Context Anchor section into an execution plan;
-- reconstruct tracked state from chat history;
-- recapture current Git state as a new baseline during resume or compaction;
-- continue after a worktree or branch mismatch;
-- use chat, todos, or dashboards as durable truth;
-- present an unchanged Anchor as execution progress;
-- report stale or backend-unaddressable agent entries as active execution lanes;
-- invent an ETA without a source-backed critical path and observed throughput;
-- use an Anchor to overwrite or conceal a stale active Goal objective; route it
-  to `pt-trae-goal-orchestrator` as `GOAL_REPLACEMENT_REQUIRED`;
-- copy an Anchor across worktrees without verification;
-- set `blocked=true` without an empty Ready Queue and exhaustion proof;
-- report one parked action as if the entire Goal cannot progress;
-- claim completion from summaries or missing evidence;
-- persist absolute user-home paths, transient command logs, or secrets;
-- use an Anchor to bypass product, architecture, plan, or review gates.
+- repair stale owner state;
+- create or update `active_work`;
+- reconstruct state from chat;
+- recapture Git identity during resume;
+- invent progress or ETA;
+- report stale agent metadata as a live lane;
+- treat one parked action as a Goal-wide blocker;
+- use the Anchor as completion authority;
+- persist secrets, transient logs, or absolute user-home paths.

@@ -23,7 +23,7 @@ type FederatedFriendRequestTransaction interface {
 		device *model.ActorDeviceRef,
 		claimedHomeStationPeerID string,
 		localStationPeerID string,
-		hydrator FriendRequestActorKeyHydrator,
+		actorKeys FriendRequestActorKeyResolver,
 		signingKeyID string,
 		canonicalSigningBytes []byte,
 		signature []byte,
@@ -530,18 +530,18 @@ func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
 	device *model.ActorDeviceRef,
 	claimedHomeStationPeerID string,
 	localStationPeerID string,
-	hydrator FriendRequestActorKeyHydrator,
+	actorKeys FriendRequestActorKeyResolver,
 	signingKeyID string,
 	canonicalSigningBytes []byte,
 	signature []byte,
 ) error {
 	return verifyFriendRequestCommandSignature(
 		ctx,
-		t.db,
+		t,
 		device,
 		claimedHomeStationPeerID,
 		localStationPeerID,
-		hydrator,
+		actorKeys,
 		signingKeyID,
 		canonicalSigningBytes,
 		signature,
@@ -821,6 +821,12 @@ func (t *federatedFriendRequestTransaction) PutRelationship(
 	ctx context.Context,
 	projection domain.FriendRequestRelationshipProjection,
 ) error {
+	if err := lockSocialRelationshipAuthority(
+		t.db.WithContext(ctx),
+		projection.OwnerPTID,
+	); err != nil {
+		return err
+	}
 	persisted := relationshipProjectionModelFromDomain(projection)
 	create := t.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
@@ -831,27 +837,72 @@ func (t *federatedFriendRequestTransaction) PutRelationship(
 			create.Error,
 		)
 	}
-	if create.RowsAffected == 1 {
-		return nil
+	if create.RowsAffected != 1 {
+		var existing federatedRelationshipProjectionModel
+		if err := t.db.WithContext(ctx).
+			Where("owner_ptid = ? AND peer_ptid = ?", projection.OwnerPTID, projection.PeerPTID).
+			First(&existing).Error; err != nil {
+			return mapFederatedFriendRequestPersistenceError(
+				"social.load_relationship_projection",
+				err,
+			)
+		}
+		if existing.RequestID != projection.RequestID ||
+			existing.AcceptedEventID != projection.AcceptedEventID ||
+			!bytes.Equal(existing.AcceptedEventHash, projection.AcceptedEventHash) {
+			return domain.NewFederationError(
+				domain.FederationErrorIdempotencyConflict,
+				"social.put_relationship_projection",
+				"owner_ptid",
+				"already has a different accepted relationship fact",
+			)
+		}
 	}
-	var existing federatedRelationshipProjectionModel
-	if err := t.db.WithContext(ctx).
-		Where("owner_ptid = ? AND peer_ptid = ?", projection.OwnerPTID, projection.PeerPTID).
-		First(&existing).Error; err != nil {
+
+	friendship := friendshipModel{
+		ActorPTID: projection.OwnerPTID,
+		PeerPTID:  projection.PeerPTID,
+		Status:    friendRequestPolicyRelationshipAccepted,
+		CreatedAt: projection.AcceptedAt,
+		UpdatedAt: projection.AcceptedAt,
+	}
+	create = t.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "actor_ptid"},
+				{Name: "peer_ptid"},
+			},
+			DoNothing: true,
+		}).
+		Create(&friendship)
+	if create.Error != nil {
 		return mapFederatedFriendRequestPersistenceError(
-			"social.load_relationship_projection",
-			err,
+			"social.put_friendship_projection",
+			create.Error,
 		)
 	}
-	if existing.RequestID != projection.RequestID ||
-		existing.AcceptedEventID != projection.AcceptedEventID ||
-		!bytes.Equal(existing.AcceptedEventHash, projection.AcceptedEventHash) {
-		return domain.NewFederationError(
-			domain.FederationErrorIdempotencyConflict,
-			"social.put_relationship_projection",
-			"owner_ptid",
-			"already has a different accepted relationship fact",
-		)
+	if create.RowsAffected != 1 {
+		var existing friendshipModel
+		if err := t.db.WithContext(ctx).
+			Where(
+				"actor_ptid = ? AND peer_ptid = ?",
+				projection.OwnerPTID,
+				projection.PeerPTID,
+			).
+			First(&existing).Error; err != nil {
+			return mapFederatedFriendRequestPersistenceError(
+				"social.load_friendship_projection",
+				err,
+			)
+		}
+		if existing.Status != friendRequestPolicyRelationshipAccepted {
+			return domain.NewFederationError(
+				domain.FederationErrorStateConflict,
+				"social.put_friendship_projection",
+				"status",
+				"conflicts with the accepted relationship",
+			)
+		}
 	}
 	return nil
 }
@@ -909,6 +960,10 @@ func (t *federatedFriendRequestTransaction) PutDirectConversationEffect(
 
 func (t *federatedFriendRequestTransaction) Outbox() delivery.OutboxWriter {
 	return t.outbox
+}
+
+func (t *federatedFriendRequestTransaction) DB() *gorm.DB {
+	return t.db
 }
 
 func friendRequestTransactionFromDelivery(

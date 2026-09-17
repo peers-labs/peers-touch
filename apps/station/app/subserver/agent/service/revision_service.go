@@ -85,7 +85,7 @@ func validateRevisionRequest(request RevisionRequest) error {
 
 func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence.Conversation, error) {
 	var conversation persistence.Conversation
-	if err := tx.Where(
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 		"id = ? AND actor_ptid = ? AND status != ?",
 		request.ConversationID,
 		request.Ptid,
@@ -99,10 +99,35 @@ func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence
 			"failed to load conversation", err)
 	}
 	if conversation.Version != request.ExpectedConversationVersion {
-		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
-			"conversation version changed", nil)
+		return nil, errcode.NewLifecycleStaleVersion(
+			request.ConversationID,
+			request.ExpectedConversationVersion,
+			conversation.Version,
+		)
 	}
 	return &conversation, nil
+}
+
+func lifecycleStaleVersionTx(tx *gorm.DB, request RevisionRequest) error {
+	var conversation persistence.Conversation
+	if err := tx.Select("version").Where(
+		"id = ? AND actor_ptid = ? AND status != ?",
+		request.ConversationID,
+		request.Ptid,
+		"deleted",
+	).Take(&conversation).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+				"conversation not found", err)
+		}
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to load conversation revision", err)
+	}
+	return errcode.NewLifecycleStaleVersion(
+		request.ConversationID,
+		request.ExpectedConversationVersion,
+		conversation.Version,
+	)
 }
 
 func loadRevisionSourceMessageTx(
@@ -154,6 +179,57 @@ func loadRevisionSourceTurnTx(
 			"source turn is not retryable", nil)
 	}
 	return &turn, nil
+}
+
+func loadRevisionSourceThinkingModeTx(
+	tx *gorm.DB,
+	sourceTurnID string,
+) (domain.ThinkingMode, error) {
+	sourceTurnID = strings.TrimSpace(sourceTurnID)
+	if sourceTurnID == "" {
+		return "", nil
+	}
+	var attempt persistence.TurnAttempt
+	err := tx.
+		Select("runtime_snapshot").
+		Where("turn_id = ?", sourceTurnID).
+		Order("attempt_index DESC").
+		First(&attempt).Error
+	if err == gorm.ErrRecordNotFound {
+		return "", nil
+	}
+	if err != nil {
+		return "", errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to load source turn runtime snapshot",
+			err,
+		)
+	}
+	if len(attempt.RuntimeSnapshot) == 0 {
+		return "", nil
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil || snapshot == nil {
+		return "", errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"source turn runtime snapshot is invalid",
+			err,
+		)
+	}
+	thinkingMode, err := normalizeThinkingMode(
+		domain.ThinkingMode(snapshot.GetThinkingMode()),
+	)
+	if err != nil {
+		return "", errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"source turn thinking mode is invalid",
+			err,
+		)
+	}
+	return thinkingMode, nil
 }
 
 func loadRevisionReplayTx(
@@ -286,6 +362,7 @@ func (s *RevisionService) admitAndExecute(
 	var config TurnConfig
 	var input string
 	var replay bool
+	var sourceThinkingMode domain.ThinkingMode
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if existing, found, err := loadRevisionReplayTx(tx, kind, request); err != nil {
 			return err
@@ -310,6 +387,13 @@ func (s *RevisionService) admitAndExecute(
 		switch kind {
 		case revisionRetry:
 			sourceTurn, err := loadRevisionSourceTurnTx(tx, request)
+			if err != nil {
+				return err
+			}
+			sourceThinkingMode, err = loadRevisionSourceThinkingModeTx(
+				tx,
+				sourceTurn.ID,
+			)
 			if err != nil {
 				return err
 			}
@@ -369,6 +453,7 @@ func (s *RevisionService) admitAndExecute(
 			if reuseRetryAssistantMessage {
 				if err := tx.Model(&retryAssistantMessage).Updates(map[string]interface{}{
 					"status":     "pending",
+					"error_json": nil,
 					"updated_at": now,
 				}).Error; err != nil {
 					return err
@@ -408,6 +493,13 @@ func (s *RevisionService) admitAndExecute(
 				expectedRole = domain.MessageRoleUser
 			}
 			sourceMessage, err := loadRevisionSourceMessageTx(tx, request, expectedRole)
+			if err != nil {
+				return err
+			}
+			sourceThinkingMode, err = loadRevisionSourceThinkingModeTx(
+				tx,
+				revisionStringValue(sourceMessage.TurnID),
+			)
 			if err != nil {
 				return err
 			}
@@ -527,6 +619,7 @@ func (s *RevisionService) admitAndExecute(
 				AssistantBranchID:   branchID,
 				AssistantParentID:   parentMessage.ID,
 				RequestedBudgetJSON: request.RequestedBudgetJSON,
+				ThinkingMode:        sourceThinkingMode,
 			}
 			if kind == revisionRegenerate {
 				config.AssistantReplacesID = request.SourceMessageID
@@ -543,6 +636,7 @@ func (s *RevisionService) admitAndExecute(
 				AssistantParentID:   parentMessage.ID,
 				RequestedBudgetJSON: request.RequestedBudgetJSON,
 				AttemptID:           admission.AttemptID,
+				ThinkingMode:        sourceThinkingMode,
 			}
 			if retryAssistantMessage.ID != "" {
 				config.AssistantMessageID = retryAssistantMessage.ID
@@ -557,7 +651,7 @@ func (s *RevisionService) admitAndExecute(
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "conversation version changed", nil)
+			return lifecycleStaleVersionTx(tx, request)
 		}
 		admission.TurnID = turnID
 		if err := storeRevisionAdmissionTx(tx, kind, request, admission); err != nil {
@@ -678,7 +772,7 @@ func (s *RevisionService) mutateConversationOnly(
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "conversation version changed", nil)
+			return lifecycleStaleVersionTx(tx, request)
 		}
 		if err := storeRevisionAdmissionTx(tx, kind, request, admission); err != nil {
 			return err

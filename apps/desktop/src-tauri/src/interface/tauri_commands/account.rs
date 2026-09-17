@@ -101,12 +101,28 @@ pub fn account_switch(
     app: AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let switched_id = input.id.clone();
     let prepared = match run_account_switch_transition(
         || auth_service::prepare_account_switch_session(&switched_id).map_err(auth_failure_to_stub),
         || {
             let previous = state.sessions.unbind(window.label());
             if let Some(previous) = previous {
+                state
+                    .secure_content
+                    .teardown_actor(&previous.actor.ptid)
+                    .map_err(|error| {
+                        account_transition_failure("detach_old_secure_content", error)
+                    })?;
                 crate::infrastructure::event_stream::stop(&previous.actor.ptid);
                 auth_service::deactivate_messaging_profile(state.inner(), &previous.account_id)
                     .map_err(|error| account_transition_failure("detach_old_messaging", error))?;
@@ -161,6 +177,15 @@ pub fn account_switch(
             }
 
             for kicked_session in binding.into_kicked() {
+                if let Err(error) = state
+                    .secure_content
+                    .teardown_actor(&kicked_session.actor.ptid)
+                {
+                    tracing::warn!(
+                        error = %error,
+                        "secure content teardown failed during account-switch takeover"
+                    );
+                }
                 let payload = serde_json::json!({
                     "reason": "takeover",
                     "actor_ptid": kicked_session.actor.ptid,
@@ -227,6 +252,16 @@ pub fn account_unlock(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let account_id_clone = input.account_id.clone();
     let pin_clone = input.pin.clone();
 
@@ -397,6 +432,22 @@ pub fn account_unlock(
     // Bind the unlocked session to *this* window before broadcasting. If another
     // local window already owns this actor, the new unlock wins and the old
     // window is routed through the same global session-revoked flow.
+    let previous_window_session = state.sessions.get(window.label());
+    if super::auth::secure_content_session_replaced(
+        previous_window_session.as_ref(),
+        &account_id_clone,
+        &session.actor_ptid,
+        &token,
+    ) {
+        if let Some(previous) = previous_window_session.as_ref() {
+            if let Err(error) = state.secure_content.teardown_actor(&previous.actor.ptid) {
+                tracing::warn!(
+                    error = %error,
+                    "secure content teardown failed while replacing unlocked session authority"
+                );
+            }
+        }
+    }
     let actor = ActorRef::new_person(session.actor_ptid.clone());
     let kicked = state.sessions.bind_exclusive(ActiveSession::new(
         window.label(),
@@ -405,6 +456,15 @@ pub fn account_unlock(
         token.clone(),
     ));
     for kicked_session in kicked {
+        if let Err(error) = state
+            .secure_content
+            .teardown_actor(&kicked_session.actor.ptid)
+        {
+            tracing::warn!(
+                error = %error,
+                "secure content teardown failed during account-unlock takeover"
+            );
+        }
         let payload = serde_json::json!({
             "reason": "takeover",
             "actor_ptid": kicked_session.actor.ptid,

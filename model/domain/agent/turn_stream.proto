@@ -59,6 +59,7 @@ message StreamTurnEventsRequest {
   string conversation_id = 1;
   string turn_id = 2;
   uint64 after_sequence = 3;
+  string attempt_id = 4;
 }
 
 message TurnSnapshot {

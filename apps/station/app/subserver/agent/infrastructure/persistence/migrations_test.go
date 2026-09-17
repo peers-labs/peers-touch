@@ -6,10 +6,20 @@ import (
 	"testing"
 	"time"
 
+	agentmodel "github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
+
+type legacyToolReceiptAttempt struct {
+	ID     string `gorm:"primaryKey;type:varchar(64)"`
+	Status string `gorm:"not null;type:varchar(32)"`
+}
+
+func (legacyToolReceiptAttempt) TableName() string {
+	return "agent_tool_receipt_attempts"
+}
 
 func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	parsed, err := schema.Parse(
@@ -23,6 +33,92 @@ func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	field := parsed.LookUpField("SchemaVersion")
 	if field == nil || field.TagSettings["TYPE"] != "varchar(64)" {
 		t.Fatalf("ToolCall schema_version type = %v, want varchar(64)", field)
+	}
+}
+
+func TestToolReceiptAttemptStatusFitsReceiptStatus(t *testing.T) {
+	parsed, err := schema.Parse(
+		&ToolReceiptAttempt{},
+		&sync.Map{},
+		schema.NamingStrategy{},
+	)
+	if err != nil {
+		t.Fatalf("parse ToolReceiptAttempt schema: %v", err)
+	}
+	field := parsed.LookUpField("Status")
+	if field == nil || field.TagSettings["TYPE"] != "varchar(64)" {
+		t.Fatalf("ToolReceiptAttempt status type = %v, want varchar(64)", field)
+	}
+
+	for value, status := range agentmodel.ClientCapabilityReceiptStatus_name {
+		if len(status) > 64 {
+			t.Fatalf("receipt status %d length = %d, exceeds varchar(64)", value, len(status))
+		}
+	}
+}
+
+func TestMigrateFencedClientExecutionExpandsReceiptAttemptStatus(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:fenced-client-receipt-status?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&legacyToolReceiptAttempt{}); err != nil {
+		t.Fatalf("create legacy receipt attempt table: %v", err)
+	}
+	if err := db.Create(&legacyToolReceiptAttempt{
+		ID:     "receipt-legacy",
+		Status: "FAILED",
+	}).Error; err != nil {
+		t.Fatalf("seed legacy receipt attempt: %v", err)
+	}
+
+	if err := MigrateFencedClientExecution(db); err != nil {
+		t.Fatalf("migrate receipt attempt status: %v", err)
+	}
+	if err := MigrateFencedClientExecution(db); err != nil {
+		t.Fatalf("repeat receipt attempt status migration: %v", err)
+	}
+
+	columnTypes, err := db.Migrator().ColumnTypes(&ToolReceiptAttempt{})
+	if err != nil {
+		t.Fatalf("inspect receipt attempt columns: %v", err)
+	}
+	var statusLength int64
+	for _, columnType := range columnTypes {
+		if columnType.Name() != "status" {
+			continue
+		}
+		var bounded bool
+		statusLength, bounded = columnType.Length()
+		if !bounded {
+			t.Fatal("receipt attempt status column is not length-bounded")
+		}
+		break
+	}
+	if statusLength != 64 {
+		t.Fatalf("receipt attempt status length = %d, want 64", statusLength)
+	}
+
+	var legacyStatus string
+	if err := db.Table("agent_tool_receipt_attempts").
+		Select("status").
+		Where("id = ?", "receipt-legacy").
+		Scan(&legacyStatus).Error; err != nil {
+		t.Fatalf("read migrated receipt attempt: %v", err)
+	}
+	if legacyStatus != "FAILED" {
+		t.Fatalf("migrated receipt attempt status = %q, want FAILED", legacyStatus)
+	}
+
+	preparedStatus := agentmodel.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED.String()
+	if err := db.Exec(`
+		INSERT INTO agent_tool_receipt_attempts (id, status)
+		VALUES ('receipt-prepared', ?)
+	`, preparedStatus).Error; err != nil {
+		t.Fatalf("insert full prepared receipt status: %v", err)
 	}
 }
 

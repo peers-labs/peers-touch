@@ -16,6 +16,7 @@ type TypingPulse struct {
 	Generation     uint64
 	ExpiresAt      time.Time
 	IsTyping       bool
+	Scope          string
 }
 
 // TypingResult records the accepted expiration without creating durable state.
@@ -24,16 +25,52 @@ type TypingResult struct {
 	ExpiresAt time.Time
 }
 
+// FederatedTypingPhase identifies the authority-mediated signal hop.
+type FederatedTypingPhase uint8
+
+const (
+	FederatedTypingPhaseAuthorityAdmission FederatedTypingPhase = iota + 1
+	FederatedTypingPhaseHomeFanout
+)
+
+// FederatedTypingSignal is the application-layer form of the canonical wire signal.
+type FederatedTypingSignal struct {
+	Phase             FederatedTypingPhase
+	FederationID      valueobject.FederationID
+	ConversationID    valueobject.ConversationID
+	AuthorityStation  valueobject.StationID
+	AuthorityEpoch    valueobject.AuthorityEpoch
+	Sender            valueobject.Endpoint
+	SenderHomeStation valueobject.StationID
+	Generation        uint64
+	ExpiresAt         time.Time
+	IsTyping          bool
+	Recipients        []valueobject.PTID
+}
+
+// FederatedTypingResult reports best-effort fan-out without durable retry.
+type FederatedTypingResult struct {
+	Accepted  bool
+	Duplicate bool
+	Attempted int
+	Delivered int
+	Dropped   int
+}
+
 // ReadCursorRequest advances one actor-scoped Conversation read position.
 type ReadCursorRequest struct {
 	ConversationID valueobject.ConversationID
 	Reader         valueobject.Endpoint
 	Sequence       valueobject.Sequence
+	// SourceStation is populated only from an authenticated Federation frame.
+	SourceStation valueobject.StationID
 }
 
 // ReadCursorResult preserves CA-W2's committed result and any post-commit notification failure.
 type ReadCursorResult struct {
-	Result command.ReadCursorResult
+	Result    command.ReadCursorResult
+	Replay    bool
+	Forwarded bool
 }
 
 // DeliveryReceipt proves that one exact device queue item was durably consumed.
@@ -88,6 +125,14 @@ type DeviceDirectory interface {
 	IsActive(ctx context.Context, endpoint valueobject.Endpoint) (bool, error)
 }
 
+// TypingRouteDirectory returns current verified active endpoint routes.
+type TypingRouteDirectory interface {
+	ListActiveEndpoints(
+		ctx context.Context,
+		actors []valueobject.PTID,
+	) ([]EndpointRoute, error)
+}
+
 // EndpointRoute identifies an active actor-owned endpoint and its Home Station.
 type EndpointRoute struct {
 	Endpoint    valueobject.Endpoint
@@ -102,6 +147,18 @@ type ReadCursorAdvancer interface {
 		reader valueobject.Endpoint,
 		sequence valueobject.Sequence,
 	) (command.ReadCursorResult, error)
+}
+
+// ReadCursorForwarder durably routes a follower-local cursor to the
+// Conversation authority. It returns true for an exact replay.
+type ReadCursorForwarder interface {
+	ForwardReadCursor(
+		ctx context.Context,
+		authority valueobject.StationID,
+		federationID valueobject.FederationID,
+		authorityEpoch valueobject.AuthorityEpoch,
+		request ReadCursorRequest,
+	) (bool, error)
 }
 
 // DeliveryReceiptRecorder validates the exact queue tuple and records it idempotently.
@@ -138,6 +195,24 @@ type TypingPublisher interface {
 		recipient valueobject.PTID,
 		pulse TypingPulse,
 	) error
+}
+
+// TypingFederationDispatcher sends one signed ephemeral frame with no retry.
+type TypingFederationDispatcher interface {
+	DispatchTyping(
+		ctx context.Context,
+		target valueobject.StationID,
+		signal FederatedTypingSignal,
+	) (FederatedTypingResult, error)
+}
+
+// FederatedTypingReceiver applies a verified Station-to-Station typing signal.
+type FederatedTypingReceiver interface {
+	ReceiveFederatedTyping(
+		ctx context.Context,
+		source valueobject.StationID,
+		signal FederatedTypingSignal,
+	) (FederatedTypingResult, error)
 }
 
 // TypingPulseLedger bounds and deduplicates ephemeral pulse generations.

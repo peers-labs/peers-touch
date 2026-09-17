@@ -6,6 +6,7 @@ import hashlib
 import json
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -21,7 +22,10 @@ from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
     WindowsCellProfile,
     _json_output,
+    _normalized_windows_path,
     _screenshot_probe_geometry,
+    _windows_path_is_descendant,
+    _windows_verbatim_path,
 )
 from tooling.acceptance.transports.ssh import RemotePlatform
 
@@ -36,6 +40,11 @@ WINDOWS_DRIVER_PATH = (
     / "drivers"
     / "native"
     / "windows.py"
+)
+WINDOWS_BUILD_SCRIPT_PATH = (
+    Path(__file__).parents[2]
+    / "scripts"
+    / "windows-desktop-build.ps1"
 )
 
 
@@ -59,7 +68,92 @@ class _BrokerTransport:
         )
 
 
+class _DigestTransport:
+    def __init__(self) -> None:
+        self.commands: list[tuple[str, ...]] = []
+
+    def run_argv(
+        self,
+        command: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        self.commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=("a" * 64) + "\n",
+            stderr="",
+        )
+
+
 class WindowsCellProfileTest(unittest.TestCase):
+    def test_windows_path_ownership_accepts_verbatim_descendant(self) -> None:
+        root = (
+            r"C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"\AcceptanceCells\desktop-windows-native\actors"
+            r"\run-1\bob"
+        )
+        candidate = (
+            r"\\?\C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"\AcceptanceCells\desktop-windows-native\actors"
+            r"\run-1\bob\storage\attachment-cache\attachment-1"
+        )
+
+        self.assertEqual(
+            _normalized_windows_path(candidate),
+            Path(root, "storage", "attachment-cache", "attachment-1"),
+        )
+        self.assertTrue(_windows_path_is_descendant(candidate, root))
+        self.assertEqual(_windows_verbatim_path(candidate), candidate)
+        self.assertEqual(_windows_verbatim_path(root), rf"\\?\{root}")
+        self.assertFalse(
+            _windows_path_is_descendant(
+                candidate,
+                root.replace(r"\bob", r"\alice"),
+            )
+        )
+
+    def test_actor_file_digest_reads_long_path_with_verbatim_prefix(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        transport = _DigestTransport()
+        provisioner.transport = transport
+        provisioner._require_state = Mock(
+            return_value={
+                "brokerRoot": r"C:\runtime",
+                "runId": "run-1",
+            }
+        )
+        provisioner._active_actor = Mock(return_value="bob")
+        path = (
+            r"C:\runtime\actors\run-1\bob\storage"
+            + (r"\long-segment" * 30)
+            + r"\attachment-1"
+        )
+
+        self.assertEqual(provisioner.actor_file_sha256("bob", path), "a" * 64)
+        self.assertIn(r"\\?\C:\runtime", transport.commands[0][-1])
+
+    def test_provisioner_registry_imports_in_fresh_process(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from tooling.acceptance.provisioners import "
+                    "get_runtime_cell_lifecycle; "
+                    "assert callable(get_runtime_cell_lifecycle)"
+                ),
+            ],
+            cwd=Path(__file__).parents[3],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def setUp(self) -> None:
         self.contract = RuntimeCellContract.from_yaml(
             RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
@@ -74,7 +168,11 @@ class WindowsCellProfileTest(unittest.TestCase):
                         "PT_ACCEPTANCE_CELL_DEPLOY_ENV=acceptance-windows",
                         "PT_ACCEPTANCE_CELL_DESKTOP_USER=administrator",
                         "PT_ACCEPTANCE_CELL_RUNTIME_ROOT=AppData/Local/PT/Cells",
+                        "PT_ACCEPTANCE_CELL_CARGO_TARGET_ROOT=pt-cache/windows",
                         "PT_ACCEPTANCE_CELL_VSDEVCMD=C:/BuildTools/VsDevCmd.bat",
+                        "PT_ACCEPTANCE_CELL_WINDOWS_SDK_ROOT="
+                        "C:/Program Files (x86)/Windows Kits/10",
+                        "PT_ACCEPTANCE_CELL_WINDOWS_SDK_VERSION=10.0.26100.0",
                         "PT_ACCEPTANCE_CELL_PERL=C:/Git/usr/bin/perl.exe",
                         "PT_ACCEPTANCE_CELL_PROTOC=C:/protobuf/bin/protoc.exe",
                         "PT_ACCEPTANCE_CELL_WEBDRIVER_PORT=4645",
@@ -91,6 +189,10 @@ class WindowsCellProfileTest(unittest.TestCase):
             )
 
             self.assertEqual(profile.desktop_user, "administrator")
+            self.assertEqual(
+                profile.cargo_target_root,
+                "pt-cache/windows",
+            )
             self.assertEqual(profile.perl_path, "C:/Git/usr/bin/perl.exe")
             self.assertEqual(
                 profile.protoc_path,
@@ -107,6 +209,8 @@ class WindowsCellProfileTest(unittest.TestCase):
             runtime_root="C:/shared/runtime",
             python_executable="python",
             vsdevcmd_path="C:/BuildTools/VsDevCmd.bat",
+            windows_sdk_root="C:/Program Files (x86)/Windows Kits/10",
+            windows_sdk_version="10.0.26100.0",
             perl_path="C:/Git/usr/bin/perl.exe",
             protoc_path="C:/protobuf/bin/protoc.exe",
             webdriver_port=4645,
@@ -117,6 +221,29 @@ class WindowsCellProfileTest(unittest.TestCase):
 
 
 class WindowsProvisionerContractTest(unittest.TestCase):
+    def test_orchestrator_endpoint_uses_distinct_remote_port(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner._endpoints = {}
+        provisioner.transport = Mock()
+        provisioner.transport.available_remote_port.return_value = 61234
+        tunnel = Mock()
+        tunnel.process_id = 4321
+        provisioner.transport.start_reverse_forward.return_value = tunnel
+
+        result = provisioner.expose_orchestrator_endpoint(
+            "fault-proxy",
+            "http://127.0.0.1:58057/fault",
+        )
+
+        provisioner.transport.start_reverse_forward.assert_called_once_with(
+            local_port=58057,
+            remote_port=61234,
+        )
+        self.assertEqual(result["url"], "http://127.0.0.1:61234/fault")
+        self.assertEqual(result["tunnelPid"], 4321)
+
     def test_screenshot_probe_geometry_uses_validated_metadata(self) -> None:
         content = bytearray(128)
         content[:2] = b"BM"
@@ -214,13 +341,21 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("source_lease.acquire()", source)
         self.assertIn("remote_platform=RemotePlatform.WINDOWS", source)
         self.assertIn("config core.longpaths true", source)
-        self.assertIn('set "OPENSSL_SRC_PERL=', source)
-        self.assertIn('set "PROTOC=', source)
-        self.assertIn('set "VITE_ACCEPTANCE_HARNESS=1"', source)
-        self.assertNotIn("set VITE_ACCEPTANCE_HARNESS=1 &&", source)
-        self.assertNotIn('set "PATH={perl_directory}', source)
+        self.assertIn("_BUILD_SCRIPT_RELATIVE_PATH", source)
+        self.assertIn('"powershell.exe"', source)
         self.assertNotIn("class SshTransport", source)
         self.assertNotIn("class SourceSyncRequest", source)
+
+    def test_build_script_preserves_toolchain_environment(self) -> None:
+        source = WINDOWS_BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+        self.assertIn("VsDevCmd", source)
+        self.assertIn("$sdkInclude + $env:INCLUDE", source)
+        self.assertIn("$sdkLib + $env:LIB", source)
+        self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
+        self.assertIn("$env:PROTOC = $ProtocPath", source)
+        self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn("$env:VITE_ACCEPTANCE_HARNESS = \"1\"", source)
+        self.assertIn("$env:TAURI_CONFIG =", source)
 
     def test_interactive_gate_runs_after_source_and_build_preflight(self) -> None:
         source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
@@ -334,6 +469,8 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             runtime_root="AppData/Local/PT/Cells",
             python_executable="python",
             vsdevcmd_path="C:/BuildTools/VsDevCmd.bat",
+            windows_sdk_root="C:/Program Files (x86)/Windows Kits/10",
+            windows_sdk_version="10.0.26100.0",
             perl_path="C:/Git/usr/bin/perl.exe",
             protoc_path="C:/protobuf/bin/protoc.exe",
             webdriver_port=4645,
@@ -384,7 +521,7 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         payload = provisioner._broker_from_state.call_args.args[2]
         self.assertEqual(
             payload["storageRoot"],
-            "C:\\runtime\\actors\\run-1\\alice\\storage",
+            "C:\\runtime\\state\\run-1\\alice",
         )
         self.assertEqual(
             payload["logPath"],
@@ -402,6 +539,8 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             runtime_root="AppData/Local/PT/Cells",
             python_executable="python",
             vsdevcmd_path="C:/BuildTools/VsDevCmd.bat",
+            windows_sdk_root="C:/Program Files (x86)/Windows Kits/10",
+            windows_sdk_version="10.0.26100.0",
             perl_path="C:/Git/usr/bin/perl.exe",
             protoc_path="C:/protobuf/bin/protoc.exe",
             webdriver_port=4645,

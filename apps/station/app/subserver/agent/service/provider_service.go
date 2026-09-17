@@ -29,8 +29,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,7 +63,7 @@ const (
 	defaultMaxTokens    = 4096
 	maxResponseBytes    = 2 * 1024 * 1024 // 2 MiB safety limit on response body
 
-	// HTTP client timeout for all provider calls.
+	// Provider-attempt deadline for all provider calls.
 	providerHTTPTimeout = 120 * time.Second
 )
 
@@ -69,6 +71,111 @@ const (
 // e.g. "/v1", "/openai/v1", or Ark's "/api/v3". The version must be the final
 // path segment so "/v1/chat/completions" does not match it.
 var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
+
+// #region debug-point A-E:ark-provider-request
+func reportArkProviderRequestDebug(
+	hypothesisID, stage, endpoint string,
+	body []byte,
+	payload map[string]any,
+	data map[string]any,
+) {
+	if !strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		return
+	}
+	messageRoles := make([]string, 0)
+	messageLengths := make([]int, 0)
+	if messages, ok := payload["messages"].([]openAIMessage); ok {
+		for _, message := range messages {
+			messageRoles = append(messageRoles, message.Role)
+			messageLengths = append(messageLengths, len(message.Content))
+		}
+	}
+	eventData := map[string]any{
+		"endpoint":       endpoint,
+		"bodyBytes":      len(body),
+		"bodyHash":       fmt.Sprintf("%x", sha256.Sum256(body)),
+		"messageRoles":   messageRoles,
+		"messageLengths": messageLengths,
+		"maxTokens":      payload["max_tokens"],
+		"stream":         payload["stream"],
+		"thinking":       payload["thinking"],
+	}
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok {
+		eventData["toolCount"] = len(tools)
+	} else {
+		eventData["toolCount"] = 0
+	}
+	for key, value := range data {
+		eventData[key] = value
+	}
+	event, err := json.Marshal(map[string]any{
+		"sessionId":    "ark-provider-request",
+		"runId":        "post-fix",
+		"hypothesisId": hypothesisID,
+		"location":     "provider_service.go:callOpenAIStream",
+		"msg":          "[DEBUG] " + stage,
+		"data":         eventData,
+		"ts":           time.Now().UnixMilli(),
+	})
+	if err != nil {
+		return
+	}
+	go func() {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			"http://10.4.55.179:7784/event",
+			bytes.NewReader(event),
+		)
+		if requestErr != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		response, requestErr := client.Do(request)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+}
+
+// #endregion
+
+// #region debug-point A-B-D:foundation-f04-duplicate-toolcalls
+func reportFoundationF04DuplicateToolCallsDebug(
+	hypothesisID, stage string,
+	data map[string]any,
+) {
+	event, err := json.Marshal(map[string]any{
+		"sessionId":    "foundation-f04-duplicate-toolcalls",
+		"runId":        "pre-fix",
+		"hypothesisId": hypothesisID,
+		"location":     "provider_service.go:callOpenAIStream",
+		"msg":          "[DEBUG] " + stage,
+		"data":         data,
+		"ts":           time.Now().UnixMilli(),
+	})
+	if err != nil {
+		return
+	}
+	go func() {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			"http://10.4.55.179:7790/event",
+			bytes.NewReader(event),
+		)
+		if requestErr != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		response, requestErr := client.Do(request)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+}
+
+// #endregion
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -134,6 +241,7 @@ type ProviderHTTPError struct {
 	StatusCode int
 	Body       string
 	Provider   string
+	RetryAfter string
 }
 
 func (e *ProviderHTTPError) Error() string {
@@ -172,17 +280,17 @@ func (s *ProviderService) loadProvider(ctx context.Context, providerID string) (
 // detects the provider type, applies prompt caching for Anthropic, and dispatches
 // the request to the appropriate API endpoint.
 type ProviderService struct {
-	cachingService *PromptCachingService
-	httpClient     *http.Client
+	cachingService  *PromptCachingService
+	httpClient      *http.Client
+	providerTimeout time.Duration
 }
 
 // NewProviderService creates a ProviderService with the given caching dependency.
 func NewProviderService(cachingService *PromptCachingService) *ProviderService {
 	return &ProviderService{
-		cachingService: cachingService,
-		httpClient: &http.Client{
-			Timeout: providerHTTPTimeout,
-		},
+		cachingService:  cachingService,
+		httpClient:      &http.Client{},
+		providerTimeout: providerHTTPTimeout,
 	}
 }
 
@@ -311,53 +419,88 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	logger.Infof(ctx, "provider call: provider_id=%s type=%s model=%s messages=%d",
 		req.ProviderID, providerType, model, len(req.Messages))
 
-	// Step 5 — Dispatch to the appropriate endpoint.
-	var resp *ProviderCallResponse
+	// Step 5 — Dispatch under the provider-attempt deadline. The request
+	// context is the cancellation authority for the upstream HTTP operation.
+	resp, err := s.callWithProviderDeadline(
+		ctx,
+		func(providerCtx context.Context) (*ProviderCallResponse, error) {
+			switch providerType {
+			case providerTypeOllama:
+				if baseURL == "" {
+					baseURL = "http://127.0.0.1:11434"
+				}
+				return s.callOllama(
+					providerCtx,
+					baseURL,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					maxOutputTokens,
+					req.DeltaSink,
+				)
 
-	switch providerType {
-	case providerTypeOllama:
-		if baseURL == "" {
-			baseURL = "http://127.0.0.1:11434"
-		}
-		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages, maxOutputTokens, req.DeltaSink)
+			case providerTypeAnthropic:
+				if baseURL == "" {
+					baseURL = "https://api.anthropic.com"
+				}
 
-	case providerTypeAnthropic:
-		if baseURL == "" {
-			baseURL = "https://api.anthropic.com"
-		}
+				// Apply prompt caching for Anthropic providers.
+				var cachingResult *PromptCachingResult
+				if s.cachingService != nil {
+					cachingResult = s.cachingService.Apply(
+						providerCtx,
+						req.SystemPrompt,
+						req.Messages,
+						providerType,
+					)
+				}
 
-		// Apply prompt caching for Anthropic providers.
-		var cachingResult *PromptCachingResult
-		if s.cachingService != nil {
-			cachingResult = s.cachingService.Apply(ctx, req.SystemPrompt, req.Messages, providerType)
-		}
+				return s.callAnthropic(
+					providerCtx,
+					baseURL,
+					apiKey,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					cachingResult,
+					maxOutputTokens,
+					req.DeltaSink,
+				)
 
-		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult, maxOutputTokens, req.DeltaSink)
-
-	default:
-		// OpenAI-compatible is the default fallback.
-		if baseURL == "" {
-			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-				"provider base_url is empty for openai-compatible provider", nil)
-		}
-		resp, err = s.callOpenAI(
-			ctx,
-			baseURL,
-			apiKey,
-			model,
-			req.SystemPrompt,
-			req.Messages,
-			req.Effort,
-			thinkingMode,
-			maxOutputTokens,
-			req.Tools,
-			req.DeltaSink,
-		)
-	}
+			default:
+				// OpenAI-compatible is the default fallback.
+				if baseURL == "" {
+					return nil, errcode.New(
+						errcode.AgentProviderFailed,
+						http.StatusBadGateway,
+						"provider base_url is empty for openai-compatible provider",
+						nil,
+					)
+				}
+				return s.callOpenAI(
+					providerCtx,
+					baseURL,
+					apiKey,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					req.Effort,
+					thinkingMode,
+					maxOutputTokens,
+					req.Tools,
+					req.DeltaSink,
+				)
+			}
+		},
+	)
 
 	if err != nil {
 		logger.Errorf(ctx, "provider call failed: provider_id=%s type=%s model=%s err=%v",
 			req.ProviderID, providerType, model, err)
+		var timeoutErr *providerTimeoutError
+		if errors.As(err, &timeoutErr) {
+			return nil, timeoutErr
+		}
 		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 			"provider call failed", err)
 	}
@@ -565,6 +708,7 @@ func (s *ProviderService) callOllama(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "ollama",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -630,6 +774,7 @@ func (s *ProviderService) callOllamaStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "ollama",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -807,6 +952,7 @@ func (s *ProviderService) callOpenAI(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "openai",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -861,6 +1007,26 @@ func (s *ProviderService) callOpenAIStream(
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 	body, _ := json.Marshal(payload)
+	requestStartedAt := time.Now()
+	// #region debug-point A-B-D:ark-provider-request-dispatch
+	reportArkProviderRequestDebug("A-B-D", "request-dispatched", endpoint, body, payload, nil)
+	// #endregion
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
+		len(tools) > 0 &&
+		strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		_, parallelToolCallsPresent := payload["parallel_tool_calls"]
+		// #region debug-point A-C-D:foundation-f04-provider-request
+		reportFoundationF04DuplicateToolCallsDebug(
+			"A-C-D",
+			"tool-request-dispatched",
+			map[string]any{
+				"toolDefinitionCount":     len(tools),
+				"parallelPolicyPresent":   parallelToolCallsPresent,
+				"parallelToolCallsPolicy": payload["parallel_tool_calls"],
+			},
+		)
+		// #endregion
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -873,9 +1039,36 @@ func (s *ProviderService) callOpenAIStream(
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		// #region debug-point C-E:ark-provider-request-error
+		reportArkProviderRequestDebug(
+			"C-E",
+			"request-failed-before-headers",
+			endpoint,
+			body,
+			payload,
+			map[string]any{
+				"elapsedMs":   time.Since(requestStartedAt).Milliseconds(),
+				"errorType":   fmt.Sprintf("%T", err),
+				"contextDone": ctx.Err() != nil,
+			},
+		)
+		// #endregion
 		return nil, err
 	}
 	defer resp.Body.Close()
+	// #region debug-point C-D:ark-provider-response-headers
+	reportArkProviderRequestDebug(
+		"C-D",
+		"response-headers-received",
+		endpoint,
+		body,
+		payload,
+		map[string]any{
+			"elapsedMs":  time.Since(requestStartedAt).Milliseconds(),
+			"httpStatus": resp.StatusCode,
+		},
+	)
+	// #endregion
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -883,6 +1076,7 @@ func (s *ProviderService) callOpenAIStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "openai",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -890,7 +1084,12 @@ func (s *ProviderService) callOpenAIStream(
 	var model string
 	var finishReason string
 	var sawDone bool
+	var dataLineCount int
+	var parsedChunkCount int
+	var contentDeltaCount int
+	var firstDataReported bool
 	toolCalls := make(map[int]*openAIToolCall)
+	toolCallFragmentCounts := make(map[int]int)
 	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	for scanner.Scan() {
@@ -901,6 +1100,22 @@ func (s *ProviderService) callOpenAIStream(
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
+		dataLineCount++
+		if !firstDataReported {
+			firstDataReported = true
+			// #region debug-point C:ark-provider-first-stream-data
+			reportArkProviderRequestDebug(
+				"C",
+				"first-stream-data-received",
+				endpoint,
+				body,
+				payload,
+				map[string]any{
+					"elapsedMs": time.Since(requestStartedAt).Milliseconds(),
+				},
+			)
+			// #endregion
+		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
 			sawDone = true
@@ -910,6 +1125,7 @@ func (s *ProviderService) callOpenAIStream(
 		if !ok {
 			continue
 		}
+		parsedChunkCount++
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
@@ -917,6 +1133,7 @@ func (s *ProviderService) callOpenAIStream(
 			finishReason = chunk.FinishReason
 		}
 		for _, fragment := range chunk.ToolCalls {
+			toolCallFragmentCounts[fragment.Index]++
 			call := toolCalls[fragment.Index]
 			if call == nil {
 				call = &openAIToolCall{Type: "function"}
@@ -932,6 +1149,7 @@ func (s *ProviderService) callOpenAIStream(
 			call.Function.Arguments += fragment.Function.Arguments
 		}
 		if chunk.Delta.Content != "" {
+			contentDeltaCount++
 			if chunk.Delta.Type == "text" {
 				content.WriteString(chunk.Delta.Content)
 			}
@@ -941,14 +1159,75 @@ func (s *ProviderService) callOpenAIStream(
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		// #region debug-point C-E:ark-provider-stream-error
+		reportArkProviderRequestDebug(
+			"C-E",
+			"stream-scan-failed",
+			endpoint,
+			body,
+			payload,
+			map[string]any{
+				"elapsedMs":         time.Since(requestStartedAt).Milliseconds(),
+				"errorType":         fmt.Sprintf("%T", err),
+				"contextDone":       ctx.Err() != nil,
+				"dataLineCount":     dataLineCount,
+				"parsedChunkCount":  parsedChunkCount,
+				"contentDeltaCount": contentDeltaCount,
+			},
+		)
+		// #endregion
 		return nil, err
 	}
+	// #region debug-point B-C:ark-provider-stream-complete
+	reportArkProviderRequestDebug(
+		"B-C",
+		"stream-completed",
+		endpoint,
+		body,
+		payload,
+		map[string]any{
+			"elapsedMs":         time.Since(requestStartedAt).Milliseconds(),
+			"sawDone":           sawDone,
+			"finishReason":      finishReason,
+			"dataLineCount":     dataLineCount,
+			"parsedChunkCount":  parsedChunkCount,
+			"contentDeltaCount": contentDeltaCount,
+			"contentBytes":      content.Len(),
+			"toolCallCount":     len(toolCalls),
+		},
+	)
+	// #endregion
 	if !sawDone && finishReason == "" {
 		return nil, io.ErrUnexpectedEOF
 	}
 	structuredCalls, err := orderedProviderToolCalls(toolCalls)
 	if err != nil {
 		return nil, err
+	}
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
+		len(tools) > 0 &&
+		strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		indices := make([]int, 0, len(toolCallFragmentCounts))
+		fragmentCounts := make([]int, 0, len(toolCallFragmentCounts))
+		for index := range toolCallFragmentCounts {
+			indices = append(indices, index)
+		}
+		sort.Ints(indices)
+		for _, index := range indices {
+			fragmentCounts = append(fragmentCounts, toolCallFragmentCounts[index])
+		}
+		// #region debug-point A-B-D:foundation-f04-provider-response
+		reportFoundationF04DuplicateToolCallsDebug(
+			"A-B-D",
+			"tool-response-assembled",
+			map[string]any{
+				"distinctToolCallIndices": indices,
+				"fragmentCountsByIndex":   fragmentCounts,
+				"assembledToolCallCount":  len(structuredCalls),
+				"finishReason":            finishReason,
+			},
+		)
+		// #endregion
 	}
 	if strings.TrimSpace(content.String()) == "" && len(structuredCalls) == 0 {
 		return &ProviderCallResponse{
@@ -1077,6 +1356,7 @@ func (s *ProviderService) callAnthropic(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "anthropic",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -1147,6 +1427,7 @@ func (s *ProviderService) callAnthropicStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "anthropic",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 

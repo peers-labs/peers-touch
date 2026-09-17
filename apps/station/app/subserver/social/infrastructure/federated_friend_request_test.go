@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
@@ -29,16 +30,19 @@ import (
 )
 
 const (
-	alicePTID = "ptid:p:alice"
-	bobPTID   = "ptid:p:bob"
-	stationA  = "station-a"
-	stationB  = "station-b"
+	alicePTID                = "ptid:p:alice"
+	bobPTID                  = "ptid:p:bob"
+	stationA                 = "station-a"
+	stationB                 = "station-b"
+	acceptedFriendshipStatus = int32(2)
 )
 
-func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect(
+func TestFederatedFriendRequestCrossStationAcceptConvergesWithoutRemoteActorRows(
 	t *testing.T,
 ) {
 	fixture := newFederatedFriendRequestFixture(t)
+	deleteRemoteActorProjection(t, fixture.a.db, bobPTID)
+	deleteRemoteActorProjection(t, fixture.b.db, alicePTID)
 	command := fixture.command(
 		t,
 		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
@@ -151,6 +155,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("receiver relationship = %+v, %v", relationship, err)
 	}
+	assertFriendshipProjection(t, fixture.b.db, bobPTID, alicePTID)
 
 	fixture.dispatchOnce(t, fixture.b)
 	assertProjectionState(
@@ -168,6 +173,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("sender relationship = %+v, %v", relationship, err)
 	}
+	assertFriendshipProjection(t, fixture.a.db, alicePTID, bobPTID)
 
 	effectID := domain.DirectConversationEffectID("request-accept")
 	effect, conversationID, err := fixture.a.store.DirectConversationEffect(
@@ -987,6 +993,7 @@ func TestSameStationFriendRequestUsesSharedDeliveryReceiver(t *testing.T) {
 		if err != nil || relationship == nil {
 			t.Fatalf("local relationship %s -> %s = %+v, %v", owner, peer, relationship, err)
 		}
+		assertFriendshipProjection(t, local.db, owner, peer)
 	}
 	effect, _, err := local.store.DirectConversationEffect(
 		context.Background(),
@@ -1083,8 +1090,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 			t.Fatal(err)
 		}
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1138,6 +1145,19 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 		if hydrationCalls != 1 {
 			t.Fatalf("cold-cache hydration calls = %d, want 1", hydrationCalls)
 		}
+		var persistedBySocial int64
+		if err := fixture.b.db.
+			Model(&touchactor.DeviceRecord{}).
+			Where("ptid = ? AND device_id = ?", alicePTID, alicePTID+":device").
+			Count(&persistedBySocial).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persistedBySocial != 0 {
+			t.Fatalf(
+				"Social persisted %d remote Actor Identity rows, want 0",
+				persistedBySocial,
+			)
+		}
 		assertProjectionState(
 			t,
 			fixture.b,
@@ -1151,8 +1171,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("latest verified profile omission rejects cached remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1194,8 +1214,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("latest verified profile rejects revoked cached remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1265,8 +1285,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 			"missing-identity-idempotency",
 		)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1310,8 +1330,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("revoked remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1356,8 +1376,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("unverified remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1403,8 +1423,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("unproven rotated remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1629,18 +1649,35 @@ func TestReceiverPolicyRejectionRollsBackCommandWhenResultOutboxConflicts(
 	}
 }
 
-type friendRequestActorKeyHydratorFunc func(
+type friendRequestActorKeyResolverFunc func(
 	context.Context,
 	string,
 	string,
 ) ([]*model.VerifiedActorDeviceSigningKey, error)
 
-func (f friendRequestActorKeyHydratorFunc) Hydrate(
+func (f friendRequestActorKeyResolverFunc) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
+	transaction delivery.Transaction,
 	actorPTID string,
 	homeStationPeerID string,
-) ([]*model.VerifiedActorDeviceSigningKey, error) {
-	return f(ctx, actorPTID, homeStationPeerID)
+	deviceID string,
+	signingKeyID string,
+) (*model.VerifiedActorDeviceSigningKey, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return nil, errors.New("missing bound Social transaction")
+	}
+	keys, err := f(ctx, actorPTID, homeStationPeerID)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		if key != nil &&
+			key.GetActorDeviceId() == deviceID &&
+			key.GetSigningKeyId() == signingKeyID {
+			return key, nil
+		}
+	}
+	return nil, nil
 }
 
 type federatedFriendRequestFixture struct {
@@ -1806,6 +1843,33 @@ func newFriendRequestStation(
 ) *friendRequestStation {
 	t.Helper()
 	db := openFriendRequestSQLite(t)
+	if err := db.AutoMigrate(&dbmodel.Actor{}, &dbmodel.Follow{}); err != nil {
+		t.Fatal(err)
+	}
+	for index, actorPTID := range []string{alicePTID, bobPTID} {
+		homeStationID := stationA
+		if actorPTID == bobPTID {
+			homeStationID = stationB
+		}
+		if stationID == "station-local" {
+			homeStationID = stationID
+		}
+		actor := dbmodel.Actor{
+			ID:                uint64(index + 1),
+			PTID:              actorPTID,
+			Namespace:         "peers",
+			PreferredUsername: fmt.Sprintf("fixture-%d", index+1),
+			Email:             fmt.Sprintf("fixture-%d@example.invalid", index+1),
+			PasswordHash:      "fixture",
+			Kind:              "p",
+			FederatedHandle:   fmt.Sprintf("@fixture-%d@%s", index+1, homeStationID),
+			HomeStationPeerID: homeStationID,
+			Origin:            "local",
+		}
+		if err := db.Create(&actor).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	actorDeviceStore := touchactor.NewDeviceStore(db)
 	if err := actorDeviceStore.AutoMigrate(); err != nil {
 		t.Fatal(err)
@@ -1877,7 +1941,7 @@ func newFriendRequestStation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.WithActorKeyHydrator(friendRequestActorKeyHydratorFunc(func(
+	service.WithActorDeviceKeyResolver(friendRequestActorKeyResolverFunc(func(
 		_ context.Context,
 		actorPTID string,
 		homeStationPeerID string,
@@ -1935,6 +1999,57 @@ func newFriendRequestStation(
 		localTransport: localTransport,
 		stationSigner:  signer,
 		clock:          clock,
+	}
+}
+
+func deleteRemoteActorProjection(
+	t *testing.T,
+	db *gorm.DB,
+	actorPTID string,
+) {
+	t.Helper()
+	if err := db.Exec(
+		"DELETE FROM touch_actor WHERE ptid = ?",
+		actorPTID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Table("touch_actor").
+		Where("ptid = ?", actorPTID).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("remote Actor projection %s count = %d, want 0", actorPTID, count)
+	}
+}
+
+func assertFriendshipProjection(
+	t *testing.T,
+	db *gorm.DB,
+	ownerPTID string,
+	peerPTID string,
+) {
+	t.Helper()
+	var count int64
+	if err := db.Table("friend_chat_friendships").
+		Where(
+			"actor_ptid = ? AND peer_ptid = ? AND status = ?",
+			ownerPTID,
+			peerPTID,
+			acceptedFriendshipStatus,
+		).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf(
+			"friendship projection %s -> %s count = %d, want 1",
+			ownerPTID,
+			peerPTID,
+			count,
+		)
 	}
 }
 

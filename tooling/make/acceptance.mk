@@ -1,6 +1,6 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+.PHONY: acceptance-plan acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
@@ -49,7 +49,8 @@ acceptance-driver-build:
 	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
 
 acceptance-driver-smoke:
-	python3 -m tooling.acceptance.drivers.tauri
+	python3 -m tooling.acceptance.drivers.tauri \
+		--port "$${PT_ACCEPTANCE_WEBDRIVER_PORT:-0}"
 
 acceptance-cell-ready:
 	python3 tooling/scripts/acceptance-cell.py ready \
@@ -66,13 +67,19 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 
+acceptance-run-completion:
+	python3 tooling/scripts/acceptance-run.py --completion
+
+acceptance-run-full:
+	python3 tooling/scripts/acceptance-run.py --full
+
 acceptance-run-ci:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier ci-structure --tier ci-cheap
+	$(if $(PLAN),python3 tooling/scripts/acceptance-run.py --plan "$(PLAN)" --tier ci-structure --tier ci-cheap,python3 tooling/scripts/acceptance-run.py --completion --tier ci-structure --tier ci-cheap)
 
 acceptance-run-local-evidence:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier local-evidence
@@ -87,7 +94,6 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG))
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
@@ -131,6 +137,12 @@ acceptance-chat-native-two-client:
 	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
 		python3 tooling/scripts/acceptance-run.py \
 		--gate chat-native-two-client-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
+
+acceptance-chat-native-submitted-command-recovery:
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-submitted-command-recovery-e2e \
 		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-interactions:

@@ -14,6 +14,17 @@ use tauri::{AppHandle, Emitter, State, Window};
 
 use crate::application::auth::service as auth_service;
 
+pub(super) fn secure_content_session_replaced(
+    previous: Option<&ActiveSession>,
+    account_id: &str,
+    actor_ptid: &str,
+    token: &str,
+) -> bool {
+    previous.is_some_and(|session| {
+        session.account_id != account_id || session.actor.ptid != actor_ptid || session.jwt != token
+    })
+}
+
 /// Bind the freshly-authenticated identity to the originating window so
 /// every subsequent command issued from that window resolves to the
 /// correct actor — even when other windows host a different actor.
@@ -23,6 +34,7 @@ fn bind_window_session(
     window: &Window,
     payload: &AuthSessionPayload,
 ) -> Result<(), String> {
+    let previous_window_session = state.sessions.get(window.label());
     let actor_ptid = payload
         .actor_ptid
         .as_deref()
@@ -39,6 +51,19 @@ fn bind_window_session(
     let account_id =
         crate::infrastructure::auth_identity::find_account_id_by_actor_ptid(&actor_ptid)
             .ok_or_else(|| "authenticated actor has no local account".to_string())?;
+    let replaces_window_session = secure_content_session_replaced(
+        previous_window_session.as_ref(),
+        &account_id,
+        &actor_ptid,
+        &token,
+    );
+    let takes_over_actor =
+        state.sessions.snapshot_all().iter().any(|session| {
+            session.window_label != window.label() && session.actor.ptid == actor_ptid
+        });
+    if replaces_window_session || takes_over_actor {
+        state.secure_content.teardown_actor(&actor_ptid)?;
+    }
     if let Err(error) =
         auth_service::activate_messaging_profile(state, &account_id, &actor_ptid, &token)
     {
@@ -93,9 +118,21 @@ fn bind_after(
     window: &Window,
     result: AppResult<AuthSessionPayload>,
 ) -> AppResult<AuthSessionPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     if !result.ok {
         if is_session_revoked(&result) {
-            state.sessions.unbind(window.label());
+            if let Err(error) = unbind_for_logout(state, window) {
+                return secure_content_teardown_failure(error);
+            }
         }
         return result;
     }
@@ -117,21 +154,42 @@ fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
         == Some("session_revoked")
 }
 
-fn unbind_for_logout(state: &Arc<AppState>, window: &Window) {
+fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), String> {
     if let Some(session) = state.sessions.unbind(window.label()) {
+        let teardown = state.secure_content.teardown_actor(&session.actor.ptid);
         crate::infrastructure::event_stream::stop(&session.actor.ptid);
+        teardown?;
     }
+    Ok(())
 }
 
 fn run_logout_transition(
-    detach_native_authority: impl FnOnce(),
+    detach_native_authority: impl FnOnce() -> Result<(), String>,
     cleanup: impl FnOnce() -> AppResult<AuthSessionPayload>,
     broadcast: impl FnOnce(),
 ) -> AppResult<AuthSessionPayload> {
-    detach_native_authority();
+    let detach_error = detach_native_authority().err();
     let result = cleanup();
     broadcast();
+    if let Some(error) = detach_error {
+        return secure_content_teardown_failure(error);
+    }
     result
+}
+
+fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayload> {
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "Failed to complete Secure Content teardown",
+        Some(serde_json::json!({
+            "command": "auth_logout",
+            "reason": "secure_content_teardown_failed",
+            "failures": [{
+                "operation": "secure_content_teardown",
+                "message": error,
+            }],
+        })),
+    )
 }
 
 #[tauri::command]
@@ -195,6 +253,16 @@ pub fn auth_logout(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     run_logout_transition(
         || unbind_for_logout(state.inner(), &window),
         || auth_service::auth_logout(state.inner()),
@@ -315,8 +383,9 @@ pub fn ensure_station_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_session_revoked, run_logout_transition};
+    use super::{is_session_revoked, run_logout_transition, secure_content_session_replaced};
     use crate::contracts::AuthSessionPayload;
+    use crate::domain::identity::{ActiveSession, ActorRef};
     use crate::error::{AppResult, ErrorCode};
     use std::cell::RefCell;
 
@@ -338,10 +407,36 @@ mod tests {
     }
 
     #[test]
+    fn same_actor_token_replacement_tears_down_secure_content_authority() {
+        let previous = ActiveSession::new(
+            "main",
+            "account-1",
+            ActorRef::new_person("ptid:alice"),
+            "old-token",
+        );
+
+        assert!(secure_content_session_replaced(
+            Some(&previous),
+            "account-1",
+            "ptid:alice",
+            "new-token",
+        ));
+        assert!(!secure_content_session_replaced(
+            Some(&previous),
+            "account-1",
+            "ptid:alice",
+            "old-token",
+        ));
+    }
+
+    #[test]
     fn logout_detaches_and_broadcasts_before_returning_cleanup_failure() {
         let order = RefCell::new(Vec::new());
         let result = run_logout_transition(
-            || order.borrow_mut().push("detach"),
+            || {
+                order.borrow_mut().push("detach");
+                Ok(())
+            },
             || {
                 order.borrow_mut().push("cleanup");
                 AppResult::fail(
@@ -361,6 +456,42 @@ mod tests {
                 .and_then(|error| error.details)
                 .and_then(|details| details["reason"].as_str().map(str::to_string)),
             Some("logout_cleanup_failed".to_string())
+        );
+    }
+
+    #[test]
+    fn logout_surfaces_secure_content_teardown_failure_after_cleanup() {
+        let order = RefCell::new(Vec::new());
+        let result = run_logout_transition(
+            || {
+                order.borrow_mut().push("detach");
+                Err("request drain timed out".to_string())
+            },
+            || {
+                order.borrow_mut().push("cleanup");
+                AppResult::success(AuthSessionPayload {
+                    command: "auth_logout".to_string(),
+                    status: "logged_out".to_string(),
+                    actor_ptid: None,
+                    session_token: None,
+                    name: None,
+                    email: None,
+                    avatar_url: None,
+                    avatar_local_path: None,
+                    login_method: None,
+                })
+            },
+            || order.borrow_mut().push("broadcast"),
+        );
+
+        assert_eq!(*order.borrow(), vec!["detach", "cleanup", "broadcast"]);
+        assert!(!result.ok);
+        assert_eq!(
+            result
+                .error
+                .and_then(|error| error.details)
+                .and_then(|details| details["reason"].as_str().map(str::to_string)),
+            Some("secure_content_teardown_failed".to_string())
         );
     }
 }

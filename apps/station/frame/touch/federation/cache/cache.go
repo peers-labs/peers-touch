@@ -45,6 +45,31 @@ var ErrCacheMiss = errors.New("federation cache: miss")
 // a buggy retry loop from rolling the cache backward.
 var ErrStaleEnvelope = errors.New("federation cache: envelope older than cached row")
 
+// ErrIdentityConflict is returned when a verified profile would rebind a
+// federated handle to another PTID, merge two existing Actor rows, or replace
+// a locally-owned Actor. Cache refreshes may normalize a historical remote
+// handle, but they never change Actor ownership.
+var ErrIdentityConflict = errors.New("federation cache: actor identity conflict")
+
+var cachedActorUpdateColumns = []string{
+	"ptid",
+	"preferred_username",
+	"namespace",
+	"federated_handle",
+	"name",
+	"summary",
+	"icon",
+	"image",
+	"url",
+	"home_station_peer_id",
+	"home_station_domain",
+	"origin",
+	"visibility",
+	"locator_seq",
+	"cached_until_unix_ms",
+	"updated_at",
+}
+
 // Cached is the in-process projection returned by Lookup. It carries
 // the touch_actor row plus the cached envelope expiry so the caller
 // (resolver) can build its own response without re-reading the DB.
@@ -132,9 +157,9 @@ func Upsert(ctx context.Context, in UpsertInput) error {
 		return errors.New("federation cache: nil locator")
 	}
 
-	canon := strings.TrimSpace(in.Envelope.GetFederatedHandle())
-	if canon == "" {
-		return errors.New("federation cache: envelope missing federated_handle")
+	canon, err := locator.CanonicalHandle(in.Envelope.GetFederatedHandle())
+	if err != nil {
+		return fmt.Errorf("federation cache: envelope federated_handle: %w", err)
 	}
 
 	rds, err := store.GetRDS(ctx)
@@ -147,46 +172,137 @@ func Upsert(ctx context.Context, in UpsertInput) error {
 		now = time.Now()
 	}
 
-	// Defensive: a buggy caller racing two upserts for the same handle
-	// must not roll back the cache. If a row exists with a higher seq,
-	// reject the write.
-	var existing db.Actor
-	err = rds.Where("federated_handle = ?", canon).First(&existing).Error
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		existing = db.Actor{} // fall through to insert path
-	case err != nil:
-		return fmt.Errorf("federation cache: select existing: %w", err)
-	default:
-		if existing.Origin == originLocal {
-			// Never overwrite a local row from federation traffic — that
-			// would let a malicious peer hijack the local actor's
-			// touch_actor row. The resolver upstream MUST short-circuit
-			// "handle resolves to my own peer id" before calling Upsert,
-			// but we belt-and-braces enforce it here too.
-			return fmt.Errorf("federation cache: refusing to overwrite local row for %s", canon)
+	return upsert(ctx, rds, canon, in, now)
+}
+
+func upsert(
+	ctx context.Context,
+	rds *gorm.DB,
+	canon string,
+	in UpsertInput,
+	now time.Time,
+) error {
+	existing, err := findExistingActor(ctx, rds, canon, actorPTID(in.Envelope))
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if err := validateRefresh(existing, canon, actorPTID(in.Envelope), in.Locator.GetSeq()); err != nil {
+			return err
 		}
-		if in.Locator.GetSeq() < existing.LocatorSeq {
-			return ErrStaleEnvelope
+		row := buildRow(canon, in, now, existing)
+		result := rds.WithContext(ctx).
+			Model(&db.Actor{}).
+			Where("id = ? AND origin = ?", existing.ID, originRemoteCached).
+			Select(cachedActorUpdateColumns).
+			Updates(&row)
+		if result.Error != nil {
+			return fmt.Errorf("federation cache: refresh: %w", result.Error)
 		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: remote actor changed during refresh", ErrIdentityConflict)
+		}
+		return nil
 	}
 
-	row := buildRow(canon, in, now, &existing)
-
+	row := buildRow(canon, in, now, &db.Actor{})
 	// ON CONFLICT (federated_handle) DO UPDATE — Postgres-friendly upsert
 	// that keeps INSERT semantics (preserves CreatedAt) while letting a
 	// repeated call simply refresh the federation columns.
-	tx := rds.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "federated_handle"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"name", "summary", "icon", "image", "url",
-			"home_station_peer_id", "home_station_domain",
-			"origin", "visibility", "locator_seq", "cached_until_unix_ms",
-			"updated_at",
-		}),
+	tx := rds.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "federated_handle"}},
+		DoUpdates: clause.AssignmentColumns(cachedActorUpdateColumns),
+		Where: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{
+				SQL:  "touch_actor.origin = ? AND (touch_actor.ptid = excluded.ptid OR touch_actor.ptid = '')",
+				Vars: []any{originRemoteCached},
+			},
+		}},
 	}).Create(&row)
 	if tx.Error != nil {
 		return fmt.Errorf("federation cache: upsert: %w", tx.Error)
+	}
+	if tx.RowsAffected != 1 {
+		return fmt.Errorf(
+			"%w: handle %s changed ownership during insert",
+			ErrIdentityConflict,
+			canon,
+		)
+	}
+	return nil
+}
+
+func actorPTID(envelope *profilepb.ActorProfileEnvelope) string {
+	if envelope == nil {
+		return ""
+	}
+	return strings.TrimSpace(envelope.GetProfile().GetPeersTouch().GetNetworkId())
+}
+
+func findExistingActor(
+	ctx context.Context,
+	rds *gorm.DB,
+	canon string,
+	ptid string,
+) (*db.Actor, error) {
+	handles := []string{canon, "@" + canon}
+	query := rds.WithContext(ctx).Where("federated_handle IN ?", handles)
+	if ptid != "" {
+		query = rds.WithContext(ctx).Where(
+			"federated_handle IN ? OR ptid = ?",
+			handles,
+			ptid,
+		)
+	}
+
+	var matches []db.Actor
+	if err := query.Limit(2).Find(&matches).Error; err != nil {
+		return nil, fmt.Errorf("federation cache: select existing: %w", err)
+	}
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &matches[0], nil
+	default:
+		return nil, fmt.Errorf(
+			"%w: handle %s and PTID %s resolve to different rows",
+			ErrIdentityConflict,
+			canon,
+			ptid,
+		)
+	}
+}
+
+func validateRefresh(existing *db.Actor, canon string, ptid string, locatorSeq uint64) error {
+	if existing == nil {
+		return nil
+	}
+	if existing.Origin == originLocal {
+		return fmt.Errorf(
+			"%w: refusing to overwrite local row for %s",
+			ErrIdentityConflict,
+			canon,
+		)
+	}
+	if existing.Origin != originRemoteCached {
+		return fmt.Errorf(
+			"%w: unsupported actor origin %q for %s",
+			ErrIdentityConflict,
+			existing.Origin,
+			canon,
+		)
+	}
+	if existing.PTID != "" && ptid != "" && existing.PTID != ptid {
+		return fmt.Errorf(
+			"%w: handle %s is already bound to PTID %s",
+			ErrIdentityConflict,
+			canon,
+			existing.PTID,
+		)
+	}
+	if locatorSeq < existing.LocatorSeq {
+		return ErrStaleEnvelope
 	}
 	return nil
 }
@@ -291,8 +407,14 @@ func buildRow(canon string, in UpsertInput, now time.Time, existing *db.Actor) d
 
 	row := db.Actor{
 		ID:                existing.ID,
+		PTID:              existing.PTID,
 		PreferredUsername: canon, // remote rows hold the full handle to avoid colliding with local preferred_username uniqueness.
 		Namespace:         strings.TrimSpace(existing.Namespace),
+		Name:              existing.Name,
+		Summary:           existing.Summary,
+		Icon:              existing.Icon,
+		Image:             existing.Image,
+		Url:               existing.Url,
 		FederatedHandle:   canon,
 		HomeStationPeerID: in.Envelope.GetHomeStationPeerId(),
 		HomeStationDomain: in.Envelope.GetHomeStationDomain(),

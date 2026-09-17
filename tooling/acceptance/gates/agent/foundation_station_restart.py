@@ -8,6 +8,7 @@ import json
 from math import ceil
 import os
 import re
+import selectors
 import shlex
 import subprocess
 import time
@@ -139,6 +140,193 @@ def _remote_command(
     return completed.stdout.strip()
 
 
+class _ArmedRemoteKill:
+    def __init__(
+        self,
+        environment: Mapping[str, str],
+        container_id: str,
+        *,
+        deadline: float,
+    ) -> None:
+        host = environment.get("PT_DEPLOY_HOST", "").strip()
+        user = environment.get("PT_DEPLOY_USER", "").strip()
+        if not host or not user:
+            raise FoundationStationRestartError(
+                "AS-F06 deployment must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
+            )
+        timeout = _remaining_seconds(deadline, "arming Station abrupt stop")
+        connect_timeout = max(1, min(10, ceil(timeout)))
+        remote_command = (
+            "printf 'READY\\n'; "
+            "if IFS= read -r trigger && [ \"$trigger\" = KILL ]; then "
+            f"docker kill --signal KILL {shlex.quote(container_id)}; "
+            "fi"
+        )
+        self._process = subprocess.Popen(
+            [
+                "ssh",
+                "-T",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                f"ConnectTimeout={connect_timeout}",
+                f"{user}@{host}",
+                remote_command,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        self._settled = False
+        stdout = self._process.stdout
+        if stdout is None:
+            self.abort()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop has no stdout"
+            )
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(stdout, selectors.EVENT_READ)
+            if not selector.select(timeout):
+                self.abort()
+                raise FoundationStationRestartError(
+                    "AS-F06 pre-armed Station stop did not become ready"
+                )
+            ready = stdout.readline().strip()
+        finally:
+            selector.close()
+        if ready != "READY":
+            self.abort()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop returned invalid readiness"
+            )
+
+    def _settle(self, signal: str, deadline: float) -> str:
+        if self._settled:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop was already settled"
+            )
+        self._settled = True
+        stdin = self._process.stdin
+        if stdin is None:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop has no stdin"
+            )
+        stdin.write(f"{signal}\n")
+        stdin.flush()
+        stdin.close()
+        self._process.stdin = None
+        try:
+            stdout, stderr = self._process.communicate(
+                timeout=_remaining_seconds(
+                    deadline,
+                    "pre-armed Station abrupt stop",
+                ),
+            )
+        except subprocess.TimeoutExpired as error:
+            self._process.kill()
+            self._process.communicate()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop timed out"
+            ) from error
+        if self._process.returncode != 0:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop failed: "
+                f"{stderr.strip()[:512]}"
+            )
+        return stdout.strip()
+
+    def trigger(self, *, deadline: float) -> str:
+        return self._settle("KILL", deadline)
+
+    def abort(self) -> None:
+        if self._settled:
+            return
+        abort_deadline = time.monotonic() + 10
+        try:
+            self._settle("ABORT", abort_deadline)
+        except Exception:
+            if self._process.poll() is None:
+                self._process.kill()
+                self._process.communicate()
+
+
+def _reviewed_environment_file(
+    repo_root: Path,
+    *,
+    profile_name: str,
+    deployment_name: str | None = None,
+) -> Path:
+    identifier_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    if not identifier_pattern.fullmatch(profile_name) or (
+        deployment_name is not None
+        and not identifier_pattern.fullmatch(deployment_name)
+    ):
+        raise FoundationStationRestartError(
+            "AS-F06 environment identity is invalid"
+        )
+    env_root = Path(
+        os.environ.get("PT_ENV_REPO", "").strip()
+        or repo_root.parent / "env"
+    ).expanduser().resolve()
+    if not (env_root / "peers-touch").is_dir():
+        raise FoundationStationRestartError(
+            f"AS-F06 reviewed environment repository is unavailable: {env_root}"
+        )
+    if deployment_name is None:
+        candidates = [
+            env_root / "peers-touch" / profile_name / "profile.env.example"
+        ]
+    else:
+        candidates = sorted(
+            (env_root / "peers-touch").glob(
+                f"*/deploy/{deployment_name}.env.example"
+            )
+        )
+    if len(candidates) != 1 or not candidates[0].is_file():
+        identity = deployment_name or profile_name
+        raise FoundationStationRestartError(
+            f"AS-F06 environment identity {identity!r} must resolve to exactly "
+            f"one env-repository definition"
+        )
+    path = candidates[0].resolve()
+    relative = path.relative_to(env_root).as_posix()
+    relative_parts = Path(relative).parts
+    profile_dir = "/".join(relative_parts[:2])
+    tracked = subprocess.run(
+        ["git", "-C", str(env_root), "ls-files", "--error-unmatch", relative],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        raise FoundationStationRestartError(
+            f"AS-F06 environment definition is not Git-tracked: {relative}"
+        )
+    dirty = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(env_root),
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            profile_dir,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    if dirty.stdout.strip():
+        raise FoundationStationRestartError(
+            f"AS-F06 environment definition is dirty or untracked: {profile_dir}"
+        )
+    return path
+
+
 def _load_bound_environment(
     runtime_manifest: Mapping[str, Any],
     repo_root: Path,
@@ -171,20 +359,21 @@ def _load_bound_environment(
             "PT_ACCEPTANCE_DISPOSABLE=1 is required for AS-F06"
         )
 
-    profile_path = repo_root / ".local" / "dev" / "profiles" / f"{profile_name}.env"
-    if not profile_path.is_file():
-        raise FoundationStationRestartError(
-            f"AS-F06 requires local profile {profile_name}"
-        )
+    profile_path = _reviewed_environment_file(
+        repo_root,
+        profile_name=profile_name,
+    )
     profile_env = load_env_file(profile_path)
     deployment_name = profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
-    deployment_path = (
-        repo_root / ".local" / "deploy" / "envs" / f"{deployment_name}.env"
-    )
-    if not deployment_name or not deployment_path.is_file():
+    if not deployment_name:
         raise FoundationStationRestartError(
             "AS-F06 requires the approved profile deployment identity"
         )
+    deployment_path = _reviewed_environment_file(
+        repo_root,
+        profile_name=profile_name,
+        deployment_name=deployment_name,
+    )
     deployment_env = load_env_file(deployment_path)
     if (
         profile_env.get("PT_DEV_PROFILE") != profile_name
@@ -336,8 +525,10 @@ def restart_foundation_station(
     runtime_manifest: Mapping[str, Any],
     *,
     repo_root: Path,
+    before_outage: Callable[[], None] | None = None,
     during_outage: Callable[[float], None] | None = None,
     after_restart: Callable[[float], None] | None = None,
+    prearm_outage: bool = False,
 ) -> dict[str, Any]:
     (
         _profile_env,
@@ -362,9 +553,27 @@ def restart_foundation_station(
         project_label=project_label,
         station_port=station_port,
     )
-
     operation_started_at = time.monotonic()
     operation_deadline = operation_started_at + RESTART_TIMEOUT_SECONDS
+    armed_kill: _ArmedRemoteKill | None = None
+    if prearm_outage:
+        if during_outage is None:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop requires an outage callback"
+            )
+        armed_kill = _ArmedRemoteKill(
+            deployment_env,
+            before["containerId"],
+            deadline=operation_deadline,
+        )
+    try:
+        if before_outage is not None:
+            before_outage()
+    except BaseException:
+        if armed_kill is not None:
+            armed_kill.abort()
+        raise
+
     outage_error: BaseException | None = None
     if during_outage is None:
         restarted = _remote_command(
@@ -380,11 +589,15 @@ def restart_foundation_station(
         try:
             stop_deadline = operation_deadline - RESTORE_RESERVE_SECONDS
             _remaining_seconds(stop_deadline, "Station abrupt stop")
-            stopped = _remote_command(
-                deployment_env,
-                "docker kill --signal KILL "
-                f"{shlex.quote(before['containerId'])}",
-                deadline=stop_deadline,
+            stopped = (
+                armed_kill.trigger(deadline=stop_deadline)
+                if armed_kill is not None
+                else _remote_command(
+                    deployment_env,
+                    "docker kill --signal KILL "
+                    f"{shlex.quote(before['containerId'])}",
+                    deadline=stop_deadline,
+                )
             )
             if not _container_ids_match(stopped, before["containerId"]):
                 raise FoundationStationRestartError(

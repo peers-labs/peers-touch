@@ -10,19 +10,23 @@ import (
 )
 
 type canonicalCompositionConfig struct {
-	database       *gorm.DB
-	devices        application.DeviceDirectory
-	deviceInbox    application.DeviceInboxPort
-	federation     application.FederationPort
-	clock          application.Clock
-	ids            application.IDGenerator
-	localStationID string
+	database                *gorm.DB
+	devices                 application.DeviceDirectory
+	actorHomes              application.ActorHomeStationDirectory
+	deviceInbox             application.DeviceInboxPort
+	federation              application.FederationPort
+	clock                   application.Clock
+	ids                     application.IDGenerator
+	localStationID          string
+	contentPreKeyPublishers infrastructure.ContentPreKeyPublisherResolver
 }
 
 type canonicalComposition struct {
-	store   *infrastructure.CanonicalStore
-	service *application.CanonicalService
-	api     *httpinterface.CanonicalAPI
+	store                *infrastructure.CanonicalStore
+	service              *application.CanonicalService
+	api                  *httpinterface.CanonicalAPI
+	contentPreKeyStore   *infrastructure.ContentPreKeyStore
+	contentPreKeyService *application.ContentPreKeyService
 }
 
 func newCanonicalComposition(
@@ -36,10 +40,28 @@ func newCanonicalComposition(
 	if err := store.Migrate(ctx); err != nil {
 		return nil, err
 	}
+	contentPreKeyStore, err := infrastructure.NewContentPreKeyStore(
+		config.database,
+		config.contentPreKeyPublishers,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := contentPreKeyStore.Migrate(ctx); err != nil {
+		return nil, err
+	}
+	contentPreKeyService, err := application.NewContentPreKeyService(
+		contentPreKeyStore,
+		config.clock,
+	)
+	if err != nil {
+		return nil, err
+	}
 	service, err := application.NewCanonicalService(
 		store,
 		store,
 		config.devices,
+		config.actorHomes,
 		config.deviceInbox,
 		config.federation,
 		config.clock,
@@ -55,8 +77,10 @@ func newCanonicalComposition(
 	}
 
 	return &canonicalComposition{
-		store:   store,
-		service: service,
-		api:     api,
+		store:                store,
+		service:              service,
+		api:                  api,
+		contentPreKeyStore:   contentPreKeyStore,
+		contentPreKeyService: contentPreKeyService,
 	}, nil
 }

@@ -177,6 +177,47 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	}
 }
 
+func TestTurnAdmissionRejectsRetiredContextReferenceBeforePersistence(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_invalid_reference_preflight")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+	turnService := &TurnService{}
+	svc.SetRequestPreflight(turnService.PreflightTurn)
+	const token = "@file:private/notes.txt"
+
+	_, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("invalid-reference", "Inspect "+token),
+	)
+	assertContextInvalidReferenceError(t, err, "file", token)
+
+	for name, record := range map[string]interface{}{
+		"turn":        &persistence.AgentTurn{},
+		"attempt":     &persistence.TurnAttempt{},
+		"queue entry": &persistence.TurnQueueEntry{},
+		"message":     &persistence.AgentMessage{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("invalid reference persisted %d %s rows", count, name)
+		}
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if conversation.Version != 1 {
+		t.Fatalf(
+			"invalid reference changed conversation version to %d",
+			conversation.Version,
+		)
+	}
+}
+
 func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_input_overflow")
 	seedAdmissionConversation(t, db)
@@ -327,12 +368,27 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 		"queued-0",
 		firstQueued.GetQueueEntry().GetQueueEntryId(),
 	)
-	if _, err := svc.Admit(
+	_, err = svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("overflow", "overflow"),
-	); !hasAdmissionCode(err, errcode.AgentQueueFull) {
+	)
+	if !hasAdmissionCode(err, errcode.AgentQueueFull) {
 		t.Fatalf("queue overflow did not fail with queue-full: %v", err)
+	}
+	var queueFull *errcode.BizError
+	if !errors.As(err, &queueFull) || queueFull.Payload == nil {
+		t.Fatalf("queue overflow did not preserve typed payload: %v", err)
+	}
+	if queueFull.Payload.GetError() != errcode.AgentQueueFullLocaleKey ||
+		queueFull.Payload.GetErrorType() != string(errcode.AgentQueueFull) ||
+		queueFull.Payload.GetLocaleKey() != errcode.AgentQueueFullLocaleKey ||
+		!queueFull.Payload.GetRetryable() ||
+		!queueFull.Payload.GetTerminal() ||
+		len(queueFull.Payload.GetDetails()) != 2 ||
+		queueFull.Payload.GetDetails()["conversation_id"] != "conversation-1" ||
+		queueFull.Payload.GetDetails()["capacity"] != fmt.Sprint(turnQueueCapacity) {
+		t.Fatalf("queue overflow typed payload = %+v", queueFull.Payload)
 	}
 }
 

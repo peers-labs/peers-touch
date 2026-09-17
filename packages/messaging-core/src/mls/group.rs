@@ -760,6 +760,22 @@ impl MlsGroupManager {
             .is_some()
     }
 
+    pub fn discard_pending_transition_if_matches(
+        &self,
+        conversation_id: &str,
+        expected_transition_id: &str,
+    ) -> bool {
+        let mut pending = self.pending_transitions.lock().unwrap();
+        if pending
+            .get(conversation_id)
+            .map(|transition| transition.result.transition_id.as_str())
+            != Some(expected_transition_id)
+        {
+            return false;
+        }
+        pending.remove(conversation_id).is_some()
+    }
+
     pub fn has_pending_transition(&self, conversation_id: &str) -> bool {
         self.pending_transitions
             .lock()
@@ -1917,13 +1933,15 @@ mod tests {
             .expect("bob join");
         let before_epoch = alice.group_epoch("conv-reject").expect("epoch");
         let charlie_kp = charlie.generate_key_package().expect("charlie kp");
-        alice
+        let prepared = alice
             .add_member(
                 "conv-reject",
                 &member_key_package("ptid:test:charlie", "charlie-device", charlie_kp),
             )
             .expect("prepare charlie");
-        assert!(alice.discard_pending_transition("conv-reject"));
+        assert!(!alice.discard_pending_transition_if_matches("conv-reject", "older-transition"));
+        assert!(alice.has_pending_transition("conv-reject"));
+        assert!(alice.discard_pending_transition_if_matches("conv-reject", &prepared.transition_id));
         assert!(!alice.has_pending_transition("conv-reject"));
         let after_epoch = alice.group_epoch("conv-reject").expect("epoch");
         assert_eq!(

@@ -78,15 +78,21 @@ This creates a two-way proof:
 ## Agent Workflow
 
 1. Update or add a feature contract when a new product capability is introduced.
-2. Run `make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>` after code changes.
-3. Run `make acceptance PLAN=<plan-path>` when a workstream needs an explicit gate bundle; the profile/runtime environment must already be active before this command.
-4. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
-5. Run `make acceptance-run-ci` for selected `ci-*` gates, or `make acceptance-run-env-evidence` only when the required environment is available.
-6. Run `make acceptance-report` and include proven / unproven scope in the handoff.
-7. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-8. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-9. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-10. For native Chat journeys, follow
+2. Ensure the worktree has exactly one active formal execution plan with an
+   `Acceptance Execution` contract.
+3. Run `make acceptance-plan` to inspect the current closure and reconcile the
+   actual diff with the formal plan.
+4. Run `make acceptance` or `make acceptance-run` for the current closure only.
+5. Run `make acceptance-run-completion` when every implementation closure is
+   ready for completion review.
+6. Run `make acceptance-run-full` only after an explicit release or full-test
+   request. Environment availability alone is not authorization.
+7. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
+8. Run `make acceptance-report` and include proven / unproven scope in the handoff.
+9. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
+10. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
+11. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+12. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.
@@ -128,6 +134,73 @@ and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,
 protos plus Desktop TypeScript and Station Go generated bindings.
 `CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
 by commas; one path may be reused for local process-isolation checks.
+
+Native Tauri Chat Gates do not select Station hosts in the Gate catalog or
+environment contract. Every required Station slot must be bound explicitly at
+run time:
+
+```bash
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-product-closure-e2e \
+  --runtime-cell desktop-windows-native \
+  --station-profile station-primary=sixwin
+```
+
+Each selected profile supplies its Station endpoint and
+local/remote lifecycle. Missing, unknown, or duplicate bindings fail closed
+before Station provisioning.
+
+`chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
+actor identity instead of resetting Station. Alice launches from
+`peers-chat-high-chat`; Bob launches first from `peers-group-chat`; both
+worktrees must be clean and resolve the same Git tree. By default each client
+uses its worktree's `.local/dev/data/<profile>/desktop-app` as a read-only
+bootstrap seed. `PT_CHAT_NATIVE_STORAGE_SEEDS` can override those two seed
+directories in Alice, Bob order.
+
+The Provisioner initializes one dedicated persistent Acceptance storage root
+per actor under that actor's worktree `.local/acceptance/state/` directory.
+`PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS` can override those roots in Alice,
+Bob order. Initial bootstrap retains the actor identity but excludes copied
+live `chat.main.db` and session-device bindings, so the Gate enrolls a dedicated
+device instead of reusing rollback-prone crypto state. Later runs reuse that
+same persistent state. This is required because Station OPK publication and
+consumption are durable and the matching private OPK, ratchet, inbox cursor,
+authority head, and projections must advance together. Runtime cleanup removes
+processes, ports, temporary logs, and ephemeral storage while verifying that
+the declared persistent device roots remain present.
+
+After an explicitly authorized destructive reset of the same active Station
+profile, reset the two dedicated Acceptance device states exactly once by
+running the Gate with:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_PROFILE=<active-profile> \
+PT_CHAT_NATIVE_RESET_PERSISTENT_STATE=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-current-profile-two-client-e2e
+```
+
+The Provisioner validates each existing marker against the actor, worktree, and
+profile before deletion, then rebuilds the persistent state from the read-only
+identity seed. The reset flag must not remain set for normal repeated runs.
+
+Multi-Station Chat Gates on explicitly approved protected development Stations
+use an exact deployment-environment allowlist:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-typing-e2e \
+  --runtime-cell desktop-macos-native
+```
+
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` and
+`CHAT_ACCEPTANCE_RESET_PROFILE` are mutually exclusive. Every listed target
+must match its reviewed deployment host, health endpoint origin, Compose
+project, Station/PostgreSQL containers, and PostgreSQL volume before mutation.
 
 ### Agent R6 Stream Resilience
 

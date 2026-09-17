@@ -149,6 +149,69 @@ func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
 	}
 }
 
+func TestToolProcessingFailurePersistsProviderTraceAndTypedError(t *testing.T) {
+	db := openConversationAuthorityDB(t, "tool_processing_failure_trace")
+	if err := db.AutoMigrate(&persistence.TurnTrace{}); err != nil {
+		t.Fatalf("migrate turn trace: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conv_unknown_tool",
+		AgentID:   "agent_1",
+		ActorPTID: "actor_1",
+		Title:     "Unknown Tool",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn_unknown_tool",
+		ConversationID: "conv_unknown_tool",
+		AgentID:        "agent_1",
+		Status:         string(domain.TurnStatusRunning),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+	service := TurnService{}
+	trace := &domain.TurnTrace{
+		TraceID: "trace_unknown_tool",
+		TurnID:  "turn_unknown_tool",
+		ProviderCalls: []domain.ProviderCallRecord{{
+			Provider: "provider_1",
+			Model:    "model_1",
+		}},
+	}
+	processingErr := errcode.NewToolUnknown(
+		"foundation_unknown_tool",
+		unregisteredProviderToolVersion,
+	)
+
+	err := service.persistToolProcessingFailureTrace(
+		context.Background(),
+		trace,
+		processingErr,
+	)
+	var typedErr *errcode.BizError
+	if !errors.As(err, &typedErr) || typedErr.Code != errcode.AgentToolUnknown {
+		t.Fatalf("typed Tool error was not preserved: %T %v", err, err)
+	}
+	loaded, err := service.loadTurnTraceForResume(
+		context.Background(),
+		trace.TurnID,
+	)
+	if err != nil {
+		t.Fatalf("load failed Tool trace: %v", err)
+	}
+	if len(loaded.ProviderCalls) != 1 ||
+		loaded.ProviderCalls[0].Provider != "provider_1" ||
+		loaded.ProviderCalls[0].Model != "model_1" {
+		t.Fatalf("failed Tool trace lost Provider attempt: %+v", loaded.ProviderCalls)
+	}
+}
+
 func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
 	expiresAt := time.Date(2026, 8, 29, 12, 30, 0, 123456789, time.UTC)
 	event := toolDecisionTurnEvent(ProposalDecision{
@@ -389,6 +452,15 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	pendingContent := "partial"
+	if err := db.Create(&persistence.AgentMessage{
+		ID: "message_lifecycle", ConversationID: "conv_lifecycle",
+		TurnID: optionalString("turn_lifecycle"), Role: string(domain.MessageRoleAssistant),
+		Status: "pending", Content: &pendingContent, Seq: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	lifecycleCtx, stopLifecycle := context.WithCancel(context.Background())
 	stopLifecycle()
@@ -414,6 +486,81 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}
 	if turn.TerminalReason == "cancelled_by_user" {
 		t.Fatal("Station lifecycle cancellation was persisted as user cancellation")
+	}
+
+	var message persistence.AgentMessage
+	if err := db.First(&message, "id = ?", "message_lifecycle").Error; err != nil {
+		t.Fatal(err)
+	}
+	if message.Status != string(domain.TurnStatusInterrupted) {
+		t.Fatalf("assistant message status = %q, want interrupted", message.Status)
+	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode interrupted assistant error: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, message.ErrorJSON)
+	assertLifecycleInterruptedPayload(
+		t,
+		&messageError,
+		"turn_lifecycle",
+		"station_lifecycle_interrupted",
+	)
+
+	var event persistence.TurnEvent
+	if err := db.First(
+		&event,
+		"turn_id = ? AND attempt_id = ? AND event_type = ?",
+		"turn_lifecycle",
+		"attempt_lifecycle",
+		"error",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	var eventPayload TurnEvent
+	if err := json.Unmarshal([]byte(event.Payload), &eventPayload); err != nil {
+		t.Fatalf("decode interrupted terminal event: %v", err)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(eventPayload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode interrupted event outcome: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, eventPayload.OutcomeError)
+	assertLifecycleInterruptedPayload(
+		t,
+		&eventError,
+		"turn_lifecycle",
+		"station_lifecycle_interrupted",
+	)
+	repeatedEvent, err := svc.interruptTurnWithEvent(
+		context.Background(),
+		"agent_1",
+		"turn_lifecycle",
+		"conv_lifecycle",
+		"",
+		"",
+		"must_not_replace_terminal_reason",
+	)
+	if err != nil {
+		t.Fatalf("repeat lifecycle interruption: %v", err)
+	}
+	if repeatedEvent.Seq != 0 {
+		t.Fatalf("repeat lifecycle interruption emitted event: %+v", repeatedEvent)
+	}
+	var terminalEventCount int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND event_type = ?", "turn_lifecycle", "error").
+		Count(&terminalEventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminalEventCount != 1 {
+		t.Fatalf("repeat lifecycle interruption created %d terminal events", terminalEventCount)
+	}
+	if err := db.First(&turn, "id = ?", "turn_lifecycle").Error; err != nil {
+		t.Fatal(err)
+	}
+	if turn.TerminalReason != "station_lifecycle_interrupted" {
+		t.Fatalf("repeat lifecycle interruption replaced terminal reason: %+v", turn)
 	}
 }
 
@@ -848,7 +995,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				ctx, cancel := context.WithDeadlineCause(
 					context.Background(),
 					time.Now().Add(-time.Second),
-					wallTimeBudgetExhausted(25),
+					wallTimeBudgetExhausted("turn_runtime_budget_wins", 25),
 				)
 				t.Cleanup(cancel)
 				return ctx
@@ -881,6 +1028,10 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			taskID := "task_" + test.name
 			stepID := "step_" + test.name
 			pendingContent := ""
+			assistantStatus := "pending"
+			if test.name == "runtime_budget_wins" {
+				assistantStatus = "completed"
+			}
 			records := []struct {
 				name  string
 				value interface{}
@@ -901,7 +1052,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				{name: "assistant message", value: &persistence.AgentMessage{
 					ID: "message_" + test.name, ConversationID: "conv_" + test.name,
 					TurnID: &turnID, Role: string(domain.MessageRoleAssistant),
-					Status: "pending", Content: &pendingContent, Seq: 1,
+					Status: assistantStatus, Content: &pendingContent, Seq: 1,
 					CreatedAt: now, UpdatedAt: now,
 				}},
 				{name: "task", value: &persistence.TaskRun{
@@ -962,8 +1113,35 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			if attempt.Status != string(test.wantStatus) || attempt.EndedAt == nil {
 				t.Fatalf("attempt remained nonterminal: %+v", attempt)
 			}
-			if message.Status != string(test.wantStatus) {
+			if test.name != "runtime_budget_wins" &&
+				message.Status != string(test.wantStatus) {
 				t.Fatalf("assistant message remained nonterminal: %+v", message)
+			}
+			if test.name == "runtime_budget_wins" {
+				if message.Status != "completed" {
+					t.Fatalf("completed tool projection was rewritten: %+v", message)
+				}
+				message = persistence.AgentMessage{}
+				if err := db.Where(
+					"turn_id = ? AND role = ? AND status = ?",
+					turnID,
+					string(domain.MessageRoleAssistant),
+					string(domain.TurnStatusFailed),
+				).Order("seq DESC").First(&message).Error; err != nil {
+					t.Fatalf("load runtime-budget assistant outcome: %v", err)
+				}
+				var messageError model.ErrorPayload
+				if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+					t.Fatalf("decode runtime-budget assistant error: %v", err)
+				}
+				if messageError.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+					messageError.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+					len(messageError.GetDetails()) != 3 ||
+					messageError.GetDetails()["turn_id"] != turnID ||
+					messageError.GetDetails()["budget_kind"] != "wall_time" ||
+					messageError.GetDetails()["limit"] != "25" {
+					t.Fatalf("assistant message lost canonical budget error: %+v", messageError)
+				}
 			}
 			var terminalSteps int64
 			if err := db.Model(&persistence.ExecutionStep{}).
@@ -996,6 +1174,24 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				test.wantEventType,
 			).Error; err != nil {
 				t.Fatalf("load terminal TurnEvent: %v", err)
+			}
+			if test.name == "runtime_budget_wins" {
+				var payload TurnEvent
+				if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+					t.Fatalf("decode runtime-budget TurnEvent: %v", err)
+				}
+				if payload.ErrorType != string(errcode.AgentToolBudgetExhausted) ||
+					payload.LocaleKey != errcode.AgentToolBudgetExhaustedLocaleKey ||
+					payload.Retryable == nil ||
+					*payload.Retryable ||
+					payload.Terminal == nil ||
+					!*payload.Terminal ||
+					len(payload.Details) != 3 ||
+					payload.Details["turn_id"] != turnID ||
+					payload.Details["budget_kind"] != "wall_time" ||
+					payload.Details["limit"] != "25" {
+					t.Fatalf("runtime-budget TurnEvent lost canonical payload: %+v", payload)
+				}
 			}
 		})
 	}
@@ -1128,6 +1324,39 @@ func assertLifecycleCancelledPayload(
 	}
 }
 
+func assertLifecycleInterruptedJSON(t *testing.T, encoded []byte) {
+	t.Helper()
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("decode lifecycle interruption JSON: %v", err)
+	}
+	retryable, retryablePresent := payload["retryable"]
+	terminal, terminalPresent := payload["terminal"]
+	if !retryablePresent || retryable != true || !terminalPresent || terminal != true {
+		t.Fatalf("lifecycle interruption booleans are incomplete: %+v", payload)
+	}
+}
+
+func assertLifecycleInterruptedPayload(
+	t *testing.T,
+	payload *model.ErrorPayload,
+	turnID string,
+	reasonCode string,
+) {
+	t.Helper()
+	if payload == nil ||
+		payload.GetError() != errcode.AgentLifecycleInterruptedLocaleKey ||
+		payload.GetErrorType() != string(errcode.AgentLifecycleInterrupted) ||
+		payload.GetLocaleKey() != errcode.AgentLifecycleInterruptedLocaleKey ||
+		!payload.GetRetryable() ||
+		!payload.GetTerminal() ||
+		len(payload.GetDetails()) != 2 ||
+		payload.GetDetails()["turn_id"] != turnID ||
+		payload.GetDetails()["reason_code"] != reasonCode {
+		t.Fatalf("lifecycle interruption payload = %+v", payload)
+	}
+}
+
 func TestRequestCancelMissingTurnReturnsTypedNotFound(t *testing.T) {
 	openConversationAuthorityDB(t, "cancel_missing_turn")
 	svc := TurnService{convService: NewConversationService()}
@@ -1187,46 +1416,84 @@ func TestRequestCancelDoesNotSignalBeforeDurableCommit(t *testing.T) {
 	}
 }
 
-func TestRequestCancelReturnsDurableTerminalWinner(t *testing.T) {
-	db := openConversationAuthorityDB(t, "cancel_terminal_winner")
-	now := time.Now()
-	if err := db.Create(&persistence.Conversation{
-		ID: "conv_cancel_winner", AgentID: "agent_1", ActorPTID: "actor_1",
-		Title: "Cancel terminal winner", Status: "active", CreatedAt: now, UpdatedAt: now,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&persistence.AgentTurn{
-		ID: "turn_cancel_winner", ConversationID: "conv_cancel_winner",
-		AgentID: "agent_1", Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
+func TestRequestCancelRejectsDurableTerminalWinnerWithoutMutation(t *testing.T) {
+	for _, terminalStatus := range []domain.TurnStatus{
+		domain.TurnStatusCompleted,
+		domain.TurnStatusFailed,
+		domain.TurnStatusCancelled,
+		domain.TurnStatusInterrupted,
+	} {
+		t.Run(string(terminalStatus), func(t *testing.T) {
+			db := openConversationAuthorityDB(t, "cancel_terminal_winner_"+string(terminalStatus))
+			now := time.Now()
+			conversationID := "conv_cancel_winner_" + string(terminalStatus)
+			turnID := "turn_cancel_winner_" + string(terminalStatus)
+			if err := db.Create(&persistence.Conversation{
+				ID: conversationID, AgentID: "agent_1", ActorPTID: "actor_1",
+				Title: "Cancel terminal winner", Status: "active", CreatedAt: now, UpdatedAt: now,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			turn := persistence.AgentTurn{
+				ID: turnID, ConversationID: conversationID,
+				AgentID: "agent_1", Status: string(terminalStatus), StartedAt: now, EndedAt: &now,
+			}
+			if err := db.Create(&turn).Error; err != nil {
+				t.Fatal(err)
+			}
+			before, err := json.Marshal(turn)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	svc := TurnService{convService: NewConversationService()}
-	executionCtx, release := svc.RegisterTurn(context.Background(), "turn_cancel_winner")
-	defer release()
+			svc := TurnService{convService: NewConversationService()}
+			executionCtx, release := svc.RegisterTurn(context.Background(), turnID)
+			defer release()
 
-	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel_winner")
-	if err != nil {
-		t.Fatalf("request cancellation: %v", err)
-	}
-	if status != string(domain.TurnStatusCompleted) {
-		t.Fatalf("cancel status = %q, want durable completed winner", status)
-	}
-	select {
-	case <-executionCtx.Done():
-		t.Fatalf("completed winner was signalled as cancelled: %v", context.Cause(executionCtx))
-	default:
-	}
-	var cancelledEvents int64
-	if err := db.Model(&persistence.TurnEvent{}).
-		Where("turn_id = ? AND event_type = ?", "turn_cancel_winner", "cancelled").
-		Count(&cancelledEvents).Error; err != nil {
-		t.Fatal(err)
-	}
-	if cancelledEvents != 0 {
-		t.Fatalf("completed winner produced %d cancellation events", cancelledEvents)
+			_, err = svc.RequestCancelTurn(context.Background(), "actor_1", turnID)
+			var businessError *errcode.BizError
+			if !errors.As(err, &businessError) {
+				t.Fatalf("request cancellation error = %T %v, want BizError", err, err)
+			}
+			if businessError.Code != errcode.AgentLifecycleTerminalMutation {
+				t.Fatalf("error code = %q, want %q", businessError.Code, errcode.AgentLifecycleTerminalMutation)
+			}
+			if businessError.Payload == nil ||
+				businessError.Payload.GetErrorType() != string(errcode.AgentLifecycleTerminalMutation) ||
+				businessError.Payload.GetLocaleKey() != errcode.AgentLifecycleTerminalMutationLocaleKey ||
+				businessError.Payload.GetRetryable() ||
+				!businessError.Payload.GetTerminal() ||
+				businessError.Payload.GetDetails()["resource_id"] != turnID ||
+				businessError.Payload.GetDetails()["terminal_status"] != string(terminalStatus) {
+				t.Fatalf("terminal mutation payload = %+v", businessError.Payload)
+			}
+			select {
+			case <-executionCtx.Done():
+				t.Fatalf("terminal winner was signalled as cancelled: %v", context.Cause(executionCtx))
+			default:
+			}
+
+			var reloaded persistence.AgentTurn
+			if err := db.First(&reloaded, "id = ?", turnID).Error; err != nil {
+				t.Fatal(err)
+			}
+			after, err := json.Marshal(reloaded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatalf("terminal turn mutated:\nbefore=%s\nafter=%s", before, after)
+			}
+			var cancellationEvents int64
+			if err := db.Model(&persistence.TurnEvent{}).
+				Where("turn_id = ?", turnID).
+				Count(&cancellationEvents).Error; err != nil {
+				t.Fatal(err)
+			}
+			if cancellationEvents != 0 {
+				t.Fatalf("terminal winner produced %d events", cancellationEvents)
+			}
+		})
 	}
 }
 

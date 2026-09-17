@@ -491,6 +491,9 @@ Do not commit concrete secrets or transient local paths.
 5. Check environment and tier against the Resource Manifest.
 6. Detect unrelated Gate selection caused by broad path patterns.
 7. Stop if an owned path produces an empty plan.
+8. For tracked work, compare the impact projection with the formal plan's
+   `Acceptance Execution` contract. Candidate Gates absent from that contract
+   are `ACCEPTANCE_PLAN_DRIFT`; candidate Gates do not become immediate work.
 
 ### Commands
 
@@ -511,7 +514,8 @@ sed -n '1,260p' /tmp/acceptance-path-plan.json
 
 ### Artifacts
 
-- `acceptance-plan` Gate role `plan` in the external Evidence Store.
+- `acceptance-plan` Gate role `plan` in the external Evidence Store. This is an
+  impact/execution projection, not a second formal plan.
 - Plan review note containing:
   changed paths, matched rules, impacted Features, selected Gates, tiers,
   environments, and mismatches.
@@ -570,11 +574,17 @@ make config
 
 If no appropriate profile exists:
 
-```bash
-make profile-init PROFILE=<name> SLOT=<unused-slot>
-make profile PROFILE=<name>
-make config
-```
+1. Stop with `PROFILE_UNAVAILABLE`.
+2. Request explicit human developer approval for the exact profile name,
+   target, and slot.
+3. Do not run `make profile-authorize` or create an authorization file.
+4. Only after the developer creates the exact pending grant may the Agent run:
+
+   ```bash
+   make profile-init PROFILE=<name> SLOT=<approved-slot>
+   make profile PROFILE=<name>
+   make config
+   ```
 
 Verify configured Station URL, mode, slot, and Desktop ports. Do not edit a
 shared active profile to fit one Gate when a dedicated profile is required.
@@ -772,7 +782,11 @@ make acceptance-run-env-evidence
 make acceptance-run
 ```
 
-Run only tiers present in the selected plan and whose environments are ready.
+Plain `make acceptance-run` executes only the current formal-plan closure.
+`make acceptance-run-completion` executes plan-completion Gates.
+`make acceptance-run-full` is allowed only after an explicit user request for
+release or full Acceptance. Run only declared Gates whose environments are
+ready; environment availability alone does not authorize full execution.
 
 Structural judgment:
 

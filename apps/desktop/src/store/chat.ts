@@ -4,18 +4,31 @@ import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
+  type AgentConversation,
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
+  type AgentErrorResolutionAction,
+  type AgentRuntimeBudgetKind,
   type AgentTypedErrorPayload,
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
   type AgentRuntimeBudgetInput,
+  classifyAgentTurnTerminalEvent,
+  isAgentLifecycleStaleVersionError,
+  isAgentLifecycleTerminalMutationError,
+  normalizeAgentTurnStreamError,
+  resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
+import {
+  agentTurnRecoveryPhaseForEvent,
+  isAgentTurnRecoveryPhaseTransitionAllowed,
+  type AgentTurnRecoveryPhase,
+} from './agentTurnRecovery';
 import { currentAuthenticatedActorPtid } from './session';
 import {
   conversationIdFromAgentDraftKey,
@@ -120,22 +133,26 @@ export interface AgentSendLifecycle {
   clientIdempotencyKey?: string;
 }
 
-export type BudgetExhaustionKind =
-  | 'tool_calls'
-  | 'wall_time'
-  | 'attempts'
-  | 'agent_steps'
-  | 'input_tokens'
-  | 'output_tokens'
-  | 'attachments'
-  | 'cost'
-  | 'unknown';
+export interface ComposerReferenceRemovalIntent {
+  sessionKey: string;
+  referenceKind: string;
+  referenceHash: string;
+  nonce: number;
+}
+
+export interface ComposerResourceSelectionIntent {
+  sessionKey: string;
+  resourceKind: string;
+  resourceRefHash: string;
+  nonce: number;
+}
+
+export type BudgetExhaustionKind = AgentRuntimeBudgetKind;
 
 export interface BudgetNotice {
   kind: BudgetExhaustionKind;
-  reason: string;
+  turnId: string;
   limit?: string;
-  consumed?: string;
   localeKey: string;
 }
 
@@ -145,17 +162,7 @@ export interface RecoveredTurnTerminal {
   content?: string;
 }
 
-export interface ErrorResolutionAction {
-  type:
-    | 'reauthCli'
-    | 'openProviderSettings'
-    | 'checkConnection'
-    | 'openOriginal';
-  cliId?: string;
-  providerId?: string;
-  existingCommandId?: string;
-  label: string;
-}
+export type ErrorResolutionAction = AgentErrorResolutionAction;
 
 export interface ChatMessage {
   id: string;
@@ -251,6 +258,28 @@ function reportApprovalExpiryRetryDebug(
 }
 // #endregion
 
+// #region debug-point N-Q:foundation-attachment-receiver
+function reportFoundationAttachmentReceiverDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-attachment-timeout',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'chat.ts:sendMessage',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const agentChatCache = getDesktopAgentChatCache();
 
 function cachedConversationToSession(conversation: CachedAgentConversation): Session {
@@ -260,13 +289,14 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
     agent_name: conversation.agentId,
     title: resolveI18nValue(conversation.title) || '',
     message_count: 0,
+    version: conversation.version,
     model_override: conversation.modelName,
     created_at: conversation.createdAt,
     updated_at: conversation.updatedAt,
   };
 }
 
-function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
+export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
   const persistedStatus = String(message.status || '').toLowerCase();
   const terminalStatus = (
     ['completed', 'failed', 'cancelled', 'interrupted'] as const
@@ -282,6 +312,7 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
       typedError = undefined;
     }
   }
+  const resolution = resolveAgentTypedErrorAction(typedError);
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -293,6 +324,8 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     turnId: message.turnId,
     error: typedError?.locale_key,
     typedError,
+    resolution,
+    providerId: typedError?.details.provider_id,
     attachments: message.attachments?.map((attachment) => ({
       cid: attachment.objectRef,
       filename: attachment.filename,
@@ -416,6 +449,8 @@ function isInFlightMessage(message: ChatMessage): boolean {
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
   const targetOwnsTerminal = Boolean(target.terminalStatus);
+  const terminalStatusMatches = targetOwnsTerminal
+    && target.terminalStatus === source.terminalStatus;
   const hasCot = source.toolCalls
     || source.thinking
     || source.thinkingDone != null
@@ -446,7 +481,11 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     typedError:
       targetOwnsTerminal ? target.typedError : target.typedError ?? source.typedError,
     errorDetail:
-      targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
+      targetOwnsTerminal
+        ? target.errorDetail ?? (
+          terminalStatusMatches ? source.errorDetail : undefined
+        )
+        : target.errorDetail ?? source.errorDetail,
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
     budgetNotice: target.budgetNotice ?? source.budgetNotice,
@@ -630,6 +669,20 @@ export function extractMessageArtifacts(message: Pick<ChatMessage, 'id' | 'role'
 
 export type ChatOperation = Operation;
 
+export interface AgentRevisionCommandFailure {
+  conversationId: string;
+  resourceId: string;
+  expectedRevision: number;
+  actualRevision: number;
+  typedError: AgentTypedErrorPayload;
+  resolution: AgentErrorResolutionAction & {
+    type: 'reloadLatest';
+    resourceId: string;
+    expectedRevision: number;
+    actualRevision: number;
+  };
+}
+
 interface ChatState {
   sessions: Session[];
   currentSessionKey: string;
@@ -643,6 +696,8 @@ interface ChatState {
   memoryDisabledSessions: Record<string, boolean>;
   draftPromotions: Record<string, string>;
   readinessErrorKey: string | null;
+  revisionCommandFailure: AgentRevisionCommandFailure | null;
+  revisionReloadingConversationId: string | null;
 
 
   wideScreen: boolean;
@@ -651,6 +706,8 @@ interface ChatState {
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
   composerFill: { text: string; nonce: number } | null;
+  composerReferenceRemoval: ComposerReferenceRemovalIntent | null;
+  composerResourceSelection: ComposerResourceSelectionIntent | null;
   composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
@@ -669,6 +726,10 @@ interface ChatState {
   retryMessage: (messageId: string) => Promise<void>;
   deleteAndRegenerateMessage: (messageId: string) => Promise<void>;
   branchFromMessage: (messageId: string) => Promise<void>;
+  requestTurnCancellation: (
+    turnId: string,
+    assistantMessageId?: string,
+  ) => Promise<void>;
   stopStreaming: () => void;
   stopOperation: (sessionKey: string) => void;
   continueGeneration: (messageId: string) => void;
@@ -691,11 +752,29 @@ interface ChatState {
   ) => Promise<void>;
   retryTurnRecovery: (conversationId?: string) => void;
   reloadTurnSnapshot: (conversationId?: string) => Promise<AgentTurnSnapshotReloadResult>;
+  reloadLatestRevision: (conversationId?: string) => Promise<void>;
+  reconcileClientLease: (
+    conversationId: string,
+    messageId: string,
+    sessionId: string,
+    leaseId: string,
+    turnId?: string,
+  ) => Promise<void>;
   syncTurnQueue: (conversationId?: string) => Promise<void>;
   cancelQueuedTurn: (conversationId: string, queueEntryId: string) => Promise<void>;
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
+  requestComposerReferenceRemoval: (
+    referenceKind: string,
+    referenceHash: string,
+  ) => void;
+  consumeComposerReferenceRemoval: (nonce: number) => void;
+  requestComposerResourceSelection: (
+    resourceKind: string,
+    resourceRefHash: string,
+  ) => void;
+  consumeComposerResourceSelection: (nonce: number) => void;
   requestComposerFocus: () => void;
   consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
@@ -704,6 +783,8 @@ interface ChatState {
 }
 
 let messageCounter = 0;
+let composerReferenceRemovalCounter = 0;
+let composerResourceSelectionCounter = 0;
 const pendingMessageRetries = new Map<string, Promise<void>>();
 
 function tempId() {
@@ -713,6 +794,113 @@ function tempId() {
 async function stationConversationVersion(conversationId: string): Promise<number> {
   const conversation = await api.getAgentConversation(conversationId);
   return conversation.version;
+}
+
+async function revisionCommandVersion(
+  conversationId: string,
+  sessions: Session[],
+): Promise<number> {
+  const projectedVersion = sessions.find(
+    (session) => session.key === conversationId,
+  )?.version;
+  if (
+    typeof projectedVersion === 'number'
+    && Number.isSafeInteger(projectedVersion)
+    && projectedVersion > 0
+  ) {
+    return projectedVersion;
+  }
+  return stationConversationVersion(conversationId);
+}
+
+export function projectAgentRevisionCommandFailure(
+  error: unknown,
+  conversationId: string,
+): AgentRevisionCommandFailure | null {
+  const normalized = normalizeAgentTurnStreamError(error);
+  const typedError = normalized.typedError;
+  const resolution = normalized.resolution;
+  if (
+    !isAgentLifecycleStaleVersionError(typedError)
+    || resolution?.type !== 'reloadLatest'
+    || resolution.resourceId !== conversationId
+    || resolution.expectedRevision === undefined
+    || resolution.actualRevision === undefined
+  ) {
+    return null;
+  }
+  return {
+    conversationId,
+    resourceId: typedError.details.resource_id,
+    expectedRevision: resolution.expectedRevision,
+    actualRevision: resolution.actualRevision,
+    typedError,
+    resolution: resolution as AgentRevisionCommandFailure['resolution'],
+  };
+}
+
+export function projectAgentTerminalMutationMessage(
+  message: ChatMessage,
+  error: AgentTurnStreamError,
+  turnId: string,
+  assistantMessageId?: string,
+): ChatMessage {
+  const typedError = error.typedError;
+  const resolution = error.resolution;
+  const matchesMessage = (
+    message.role === 'assistant'
+    && (
+      (assistantMessageId !== undefined && message.id === assistantMessageId)
+      || message.turnId === turnId
+    )
+  );
+  if (
+    !matchesMessage
+    || !isAgentLifecycleTerminalMutationError(typedError)
+    || resolution?.type !== 'openResult'
+    || resolution.resourceId !== turnId
+    || resolution.turnId !== turnId
+    || resolution.terminalStatus !== typedError.details.terminal_status
+  ) {
+    return message;
+  }
+  return {
+    ...message,
+    error: typedError.locale_key,
+    typedError,
+    errorDetail: error.errorDetail || message.errorDetail,
+    resolution,
+    loading: false,
+    terminalStatus: resolution.terminalStatus,
+    cancelled: resolution.terminalStatus === 'cancelled',
+  };
+}
+
+function reconcileRevisionSession(
+  sessions: Session[],
+  conversation: AgentConversation,
+): Session[] {
+  const existing = sessions.find(
+    (session) => session.key === conversation.conversation_id,
+  );
+  const reloaded: Session = {
+    id: conversation.conversation_id,
+    key: conversation.conversation_id,
+    agent_name: conversation.agent_id,
+    title: resolveI18nValue(conversation.title) || '',
+    message_count: existing?.message_count ?? 0,
+    version: conversation.version,
+    model_override: conversation.model_name,
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    pinned: existing?.pinned,
+    favorite: existing?.favorite,
+  };
+  return existing
+    ? sessions.map((session) => (
+        session.key === conversation.conversation_id ? reloaded : session
+      ))
+    : [reloaded, ...sessions];
 }
 
 function presentChatRuntimeError(message: string): string {
@@ -728,13 +916,67 @@ function presentChatRuntimeError(message: string): string {
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.reduceToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
 }
 
 function applyProjectedStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.projectToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
+}
+
+export function clearReconciledClientLeaseError(
+  message: ChatMessage,
+  messageId: string,
+  sessionId: string,
+  leaseId: string,
+  turnId?: string,
+): ChatMessage {
+  if (
+    message.id !== messageId
+    || (turnId && message.turnId !== turnId)
+  ) {
+    return message;
+  }
+  if (
+    message.typedError
+    && (
+      message.typedError.error_type !== 'CLIENT_LEASE_EXPIRED'
+      || message.typedError.details.session_id !== sessionId
+      || message.typedError.details.lease_id !== leaseId
+    )
+  ) {
+    return message;
+  }
+  return {
+    ...message,
+    error: undefined,
+    typedError: undefined,
+    errorDetail: undefined,
+    resolution: undefined,
+    loading: true,
+    cancelled: false,
+    terminalStatus: undefined,
+  };
+}
+
+function bindStreamEventTurnIdentity(
+  message: ChatMessage,
+  event: StreamEvent,
+): ChatMessage {
+  const turnId = typeof event.data?.turnId === 'string'
+    ? event.data.turnId
+    : typeof event.data?.turn_id === 'string'
+      ? event.data.turn_id
+      : '';
+  if (!turnId || message.turnId === turnId) return message;
+  return { ...message, turnId };
 }
 
 function mergeToolProjection(
@@ -906,6 +1148,27 @@ function removeOperation(
   return next;
 }
 
+function operationRecoveryPhase(
+  operation: ChatOperation,
+): AgentTurnRecoveryPhase | undefined {
+  switch (operation.runState) {
+    case 'streaming':
+      return 'CONNECTED';
+    case 'connection_lost':
+      return 'CONNECTION_LOST';
+    case 'reconnecting':
+      return 'RECONNECTING';
+    case 'replaying':
+      return 'REPLAYING';
+    case 'reconciling':
+      return 'RECONCILING';
+    case 'recovery_failed':
+      return 'RECOVERY_FAILED';
+    default:
+      return undefined;
+  }
+}
+
 export function applyOperationEventIdentity(
   operations: Record<string, ChatOperation>,
   sessionKey: string,
@@ -916,14 +1179,16 @@ export function applyOperationEventIdentity(
   const seq = Number(event.data?.seq || 0);
   const streamGeneration = Number(event.data?.streamGeneration || 0);
   const currentGeneration = operation.streamGeneration ?? 0;
-  const recoveryControlEvent = [
-    'connection_lost',
-    'reconnecting',
-    'replaying',
-    'reconciling',
-    'connected',
-    'recovery_failed',
-  ].includes(event.event);
+  const recoveryPhase = agentTurnRecoveryPhaseForEvent(event.event);
+  const currentRecoveryPhase = operationRecoveryPhase(operation);
+  const sameSequenceRecoveryAdvance =
+    recoveryPhase !== undefined
+    && currentRecoveryPhase !== undefined
+    && seq === (operation.lastEventSeq || 0)
+    && isAgentTurnRecoveryPhaseTransitionAllowed(
+      currentRecoveryPhase,
+      recoveryPhase,
+    );
   if (
     streamGeneration > 0
     && currentGeneration > 0
@@ -935,7 +1200,7 @@ export function applyOperationEventIdentity(
     seq > 0
     && (operation.lastEventSeq || 0) >= seq
     && streamGeneration === currentGeneration
-    && !recoveryControlEvent
+    && !sameSequenceRecoveryAdvance
     && !(
       event.event === 'snapshot'
       && (operation.lastEventSeq || 0) === seq
@@ -966,6 +1231,9 @@ export function applyOperationEventIdentity(
   const snapshotStatus = event.event === 'snapshot'
     ? String(event.data?.status || '').toLowerCase()
     : '';
+  const terminalStatus = classifyAgentTurnTerminalEvent(event);
+  const terminalRunState =
+    terminalStatus === 'queued' ? null : terminalStatus;
   const runState = ({
     connection_lost: 'connection_lost',
     reconnecting: 'reconnecting',
@@ -973,10 +1241,8 @@ export function applyOperationEventIdentity(
     reconciling: 'reconciling',
     connected: 'streaming',
     recovery_failed: 'recovery_failed',
-    done: 'completed',
-    error: 'failed',
-    cancelled: 'cancelled',
   } as const)[event.event]
+    ?? terminalRunState
     ?? ({
       completed: 'completed',
       failed: 'failed',
@@ -1033,12 +1299,22 @@ export function isMessageRetryBlocked(
   isStreaming: boolean,
   operation: ChatOperation | undefined,
   sourceTurnId: string | undefined,
+  sourceTerminalStatus?: ChatMessage['terminalStatus'],
 ): boolean {
   if (!isStreaming) return false;
+  const matchesActiveTurn = Boolean(
+    sourceTurnId && operation?.turnId === sourceTurnId,
+  );
+  if (
+    matchesActiveTurn
+    && sourceTerminalStatus === 'interrupted'
+    && operation?.runState === 'replaying'
+  ) {
+    return false;
+  }
   return (
     operation?.runState !== 'recovery_failed'
-    || !sourceTurnId
-    || operation.turnId !== sourceTurnId
+    || !matchesActiveTurn
   );
 }
 
@@ -1084,10 +1360,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   memoryDisabledSessions: {},
   draftPromotions: {},
   readinessErrorKey: null,
+  revisionCommandFailure: null,
+  revisionReloadingConversationId: null,
 
 
   wideScreen: false,
   composerFill: null,
+  composerReferenceRemoval: null,
+  composerResourceSelection: null,
   composerFocusNonce: 0,
 
   reset: () => {
@@ -1109,7 +1389,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       memoryDisabledSessions: {},
       draftPromotions: {},
       readinessErrorKey: null,
+      revisionCommandFailure: null,
+      revisionReloadingConversationId: null,
       composerFill: null,
+      composerReferenceRemoval: null,
+      composerResourceSelection: null,
       composerFocusNonce: 0,
     });
   },
@@ -1315,7 +1599,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
       const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
         const existingIndex = messages.findIndex(
-          (message) => message.id === assistantMessageId || message.turnId === turnId,
+          (message) => (
+            message.role === 'assistant'
+            && (
+              message.id === assistantMessageId
+              || message.turnId === turnId
+            )
+          ),
         );
         const existing: ChatMessage = existingIndex >= 0
           ? messages[existingIndex]
@@ -1440,6 +1730,85 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     return reloadAgentTurnSnapshot(key);
   },
 
+  reloadLatestRevision: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    const incident = get().revisionCommandFailure;
+    if (!incident || incident.conversationId !== key) return;
+    set({ revisionReloadingConversationId: key });
+    try {
+      const [conversation, synced] = await Promise.all([
+        api.getAgentConversation(key),
+        agentChatCache.refreshConversation(key),
+      ]);
+      const serverMessages = reconcileToolMessages(
+        synced.map(cachedMessageToChatMessage),
+      );
+      set((state) => {
+        const currentIncident = state.revisionCommandFailure;
+        const isSameIncident = (
+          currentIncident?.conversationId === incident.conversationId
+          && currentIncident.expectedRevision === incident.expectedRevision
+          && currentIncident.actualRevision === incident.actualRevision
+        );
+        return {
+          sessions: reconcileRevisionSession(state.sessions, conversation),
+          messages: state.currentSessionKey === key
+            ? serverMessages
+            : state.messages,
+          revisionCommandFailure: isSameIncident
+            ? null
+            : state.revisionCommandFailure,
+          revisionReloadingConversationId:
+            state.revisionReloadingConversationId === key
+              ? null
+              : state.revisionReloadingConversationId,
+        };
+      });
+    } catch (error) {
+      set((state) => ({
+        revisionReloadingConversationId:
+          state.revisionReloadingConversationId === key
+            ? null
+            : state.revisionReloadingConversationId,
+      }));
+      throw error;
+    }
+  },
+
+  reconcileClientLease: async (
+    conversationId,
+    messageId,
+    sessionId,
+    leaseId,
+    turnId,
+  ) => {
+    const result = await get().reloadTurnSnapshot(conversationId);
+    if (turnId && result.turnId !== turnId) {
+      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
+    }
+    if (result.terminal) return;
+    set((state) => {
+      const clear = (messages: ChatMessage[]) => messages.map((message) =>
+        clearReconciledClientLeaseError(
+          message,
+          messageId,
+          sessionId,
+          leaseId,
+          turnId,
+        ));
+      const isCurrent = state.currentSessionKey === conversationId;
+      return {
+        messages: isCurrent ? clear(state.messages) : state.messages,
+        sessionBuffers: {
+          ...state.sessionBuffers,
+          [conversationId]: clear(
+            state.sessionBuffers[conversationId] ?? [],
+          ),
+        },
+      };
+    });
+  },
+
   syncTurnQueue: async (conversationId) => {
     const key = conversationId || get().currentSessionKey;
     if (isAgentDraftKey(key)) return;
@@ -1514,11 +1883,24 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const assistantId = assistantMsg.id;
     let resolvedSessionKey = currentSessionKey;
     let acceptedByStation = false;
+    const attachmentDiagnostic = attachments.length > 0;
     const notifyAccepted = () => {
       if (acceptedByStation) return;
       acceptedByStation = true;
       lifecycle?.onAccepted?.();
     };
+    if (attachmentDiagnostic) {
+      reportFoundationAttachmentReceiverDebug('N-P', 'stream-started', {
+        currentSessionPresent: currentSessionKey.length > 0,
+        currentSessionMatches: get().currentSessionKey === currentSessionKey,
+        assistantPresent: get().messages.some(
+          (message) => message.id === assistantId,
+        ),
+        bufferedAssistantPresent: (
+          get().sessionBuffers[currentSessionKey] ?? []
+        ).some((message) => message.id === assistantId),
+      });
+    }
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -1652,9 +2034,40 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        const attachmentRejected =
+          err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateBeforeError = get();
+          reportFoundationAttachmentReceiverDebug(
+            'N-P',
+            'error-callback-entered',
+            {
+              acceptedByStation,
+              currentSessionMatches:
+                stateBeforeError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: stateBeforeError.messages.some(
+                (message) => message.id === assistantId,
+              ),
+              bufferedAssistantPresent: (
+                stateBeforeError.sessionBuffers[resolvedSessionKey] ?? []
+              ).some((message) => message.id === assistantId),
+              operationPresent:
+                stateBeforeError.operations[resolvedSessionKey] !== undefined,
+              operationRunState:
+                stateBeforeError.operations[resolvedSessionKey]?.runState
+                ?? null,
+            },
+          );
+        }
         if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
-        const resolution = err.resolution as ErrorResolutionAction | undefined;
+        const mappedResolution = resolveAgentTypedErrorAction(err.typedError);
+        const resolution = mappedResolution ?? (
+          err.resolution?.type === 'chooseResourceAgain'
+          || err.resolution?.type === 'removeReference'
+            ? undefined
+            : err.resolution
+        );
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyError = (m: ChatMessage): ChatMessage => {
@@ -1674,6 +2087,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               ...m,
               error: presentChatRuntimeError(err.message),
               typedError: err.typedError ?? m.typedError,
+              resolution: undefined,
               loading: false,
             };
           };
@@ -1694,6 +2108,35 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             operations: failOperationInMap(state.operations, resolvedSessionKey, err.message),
           };
         });
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateAfterError = get();
+          const currentAssistant = stateAfterError.messages.find(
+            (message) => message.id === assistantId,
+          );
+          const bufferedAssistant = (
+            stateAfterError.sessionBuffers[resolvedSessionKey] ?? []
+          ).find((message) => message.id === assistantId);
+          reportFoundationAttachmentReceiverDebug(
+            'N-Q',
+            'error-state-projected',
+            {
+              currentSessionMatches:
+                stateAfterError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: currentAssistant !== undefined,
+              assistantErrorPresent: Boolean(currentAssistant?.error),
+              assistantTypedError:
+                currentAssistant?.typedError?.error_type ?? null,
+              bufferedAssistantPresent: bufferedAssistant !== undefined,
+              bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+              bufferedAssistantTypedError:
+                bufferedAssistant?.typedError?.error_type ?? null,
+              operationRunState:
+                stateAfterError.operations[resolvedSessionKey]?.runState
+                ?? null,
+              isStreaming: stateAfterError.isStreaming,
+            },
+          );
+        }
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       currentAuthenticatedActorPtid() || '',
@@ -1723,22 +2166,63 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
     });
+    if (attachmentDiagnostic) {
+      const installedState = get();
+      const currentAssistant = installedState.messages.find(
+        (message) => message.id === assistantId,
+      );
+      const bufferedAssistant = (
+        installedState.sessionBuffers[currentSessionKey] ?? []
+      ).find((message) => message.id === assistantId);
+      reportFoundationAttachmentReceiverDebug(
+        'N-P',
+        'optimistic-state-installed',
+        {
+          currentSessionMatches:
+            installedState.currentSessionKey === currentSessionKey,
+          assistantPresent: currentAssistant !== undefined,
+          assistantErrorPresent: Boolean(currentAssistant?.error),
+          bufferedAssistantPresent: bufferedAssistant !== undefined,
+          bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+          operationPresent:
+            installedState.operations[currentSessionKey] !== undefined,
+          operationRunState:
+            installedState.operations[currentSessionKey]?.runState ?? null,
+          isStreaming: installedState.isStreaming,
+        },
+      );
+    }
     return true;
   },
 
   regenerateMessage: async (messageId: string) => {
     const { currentSessionKey, isStreaming } = get();
     if (isStreaming) return;
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.regenerateAgentTurn({
-      conversation_id: currentSessionKey,
-      source_assistant_message_id: messageId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.regenerateAgentTurn({
+        conversation_id: currentSessionKey,
+        source_assistant_message_id: messageId,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   retryMessage: (messageId: string) => {
@@ -1750,6 +2234,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       isStreaming,
       operation,
       sourceTurnId,
+      source?.terminalStatus,
     );
     const retryKey = `${currentSessionKey}:${messageId}`;
     const pending = pendingMessageRetries.get(retryKey);
@@ -1794,7 +2279,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
     const request = (async () => {
       try {
-        const version = await stationConversationVersion(currentSessionKey);
+        const version = await revisionCommandVersion(
+          currentSessionKey,
+          get().sessions,
+        );
         // #region debug-point C:retry-api-start
         reportApprovalExpiryRetryDebug('C', 'retry-api-start', {
           conversationVersionPresent: Number.isInteger(version) && version > 0,
@@ -1823,13 +2311,21 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         }
         await get().loadSessions();
       } catch (error) {
-        const stableCode = String(error).match(/\b(?:AGENT|TOOL)_[A-Z0-9_]+\b/)?.[0] ?? null;
+        const stableCode = String(error).match(/\b(?:AGENT|TOOL|LIFECYCLE)_[A-Z0-9_]+\b/)?.[0] ?? null;
         // #region debug-point C:retry-api-error
         reportApprovalExpiryRetryDebug('C', 'retry-api-error', {
           errorName: error instanceof Error ? error.name : typeof error,
           stableCode,
         });
         // #endregion
+        const failure = projectAgentRevisionCommandFailure(
+          error,
+          currentSessionKey,
+        );
+        if (failure) {
+          set({ revisionCommandFailure: failure });
+          return;
+        }
         throw error;
       }
     })().finally(() => {
@@ -1845,16 +2341,82 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   branchFromMessage: async (messageId: string) => {
     const { currentSessionKey } = get();
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.selectAgentActiveBranch({
-      conversation_id: currentSessionKey,
-      active_branch_message_id: messageId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.selectAgentActiveBranch({
+        conversation_id: currentSessionKey,
+        active_branch_message_id: messageId,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
+  },
+
+  requestTurnCancellation: async (turnId, assistantMessageId) => {
+    try {
+      await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      const normalized = normalizeAgentTurnStreamError(error);
+      const typedError = normalized.typedError;
+      const resolution = normalized.resolution;
+      if (
+        !isAgentLifecycleTerminalMutationError(typedError)
+        || resolution?.type !== 'openResult'
+        || resolution.resourceId !== turnId
+        || resolution.turnId !== turnId
+        || resolution.terminalStatus !== typedError.details.terminal_status
+      ) {
+        throw error;
+      }
+
+      let projected = false;
+      const projectMessages = (messages: ChatMessage[]): ChatMessage[] => {
+        let changed = false;
+        const next = messages.map((message) => {
+          const projectedMessage = projectAgentTerminalMutationMessage(
+            message,
+            normalized,
+            turnId,
+            assistantMessageId,
+          );
+          if (projectedMessage !== message) {
+            projected = true;
+            changed = true;
+          }
+          return projectedMessage;
+        });
+        return changed ? next : messages;
+      };
+      set((state) => {
+        const sessionBuffers = Object.fromEntries(
+          Object.entries(state.sessionBuffers).map(([key, messages]) => [
+            key,
+            projectMessages(messages),
+          ]),
+        );
+        return {
+          messages: projectMessages(state.messages),
+          sessionBuffers,
+        };
+      });
+      if (!projected) throw normalized;
+    }
   },
 
   stopStreaming: () => {
@@ -1865,6 +2427,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.info('chat', 'Streaming stopped', { sessionKey });
     const op = get().operations[sessionKey];
     if (!op || !isActiveOperation(op)) return;
+    if (op.turnId) {
+      void get().requestTurnCancellation(op.turnId, op.assistantMessageId)
+        .catch((error) => {
+          log.warn('chat', 'Agent turn cancellation failed', {
+            turnId: op.turnId,
+            error: String(error),
+          });
+        });
+    }
     const cancelled = cancelOperation(op);
     set((state) => {
       const isCurrent = state.currentSessionKey === sessionKey;
@@ -1899,34 +2470,64 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       });
       return;
     }
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.tombstoneAgentMessage({
-      conversation_id: currentSessionKey,
-      message_id: id,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-      destructive_confirmed: true,
-      reason: 'user_requested',
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.tombstoneAgentMessage({
+        conversation_id: currentSessionKey,
+        message_id: id,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+        destructive_confirmed: true,
+        reason: 'user_requested',
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   editMessage: async (id: string, content: string) => {
     if (id.startsWith('temp-')) return;
     const { currentSessionKey } = get();
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.editAndResendAgentMessage({
-      conversation_id: currentSessionKey,
-      source_user_message_id: id,
-      revised_content: content,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.editAndResendAgentMessage({
+        conversation_id: currentSessionKey,
+        source_user_message_id: id,
+        revised_content: content,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   translateMessage: async (id: string) => {
@@ -1990,6 +2591,46 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   consumeComposerFill: () => {
     set({ composerFill: null });
+  },
+
+  requestComposerReferenceRemoval: (referenceKind, referenceHash) => {
+    composerReferenceRemovalCounter += 1;
+    set({
+      composerReferenceRemoval: {
+        sessionKey: get().currentSessionKey,
+        referenceKind,
+        referenceHash,
+        nonce: composerReferenceRemovalCounter,
+      },
+    });
+  },
+
+  consumeComposerReferenceRemoval: (nonce) => {
+    set((state) => (
+      state.composerReferenceRemoval?.nonce === nonce
+        ? { composerReferenceRemoval: null }
+        : {}
+    ));
+  },
+
+  requestComposerResourceSelection: (resourceKind, resourceRefHash) => {
+    composerResourceSelectionCounter += 1;
+    set({
+      composerResourceSelection: {
+        sessionKey: get().currentSessionKey,
+        resourceKind,
+        resourceRefHash,
+        nonce: composerResourceSelectionCounter,
+      },
+    });
+  },
+
+  consumeComposerResourceSelection: (nonce) => {
+    set((state) => (
+      state.composerResourceSelection?.nonce === nonce
+        ? { composerResourceSelection: null }
+        : {}
+    ));
   },
 
   requestComposerFocus: () => {
