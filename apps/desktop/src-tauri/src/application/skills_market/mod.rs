@@ -473,6 +473,11 @@ fn validate_skill_content(content: &str, fallback_name: &str) -> Result<String, 
     derive_skill_name(trimmed, fallback_name)
 }
 
+fn station_marketplace_skill_trust_level() -> String {
+    // Catalog trust proves discovery provenance; Station owns install scanning.
+    "community".to_string()
+}
+
 fn install_skill(
     agent_id: String,
     name: String,
@@ -1723,10 +1728,7 @@ pub fn skills_market_install(
         name.clone(),
         source.clone(),
         content,
-        skill
-            .trust_level
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string()),
+        station_marketplace_skill_trust_level(),
         token,
     ) {
         Ok(outcome) => outcome,
@@ -2276,6 +2278,11 @@ mod tests {
             validate_market_install_policy(revoked, true),
             Err("MARKETPLACE_PACKAGE_REVOKED_OR_BLOCKED")
         );
+    }
+
+    #[test]
+    fn marketplace_skill_install_does_not_promote_catalog_trust() {
+        assert_eq!(station_marketplace_skill_trust_level(), "community");
     }
 
     #[test]
