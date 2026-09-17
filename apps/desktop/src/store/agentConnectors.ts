@@ -173,6 +173,8 @@ interface AgentConnectorState {
   reset: () => void;
 }
 
+let loadConnectorsPromise: Promise<void> | null = null;
+
 export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
   'agentConnectors',
   (set, get) => ({
@@ -181,32 +183,39 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
     loading: false,
 
     loadConnectors: async () => {
-      set({ loading: true });
-      try {
-        // Leverage the existing OAuth2 store to discover connectors
-        const oauth2 = useOAuth2Store.getState();
-        await oauth2.loadAll();
-        await api.syncOAuthConnectorManifests();
-        await oauth2.loadConnections();
-        const resourceManifests = await api.listConnectorResourceManifests(
-          create(ListConnectorResourceManifestsRequestSchema, {}),
-        );
+      if (loadConnectorsPromise) return loadConnectorsPromise;
 
-        const { providers, connections } = useOAuth2Store.getState();
-        const connectors: ConnectorInfo[] = providers
-          .filter((p) => p.enabled)
-          .map((provider) => {
-            const connection = connections.find((c) => c.provider_id === provider.id);
-            return mapOAuth2ToConnector(provider, connection);
-          });
+      loadConnectorsPromise = (async () => {
+        set({ loading: true });
+        try {
+          // Leverage the existing OAuth2 store to discover connectors
+          const oauth2 = useOAuth2Store.getState();
+          await oauth2.loadAll();
+          await api.syncOAuthConnectorManifests();
+          await oauth2.loadConnections();
+          const resourceManifests = await api.listConnectorResourceManifests(
+            create(ListConnectorResourceManifestsRequestSchema, {}),
+          );
 
-        set({ availableConnectors: connectors, resourceManifests });
-      } catch (error) {
-        log.error('agentConnectors', 'Failed to load connectors', { error: String(error) });
-        throw error;
-      } finally {
-        set({ loading: false });
-      }
+          const { providers, connections } = useOAuth2Store.getState();
+          const connectors: ConnectorInfo[] = providers
+            .filter((p) => p.enabled)
+            .map((provider) => {
+              const connection = connections.find((c) => c.provider_id === provider.id);
+              return mapOAuth2ToConnector(provider, connection);
+            });
+
+          set({ availableConnectors: connectors, resourceManifests });
+        } catch (error) {
+          log.error('agentConnectors', 'Failed to load connectors', { error: String(error) });
+          throw error;
+        } finally {
+          set({ loading: false });
+          loadConnectorsPromise = null;
+        }
+      })();
+
+      return loadConnectorsPromise;
     },
 
     // OAuth leg: reuse the complete existing OAuth2 loopback flow to establish
