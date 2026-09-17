@@ -1092,6 +1092,12 @@ fn connector_projection_matches_station_head(
         })
 }
 
+fn connector_revocation_is_projected(connection: &OAuthConnectionState) -> bool {
+    connection.status == "revocation_unconfirmed"
+        && connection.revision > 0
+        && connection.projected_revision == connection.revision
+}
+
 pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<u8>> {
     if !actor_ptid.starts_with("ptid:") || token.trim().is_empty() {
         return AppResult::fail(
@@ -1696,6 +1702,19 @@ pub fn oauth2_disconnect(
     if current.owner_ptid != actor_ptid {
         return AppResult::fail(ErrorCode::Forbidden, "agent.errors.forbiddenActor", None);
     }
+    if connector_revocation_is_projected(current) {
+        return success_payload(
+            "oauth2_disconnect",
+            json!({
+                "status": "revocation_unconfirmed",
+                "provider_revoke": {
+                    "status": "unconfirmed",
+                    "error_code": current.revocation_error,
+                    "idempotency_key": current.revocation_idempotency_key,
+                }
+            }),
+        );
+    }
     let mut disconnected = current.clone();
     if disconnected.status != "revocation_unconfirmed" {
         if let Some(snapshot) = executable_connection_revision(&disconnected) {
@@ -2048,6 +2067,21 @@ mod tests {
             &unprojected,
             &current,
         ));
+    }
+
+    #[test]
+    fn connector_projected_revocation_is_idempotent_bits_ut() {
+        let projected = OAuthConnectionState {
+            revision: 6,
+            projected_revision: 6,
+            status: "revocation_unconfirmed".to_string(),
+            ..Default::default()
+        };
+        assert!(connector_revocation_is_projected(&projected));
+
+        let mut pending = projected.clone();
+        pending.projected_revision = 5;
+        assert!(!connector_revocation_is_projected(&pending));
     }
 
     #[test]
