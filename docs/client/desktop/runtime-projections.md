@@ -36,6 +36,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `agent-topic` | Selected Agent topic/message bootstrap, Agent-switch refresh, and periodic reconciliation |
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `home` | Station-authored Home projection bootstrap, actor-scoped reset, exact recent-conversation handoff, and periodic reconciliation |
+| `evaluation` | Station-authored benchmark, dataset, case, run, result, metrics, and recovery projection; actor-scoped reset, event consumption, and periodic reconciliation |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
@@ -192,6 +193,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
 | `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `home` | `pages/HomePage.descriptor.tsx` | `home` | migrated (`preload: eager`, `keepAlive: forever`); page renders the Station Home projection |
+| `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page renders Station-owned Evaluation truth and runtime recovery |
 | `notes`, `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

@@ -17,6 +17,7 @@ import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { chatRuntime } from '../runtimes/chatRuntime';
+import { evaluationRuntime } from '../runtimes/evaluationRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -40,6 +41,7 @@ function registerKernelRuntimes(): void {
   registerRuntime(chatRuntime);
   registerRuntime(messagingRecoveryRuntime);
   registerRuntime(toolRuntime);
+  registerRuntime(evaluationRuntime);
 }
 
 let installed = false;
@@ -158,6 +160,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(chatRuntime.id);
   teardownRuntime(messagingRecoveryRuntime.id);
   teardownRuntime(toolRuntime.id);
+  teardownRuntime(evaluationRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
   teardownSessionKickBridge();

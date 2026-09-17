@@ -22,6 +22,7 @@
     "model/domain/agent",
     "packages/locales",
     "tooling/acceptance",
+    "docs/client",
     "docs/architecture/agent"
   ],
   "readSet": [
@@ -40,7 +41,7 @@
     },
     {
       "id": "evaluation-native-journey",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mca-v2-j06 --gate agent-v2-evaluation-lab-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/evaluation_development.py",
       "verificationClass": "FUNCTIONAL_CHECK"
     }
   ],
@@ -55,7 +56,7 @@
     "Do not mutate terminal parent runs or duplicate completed work on retry",
     "Do not infer terminal state from client progress"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
+  "updatedAt": "2026-09-17T10:15:28Z",
   "durableEvidence": []
 }
 ```
@@ -67,6 +68,15 @@ Evaluation aggregate and prove V2-J06 end to end.
 
 ## Current Snapshot
 
-- Evaluation UI, client-local datasets/runs, and Station dataset CRUD exist.
-- The client still uses `localStorage` and `quickCompletion` as terminal truth.
-- Station run/attempt/result/metrics ownership and restart proof remain absent.
+- Station owns the actor-scoped benchmark, dataset, case, run, attempt,
+  result, event, metrics, cancellation, retry, and retention aggregate.
+- Every case enters the canonical Turn kernel with a Station-authored frozen
+  Agent/runtime/readiness snapshot; restart fences interrupted Turns instead
+  of replaying provider or tool side effects.
+- Desktop uses the `evaluation` runtime and Station-backed store, with
+  `on-visit + lru(1)` page lifetime and no Evaluation `localStorage` or
+  `quickCompletion` authority.
+- Focused Go/race, TypeScript/Vitest, Rust bridge, proto coverage, Acceptance
+  contract, and plan validation checks pass.
+- Exact-source Profile `two` native Journey remains `UNPROVEN` until the
+  checkpoint is deployed and executed.

@@ -16,6 +16,7 @@ pub mod chat_storage;
 pub mod cron;
 pub mod desktop_executor_worker;
 pub mod error_resolver;
+pub mod evaluation;
 pub mod federation;
 pub mod group_chat;
 pub mod home;

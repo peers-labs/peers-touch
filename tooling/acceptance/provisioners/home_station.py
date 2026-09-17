@@ -35,6 +35,7 @@ GATE_ROLES = {
     "agent-v2-governed-tool-loop-e2e": ("bob",),
     "agent-v2-mcp-lifecycle-e2e": ("bob",),
     "agent-v2-connector-invocation-e2e": ("bob",),
+    "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
@@ -50,6 +51,7 @@ AGENT_V2_BINDING_GATE = "agent-v2-capability-binding-e2e"
 AGENT_V2_GOVERNED_TOOL_GATE = "agent-v2-governed-tool-loop-e2e"
 AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
+AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -460,6 +462,81 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         return client
 
+    def _agent_v2_evaluation_clients(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> tuple[ClientRuntime, ClientRuntime]:
+        run_root = (
+            Path(tempfile.gettempdir()) / f"pt-agent-v2-evaluation-{run_id}"
+        )
+        worktree = Path(
+            os.environ.get("PT_AGENT_V2_EVALUATION_WORKTREE", str(REPO_ROOT))
+        ).expanduser().resolve()
+        defaults = {
+            "alice": (
+                profile_env.get(
+                    "PT_DESKTOP_APP_GATEWAY_PORT",
+                    str(3030 + slot * 100),
+                ),
+                profile_env.get(
+                    "PT_DESKTOP_APP_WEB_PORT",
+                    str(3210 + slot * 100),
+                ),
+                str(4445 + slot * 10),
+            ),
+            "bob": (
+                profile_env.get(
+                    "PT_DESKTOP_WEB_GATEWAY_PORT",
+                    str(3031 + slot * 100),
+                ),
+                profile_env.get(
+                    "PT_DESKTOP_WEB_WEB_PORT",
+                    str(3211 + slot * 100),
+                ),
+                str(4446 + slot * 10),
+            ),
+        }
+        clients = tuple(
+            ClientRuntime(
+                actor=actor,
+                runtime="native-tauri",
+                worktree=str(worktree),
+                gateway_port=int(
+                    os.environ.get(
+                        f"PT_AGENT_V2_EVALUATION_{actor.upper()}_GATEWAY_PORT",
+                        defaults[actor][0],
+                    )
+                ),
+                renderer_port=int(
+                    os.environ.get(
+                        f"PT_AGENT_V2_EVALUATION_{actor.upper()}_RENDERER_PORT",
+                        defaults[actor][1],
+                    )
+                ),
+                webdriver_port=int(
+                    os.environ.get(
+                        f"PT_AGENT_V2_EVALUATION_{actor.upper()}_WEBDRIVER_PORT",
+                        defaults[actor][2],
+                    )
+                ),
+                profile=f"agent-v2-evaluation-{actor}-native",
+                storage_root=str(run_root / actor / "storage"),
+            )
+            for actor in ("alice", "bob")
+        )
+        for client in clients:
+            self._assert_client_ports_available(
+                client,
+                resource_prefix=f"{client.actor}-",
+            )
+        self.register_cleanup(
+            f"client-storage:{run_root}",
+            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        )
+        return clients
+
     def _agent_native_client(
         self,
         run_id: str,
@@ -780,6 +857,34 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_resources=self.contract.cleanup.resources,
         )
 
+    def _agent_v2_evaluation_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
+            raise BlockedError(
+                reason=(
+                    "Agent V2 Evaluation Development requires "
+                    "CHAT_NATIVE_DEMO_PASSWORD in Profile two"
+                ),
+                resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            )
+        return dataclasses.replace(
+            manifest,
+            credential_refs=("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+            clients=self._agent_v2_evaluation_clients(
+                manifest.run_id,
+                slot,
+                profile_env,
+            ),
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
     def _agent_native_manifest(
         self,
         manifest: RuntimeManifest,
@@ -858,6 +963,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 AGENT_V2_GOVERNED_TOOL_GATE,
                 AGENT_V2_MCP_GATE,
                 AGENT_V2_CONNECTOR_GATE,
+                AGENT_V2_EVALUATION_GATE,
             }
             else AGENT_V2_PROFILE
         )
@@ -898,6 +1004,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_GOVERNED_TOOL_GATE,
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_CONNECTOR_GATE,
+                    AGENT_V2_EVALUATION_GATE,
                 }
                 or gate_id in AGENT_NATIVE_GATES
             ):
@@ -1013,6 +1120,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_BINDING_GATE,
                     AGENT_V2_GOVERNED_TOOL_GATE,
                     AGENT_V2_MCP_GATE,
+                    AGENT_V2_EVALUATION_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -1081,6 +1189,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 return self._ready(manifest)
             if gate_id == AGENT_V2_CONNECTOR_GATE:
                 manifest = self._agent_v2_connector_manifest(
+                    manifest,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_EVALUATION_GATE:
+                manifest = self._agent_v2_evaluation_manifest(
                     manifest,
                     station_url=station_url,
                     deployment_environment=deployment_environment,

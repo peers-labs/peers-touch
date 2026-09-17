@@ -1,4 +1,6 @@
-import { create } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
+import type { Message as ProtoMessage } from '@bufbuild/protobuf';
+import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus, eventDebugBuffer } from '../../kernel/events';
@@ -14,6 +16,7 @@ import {
   isAgentCapabilityReady,
   projectAgentTurnOutcomeErrorPayload,
   projectAgentTypedErrorPayload,
+  invokeRustProto,
   streamAgentTurn,
   streamAgentTurnReplay,
   submitAgentFeedback,
@@ -38,6 +41,7 @@ import { terminalReasonFromStreamData } from '../../store/streaming/handler';
 import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
+import { evaluationRevisionMutationKey } from '../../store/evaluation/commands';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import { useAgentConnectorStore } from '../../store/agentConnectors';
 import { useMCPStore } from '../../store/mcp';
@@ -61,6 +65,46 @@ import {
   type CapabilityManifest,
   type ConnectorResourceManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
+import {
+  CancelEvaluationRunRequestSchema,
+  CancelEvaluationRunResponseSchema,
+  CreateEvaluationBenchmarkRequestSchema,
+  CreateEvaluationBenchmarkResponseSchema,
+  CreateEvaluationDatasetRequestSchema,
+  CreateEvaluationDatasetResponseSchema,
+  CreateEvaluationRunRequestSchema,
+  CreateEvaluationRunResponseSchema,
+  CreateEvaluationTestCaseRequestSchema,
+  CreateEvaluationTestCaseResponseSchema,
+  DeleteEvaluationBenchmarkRequestSchema,
+  DeleteEvaluationBenchmarkResponseSchema,
+  DeleteEvaluationDatasetRequestSchema,
+  DeleteEvaluationDatasetResponseSchema,
+  DeleteEvaluationRunRequestSchema,
+  DeleteEvaluationRunResponseSchema,
+  DeleteEvaluationTestCaseRequestSchema,
+  DeleteEvaluationTestCaseResponseSchema,
+  EvaluationAttemptStatus,
+  EvaluationRunStatus,
+  GetEvaluationRunRequestSchema,
+  GetEvaluationRunResponseSchema,
+  ListEvaluationBenchmarksRequestSchema,
+  ListEvaluationBenchmarksResponseSchema,
+  ListEvaluationDatasetsRequestSchema,
+  ListEvaluationDatasetsResponseSchema,
+  ListEvaluationRunEventsRequestSchema,
+  ListEvaluationRunEventsResponseSchema,
+  ListEvaluationRunsRequestSchema,
+  ListEvaluationRunsResponseSchema,
+  ListEvaluationTestCasesRequestSchema,
+  ListEvaluationTestCasesResponseSchema,
+  RetryEvaluationCasesRequestSchema,
+  RetryEvaluationCasesResponseSchema,
+  StartEvaluationRunRequestSchema,
+  StartEvaluationRunResponseSchema,
+  type EvaluationCaseAttempt,
+  type EvaluationRun,
+} from '../../gen/proto/domain/agent/evaluation_pb';
 import { registerAcceptanceHarness } from '../registry';
 import {
   assertFoundationCapabilityFixtureCleanupState,
@@ -2031,6 +2075,41 @@ interface ConnectorInvocationDevelopmentInput {
   sampleId: string;
   providerBaseUrl: string;
   connectorId: string;
+}
+
+type EvaluationDevelopmentPhase =
+  | 'prepare'
+  | 'recover'
+  | 'isolate'
+  | 'cleanup';
+
+interface EvaluationDevelopmentState {
+  ownerActorId: string;
+  agentId: string;
+  agentName: string;
+  agentRevision: number;
+  providerId: string;
+  modelId: string;
+  benchmarkId: string;
+  benchmarkRevision: string;
+  datasetId: string;
+  datasetRevision: string;
+  cases: Array<{
+    caseId: string;
+    revision: string;
+  }>;
+  primaryRunId: string;
+  cancelledRunId: string;
+  childRunId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}
+
+interface EvaluationDevelopmentInput {
+  phase: EvaluationDevelopmentPhase;
+  sampleId: string;
+  providerBaseUrl?: string;
+  state?: EvaluationDevelopmentState;
 }
 
 function toolStatusName(value: unknown): string {
@@ -22772,6 +22851,1275 @@ async function runConnectorInvocationDevelopmentJourney(
   }) as Record<string, unknown>;
 }
 
+const EVALUATION_SELECTORS = {
+  page: '[data-pt-evaluation-page]',
+  runsTab: '[data-pt-evaluation-tab="runs"]',
+  createRun: '[data-pt-evaluation-create-run]',
+  targetAgent: '[data-pt-evaluation-target-agent]',
+  dataset: '[data-pt-evaluation-dataset]',
+  createRunSubmit: '[data-pt-evaluation-create-run-submit]',
+  backToRuns: '[data-pt-evaluation-back-to-runs]',
+} as const;
+
+const EVALUATION_COMMANDS = {
+  createBenchmark: 'agent_evaluation_benchmark_create',
+  listBenchmarks: 'agent_evaluation_benchmark_list',
+  deleteBenchmark: 'agent_evaluation_benchmark_delete',
+  createDataset: 'agent_evaluation_dataset_create',
+  listDatasets: 'agent_evaluation_dataset_list',
+  deleteDataset: 'agent_evaluation_dataset_delete',
+  createTestCase: 'agent_evaluation_case_create',
+  listTestCases: 'agent_evaluation_case_list',
+  deleteTestCase: 'agent_evaluation_case_delete',
+  createRun: 'agent_evaluation_run_create',
+  startRun: 'agent_evaluation_run_start',
+  cancelRun: 'agent_evaluation_run_cancel',
+  retryCases: 'agent_evaluation_run_retry',
+  getRun: 'agent_evaluation_run_get',
+  listRuns: 'agent_evaluation_run_list',
+  listRunEvents: 'agent_evaluation_run_events_list',
+  deleteRun: 'agent_evaluation_run_delete',
+} as const;
+
+async function invokeEvaluationProto<
+  TRequest extends ProtoMessage,
+  TResponse extends ProtoMessage,
+>(
+  command: string,
+  requestSchema: GenMessage<TRequest>,
+  responseSchema: GenMessage<TResponse>,
+  request: TRequest,
+): Promise<TResponse> {
+  return invokeRustProto(
+    command,
+    responseSchema,
+    { requestBytes: Array.from(toBinary(requestSchema, request)) },
+  );
+}
+
+async function listEvaluationBenchmarks() {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listBenchmarks,
+    ListEvaluationBenchmarksRequestSchema,
+    ListEvaluationBenchmarksResponseSchema,
+    create(ListEvaluationBenchmarksRequestSchema),
+  );
+}
+
+async function listEvaluationDatasets(benchmarkId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listDatasets,
+    ListEvaluationDatasetsRequestSchema,
+    ListEvaluationDatasetsResponseSchema,
+    create(ListEvaluationDatasetsRequestSchema, { benchmarkId }),
+  );
+}
+
+async function listEvaluationTestCases(datasetId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listTestCases,
+    ListEvaluationTestCasesRequestSchema,
+    ListEvaluationTestCasesResponseSchema,
+    create(ListEvaluationTestCasesRequestSchema, { datasetId }),
+  );
+}
+
+async function listEvaluationRuns(parentRunId?: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listRuns,
+    ListEvaluationRunsRequestSchema,
+    ListEvaluationRunsResponseSchema,
+    create(ListEvaluationRunsRequestSchema, {
+      parentRunId,
+      page: 1,
+      pageSize: 100,
+    }),
+  );
+}
+
+async function getEvaluationRun(runId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.getRun,
+    GetEvaluationRunRequestSchema,
+    GetEvaluationRunResponseSchema,
+    create(GetEvaluationRunRequestSchema, { runId }),
+  );
+}
+
+async function listEvaluationRunEvents(runId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listRunEvents,
+    ListEvaluationRunEventsRequestSchema,
+    ListEvaluationRunEventsResponseSchema,
+    create(ListEvaluationRunEventsRequestSchema, {
+      runId,
+      afterSequence: 0n,
+    }),
+  );
+}
+
+function evaluationRunIsTerminal(run: EvaluationRun): boolean {
+  return new Set([
+    EvaluationRunStatus.COMPLETED,
+    EvaluationRunStatus.PARTIAL,
+    EvaluationRunStatus.FAILED,
+    EvaluationRunStatus.CANCELLED,
+  ]).has(run.status);
+}
+
+function evaluationAttemptStatusName(
+  status: EvaluationAttemptStatus,
+): string {
+  switch (status) {
+    case EvaluationAttemptStatus.PENDING:
+      return 'pending';
+    case EvaluationAttemptStatus.RUNNING:
+      return 'running';
+    case EvaluationAttemptStatus.COMPLETED:
+      return 'completed';
+    case EvaluationAttemptStatus.FAILED:
+      return 'failed';
+    case EvaluationAttemptStatus.CANCELLED:
+      return 'cancelled';
+    case EvaluationAttemptStatus.INTERRUPTED:
+      return 'interrupted';
+    default:
+      return 'unspecified';
+  }
+}
+
+async function waitForEvaluationRun(
+  runId: string,
+  predicate: (run: EvaluationRun) => boolean,
+  description: string,
+  timeoutMs = 300_000,
+) {
+  const startedAt = Date.now();
+  let latest = await getEvaluationRun(runId);
+  while (Date.now() - startedAt < timeoutMs) {
+    if (latest.run && predicate(latest.run)) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    latest = await getEvaluationRun(runId);
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function navigateToEvaluationLab(): Promise<HTMLElement> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'evaluation' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.page)
+        ?.getClientRects().length,
+    ),
+    'Evaluation Lab native surface',
+    30_000,
+  );
+  const page = document.querySelector<HTMLElement>(EVALUATION_SELECTORS.page);
+  if (!page) throw new Error('agent.acceptance.evaluationPageMissing');
+  return page;
+}
+
+async function openEvaluationRunsTab(): Promise<void> {
+  await navigateToEvaluationLab();
+  const createRun = document.querySelector<HTMLElement>(
+    EVALUATION_SELECTORS.createRun,
+  );
+  if (!createRun?.getClientRects().length) {
+    clickEvaluationControl(EVALUATION_SELECTORS.runsTab);
+  }
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.createRun)
+        ?.getClientRects().length,
+    ),
+    'Evaluation runs view',
+    10_000,
+  );
+}
+
+async function closeEvaluationRunDetail(): Promise<void> {
+  clickEvaluationControl(EVALUATION_SELECTORS.backToRuns);
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.createRun)
+        ?.getClientRects().length,
+    ),
+    'Evaluation run list',
+    10_000,
+  );
+}
+
+async function selectEvaluationOption(
+  selector: string,
+  label: string,
+): Promise<void> {
+  const control = document.querySelector<HTMLElement>(selector);
+  if (!control || !control.getClientRects().length) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  control.click();
+  const optionSelector = '[role="option"],.ant-select-item-option';
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>(optionSelector),
+    ).some((option) =>
+      option.getClientRects().length > 0
+      && option.textContent?.trim() === label),
+    `Evaluation option ${label}`,
+    10_000,
+  );
+  const option = Array.from(
+    document.querySelectorAll<HTMLElement>(optionSelector),
+  ).find((candidate) =>
+    candidate.getClientRects().length > 0
+    && candidate.textContent?.trim() === label);
+  if (!option) {
+    throw new Error(`agent.acceptance.evaluationOptionMissing:${label}`);
+  }
+  option.click();
+}
+
+function clickEvaluationControl(selector: string): void {
+  const control = document.querySelector<HTMLButtonElement>(selector);
+  if (!control || !control.getClientRects().length || control.disabled) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  control.click();
+}
+
+async function createEvaluationRunThroughUi(input: {
+  agentId: string;
+  agentLabel: string;
+  datasetId: string;
+  datasetLabel: string;
+}): Promise<EvaluationRun> {
+  const before = new Set(
+    (await listEvaluationRuns()).runs.map((run) => run.runId),
+  );
+  clickEvaluationControl(EVALUATION_SELECTORS.createRun);
+  await selectEvaluationOption(
+    EVALUATION_SELECTORS.dataset,
+    input.datasetLabel,
+  );
+  await selectEvaluationOption(
+    EVALUATION_SELECTORS.targetAgent,
+    input.agentLabel,
+  );
+  clickEvaluationControl(EVALUATION_SELECTORS.createRunSubmit);
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    const created = (await listEvaluationRuns()).runs.find(
+      (run) =>
+        !before.has(run.runId)
+        && run.targetAgentId === input.agentId
+        && run.datasetId === input.datasetId,
+    );
+    if (created) {
+      await waitFor(
+        () => Boolean(
+          document.querySelector<HTMLElement>(
+            `[data-pt-evaluation-run-detail="${created.runId}"]`,
+          )?.getClientRects().length,
+        ),
+        `Evaluation run detail ${created.runId}`,
+        30_000,
+      );
+      return created;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error('agent.acceptance.evaluationUiCreateTimedOut');
+}
+
+async function startEvaluationRunThroughUi(run: EvaluationRun) {
+  clickEvaluationControl(
+    `[data-pt-evaluation-start-run="${run.runId}"]`,
+  );
+  return waitForEvaluationRun(
+    run.runId,
+    (candidate) =>
+      candidate.status !== EvaluationRunStatus.DRAFT
+      && candidate.status !== EvaluationRunStatus.PENDING
+      && candidate.revision > run.revision,
+    `Evaluation run ${run.runId} start`,
+  );
+}
+
+async function cancelEvaluationRunThroughUi(run: EvaluationRun) {
+  clickEvaluationControl(
+    `[data-pt-evaluation-cancel-run="${run.runId}"]`,
+  );
+  return waitForEvaluationRun(
+    run.runId,
+    evaluationRunIsTerminal,
+    `Evaluation run ${run.runId} cancellation`,
+  );
+}
+
+function evaluationAttemptEvidence(attempt: EvaluationCaseAttempt) {
+  return {
+    attemptId: attempt.attemptId,
+    runId: attempt.runId,
+    caseId: attempt.caseId,
+    attempt: attempt.attempt,
+    idempotencyKey: attempt.idempotencyKey,
+    sourceAttemptId: attempt.sourceAttemptId ?? '',
+    sourceResultId: attempt.sourceResultId ?? '',
+    turnId: attempt.turnId,
+    status: evaluationAttemptStatusName(attempt.status),
+    schedulerClaim: attempt.schedulerClaim,
+    cancellationAcknowledged: Boolean(attempt.cancellationAckAt),
+    terminal: Boolean(attempt.terminalAt),
+  };
+}
+
+async function cleanupEvaluationDevelopmentState(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  let retentionConflictObserved = false;
+  const deleted = {
+    childRun: !state.childRunId,
+    primaryRun: !state.primaryRunId,
+    cancelledRun: !state.cancelledRunId,
+    cases: 0,
+    dataset: !state.datasetId,
+    benchmark: !state.benchmarkId,
+    agent: !state.agentId,
+    model: !state.modelId,
+    provider: !state.providerId,
+  };
+
+  if (state.primaryRunId && state.childRunId) {
+    try {
+      const parent = await getEvaluationRun(state.primaryRunId);
+      if (!parent.run) throw new Error('parent readback missing');
+      await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteRun,
+        DeleteEvaluationRunRequestSchema,
+        DeleteEvaluationRunResponseSchema,
+        create(DeleteEvaluationRunRequestSchema, {
+          runId: state.primaryRunId,
+          expectedRevision: parent.run.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+    } catch (error) {
+      retentionConflictObserved = /RETENTION_CONFLICT/.test(
+        observedErrorCode(error),
+      );
+      if (!retentionConflictObserved) {
+        failures.push(`retention:${observedErrorCode(error)}`);
+      }
+    }
+  }
+
+  for (const [key, runId] of [
+    ['childRun', state.childRunId],
+    ['cancelledRun', state.cancelledRunId],
+    ['primaryRun', state.primaryRunId],
+  ] as const) {
+    if (!runId) continue;
+    try {
+      const readback = await getEvaluationRun(runId);
+      if (!readback.run) throw new Error('run readback missing');
+      const response = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteRun,
+        DeleteEvaluationRunRequestSchema,
+        DeleteEvaluationRunResponseSchema,
+        create(DeleteEvaluationRunRequestSchema, {
+          runId,
+          expectedRevision: readback.run.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+      deleted[key] = response.deleted;
+    } catch (error) {
+      failures.push(`${key}:${observedErrorCode(error)}`);
+    }
+  }
+
+  for (const testCase of [...state.cases].reverse()) {
+    try {
+      const current = (await listEvaluationTestCases(state.datasetId))
+        .testCases.find((candidate) => candidate.caseId === testCase.caseId);
+      if (!current) {
+        deleted.cases += 1;
+        continue;
+      }
+      const response = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteTestCase,
+        DeleteEvaluationTestCaseRequestSchema,
+        DeleteEvaluationTestCaseResponseSchema,
+        create(DeleteEvaluationTestCaseRequestSchema, {
+          caseId: current.caseId,
+          expectedRevision: current.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+      if (response.deleted) deleted.cases += 1;
+    } catch (error) {
+      failures.push(`case:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.datasetId) {
+    try {
+      const dataset = (await listEvaluationDatasets(state.benchmarkId))
+        .datasets.find((candidate) => candidate.datasetId === state.datasetId);
+      if (dataset) {
+        const response = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteDataset,
+          DeleteEvaluationDatasetRequestSchema,
+          DeleteEvaluationDatasetResponseSchema,
+          create(DeleteEvaluationDatasetRequestSchema, {
+            datasetId: dataset.datasetId,
+            expectedRevision: dataset.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        deleted.dataset = response.deleted;
+      } else {
+        deleted.dataset = true;
+      }
+    } catch (error) {
+      failures.push(`dataset:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.benchmarkId) {
+    try {
+      const benchmark = (await listEvaluationBenchmarks()).benchmarks.find(
+        (candidate) => candidate.benchmarkId === state.benchmarkId,
+      );
+      if (benchmark) {
+        const response = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteBenchmark,
+          DeleteEvaluationBenchmarkRequestSchema,
+          DeleteEvaluationBenchmarkResponseSchema,
+          create(DeleteEvaluationBenchmarkRequestSchema, {
+            benchmarkId: benchmark.benchmarkId,
+            expectedRevision: benchmark.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        deleted.benchmark = response.deleted;
+      } else {
+        deleted.benchmark = true;
+      }
+    } catch (error) {
+      failures.push(`benchmark:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.agentId) {
+    try {
+      await api.deleteAgent(state.agentId);
+      await useAgentStore.getState().loadAgents();
+      deleted.agent = true;
+    } catch (error) {
+      failures.push(`agent:${observedErrorCode(error)}`);
+    }
+  }
+  if (state.providerId && state.modelId) {
+    try {
+      await api.deleteModel(state.providerId, state.modelId);
+      deleted.model = true;
+    } catch (error) {
+      failures.push(`model:${observedErrorCode(error)}`);
+    }
+    try {
+      await api.deleteProvider(state.providerId);
+      deleted.provider = true;
+    } catch (error) {
+      failures.push(`provider:${observedErrorCode(error)}`);
+    }
+  }
+  if (state.priorSelection) {
+    useAgentStore.getState().setSelectedAgent(state.priorSelection);
+    useAgentStore.getState().setAgentSurface(
+      state.priorSelection,
+      state.priorSurface,
+    );
+    await api.setSelectedAgent(state.priorSelection).catch((error) => {
+      failures.push(`selection:${observedErrorCode(error)}`);
+    });
+  }
+
+  const resourceDeletionComplete =
+    deleted.childRun
+    && deleted.primaryRun
+    && deleted.cancelledRun
+    && deleted.cases === state.cases.length
+    && deleted.dataset
+    && deleted.benchmark
+    && deleted.agent
+    && deleted.model
+    && deleted.provider;
+  return {
+    status: (
+      failures.length === 0
+      && retentionConflictObserved
+      && resourceDeletionComplete
+        ? 'clean'
+        : 'failed'
+    ),
+    retentionConflictObserved,
+    resourceDeletionComplete,
+    deleted,
+    failures,
+  };
+}
+
+async function prepareEvaluationDevelopmentJourney(
+  input: EvaluationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  if (!input.providerBaseUrl) {
+    throw new Error('agent.acceptance.evaluationProviderUrlMissing');
+  }
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.evaluationProviderUrlInvalid');
+  }
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId) throw new Error('agent.acceptance.evaluationActorMissing');
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const state: EvaluationDevelopmentState = {
+    ownerActorId: actorId,
+    agentId: '',
+    agentName: '',
+    agentRevision: 0,
+    providerId: '',
+    modelId: '',
+    benchmarkId: '',
+    benchmarkRevision: '0',
+    datasetId: '',
+    datasetRevision: '0',
+    cases: [],
+    primaryRunId: '',
+    cancelledRunId: '',
+    childRunId: '',
+    priorSelection,
+    priorSurface,
+  };
+
+  try {
+    const runtimeFixture = await createGovernedToolRuntimeFixture(
+      'evaluation',
+      providerUrl.toString(),
+    );
+    state.providerId = runtimeFixture.providerId;
+    state.modelId = runtimeFixture.modelId;
+    const agent = await agentStore.createAgent({
+      name: `evaluation-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Evaluation ${input.sampleId}`,
+      description: 'V2-J06 Evaluation Lab Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    state.agentId = agent.id || agent.name;
+    state.agentName = agent.name;
+    state.agentRevision = agent.version;
+    await api.setSelectedAgent(agent.name);
+    useAgentStore.getState().setSelectedAgent(agent.name);
+    useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: state.agentId,
+      client_capability_session_id: capabilitySession.capabilitySessionId,
+    });
+    if (!readiness.snapshot_id) {
+      throw new Error('agent.acceptance.evaluationReadinessMissing');
+    }
+
+    const benchmarkKey = crypto.randomUUID();
+    const benchmarkRequest = create(
+      CreateEvaluationBenchmarkRequestSchema,
+      {
+        name: `V2-J06 ${input.sampleId}`,
+        rubric: 'case_insensitive_contains',
+        idempotencyKey: benchmarkKey,
+      },
+    );
+    const benchmarkCreated = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createBenchmark,
+      CreateEvaluationBenchmarkRequestSchema,
+      CreateEvaluationBenchmarkResponseSchema,
+      benchmarkRequest,
+    );
+    const benchmarkReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createBenchmark,
+      CreateEvaluationBenchmarkRequestSchema,
+      CreateEvaluationBenchmarkResponseSchema,
+      benchmarkRequest,
+    );
+    if (!benchmarkCreated.benchmark || !benchmarkReplay.benchmark) {
+      throw new Error('agent.acceptance.evaluationBenchmarkMissing');
+    }
+    state.benchmarkId = benchmarkCreated.benchmark.benchmarkId;
+    state.benchmarkRevision =
+      benchmarkCreated.benchmark.revision.toString();
+
+    const datasetKey = crypto.randomUUID();
+    const datasetRequest = create(CreateEvaluationDatasetRequestSchema, {
+      benchmarkId: state.benchmarkId,
+      name: `V2-J06 dataset ${input.sampleId}`,
+      description: 'Deterministic pass, fail, and cancellation cases.',
+      expectedBenchmarkRevision: benchmarkCreated.benchmark.revision,
+      idempotencyKey: datasetKey,
+    });
+    const datasetCreated = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createDataset,
+      CreateEvaluationDatasetRequestSchema,
+      CreateEvaluationDatasetResponseSchema,
+      datasetRequest,
+    );
+    const datasetReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createDataset,
+      CreateEvaluationDatasetRequestSchema,
+      CreateEvaluationDatasetResponseSchema,
+      datasetRequest,
+    );
+    if (!datasetCreated.dataset || !datasetReplay.dataset) {
+      throw new Error('agent.acceptance.evaluationDatasetMissing');
+    }
+    state.datasetId = datasetCreated.dataset.datasetId;
+    state.datasetRevision = datasetCreated.dataset.revision.toString();
+
+    const caseDefinitions = [
+      {
+        input: `J06_PASS_CASE ${input.sampleId}`,
+        expected: 'J06_OK',
+        tags: ['j06', 'pass'],
+      },
+      {
+        input: `J06_FAIL_ONCE_CASE ${input.sampleId}`,
+        expected: 'J06_RETRY_OK',
+        tags: ['j06', 'failed-case'],
+      },
+      {
+        input: `J06_CANCEL_CASE ${input.sampleId}`,
+        expected: 'J06_CANCELLED',
+        tags: ['j06', 'cancel'],
+      },
+    ];
+    const caseReplayMatches: boolean[] = [];
+    for (const definition of caseDefinitions) {
+      const dataset = (await listEvaluationDatasets(state.benchmarkId))
+        .datasets.find((candidate) => candidate.datasetId === state.datasetId);
+      if (!dataset) {
+        throw new Error('agent.acceptance.evaluationDatasetReadbackMissing');
+      }
+      state.datasetRevision = dataset.revision.toString();
+      const request = create(CreateEvaluationTestCaseRequestSchema, {
+        datasetId: state.datasetId,
+        input: definition.input,
+        expected: definition.expected,
+        expectedDatasetRevision: dataset.revision,
+        idempotencyKey: crypto.randomUUID(),
+        tags: definition.tags,
+      });
+      const created = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.createTestCase,
+        CreateEvaluationTestCaseRequestSchema,
+        CreateEvaluationTestCaseResponseSchema,
+        request,
+      );
+      const replayed = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.createTestCase,
+        CreateEvaluationTestCaseRequestSchema,
+        CreateEvaluationTestCaseResponseSchema,
+        request,
+      );
+      if (!created.testCase || !replayed.testCase) {
+        throw new Error('agent.acceptance.evaluationCaseMissing');
+      }
+      state.cases.push({
+        caseId: created.testCase.caseId,
+        revision: created.testCase.revision.toString(),
+      });
+      caseReplayMatches.push(
+        created.testCase.caseId === replayed.testCase.caseId,
+      );
+    }
+    const authoritativeDataset = (
+      await listEvaluationDatasets(state.benchmarkId)
+    ).datasets.find((candidate) => candidate.datasetId === state.datasetId);
+    if (!authoritativeDataset) {
+      throw new Error('agent.acceptance.evaluationDatasetReadbackMissing');
+    }
+    state.datasetRevision = authoritativeDataset.revision.toString();
+
+    await openEvaluationRunsTab();
+    const primaryDraft = await createEvaluationRunThroughUi({
+      agentId: state.agentId,
+      agentLabel: agent.title || agent.name,
+      datasetId: state.datasetId,
+      datasetLabel: authoritativeDataset.name,
+    });
+    state.primaryRunId = primaryDraft.runId;
+    const primaryCreateReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createRun,
+      CreateEvaluationRunRequestSchema,
+      CreateEvaluationRunResponseSchema,
+      create(CreateEvaluationRunRequestSchema, {
+        datasetId: primaryDraft.datasetId,
+        datasetRevision: primaryDraft.datasetRevision,
+        readinessSnapshotId: primaryDraft.readinessSnapshotId,
+        idempotencyKey: primaryDraft.idempotencyKey,
+        targetAgentId: primaryDraft.targetAgentId,
+        expectedAgentRevision: primaryDraft.targetAgentRevision,
+        runtimeProfileId:
+          primaryDraft.targetAgentSnapshot?.runtimeProfileId || undefined,
+        modelId: primaryDraft.targetAgentSnapshot?.modelId || undefined,
+      }),
+    );
+    const primaryStarted = await startEvaluationRunThroughUi(primaryDraft);
+    if (!primaryStarted.run) {
+      throw new Error('agent.acceptance.evaluationStartReadbackMissing');
+    }
+    const primaryStartReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.startRun,
+      StartEvaluationRunRequestSchema,
+      StartEvaluationRunResponseSchema,
+      create(StartEvaluationRunRequestSchema, {
+        runId: primaryDraft.runId,
+        expectedRevision: primaryDraft.revision,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:start',
+          primaryDraft.runId,
+          primaryDraft.revision,
+        ),
+      }),
+    );
+    const primaryTerminal = await waitForEvaluationRun(
+      primaryDraft.runId,
+      evaluationRunIsTerminal,
+      `Evaluation primary run ${primaryDraft.runId}`,
+    );
+    if (!primaryTerminal.run) {
+      throw new Error('agent.acceptance.evaluationPrimaryRunMissing');
+    }
+    const failedAttempts = primaryTerminal.attempts.filter(
+      (attempt) => attempt.status === EvaluationAttemptStatus.FAILED,
+    );
+    const failedCaseIds = [...new Set(
+      failedAttempts.map((attempt) => attempt.caseId),
+    )];
+    if (failedCaseIds.length === 0) {
+      throw new Error('agent.acceptance.evaluationFailedCaseMissing');
+    }
+    const firstResult = primaryTerminal.results[0];
+    if (!firstResult) {
+      throw new Error('agent.acceptance.evaluationResultMissing');
+    }
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-evaluation-result="${firstResult.resultId}"]`,
+        )?.getClientRects().length,
+      ),
+      'Evaluation result detail',
+      30_000,
+    );
+
+    clickEvaluationControl(
+      `[data-pt-evaluation-retry-run="${primaryDraft.runId}"]`,
+    );
+    const childStartedAt = Date.now();
+    let childRun: EvaluationRun | undefined;
+    while (Date.now() - childStartedAt < 30_000) {
+      childRun = (await listEvaluationRuns(primaryDraft.runId)).runs.find(
+        (candidate) => candidate.parentRunId === primaryDraft.runId,
+      );
+      if (childRun) break;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (!childRun) {
+      throw new Error('agent.acceptance.evaluationRetryChildMissing');
+    }
+    state.childRunId = childRun.runId;
+    const retryReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.retryCases,
+      RetryEvaluationCasesRequestSchema,
+      RetryEvaluationCasesResponseSchema,
+      create(RetryEvaluationCasesRequestSchema, {
+        parentRunId: primaryDraft.runId,
+        caseIds: failedCaseIds,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:retry',
+          primaryDraft.runId,
+          primaryTerminal.run.revision,
+          failedCaseIds,
+        ),
+        expectedParentRevision: primaryTerminal.run.revision,
+      }),
+    );
+    if (
+      childRun.status === EvaluationRunStatus.DRAFT
+      || childRun.status === EvaluationRunStatus.PENDING
+    ) {
+      const childStarted = await startEvaluationRunThroughUi(childRun);
+      if (!childStarted.run) {
+        throw new Error('agent.acceptance.evaluationChildStartMissing');
+      }
+    }
+    const childTerminal = await waitForEvaluationRun(
+      childRun.runId,
+      evaluationRunIsTerminal,
+      `Evaluation child run ${childRun.runId}`,
+    );
+    if (!childTerminal.run) {
+      throw new Error('agent.acceptance.evaluationChildRunMissing');
+    }
+    const [parentAfterRetry, retryChildren] = await Promise.all([
+      getEvaluationRun(primaryDraft.runId),
+      listEvaluationRuns(primaryDraft.runId),
+    ]);
+    if (!parentAfterRetry.run) {
+      throw new Error('agent.acceptance.evaluationParentAfterRetryMissing');
+    }
+
+    await closeEvaluationRunDetail();
+    const cancelDraft = await createEvaluationRunThroughUi({
+      agentId: state.agentId,
+      agentLabel: agent.title || agent.name,
+      datasetId: state.datasetId,
+      datasetLabel: authoritativeDataset.name,
+    });
+    const cancelCreateReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createRun,
+      CreateEvaluationRunRequestSchema,
+      CreateEvaluationRunResponseSchema,
+      create(CreateEvaluationRunRequestSchema, {
+        datasetId: cancelDraft.datasetId,
+        datasetRevision: cancelDraft.datasetRevision,
+        readinessSnapshotId: cancelDraft.readinessSnapshotId,
+        idempotencyKey: cancelDraft.idempotencyKey,
+        targetAgentId: cancelDraft.targetAgentId,
+        expectedAgentRevision: cancelDraft.targetAgentRevision,
+        runtimeProfileId:
+          cancelDraft.targetAgentSnapshot?.runtimeProfileId || undefined,
+        modelId: cancelDraft.targetAgentSnapshot?.modelId || undefined,
+      }),
+    );
+    state.cancelledRunId = cancelDraft.runId;
+    const cancelStarted = await startEvaluationRunThroughUi(cancelDraft);
+    if (!cancelStarted.run) {
+      throw new Error('agent.acceptance.evaluationCancelStartMissing');
+    }
+    const cancelStartRevision = cancelDraft.revision;
+    const cancelRunningRevision = cancelStarted.run.revision;
+    const cancelledTerminal = await cancelEvaluationRunThroughUi(
+      cancelStarted.run,
+    );
+    if (!cancelledTerminal.run) {
+      throw new Error('agent.acceptance.evaluationCancelReadbackMissing');
+    }
+    const cancelStartReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.startRun,
+      StartEvaluationRunRequestSchema,
+      StartEvaluationRunResponseSchema,
+      create(StartEvaluationRunRequestSchema, {
+        runId: cancelDraft.runId,
+        expectedRevision: cancelStartRevision,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:start',
+          cancelDraft.runId,
+          cancelStartRevision,
+        ),
+      }),
+    );
+    const cancelReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.cancelRun,
+      CancelEvaluationRunRequestSchema,
+      CancelEvaluationRunResponseSchema,
+      create(CancelEvaluationRunRequestSchema, {
+        runId: cancelDraft.runId,
+        expectedRevision: cancelRunningRevision,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:cancel',
+          cancelDraft.runId,
+          cancelRunningRevision,
+        ),
+      }),
+    );
+
+    const primaryEvents = await listEvaluationRunEvents(primaryDraft.runId);
+    const cancelledEvents = await listEvaluationRunEvents(cancelDraft.runId);
+    const childEvents = await listEvaluationRunEvents(childRun.runId);
+    const allAttempts = [
+      ...primaryTerminal.attempts,
+      ...cancelledTerminal.attempts,
+      ...childTerminal.attempts,
+    ];
+    const attemptIds = allAttempts.map((attempt) => attempt.attemptId);
+    const schedulerClaims = allAttempts.map(
+      (attempt) => attempt.schedulerClaim,
+    );
+    const childSources = childTerminal.attempts.map((attempt) => ({
+      ...evaluationAttemptEvidence(attempt),
+      sourceResultPresent: Boolean(attempt.sourceResultId),
+    }));
+    const cancelledAttempts = cancelledTerminal.attempts.filter(
+      (attempt) =>
+        attempt.status === EvaluationAttemptStatus.CANCELLED
+        || attempt.status === EvaluationAttemptStatus.INTERRUPTED,
+    );
+    const lineage = [
+      ...primaryTerminal.results,
+      ...cancelledTerminal.results,
+      ...childTerminal.results,
+    ].map((result) => ({
+      runId: result.runId,
+      caseId: result.caseId,
+      attemptId: result.attemptId,
+      resultId: result.resultId,
+      turnTraceId: result.turnTraceId,
+      latencyMs: result.latencyMs.toString(),
+    }));
+    const resultCount =
+      primaryTerminal.results.length
+      + cancelledTerminal.results.length
+      + childTerminal.results.length;
+    const assertions = {
+      exactActorOwned:
+        primaryTerminal.run.ptid === actorId
+        && primaryTerminal.run.targetAgentId === state.agentId
+        && benchmarkCreated.benchmark.ptid === actorId
+        && authoritativeDataset.ptid === actorId,
+      fixtureCreateIdempotent:
+        benchmarkReplay.benchmark.benchmarkId === state.benchmarkId
+        && datasetReplay.dataset.datasetId === state.datasetId
+        && caseReplayMatches.every(Boolean),
+      nativeCreateStartResultVisible: Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-evaluation-result="${firstResult.resultId}"]`,
+        )?.getClientRects().length,
+      ),
+      runMutationIdempotent:
+        primaryCreateReplay.run?.runId === primaryDraft.runId
+        && primaryStartReplay.run?.runId === primaryDraft.runId
+        && cancelCreateReplay.run?.runId === cancelDraft.runId
+        && cancelStartReplay.run?.runId === cancelDraft.runId
+        && cancelReplay.run?.runId === cancelDraft.runId,
+      schedulerUnique:
+        attemptIds.length === new Set(attemptIds).size
+        && schedulerClaims.every(Boolean)
+        && schedulerClaims.length === new Set(schedulerClaims).size,
+      cancellationAcknowledged:
+        cancelledAttempts.length > 0
+        && cancelledAttempts.every((attempt) =>
+          Boolean(attempt.cancellationAckAt)),
+      cancellationTerminal:
+        cancelledTerminal.run.status === EvaluationRunStatus.PARTIAL
+        || cancelledTerminal.run.status === EvaluationRunStatus.CANCELLED,
+      retryChildUnique:
+        childRun.runId !== primaryDraft.runId
+        && retryReplay.childRun?.runId === childRun.runId
+        && childTerminal.run.parentRunId === primaryDraft.runId
+        && retryChildren.runs.length === 1
+        && retryChildren.runs[0].runId === childRun.runId,
+      retryLineageComplete:
+        childSources.length === failedCaseIds.length
+        && childSources.every((attempt) =>
+          Boolean(
+            attempt.sourceAttemptId
+            && attempt.sourceResultId
+            && attempt.turnId
+            && attempt.sourceResultPresent,
+          )),
+      turnTraceComplete:
+        lineage.length === resultCount
+        && lineage.length > 0
+        && lineage.every((item) =>
+          Boolean(item.turnTraceId && item.attemptId && item.resultId)),
+      parentMetricsImmutable:
+        parentAfterRetry.run.revision === primaryTerminal.run.revision
+        && stableJson(parentAfterRetry.run.metrics)
+          === stableJson(primaryTerminal.run.metrics),
+      eventCursorMonotonic: [
+        primaryEvents,
+        cancelledEvents,
+        childEvents,
+      ].every((batch) =>
+        batch.events.every(
+          (event, index) =>
+            index === 0
+            || event.sequence > batch.events[index - 1].sequence,
+        )),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.evaluationAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    return evidenceValue({
+      state,
+      assertions,
+      'receiver-dom': {
+        labVisible: true,
+        createSubmitted: true,
+        startSubmitted: true,
+        resultVisible: true,
+        cancelSubmitted: true,
+        retrySubmitted: true,
+        primaryRunId: primaryDraft.runId,
+        cancelledRunId: cancelDraft.runId,
+        childRunId: childRun.runId,
+      },
+      'station-readback': {
+        entityKind: 'evaluation-run-lineage',
+        ownerActorId: actorId,
+        benchmark: benchmarkCreated.benchmark,
+        dataset: authoritativeDataset,
+        cases: (await listEvaluationTestCases(state.datasetId)).testCases,
+        primary: primaryTerminal,
+        parentAfterRetry,
+        cancelled: cancelledTerminal,
+        child: childTerminal,
+      },
+      'runtime-events': {
+        primary: primaryEvents,
+        cancelled: cancelledEvents,
+        child: childEvents,
+      },
+      'turn-trace': {
+        lineage,
+        complete: assertions.turnTraceComplete,
+      },
+      'metrics-lineage': {
+        parentRunId: primaryTerminal.run.runId,
+        parentMetrics: primaryTerminal.run.metrics,
+        parentMetricsAfterRetry: parentAfterRetry.run.metrics,
+        childRunId: childTerminal.run.runId,
+        childParentRunId: childTerminal.run.parentRunId,
+        childMetrics: childTerminal.run.metrics,
+        parentRevision: primaryTerminal.run.revision,
+      },
+      'side-effect-count': {
+        attemptCount: attemptIds.length,
+        uniqueAttemptCount: new Set(attemptIds).size,
+        schedulerClaimCount: schedulerClaims.length,
+        uniqueSchedulerClaimCount: new Set(schedulerClaims).size,
+      },
+      replay: {
+        benchmarkId: benchmarkReplay.benchmark.benchmarkId,
+        datasetId: datasetReplay.dataset.datasetId,
+        primaryRunId: primaryCreateReplay.run?.runId ?? '',
+        startedPrimaryRunId: primaryStartReplay.run?.runId ?? '',
+        createdCancelledRunId: cancelCreateReplay.run?.runId ?? '',
+        startedCancelledRunId: cancelStartReplay.run?.runId ?? '',
+        cancelledRunId: cancelReplay.run?.runId ?? '',
+        childRunId: retryReplay.childRun?.runId ?? '',
+      },
+    }) as Record<string, unknown>;
+  } catch (error) {
+    const cleanup = await cleanupEvaluationDevelopmentState(state);
+    throw Object.assign(
+      new Error(`agent.acceptance.evaluationPrepareFailed:${
+        observedErrorCode(error)
+      }`),
+      { cause: error, cleanup },
+    );
+  }
+}
+
+async function recoverEvaluationDevelopmentJourney(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (actorId !== state.ownerActorId) {
+    throw new Error('agent.acceptance.evaluationRecoveryActorMismatch');
+  }
+  await openEvaluationRunsTab();
+  const runIds = [
+    state.primaryRunId,
+    state.cancelledRunId,
+    state.childRunId,
+  ];
+  for (const runId of runIds) {
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-evaluation-run="${runId}"]`,
+        )?.getClientRects().length,
+      ),
+      `restored Evaluation run ${runId}`,
+      30_000,
+    );
+  }
+  const [primary, cancelled, child] = await Promise.all(
+    runIds.map(getEvaluationRun),
+  );
+  const events = await Promise.all(runIds.map(listEvaluationRunEvents));
+  const restored = [primary, cancelled, child].every(
+    (readback, index) =>
+      readback.run?.runId === runIds[index]
+      && evaluationRunIsTerminal(readback.run),
+  );
+  if (!restored) {
+    throw new Error('agent.acceptance.evaluationRestartRestoreMissing');
+  }
+  return evidenceValue({
+    assertions: {
+      actorRestored: actorId === state.ownerActorId,
+      nativeRowsRestored: true,
+      stationTerminalReadbackRestored: restored,
+      eventCursorRestored: events.every((batch) =>
+        batch.latestSequence > 0n),
+    },
+    'receiver-dom': {
+      labVisible: true,
+      restoredRunIds: runIds,
+    },
+    'station-readback': {
+      entityKind: 'evaluation-restart-readback',
+      runs: [primary, cancelled, child],
+    },
+    'runtime-events': {
+      runs: events,
+    },
+  }) as Record<string, unknown>;
+}
+
+async function isolateEvaluationDevelopmentJourney(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId || actorId === state.ownerActorId) {
+    throw new Error('agent.acceptance.evaluationIsolationActorInvalid');
+  }
+  const denied = async (
+    action: () => Promise<unknown>,
+  ): Promise<string> => {
+    try {
+      await action();
+    } catch (error) {
+      const code = observedErrorCode(error);
+      if (/FORBIDDEN|NOT_FOUND|OWNERSHIP/.test(code)) return code;
+      throw error;
+    }
+    return '';
+  };
+  let directReadDenied = false;
+  let directReadError = '';
+  try {
+    await getEvaluationRun(state.primaryRunId);
+  } catch (error) {
+    directReadError = observedErrorCode(error);
+    directReadDenied = /FORBIDDEN|NOT_FOUND|OWNERSHIP/.test(directReadError);
+  }
+  const visibleRunIds = (await listEvaluationRuns()).runs.map(
+    (run) => run.runId,
+  );
+  const visibleBenchmarkIds = (await listEvaluationBenchmarks()).benchmarks.map(
+    (benchmark) => benchmark.benchmarkId,
+  );
+  const ownerRunsHidden = [
+    state.primaryRunId,
+    state.cancelledRunId,
+    state.childRunId,
+  ].every((runId) => !visibleRunIds.includes(runId));
+  const mutationErrors = {
+    cancel: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.cancelRun,
+      CancelEvaluationRunRequestSchema,
+      CancelEvaluationRunResponseSchema,
+      create(CancelEvaluationRunRequestSchema, {
+        runId: state.primaryRunId,
+        expectedRevision: 0n,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    )),
+    retry: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.retryCases,
+      RetryEvaluationCasesRequestSchema,
+      RetryEvaluationCasesResponseSchema,
+      create(RetryEvaluationCasesRequestSchema, {
+        parentRunId: state.primaryRunId,
+        caseIds: state.cases.slice(0, 1).map((item) => item.caseId),
+        idempotencyKey: crypto.randomUUID(),
+        expectedParentRevision: 0n,
+      }),
+    )),
+    delete: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.deleteRun,
+      DeleteEvaluationRunRequestSchema,
+      DeleteEvaluationRunResponseSchema,
+      create(DeleteEvaluationRunRequestSchema, {
+        runId: state.primaryRunId,
+        expectedRevision: 0n,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    )),
+  };
+  const ownerBenchmarkHidden = !visibleBenchmarkIds.includes(
+    state.benchmarkId,
+  );
+  const mutationsDenied = Object.values(mutationErrors).every(Boolean);
+  if (
+    !directReadDenied
+    || !ownerRunsHidden
+    || !ownerBenchmarkHidden
+    || !mutationsDenied
+  ) {
+    throw new Error('agent.acceptance.evaluationActorIsolationFailed');
+  }
+  return {
+    assertions: {
+      distinctActor: actorId !== state.ownerActorId,
+      directReadDenied,
+      ownerRunsHidden,
+      ownerBenchmarkHidden,
+      mutationsDenied,
+    },
+    actorId,
+    ownerActorId: state.ownerActorId,
+    directReadError,
+    mutationErrors,
+    visibleRunCount: visibleRunIds.length,
+    visibleBenchmarkCount: visibleBenchmarkIds.length,
+  };
+}
+
+async function runEvaluationDevelopmentJourney(
+  input: EvaluationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  switch (input.phase) {
+    case 'prepare':
+      return prepareEvaluationDevelopmentJourney(input);
+    case 'recover':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationRecoveryStateMissing');
+      }
+      return recoverEvaluationDevelopmentJourney(input.state);
+    case 'isolate':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationIsolationStateMissing');
+      }
+      return isolateEvaluationDevelopmentJourney(input.state);
+    case 'cleanup':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationCleanupStateMissing');
+      }
+      return cleanupEvaluationDevelopmentState(input.state);
+    default:
+      throw new Error('agent.acceptance.evaluationDevelopmentPhaseInvalid');
+  }
+}
+
 async function runGovernedToolDevelopmentJourney(input: {
   sampleId: string;
   providerBaseUrl: string;
@@ -23931,6 +25279,10 @@ export function installAcceptanceHarness(): void {
       input: ConnectorInvocationDevelopmentInput,
     ) {
       return runConnectorInvocationDevelopmentJourney(input);
+    },
+
+    async runEvaluationDevelopment(input: EvaluationDevelopmentInput) {
+      return runEvaluationDevelopmentJourney(input);
     },
 
     async runCapabilityIncompatibleDevelopment({

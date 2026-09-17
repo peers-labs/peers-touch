@@ -55,8 +55,14 @@
     "Do not duplicate OAuth credential ownership in Agent configuration",
     "Disconnect and invoke races must preserve pinned revisions and idempotency"
   ],
-  "updatedAt": "2026-09-17T07:20:59Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-17T08:00:13Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:ec9995a5e6dec7acfa9c52a75485838caba65b7d;apps/desktop:rust-connector-tests-pass;apps/desktop:tsc-pass;apps/desktop:vitest-39-pass;apps/station:connector-capability-tool-tests-pass;tooling/acceptance:j05-runner-and-provisioner-tests-14-pass"
+    }
+  ]
 }
 ```
 
@@ -67,7 +73,14 @@ binding, governed execution, result, and recovery.
 
 ## Current Snapshot
 
-- OAuth connection UI and canonical capability binding projection exist.
-- Station has an `oauth_connector_call` Tool definition and Connector backfill.
-- Resource manifest versioning and real turn invocation/recovery remain
-  unproven.
+- Desktop owns actor-scoped OAuth connection state and credential-local
+  execution; Station owns resource manifests, capability bindings, readiness,
+  admission, approval, replay, and result lineage.
+- The generic `oauth_connector_call` production path is removed; startup
+  backfill only retires legacy placeholder rows.
+- Versioned opaque Connector resources, Station-owned binding/readiness,
+  pinned disconnect-race dispatch, typed recovery, and the native Journey
+  driver are implemented at checkpoint
+  `ec9995a5e6dec7acfa9c52a75485838caba65b7d`.
+- Focused Rust, TypeScript, Vitest, Go, and Python verification passes.
+- Exact-source Profile `two` native invocation/recovery remains `UNPROVEN`.

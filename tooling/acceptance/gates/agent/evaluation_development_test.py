@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import copy
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from tooling.acceptance.gates.agent.agent_v2_gate import _validate_candidate
+from tooling.acceptance.gates.agent.evaluation_development import (
+    AGENT_V2_EVALUATION_GATE,
+    EvaluationDevelopmentError,
+    ROOT,
+    TUPLE_FIELDS,
+    evaluate_evaluation_journey,
+    write_candidate,
+)
+
+
+def formal_tuples() -> list[dict[str, str]]:
+    return [
+        {
+            "gate": AGENT_V2_EVALUATION_GATE,
+            "row": "evaluation-desktop-direct",
+            "platform": "desktop_app",
+            "runtime": "direct_model",
+            "cell": f"cell-{index:02d}",
+            "locale": "en",
+            "ordering": "single",
+            "sample_id": "sample-001",
+        }
+        for index in range(57)
+    ]
+
+
+def valid_capture() -> dict[str, object]:
+    tuples = formal_tuples()
+    return {
+        "prepare": {
+            "assertions": {
+                "nativeCreateStartResultVisible": True,
+                "cancellationAcknowledged": True,
+                "retryLineageComplete": True,
+                "schedulerUnique": True,
+            },
+            "receiver-dom": {"resultVisible": True},
+            "station-readback": {
+                "entityKind": "evaluation-run-lineage",
+                "ownerActorId": "ptid:alice",
+                "primary": {
+                    "run": {"runId": "run-parent", "status": 8},
+                    "attempts": [],
+                    "results": [],
+                },
+                "cancelled": {
+                    "run": {"runId": "run-cancel", "status": 7},
+                    "attempts": [{
+                        "attemptId": "attempt-cancel",
+                        "cancellationAckAt": {"seconds": "1"},
+                    }],
+                    "results": [],
+                },
+                "child": {
+                    "run": {
+                        "runId": "run-child",
+                        "parentRunId": "run-parent",
+                        "status": 6,
+                    },
+                    "attempts": [{
+                        "attemptId": "attempt-child",
+                        "sourceAttemptId": "attempt-parent",
+                        "sourceResultId": "result-parent",
+                        "turnId": "turn-child",
+                    }],
+                    "results": [],
+                },
+            },
+            "runtime-events": {
+                "primary": {"events": [{"sequence": "1"}]},
+                "cancelled": {"events": [{"sequence": "1"}]},
+                "child": {"events": [{"sequence": "1"}]},
+            },
+            "turn-trace": {
+                "complete": True,
+                "lineage": [{
+                    "turnTraceId": "trace-1",
+                    "attemptId": "attempt-parent",
+                    "resultId": "result-parent",
+                }],
+            },
+            "metrics-lineage": {
+                "childParentRunId": "run-parent",
+                "parentMetrics": {"totalCases": 3, "terminalCases": 3},
+                "parentMetricsAfterRetry": {
+                    "totalCases": 3,
+                    "terminalCases": 3,
+                },
+            },
+            "side-effect-count": {
+                "attemptCount": 3,
+                "uniqueAttemptCount": 3,
+                "schedulerClaimCount": 3,
+                "uniqueSchedulerClaimCount": 3,
+            },
+            "replay": {
+                "primaryRunId": "run-parent",
+                "cancelledRunId": "run-cancel",
+                "childRunId": "run-child",
+            },
+        },
+        "recovery": {
+            "assertions": {
+                "actorRestored": True,
+                "nativeRowsRestored": True,
+                "stationTerminalReadbackRestored": True,
+                "eventCursorRestored": True,
+            },
+            "receiver-dom": {"labVisible": True},
+            "station-readback": {"runs": []},
+            "runtime-events": {"runs": []},
+        },
+        "isolation": {
+            "assertions": {
+                "distinctActor": True,
+                "directReadDenied": True,
+                "ownerRunsHidden": True,
+                "ownerBenchmarkHidden": True,
+                "mutationsDenied": True,
+            },
+        },
+        "cleanup": {
+            "status": "clean",
+            "retentionConflictObserved": True,
+            "resourceDeletionComplete": True,
+        },
+        "cell-results": [
+            {
+                **runtime_tuple,
+                "observed": True,
+                "passed": True,
+            }
+            for runtime_tuple in tuples
+        ],
+    }
+
+
+class EvaluationDevelopmentTest(unittest.TestCase):
+    def test_accepts_complete_j06_capture(self) -> None:
+        capture = valid_capture()
+        assertions = evaluate_evaluation_journey(
+            capture,
+            expected_tuples=formal_tuples(),
+        )
+
+        self.assertTrue(all(assertions.values()))
+
+    def test_rejects_missing_cancellation_ack(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["prepare"]["station-readback"]["cancelled"]["attempts"][0][
+            "cancellationAckAt"
+        ] = None
+
+        with self.assertRaisesRegex(
+            EvaluationDevelopmentError,
+            "cancellationAcknowledged",
+        ):
+            evaluate_evaluation_journey(
+                capture,
+                expected_tuples=formal_tuples(),
+            )
+
+    def test_rejects_incomplete_retry_lineage(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["prepare"]["station-readback"]["child"]["attempts"][0][
+            "sourceResultId"
+        ] = ""
+
+        with self.assertRaisesRegex(
+            EvaluationDevelopmentError,
+            "retryLineageUnique",
+        ):
+            evaluate_evaluation_journey(
+                capture,
+                expected_tuples=formal_tuples(),
+            )
+
+    def test_rejects_duplicate_scheduler_or_attempt_identity(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["prepare"]["side-effect-count"]["uniqueSchedulerClaimCount"] = 2
+
+        with self.assertRaisesRegex(
+            EvaluationDevelopmentError,
+            "schedulerAndAttemptUnique",
+        ):
+            evaluate_evaluation_journey(
+                capture,
+                expected_tuples=formal_tuples(),
+            )
+
+    def test_rejects_actor_isolation_or_cleanup_gap(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["isolation"]["assertions"]["ownerRunsHidden"] = False
+        capture["cleanup"]["retentionConflictObserved"] = False
+
+        with self.assertRaisesRegex(
+            EvaluationDevelopmentError,
+            "actorIsolationAssertionsPass.*retentionAndCleanupComplete",
+        ):
+            evaluate_evaluation_journey(
+                capture,
+                expected_tuples=formal_tuples(),
+            )
+
+    def test_rejects_missing_formal_runtime_tuple(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["cell-results"].pop()
+
+        with self.assertRaisesRegex(
+            EvaluationDevelopmentError,
+            "exactFormalTupleCoverage",
+        ):
+            evaluate_evaluation_journey(
+                capture,
+                expected_tuples=formal_tuples(),
+            )
+
+    def test_development_journey_can_pass_while_formal_coverage_is_unproven(
+        self,
+    ) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["cell-results"] = []
+
+        assertions = evaluate_evaluation_journey(
+            capture,
+            expected_tuples=formal_tuples(),
+            require_formal_coverage=False,
+        )
+
+        self.assertTrue(all(assertions.values()))
+        self.assertNotIn("exactFormalTupleCoverage", assertions)
+
+    def test_candidate_writer_emits_complete_external_formal_role_set(
+        self,
+    ) -> None:
+        capture = valid_capture()
+        with tempfile.TemporaryDirectory() as directory:
+            candidate_path = write_candidate(
+                Path(directory),
+                capture,
+                runtime_manifest={"state": "FIXTURE_READY"},
+                duration_ms=1234,
+                provider_requests=[{"marker": "pass"}],
+            )
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+            issues = _validate_candidate(
+                AGENT_V2_EVALUATION_GATE,
+                candidate_path,
+            )
+
+        self.assertEqual(issues, [])
+        self.assertEqual(candidate["proofStatus"], "UNPROVEN")
+        self.assertEqual(len(candidate["artifacts"]), 11)
+
+    def test_runner_targets_production_harness_and_keeps_candidate_unproven(
+        self,
+    ) -> None:
+        source = (
+            ROOT
+            / "tooling/acceptance/gates/agent/evaluation_development.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("AGENT_V2_EVALUATION_GATE", source)
+        self.assertIn('"runEvaluationDevelopment"', source)
+        self.assertIn('"phase": "prepare"', source)
+        self.assertIn('"phase": "isolate"', source)
+        self.assertIn('"phase": "recover"', source)
+        self.assertIn('"phase": "cleanup"', source)
+        self.assertIn('"proofStatus": "UNPROVEN"', source)
+        self.assertIn("--formal-candidate", source)
+        self.assertIn("source_identity(ROOT)", source)
+        self.assertNotIn("useEvaluationStore", source)
+        self.assertEqual(len(TUPLE_FIELDS), 8)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

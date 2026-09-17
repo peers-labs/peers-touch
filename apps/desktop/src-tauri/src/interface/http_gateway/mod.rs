@@ -40,6 +40,7 @@ use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
+use crate::application::evaluation as app_evaluation;
 use crate::application::federation as app_federation;
 use crate::application::home as app_home;
 use crate::application::key_exchange::{device_install, wire};
@@ -1581,6 +1582,22 @@ fn filter_incremental_messages(
 // -------------------------------------------------------------------------
 // Command dispatch - maps cmd string to application-layer calls
 // -------------------------------------------------------------------------
+
+fn dispatch_evaluation(
+    args: Value,
+    state: &AppState,
+    operation: app_evaluation::EvaluationOperation,
+) -> Value {
+    let input = match parse_args::<app_evaluation::EncodedRequestInput>(args) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
+    let token = match http_gateway_bearer_token(state) {
+        Some(token) => token,
+        None => return to_json(unauthorized_error()),
+    };
+    to_json(app_evaluation::forward(input, &token, operation))
+}
 
 /// Dispatch a command by name, returning the result as a JSON Value.
 ///
@@ -3851,6 +3868,92 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_home::submit_task(input, &token))
+        }
+        "agent_evaluation_benchmark_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateBenchmark,
+        ),
+        "agent_evaluation_benchmark_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateBenchmark,
+        ),
+        "agent_evaluation_benchmark_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteBenchmark,
+        ),
+        "agent_evaluation_benchmark_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListBenchmarks,
+        ),
+        "agent_evaluation_dataset_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateDataset,
+        ),
+        "agent_evaluation_dataset_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateDataset,
+        ),
+        "agent_evaluation_dataset_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteDataset,
+        ),
+        "agent_evaluation_dataset_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListDatasets,
+        ),
+        "agent_evaluation_case_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateTestCase,
+        ),
+        "agent_evaluation_case_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateTestCase,
+        ),
+        "agent_evaluation_case_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteTestCase,
+        ),
+        "agent_evaluation_case_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListTestCases,
+        ),
+        "agent_evaluation_run_create" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::CreateRun)
+        }
+        "agent_evaluation_run_start" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::StartRun)
+        }
+        "agent_evaluation_run_cancel" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::CancelRun)
+        }
+        "agent_evaluation_run_retry" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::RetryCases)
+        }
+        "agent_evaluation_run_get" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::GetRun)
+        }
+        "agent_evaluation_run_list" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::ListRuns)
+        }
+        "agent_evaluation_run_events_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListRunEvents,
+        ),
+        "agent_evaluation_run_delete" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::DeleteRun)
         }
         "agent_capability_binding_list" => {
             let input =

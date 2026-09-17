@@ -151,6 +151,7 @@ import {
   SubmitHomeTaskCommandRequestSchema,
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
+import * as EvaluationModel from '../gen/proto/domain/agent/evaluation_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
@@ -4590,6 +4591,14 @@ export interface StationProbeResult {
   error?: string;
 }
 
+function requireEvaluationValue<T>(
+  value: T | undefined,
+  errorKey: string,
+): T {
+  if (!value) throw new Error(errorKey);
+  return value;
+}
+
 export const api = {
   authLogin: (input: AuthLoginInput) =>
     invokeAuthCommand<AuthLoginInput>('auth_login', input),
@@ -5111,6 +5120,312 @@ export const api = {
       SubmitHomeTaskCommandRequestSchema,
       SubmitHomeTaskCommandResponseSchema,
       create(SubmitHomeTaskCommandRequestSchema, input),
+    ),
+
+  createEvaluationBenchmark: async (
+    request: EvaluationModel.CreateEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.EvaluationBenchmark> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_create',
+      EvaluationModel.CreateEvaluationBenchmarkRequestSchema,
+      EvaluationModel.CreateEvaluationBenchmarkResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.benchmark,
+      'agent.evaluationBenchmarkResponseMissing',
+    );
+  },
+
+  updateEvaluationBenchmark: async (
+    request: EvaluationModel.UpdateEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.EvaluationBenchmark> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_update',
+      EvaluationModel.UpdateEvaluationBenchmarkRequestSchema,
+      EvaluationModel.UpdateEvaluationBenchmarkResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.benchmark,
+      'agent.evaluationBenchmarkResponseMissing',
+    );
+  },
+
+  deleteEvaluationBenchmark: (
+    request: EvaluationModel.DeleteEvaluationBenchmarkRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationBenchmarkResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_benchmark_delete',
+      EvaluationModel.DeleteEvaluationBenchmarkRequestSchema,
+      EvaluationModel.DeleteEvaluationBenchmarkResponseSchema,
+      request,
+    ),
+
+  listEvaluationBenchmarks: async (): Promise<EvaluationModel.EvaluationBenchmark[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_benchmark_list',
+      EvaluationModel.ListEvaluationBenchmarksRequestSchema,
+      EvaluationModel.ListEvaluationBenchmarksResponseSchema,
+      create(EvaluationModel.ListEvaluationBenchmarksRequestSchema),
+    );
+    return response.benchmarks;
+  },
+
+  createEvaluationDataset: async (
+    request: EvaluationModel.CreateEvaluationDatasetRequest,
+  ): Promise<{
+    dataset: EvaluationModel.EvaluationDataset;
+    benchmark: EvaluationModel.EvaluationBenchmark;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_create',
+      EvaluationModel.CreateEvaluationDatasetRequestSchema,
+      EvaluationModel.CreateEvaluationDatasetResponseSchema,
+      request,
+    );
+    return {
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+      benchmark: requireEvaluationValue(
+        response.benchmark,
+        'agent.evaluationBenchmarkResponseMissing',
+      ),
+    };
+  },
+
+  updateEvaluationDataset: async (
+    request: EvaluationModel.UpdateEvaluationDatasetRequest,
+  ): Promise<EvaluationModel.EvaluationDataset> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_update',
+      EvaluationModel.UpdateEvaluationDatasetRequestSchema,
+      EvaluationModel.UpdateEvaluationDatasetResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.dataset,
+      'agent.evaluationDatasetResponseMissing',
+    );
+  },
+
+  deleteEvaluationDataset: (
+    request: EvaluationModel.DeleteEvaluationDatasetRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationDatasetResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_dataset_delete',
+      EvaluationModel.DeleteEvaluationDatasetRequestSchema,
+      EvaluationModel.DeleteEvaluationDatasetResponseSchema,
+      request,
+    ),
+
+  listEvaluationDatasets: async (
+    benchmarkId: string,
+  ): Promise<EvaluationModel.EvaluationDataset[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_dataset_list',
+      EvaluationModel.ListEvaluationDatasetsRequestSchema,
+      EvaluationModel.ListEvaluationDatasetsResponseSchema,
+      create(EvaluationModel.ListEvaluationDatasetsRequestSchema, {
+        benchmarkId,
+      }),
+    );
+    return response.datasets;
+  },
+
+  createEvaluationTestCase: async (
+    request: EvaluationModel.CreateEvaluationTestCaseRequest,
+  ): Promise<{
+    testCase: EvaluationModel.EvaluationTestCase;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_create',
+      EvaluationModel.CreateEvaluationTestCaseRequestSchema,
+      EvaluationModel.CreateEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      testCase: requireEvaluationValue(
+        response.testCase,
+        'agent.evaluationCaseResponseMissing',
+      ),
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  updateEvaluationTestCase: async (
+    request: EvaluationModel.UpdateEvaluationTestCaseRequest,
+  ): Promise<{
+    testCase: EvaluationModel.EvaluationTestCase;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_update',
+      EvaluationModel.UpdateEvaluationTestCaseRequestSchema,
+      EvaluationModel.UpdateEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      testCase: requireEvaluationValue(
+        response.testCase,
+        'agent.evaluationCaseResponseMissing',
+      ),
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  deleteEvaluationTestCase: async (
+    request: EvaluationModel.DeleteEvaluationTestCaseRequest,
+  ): Promise<{
+    deleted: boolean;
+    dataset: EvaluationModel.EvaluationDataset;
+  }> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_delete',
+      EvaluationModel.DeleteEvaluationTestCaseRequestSchema,
+      EvaluationModel.DeleteEvaluationTestCaseResponseSchema,
+      request,
+    );
+    return {
+      deleted: response.deleted,
+      dataset: requireEvaluationValue(
+        response.dataset,
+        'agent.evaluationDatasetResponseMissing',
+      ),
+    };
+  },
+
+  listEvaluationTestCases: async (
+    datasetId: string,
+  ): Promise<EvaluationModel.EvaluationTestCase[]> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_case_list',
+      EvaluationModel.ListEvaluationTestCasesRequestSchema,
+      EvaluationModel.ListEvaluationTestCasesResponseSchema,
+      create(EvaluationModel.ListEvaluationTestCasesRequestSchema, {
+        datasetId,
+      }),
+    );
+    return response.testCases;
+  },
+
+  createEvaluationRun: async (
+    request: EvaluationModel.CreateEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_create',
+      EvaluationModel.CreateEvaluationRunRequestSchema,
+      EvaluationModel.CreateEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  startEvaluationRun: async (
+    request: EvaluationModel.StartEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_start',
+      EvaluationModel.StartEvaluationRunRequestSchema,
+      EvaluationModel.StartEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  cancelEvaluationRun: async (
+    request: EvaluationModel.CancelEvaluationRunRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_cancel',
+      EvaluationModel.CancelEvaluationRunRequestSchema,
+      EvaluationModel.CancelEvaluationRunResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.run,
+      'agent.evaluationRunResponseMissing',
+    );
+  },
+
+  retryEvaluationCases: async (
+    request: EvaluationModel.RetryEvaluationCasesRequest,
+  ): Promise<EvaluationModel.EvaluationRun> => {
+    const response = await invokeRustProtoRequest(
+      'agent_evaluation_run_retry',
+      EvaluationModel.RetryEvaluationCasesRequestSchema,
+      EvaluationModel.RetryEvaluationCasesResponseSchema,
+      request,
+    );
+    return requireEvaluationValue(
+      response.childRun,
+      'agent.evaluationChildRunResponseMissing',
+    );
+  },
+
+  getEvaluationRun: (
+    runId: string,
+  ): Promise<EvaluationModel.GetEvaluationRunResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_get',
+      EvaluationModel.GetEvaluationRunRequestSchema,
+      EvaluationModel.GetEvaluationRunResponseSchema,
+      create(EvaluationModel.GetEvaluationRunRequestSchema, { runId }),
+    ),
+
+  listEvaluationRuns: (
+    page = 1,
+    pageSize = 100,
+    parentRunId?: string,
+  ): Promise<EvaluationModel.ListEvaluationRunsResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_list',
+      EvaluationModel.ListEvaluationRunsRequestSchema,
+      EvaluationModel.ListEvaluationRunsResponseSchema,
+      create(EvaluationModel.ListEvaluationRunsRequestSchema, {
+        page,
+        pageSize,
+        parentRunId,
+      }),
+    ),
+
+  listEvaluationRunEvents: (
+    runId: string,
+    afterSequence: bigint,
+  ): Promise<EvaluationModel.ListEvaluationRunEventsResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_events_list',
+      EvaluationModel.ListEvaluationRunEventsRequestSchema,
+      EvaluationModel.ListEvaluationRunEventsResponseSchema,
+      create(EvaluationModel.ListEvaluationRunEventsRequestSchema, {
+        runId,
+        afterSequence,
+      }),
+    ),
+
+  deleteEvaluationRun: (
+    request: EvaluationModel.DeleteEvaluationRunRequest,
+  ): Promise<EvaluationModel.DeleteEvaluationRunResponse> =>
+    invokeRustProtoRequest(
+      'agent_evaluation_run_delete',
+      EvaluationModel.DeleteEvaluationRunRequestSchema,
+      EvaluationModel.DeleteEvaluationRunResponseSchema,
+      request,
     ),
 
   getAgentWorkspaceInfo: (agentId: string) =>

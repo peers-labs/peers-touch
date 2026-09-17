@@ -1003,8 +1003,10 @@
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [
+        "cell-results",
         "receiver-dom",
         "station-readback",
+        "runtime-events",
         "turn-trace",
         "metrics-lineage",
         "runtime-attestation-set",

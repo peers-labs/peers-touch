@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-09-16
+> **Created**: 2026-07-01 | **Updated**: 2026-09-17
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -61,6 +61,7 @@ Budget fields are recorded inside `Evidence` until the registry grows explicit c
 | Search primary module | PageHost | `eager + forever` | Ready shell mount | Forever | `search` runtime/store projection | alive | `pages/SearchPage.descriptor.tsx` registered, PageHost-owned (`runtime-projections.md §7`); hidden re-render cost not sampled | Client Platform |
 | Chat primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever | `social` runtime/store projection | alive | `pages/SocialChatPage.descriptor.tsx` registered, PageHost-owned (`runtime-projections.md §7`); message-list virtualization not yet proven | Chat / Client Platform |
 | Agent primary module and sibling surfaces | PageHost / PageFrame | `idle + forever` | First idle slot or first visit per surface | Forever while Desktop Shell is alive | `agentCapability`, `agentTopic`, `social`, orchestration stores | alive | `pages/AgentChatPage.descriptor.tsx` registered (`preload: idle`, `keepAlive: forever`, `runtime-projections.md §7`); prototype Shell uses first-visit fixed frames for Agent / Atelier / Orchestration and preserves drafts, inner tabs, and panel state across switches; hidden render cost still needs production sampling | Agent / Client Platform |
+| Evaluation Lab primary module | PageHost / PageBoundary | `on-visit + lru` | First Evaluation navigation | LRU 1 | `evaluation` and `agent-capability` runtime/store projections | lru | `pages/EvaluationPage.descriptor.tsx` declares `on-visit` and `lru(1)`; Station readback owns restart recovery and the page does not fetch on mount; route visibility and hidden-render cost remain part of V2-J06 native proof | Agent / Client Platform |
 | Settings primary module | PageHost / SectionHost | `idle + forever` | First idle slot or first visit | Forever for page shell; SectionHost policy for sections | `settings`, `federation`, provider/model stores | alive | `pages/SettingsPage.descriptor.tsx` registered, PageHost-owned; `kernel/SectionHost.tsx` owns section mount/cache; runtime sample recorded `settings:group:ai` route-to-visible ~189ms and `settings:section:logs/statistics` route-to-visible ~151–153ms | Client Platform |
 | Applets launcher | PageHost | `idle + forever` | First idle slot or first visit | Forever for launcher shell | `applets` runtime/store projection | alive | `pages/AppletsPage.descriptor.tsx` registered; applet runtime materializes only after navigating to `applet:<id>` (§5) | Applet Platform |
 | Moments / Social primary module | PageHost | `idle + forever` | First idle slot or first visit | Forever | `moments`, `social` runtime/store projection | alive | `pages/moments/MomentsApp.descriptor.tsx` registered; hidden feed selector/render cost not sampled (§12) | Social / Client Platform |
