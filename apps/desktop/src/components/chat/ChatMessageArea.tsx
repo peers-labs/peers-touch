@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
-  Inbox, Phone, RadioTower, RefreshCw, Video, MoreHorizontal,
+  Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
   Lock,
 } from 'lucide-react';
 import {
@@ -15,7 +15,10 @@ import {
   socialThreadKey,
 } from '../../store/socialChat';
 import { useCryptoStore } from '../../store/cryptoStore';
-import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatFederationSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { api } from '../../services/desktop_api';
@@ -47,6 +50,7 @@ import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import type { DirectConversationOpenIntent } from './contactSelection';
+import { resolveFederationStationName } from '../../store/federation';
 
 const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
@@ -93,6 +97,7 @@ export function ChatMessageArea({
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
+    conversationBackgroundPreviews,
     getIMConversations,
     getIMMessages,
     getIMThreadMessages,
@@ -129,6 +134,7 @@ export function ChatMessageArea({
     editGroupMessage: s.editGroupMessage,
     openThread: s.openThread,
     conversationLocalState: s.conversationLocalState,
+    conversationBackgroundPreviews: s.conversationBackgroundPreviews,
     getIMConversations: s.getIMConversations,
     getIMMessages: s.getIMMessages,
     getIMThreadMessages: s.getIMThreadMessages,
@@ -149,6 +155,13 @@ export function ChatMessageArea({
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
+  }));
+  const {
+    actorStationEntries,
+    memberStationsByFederation,
+  } = useActiveChatFederationSlice((state) => ({
+    actorStationEntries: state.actorStationEntries,
+    memberStationsByFederation: state.memberStationsByFederation,
   }));
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
@@ -188,9 +201,19 @@ export function ChatMessageArea({
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
   const activeBackground = activeLocalState?.background;
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
+  const activeBackgroundPreview = activeUlid
+    ? conversationBackgroundPreviews[`${activeTab}:${activeUlid}`]
+    : undefined;
 
   const currentName = activeConversation?.title || '';
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
+  const authorityStationName = resolveFederationStationName({
+    actorPtid: activeConversation?.peerPtid,
+    federationId: activeConversation?.federationId,
+    stationPeerId: authorityStationId,
+    actorStationEntries,
+    memberStationsByFederation,
+  });
 
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
@@ -202,24 +225,40 @@ export function ChatMessageArea({
   // station, separate from whether our P2P channel happens to be up.
   const activePeerDid = activeTab === 'friend' ? activeConversation?.peerPtid || null : null;
 
+  useEffect(() => {
+    // #region debug-point A:conversation-header-projection
+    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'ChatMessageArea.tsx:conversation-header-projection', msg: '[DEBUG] Conversation header projection', data: { activeTab, activeUlid, currentUserPtid, currentName, federationId: activeConversation?.federationId || '', authorityStationId, authorityStationName, activePeerDid, actorStationEntryCount: Object.keys(actorStationEntries).length, memberStationCount: Object.values(memberStationsByFederation).flat().length, presenceKnown: Boolean(activePeerDid && activePeerDid in peerOnline), presenceOnline: activePeerDid ? peerOnline[activePeerDid] ?? null : null }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
+  }, [
+    activeConversation?.federationId,
+    activePeerDid,
+    activeTab,
+    activeUlid,
+    actorStationEntries,
+    authorityStationId,
+    authorityStationName,
+    currentName,
+    currentUserPtid,
+    memberStationsByFederation,
+    peerOnline,
+  ]);
+
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.
   //
-  // Unknown (peer DID never seen by the realtime stream) renders
-  // *no* indicator rather than a grey dot — a grey dot would be hard
-  // to distinguish from "offline" at a glance, and "we don't know yet"
-  // is a real third state.
+  // Unknown is rendered explicitly instead of being collapsed into Offline.
   const peerOnlineIndicator = (() => {
     if (activeTab !== 'friend' || !activePeerDid) return null;
     const known = activePeerDid in peerOnline;
-    if (!known) return null;
-    const online = peerOnline[activePeerDid];
-    const label = online ? 'Online' : 'Offline';
+    const online = known ? peerOnline[activePeerDid] : null;
+    const state = online === null ? 'unknown' : online ? 'online' : 'offline';
+    const label = t(`chat.social.presence.${state}`);
     const bg = online ? token.colorSuccessBg : token.colorFillSecondary;
     const color = online ? token.colorSuccess : token.colorTextQuaternary;
     return (
       <span
-        data-chat-presence-tag={label}
+        data-chat-presence-tag={state}
+        data-chat-presence-source="station"
         aria-label={label}
         style={{
           display: 'inline-flex',
@@ -802,7 +841,7 @@ export function ChatMessageArea({
     activeBackground,
     token.colorBgLayout,
     token.colorBgContainer,
-    activeBackgroundImageUrl || undefined,
+    activeBackgroundPreview || activeBackgroundImageUrl || undefined,
   );
   const headerSubtitle = activeTab === 'friend'
     ? directSecurityState === 'establishing'
@@ -827,6 +866,7 @@ export function ChatMessageArea({
       data-chat-typing={peerIsTyping ? 'active' : 'inactive'}
       data-chat-background={activeBackground || 'default'}
       data-chat-background-image={activeLocalState?.backgroundImage || ''}
+      data-chat-background-preview={activeBackgroundPreview ? 'local' : 'durable'}
       flex={1}
       gap={0}
       style={{
@@ -889,8 +929,9 @@ export function ChatMessageArea({
                 <span
                   data-chat-station="authority"
                   data-chat-station-id={authorityStationId}
+                  data-chat-station-name={authorityStationName}
                   data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
-                  title={authorityStationId || t('chat.social.detail.authorityStationUnavailable')}
+                  title={authorityStationName || t('chat.social.detail.authorityStationUnavailable')}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -906,7 +947,7 @@ export function ChatMessageArea({
                     flexShrink: 1,
                   }}
                 >
-                  <RadioTower aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
+                  <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
                   <span
                     style={{
                       minWidth: 0,
@@ -915,8 +956,8 @@ export function ChatMessageArea({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {authorityStationId
-                      ? `${t('chat.social.findPeople.scopeStation')} · ${authorityStationId}`
+                    {authorityStationName
+                      ? `${t('chat.social.findPeople.scopeStation')} · ${authorityStationName}`
                       : t('chat.social.detail.authorityStationUnavailable')}
                   </span>
                 </span>

@@ -20,6 +20,8 @@
     "model/domain/chat",
     "apps/station/app/subserver/conversation",
     "apps/desktop",
+    "docs/architecture/social/prototype/README.md",
+    "packages/prototypes/desktop/features/social-chat",
     "packages/messaging-core",
     "tooling/acceptance",
     "packages/locales"
@@ -53,15 +55,22 @@
   ],
   "doneWhen": [
     "Bidirectional text, offline delivery, reconnect, and restart preserve exact identity and order",
+    "CHAT-UR02: each newly received message appears in the active receiver transcript without manual reload",
+    "CHAT-UR03: aggregate Chat acknowledgement does not erase unread counts from unopened conversation rows",
+    "CHAT-UR04: each conversation row immediately projects the exact latest message and timestamp and preserves them after restart",
+    "CHAT-UR10: Direct header, row, and detail use authoritative Station names and snapshot-plus-event presence without raw-ID or guessed-status primary labels",
+    "CHAT-UR11: local chat background preview is immediate while upload/persistence runs asynchronously, with rollback and retry on failure",
+    "CHAT-UR12: message search targets canonical Conversation projections, finds known durable plaintext, and keeps the clear affordance inside the input",
+    "CHAT-UR13: clear history and restore within 24 hours converge on the authoritative marker and reproject the same durable messages",
     "Queued, retrying, failed, delivered, and read states are visibly distinct",
     "Message-level retry reuses the logical message without duplicate authority facts",
     "Conversation preview, unread/read, history pagination, search, and settings survive restart"
   ],
   "failureBehavior": [
     "Keep exact durable command and user content on uncertain submit outcome",
-    "Stop on false delivered/read state, no-op freshness owner, or duplicate message identity"
+    "Stop on false delivered/read state, no-op freshness owner, missing per-conversation unread attribution, stale preview, or duplicate message identity"
   ],
-  "updatedAt": "2026-09-16T07:45:00Z",
+  "updatedAt": "2026-09-17T07:00:00Z",
   "durableEvidence": []
 }
 ```

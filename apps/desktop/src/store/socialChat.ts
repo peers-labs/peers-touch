@@ -36,6 +36,7 @@ import type {
   ConversationMember,
 } from '../gen/proto/domain/chat/conversation_pb';
 import {
+  ConversationStatus,
   MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
@@ -376,6 +377,28 @@ export interface SearchResultAttachment {
   mimeType: string;
 }
 
+export interface MessageSearchTarget {
+  conversationId: string;
+  scope: 'friend' | 'group';
+}
+
+export function resolveMessageSearchTargets(
+  conversations: readonly Conversation[],
+  scope?: string,
+  conversationId?: string,
+): MessageSearchTarget[] {
+  return conversations
+    .filter((conversation) => conversation.status === ConversationStatus.ACTIVE)
+    .map((conversation) => ({
+      conversationId: conversation.conversationId,
+      scope: conversation.kind === 1 ? 'friend' as const : 'group' as const,
+    }))
+    .filter((target) => (
+      (!conversationId || target.conversationId === conversationId)
+      && (!scope || scope === target.scope)
+    ));
+}
+
 interface ThreadLoadOptions {
   append?: boolean;
   afterUlid?: string;
@@ -414,6 +437,7 @@ interface SocialChatState {
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
   conversationLocalState: Record<string, ConversationLocalState>;
+  conversationBackgroundPreviews: Record<string, string>;
   sendOutcomes: Record<string, MessagingSendOutcomeRecord>;
 
   /**
@@ -490,11 +514,13 @@ interface SocialChatState {
    * up (e.g. bootstrapping ICE), so the two concepts must not be
    * conflated in the UI.
    *
-   * Source of truth: Station `StreamEvent.PresenceFlip` events carried
+   * Source of truth: Station `/presence/query` snapshots reconciled by the
+   * social runtime plus immediate `StreamEvent.PresenceFlip` updates carried
    * by the unified `/events/stream`.
    */
   peerOnline: Record<string, boolean>;
   setPeerOnline: (did: string, online: boolean) => void;
+  clearPeerPresence: (actorPtids: readonly string[]) => void;
 
   /**
    * Per-session typing-state map.
@@ -664,6 +690,11 @@ interface SocialChatState {
     ulid: string,
     patch: Partial<ConversationLocalState>,
   ) => Promise<void>;
+  setConversationBackgroundPreview: (
+    kind: 'friend' | 'group',
+    ulid: string,
+    previewUrl: string | null,
+  ) => void;
   hideConversation: (kind: 'friend' | 'group', ulid: string, keepHistory: boolean) => Promise<void>;
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
@@ -900,6 +931,7 @@ const initialSocialState: Pick<
   | 'peerProfiles'
   | 'peerProfileLoading'
   | 'conversationLocalState'
+  | 'conversationBackgroundPreviews'
   | 'searchQuery'
   | 'searchResults'
   | 'searchLoading'
@@ -953,6 +985,7 @@ const initialSocialState: Pick<
   peerProfiles: {},
   peerProfileLoading: {},
   conversationLocalState: {},
+  conversationBackgroundPreviews: {},
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
@@ -1047,6 +1080,20 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set((state) => {
       const next = applyPresenceToMap(state.peerOnline, did, online);
       return next ? { peerOnline: next } : state;
+    });
+  },
+  clearPeerPresence: (actorPtids) => {
+    const requested = new Set(actorPtids.filter(Boolean));
+    if (requested.size === 0) return;
+    set((state) => {
+      const next = { ...state.peerOnline };
+      let changed = false;
+      for (const actorPtid of requested) {
+        if (!(actorPtid in next)) continue;
+        delete next[actorPtid];
+        changed = true;
+      }
+      return changed ? { peerOnline: next } : state;
     });
   },
 
@@ -2138,6 +2185,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
     let committedPatch = patch;
+    // #region debug-point B-E:conversation-settings-command
+    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:start', msg: '[DEBUG] Conversation settings command started', data: { kind, conversationId: ulid, patch: { background: patch.background, backgroundImage: patch.backgroundImage, clearedAt: patch.clearedAt } }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     try {
       const settingsPatch: Partial<MemberSettingsResult> = {
         muted: patch.muted,
@@ -2153,8 +2203,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...patch,
           ...projectConversationMemberSettings(settings),
         };
+        // #region debug-point B-E:conversation-settings-result
+        void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:result', msg: '[DEBUG] Conversation settings command returned', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, returnedClearedAt: settings.clearedAtUnixMs, returnedBackgroundImage: settings.backgroundImage }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
       }
     } catch (error) {
+      // #region debug-point B-E:conversation-settings-error
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:error', msg: '[DEBUG] Conversation settings command failed', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, error: String(error) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
       throw error;
     }
@@ -2168,6 +2224,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       };
       saveConversationLocalState(state.currentUserPtid, nextLocalState);
       return { conversationLocalState: nextLocalState };
+    });
+  },
+
+  setConversationBackgroundPreview: (kind, ulid, previewUrl) => {
+    const key = conversationKey(kind, ulid);
+    set((state) => {
+      const next = { ...state.conversationBackgroundPreviews };
+      if (previewUrl) {
+        next[key] = previewUrl;
+      } else {
+        delete next[key];
+      }
+      return { conversationBackgroundPreviews: next };
     });
   },
 
@@ -2460,13 +2529,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ searchLoading: true, searchQuery: trimmedQuery });
     try {
       const state = get();
-      const targets = [
-        ...state.sessions.map(session => ({ conversationId: session.ulid, scope: 'friend' as const })),
-        ...state.groups.map(group => ({ conversationId: group.ulid, scope: 'group' as const })),
-      ].filter(target => (
-        (!conversationId || target.conversationId === conversationId)
-        && (!scope || scope === target.scope)
-      ));
+      const targets = resolveMessageSearchTargets(
+        state.conversations,
+        scope,
+        conversationId,
+      );
+      // #region debug-point C:message-search-targets
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:targets', msg: '[DEBUG] Message search targets resolved', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', targetCount: targets.length, targetIds: targets.map(target => target.conversationId) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       const projected = await Promise.all(targets.map(async target => ({
         ...target,
         messages: await imServiceV1.messaging.searchMessages(
@@ -2512,8 +2582,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }).sort((left, right) => (
         right.sentAt - left.sentAt || right.messageId.localeCompare(left.messageId)
       )).slice(0, 100);
+      // #region debug-point C:message-search-results
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:results', msg: '[DEBUG] Message search completed', data: { queryLength: trimmedQuery.length, rawCounts: projected.map(item => ({ conversationId: item.conversationId, count: item.messages.length })), visibleResultCount: results.length, clearedAtByConversation: Object.fromEntries(projected.map(item => [item.conversationId, state.conversationLocalState[conversationKey(item.scope, item.conversationId)]?.clearedAt ?? 0])) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       set({ searchResults: results, searchLoading: false });
     } catch (error) {
+      // #region debug-point C:message-search-error
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:error', msg: '[DEBUG] Message search failed', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', error: String(error) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'searchMessages failed', error);
       if (get().searchQuery === trimmedQuery) {
         set({ searchLoading: false });

@@ -4,7 +4,10 @@ import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
-import { refreshSocialProjection } from '../../services/socialRealtime';
+import {
+  refreshPeerPresence,
+  refreshSocialProjection,
+} from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -29,6 +32,15 @@ interface SyncFriendInput {
 
 interface OnboardingPeerInput {
   peerPtid: string;
+}
+
+interface PresenceSnapshotInput {
+  actorPtids: string[];
+}
+
+interface SearchMessagesInput {
+  conversationId: string;
+  query: string;
 }
 
 interface CreateGroupInput {
@@ -392,6 +404,26 @@ export function installAcceptanceHarness(): void {
         homeStationPeerId: identity.homeStationPeerId,
         homeStationDomain: identity.homeStationDomain,
         locatorSeq: Number(identity.locatorSeq),
+      };
+    },
+
+    async presenceSnapshot({ actorPtids }: PresenceSnapshotInput) {
+      await refreshPeerPresence(actorPtids);
+      const peerOnline = useSocialChatStore.getState().peerOnline;
+      return {
+        statuses: actorPtids.map((actorPtid) => ({
+          actorPtid,
+          online: actorPtid in peerOnline ? peerOnline[actorPtid] : null,
+        })),
+      };
+    },
+
+    async searchMessages({ conversationId, query }: SearchMessagesInput) {
+      const social = useSocialChatStore.getState();
+      await social.searchMessages(query, 'friend', conversationId);
+      return {
+        messageIds: useSocialChatStore.getState().searchResults
+          .map((result) => result.messageId),
       };
     },
 

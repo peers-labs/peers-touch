@@ -9,6 +9,7 @@ import {
 import type { JsonValue, Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
+import { resolvePresenceOnline } from './chatPresence';
 import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
@@ -658,6 +659,11 @@ export interface PresenceTransitionEvent {
   trigger: PresenceTrigger;
   reconciled_count: number;
   affected_sessions: string[];
+}
+
+export interface PresenceStatusProjection {
+  actorPtid: string;
+  online: boolean | null;
 }
 
 /**
@@ -6551,6 +6557,27 @@ export const api = {
       log.debug('presence', 'presenceNotify failed', { trigger, error: err instanceof Error ? err.message : String(err) });
       return { command: 'presence_notify', status: '{"accepted":false}' };
     }),
+
+  presenceQuery: async (actorPtids: string[]): Promise<PresenceStatusProjection[]> => {
+    const response = await invokeRustData<
+      { actor_ptids: string[] },
+      {
+        statuses?: Array<{
+          actorPtid?: string;
+          actor_ptid?: string;
+          state?: number | string;
+        }>;
+      }
+    >('presence_query', { actor_ptids: actorPtids });
+    return (response.statuses ?? []).flatMap((status) => {
+      const actorPtid = (status.actorPtid || status.actor_ptid || '').trim();
+      if (!actorPtid) return [];
+      return [{
+        actorPtid,
+        online: resolvePresenceOnline(status.state ?? 0),
+      }];
+    });
+  },
 
   /**
    * Start the unified realtime SSE consumer for the current actor.

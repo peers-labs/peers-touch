@@ -906,6 +906,7 @@ fn main() {
             account::account_begin_pin_recovery,
             account::account_reset_pin,
             account::account_get_device_id,
+            presence::presence_query,
             presence::presence_notify,
             oss::oss_pick_local_file,
             oss::oss_pick_local_folder,

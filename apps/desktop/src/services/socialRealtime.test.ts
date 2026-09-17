@@ -8,6 +8,7 @@ import {
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   installSocialRealtimeBridge,
+  refreshPeerPresence,
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
 import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
@@ -47,6 +48,9 @@ const mocks = vi.hoisted(() => ({
   resetMutualFriends: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
+  setPeerOnline: vi.fn(),
+  clearPeerPresence: vi.fn(),
+  presenceQuery: vi.fn(),
   currentActorPtid: null as string | null,
   activeTab: 'group' as 'friend' | 'group',
   activeSessionUlid: null as string | null,
@@ -67,6 +71,7 @@ vi.mock('../store/relationships', () => ({
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
       resetMutualFriends: mocks.resetMutualFriends,
+      mutualFriends: [],
     }),
   },
 }));
@@ -75,8 +80,13 @@ vi.mock('../store/socialChat', () => ({
   useSocialChatStore: {
     getState: () => ({
       currentUserPtid: 'did:peer:self',
+      currentUserProfile: null,
+      conversations: [],
+      conversationMembers: {},
       sessions: [],
       groups: [],
+      friendRequests: [],
+      peerProfiles: {},
       conversationLocalState: {},
       messages: {},
       activeSessionUlid: mocks.activeSessionUlid,
@@ -95,6 +105,8 @@ vi.mock('../store/socialChat', () => ({
       ingestRealtimeMessage: mocks.ingestRealtimeMessage,
       bumpChatUnread: mocks.bumpChatUnread,
       clearChatUnread: mocks.clearChatUnread,
+      setPeerOnline: mocks.setPeerOnline,
+      clearPeerPresence: mocks.clearPeerPresence,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -137,6 +149,7 @@ vi.mock('./eventStream', () => ({
 vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
+    presenceQuery: mocks.presenceQuery,
   },
 }));
 
@@ -165,6 +178,7 @@ describe('social realtime group membership side effects', () => {
     mocks.loadMessages.mockResolvedValue(undefined);
     mocks.markFriendRead.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
+    mocks.presenceQuery.mockResolvedValue([]);
     mocks.currentActorPtid = null;
     mocks.activeTab = 'group';
     mocks.activeSessionUlid = null;
@@ -322,6 +336,27 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:self', true);
     });
+  });
+
+  it('reconciles peer presence from the authoritative Station snapshot', async () => {
+    mocks.presenceQuery.mockResolvedValue([
+      { actorPtid: 'ptid:alice', online: true },
+      { actorPtid: 'ptid:bob', online: false },
+    ]);
+
+    await refreshPeerPresence(['ptid:alice', 'ptid:bob', 'ptid:alice']);
+
+    expect(mocks.presenceQuery).toHaveBeenCalledWith(['ptid:alice', 'ptid:bob']);
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:alice', true);
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:bob', false);
+  });
+
+  it('removes stale presence when the authoritative snapshot omits a peer', async () => {
+    mocks.presenceQuery.mockResolvedValue([]);
+
+    await refreshPeerPresence(['ptid:alice']);
+
+    expect(mocks.clearPeerPresence).toHaveBeenCalledWith(['ptid:alice']);
   });
 });
 

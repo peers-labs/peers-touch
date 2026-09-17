@@ -48,6 +48,7 @@ from tooling.acceptance.gates.chat.native_support import (
 GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
 LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
+LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
@@ -55,6 +56,7 @@ CURRENT_PROFILE_GATE_IDS = frozenset(
     {
         CURRENT_PROFILE_GATE_ID,
         LIFECYCLE_ONBOARDING_GATE_ID,
+        LIFECYCLE_DIRECT_GATE_ID,
         SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     }
 )
@@ -129,6 +131,8 @@ def is_current_profile_gate(gate_id: str) -> bool:
 def journey_for_gate(gate_id: str) -> str:
     if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
         return "onboarding-first-message"
+    if gate_id == LIFECYCLE_DIRECT_GATE_ID:
+        return "daily-direct"
     if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
         return "submitted-command-recovery"
     return "direct-delivered-receipt"
@@ -742,6 +746,9 @@ class NativeTwoClientGate(AcceptanceGate):
                 pid=client.process_id,
             )
         )
+
+    def prove_additional_journey_assertions(self) -> None:
+        """Variant hook for assertions that must run before evidence cleanup."""
 
     def current_profile_worktree_topology(self) -> dict[str, Any]:
         topology: dict[str, Any] = {}
@@ -1607,6 +1614,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 )
                 self.prove_direction(*self.direction_order)
                 self.prove_direction(*reversed(self.direction_order))
+                self.prove_additional_journey_assertions()
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:

@@ -1,8 +1,8 @@
 # Chat Lifecycle - Product Definition
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-16 | **Updated**: 2026-09-16
+> **Version**: v1.1
+> **Created**: 2026-09-16 | **Updated**: 2026-09-17
 > **Owner**: Chat Product Team
 
 ---
@@ -22,11 +22,14 @@ Product promise:
 
 First useful outcome:
 
-1. Alice searches for Bob by local identity or federated handle.
-2. Alice sends a request and Bob accepts it.
-3. Both clients show the same contact and one Direct conversation.
-4. Alice and Bob exchange exact text and observe truthful delivery state.
-5. Both restart and retain the conversation and plaintext history.
+1. Alice and Bob cold-launch previously authenticated native accounts without
+   re-entering credentials; a configured PIN remains the only local unlock
+   prompt.
+2. Alice searches for Bob by local identity or federated handle.
+3. Alice sends a request and Bob accepts it.
+4. Both clients show the same contact and one Direct conversation.
+5. Alice and Bob exchange exact text and observe truthful delivery state.
+6. Both restart and retain the conversation and plaintext history.
 
 Recurring value extends this result to media, recorded voice, live voice,
 groups, multiple devices, and multiple Stations.
@@ -51,16 +54,16 @@ current-source claim.
 
 | ID | Capability | Class | Product claim |
 |---|---|---|---|
-| CHAT-C01 | Person discovery and identity | required | Search local and federated people, show stable PTID/Home Station identity, and fail visibly when resolution is unavailable |
-| CHAT-C02 | Relationship establishment | required | Send, receive, accept, reject, block, and unblock with one durable relationship result |
+| CHAT-C01 | Person discovery and identity | required | Search local and federated people, show a human-readable Home Station name, keep canonical PTID/Station peer ID copyable in details, and fail visibly when resolution is unavailable |
+| CHAT-C02 | Relationship establishment | required | Send, receive, accept, reject, block, and unblock with one durable relationship result; request retries project as one PTID-keyed person row with attempt count and selectable history |
 | CHAT-C03 | Conversation entry | required | Open or create exactly one Direct conversation from a person/contact and return to it after restart |
 | CHAT-C04 | Durable text lifecycle | required | Send, receive, order, retry, reconnect, and restart without loss, duplication, or hidden terminal failure |
-| CHAT-C05 | Conversation projection | required | Conversation list, unread/read, previews, history pagination, local search, and settings reflect durable truth |
-| CHAT-C06 | Rich attachments | required | Image and file content is encrypted, resumable, visible, downloadable, and recoverable |
+| CHAT-C05 | Conversation projection | required | Active transcript, conversation list, per-conversation unread/read attribution, latest-message previews, history pagination, canonical local search, immediate background preview with asynchronous persistence, and bounded clear/restore reflect durable truth |
+| CHAT-C06 | Rich attachments | required | Image, file, and screenshot content is captured without resizing the app, encrypted, resumable, visible, downloadable, and recoverable |
 | CHAT-C07 | Recorded voice messages | required | Record, preview/cancel, send, receive, play, seek, retry, and restore an encrypted voice note with truthful duration/progress |
-| CHAT-C08 | Message interactions and presence | required | Reply/thread, edit, retract, reaction, pin, read, and typing converge across members and restart |
+| CHAT-C08 | Message interactions and presence | required | Reply/thread, edit, retract, reaction, pin, read, and typing converge across members and restart without false failure after authority acceptance; visible presence is reconciled from the Presence owner and never guessed |
 | CHAT-C09 | Group lifecycle | required | Create, add/remove/leave, role/owner changes, rename, dissolve, message, and preserve entitled history |
-| CHAT-C10 | Live one-to-one voice | required | Ring, accept/reject, connect, mute, change input, reconnect, and end through WebRTC direct/TURN paths |
+| CHAT-C10 | Live one-to-one voice and video | required | Ring, accept/reject, connect audio/video, mute, toggle or change camera/input, reconnect, and end through WebRTC direct/TURN paths |
 | CHAT-C11 | Continuity and portability | required | Cross-Station, multi-device, revoke, offline delivery, fresh-install recovery, and failure diagnostics preserve product truth |
 
 ## 4. Platform Applicability
@@ -68,7 +71,7 @@ current-source claim.
 | Capability | Desktop | Mobile | Browser | Claim boundary |
 |---|---|---|---|---|
 | CHAT-C01-C09 | required | required | not claimed | Each platform needs independent native evidence |
-| CHAT-C10 live voice | required | required | not claimed | One-to-one audio only; video is deferred |
+| CHAT-C10 live voice/video | required | required | not claimed | One-to-one audio and video; group calling remains deferred |
 | CHAT-C11 continuity | required | required | not claimed | Cross-Station and device/recovery cells are explicit |
 
 Desktop proof cannot substitute for Mobile. Simulator or emulator evidence
@@ -82,12 +85,12 @@ Recorded voice and live voice are separate products:
 - A **recorded voice message** is durable encrypted Chat content. It uses the
   attachment data plane but has voice-specific capture, duration, playback,
   seek, progress, retry, and recovery behavior.
-- **Live voice** is an ephemeral one-to-one WebRTC session. Station routes
-  sealed signaling; media uses direct ICE with TURN fallback. It never uses
-  the durable message lane as a media stream.
+- **Live voice/video** is an ephemeral one-to-one WebRTC session. Station
+  routes sealed signaling; media uses direct ICE with TURN fallback. It never
+  uses the durable message lane as a media stream.
 
-Resumable chunk upload is not called streaming voice. Video and group voice are
-deferred and cannot be counted toward CHAT-C10.
+Resumable chunk upload is not called streaming voice. Group voice and group
+video remain deferred and cannot be counted toward CHAT-C10.
 
 ## 6. Trust And Safety Promises
 

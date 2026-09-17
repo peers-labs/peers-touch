@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPresenceOnline, resolveChatPresenceTag } from './chatPresence';
+import {
+  isPresenceOnline,
+  resolveChatPresenceTag,
+  resolvePresenceOnline,
+} from './chatPresence';
 
 describe('chat presence tag projection', () => {
   it('prioritizes active media transport over Station reachability', () => {
@@ -30,6 +34,8 @@ describe('chat presence tag projection', () => {
   it('accepts protobuf JSON and numeric online states', () => {
     expect(isPresenceOnline(1)).toBe(true);
     expect(isPresenceOnline('PRESENCE_STATE_ONLINE')).toBe(true);
+    expect(isPresenceOnline('online')).toBe(true);
     expect(isPresenceOnline('PRESENCE_STATE_OFFLINE')).toBe(false);
+    expect(resolvePresenceOnline(0)).toBeNull();
   });
 });

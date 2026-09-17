@@ -63,6 +63,7 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::interface::tauri_commands::actor::actor_profile_to_json;
 use crate::interface::tauri_commands::oss::{
     safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
     OssUploadAttachmentBytesInput,
@@ -2500,10 +2501,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(to_stub(
                 "actor_get_my_profile",
-                json!({
-                    "id": resp.id, "displayName": resp.display_name,
-                    "username": resp.username, "avatar": resp.avatar,
-                }),
+                actor_profile_to_json(&resp),
             ))
         }
 
@@ -2854,6 +2852,32 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_bearer_token(state) {
                 Some(t) => to_json(app_profile::profile_upload_header_oss(input, &t)),
                 None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "presence_query" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::presence::PresenceQueryInput,
+            >(args)
+            {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => match station_request_json(
+                    Method::POST,
+                    "/presence/query",
+                    &token,
+                    None,
+                    Some(json!({ "actor_ptids": input.actor_ptids })),
+                ) {
+                    Ok(data) => to_json(AppResult::success(data)),
+                    Err(error) => error,
+                },
+                None => to_json(AppResult::<Value>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
                     None,
@@ -7282,7 +7306,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_list_messages" => {
-            let (account_id, actor_ptid, _) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingListMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7296,32 +7327,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let conversation_id = args
-                .get("conversation_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            match engine.conversation_messages(conversation_id) {
-                Ok(messages) => {
-                    let items: Vec<Value> = messages
-                        .iter()
-                        .map(|m| {
-                            json!({
-                                "event_id": m.event_id,
-                                "event_sequence": m.event_sequence,
-                                "message_id": m.message_id,
-                                "sender_ptid": m.sender_ptid,
-                                "sender_device_id": m.sender_device_id,
-                                "plaintext": m.plaintext,
-                                "attachments": Vec::<Value>::new(),
-                                "state": m.state,
-                                "timestamp_unix_ms": m.timestamp_unix_ms,
-                            })
-                        })
-                        .collect();
-                    to_json(AppResult::success(json!({ "messages": items })))
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_list_messages_result(&engine, &input),
+            )
+        }
+        "messaging_search_messages" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingSearchMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
                 }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_search_messages_result(&engine, &input),
+            )
         }
         "messaging_thread_counts" => {
             let input = match parse_args::<

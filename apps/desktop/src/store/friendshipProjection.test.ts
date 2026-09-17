@@ -12,6 +12,7 @@ import {
   chatActorIdentityMetadata,
   chatActorIdentityMetadataParts,
   projectChatFriendContacts,
+  projectChatFriendRequestPeers,
   projectMutualFriends,
   singleFederationId,
 } from './friendshipProjection';
@@ -171,6 +172,9 @@ describe('projectChatFriendContacts', () => {
         federationId: 'federation-default',
         name: 'Default Federation',
       }],
+      stationNamesByPeerId: {
+        'station-peer': 'Aspen Station',
+      },
     });
 
     expect(contacts).toEqual([
@@ -179,6 +183,7 @@ describe('projectChatFriendContacts', () => {
         conversationId: 'direct-alice',
         federationId: 'federation-from-conversation',
         homeStationPeerId: 'station-peer',
+        homeStationName: 'Aspen Station',
       }),
     ]);
   });
@@ -233,6 +238,12 @@ describe('projectChatFriendContacts', () => {
         federationId: 'federation-current',
         name: 'Friends Federation',
       }],
+      stationNamesByPeerId: {
+        'station-peer': 'Aspen Station',
+      },
+      stationNamesByActorPtid: {
+        'ptid:bob': 'Bob Home Station',
+      },
     });
 
     expect(contacts[0]).toMatchObject({
@@ -242,14 +253,15 @@ describe('projectChatFriendContacts', () => {
       federatedHandle: '@bob@station.example',
       homeStationDomain: 'station.example',
       homeStationPeerId: 'station-peer',
+      homeStationName: 'Bob Home Station',
       federationId: 'federation-current',
       federationName: 'Friends Federation',
     });
     expect(chatActorIdentityMetadata(contacts[0]!))
-      .toBe('Friends Federation · station.example');
+      .toBe('Friends Federation · Bob Home Station');
     expect(chatActorIdentityMetadataParts(contacts[0]!)).toEqual({
       federation: 'Friends Federation',
-      station: 'station.example',
+      station: 'Bob Home Station',
     });
   });
 
@@ -288,6 +300,47 @@ describe('projectChatFriendContacts', () => {
       federation: 'Friends Federation',
       station: 'remote.station.example',
     });
+  });
+});
+
+describe('projectChatFriendRequestPeers', () => {
+  it('consolidates request attempts by canonical counterparty PTID', () => {
+    const rejected = {
+      ...acceptedRequest('ptid:self', 'ptid:alice', 'federation-current'),
+      id: 'request-rejected',
+      status: 3,
+      createdAt: '2026-09-17T09:00:00.000Z',
+      respondedAt: '2026-09-17T09:01:00.000Z',
+    };
+    const accepted = {
+      ...acceptedRequest('ptid:self', 'ptid:alice', 'federation-current'),
+      id: 'request-accepted',
+      createdAt: '2026-09-17T10:00:00.000Z',
+      respondedAt: '2026-09-17T10:01:00.000Z',
+    };
+
+    expect(projectChatFriendRequestPeers(
+      [accepted, rejected],
+      'ptid:self',
+    )).toEqual([{
+      peerPtid: 'ptid:alice',
+      request: accepted,
+      direction: 'outgoing',
+      attemptCount: 2,
+    }]);
+  });
+
+  it('never merges same-name actors with distinct PTIDs', () => {
+    expect(projectChatFriendRequestPeers([
+      {
+        ...acceptedRequest('ptid:self', 'ptid:alice:station-a', 'federation-current'),
+        receiverDisplayName: 'Alice',
+      },
+      {
+        ...acceptedRequest('ptid:self', 'ptid:alice:station-b', 'federation-current'),
+        receiverDisplayName: 'Alice',
+      },
+    ], 'ptid:self')).toHaveLength(2);
   });
 });
 

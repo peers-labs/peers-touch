@@ -14,6 +14,7 @@ export interface MutualFriendProjection {
   federatedHandle: string;
   homeStationDomain: string;
   homeStationPeerId: string;
+  homeStationName?: string;
 }
 
 export interface ChatActorIdentityProjection extends MutualFriendProjection {
@@ -34,12 +35,21 @@ export interface ChatActorIdentityMetadataParts {
   station: string;
 }
 
+export interface ChatFriendRequestPeerProjection {
+  peerPtid: string;
+  request: FriendRequestData;
+  direction: 'incoming' | 'outgoing';
+  attemptCount: number;
+}
+
 export interface ProjectChatFriendContactsInput {
   conversations: readonly DesktopIMConversationProjection[];
   friendRequests: readonly FriendRequestData[];
   peerProfiles: Readonly<Record<string, AccountProfile | null>>;
   currentUserPtid: string;
   federations: readonly ChatFederationProjection[];
+  stationNamesByPeerId?: Readonly<Record<string, string>>;
+  stationNamesByActorPtid?: Readonly<Record<string, string>>;
 }
 
 export function singleFederationId(
@@ -86,6 +96,8 @@ export function projectChatFriendContacts({
   peerProfiles,
   currentUserPtid,
   federations,
+  stationNamesByPeerId = {},
+  stationNamesByActorPtid = {},
 }: ProjectChatFriendContactsInput): ChatFriendContactProjection[] {
   const conversationsByPeer = new Map(
     conversations
@@ -161,13 +173,79 @@ export function projectChatFriendContacts({
       federatedHandle,
       homeStationDomain,
       homeStationPeerId,
+      homeStationName: stationNamesByActorPtid[actorPtid]?.trim()
+        || stationNamesByPeerId[homeStationPeerId]?.trim()
+        || '',
       federationId,
       federationName: federationNames.get(federationId) || '',
     };
   });
 }
 
-function friendRequestTime(request: FriendRequestData): number {
+export function projectChatFriendRequestPeers(
+  friendRequests: readonly FriendRequestData[],
+  currentUserPtid: string,
+): ChatFriendRequestPeerProjection[] {
+  const currentPtid = currentUserPtid.trim();
+  if (!currentPtid) return [];
+
+  const byPeer = new Map<string, {
+    peerPtid: string;
+    request: FriendRequestData;
+    direction: 'incoming' | 'outgoing';
+    attemptCount: number;
+    latestTime: number;
+    latestIndex: number;
+  }>();
+
+  friendRequests.forEach((request, index) => {
+    const outgoing = request.senderPtid === currentPtid;
+    const incoming = request.receiverPtid === currentPtid;
+    if (!outgoing && !incoming) return;
+    const peerPtid = outgoing ? request.receiverPtid : request.senderPtid;
+    if (!peerPtid) return;
+    const direction = outgoing ? 'outgoing' as const : 'incoming' as const;
+    const requestTime = friendRequestTime(request);
+    const current = byPeer.get(peerPtid);
+    if (!current) {
+      byPeer.set(peerPtid, {
+        peerPtid,
+        request,
+        direction,
+        attemptCount: 1,
+        latestTime: requestTime,
+        latestIndex: index,
+      });
+      return;
+    }
+
+    current.attemptCount += 1;
+    if (
+      requestTime > current.latestTime
+      || (requestTime === current.latestTime && index < current.latestIndex)
+    ) {
+      current.request = request;
+      current.direction = direction;
+      current.latestTime = requestTime;
+      current.latestIndex = index;
+    }
+  });
+
+  return [...byPeer.values()]
+    .sort((left, right) => (
+      right.latestTime - left.latestTime
+      || left.latestIndex - right.latestIndex
+      || left.peerPtid.localeCompare(right.peerPtid)
+    ))
+    .map(({ peerPtid, request, direction, attemptCount }) => ({
+      peerPtid,
+      request,
+      direction,
+      attemptCount,
+    }));
+}
+
+export function friendRequestTime(request: FriendRequestData): number {
   return Date.parse(request.respondedAt || request.createdAt) || 0;
 }
 
@@ -184,6 +262,7 @@ export function chatActorIdentityMetadata(
     | 'actorPtid'
     | 'homeStationDomain'
     | 'homeStationPeerId'
+    | 'homeStationName'
     | 'federationId'
     | 'federationName'
   >,
@@ -199,16 +278,17 @@ export function chatActorIdentityMetadataParts(
     | 'federatedHandle'
     | 'homeStationDomain'
     | 'homeStationPeerId'
+    | 'homeStationName'
     | 'federationId'
     | 'federationName'
   >,
 ): ChatActorIdentityMetadataParts {
   const federation = identity.federationName.trim()
     || identity.federationId.trim();
-  const station = identity.homeStationDomain.trim()
+  const station = identity.homeStationName?.trim()
+    || identity.homeStationDomain.trim()
     || homeStationDomainFromHandle(identity.federatedHandle)
-    || identity.federatedHandle.trim()
-    || identity.homeStationPeerId.trim();
+    || '';
   return { federation, station };
 }
 
