@@ -22397,6 +22397,7 @@ async function waitForConnectorToolSession(
 ): Promise<FoundationToolTurnSession> {
   const startedAt = Date.now();
   let lastError: unknown = null;
+  let lastObservation: Record<string, unknown> | null = null;
   while (Date.now() - startedAt < 90_000) {
     try {
       const session = await resolveFoundationToolTurnSession();
@@ -22404,6 +22405,19 @@ async function waitForConnectorToolSession(
         agent_id: agentId,
         client_capability_session_id: session.capabilitySessionId,
       });
+      lastObservation = {
+        expected: {
+          capabilityId: fixture.manifest.capabilityId,
+          capabilityVersion: fixture.manifest.version,
+        },
+        capabilitySessionId: session.capabilitySessionId,
+        readiness: readiness.capabilities.map((capability) => ({
+          capabilityId: capability.capability_id,
+          capabilityVersion: capability.capability_version,
+          state: capability.state,
+          reasonCode: capability.reason_code,
+        })),
+      };
       if (readiness.capabilities.some((capability) =>
         capability.capability_id === fixture.manifest.capabilityId
         && capability.capability_version === fixture.manifest.version
@@ -22416,7 +22430,10 @@ async function waitForConnectorToolSession(
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   throw Object.assign(
-    new Error('agent.acceptance.connectorCapabilitySessionUnavailable'),
+    new Error(
+      'agent.acceptance.connectorCapabilitySessionUnavailable:'
+      + stableJson(lastObservation),
+    ),
     { cause: lastError },
   );
 }
