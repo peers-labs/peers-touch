@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-17
-covered_docs_hash: 29818125151c4809533e9da3b850ede763e2f17c8f22592182fd17e954b37003
+covered_docs_hash: 996e22162e181fc6a997aba60d5472e4a568447c94efd80e19fbbbc66e3ba9ff
 
 covered_docs:
   - AGENTS.md
@@ -263,3 +263,10 @@ reject inferred percentages, hidden stale work, environment failures presented
 as Task failure, absolute Plan path exposure, or server identities that omit
 dirty source state. Existing Local Dev, Plan, Peers Dev, redaction, and visual
 regressions cover these rules; no new generic review fixture is required.
+
+DWF-D17 removes repository-wide sibling worktree inventory from immutable
+execution identity. Review still fails closed on canonical root, branch,
+workspace and expected-HEAD drift, while unrelated worktree add/remove/prune
+operations no longer invalidate another task. The verifier integration test,
+Plan/Session/migration suites, and contract checks cover the hard cut; review
+severity and golden fixtures remain unchanged.

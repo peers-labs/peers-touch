@@ -31,8 +31,6 @@ const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const PLANCTL = path.join(TEST_DIRECTORY, 'planctl.mjs');
 const INITIAL_HEAD = '3d4e858ce0c8e28969e01a736e2b238269aedb3b';
 const EXPECTED_HEAD = '771605c8d768ea3ef73a1b9b1a63befae354292f';
-const WORKTREE_SET_DIGEST =
-  '4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4';
 const WORKSPACE_ID = 'b0a926025d2b25b9';
 const FIXED_TIME = '2026-09-16T00:00:00.000Z';
 const SOURCE_WORKSPACE_DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -78,7 +76,6 @@ function manifestForStatus(status) {
       workspaceId: WORKSPACE_ID,
       initialHead: INITIAL_HEAD,
       expectedHead: EXPECTED_HEAD,
-      worktreeSetDigest: WORKTREE_SET_DIGEST,
     },
     workClass: 'infrastructure',
     architecture: {
@@ -201,7 +198,6 @@ function planMarkdown(manifest, acceptance, suffix = '') {
 > **Workspace ID**: ${manifest.binding.workspaceId}
 > **Initial HEAD**: ${manifest.binding.initialHead}
 > **Expected HEAD**: ${manifest.binding.expectedHead}
-> **Worktree-set Digest**: ${manifest.binding.worktreeSetDigest}
 
 ## Plan Package
 
@@ -357,6 +353,18 @@ test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhau
     );
   });
 
+  await t.test('obsolete sibling worktree digest field', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateManifest(manifest) {
+        manifest.binding.worktreeSetDigest = 'c'.repeat(64);
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
   await t.test('duplicate task ID', async (t) => {
     const fixture = await makeFixture(t, {
       mutateManifest(manifest) {
@@ -484,6 +492,21 @@ test('renderPlanDocument falls back to bounded compact JSON for a large manifest
   const rendered = renderPlanDocument(compactSource, manifest);
   assert.ok(rendered.split('\n').length <= 300);
   assert.ok(rendered.includes(JSON.stringify(manifest.tasks[19])));
+});
+
+test('renderPlanDocument removes obsolete sibling worktree metadata', () => {
+  const manifest = manifestForStatus('prepared');
+  const acceptance = acceptanceForTasks(manifest.tasks);
+  const source = planMarkdown(manifest, acceptance).replace(
+    `> **Expected HEAD**: ${manifest.binding.expectedHead}`,
+    [
+      `> **Expected HEAD**: ${manifest.binding.expectedHead}`,
+      `> **Worktree-set Digest**: ${'c'.repeat(64)}`,
+    ].join('\n'),
+  );
+
+  const rendered = renderPlanDocument(source, manifest);
+  assert.equal(rendered.includes('Worktree-set Digest'), false);
 });
 
 test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
@@ -746,6 +769,25 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
     await fsp.writeFile(
       fixture.planPath,
       markdown.replace(`> **Initial HEAD**: ${INITIAL_HEAD}`, `> **Initial HEAD**: ${EXPECTED_HEAD}`),
+    );
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_METADATA_MISMATCH',
+    );
+  });
+
+  await t.test('obsolete sibling worktree metadata', async (t) => {
+    const fixture = await makeFixture(t);
+    const markdown = await fsp.readFile(fixture.planPath, 'utf8');
+    await fsp.writeFile(
+      fixture.planPath,
+      markdown.replace(
+        `> **Expected HEAD**: ${EXPECTED_HEAD}`,
+        [
+          `> **Expected HEAD**: ${EXPECTED_HEAD}`,
+          `> **Worktree-set Digest**: ${'c'.repeat(64)}`,
+        ].join('\n'),
+      ),
     );
     await expectPlanError(
       loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
@@ -1320,7 +1362,6 @@ async function makeMigrationFixture(t, { targetStatus = 'active' } = {}) {
         branch: 'merge-desktop-prototype',
         workspaceId,
         head: EXPECTED_HEAD,
-        worktreeSetDigest: WORKTREE_SET_DIGEST,
       };
     },
     async captureSourceIdentity() {
@@ -1374,6 +1415,27 @@ async function prepareReviewedMigration(fixture, options = fixture.migrationOpti
   fixture.migrationOptions.reviewedJournalDigest = digest;
   return prepared;
 }
+
+test('migration preserves review lineage while removing the obsolete binding digest', async (t) => {
+  const fixture = await makeMigrationFixture(t);
+  await preparePlanMigration(fixture.migrationOptions);
+  const legacyJournal = JSON.parse(
+    await fsp.readFile(fixture.journalPath, 'utf8'),
+  );
+  legacyJournal.binding.worktreeSetDigest = 'c'.repeat(64);
+  const legacyBytes = Buffer.from(`${JSON.stringify(legacyJournal, null, 2)}\n`);
+  await fsp.writeFile(fixture.journalPath, legacyBytes);
+  fixture.migrationOptions.reviewedJournalDigest = sha256(legacyBytes);
+
+  await commitPlanMigration(fixture.migrationOptions);
+
+  const committed = JSON.parse(await fsp.readFile(fixture.journalPath, 'utf8'));
+  assert.equal(Object.hasOwn(committed.binding, 'worktreeSetDigest'), false);
+  const reviewed = JSON.parse(
+    await fsp.readFile(`${fixture.journalPath}.reviewed`, 'utf8'),
+  );
+  assert.equal(reviewed.binding.worktreeSetDigest, 'c'.repeat(64));
+});
 
 test('migration PREPARED is non-blocking and interrupted commit completes idempotently', async (t) => {
   const fixture = await makeMigrationFixture(t);
@@ -2344,7 +2406,6 @@ test('migration binds commit to reviewed journal and exact source identity', asy
             branch: 'unexpected-branch',
             workspaceId: WORKSPACE_ID,
             head: EXPECTED_HEAD,
-            worktreeSetDigest: WORKTREE_SET_DIGEST,
           };
         },
       }),

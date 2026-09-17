@@ -38,9 +38,8 @@ include this title or explanatory text in the generated Goal.
 - `workspaceId`: `<materialized-workspaceId>`
 - Initial HEAD: `<materialized-full-commit>`
 - Expected HEAD: `<initially identical to Initial HEAD; refresh only after an explicitly authorized commit, rebase, or merge>`
-- Worktree-set digest: `<materialized-digest>`
 - Capture command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --capture`
-- Verification command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --branch '<materialized-branch>' --workspace-id '<materialized-workspaceId>' --head '<materialized-expected-head>' --worktree-set-digest '<materialized-digest>'`
+- Verification command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --branch '<materialized-branch>' --workspace-id '<materialized-workspaceId>' --head '<materialized-expected-head>'`
 - Shell quoting: every materialized value is one POSIX shell-safe argument;
   use equivalent `shlex.quote` escaping when a value contains a single quote.
 - Identity source: the current verified worktree; skill resolution and skill
@@ -57,8 +56,8 @@ include this title or explanatory text in the generated Goal.
   baseline, and the integrator reverifies before reconcile and before Slice
   completion.
 - Refresh policy: retain Initial HEAD; refresh Expected HEAD only after an
-  explicitly authorized commit, rebase, or merge; refresh the worktree-set
-  digest only after the exact explicitly requested worktree operation.
+  explicitly authorized commit, rebase, or merge. Sibling worktree inventory
+  is topology and does not change this binding.
 - Forbidden worktree operations: no `git switch`, `git checkout`,
   `git worktree add`, `git worktree remove`, `git worktree prune`, or new
   worktree unless the user explicitly requests that exact operation.

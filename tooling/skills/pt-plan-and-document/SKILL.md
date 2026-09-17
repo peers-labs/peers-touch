@@ -156,7 +156,6 @@ branch
 workspace_id
 initial_head
 expected_head
-worktree_set_digest
 blocked=false
 last_session
 ```

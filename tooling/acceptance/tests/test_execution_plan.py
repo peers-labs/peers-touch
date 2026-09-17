@@ -128,7 +128,6 @@ class ExecutionPlanTest(unittest.TestCase):
                     "workspaceId": workspace,
                     "initialHead": "a" * 40,
                     "expectedHead": "b" * 40,
-                    "worktreeSetDigest": "c" * 64,
                 },
                 "workClass": "infrastructure",
                 "architecture": {
@@ -251,7 +250,6 @@ class ExecutionPlanTest(unittest.TestCase):
                         f"> **Workspace ID**: {workspace}",
                         f"> **Initial HEAD**: {'a' * 40}",
                         f"> **Expected HEAD**: {'b' * 40}",
-                        f"> **Worktree-set Digest**: {'c' * 64}",
                         "",
                         "## Plan Package",
                         "",

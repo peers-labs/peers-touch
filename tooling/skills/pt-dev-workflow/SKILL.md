@@ -77,8 +77,8 @@ Before mutation:
 1. Bind one explicitly selected worktree. Never infer it from a Skill path,
    branch name, plan path, or nearby repository.
 2. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
-   expected HEAD, and worktree-set digest with
-   `tooling/scripts/verify-worktree-binding.py`.
+   and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
+   Unrelated sibling worktree inventory is not execution identity.
 3. Resolve user intent, authorization envelope, existing accepted sources, and
    whether the work is tracked.
 4. Preserve unrelated dirty files. Never switch branches or worktrees

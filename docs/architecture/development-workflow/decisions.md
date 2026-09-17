@@ -338,7 +338,7 @@ Migration recovery is serialized by an owner-token lock plus an exclusive
 recovery claim. B4 approves one exact PREPARED journal digest; commit preserves
 that input as `migration.json.reviewed` and every later phase must derive from
 it. The implementation also re-observes the declared `active_work` registry,
-verifies actual branch/HEAD/worktree-set identity and the formal Gate
+verifies actual root/branch/workspace/HEAD identity and the formal Gate
 `workspaceDigest` before mutation, and rehashes every applied target before
 COMMITTED and backup deletion. The reviewed crosswalk digest and old-path
 reference inventory remain mandatory. Public discovery derives the fixed
@@ -568,3 +568,60 @@ creates ambiguous progress and can attach one task to another plan.
 - Tracked workflow commands publish and refresh all three fields atomically.
 - Peers Dev can resolve progress through the canonical Plan Package parser and
   expose typed unavailable/mismatch states without filesystem-path leakage.
+
+## DWF-D17: Bind The Current Worktree, Not The Sibling Inventory
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+### Context
+
+The execution binding included a digest of every path returned by
+`git worktree list`. Adding, removing or pruning an unrelated sibling worktree
+therefore invalidated every active task in the repository even when the bound
+root, branch, workspace and HEAD were unchanged. The digest also made one
+worktree's progress depend on machine topology owned by other tasks.
+
+### Decision
+
+- Immutable execution identity consists of the explicitly selected canonical
+  root, current working directory, branch, `workspaceId`, initial HEAD and
+  expected HEAD.
+- The sibling worktree inventory is operational topology, not identity. It is
+  neither emitted nor compared by the verifier, Plan Package, new migration
+  journals, `active_work`, Goal, or Context Anchor.
+- A pre-DWF-D17 migration may retain the old field only inside its immutable
+  reviewed snapshot. Recovery normalizes that reviewed input and removes the
+  field from the live journal on its next write.
+- Root, branch, workspace or expected-HEAD drift remains fail-closed with
+  `WORKTREE_IDENTITY_MISMATCH`.
+- Adding, removing or pruning an unrelated sibling worktree does not require a
+  binding migration or user authorization for the current task.
+- The old digest field is removed as a hard cut; readers and writers do not
+  maintain a compatibility alias.
+
+### Rationale
+
+An identity field must describe the selected execution object. Repository-wide
+worktree membership describes mutable shared topology and cannot establish
+whether the current worktree changed. Canonical root plus `workspaceId` already
+distinguishes sibling worktrees, while branch and HEAD fence source state.
+
+### Alternatives Considered
+
+- Automatically refresh the digest after sibling churn: rejected because it
+  preserves the false invariant and still interrupts unrelated work.
+- Keep the digest as optional persisted telemetry: rejected because persisted
+  topology invites callers to treat it as authority again.
+- Ignore only known temporary paths: rejected because path allowlists encode
+  environment accidents rather than the ownership model.
+
+### Consequences
+
+- Existing Plan Package and `active_work` records must remove the obsolete
+  field when they adopt this contract. The `active_work` rewrite preserves
+  current-worktree identity and appends an auditable schema-migration record.
+- Worktree add/remove authorization remains required for the operation itself;
+  it no longer mutates another task's identity.
+- Regression coverage must prove that unrelated sibling worktree churn leaves
+  capture and verification output unchanged.

@@ -44,8 +44,6 @@ const EXPECTED_HEAD = execFileSync('git', ['rev-parse', 'HEAD'], {
 }).trim();
 const INITIAL_HEAD =
   EXPECTED_HEAD === '0'.repeat(40) ? '1'.repeat(40) : '0'.repeat(40);
-const WORKTREE_SET_DIGEST =
-  '4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4';
 const WORKSPACE_ID = workspaceIdForRoot(REPO_ROOT);
 const START_TIME = Date.parse('2026-09-16T12:00:00.000Z');
 
@@ -108,7 +106,6 @@ function fixture({
       workspaceId: WORKSPACE_ID,
       initialHead: INITIAL_HEAD,
       expectedHead: EXPECTED_HEAD,
-      worktreeSetDigest: WORKTREE_SET_DIGEST,
     },
     workClass: planWorkClass ?? workClass,
     tasks: [
@@ -157,7 +154,6 @@ function fixture({
         branch: binding.branch,
         workspaceId: binding.workspaceId,
         head: binding.expectedHead,
-        worktreeSetDigest: binding.worktreeSetDigest,
       };
     },
   };

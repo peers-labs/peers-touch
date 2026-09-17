@@ -141,7 +141,7 @@ Example:
     instructions, never the execution worktree. Before dispatch and before the
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
-    branch, `workspaceId`, initial HEAD, expected HEAD, and worktree-set digest.
+    branch, `workspaceId`, initial HEAD, and expected HEAD.
     The verified binding remains immutable unless the user explicitly
     authorizes one of the refresh operations defined in §13.5.1.
 12. **Development declaration first** — Read-only intake may inspect any
@@ -202,7 +202,7 @@ Use domain-specific loggers only (see platform docs for specifics).
   the absolute root. The logical worktree name is mandatory so `<repo-root>`
   cannot make multiple worktrees indistinguishable. A Context Anchor's
   worktree identity also includes the verified branch, `workspaceId`, initial
-  HEAD, expected/verified HEAD, and worktree-set digest.
+  HEAD, and expected/verified HEAD.
 
 ### Station Runs Through Profile Only
 
@@ -540,16 +540,16 @@ edits, status claims, and completion claims.
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
 4. Reconcile the captured identity with every worktree identity present in
    `active_work`, the formal plan, and the latest Context Anchor. Any mismatch,
-   or any later root, branch, HEAD, `workspaceId`, or worktree-set drift,
+   or any later root, branch, HEAD, or `workspaceId` drift,
    returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
    automatically changing directories, switching branches, or selecting a
    different worktree.
 5. From the same root, immediately verify all captured values:
-   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>' --worktree-set-digest '<digest>'`.
+   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
    Every materialized value must be one POSIX shell-safe argument.
    Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
-   expected HEAD, and worktree-set digest. On first registration, expected HEAD
-   equals initial HEAD. A missing verifier or unresolved field is
+   and expected HEAD. On first registration, expected HEAD equals initial HEAD.
+   A missing verifier or unresolved field is
    `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
    mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
 6. Every mutating tool call must carry the bound canonical root as its explicit
@@ -559,10 +559,10 @@ edits, status claims, and completion claims.
 7. Re-run the verifier after resume or context compaction and before every
    status, readiness, handoff, or completion report.
 8. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
-   after a commit, rebase, or merge that the user explicitly authorized. The
-   worktree-set digest may refresh only after the exact worktree operation the
-   user explicitly requested. Resume and context compaction verify the persisted
-   values; they MUST NOT recapture current Git state as a replacement baseline.
+   after a commit, rebase, or merge that the user explicitly authorized.
+   Resume and context compaction verify the persisted values; they MUST NOT
+   recapture current Git state as a replacement baseline. Unrelated sibling
+   worktree inventory is machine topology and never part of this binding.
 9. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
@@ -576,15 +576,25 @@ atomically:
 
 1. append an immutable row under `## active_work_binding_migrations` containing
    the work ID, migration date, prior branch, captured `workspace_id`,
-   baseline HEAD, worktree-set digest, and authorization reference;
+   baseline HEAD, and authorization reference;
 2. populate the legacy row with that captured `workspace_id`,
-   `initial_head`, `expected_head`, and `worktree_set_digest`, with both HEAD
-   fields equal to the captured HEAD.
+   `initial_head`, and `expected_head`, with both HEAD fields equal to the
+   captured HEAD.
 
 This explicit migration establishes a new auditable baseline; it is not resume
 recapture. Missing authorization, plan mismatch, branch mismatch, ambiguous
 worktree selection, or a partial registry write remains
 `WORKTREE_IDENTITY_UNAVAILABLE` and blocks execution.
+
+Rows that already contain `workspace_id`, both HEAD fields, and the obsolete
+sibling-topology digest use a separate one-time schema migration. Dev Workflow
+must atomically remove the obsolete column and every row value while preserving
+all current-worktree identity fields, then append an
+`active_work_binding_migrations` audit row naming the work ID, migration date,
+`DWF-D17`, unchanged `workspace_id`/HEAD values, and authorization reference.
+This migration does not recapture identity and does not require a worktree
+operation. Context Anchor reports `CONTEXT_PROJECTION_STALE` until the owner
+completes it.
 
 ### 13.6 Session Continuity Protocol
 
@@ -626,9 +636,9 @@ application service that coordinates writes through the owning commands.
 ```markdown
 ## active_work
 
-| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
-| 1 | docs/.../execution-plans/example/plan.md | EXECUTE | TASK-03 | docs/.../execution-plans/example/tasks/TASK-03.md | IMPLEMENTING | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-09-16 |
+| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | blocked | last_session |
+|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------|--------------|
+| 1 | docs/.../execution-plans/example/plan.md | EXECUTE | TASK-03 | docs/.../execution-plans/example/tasks/TASK-03.md | IMPLEMENTING | main | 0123456789abcdef | `<full-head>` | `<full-head>` | false | 2026-09-16 |
 ```
 
 **Lifecycle rules:**
@@ -636,9 +646,9 @@ application service that coordinates writes through the owning commands.
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a placeholder row or fabricate a plan path.
 - **Plan created** → append a row with the repository-relative plan path and `stage: PLAN`.
 - **Worktree binding created** → record the verified `workspace_id`,
-  `initial_head`, `expected_head`, and `worktree_set_digest`; initially both
-  HEAD fields are identical. Never derive identity from a skill path or copy it
-  from another worktree.
+  `initial_head`, and `expected_head`; initially both HEAD fields are
+  identical. Never derive identity from a skill path or copy it from another
+  worktree.
 - **Task/Session transition** → Dev Workflow updates manifest/Task/Session
   owners first, then mirrors `current_task_id/current_task_path/dev_state`.
 - **Action blocked** → the scheduler parks the action in its projection; Dev
@@ -660,7 +670,7 @@ Context Anchor rules:
 - Context Anchor validates and projects; it never writes or repairs
   `active_work`.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
-  `workspaceId`, initial HEAD, expected/verified HEAD, and worktree-set digest.
+  `workspaceId`, initial HEAD, and expected/verified HEAD.
   It never persists a developer or CI user-home absolute path or an ambiguous
   bare `<repo-root>`.
 - The chat projection also records completed delta, dependency-ready queue,

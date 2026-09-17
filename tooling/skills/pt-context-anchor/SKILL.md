@@ -56,7 +56,7 @@ the owner, then invokes this Skill again.
 | Projected field | Read owner |
 |---|---|
 | Worktree, branch, `workspaceId` | verified Git binding |
-| Initial/expected HEAD and worktree-set digest | persisted binding |
+| Initial/expected HEAD | persisted binding |
 | Main task, scope, architecture/product decisions | accepted sources |
 | Stage and tracked locator | `active_work` |
 | Task lifecycle/current Task/dependencies | Plan Package manifest |
@@ -76,8 +76,8 @@ Tracked work uses:
 ```markdown
 ## active_work
 
-| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
+| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | blocked | last_session |
+|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------|--------------|
 ```
 
 Validation rules:
@@ -85,8 +85,10 @@ Validation rules:
 - `plan` resolves to package `plan.md`.
 - `current_task_id/current_task_path` mirror the manifest or are both `NONE`.
 - `dev_state` mirrors `session.json` or is `NONE`.
-- branch, workspace, expected HEAD, and digest match verified Git state.
+- branch, workspace, and expected HEAD match verified Git state.
 - initial HEAD is immutable.
+- the obsolete sibling-topology digest column is absent; if present, report
+  `CONTEXT_PROJECTION_STALE` for Dev Workflow migration.
 - one workspace has at most one non-complete row.
 - `blocked=true` requires an empty Ready Queue and source-backed exhaustion.
 
@@ -123,7 +125,6 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Worktree / branch / workspace**:
 - **Initial HEAD**:
 - **Expected / verified HEAD**:
-- **Worktree-set digest**:
 - **Progress**: <done>/<total> Task closures (<percentage>%)
 - **Completed delta**:
 - **Next Progress Slice**: <Task ID, outcome, and completion boundary>

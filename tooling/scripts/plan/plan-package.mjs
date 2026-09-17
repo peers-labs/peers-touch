@@ -362,13 +362,19 @@ function parseMetadata(text, sourcePath) {
 }
 
 function assertMetadata(manifest, metadata, sourcePath) {
+  if (metadata.has('worktreesetdigest')) {
+    fail(
+      'PLAN_METADATA_MISMATCH',
+      'Obsolete Worktree-set Digest metadata must be removed',
+      { path: sourcePath, key: 'Worktree-set Digest' },
+    );
+  }
   const expected = {
     status: manifest.status,
     branch: manifest.binding.branch,
     workspaceid: manifest.binding.workspaceId,
     initialhead: manifest.binding.initialHead,
     expectedhead: manifest.binding.expectedHead,
-    worktreesetdigest: manifest.binding.worktreeSetDigest,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (!metadata.has(key) || metadata.get(key) !== value) {
@@ -544,7 +550,7 @@ function validateManifestSchema(manifest) {
   assertEnum(manifest.status, PLAN_STATUSES, 'Plan Package.status');
   assertClosedObject(
     manifest.binding,
-    ['branch', 'workspaceId', 'initialHead', 'expectedHead', 'worktreeSetDigest'],
+    ['branch', 'workspaceId', 'initialHead', 'expectedHead'],
     'Plan Package.binding',
   );
   assertString(manifest.binding.branch, 'Plan Package.binding.branch');
@@ -555,11 +561,6 @@ function validateManifestSchema(manifest) {
   assertString(manifest.binding.expectedHead, 'Plan Package.binding.expectedHead', {
     pattern: SHA1_PATTERN,
   });
-  assertString(
-    manifest.binding.worktreeSetDigest,
-    'Plan Package.binding.worktreeSetDigest',
-    { pattern: SHA256_PATTERN },
-  );
   assertEnum(manifest.workClass, WORK_CLASSES, 'Plan Package.workClass');
 
   assertClosedObject(manifest.architecture, ['sources', 'decisions'], 'Plan Package.architecture');
@@ -1629,7 +1630,6 @@ export function renderPlanDocument(markdown, manifest) {
     ['workspaceid', manifest.binding.workspaceId],
     ['initialhead', manifest.binding.initialHead],
     ['expectedhead', manifest.binding.expectedHead],
-    ['worktreesetdigest', manifest.binding.worktreeSetDigest],
   ]);
 
   function renderWith(serializedManifest) {
@@ -1642,6 +1642,7 @@ export function renderPlanDocument(markdown, manifest) {
       /^(\s*>\s*\*\*([^*]+)\*\*:\s*)(.*?)(\s*)$/gm,
       (whole, prefix, rawKey, _value, suffix) => {
         const key = metadataKey(rawKey);
+        if (key === 'worktreesetdigest') return '';
         if (!replacements.has(key)) return whole;
         if (seen.has(key)) {
           fail('PLAN_METADATA_MISMATCH', 'Markdown metadata key is duplicated', {

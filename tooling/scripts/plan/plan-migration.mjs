@@ -269,8 +269,6 @@ function defaultVerifyBinding(repoRoot, binding) {
       binding.workspaceId,
       '--head',
       binding.expectedHead,
-      '--worktree-set-digest',
-      binding.worktreeSetDigest,
     ],
     repoRoot,
     'WORKTREE_IDENTITY_MISMATCH',
@@ -310,11 +308,6 @@ async function assertMigrationIdentity(
     ['branch', journal.binding.branch, verified?.branch],
     ['workspaceId', journal.binding.workspaceId, verified?.workspaceId],
     ['expectedHead', journal.binding.expectedHead, verified?.head],
-    [
-      'worktreeSetDigest',
-      journal.binding.worktreeSetDigest,
-      verified?.worktreeSetDigest,
-    ],
   ]) {
     if (expected !== actual) mismatches[field] = { expected, actual };
   }
@@ -433,7 +426,7 @@ async function verifyReviewedJournalLineage(options, journal) {
   let reviewed;
   try {
     reviewed = validatePlanMigrationJournal(
-      JSON.parse(snapshotBytes.toString('utf8')),
+      normalizeLegacyJournalBinding(JSON.parse(snapshotBytes.toString('utf8'))),
     );
   } catch (error) {
     if (error instanceof SyntaxError) {
@@ -874,10 +867,28 @@ function validateActiveWorkProjection(projection) {
   }
 }
 
+function normalizeLegacyJournalBinding(journal) {
+  if (
+    !isPlainObject(journal) ||
+    !isPlainObject(journal.binding) ||
+    !Object.hasOwn(journal.binding, 'worktreeSetDigest')
+  ) {
+    return journal;
+  }
+  assertString(
+    journal.binding.worktreeSetDigest,
+    'Legacy Plan Migration Journal.binding.worktreeSetDigest',
+    SHA256_PATTERN,
+  );
+  const normalized = structuredClone(journal);
+  delete normalized.binding.worktreeSetDigest;
+  return normalized;
+}
+
 function validateBinding(binding) {
   assertClosedObject(
     binding,
-    ['branch', 'workspaceId', 'initialHead', 'expectedHead', 'worktreeSetDigest'],
+    ['branch', 'workspaceId', 'initialHead', 'expectedHead'],
     'Plan Migration Journal.binding',
   );
   assertString(binding.branch, 'Plan Migration Journal.binding.branch');
@@ -895,11 +906,6 @@ function validateBinding(binding) {
     binding.expectedHead,
     'Plan Migration Journal.binding.expectedHead',
     SHA1_PATTERN,
-  );
-  assertString(
-    binding.worktreeSetDigest,
-    'Plan Migration Journal.binding.worktreeSetDigest',
-    SHA256_PATTERN,
   );
 }
 
@@ -1085,7 +1091,7 @@ export async function readPlanMigrationJournal(journalPath) {
     }
     throw error;
   }
-  return validatePlanMigrationJournal(value);
+  return validatePlanMigrationJournal(normalizeLegacyJournalBinding(value));
 }
 
 async function writeJournal(journalPath, journal, clock) {

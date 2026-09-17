@@ -56,7 +56,6 @@ Retained authorities:
 | Workspace ID | `9eb2cb904c9ae460` |
 | Initial HEAD | `2d54851f95994d717928105aca6470c30adf3657` |
 | Expected HEAD | `active_work.expected_head` (authoritative advancing value) |
-| Worktree-set digest | `4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4` |
 
 Initial HEAD is immutable. Expected HEAD advances only through authorized local
 checkpoint commits or an explicitly authorized merge/rebase.

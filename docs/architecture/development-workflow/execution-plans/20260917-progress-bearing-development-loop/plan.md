@@ -5,7 +5,6 @@
 > **Workspace ID**: dbd1913c8dd24d52
 > **Initial HEAD**: d8e610d5275014733545a815ac9ed3a0a5c7564c
 > **Expected HEAD**: d8e610d5275014733545a815ac9ed3a0a5c7564c
-> **Worktree-set Digest**: 35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb
 
 ## Plan Package
 
@@ -19,8 +18,7 @@
     "branch": "peers-dev-workflow",
     "workspaceId": "dbd1913c8dd24d52",
     "initialHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c",
-    "expectedHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c",
-    "worktreeSetDigest": "35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb"
+    "expectedHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c"
   },
   "workClass": "infrastructure",
   "architecture": {

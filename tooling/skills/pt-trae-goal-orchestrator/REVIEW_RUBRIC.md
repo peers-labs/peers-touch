@@ -45,8 +45,8 @@ Reject regardless of score when:
   `GOAL_REPLACEMENT_REQUIRED`;
 - no current stage can be resolved;
 - the `Worktree Binding` section is absent or leaves the canonical runtime
-  worktree root, branch, `workspaceId`, initial `HEAD`, expected `HEAD`, or
-  worktree-set digest unresolved or as a placeholder;
+  worktree root, branch, `workspaceId`, initial `HEAD`, or expected `HEAD`
+  unresolved or as a placeholder;
 - the binding is inferred from a skill resolution or source location instead
   of the current verified worktree;
 - the explicit-root capture command is missing, does not run from that exact
@@ -69,8 +69,7 @@ Reject regardless of score when:
   `git worktree remove`, `git worktree prune`, or new-worktree creation without
   an explicit user request for that exact operation;
 - expected `HEAD` can refresh without an explicitly authorized commit, rebase,
-  or merge, or the worktree-set digest can refresh without the exact explicitly
-  requested worktree operation;
+  or merge;
 - the Goal crosses a stage review boundary;
 - an EXECUTE Goal has no approved plan or matching tracked-work state;
 - the Goal changes product, architecture, or plan semantics;

@@ -186,8 +186,6 @@ function defaultBindingVerifier({ repoRoot: root, binding }) {
         binding.workspaceId,
         '--head',
         binding.expectedHead,
-        '--worktree-set-digest',
-        binding.worktreeSetDigest,
       ],
       {
         cwd: root,
@@ -244,8 +242,7 @@ async function loadBoundContext(options, dependencies = {}) {
   if (
     verified?.workspaceId !== plan.manifest.binding.workspaceId ||
     verified?.branch !== plan.manifest.binding.branch ||
-    verified?.head !== plan.manifest.binding.expectedHead ||
-    verified?.worktreeSetDigest !== plan.manifest.binding.worktreeSetDigest
+    verified?.head !== plan.manifest.binding.expectedHead
   ) {
     sessionFail(
       'WORKTREE_IDENTITY_MISMATCH',

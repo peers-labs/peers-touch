@@ -46,8 +46,8 @@ export VITE_PORT=3000
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
 | `generate-mobile-brand-assets.py` | 可用 | 生成 Mobile 品牌资源 | 生成 App 内透明 wordmark；系统图标从 Desktop `icon-source.png` 裁掉外圈并保留源图主体占比，再同步生成 Tauri icon、iOS AppIcon 与 Android launcher icons |
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
-| `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId`、expected HEAD 与 worktree-set digest；必须从被绑定 root 运行 |
-| `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、持久 schema、synthetic worktree-set digest 变化，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义；不创建真实 worktree |
+| `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
+| `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
 | `../../apps/dev/server/index.mjs` | 推荐 | 提供 Peers Dev 只读开发控制面 | `make dev-ui` 在固定 `127.0.0.1:4177` 上启动或复用机器唯一实例；应用源码与界面统一归属 `apps/dev/`，不暴露 canonical root、原始 profile/credential 或写接口 |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |

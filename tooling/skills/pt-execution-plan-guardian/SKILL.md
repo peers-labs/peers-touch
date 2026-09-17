@@ -75,8 +75,8 @@ Missing required input returns `ACTION_DENIED` with
 Evaluate in this order:
 
 1. **Identity**
-   - worktree, branch, `workspaceId`, expected HEAD, and worktree-set digest
-     match persisted binding;
+   - canonical worktree, branch, `workspaceId`, and expected HEAD match the
+     persisted binding;
    - otherwise `WORKTREE_IDENTITY_MISMATCH`.
 2. **Current ownership**
    - the action belongs to the manifest current Task;

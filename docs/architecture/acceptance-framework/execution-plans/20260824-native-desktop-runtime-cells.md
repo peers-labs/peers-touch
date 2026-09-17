@@ -4494,9 +4494,7 @@ Binding verified after resume:
 - user-requested synchronization target: `peers-chat-high-chat`,
   `high-chat-dogfood`, workspace `95620934d3348d95`, synchronization baseline
   `67efeb70354351ed2afa838849f3b5c1d0b6d5c3`, first synchronization merge
-  `f20e4e4c12485b6002bb78579dc0a3b39a9d63a7`;
-- shared worktree-set digest:
-  `4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4`.
+  `f20e4e4c12485b6002bb78579dc0a3b39a9d63a7`.
 
 Run `20260911T010001453367Z-fd133cd4e8ee5f82e4a1480f0aa8a26b`
 failed building Bob's binary with E0609: the HTTP adapter's identity-transition

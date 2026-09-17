@@ -48,7 +48,6 @@ interface PlanPackage {
     workspaceId: string;
     initialHead: string;
     expectedHead: string;
-    worktreeSetDigest: string;
   };
   workClass: DevelopmentWorkClass;
   architecture: {
@@ -101,8 +100,9 @@ refactor or documentation closures without downgrading product Tasks.
 
 Current Task derives from exactly one manifest Task entry with
 `status: in_progress`. Ready Tasks derive from the same manifest DAG and statuses.
-`expectedHead` changes only after an authorized Git operation; `initialHead` and
-`worktreeSetDigest` follow the immutable binding rules.
+`expectedHead` changes only after an authorized Git operation; `initialHead`
+follows the immutable binding rules. Sibling worktree inventory is machine
+topology and is not part of this binding.
 
 `planctl status` also derives a read-only progress projection:
 
@@ -304,7 +304,6 @@ branch
 workspace_id
 initial_head
 expected_head
-worktree_set_digest
 blocked
 last_session
 ```
@@ -321,6 +320,9 @@ Ownership:
   never rewrites its owners.
 - `current_step` is removed after package cutover; it cannot coexist as a second
   current-state field.
+- adopting DWF-D17 atomically removes the obsolete sibling-topology column
+  while preserving workspace and HEAD identity and appending a binding
+  migration audit row.
 
 ## 7. Development Work Item
 
@@ -746,7 +748,6 @@ interface PlanMigrationJournal {
     workspaceId: string;
     initialHead: string;
     expectedHead: string;
-    worktreeSetDigest: string;
   };
   sourceIdentity: {
     commit: string;
@@ -796,8 +797,12 @@ Rules:
   the declared registry source directly, hash its canonical `active_work`
   section and require the observed state to remain `NONE`; caller-supplied
   state text is not authoritative;
-- `binding` is revalidated from actual branch, HEAD, workspace identity and
-  worktree-set digest before mutation and throughout recovery;
+- `binding` is revalidated from actual branch, HEAD and workspace identity
+  before mutation and throughout recovery;
+- a pre-DWF-D17 journal may carry the removed sibling-topology digest only in
+  its already-reviewed bytes; recovery validates its shape, excludes it from
+  identity comparison, and drops it on the next journal write while preserving
+  the original reviewed snapshot and digest;
 - `sourceIdentity.workspaceDigest` is copied from the frozen formal Gate source
   and must still match immediately before the first live replacement;
 - B4 reviews the exact PREPARED `migration.json` SHA-256. Commit/recovery require

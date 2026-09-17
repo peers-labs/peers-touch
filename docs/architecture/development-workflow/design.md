@@ -138,6 +138,8 @@ execution-plans/<date>-<slug>/
 `plan.md` owns:
 
 - verified worktree binding and plan identity;
+- current-worktree binding only; sibling worktree inventory remains
+  non-authoritative machine topology;
 - stable goal, scope, non-scope and architecture references;
 - task ID/path/dependency graph, Task lifecycle status and compact blocker reference;
 - one machine-readable Acceptance Execution contract;
@@ -427,6 +429,8 @@ The architecture is implemented only when:
   Task locator; Peers Dev never infers progress from a work item or branch;
 - Dev Workflow heartbeats long-running declarations before expiry and refreshes
   both the declaration and workspace registration after source HEAD changes;
+- unrelated sibling worktree add/remove/prune operations do not invalidate the
+  selected worktree's binding;
 - every non-blocked Anchor continuation targets one Task closure and cannot
   terminate successfully with zero durable progress;
 - two independent reviews find no unresolved source-of-truth or runnable gap.
