@@ -26,7 +26,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
-from tooling.acceptance.core.evidence_store import source_identity, workspace_id
+from tooling.acceptance.core.evidence_store import (
+    EvidenceStore,
+    RunHandle,
+    source_identity,
+    workspace_id,
+)
 from tooling.acceptance.gates.agent.agent_v2_gate import (
     GATE_ROLES,
     MATRIX,
@@ -100,6 +105,24 @@ def require_mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise EvaluationDevelopmentError(f"{label} must be an object")
     return value
+
+
+def begin_attestation_run(artifact_root: Path) -> RunHandle:
+    os.environ["PT_ACCEPTANCE_ARTIFACT_ROOT"] = str(artifact_root)
+    try:
+        store = EvidenceStore(artifact_root, worktree=ROOT)
+        run = store.begin_run(
+            AGENT_V2_EVALUATION_GATE,
+            source=source_identity(ROOT),
+        )
+    except BaseException:
+        shutil.rmtree(artifact_root, ignore_errors=True)
+        raise
+    os.environ["PT_ACCEPTANCE_WORKSPACE_ID"] = store.workspace_id
+    os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_EVALUATION_GATE
+    os.environ["PT_ACCEPTANCE_RUN_ID"] = run.run_id
+    os.environ["PT_ACCEPTANCE_APPROVED_PROFILE"] = PROFILE
+    return run
 
 
 def _load_module(path: Path, name: str) -> ModuleType:
@@ -730,9 +753,6 @@ def main() -> int:
     )
     artifact_dir = artifact_parent / artifact_run_id
     artifact_dir.mkdir(parents=True, exist_ok=False)
-    candidate_root = Path(
-        tempfile.mkdtemp(prefix=f"pt-agent-v2-j06-{artifact_run_id}-")
-    )
     provisioner = HomeStationProvisioner(
         EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "home-station.yaml")
     )
@@ -763,6 +783,15 @@ def main() -> int:
         "provisionerResourcesReleased": [],
         "failures": [],
     }
+    candidate_root = Path(
+        tempfile.mkdtemp(prefix=f"pt-agent-v2-j06-{artifact_run_id}-")
+    )
+    attestation_root = Path("/tmp") / f"mca-evaluation-{artifact_run_id}"
+    try:
+        attestation_run = begin_attestation_run(attestation_root)
+    except BaseException:
+        shutil.rmtree(candidate_root, ignore_errors=True)
+        raise
 
     try:
         runtime_manifest = provisioner.provision(AGENT_V2_EVALUATION_GATE)
@@ -924,6 +953,15 @@ def main() -> int:
             cleanup["failures"].append(
                 f"provisioner cleanup: {type(error).__name__}: {error}"
             )
+        try:
+            attestation_run.close()
+        except BaseException as error:
+            cleanup["status"] = "failed"
+            cleanup["failures"].append(
+                f"attestation cleanup: {type(error).__name__}: {error}"
+            )
+        finally:
+            shutil.rmtree(attestation_root, ignore_errors=True)
 
     product_cleanup = cleanup.get("product") or {
         "status": "failed",

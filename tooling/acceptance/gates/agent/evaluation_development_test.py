@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ from tooling.acceptance.gates.agent.evaluation_development import (
     EvaluationDevelopmentError,
     ROOT,
     TUPLE_FIELDS,
+    begin_attestation_run,
     evaluate_evaluation_journey,
     write_candidate,
 )
@@ -145,6 +147,53 @@ def valid_capture() -> dict[str, object]:
 
 
 class EvaluationDevelopmentTest(unittest.TestCase):
+    def test_attestation_run_context_is_ready_before_provisioning(
+        self,
+    ) -> None:
+        keys = (
+            "PT_ACCEPTANCE_ARTIFACT_ROOT",
+            "PT_ACCEPTANCE_WORKSPACE_ID",
+            "PT_ACCEPTANCE_GATE_ID",
+            "PT_ACCEPTANCE_RUN_ID",
+            "PT_ACCEPTANCE_APPROVED_PROFILE",
+        )
+        previous = {key: os.environ.get(key) for key in keys}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                artifact_root = Path(directory) / "attestation"
+                run = begin_attestation_run(artifact_root)
+                try:
+                    self.assertEqual(
+                        os.environ["PT_ACCEPTANCE_ARTIFACT_ROOT"],
+                        str(artifact_root),
+                    )
+                    self.assertEqual(
+                        os.environ["PT_ACCEPTANCE_WORKSPACE_ID"],
+                        run.store.workspace_id,
+                    )
+                    self.assertEqual(
+                        os.environ["PT_ACCEPTANCE_GATE_ID"],
+                        AGENT_V2_EVALUATION_GATE,
+                    )
+                    self.assertEqual(
+                        os.environ["PT_ACCEPTANCE_RUN_ID"],
+                        run.run_id,
+                    )
+                    self.assertEqual(
+                        os.environ["PT_ACCEPTANCE_APPROVED_PROFILE"],
+                        "two",
+                    )
+                    self.assertEqual(run.state, "ACTIVE")
+                    self.assertTrue(run.run_dir.is_dir())
+                finally:
+                    run.close()
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_accepts_complete_j06_capture(self) -> None:
         capture = valid_capture()
         assertions = evaluate_evaluation_journey(
