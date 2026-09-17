@@ -342,7 +342,7 @@ def inspect_leases(args):
     for lease_file in sorted(lease_root.glob("*.lock")):
         with lease_file.open("r+", encoding="utf-8") as handle:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
             except BlockingIOError:
                 metadata = read_metadata(handle)
                 invalid = validate_active_metadata(metadata)

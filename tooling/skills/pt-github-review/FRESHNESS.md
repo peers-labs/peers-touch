@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-16
-covered_docs_hash: ffb8fce26160cbfcb33c8f9a535418e9bc75a49f7945a704879b1d7748cbc831
+last_verified_at: 2026-09-17
+covered_docs_hash: 2636040d6558c53b052e757455e8800bf10e338dc6afeda6aec9d78a32b33b58
 
 covered_docs:
   - AGENTS.md
@@ -241,3 +241,30 @@ The W2 Home slice registers `homeRuntime` as the owner of the Station-backed
 Home projection while retaining the existing `eager + forever` page lifetime.
 This changes projection ownership, not review severity; runtime, store, and
 page-descriptor checks cover the boundary without a new review fixture.
+
+## 2026-09-17 Review
+
+Progress-bearing continuation makes Task closure the user-facing progress unit,
+derives the exact next completion effect through `planctl status`, and prevents
+Context Anchor from returning successful zero-delta administrative actions.
+Profile Agent control and the read-only Development Control Plane dashboard
+refine Local Dev operation policy without weakening declaration, capability,
+lease, reset-scope, source-identity, or evidence rules. The dashboard now uses
+one worktree-first projection for requirements, Journeys and runtime resources,
+with profile occupancy retained as a secondary capacity view. PR review
+severity and fixtures remain unchanged; `review/skill-check.sh`, Plan tests,
+Local Dev tests, and dashboard tests own the executable contract.
+
+Peers Dev now owns that projection as a first-class `apps/dev` application with
+one fixed machine endpoint and a fail-closed server identity contract. Concurrent
+read-only lease observers use shared locks so they do not impersonate live
+exclusive holders. These changes preserve existing review severity and require
+no new review fixture.
+
+Plan-aware observability adds an explicit declaration-to-Plan locator, a
+read-only Development Session bridge for mixed-version rollout, typed legacy
+and stale states, and separate work versus environment projections. Review must
+reject inferred percentages, hidden stale work, environment failures presented
+as Task failure, absolute Plan path exposure, or server identities that omit
+dirty source state. Existing Local Dev, Plan, Peers Dev, redaction, and visual
+regressions cover these rules; no new generic review fixture is required.

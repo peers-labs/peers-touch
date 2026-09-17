@@ -25,9 +25,10 @@ make restart       # Restart everything
 ```
 
 The agent's job is to resolve and activate an existing approved **profile** for
-the user's scenario. Creating or registering a profile or deploy environment is
-permitted only after a human developer explicitly authorizes the exact
-environment name and target in the current conversation.
+the user's scenario. The reviewed profile's `PT_AGENT_CONTROL_MODE` determines
+whether registration and runtime operation are human-gated, managed, or
+disposable. Creating a profile or deploy environment still requires explicit
+human approval for the exact environment name and target.
 
 ## Environment Creation Authorization
 
@@ -89,6 +90,22 @@ its consumed environment-creation receipt.
 Remote deploy environments resolve directly from exactly one Git-tracked, clean
 `env/peers-touch/<profile>/deploy/<name>.env.example`. A
 `.local/deploy/envs/` copy is not deployment authority.
+
+Every canonical profile declares:
+
+```env
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
+```
+
+- `human-gated`: ask before registration/binding changes or Station mutation.
+- `managed`: the Agent may register, bind, deploy, restart, and clean up without
+  repeated approval, within declaration, capability, lease, and source guards.
+- `disposable`: the Agent may additionally run exact-scope reset when
+  `station.reset` is declared, bound, and leased.
+
+The field is a maximum policy, not a lease or source of credentials. Missing or
+invalid mode fails closed. Profile creation and policy changes remain
+human-reviewed.
 
 One profile is bound per registered worktree in
 `~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
@@ -175,6 +192,7 @@ make mobile-stop / mobile-restart
 ```env
 PT_DEV_PROFILE=<name>
 PT_DEV_SLOT=<0-9>
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
 
 # Station
 PT_STATION_MODE=local|remote
@@ -341,28 +359,30 @@ switch profile, `make station`), then run acceptance from either profile.
 When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Inspect authority**: run `make env-status-all` and `make profiles`.
-2. **Select remote only**: reuse a canonical environment-repository profile that sets
+2. **Resolve Agent control**: read the canonical profile's
+   `PT_AGENT_CONTROL_MODE`; never infer authority from its name.
+3. **Select remote only**: reuse a canonical environment-repository profile that sets
    `PT_STATION_MODE=remote`.
-3. **Missing profile means stop**: report the missing topology and request
+4. **Missing profile means stop**: report the missing topology and request
    explicit human developer authorization. Do not run `make profile-authorize`,
    create authorization files, create `env/peers-touch/<name>/`, or add a
    local-only fallback.
-4. **Configure**: set the approved remote Station URL and deploy environment in
+5. **Configure**: set the approved remote Station URL and deploy environment in
    that canonical environment source only when the developer explicitly
    authorized creating or changing it.
-5. **Register or update only when authorized**: `make env-register` is an
-   explicit Owner action for an unregistered workspace. `make profile <name>`
-   or `make env-update` changes only an existing registration. Neither command
-   creates an environment.
-6. **Fail-closed preflight**: run `make env-check` and `make config`; verify
+6. **Register or update by policy**: for `managed` and `disposable`, the Agent
+   may run `make env-register`, `make profile`, or `make env-update` without a
+   repeated approval prompt. For `human-gated`, require explicit approval.
+   None of these commands creates an environment.
+7. **Fail-closed preflight**: run `make env-check` and `make config`; verify
    canonical workspace identity, tracked-clean definition, allocated slot,
    allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
    match.
-7. **Declare runtime intent**: the active Development declaration must contain
+8. **Declare runtime intent**: the active Development declaration must contain
    the exact profile and exclusive runtime resource before lease acquisition.
-8. **Execute**: only after preflight may the agent run `make station`,
+9. **Execute**: only after preflight may the agent run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
-9. **Report**: include workspace ID, slot, capabilities, resolved mode, Station
+10. **Report**: include workspace ID, slot, capabilities, Agent control mode, Station
    URL, deploy environment, and lease result.
 
 ## Remote Deployment
@@ -445,6 +465,10 @@ Source modes:
   repository; remote deploy resolves them directly.
 - Agents must not create or register profiles or deploy environments without
   explicit human developer approval for the exact name and target.
+- `managed` and `disposable` authorize repeated operation of an existing
+  reviewed profile; they do not authorize profile creation or policy changes.
+- `managed` never authorizes Station reset. `disposable` reset still requires
+  exact declaration, capability, reset scope, and live lease.
 - `make profile-authorize` is human-only. Agents may consume only an existing,
   unexpired exact-tuple grant through `make profile-init`.
 - Agents may select only approved canonical env-repository definitions; a

@@ -9,6 +9,8 @@ Score each dimension from 0 to 2.
 | Slice closure | The Slice is dependency-, ownership-, evidence-, recovery-, and scope-closed |
 | Queue completeness | All in-scope actions are classified as ready, in progress, parked, or done |
 | Queue liveness | A blocked action is parked and the complete ready frontier continues |
+| Progress contract | The Slice targets one current Task closure with a machine-derived baseline, exact `+1` delta, and unlock effect |
+| Reporting boundary | Supporting actions stay inside the Slice; success cannot stop at setup, authorization, diagnosis, deploy, or one check |
 | Dynamic admission | Only already-modeled remediation is admitted; new deliverables return `PLAN_AMENDMENT_REQUIRED` to the Development Run |
 | Exhaustion proof | Goal-level blocked requires an empty Ready Queue, no legal remediation, and explicit hard blockers |
 | Scope fidelity | Selected work and remainder match the owning workflow or formal plan |
@@ -84,6 +86,8 @@ Reject regardless of score when:
 - Goal-level blocked is allowed without an exhaustion proof or before the
   repeated-blocker lifecycle threshold is satisfied;
 - blocked external work is treated as ready or counted as progress;
+- the Goal can complete successfully without closing its target Task;
+- the reported next continuation has no exact Task-closure delta;
 - dynamic admission may change product behavior, architecture, ownership,
   topology, version/schema policy, destructive authorization, or proof
   strength;

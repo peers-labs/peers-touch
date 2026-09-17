@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Created**: 2026-09-13 | **Updated**: 2026-09-17
 > **Owner**: Platform Team
 
 ---
@@ -21,6 +21,10 @@
    引用；attempt、日志和截图留在机器 Dev root。
 7. **Bounded resume**: 恢复只读取 active pointer、manifest、当前 Task 和当前 Session。
 8. **No dual truth**: 迁移完成后，旧计划只能作为 archive 输入，不能继续承载状态。
+9. **Progress-bearing continuation**: Context Anchor 的续作单位是可关闭一个
+   Task 的 Progress Slice，不是单条命令、检查或授权动作。
+10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
+    修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
 
 ## 2. Evidence Ledger
 
@@ -32,6 +36,8 @@
 | Mobile Shell 计划超过 4,000 行并包含大量 dated progress | `verified_fact` | `20260827-mobile-shell-implementation.md` | high | none |
 | `DevelopmentSession` 目前只存在于文档模型 | `verified_fact` | DWF data model 与当前 tooling inventory | high | transition store implementation |
 | compact package 会降低恢复输入且保持证明可追踪 | `proposal` | DWF-D13 | medium | pilot metrics and adversarial simulation |
+| Context Anchor 的 `Next action` 是无结构自由文本 | `verified_fact` | `tooling/skills/pt-context-anchor/SKILL.md` | high | none |
+| `planctl status` 未输出 Task closure 进度和下一关闭效果 | `verified_fact` | `tooling/scripts/plan/plan-package.mjs` | high | none |
 
 ## 3. System Architecture
 
@@ -177,6 +183,13 @@ Each Task Slice owns:
 - closure Gate reference, budgets and durable evidence references;
 - a compact current snapshot.
 
+Task lifecycle defines the progress unit. One completed Task contributes exactly
+one closure unit. Commands, checks, declarations, leases, diagnostics and
+individual Session transitions are execution activity, not independent progress.
+Task weights are intentionally forbidden: if one Task is too broad to serve as
+one meaningful progress unit, the plan owner must split it into independently
+closable Task Slices.
+
 Exactly one Task must be `in_progress` in an active package. A `pending` Task is
 ready only when every dependency is `done`. `blocked` parks that branch; it does
 not block independent ready Tasks. One worktree has one current Task; parallel
@@ -198,6 +211,32 @@ no component reverses the manifest from a stale projection.
 If a blocked Task has no ready successor, the same atomic update sets package
 status `blocked`. If a ready Task exists, the package remains `active` and that
 Task becomes the sole `in_progress` entry.
+
+### 6.1 Progress Slice Contract
+
+A Progress Slice is the user-facing continuation boundary projected from the
+current Task. It is not another durable graph or status owner.
+
+`planctl status` derives:
+
+- completed and total Task closures;
+- the current Task closure;
+- the exact `in_progress -> done` target transition;
+- the resulting completed-count and percentage delta;
+- Task IDs unlocked when that closure completes.
+
+`pt-trae-goal-orchestrator` may schedule multiple supporting actions inside the
+Slice, but the Slice completion boundary is the Task closure. `pt-dev-workflow`
+does not hand control back after a successful setup, inspection, authorization,
+or diagnostic action. It continues until:
+
+1. the target Task is `done` and the progress delta is durable; or
+2. a hard product, architecture, worktree, ownership, authorization, or
+   unavailable-resource boundary prevents closure.
+
+If the current Task hard-blocks while another Task is dependency-ready, the
+workflow parks the blocked branch and continues with a new Progress Slice.
+Only fixed-point exhaustion may produce a zero-delta blocked handoff.
 
 ## 7. Development Session State Machine
 
@@ -271,6 +310,11 @@ Resume is deterministic and bounded:
 7. Reconcile `active_work.current_task_id`, `current_task_path` and `dev_state`.
 8. Derive ready/parked next Tasks from the manifest DAG.
 9. Emit or update Context Anchor, then continue the next legal transition.
+
+The emitted Anchor is a compact long-running execution contract. It carries the
+stable mission, execution horizon, current closure, machine-derived progress,
+the next Progress Slice and its expected delta. It does not enumerate every
+supporting action or stop after administrative work.
 
 Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 `SESSION_IDENTITY_MISMATCH`; it never causes history reconstruction from chat.
@@ -377,4 +421,12 @@ The architecture is implemented only when:
 - Acceptance current-closure selection reads the Plan Package;
 - work-class-specific Tasks have legal completion paths without false product claims;
 - Context Anchor contains stable task pointers, not prose recovery state;
+- `planctl status` exposes deterministic Task-closure progress and the next
+  closure's expected delta/unlock effect;
+- tracked Development declarations publish the exact Plan Package and current
+  Task locator; Peers Dev never infers progress from a work item or branch;
+- Dev Workflow heartbeats long-running declarations before expiry and refreshes
+  both the declaration and workspace registration after source HEAD changes;
+- every non-blocked Anchor continuation targets one Task closure and cannot
+  terminate successfully with zero durable progress;
 - two independent reviews find no unresolved source-of-truth or runnable gap.
