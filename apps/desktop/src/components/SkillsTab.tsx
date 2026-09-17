@@ -406,15 +406,17 @@ function MarketCard({
                 onClick={handleSync}
               />
             </Tooltip>
-            <Popconfirm title={t('provider.skills.market.removeConfirm')} onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}>
-              <Button
-                type="text"
-                size="small"
-                danger
-                icon={<Trash2 size={14} />}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </Popconfirm>
+            {!market.builtIn && (
+              <Popconfirm title={t('provider.skills.market.removeConfirm')} onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}>
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<Trash2 size={14} />}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Popconfirm>
+            )}
           </Flexbox>
         </Flexbox>
         <Paragraph
@@ -424,6 +426,14 @@ function MarketCard({
         >
           {market.url}
         </Paragraph>
+        <Flexbox horizontal gap={4} wrap="wrap">
+          <Tag color={market.signatureStatus === 'verified' ? 'green' : 'red'}>
+            {market.signatureStatus}
+          </Tag>
+          <Tag>{market.trustLevel}</Tag>
+          {market.stale && <Tag color="orange">{t('provider.skills.market.stale')}</Tag>}
+          {market.revoked && <Tag color="red">{t('provider.skills.market.revoked')}</Tag>}
+        </Flexbox>
         {market.error && (
           <Text type="danger" style={{ fontSize: 11 }}>{market.error}</Text>
         )}
@@ -450,6 +460,13 @@ function AddMarketModal({
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('main');
   const [branchCustom, setBranchCustom] = useState('');
+  const [sourceId, setSourceId] = useState('');
+  const [publisherId, setPublisherId] = useState('');
+  const [signingKeyId, setSigningKeyId] = useState('');
+  const [publicKeyBase64, setPublicKeyBase64] = useState('');
+  const [manifestPath, setManifestPath] = useState(
+    'apps/desktop/src-tauri/src/application/skills_market/official-catalog.v1.envelope.json',
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -459,14 +476,26 @@ function AddMarketModal({
   }, [url]);
 
   const handleOk = async () => {
-    if (!url.trim()) {
+    if (
+      !url.trim()
+      || !sourceId.trim()
+      || !publisherId.trim()
+      || !signingKeyId.trim()
+      || !publicKeyBase64.trim()
+    ) {
       message.warning(t('provider.skills.market.add.urlRequired'));
       return;
     }
     setLoading(true);
     try {
       const br = branch === 'custom' ? branchCustom.trim() || 'main' : branch;
-      await api.addSkillMarketSource(url.trim(), name.trim() || undefined, br || undefined);
+      await api.addSkillMarketSource(url.trim(), name.trim() || undefined, br || undefined, {
+        sourceId: sourceId.trim(),
+        manifestPath: manifestPath.trim(),
+        publisherId: publisherId.trim(),
+        signingKeyId: signingKeyId.trim(),
+        publicKeyBase64: publicKeyBase64.trim(),
+      });
       message.success(t('provider.skills.market.add.success'));
       onDone();
     } catch (e: any) {
@@ -500,6 +529,11 @@ function AddMarketModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <Input
+          placeholder={t('provider.skills.market.add.sourceIdPlaceholder')}
+          value={sourceId}
+          onChange={(e) => setSourceId(e.target.value)}
+        />
         <Flexbox gap={8}>
           <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.skills.market.add.branch')}</Text>
           <Flexbox horizontal gap={8}>
@@ -523,6 +557,27 @@ function AddMarketModal({
             )}
           </Flexbox>
         </Flexbox>
+        <Input
+          placeholder={t('provider.skills.market.add.manifestPathPlaceholder')}
+          value={manifestPath}
+          onChange={(e) => setManifestPath(e.target.value)}
+        />
+        <Input
+          placeholder={t('provider.skills.market.add.publisherPlaceholder')}
+          value={publisherId}
+          onChange={(e) => setPublisherId(e.target.value)}
+        />
+        <Input
+          placeholder={t('provider.skills.market.add.signingKeyPlaceholder')}
+          value={signingKeyId}
+          onChange={(e) => setSigningKeyId(e.target.value)}
+        />
+        <TextArea
+          autoSize={{ minRows: 2, maxRows: 3 }}
+          placeholder={t('provider.skills.market.add.publicKeyPlaceholder')}
+          value={publicKeyBase64}
+          onChange={(e) => setPublicKeyBase64(e.target.value)}
+        />
       </Flexbox>
     </Modal>
   );
@@ -552,8 +607,26 @@ function MarketBrowserDialog({
   const loadSkills = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api.listMarketSkills(market.id, searchQuery || undefined);
-      setSkills(result.skills || []);
+      const packages: MarketSkillEntry[] = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      do {
+        const result = await api.listMarketSkills(
+          market.id,
+          searchQuery || undefined,
+          cursor,
+          100,
+        );
+        packages.push(...(result.skills || []));
+        cursor = result.nextCursor;
+        if (cursor && !seenCursors.add(cursor)) {
+          throw new Error('marketplace pagination cursor repeated');
+        }
+        if (packages.length > 500) {
+          throw new Error('marketplace package limit exceeded');
+        }
+      } while (cursor);
+      setSkills(packages);
     } catch (e: any) {
       message.error(e.message);
     } finally {
@@ -564,6 +637,35 @@ function MarketBrowserDialog({
   useEffect(() => { loadSkills(); }, [loadSkills]);
 
   const handleInstall = async (entry: MarketSkillEntry) => {
+    if (entry.installPolicy === 'blocked' || entry.revoked) {
+      message.error(t('provider.skills.market.installBlocked'));
+      return;
+    }
+    if (entry.installPolicy === 'confirmation_required') {
+      Modal.confirm({
+        title: t('provider.skills.market.riskConfirmTitle'),
+        content: t('provider.skills.market.riskConfirmDescription', {
+          name: entry.name,
+          risk: entry.riskLevel || 'unknown',
+        }),
+        okText: t('provider.skills.market.install'),
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          setInstalling(entry.filePath);
+          try {
+            await api.installMarketSkill(market.id, entry.filePath, true);
+            message.success(t('provider.skills.market.installSuccess', { name: entry.name }));
+            onInstalled();
+            await loadSkills();
+          } catch (e: any) {
+            message.error(e.message);
+          } finally {
+            setInstalling(null);
+          }
+        },
+      });
+      return;
+    }
     setInstalling(entry.filePath);
     try {
       await api.installMarketSkill(market.id, entry.filePath);
@@ -699,6 +801,7 @@ function MarketBrowserDialog({
                       </>
                     ) : (
                       <Button
+                        disabled={entry.installPolicy === 'blocked' || entry.revoked}
                         type="text"
                         icon={<Plus size={14} />}
                         loading={installing === entry.filePath}
@@ -802,6 +905,7 @@ function MarketSkillDetailModal({
                 </Flexbox>
               ) : (
                 <Button
+                  disabled={skillData.installPolicy === 'blocked' || skillData.revoked}
                   type="primary"
                   icon={<Download size={14} />}
                   onClick={onInstall}

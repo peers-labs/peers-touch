@@ -1,8 +1,8 @@
 # Modern Chat Agent — Data Model
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-25
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -1682,3 +1682,71 @@ Rules:
 - Counter comparison requires equal owner, owner instance, actor, epoch,
   profile revision, and readiness snapshot identity.
 - Values contain no local path, PID, command line, credential, or secret.
+
+### 8.11 Trusted Package Catalog Snapshot
+
+MCA-D20 defines an exact-byte signed discovery contract:
+
+```text
+CatalogSourceRegistration:
+  source_id, display_name, source_kind
+  repository, branch, manifest_path
+  publisher_id, signing_key_id, public_key
+  trust_class, built_in
+
+CatalogEnvelopeV1:
+  schema_version = "peers.package-catalog.envelope.v1"
+  payload_base64
+  signing_key_id
+  signature_base64
+
+CatalogSnapshotV1 payload:
+  schema_version = "peers.package-catalog.v1"
+  source_id, publisher_id, revision, generated_at
+  revoked_at?
+  packages[]
+
+CatalogPackageV1:
+  package_id, package_type, version
+  name, description, publisher_id
+  artifact_encoding, artifact_content, artifact_sha256
+  license?, homepage?, repository?, keywords[]
+  revoked_at?
+```
+
+The Ed25519 signature covers the exact decoded `payload_base64` bytes with
+domain separator `peers-touch/package-catalog/v1\0`. The verifier resolves the
+public key only from `CatalogSourceRegistration`, checks that envelope key ID
+matches the pinned key, then validates source ID, publisher ID, schema, revision,
+package IDs, semantic versions, artifact encodings, artifact hashes, and
+bounded sizes.
+
+Derived projection fields are never accepted from the payload:
+
+```text
+signature_status = verified | invalid
+trust_level      = official | user_pinned
+scan_verdict     = passed | blocked
+risk_level       = low | medium | high
+install_policy   = allowed | confirmation_required | blocked
+```
+
+Pagination tokens bind source ID, immutable revision, filter, and next offset.
+A token from another source/revision/filter is invalid. List responses never
+mix revisions.
+
+`MarketInstallRecord` is a cache/reconciliation record:
+
+```text
+source_id, catalog_revision, package_id, package_version
+artifact_sha256, package_type
+target_authority, target_id
+installed_at, last_readback_at
+revoked_at?
+```
+
+It may report `installed=true` only after target-authority readback succeeds.
+Agent and Skill targets are Station-owned; MCP targets are owned by the
+actor-scoped Desktop Rust MCP store. Catalog revocation blocks new mutation but
+does not delete the target. Explicit uninstall deletes through the same target
+authority and removes the ledger record only after absence readback.

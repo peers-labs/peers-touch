@@ -36,6 +36,7 @@ GATE_ROLES = {
     "agent-v2-mcp-lifecycle-e2e": ("bob",),
     "agent-v2-connector-invocation-e2e": ("bob",),
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
+    "agent-marketplace-catalog-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
@@ -52,6 +53,7 @@ AGENT_V2_GOVERNED_TOOL_GATE = "agent-v2-governed-tool-loop-e2e"
 AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
 AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
+AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -537,6 +539,54 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         return clients
 
+    def _agent_marketplace_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        run_root = Path(tempfile.gettempdir()) / f"pt-agent-marketplace-{run_id}"
+        worktree = Path(
+            os.environ.get("PT_AGENT_MARKETPLACE_WORKTREE", str(REPO_ROOT))
+        ).expanduser().resolve()
+        client = ClientRuntime(
+            actor="alice",
+            runtime="native-tauri",
+            worktree=str(worktree),
+            gateway_port=int(
+                os.environ.get(
+                    "PT_AGENT_MARKETPLACE_GATEWAY_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_APP_GATEWAY_PORT",
+                        str(3030 + slot * 100),
+                    ),
+                )
+            ),
+            renderer_port=int(
+                os.environ.get(
+                    "PT_AGENT_MARKETPLACE_RENDERER_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_APP_WEB_PORT",
+                        str(3210 + slot * 100),
+                    ),
+                )
+            ),
+            webdriver_port=int(
+                os.environ.get(
+                    "PT_AGENT_MARKETPLACE_WEBDRIVER_PORT",
+                    str(4445 + slot * 10),
+                )
+            ),
+            profile="agent-marketplace-native",
+            storage_root=str(run_root / "native" / "storage"),
+        )
+        self._assert_client_ports_available(client)
+        self.register_cleanup(
+            f"client-storage:{run_root}",
+            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        )
+        return client
+
     def _agent_native_client(
         self,
         run_id: str,
@@ -964,6 +1014,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 AGENT_V2_MCP_GATE,
                 AGENT_V2_CONNECTOR_GATE,
                 AGENT_V2_EVALUATION_GATE,
+                AGENT_MARKETPLACE_GATE,
             }
             else AGENT_V2_PROFILE
         )
@@ -1105,11 +1156,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     ),
                     resource="source-identity:commit",
                 )
-            if gate_id == AGENT_V2_FOUNDATION_GATE:
+            if gate_id in {
+                AGENT_V2_FOUNDATION_GATE,
+                AGENT_MARKETPLACE_GATE,
+            }:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
                         reason=(
-                            "Agent V2 Foundation requires a clean candidate "
+                            f"{gate_id} requires a clean candidate "
                             "worktree before remote proof"
                         ),
                         resource="source-identity:workspace",
@@ -1121,6 +1175,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_GOVERNED_TOOL_GATE,
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_EVALUATION_GATE,
+                    AGENT_MARKETPLACE_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -1204,6 +1259,29 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     deployment_environment=deployment_environment,
                     slot=slot,
                     profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_MARKETPLACE_GATE:
+                if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
+                    raise BlockedError(
+                        reason=(
+                            "Agent Marketplace Development requires "
+                            "CHAT_NATIVE_DEMO_PASSWORD in Profile two"
+                        ),
+                        resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
+                    )
+                manifest = dataclasses.replace(
+                    manifest,
+                    credential_refs=("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+                    clients=(
+                        self._agent_marketplace_client(
+                            manifest.run_id,
+                            slot,
+                            profile_env,
+                        ),
+                    ),
+                    cleanup_resources=self.contract.cleanup.resources,
                 )
                 self._manifest = manifest
                 return self._ready(manifest)

@@ -56,8 +56,19 @@
     "Do not mutate terminal parent runs or duplicate completed work on retry",
     "Do not infer terminal state from client progress"
   ],
-  "updatedAt": "2026-09-17T10:15:28Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-17T10:48:56Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "git:3549ce0a953db1bcf1f02e46db8c8c3c09c4e74d;model:build-pass;station:agent-suite-pass;station:evaluation-race-pass;desktop:tsc-pass;desktop:vitest-13-pass;desktop:rust-evaluation-3-pass;acceptance:j06-contract-21-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "BLOCKED",
+      "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:3549ce0a953db1bcf1f02e46db8c8c3c09c4e74d;diagnostic:<env-repo>/peers-touch/two/profile.env.example"
+    }
+  ]
 }
 ```
 
@@ -75,8 +86,12 @@ Evaluation aggregate and prove V2-J06 end to end.
   of replaying provider or tool side effects.
 - Desktop uses the `evaluation` runtime and Station-backed store, with
   `on-visit + lru(1)` page lifetime and no Evaluation `localStorage` or
-  `quickCompletion` authority.
+  `quickCompletion` authority. Definition child mutations return authoritative
+  parent revisions so consecutive edits do not depend on optimistic version
+  inference.
 - Focused Go/race, TypeScript/Vitest, Rust bridge, proto coverage, Acceptance
   contract, and plan validation checks pass.
-- Exact-source Profile `two` native Journey remains `UNPROVEN` until the
-  checkpoint is deployed and executed.
+- Source checkpoint:
+  `3549ce0a953db1bcf1f02e46db8c8c3c09c4e74d`.
+- Exact-source Profile `two` native Journey is `BLOCKED/UNPROVEN` because the
+  canonical environment definition is dirty; no runtime resource was acquired.

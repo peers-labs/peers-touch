@@ -1,8 +1,8 @@
 # Modern Chat Agent — Architecture Design
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-25
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -27,6 +27,8 @@
 | A new Station-fenced takeover can restore execution authority without broadening the recovery credential | `accepted_decision` | MCA-D19C in `decisions.md` | high | Deterministic takeover race evidence |
 | Provider/model filtering and TurnTrace cannot prove P12/CLI non-advertisement or zero local runtime side effects | `verified_fact` | XR-4 source audit and rejected weak adapter | high | Production snapshot implementation |
 | Production-owned advertisement and monotonic activity snapshots make conditional-runtime absence falsifiable without enabling the runtime | `accepted_decision` | MCA-D19D in `decisions.md` | high | XR-4 Native/Browser evidence |
+| Desktop Marketplace currently accepts arbitrary unsigned JSON, ignores branch semantics, and trusts source labels | `verified_fact` | `application/skills_market/mod.rs` source parser/store | high | None |
+| Publisher-signed snapshots plus target-authority readback close X3 without a hosted marketplace | `accepted_decision` | MCA-D20 in `decisions.md` | high | X3 native evidence |
 | A working turn alone is insufficient for a dependable Agent | `inference` | Benchmark runtime contracts plus current architecture goals | high | Owner acceptance of target quality |
 | Stateful Codex/Claude-like runtimes require conversation-scoped runtime identity separate from model-provider identity | `verified_fact` for benchmark behavior; `proposal` for Peers-Touch | AgentBox thread-owned runtime and external session contract | medium-high | Peers runtime product decision |
 | Multi-Agent orchestration should consume, not define, the single-Agent runtime | `proposal` | Separation between Agent Canvas and turn kernel | high | Architecture review |
@@ -50,7 +52,8 @@ Non-goals:
 - Multi-Agent plan construction or reduction.
 - Offline provider execution on clients.
 - Arbitrary user-supplied CLI commands.
-- Voice/video, Mobile UI, marketplace, sharing, or visual redesign.
+- Voice/video, Mobile UI, hosted commercial marketplace/community, sharing, or
+  visual redesign.
 - Unreviewed automatic self-modification.
 
 ## 3. Core Principles
@@ -111,6 +114,9 @@ Non-goals:
 | Messages and branch lineage | Station | Turn kernel and authorized message commands | Chat runtime projection |
 | Turn, attempts, events, trace, usage | Station | Turn kernel | Chat/diagnostic projections |
 | Provider/model catalog and capability facts | Station | Station catalog/discovery | Provider projection |
+| Package catalog snapshot | Verified publisher signature and pinned source registration | Desktop Rust verifier/cache | Desktop Marketplace projection |
+| Installed Agent/Skill state | Station | Station package/Skill services | Desktop Agent/Skill projections |
+| Installed MCP configuration | Actor-scoped Desktop Rust MCP store | Desktop Rust MCP service | Desktop MCP projection |
 | Credentials | Station | Client submission; Station runtime state | Status projection only |
 | Memory, skills, knowledge bindings | Station | Station services and authorized user/Agent actions | Capability projections |
 | Device-local endpoint/file handle | Owning client capability kernel | Authenticated local user | Station receives opaque capability/result |
@@ -292,6 +298,7 @@ claims.
 | Client Capability Executor | Execute authorized device-local capability | Opaque request/local policy | Decide turn completion |
 | Client Receipt Ledger | Persist PREPARED and terminal attempts | Device-local encrypted storage | Become Station result truth |
 | Client Resource Registry | Resolve opaque refs to local paths/handles | Device-local encrypted storage | Expose raw paths/handles to Station or Web |
+| Package Catalog Verifier | Pin source keys, verify signed snapshots, derive scan/risk/install policy, and cache the last verified revision | Publisher snapshot plus local policy | Trust source-provided labels or become installed-state authority |
 | Trace/Evaluation Service | Persist evidence, usage, feedback attribution | Turn facts | Infer unrecorded resource use |
 | Chat Runtime Projection | Consume/replay/reconcile Station state | Read-only Station projections | Become durable truth |
 
@@ -796,6 +803,7 @@ Run semantics:
 | `agent-v2-connector-invocation-e2e` | OAuth resource→manifest→binding→turn result, scope/version expiry, disconnect/resource removal, actor isolation |
 | `agent-v2-governed-tool-loop-e2e` | Unique decision/claim/result, PREPARED/APPLIED crash points, signed one-time recovery, idempotent replay or UNKNOWN_SIDE_EFFECT, lease renew/revoke, timeout/cancel/revoke and replay equality |
 | `agent-v2-evaluation-lab-e2e` | Durable run/case attempt/result/metrics, duplicate scheduler/mutation idempotency, cancel propagation/ack, retry uniqueness, restart, deletion/retention and actor isolation |
+| `agent-marketplace-catalog-e2e` | Default signed source, verified sync, cursor pagination, browse/detail, Agent/Skill/MCP install and authority readback, high-risk confirmation, revocation, uninstall, and cleanup |
 
 All gates fail closed when receiver DOM, Station readback, or required runtime
 evidence is missing.
@@ -824,3 +832,62 @@ evidence is missing.
 
 Each corresponding Gate must inject both orderings of the race and prove
 Station state, executor side-effect count, cleanup outcome, and replay equality.
+
+## 25. Trusted Package Catalog
+
+The X3 package catalog is an external discovery input, not an installed-state
+authority and not a hosted marketplace.
+
+```text
+Pinned source registration
+  -> repository + branch + manifest path
+  -> signed peers.package-catalog.v1 envelope
+  -> Desktop Rust signature/schema/hash verification
+  -> derived trust + scan + risk + install policy
+  -> cursor-paginated Desktop projection
+  -> authority-specific install
+       Agent package -> Station atomic package import -> Station readback
+       Skill         -> Station install/scan         -> Station readback
+       MCP           -> Desktop Rust MCP store       -> MCP readback
+  -> projection ledger reconciliation
+```
+
+The built-in Peers source carries a pinned Ed25519 public key and an embedded
+last-known signed snapshot. It is available to every new profile before first
+network sync. Remote synchronization resolves the configured Git repository,
+branch, and fixed manifest path; a repository URL is never fetched directly as
+JSON. The verifier accepts only bounded version-1 envelopes signed by the
+pinned key and matching the registered source and publisher.
+
+Catalog package state is:
+
+```text
+verified -> installable | confirmation_required | revoked | blocked
+```
+
+- `installable`: verified source, valid artifact hash/schema, passing scan, and
+  low/medium policy.
+- `confirmation_required`: same guarantees, but derived high risk.
+- `revoked`: a valid signed snapshot revokes the package or source.
+- `blocked`: signature, schema, identity, hash, encoding, or scan validation
+  failed.
+
+Revocation blocks new install/update. Existing installed snapshots remain
+visible with a revocation warning until the user explicitly uninstalls them.
+The catalog ledger never reports installed state without successful target
+authority readback.
+
+Allowed:
+
+- last-known verified snapshot during a visible network-sync failure;
+- user-pinned sources with explicit publisher/key identity;
+- deterministic cursor pagination over one immutable source revision.
+
+Forbidden:
+
+- source-provided trust, risk, scan, or install-policy authority;
+- accepting a signing key from the same envelope it verifies;
+- arbitrary URL-to-JSON sync or ignored repository branch fields;
+- local-ledger-only Agent, Skill, or MCP installation success;
+- silent installation of high-risk or revoked packages;
+- silent deletion of installed user resources after source revocation.

@@ -643,6 +643,23 @@
       "tier": "env-evidence",
       "description": "Ecosystem: publish, discover, install, rate, federation sharing."
     },
+    "agent-marketplace-catalog-e2e": {
+      "command": "PT_ACCEPTANCE_APPROVED_PROFILE=two python3 tooling/acceptance/gates/agent/marketplace_catalog_development.py",
+      "timeout_seconds": 1200,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "X3 trusted package catalog: default signed source, sync, pagination, native browse/detail, Agent/Skill/MCP authority readback, revocation, uninstall, and cleanup.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "catalog-source",
+        "target-readback",
+        "revocation",
+        "cleanup",
+        "source-identity"
+      ]
+    },
     "agent-task-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey task",
       "timeout_seconds": 300,

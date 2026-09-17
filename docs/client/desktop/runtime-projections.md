@@ -194,6 +194,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `home` | `pages/HomePage.descriptor.tsx` | `home` | migrated (`preload: eager`, `keepAlive: forever`); page renders the Station Home projection |
 | `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page renders Station-owned Evaluation truth and runtime recovery |
+| `marketplace` | `pages/MarketplacePage.descriptor.tsx` | none | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page uses one-shot prefetch for the verified Desktop Rust catalog cache and explicit user sync for invalidation |
 | `notes`, `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

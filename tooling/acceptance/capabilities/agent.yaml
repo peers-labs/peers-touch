@@ -710,8 +710,44 @@
           "PENDING: Agent publish, discover, install, rate, and federation sharing lifecycle"
         ],
         "unproven_scope": [
-          "Agent publish, discover, install, rate, and federation sharing lifecycle",
-          "Governed default Marketplace source, official or federated catalog ownership, source signatures, first-use catalog data, and source-to-install readback"
+          "Agent publish, discover, install, rate, and federation sharing lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-trusted-package-catalog",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-trusted-package-catalog"
+      ],
+      "required_gates": [
+        "agent-marketplace-catalog-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/skills_market/trusted_catalog.rs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "publisher-signed peers.package-catalog.v1 snapshot",
+          "Station Agent package and Skill authorities",
+          "actor-scoped Desktop Rust MCP authority"
+        ],
+        "surfaces": [
+          "Native Tauri Marketplace source, package list, detail, confirmation, and revocation states",
+          "Station Agent and Skill readback",
+          "Desktop MCP readback"
+        ],
+        "proven_by": [
+          "agent-marketplace-catalog-e2e"
+        ],
+        "proven_scope": [
+          "X3 default source, signed sync, pagination, browse/detail, Agent/Skill/MCP install, authority readback, uninstall, revocation, and cleanup"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until the exact-source Native X3 Journey and cleanup pass"
         ]
       }
     },

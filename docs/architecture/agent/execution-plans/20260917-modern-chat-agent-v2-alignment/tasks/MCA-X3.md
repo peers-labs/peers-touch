@@ -21,6 +21,7 @@
     "apps/station/app/subserver/agent",
     "packages/locales",
     "tooling/acceptance",
+    "docs/client",
     "docs/architecture/agent"
   ],
   "readSet": [
@@ -35,7 +36,7 @@
   "checks": [
     {
       "id": "marketplace-focused",
-      "command": "(cd apps/desktop/src-tauri && cargo test application::skills_market --lib) && pnpm --dir apps/desktop run check",
+      "command": "(cd apps/desktop/src-tauri && cargo test --bin peers-touch-desktop application::skills_market -- --test-threads=1) && python3 -m unittest tooling.acceptance.gates.agent.marketplace_catalog_development_test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && (cd apps/desktop && ESLINT_USE_FLAT_CONFIG=false pnpm exec eslint src/pages/MarketplacePage.tsx src/pages/marketplace/PackageCard.tsx --report-unused-disable-directives --max-warnings 0) && make acceptance-validate DOMAIN=agent",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -55,7 +56,7 @@
     "Do not copy LobeHub hosted commercial marketplace or Community behavior",
     "Do not accept source-provided trust labels without verification"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
+  "updatedAt": "2026-09-17T12:00:00Z",
   "durableEvidence": []
 }
 ```
@@ -67,7 +68,15 @@ the product into a hosted commercial marketplace.
 
 ## Current Snapshot
 
-- Desktop can register and sync JSON index sources, classify Agent/Skill/MCP
-  packages, show details, and dispatch install/uninstall.
-- The default catalog, stable source protocol, publisher trust, signature
-  verification, pagination, first-run data, and real Acceptance Journey remain.
+- MCA-D20 now defines publisher-signed, key-pinned catalog snapshots,
+  derived scan/risk/install policy, explicit revocation, and target-authority
+  readback.
+- Desktop Rust now boots a verified Peers source with real Agent, Skill, MCP,
+  and revoked entries; arbitrary unsigned JSON sources are disabled.
+- Cursor pagination, repository/branch resolution, Agent/Skill/MCP install
+  dispatch, authority readback, high-risk confirmation, and revocation UI are
+  implemented.
+- Focused X3 checks pass. The broader Desktop wrapper remains red only on 12
+  pre-existing Mobile social-runtime-boundary violations outside this Task
+  write set.
+- The exact-source native Journey remains to be executed.

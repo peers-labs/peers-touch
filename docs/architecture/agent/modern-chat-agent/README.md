@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -85,6 +85,8 @@ A Modern Chat Agent is:
 | [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
 | [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |
 
+The Owner accepted the MCA-D20 publisher-signed package catalog and
+authority-readback contract on 2026-09-17 as the X3/P4-3 closure boundary.
 The Owner accepted the MCA-D19 result-identity, ToolBatch barrier, and durable
 continuation core on 2026-08-21. The G1-C entry audit then exposed missing
 receipt-recovery, replay-policy, lease-lifecycle, deadline, and opaque-resource

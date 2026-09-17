@@ -1560,6 +1560,80 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-evaluation-", cleanup[0])
 
+    def test_agent_marketplace_provisions_one_profile_two_native_client(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            deployment_environment="station-2",
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._two_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_MARKETPLACE_WEBDRIVER_PORT": "30445",
+            },
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "agent-marketplace-catalog-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.profile_resolved, "two")
+        self.assertEqual(manifest.services, {"station": attestation})
+        self.assertEqual(len(manifest.clients), 1)
+        native = manifest.clients[0]
+        self.assertEqual(native.runtime, "native-tauri")
+        self.assertEqual(native.actor, "alice")
+        self.assertEqual(native.profile, "agent-marketplace-native")
+        self.assertEqual(native.webdriver_port, 30445)
+        self.assertIn("pt-agent-marketplace-", native.storage_root)
+        self.assertEqual(
+            manifest.credential_refs,
+            ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+        )
+        profile_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-marketplace-catalog-e2e:{manifest.run_id}",
+        )
+        source_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-marketplace-catalog-e2e:{manifest.run_id}",
+        )
+        cleanup = provisioner.cleanup()
+        self.assertEqual(len(cleanup), 1)
+        self.assertIn("pt-agent-marketplace-", cleanup[0])
+
     def test_agent_v2_binding_rejects_non_two_profile(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"

@@ -1652,6 +1652,10 @@ export interface SkillImportResult {
   identifier: string;
   name: string;
   isNew: boolean;
+  packageType?: string;
+  scanVerdict?: string;
+  targetAuthority?: string;
+  targetReadback?: boolean;
 }
 
 export interface SkillImportBatchResult {
@@ -1685,12 +1689,25 @@ export interface MarketSource {
   name: string;
   url: string;
   branch?: string;
+  manifestPath: string;
+  publisherId: string;
+  signingKeyId: string;
+  publicKeyFingerprint: string;
+  trustLevel: 'official' | 'user-pinned' | 'unknown';
+  builtIn: boolean;
+  enabled: boolean;
+  catalogRevision: string;
+  generatedAt: string;
+  signatureStatus: 'verified' | 'invalid' | 'pending';
+  revoked: boolean;
+  revokedAt?: string;
 }
 
 export interface MarketSummary extends MarketSource {
   skillCount: number;
   lastSynced?: string;
   synced: boolean;
+  stale: boolean;
   error?: string;
 }
 
@@ -1712,6 +1729,14 @@ export interface MarketSkillEntry {
   riskLevel?: string;
   packageType?: string;
   source?: string;
+  contentHash?: string;
+  signatureStatus?: 'verified' | 'invalid';
+  signingKeyId?: string;
+  installPolicy?: 'allowed' | 'confirmation_required' | 'blocked';
+  revoked?: boolean;
+  revokedAt?: string;
+  targetAuthority?: 'station-agent' | 'station-skill' | 'desktop-mcp' | string;
+  targetReadbackAt?: string;
 }
 
 export interface MarketSkillDetail extends MarketSkillEntry {
@@ -1722,6 +1747,13 @@ export interface MarketSkillDetail extends MarketSkillEntry {
   publisher: string;
   homepage: string;
   repository: string;
+}
+
+export interface MarketSkillPage {
+  skills: MarketSkillEntry[];
+  total: number;
+  nextCursor?: string;
+  catalogRevision: string;
 }
 
 // ── MCP Server types ──
@@ -4385,9 +4417,14 @@ export interface SkillMarketIdInput {
 }
 
 export interface SkillMarketAddInput {
+  source_id?: string;
   url: string;
   name?: string;
   branch?: string;
+  manifest_path?: string;
+  publisher_id?: string;
+  signing_key_id?: string;
+  public_key_base64?: string;
 }
 
 export interface SkillMarketSyncInput {
@@ -4397,12 +4434,15 @@ export interface SkillMarketSyncInput {
 export interface SkillMarketListInput {
   market_id: string;
   q?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface SkillMarketDetailInput {
   agent_id?: string;
   market_id: string;
   file_path: string;
+  risk_acknowledged?: boolean;
 }
 
 export interface AgentIdInput {
@@ -5993,22 +6033,49 @@ export const api = {
   listSkillMarkets: () =>
     invokeRustDataFromStatus<void, { markets: MarketSummary[] }>('skills_market_list').then(r => r.markets),
 
-  addSkillMarketSource: (url: string, name?: string, branch?: string) =>
-    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean }>('skills_market_add', { url, name, branch }),
+  addSkillMarketSource: (
+    url: string,
+    name?: string,
+    branch?: string,
+    governance?: {
+      sourceId?: string;
+      manifestPath?: string;
+      publisherId?: string;
+      signingKeyId?: string;
+      publicKeyBase64?: string;
+    },
+  ) =>
+    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean; id: string }>('skills_market_add', {
+      url,
+      name,
+      branch,
+      source_id: governance?.sourceId,
+      manifest_path: governance?.manifestPath,
+      publisher_id: governance?.publisherId,
+      signing_key_id: governance?.signingKeyId,
+      public_key_base64: governance?.publicKeyBase64,
+    }),
 
   removeSkillMarketSource: (id: string) =>
     invokeRustDataFromStatus<SkillMarketIdInput, { ok: boolean }>('skills_market_remove', { id }),
 
   syncSkillMarket: (marketId: string) =>
-    invokeRustDataFromStatus<SkillMarketSyncInput, { skills: MarketSkillEntry[]; total: number }>(
+    invokeRustDataFromStatus<
+      SkillMarketSyncInput,
+      MarketSkillPage & {
+        signatureStatus: string;
+        stale: boolean;
+        error?: string;
+      }
+    >(
       'skills_market_sync',
       { market_id: marketId },
     ),
 
-  listMarketSkills: (marketId: string, q?: string) => {
-    return invokeRustDataFromStatus<SkillMarketListInput, { skills: MarketSkillEntry[]; total: number }>(
+  listMarketSkills: (marketId: string, q?: string, cursor?: string, limit?: number) => {
+    return invokeRustDataFromStatus<SkillMarketListInput, MarketSkillPage>(
       'skills_market_list_skills',
-      { market_id: marketId, q },
+      { market_id: marketId, q, cursor, limit },
     );
   },
 
@@ -6018,10 +6085,11 @@ export const api = {
       file_path: filePath,
     }),
 
-  installMarketSkill: (marketId: string, filePath: string) =>
+  installMarketSkill: (marketId: string, filePath: string, riskAcknowledged = false) =>
     invokeRustDataFromStatus<SkillMarketDetailInput, SkillImportResult>('skills_market_install', {
       market_id: marketId,
       file_path: filePath,
+      risk_acknowledged: riskAcknowledged,
     }),
 
   uninstallMarketSkill: (marketId: string, filePath: string) =>

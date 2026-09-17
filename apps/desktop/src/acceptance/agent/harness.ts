@@ -25,6 +25,7 @@ import {
   type AgentRuntimeBudgetInput,
   type OAuth2Connection,
   type MCPServerItem,
+  type MarketSkillEntry,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
   type StreamEvent,
@@ -25065,6 +25066,306 @@ async function runCapabilityIncompatibleDevelopmentJourney(
   }) as Record<string, unknown>;
 }
 
+async function runMarketplaceCatalogDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const installed: MarketSkillEntry[] = [];
+  const cleanup = {
+    agentRemoved: false,
+    skillRemoved: false,
+    mcpRemoved: false,
+    status: 'pending',
+  };
+  let primaryError: unknown;
+  let capture: Record<string, unknown> | undefined;
+
+  try {
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'marketplace' });
+    await waitFor(
+      () => {
+        const page = document.querySelector<HTMLElement>(
+          '[data-testid="marketplace-page"]',
+        );
+        return Boolean(page && page.getClientRects().length > 0);
+      },
+      'Marketplace page to become visible',
+      30_000,
+    );
+
+    const markets = await api.listSkillMarkets();
+    const source = markets.find((market) => market.id === 'peers-official');
+    if (
+      !source
+      || !source.builtIn
+      || source.signatureStatus !== 'verified'
+      || source.trustLevel !== 'official'
+      || !source.publicKeyFingerprint
+    ) {
+      throw new Error('agent.acceptance.marketplaceDefaultSourceInvalid');
+    }
+    const synchronized = await api.syncSkillMarket(source.id);
+    if (
+      synchronized.signatureStatus !== 'verified'
+      || synchronized.stale
+      || synchronized.error
+    ) {
+      throw new Error('agent.acceptance.marketplaceSyncUnverified');
+    }
+
+    const firstPage = await api.listMarketSkills(source.id, undefined, undefined, 1);
+    if (!firstPage.nextCursor || firstPage.skills.length !== 1) {
+      throw new Error('agent.acceptance.marketplacePaginationMissing');
+    }
+    const secondPage = await api.listMarketSkills(
+      source.id,
+      undefined,
+      firstPage.nextCursor,
+      1,
+    );
+    if (
+      secondPage.skills.length !== 1
+      || secondPage.skills[0]?.identifier === firstPage.skills[0]?.identifier
+      || secondPage.catalogRevision !== firstPage.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplacePaginationInvalid');
+    }
+
+    const packages: MarketSkillEntry[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await api.listMarketSkills(source.id, undefined, cursor, 100);
+      packages.push(...page.skills);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const byType = new Map(packages.map((entry) => [entry.packageType, entry]));
+    const agentPackage = byType.get('agent');
+    const skillPackage = packages.find(
+      (entry) => entry.packageType === 'skill' && !entry.revoked,
+    );
+    const mcpPackage = byType.get('mcp');
+    const revokedPackage = packages.find((entry) => entry.revoked);
+    if (!agentPackage || !skillPackage || !mcpPackage || !revokedPackage) {
+      throw new Error('agent.acceptance.marketplacePackageTypesMissing');
+    }
+    if (
+      agentPackage.installPolicy !== 'confirmation_required'
+      || skillPackage.installPolicy !== 'allowed'
+      || mcpPackage.installPolicy !== 'allowed'
+      || revokedPackage.installPolicy !== 'blocked'
+    ) {
+      throw new Error('agent.acceptance.marketplacePolicyProjectionInvalid');
+    }
+
+    const visiblePackageIds: string[] = [];
+    for (const [tab, entries] of [
+      ['agents', [agentPackage]],
+      ['skills', [skillPackage, revokedPackage]],
+      ['tools', [mcpPackage]],
+    ] as const) {
+      document.querySelector<HTMLElement>(
+        `[data-testid="marketplace-tab-${tab}"]`,
+      )?.click();
+      await waitFor(
+        () => entries.every((entry) => {
+          const element = document.querySelector<HTMLElement>(
+            `[data-testid="marketplace-package-${entry.identifier}"]`,
+          );
+          return Boolean(element && element.getClientRects().length > 0);
+        }),
+        `Marketplace ${tab} packages to render`,
+        30_000,
+      );
+      visiblePackageIds.push(...entries.map((entry) => entry.identifier));
+    }
+    document.querySelector<HTMLElement>(
+      '[data-testid="marketplace-tab-agents"]',
+    )?.click();
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-testid="marketplace-package-${agentPackage.identifier}"]`,
+      )),
+      'Marketplace Agent package to render',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      `[data-testid="marketplace-detail-${agentPackage.identifier}"]`,
+    )?.click();
+    await waitFor(
+      () => document.querySelector<HTMLElement>(
+        '[data-testid="marketplace-package-detail"]',
+      )?.dataset.packageId === agentPackage.identifier,
+      'Marketplace package detail drawer',
+      30_000,
+    );
+    document.querySelector<HTMLButtonElement>('.ant-drawer-close')?.click();
+    await waitFor(
+      () => !document.querySelector<HTMLElement>(
+        '[data-testid="marketplace-package-detail"]',
+      )?.getClientRects().length,
+      'Marketplace package detail drawer to close',
+      10_000,
+    );
+    document.querySelector<HTMLButtonElement>(
+      `[data-testid="marketplace-install-${agentPackage.identifier}"]`,
+    )?.click();
+    await waitFor(
+      () => Boolean(document.querySelector('.ant-modal-confirm')),
+      'high-risk package confirmation',
+      10_000,
+    );
+    const riskConfirmationText =
+      document.querySelector<HTMLElement>('.ant-modal-confirm')?.innerText || '';
+    document.querySelectorAll<HTMLButtonElement>(
+      '.ant-modal-confirm .ant-modal-confirm-btns button',
+    )[0]?.click();
+
+    let unacknowledgedRiskRejected = false;
+    try {
+      await api.installMarketSkill(
+        source.id,
+        agentPackage.filePath,
+        false,
+      );
+    } catch (error) {
+      unacknowledgedRiskRejected = String(error).includes(
+        'MARKETPLACE_RISK_CONFIRMATION_REQUIRED',
+      );
+    }
+    if (!unacknowledgedRiskRejected) {
+      throw new Error('agent.acceptance.marketplaceRiskConfirmationBypassed');
+    }
+
+    const agentInstall = await api.installMarketSkill(
+      source.id,
+      agentPackage.filePath,
+      true,
+    );
+    if (agentInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceAgentWasNotNew');
+    }
+    installed.push(agentPackage);
+    const agents = await api.listAgents();
+    const agentReadback = agents.find((agent) => agent.id === agentInstall.id);
+    if (!agentReadback) {
+      throw new Error('agent.acceptance.marketplaceAgentReadbackMissing');
+    }
+
+    const skillInstall = await api.installMarketSkill(
+      source.id,
+      skillPackage.filePath,
+    );
+    if (skillInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceSkillWasNotNew');
+    }
+    installed.push(skillPackage);
+    const skills = await api.listSkills();
+    const skillReadback = skills.skills.find((skill) => skill.id === skillInstall.id);
+    if (!skillReadback) {
+      throw new Error('agent.acceptance.marketplaceSkillReadbackMissing');
+    }
+
+    const mcpInstall = await api.installMarketSkill(
+      source.id,
+      mcpPackage.filePath,
+    );
+    if (mcpInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceMcpWasNotNew');
+    }
+    installed.push(mcpPackage);
+    const mcpServers = await api.listMCPServers();
+    const mcpReadback = mcpServers.find((server) => server.name === mcpInstall.id);
+    if (!mcpReadback) {
+      throw new Error('agent.acceptance.marketplaceMcpReadbackMissing');
+    }
+
+    let revokedInstallRejected = false;
+    try {
+      await api.installMarketSkill(source.id, revokedPackage.filePath, true);
+    } catch (error) {
+      revokedInstallRejected = String(error).includes(
+        'MARKETPLACE_PACKAGE_REVOKED_OR_BLOCKED',
+      );
+    }
+    if (!revokedInstallRejected) {
+      throw new Error('agent.acceptance.marketplaceRevocationBypassed');
+    }
+
+    capture = {
+      sampleId,
+      assertions: {
+        defaultSourceVerified: true,
+        signedSyncVerified: true,
+        paginationVerified: true,
+        packageTypesVisible: true,
+        packageDetailVisible: true,
+        highRiskConfirmationVisible: Boolean(riskConfirmationText),
+        unacknowledgedRiskRejected,
+        agentAuthorityReadback: true,
+        skillAuthorityReadback: true,
+        mcpAuthorityReadback: true,
+        revokedInstallRejected,
+      },
+      'receiver-dom': {
+        marketplaceVisible: true,
+        sourceVisible: Boolean(document.querySelector(
+          '[data-testid="marketplace-source-peers-official"]',
+        )),
+        packageIds: visiblePackageIds,
+        detailPackageId: agentPackage.identifier,
+        highRiskConfirmationVisible: Boolean(riskConfirmationText),
+      },
+      catalog: {
+        source,
+        sync: synchronized,
+        firstPage,
+        secondPage,
+        packagePolicies: packages.map((entry) => ({
+          packageId: entry.identifier,
+          packageType: entry.packageType,
+          signatureStatus: entry.signatureStatus,
+          scanVerdict: entry.scanVerdict,
+          riskLevel: entry.riskLevel,
+          installPolicy: entry.installPolicy,
+          revoked: entry.revoked,
+        })),
+      },
+      'target-readback': {
+        agent: agentReadback,
+        skill: skillReadback,
+        mcp: mcpReadback,
+      },
+      revocation: {
+        packageId: revokedPackage.identifier,
+        rejected: revokedInstallRejected,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    for (const entry of installed.reverse()) {
+      try {
+        await api.uninstallMarketSkill(entry.marketId || 'peers-official', entry.filePath);
+        if (entry.packageType === 'agent') cleanup.agentRemoved = true;
+        if (entry.packageType === 'skill') cleanup.skillRemoved = true;
+        if (entry.packageType === 'mcp') cleanup.mcpRemoved = true;
+      } catch (error) {
+        primaryError ||= error;
+      }
+    }
+    cleanup.status = (
+      cleanup.agentRemoved
+      && cleanup.skillRemoved
+      && cleanup.mcpRemoved
+    ) ? 'clean' : 'failed';
+  }
+
+  if (primaryError) throw primaryError;
+  if (!capture || cleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.marketplaceCleanupFailed');
+  }
+  return evidenceValue({ ...capture, cleanup }) as Record<string, unknown>;
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -25283,6 +25584,14 @@ export function installAcceptanceHarness(): void {
 
     async runEvaluationDevelopment(input: EvaluationDevelopmentInput) {
       return runEvaluationDevelopmentJourney(input);
+    },
+
+    async runMarketplaceCatalogDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runMarketplaceCatalogDevelopmentJourney(sampleId);
     },
 
     async runCapabilityIncompatibleDevelopment({

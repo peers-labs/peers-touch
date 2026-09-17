@@ -926,9 +926,14 @@ pub struct SkillMarketIdInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMarketAddInput {
+    pub source_id: Option<String>,
     pub url: String,
     pub name: Option<String>,
     pub branch: Option<String>,
+    pub manifest_path: Option<String>,
+    pub publisher_id: Option<String>,
+    pub signing_key_id: Option<String>,
+    pub public_key_base64: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -940,6 +945,8 @@ pub struct SkillMarketSyncInput {
 pub struct SkillMarketListInput {
     pub market_id: String,
     pub q: Option<String>,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -947,6 +954,7 @@ pub struct SkillMarketDetailInput {
     pub agent_id: Option<String>,
     pub market_id: String,
     pub file_path: String,
+    pub risk_acknowledged: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
