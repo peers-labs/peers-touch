@@ -209,7 +209,7 @@
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
 - Chat 全生命周期：`architecture/chat-lifecycle/README.md`（active；定义从找人、
-  好友建立、会话进入、文本与富媒体、语音消息、实时语音、群聊到跨设备/跨 Station
+  好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
 - Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；

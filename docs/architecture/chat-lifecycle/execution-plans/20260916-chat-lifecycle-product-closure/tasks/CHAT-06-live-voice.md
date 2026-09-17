@@ -1,4 +1,4 @@
-# CHAT-06 Live One-To-One Voice
+# CHAT-06 Live One-To-One Voice And Video
 
 ## Task Slice
 
@@ -9,7 +9,7 @@
   "planId": "CHAT-LIFECYCLE-20260916",
   "taskId": "CHAT-06-live-voice",
   "workstreamId": "CHAT-W05",
-  "title": "Product-grade one-to-one live voice",
+  "title": "Product-grade one-to-one live voice and video",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "fix",
@@ -52,24 +52,26 @@
     }
   ],
   "doneWhen": [
-    "Native clients prove ring, accept, reject, no-answer, active audio, reconnect, and hangup",
+    "CHAT-UR07: Native clients complete both one-to-one audio and video calls with real receiver media",
+    "Native clients prove ring, accept, reject, no-answer, microphone/camera permission, active media, reconnect, and hangup",
+    "Video proves local preview, remote video, camera toggle, and camera-device changes",
     "Direct ICE and TURN fallback use the same authenticated discovery path",
     "Calls work from a valid Direct conversation without unrelated P2P readiness",
     "Text remains usable and all call resources are released"
   ],
   "failureBehavior": [
-    "Expose permission, timeout, network, and relay failures as distinct states",
+    "Expose microphone, camera, timeout, network, and relay failures as distinct states",
     "Never restore ICE polling, a second signaling channel, or foreign-Station client access"
   ],
-  "updatedAt": "2026-09-16T07:45:00Z",
+  "updatedAt": "2026-09-17T07:00:00Z",
   "durableEvidence": []
 }
 ```
 
 ## Objective
 
-Turn the existing Desktop WebRTC skeleton into a proven Chat capability using
-the accepted Realtime and TURN boundaries.
+Turn the existing Desktop WebRTC skeleton into a proven one-to-one audio/video
+Chat capability using the accepted Realtime and TURN boundaries.
 
 ## Current Snapshot
 

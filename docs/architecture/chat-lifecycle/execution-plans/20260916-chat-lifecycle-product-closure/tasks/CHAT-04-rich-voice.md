@@ -54,15 +54,16 @@
   ],
   "doneWhen": [
     "Image/file transfer retains byte identity across interruption and restart",
+    "CHAT-UR06: screenshot confirmation or cancellation preserves native window bounds and renderer geometry without a visible scale flash",
     "Voice capture supports permission, duration, stop, cancel, preview, and durable send",
     "Receiver playback exposes duration, progress, seek, pause, retry, and terminal state",
     "Voice metadata remains private and recovery restores exact audio"
   ],
   "failureBehavior": [
     "Retain local draft or durable transfer state on failure",
-    "Never expose unverified media or describe resumable transfer as live voice"
+    "Never expose unverified media, resize the app as a screenshot side effect, or describe resumable transfer as live voice"
   ],
-  "updatedAt": "2026-09-16T07:45:00Z",
+  "updatedAt": "2026-09-17T07:00:00Z",
   "durableEvidence": []
 }
 ```

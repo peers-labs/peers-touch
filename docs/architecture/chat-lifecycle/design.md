@@ -1,8 +1,8 @@
 # Chat Lifecycle - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-16 | **Updated**: 2026-09-16
+> **Version**: v1.1
+> **Created**: 2026-09-16 | **Updated**: 2026-09-17
 > **Owner**: Chat Product Team
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/app/subserver/`
 
@@ -32,7 +32,7 @@ Upstream sources:
 | Find-person through first-message is not one accepted Journey | verified_fact | Messaging J01 starts after authentication with an already selectable Bob conversation | high |
 | Desktop voice notes have real capture/send/playback code | verified_fact | `ChatComposer`, `useChatVoiceRecorder`, and `AttachmentItem` | high |
 | Recorded voice lacks a complete product contract and proof | verified_fact | No duration persistence, progress/seek/retry contract, Mobile recorder, or Gate | high |
-| Desktop live voice has a real WebRTC foundation | verified_fact | `callP2p`, `CallSurface`, Realtime signaling, and TURN discovery | high |
+| Desktop live voice/video has a real WebRTC foundation | verified_fact | `callP2p`, `CallSurface`, Realtime signaling, and TURN discovery | high |
 | Current Chat readiness is not proven | verified_fact | Stored evidence binds older source; current worktree has no matching aggregate | high |
 | A lifecycle-level integration owner is required | inference | Individual domains contain substantial code, but no source governs their user-facing composition | high |
 | Existing domain ownership should remain unchanged | accepted_decision | CHAT-D01 through CHAT-D06 | accepted |
@@ -44,7 +44,8 @@ Upstream sources:
 3. Conversation owns conversation and group business facts.
 4. Device Messaging Engine owns device-private encryption, durable delivery,
    local plaintext projection, attachments, and voice-note bytes.
-5. Realtime owns sealed live-call signaling; WebRTC/TURN owns live media.
+5. Realtime owns sealed live-call signaling; WebRTC/TURN owns live audio/video
+   media.
 6. UI submits intents and renders typed projections; it never fabricates
    terminal truth.
 7. Every readiness claim is current-source and receiver-perspective.
@@ -75,7 +76,7 @@ flowchart LR
 
     UI -->|"start / accept / end call"| RT
     RT -->|"sealed signaling"| UI
-    UI <-->|"audio media"| MEDIA
+    UI <-->|"audio / video media"| MEDIA
 
     DISC <--> FED
     SOCIAL <--> FED
@@ -96,13 +97,18 @@ flowchart LR
 | Attachment and voice-note bytes | Encrypted object plane + Engine metadata | Verified local cache |
 | Typing | Authenticated ephemeral Realtime path | Receiver TTL state |
 | Live call lifecycle | Client call runtime plus sealed signaling facts | Runtime-owned call projection |
-| Live audio media | WebRTC peers | No Station media state |
+| Live audio/video media | WebRTC peers | No Station media state |
 
 ## 6. Lifecycle Composition Contracts
 
 ### 6.1 Discovery To Conversation
 
 - Search returns canonical Actor identity and verified Home Station metadata.
+- Relationship history projects one row per counterparty PTID with latest
+  authority state and total request attempts; display names never define
+  identity.
+- Federation runtime joins Station peer IDs to authoritative Station names for
+  human-readable summaries, while raw identifiers remain copyable details.
 - Social relationship acceptance is the only friendship truth.
 - Conversation creation consumes the selected PTID and verified routing
   context; duplicate creation converges on one Direct ID.
@@ -137,13 +143,16 @@ flowchart LR
   projection agree.
 - Legacy `/group-chat/*` mutation paths are deleted after consumers cut over.
 
-### 6.5 Live Voice
+### 6.5 Live Voice And Video
 
-- Live voice uses existing `CallSignal` over the Realtime stream.
+- Live voice and video use existing `CallSignal` over the Realtime stream.
 - Signaling payloads remain sealed; Station validates sender, relationship,
   route, size, expiry, and replay metadata without reading SDP or candidates.
 - Client call runtime owns permission, ringing, WebRTC, ICE/TURN, media tracks,
   reconnect, timeout, and teardown across page navigation.
+- Video uses the same call identity and signaling lifecycle while adding camera
+  permission, local preview, remote video, camera toggle, and camera-device
+  selection.
 - Conversation membership identifies the Direct peer but does not own media.
 - Text messaging continues through the durable messaging path during calls.
 
@@ -158,6 +167,7 @@ flowchart LR
 | Message terminal failure | Show failed-actionable; never read/delivered |
 | Attachment/voice transfer interrupted | Resume from verified checkpoint |
 | Microphone denied | Preserve draft context; show permission action |
+| Camera denied | Preserve the conversation; expose retry or audio-only exit without false video-active state |
 | MLS/membership mismatch | Stop send; reconcile before ready |
 | Call network loss | Enter reconnecting, then recover or terminate visibly |
 | Station/restart loss | Reopen durable projections and workers |

@@ -54,15 +54,16 @@
   ],
   "doneWhen": [
     "Direct and Group interactions converge after offline, duplicate, and restart paths",
+    "CHAT-UR05: an accepted thread reply never shows terminal failure, and root count plus both participants' thread panels converge on identical message IDs and order",
     "Group create, add/remove, leave, roles, owner, rename, and dissolve use Conversation authority",
     "UI readiness follows committed membership and MLS projection",
     "Active clients contain no legacy Group mutation owner"
   ],
   "failureBehavior": [
     "Preserve pending interaction or group transition until authority outcome is known",
-    "Stop on authority-head mismatch, split ownership, or premature ready state"
+    "Stop on false thread failure, thread/main projection divergence, authority-head mismatch, split ownership, or premature ready state"
   ],
-  "updatedAt": "2026-09-16T07:45:00Z",
+  "updatedAt": "2026-09-17T07:00:00Z",
   "durableEvidence": []
 }
 ```

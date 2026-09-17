@@ -35,7 +35,7 @@ Historical proof is recorded separately and never upgrades current status.
 | Image/file attachments | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Encrypted resumable transfer, rendering, open/download, recovery foundations exist | Current-source product proof and complete Mobile lifecycle are absent |
 | Recorded voice message | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop records WebM, stages it as encrypted audio attachment, and plays it inline | Duration is discarded before persistence; no progress/seek/retry contract; no Mobile recorder/player; no Gate |
 | Group lifecycle | `PARTIAL` | Conversation create and MLS add/remove/send paths exist | Rename/roles/owner/dissolve still use legacy Group routes; leave is incomplete; readiness is projected too early |
-| Live one-to-one voice | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop WebRTC manager, sealed signaling, call surface, and TURN discovery exist | Calls require unrelated P2P-connected state; no native call proof; Mobile explicitly defers calls |
+| Live one-to-one voice/video | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop WebRTC manager, sealed signaling, audio/video call surface, camera controls, and TURN discovery exist | Calls require unrelated P2P-connected state; no native audio/video call proof; Mobile explicitly defers calls |
 | Cross-Station/multi-device/recovery | `PARTIAL` | Substantial Station/Desktop paths and historical proof exist | Current-source matrix, Mobile, and complete cross-Station product proof are absent |
 
 Current product result: **0/11 required Chat capabilities are current-source

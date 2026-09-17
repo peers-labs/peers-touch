@@ -1,8 +1,8 @@
 # Chat Lifecycle - Design Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-16 | **Updated**: 2026-09-16
+> **Version**: v1.1
+> **Created**: 2026-09-16 | **Updated**: 2026-09-17
 > **Owner**: Chat Product Team
 
 ---
@@ -15,7 +15,7 @@
 | CHAT-D02 | Existing domain owners remain authoritative | accepted |
 | CHAT-D03 | Current-source receiver proof is mandatory | accepted |
 | CHAT-D04 | Voice notes specialize encrypted attachments | accepted |
-| CHAT-D05 | Live voice uses Realtime signaling and WebRTC/TURN | accepted |
+| CHAT-D05 | Live voice/video uses Realtime signaling and WebRTC/TURN | accepted |
 | CHAT-D06 | Desktop and Mobile claims are independent | accepted |
 | CHAT-D07 | Product safety and evidence integrity precede feature proof | accepted |
 | CHAT-D08 | Old NDR and Messaging execution plans are historical only | accepted |
@@ -108,22 +108,23 @@ admission. Playback begins only from a fully verified local object.
 - Calling resumable chunk transfer streaming voice.
 - Sending before recording completion without a separate protocol.
 
-## CHAT-D05: Live Voice Uses Existing Realtime Boundaries
+## CHAT-D05: Live Voice And Video Use Existing Realtime Boundaries
 
 **Status**: accepted
 **Date**: 2026-09-16
 
 ### Decision
 
-Required live voice is one-to-one audio using sealed `CallSignal`, the shared
-Realtime stream, WebRTC direct ICE, and TURN fallback. The call runtime survives
-Chat page navigation and owns media teardown.
+Required live calling is one-to-one audio and video using sealed `CallSignal`,
+the shared Realtime stream, WebRTC direct ICE, and TURN fallback. The call
+runtime survives Chat page navigation and owns media teardown.
 
 ### Scope decisions
 
-- Required now: audio ring, accept/reject, no-answer, active, mute, input
-  selection, reconnect, hangup, direct/TURN, and cross-Station signaling.
-- Deferred: video readiness, group calls, recording, transcription, and durable
+- Required now: audio/video ring, accept/reject, no-answer, active media,
+  mute, camera toggle, microphone/camera selection, reconnect, hangup,
+  direct/TURN, and cross-Station signaling.
+- Deferred: group calls, recording, transcription, screen sharing, and durable
   call-history cards.
 - Ring timeout remains 45 seconds.
 

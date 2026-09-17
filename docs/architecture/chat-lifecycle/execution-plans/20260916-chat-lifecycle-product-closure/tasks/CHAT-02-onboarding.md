@@ -39,7 +39,7 @@
   "checks": [
     {
       "id": "chat-onboarding-source",
-      "command": "pnpm --dir apps/desktop exec vitest run src/store/friendshipProjection.test.ts src/components/chat/contactSelection.test.ts",
+      "command": "pnpm --dir apps/desktop exec vitest run src/kernel/identityRuntime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/socialNormalizers.test.ts src/services/socialRealtime.test.ts src/components/chat/contactSelection.test.ts && python3 -m unittest tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_regression_contract_test",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -54,16 +54,20 @@
     }
   ],
   "doneWhen": [
+    "CHAT-UR01: a restorable no-PIN native account cold-launches directly, a PIN-protected account asks only for PIN, and only a missing or revoked session requests provider credentials",
+    "CHAT-UR08: request history projects one selectable row per counterparty PTID with current state and total attempt count",
+    "CHAT-UR09: contact summary uses the authoritative Station name while canonical PTID, Station peer ID, handle, and Federation ID remain expandable and copyable",
     "Native UI completes local and federated search with stable identity",
     "Friend request send, receive, accept, reject, duplicate, and retry states converge",
     "Accepted contact creates or reuses one Direct conversation",
     "Alice and Bob exchange the first exact plaintext message"
   ],
   "failureBehavior": [
+    "Never downgrade a native restorable session to provider reauthentication in the renderer",
     "Preserve search query, selected peer, pending request, and inline retry state",
     "Do not fall back to legacy friend-chat or client-fabricated relationship state"
   ],
-  "updatedAt": "2026-09-16T07:45:00Z",
+  "updatedAt": "2026-09-17T08:20:00Z",
   "durableEvidence": []
 }
 ```

@@ -1,8 +1,8 @@
 # Chat Lifecycle
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-16 | **Updated**: 2026-09-16
+> **Version**: v1.1
+> **Created**: 2026-09-16 | **Updated**: 2026-09-17
 > **Owner**: Chat Product Team
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/app/subserver/`
 
@@ -12,7 +12,7 @@
 
 This document set defines the product-grade Chat lifecycle from finding another
 person through relationship establishment, conversation use, rich messaging,
-recorded voice, live voice, group participation, and durable continuity.
+recorded voice, live voice/video, group participation, and durable continuity.
 
 It defines:
 
@@ -31,7 +31,7 @@ domains. `20260906-conversation-authority-hard-cut.md` is executed in the
 
 A user can find another person, establish a trusted relationship, open a
 conversation, exchange text and rich media, record and play voice messages,
-complete a live one-to-one voice call, use groups, and continue after
+complete live one-to-one voice and video calls, use groups, and continue after
 disconnect, restart, device change, or Station boundary.
 
 No capability is product-ready merely because source, tests, or historical
