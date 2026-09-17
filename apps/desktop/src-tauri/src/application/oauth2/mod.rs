@@ -121,6 +121,7 @@ struct LoopbackSessionState {
 }
 
 static LOOPBACK_SESSIONS: OnceLock<Mutex<HashMap<String, LoopbackSessionState>>> = OnceLock::new();
+static CONNECTION_MUTATIONS: OnceLock<Mutex<()>> = OnceLock::new();
 static LOOPBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
 static CONNECTOR_PROJECTION_EPOCH: AtomicU64 = AtomicU64::new(1);
 
@@ -134,6 +135,13 @@ fn advance_connector_projection_epoch() {
 
 fn loopback_sessions() -> &'static Mutex<HashMap<String, LoopbackSessionState>> {
     LOOPBACK_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lock_connection_mutations() -> std::sync::MutexGuard<'static, ()> {
+    CONNECTION_MUTATIONS
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn next_loopback_session_id() -> String {
@@ -199,6 +207,7 @@ fn save_oauth_callback(
     if input.provider_user_id.trim().is_empty() {
         return Err(invalid_argument("provider_user_id is required"));
     }
+    let _mutation_guard = lock_connection_mutations();
     let mut map = read_connections()?;
     let now = unix_to_rfc3339(chrono_like_now_unix());
     let expires_at = input
@@ -1079,6 +1088,7 @@ pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<
             None,
         );
     }
+    let _mutation_guard = lock_connection_mutations();
     let mut connections = match read_connections() {
         Ok(connections) => connections,
         Err(error) => return connector_sync_error(error),
@@ -1662,6 +1672,7 @@ pub fn oauth2_disconnect(
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
+    let _mutation_guard = lock_connection_mutations();
     let mut map = try_cmd!(read_connections());
     let Some(current) = map.get(input.id.trim()) else {
         return AppResult::fail(ErrorCode::NotFound, "error.oauth2.connectionNotFound", None);
@@ -1726,6 +1737,7 @@ pub fn oauth2_refresh_token(actor_ptid: &str, input: OAuthIdInput) -> AppResult<
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
+    let _mutation_guard = lock_connection_mutations();
     let id = input.id.trim();
     let mut map = try_cmd!(read_connections());
     let Some(conn) = map.get_mut(id) else {
@@ -2006,10 +2018,7 @@ mod tests {
                 provider_id: "github".to_string(),
                 status: "active".to_string(),
                 projected_capabilities: vec![ProjectedConnectorCapability {
-                    capability_id: format!(
-                        "connector.resource.{}",
-                        "a".repeat(64),
-                    ),
+                    capability_id: format!("connector.resource.{}", "a".repeat(64),),
                     capability_version: "version-1".to_string(),
                     status: ConnectorResourceStatus::Ready as i32,
                     ..Default::default()
@@ -2018,24 +2027,12 @@ mod tests {
             },
         )]);
 
-        assert!(projected_connector_contracts(
-            &connections,
-            "ptid:person:owner",
-        )
-        .is_empty());
+        assert!(projected_connector_contracts(&connections, "ptid:person:owner",).is_empty());
         connections.get_mut("github").unwrap().projected_revision = 2;
         assert_eq!(
-            projected_connector_contracts(
-                &connections,
-                "ptid:person:owner",
-            )
-            .len(),
+            projected_connector_contracts(&connections, "ptid:person:owner",).len(),
             1,
         );
-        assert!(projected_connector_contracts(
-            &connections,
-            "ptid:person:other",
-        )
-        .is_empty());
+        assert!(projected_connector_contracts(&connections, "ptid:person:other",).is_empty());
     }
 }
