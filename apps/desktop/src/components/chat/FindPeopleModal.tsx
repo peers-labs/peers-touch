@@ -262,6 +262,37 @@ export function FindPeopleModal({ open, onClose }: Props) {
   };
 
   const handleSendRequest = async (target: ActorSearchResult) => {
+    // #region debug-point B-D:friend-request-retry-handler-entry
+    void fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'friend-request-retry',
+        runId: 'pre-fix',
+        hypothesisId: 'B-D',
+        location: 'FindPeopleModal.tsx:handleSendRequest:entry',
+        msg: '[DEBUG] Friend request handler entered',
+        data: {
+          addingId,
+          currentUserPtid,
+          receiverPtid: target.id,
+          receiverHomeStationPeerId: target.homeStationPeerId,
+          activeFederationId,
+          defaultFederationId,
+          matchingRequests: friendRequests
+            .filter((request) => (
+              request.senderPtid === target.id
+              || request.receiverPtid === target.id
+            ))
+            .map((request) => ({
+              id: request.id,
+              senderPtid: request.senderPtid,
+              receiverPtid: request.receiverPtid,
+              status: request.status,
+            })),
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
     if (addingId) return;
     const receiverPtid = target.id.trim();
     if (!receiverPtid) {
@@ -286,14 +317,62 @@ export function FindPeopleModal({ open, onClose }: Props) {
       return next;
     });
     try {
+      // #region debug-point B-D:friend-request-retry-dispatch
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'B-D',
+          location: 'FindPeopleModal.tsx:handleSendRequest:dispatch',
+          msg: '[DEBUG] Dispatching friend request retry',
+          data: {
+            currentUserPtid,
+            receiverPtid,
+            receiverHomeStationPeerId: target.homeStationPeerId,
+            federationId,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await sendFriendRequest(
         receiverPtid,
         target.homeStationPeerId,
         federationId,
         '',
       );
+      // #region debug-point B-E:friend-request-retry-handler-success
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'B-E',
+          location: 'FindPeopleModal.tsx:handleSendRequest:success',
+          msg: '[DEBUG] Friend request retry handler succeeded',
+          data: { currentUserPtid, receiverPtid },
+        }),
+      }).catch(() => {});
+      // #endregion
       message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
+      // #region debug-point A-B:friend-request-retry-handler-error
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'A-B',
+          location: 'FindPeopleModal.tsx:handleSendRequest:error',
+          msg: '[DEBUG] Friend request retry handler failed',
+          data: {
+            currentUserPtid,
+            receiverPtid,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       setRequestErrors((current) => ({
         ...current,
         [receiverPtid]: (e as { message?: string })?.message
@@ -677,6 +756,27 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     }
                     onClick={(event) => {
                       event.stopPropagation();
+                      // #region debug-point B:friend-request-retry-click
+                      void fetch('http://127.0.0.1:7781/event', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          sessionId: 'friend-request-retry',
+                          runId: 'pre-fix',
+                          hypothesisId: 'B',
+                          location: 'FindPeopleModal.tsx:findPeopleAction:onClick',
+                          msg: '[DEBUG] Friend request action clicked',
+                          data: {
+                            currentUserPtid,
+                            receiverPtid,
+                            isPending,
+                            isFriend,
+                            isSelf,
+                            friendshipReady,
+                            addingId,
+                          },
+                        }),
+                      }).catch(() => {});
+                      // #endregion
                       void handleSendRequest(r);
                     }}
                     style={isPending || isFriend

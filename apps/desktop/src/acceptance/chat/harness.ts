@@ -417,7 +417,21 @@ export function installAcceptanceHarness(): void {
 
     async refreshOnboardingProjection({ peerPtid }: OnboardingPeerInput) {
       await refreshSocialProjection('acceptance:onboarding-readback', true);
-      return onboardingSnapshot(peerPtid);
+      const snapshot = await onboardingSnapshot(peerPtid);
+      // #region debug-point C-E:friend-request-retry-readback
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'C-E',
+          location: 'harness.ts:refreshOnboardingProjection',
+          msg: '[DEBUG] Onboarding projection read back',
+          data: snapshot,
+        }),
+      }).catch(() => {});
+      // #endregion
+      return snapshot;
     },
 
     async createDirectConversation({

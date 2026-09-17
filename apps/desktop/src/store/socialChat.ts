@@ -1813,14 +1813,109 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     message,
   ) => {
     try {
-      await api.socialFriendRequestSend({
+      // #region debug-point A-D:friend-request-retry-command
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'A-D',
+          location: 'socialChat.ts:sendFriendRequest:command',
+          msg: '[DEBUG] Sending friend request command',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            receiverHomeStationPeerId,
+            federationId,
+            matchingRequests: get().friendRequests
+              .filter((request) => (
+                request.senderPtid === receiverPtid
+                || request.receiverPtid === receiverPtid
+              ))
+              .map((request) => ({
+                id: request.id,
+                senderPtid: request.senderPtid,
+                receiverPtid: request.receiverPtid,
+                status: request.status,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
+      const response = await api.socialFriendRequestSend({
         receiverPtid,
         receiverHomeStationPeerId,
         federationId,
         message,
       });
+      // #region debug-point A:friend-request-retry-command-response
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'A',
+          location: 'socialChat.ts:sendFriendRequest:response',
+          msg: '[DEBUG] Friend request command returned',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            responseRequestId: (
+              response as unknown as { request?: { requestId?: string } }
+            ).request?.requestId ?? '',
+            responseStatus: (
+              response as unknown as { request?: { status?: number } }
+            ).request?.status ?? null,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await get().loadFriendRequests();
+      // #region debug-point C-E:friend-request-retry-projection
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'C-E',
+          location: 'socialChat.ts:sendFriendRequest:projection',
+          msg: '[DEBUG] Friend request projection refreshed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            matchingRequests: get().friendRequests
+              .filter((request) => (
+                request.senderPtid === receiverPtid
+                || request.receiverPtid === receiverPtid
+              ))
+              .map((request) => ({
+                id: request.id,
+                senderPtid: request.senderPtid,
+                receiverPtid: request.receiverPtid,
+                status: request.status,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (error) {
+      // #region debug-point A-C:friend-request-retry-command-error
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'pre-fix',
+          hypothesisId: 'A-C',
+          location: 'socialChat.ts:sendFriendRequest:error',
+          msg: '[DEBUG] Friend request command failed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'sendFriendRequest failed', error);
       throw error;
     }
