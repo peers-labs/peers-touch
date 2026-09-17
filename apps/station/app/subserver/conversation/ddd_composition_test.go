@@ -3841,7 +3841,7 @@ func TestConversationDDDPlanConsumptionRollsBackWithTransition(t *testing.T) {
 	}
 }
 
-func TestConversationDDDMemberSettingsClearCursorIsMonotonic(t *testing.T) {
+func TestConversationDDDMemberSettingsClearCursorSupportsBoundedRestore(t *testing.T) {
 	fixture := newDDDComposition(t)
 	ctx := context.Background()
 	alice := dddEndpoint("ptid:alice", "alice-1")
@@ -3867,12 +3867,35 @@ func TestConversationDDDMemberSettingsClearCursorIsMonotonic(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, rejected := range []int64{-1, 0, clearedAt - 1} {
+	for _, rejected := range []int64{-1, clearedAt - 1} {
 		if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
 			command.MemberSettingsPatch{ClearedAtUnixMillis: &rejected},
 		); err == nil {
 			t.Fatalf("accepted invalid clear cursor %d", rejected)
 		}
+	}
+	restoredAt := int64(0)
+	restored, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
+	)
+	if err != nil {
+		t.Fatalf("restore within window: %v", err)
+	}
+	if restored.ClearedAtUnixMillis != 0 {
+		t.Fatalf("restored settings = %+v", restored)
+	}
+	secondClearAt := clearedAt + 1
+	fixture.clock.now = time.UnixMilli(secondClearAt)
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &secondClearAt},
+	); err != nil {
+		t.Fatalf("clear after restore: %v", err)
+	}
+	fixture.clock.now = time.UnixMilli(secondClearAt).Add(24*time.Hour + time.Millisecond)
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
+	); err == nil {
+		t.Fatal("accepted restore after restore window expired")
 	}
 	advancedAt := clearedAt + 1
 	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, "ptid:outsider",
@@ -3886,7 +3909,7 @@ func TestConversationDDDMemberSettingsClearCursorIsMonotonic(t *testing.T) {
 	).Error; err != nil {
 		t.Fatal(err)
 	}
-	if persisted.ClearedAtUnixMillis != clearedAt || !persisted.Muted {
+	if persisted.ClearedAtUnixMillis != secondClearAt || !persisted.Muted {
 		t.Fatalf("persisted settings = %+v", persisted)
 	}
 }
