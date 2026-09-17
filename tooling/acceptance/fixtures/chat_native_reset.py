@@ -21,6 +21,10 @@ from typing import Iterable
 import urllib.parse
 import urllib.request
 
+from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.provisioner import (
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 
@@ -162,14 +166,8 @@ def deploy_environment(name: str) -> dict[str, str]:
 
 
 def active_profile_environment() -> dict[str, str]:
-    active_profile = (
-        REPO_ROOT
-        / ".local"
-        / "dev"
-        / "active"
-        / f"{REPO_ROOT.name}.env"
-    )
-    return load_environment_file(active_profile)
+    _, _, _, values = resolve_machine_profile_environment(REPO_ROOT)
+    return values
 
 
 def active_deployment_environment() -> str:
@@ -201,7 +199,7 @@ def _local_source_environment(
 ) -> dict[str, str] | None:
     try:
         profile = active_profile_environment()
-    except RuntimeError:
+    except (BlockedError, RuntimeError):
         return None
     if profile.get("PT_STATION_MODE", "").strip() != "local":
         return None

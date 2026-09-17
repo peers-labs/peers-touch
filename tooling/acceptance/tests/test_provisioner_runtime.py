@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import socket
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -227,21 +229,51 @@ class ProvisionerBaseClassTests(unittest.TestCase):
 
 
 class ProfileResolutionTests(unittest.TestCase):
-    def test_missing_active_profile_blocks(self):
+    @staticmethod
+    def _machine_profile_result(
+        profile_file: Path,
+        *,
+        profile: str = "expected",
+        slot: int = 4,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["node", "machine-dev.mjs", "check"],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "binding": {
+                        "profile": profile,
+                        "slot": slot,
+                    },
+                    "profile": {
+                        "profileFile": str(profile_file),
+                    },
+                }
+            ),
+            stderr="",
+        )
+
+    def test_missing_machine_profile_binding_blocks(self):
         provisioner = get_provisioner(
             EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "home-station.yaml"
             )
         )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fake_worktree = Path(tmpdir) / "fake-worktree"
-            fake_worktree.mkdir()
-            with patch(
-                "tooling.acceptance.core.provisioner.REPO_ROOT",
-                fake_worktree,
+        completed = subprocess.CompletedProcess(
+            args=["node", "machine-dev.mjs", "check"],
+            returncode=2,
+            stdout="",
+            stderr="WORKSPACE_UNREGISTERED",
+        )
+        with patch(
+            "tooling.acceptance.core.provisioner.subprocess.run",
+            return_value=completed,
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "Machine Dev profile binding is unavailable",
             ):
-                with self.assertRaisesRegex(BlockedError, "No active profile"):
-                    provisioner._resolve_active_profile()
+                provisioner._resolve_active_profile()
 
     def test_profile_identity_mismatch_blocks(self):
         provisioner = get_provisioner(
@@ -250,23 +282,45 @@ class ProfileResolutionTests(unittest.TestCase):
             )
         )
         with tempfile.TemporaryDirectory() as tmpdir:
-            fake_worktree = Path(tmpdir) / "peers-oss"
-            profile_dir = fake_worktree / ".local" / "dev" / "profiles"
-            active_dir = fake_worktree / ".local" / "dev" / "active"
-            profile_dir.mkdir(parents=True)
-            active_dir.mkdir(parents=True)
-            profile = profile_dir / "expected.env"
-            profile.write_text(
+            profile_file = Path(tmpdir) / "profile.env.example"
+            profile_file.write_text(
                 "PT_DEV_PROFILE=other\nPT_DEV_SLOT=1\n",
                 encoding="utf-8",
             )
-            (active_dir / "peers-oss.env").symlink_to(profile)
             with patch(
-                "tooling.acceptance.core.provisioner.REPO_ROOT",
-                fake_worktree,
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=self._machine_profile_result(profile_file),
             ):
                 with self.assertRaisesRegex(BlockedError, "identity mismatch"):
                     provisioner._resolve_active_profile()
+
+    def test_machine_binding_owns_profile_and_slot(self):
+        provisioner = get_provisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_file = Path(tmpdir) / "profile.env.example"
+            profile_file.write_text(
+                "PT_DEV_PROFILE=expected\nPT_DEV_SLOT=1\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=self._machine_profile_result(
+                    profile_file,
+                    slot=6,
+                ),
+            ):
+                profile_name, resolved_file, slot, values = (
+                    provisioner._resolve_active_profile()
+                )
+
+        self.assertEqual(profile_name, "expected")
+        self.assertEqual(resolved_file, profile_file.resolve())
+        self.assertEqual(slot, 6)
+        self.assertEqual(values["PT_DEV_SLOT"], "1")
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
@@ -656,6 +710,21 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ), patch(
                 "tooling.acceptance.provisioners.home_station.REPO_ROOT",
                 fake_worktree,
+            ), patch.object(
+                provisioner,
+                "_resolve_active_profile",
+                return_value=(
+                    "three",
+                    profile,
+                    2,
+                    {
+                        "PT_DEV_PROFILE": "three",
+                        "PT_DEV_SLOT": "2",
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_URL": "http://station.example:18080",
+                        "PT_STATION_DEPLOY_ENV": "station-three",
+                    },
+                ),
             ), patch.object(
                 provisioner,
                 "_git_commit",
