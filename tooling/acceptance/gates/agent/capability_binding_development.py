@@ -202,7 +202,12 @@ def persist_native_actor_identity(
     fixture_root: Path,
     station_url: str,
     actor_id: str,
+    station_accepted: bool,
 ) -> dict[str, Any]:
+    require(
+        station_accepted,
+        "Station acceptance proof is required before retaining actor identity",
+    )
     _validate_actor_identity_root(source_root)
     metadata = {
         "schemaVersion": 1,
@@ -495,16 +500,6 @@ def main() -> int:
         )
         client.start()
         login = authenticate_native_client(client, profile_env)
-        identity_metadata = persist_native_actor_identity(
-            source_root=client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-        )
-        capture["identityFixture"] = identity_fixture_evidence(
-            identity_metadata,
-            reused=seeded_identity is not None,
-        )
         sample_id = f"mca-j02-{artifact_run_id}"
         capture["capabilityPreflight"] = client.harness(
             "debugCapabilitySnapshot",
@@ -535,6 +530,17 @@ def main() -> int:
             }
         )
         capture["assertions"] = evaluate_capability_binding(capture)
+        identity_metadata = persist_native_actor_identity(
+            source_root=client.actor_identity_root,
+            fixture_root=J02_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=True,
+        )
+        capture["identityFixture"] = identity_fixture_evidence(
+            identity_metadata,
+            reused=seeded_identity is not None,
+        )
     except BaseException as error:
         primary_error = error
     finally:

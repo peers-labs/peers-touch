@@ -246,6 +246,56 @@ class McpLifecycleDevelopmentTest(unittest.TestCase):
         self.assertNotIn("agent_v2_gate.py", source)
         self.assertNotIn("reset_fixture", source)
 
+    def test_native_receiver_expands_terminal_tool_group_before_item_assertion(
+        self,
+    ) -> None:
+        source = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+        journey = source[
+            source.index("async function prepareMcpLifecycleDevelopmentJourney("):
+            source.index("async function recoverMcpLifecycleDevelopmentJourney(")
+        ]
+
+        group_selector = journey.find(
+            "const toolCallGroupSelector ="
+        )
+        group_assertion = journey.find(
+            "'MCP ToolCall native receiver group'",
+            max(group_selector, 0),
+        )
+        group_toggle = journey.find(
+            "'[data-pt-agent-tool-call-group-toggle]'",
+            max(group_assertion, 0),
+        )
+        item_assertion = journey.find(
+            "'MCP ToolCall native receiver'",
+            max(group_toggle, 0),
+        )
+
+        self.assertGreaterEqual(group_selector, 0)
+        self.assertGreaterEqual(group_assertion, 0)
+        self.assertGreaterEqual(group_toggle, 0)
+        self.assertGreaterEqual(item_assertion, 0)
+        self.assertLess(group_selector, group_assertion)
+        self.assertLess(group_assertion, group_toggle)
+        self.assertLess(group_toggle, item_assertion)
+        self.assertNotIn(
+            "receiver state after diagnostic authoritative sync",
+            journey,
+        )
+        self.assertIn(
+            "JSON.stringify(conversationReadback.messages)"
+            ".includes(toolCallId)",
+            journey.replace("\n", "").replace(" ", ""),
+        )
+        self.assertNotIn(
+            "conversationReadback.messages)\n"
+            "          .includes(input.expectedResult)",
+            journey,
+        )
+
     @staticmethod
     def _write_frame(
         process: subprocess.Popen[bytes],

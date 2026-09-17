@@ -116,6 +116,38 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn('"foundationDirectProbe"', source)
         self.assertIn("copy_native_runtime_logs(", source)
 
+    def test_agent_journeys_persist_identity_only_after_native_success(
+        self,
+    ) -> None:
+        journeys = {
+            "capability_binding_development.py":
+                '"runCapabilityIncompatibleDevelopment"',
+            "governed_tool_development.py":
+                '"runGovernedToolDevelopment"',
+            "mcp_lifecycle_development.py":
+                '"runMcpLifecycleDevelopment"',
+            "connector_invocation_development.py":
+                '"runConnectorInvocationDevelopment"',
+        }
+
+        for filename, success_marker in journeys.items():
+            with self.subTest(filename=filename):
+                source = (
+                    ROOT / "tooling/acceptance/gates/agent" / filename
+                ).read_text(encoding="utf-8")
+                journey_call = source.find(success_marker)
+                persistence = source.rfind(
+                    "persist_native_actor_identity("
+                )
+
+                self.assertGreaterEqual(journey_call, 0)
+                self.assertGreaterEqual(persistence, 0)
+                self.assertLess(journey_call, persistence)
+                self.assertIn(
+                    "station_accepted=True",
+                    source[persistence:persistence + 500],
+                )
+
     def test_native_harness_uses_disposable_no_credential_runtime(self) -> None:
         source = (
             ROOT
@@ -209,6 +241,7 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                 fixture_root=fixture,
                 station_url="https://station.example/",
                 actor_id="ptid:bob",
+                station_accepted=True,
             )
 
             self.assertEqual(metadata["account"], J02_ACTOR_ACCOUNT)
@@ -229,7 +262,34 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                     fixture_root=fixture,
                     station_url="https://station.example",
                     actor_id="ptid:mallory",
+                    station_accepted=True,
                 )
+
+    def test_rejects_identity_persistence_without_station_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = (
+                root
+                / "source/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            source.mkdir(parents=True)
+            (source / "actor.key").write_text("ef" * 32, encoding="utf-8")
+            fixture = root / "fixture"
+
+            with self.assertRaisesRegex(
+                CapabilityBindingDevelopmentError,
+                "Station acceptance proof is required",
+            ):
+                persist_native_actor_identity(
+                    source_root=root / "source",
+                    fixture_root=fixture,
+                    station_url="https://station.example",
+                    actor_id="ptid:bob",
+                    station_accepted=False,
+                )
+
+            self.assertFalse(fixture.exists())
 
     def test_rejects_mismatched_or_malformed_identity_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

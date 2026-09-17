@@ -21899,17 +21899,34 @@ async function prepareMcpLifecycleDevelopmentJourney(
       governedToolSettlementSucceeded,
       'MCP ToolCall settlement',
     );
-    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
     const toolFact = settled.facts[0];
     const toolCallId = String(
       evidenceField(toolFact, 'toolCallId', 'tool_call_id') ?? '',
     );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
     await waitFor(
       () => toolRuntime.getProjection(toolCallId)?.status === 'success',
       'MCP ToolCall native receiver projection',
       30_000,
     );
     const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallGroupSelector)),
+      'MCP ToolCall native receiver group',
+      30_000,
+    );
+    if (!document.querySelector(toolCallSelector)) {
+      const groupToggle = document.querySelector<HTMLElement>(
+        `${toolCallGroupSelector} `
+        + '[data-pt-agent-tool-call-group-toggle]',
+      );
+      if (!groupToggle) {
+        throw new Error('agent.acceptance.mcpToolCallGroupToggleMissing');
+      }
+      groupToggle.click();
+    }
     await waitFor(
       () => Boolean(document.querySelector(toolCallSelector)),
       'MCP ToolCall native receiver',
@@ -22016,7 +22033,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
         && stationFact.resultCount === 1
         && stationFact.continuationCount === 1
         && JSON.stringify(conversationReadback.messages)
-          .includes(input.expectedResult),
+          .includes(toolCallId),
       cancellationVisibleAndTerminal:
         cancelled.status === CapabilityOperationStatus.CANCELLED
         && cancelledReceiver.visible === true

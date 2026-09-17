@@ -558,12 +558,6 @@ def main() -> int:
         )
         runtime_client.start()
         login = authenticate_native_client(runtime_client, profile_env)
-        identity_metadata = persist_native_actor_identity(
-            source_root=runtime_client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-        )
         prepared_value = runtime_client.harness(
             "runMcpLifecycleDevelopment",
             {
@@ -630,10 +624,6 @@ def main() -> int:
         )
         provider_requests = provider_fixture.snapshot()
         capture_without_secret = {
-            "identityFixture": identity_fixture_evidence(
-                identity_metadata,
-                reused=seeded_identity is not None,
-            ),
             "prepared": prepared,
             "recovered": recovered,
             "providerFixture": {
@@ -656,6 +646,17 @@ def main() -> int:
             provider_requests,
             process_evidence,
             canary_leaked=canary_leaked,
+        )
+        identity_metadata = persist_native_actor_identity(
+            source_root=runtime_client.actor_identity_root,
+            fixture_root=J02_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=True,
+        )
+        capture_without_secret["identityFixture"] = identity_fixture_evidence(
+            identity_metadata,
+            reused=seeded_identity is not None,
         )
     except BaseException as error:
         primary_error = error

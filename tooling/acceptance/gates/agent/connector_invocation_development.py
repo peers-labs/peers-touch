@@ -337,12 +337,6 @@ def main() -> int:
         )
         runtime_client.start()
         login = authenticate_native_client(runtime_client, profile_env)
-        identity_metadata = persist_native_actor_identity(
-            source_root=runtime_client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-        )
         journey_value = runtime_client.harness(
             "runConnectorInvocationDevelopment",
             {
@@ -356,13 +350,7 @@ def main() -> int:
             isinstance(journey_value, Mapping),
             "V2-J05 Harness returned invalid evidence",
         )
-        journey = {
-            "identityFixture": identity_fixture_evidence(
-                identity_metadata,
-                reused=seeded_identity is not None,
-            ),
-            **dict(journey_value),
-        }
+        journey = dict(journey_value)
         provider_requests = provider_fixture.snapshot()
         credential_field_leaked = _contains_credential_field(journey)
         assertions = evaluate_connector_invocation(
@@ -370,6 +358,20 @@ def main() -> int:
             provider_requests,
             credential_field_leaked=credential_field_leaked,
         )
+        identity_metadata = persist_native_actor_identity(
+            source_root=runtime_client.actor_identity_root,
+            fixture_root=J02_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=True,
+        )
+        journey = {
+            "identityFixture": identity_fixture_evidence(
+                identity_metadata,
+                reused=seeded_identity is not None,
+            ),
+            **journey,
+        }
     except BaseException as error:
         primary_error = error
     finally:

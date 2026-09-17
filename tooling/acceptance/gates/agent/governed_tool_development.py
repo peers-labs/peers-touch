@@ -689,12 +689,6 @@ def main() -> int:
         )
         client.start()
         login = authenticate_native_client(client, profile_env)
-        identity_metadata = persist_native_actor_identity(
-            source_root=client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-        )
         native_adapter.write_clipboard(FIXTURE_CLIPBOARD_BYTES)
         fixture_round_trip = (
             native_adapter.read_clipboard() == FIXTURE_CLIPBOARD_BYTES
@@ -716,6 +710,14 @@ def main() -> int:
             "V2-J03 Harness returned invalid evidence",
         )
         provider_requests = provider_fixture.snapshot()
+        assertions = evaluate_governed_tool(journey, provider_requests)
+        identity_metadata = persist_native_actor_identity(
+            source_root=client.actor_identity_root,
+            fixture_root=J02_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=True,
+        )
         capture = {
             "identityFixture": identity_fixture_evidence(
                 identity_metadata,
@@ -731,7 +733,6 @@ def main() -> int:
             },
             "journey": dict(journey),
         }
-        assertions = evaluate_governed_tool(journey, provider_requests)
     except BaseException as error:
         primary_error = error
     finally:
