@@ -23082,7 +23082,7 @@ async function openEvaluationRunsTab(): Promise<void> {
     EVALUATION_SELECTORS.createRun,
   );
   if (!createRun?.getClientRects().length) {
-    clickEvaluationControl(EVALUATION_SELECTORS.runsTab);
+    clickEvaluationTab(EVALUATION_SELECTORS.runsTab);
   }
   await waitFor(
     () => Boolean(
@@ -23134,6 +23134,21 @@ async function selectEvaluationOption(
     throw new Error(`agent.acceptance.evaluationOptionMissing:${label}`);
   }
   option.click();
+}
+
+function clickEvaluationTab(selector: string): void {
+  const marker = document.querySelector<HTMLElement>(selector);
+  const input = marker
+    ?.closest<HTMLLabelElement>('label')
+    ?.querySelector<HTMLInputElement>('input');
+  if (
+    !marker?.getClientRects().length
+    || !input
+    || input.disabled
+  ) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  input.click();
 }
 
 function clickEvaluationControl(selector: string): void {

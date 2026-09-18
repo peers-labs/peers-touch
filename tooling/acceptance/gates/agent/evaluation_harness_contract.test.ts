@@ -106,6 +106,22 @@ test('J06 native navigation reaches the production Evaluation page', () => {
   );
 });
 
+test('J06 selects the Ant Design Segmented input behind the stable tab marker', () => {
+  assert.match(
+    harness,
+    /clickEvaluationTab\(EVALUATION_SELECTORS\.runsTab\)/,
+  );
+  assert.match(
+    harness,
+    /\.closest<HTMLLabelElement>\(['"]label['"]\)/,
+  );
+  assert.match(
+    harness,
+    /\.querySelector<HTMLInputElement>\(['"]input['"]\)/,
+  );
+  assert.match(harness, /input\.click\(\)/);
+});
+
 test('J06 Acceptance does not use the legacy Evaluation store', () => {
   const j06Start = harness.indexOf('const EVALUATION_SELECTORS');
   const j06End = harness.indexOf(
