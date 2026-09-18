@@ -17,6 +17,8 @@
   "journeyId": "DWF-J18-immutable-plan-binding",
   "runtimeClass": "source-only",
   "writeSet": [
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/review.yml",
     "apps/desktop/src/acceptance/agent/harness.ts",
     "apps/dev",
     "AGENTS.md",
@@ -58,6 +60,11 @@
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
+      "id": "pr-plan-input-python",
+      "command": "python3 tooling/scripts/review/pr-plan-input-test.py",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
       "id": "development-workflow-gate",
       "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract",
       "verificationClass": "ACCEPTANCE_PROOF"
@@ -76,12 +83,12 @@
     "Do not add an unbind or rebind compatibility path",
     "Return typed binding errors without changing the binding"
   ],
-  "updatedAt": "2026-09-18T02:02:15.000Z",
+  "updatedAt": "2026-09-18T03:08:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "STRUCTURAL_CHECK",
       "result": "PASS",
-      "ref": "Plan, binding, declaration, Session and Peers Dev Node suites (166/166)"
+      "ref": "Plan, binding, declaration, Session and Peers Dev Node suites (166/166); PR Plan input parser (2/2)"
     },
     {
       "verificationClass": "FUNCTIONAL_CHECK",

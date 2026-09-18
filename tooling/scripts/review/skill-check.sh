@@ -9,6 +9,9 @@ pr_skill_file="tooling/skills/pt-github-pr/SKILL.md"
 freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
+review_workflow=".github/workflows/review.yml"
+pr_plan_input="tooling/scripts/review/pr-plan-input.py"
+pr_plan_input_test="tooling/scripts/review/pr-plan-input-test.py"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
 review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
@@ -44,6 +47,9 @@ require_file "$skill_file"
 require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
+require_file "$review_workflow"
+require_file "$pr_plan_input"
+require_file "$pr_plan_input_test"
 require_file "$submit_pipeline"
 require_file "$review_runner"
 require_file "$gap_skill"
@@ -150,6 +156,15 @@ for marker in "${submit_markers[@]}"; do
   fi
   if ! grep -q "$marker" "$pr_template"; then
     fail "$pr_template missing submit pipeline marker: $marker"
+  fi
+done
+
+for marker in \
+  "Execution Plans / 执行计划" \
+  "pr-plan-input.py" \
+  "execution-plan.py"; do
+  if ! grep -Fq "$marker" "$pr_template" "$review_workflow" "$pr_plan_input"; then
+    fail "explicit PR Plan input is missing marker: $marker"
   fi
 done
 

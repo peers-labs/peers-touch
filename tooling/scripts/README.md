@@ -65,6 +65,7 @@ export VITE_PORT=3000
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
 | `execution-plan.py` | 推荐 | 解析当前 workspace 不可变绑定的 formal Plan；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
 | `plan/workspace-plan-binding.mjs` | 推荐 | 一次性建立/解析 workspace 的 `planId + planPath` | `make plan-bind PLAN=<path>`；同值幂等，拒绝换绑 |
+| `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表 | CI 对每个声明路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
 | `acceptance-validate.py` | 推荐 | 按责任范围校验 capability graph、feature/gate、Provisioning contract、registry、run result 与 report；Infra 模式只消费 `acceptance_core_self_validation` | 通过 `make acceptance-infra-validate`、`make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |

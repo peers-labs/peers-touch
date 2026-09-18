@@ -25,12 +25,25 @@ jobs:
         run: |
           echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
 
-      - name: Require completed execution plan
-        run: python3 tooling/scripts/execution-plan.py --ci --require-complete
+      - name: Resolve explicit execution plans
+        run: |
+          python3 tooling/scripts/review/pr-plan-input.py \
+            --event "$GITHUB_EVENT_PATH" \
+            > "$RUNNER_TEMP/execution-plans.txt"
+
+      - name: Require completed execution plans
+        run: |
+          while IFS= read -r plan; do
+            python3 tooling/scripts/execution-plan.py \
+              --ci \
+              --require-complete \
+              --plan "$plan"
+          done < "$RUNNER_TEMP/execution-plans.txt"
 
       - name: Validate Acceptance workflow contracts
         run: |
           python3 -m pip install -r tooling/acceptance/requirements.txt
+          python3 tooling/scripts/review/pr-plan-input-test.py
           python3 -m unittest tooling.acceptance.tests.test_execution_plan
           python3 tooling/scripts/acceptance-plan-test.py
           python3 tooling/scripts/acceptance-run-test.py

@@ -37,6 +37,14 @@
   "scope": {
     "sourceClaims": [
       {
+        "pathPrefix": ".github/PULL_REQUEST_TEMPLATE.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": ".github/workflows/review.yml",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop/src/acceptance/agent/harness.ts",
         "mode": "exclusive-write"
       },

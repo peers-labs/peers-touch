@@ -662,8 +662,10 @@ a synchronized foreign Plan to the current worktree.
   must match the immutable binding. They are projections or consumers, not
   alternative binding owners.
 - A Plan-bound workspace cannot publish untracked work.
-- CI has no machine workspace binding and must receive an explicit Plan path.
-  Missing input returns `EXECUTION_PLAN_INPUT_REQUIRED`.
+- CI has no machine workspace binding. A pull request declares every owned Plan
+  path in `## Execution Plans / 执行计划`; CI passes each path explicitly and
+  requires all declared Plans to be complete before ready-for-review.
+  Missing or malformed input fails with `PR_EXECUTION_PLAN_INPUT_INVALID`.
 
 ### Rationale
 

@@ -79,8 +79,9 @@ python3 tooling/scripts/execution-plan.py --require-complete
 python3 tooling/scripts/acceptance-plan.py --active-plan --completion
 ```
 
-CI has no machine workspace binding and must pass the reviewed Plan through
-`--plan` or `PT_EXECUTION_PLAN`; it must not infer a Plan from the PR branch.
+CI has no machine workspace binding. The PR body must declare every owned Plan
+under `## Execution Plans / 执行计划`; CI passes each path through `--plan` and
+must not infer a Plan from the PR branch.
 Reject Plan Packages that retain mutable `expectedHead`; current source
 identity belongs to the Development declaration, Session checkpoint, and
 `active_work` projection rather than tracked Plan content.

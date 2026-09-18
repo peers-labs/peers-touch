@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-18
-covered_docs_hash: a770e4e0b0f07bef36831ebb4b3d3329af3cedf3868555e642bdf843f052c75a
+covered_docs_hash: f970f74b60fc70e411a2928f9b53eb5a9677e2499afbecf4c34f74a4f8d78ce1
 
 covered_docs:
   - AGENTS.md
@@ -281,9 +281,10 @@ severity and golden fixtures remain unchanged.
 DWF-D18 makes workspace-to-Plan ownership a machine-local create-once binding.
 Review must reject branch/repository Plan scans, synchronized foreign Plan
 selection, locator-less declarations after binding, and any unbind/rebind path.
-`pt-github-review/SKILL.md` now records explicit CI Plan input; dedicated Node,
-Python and Development declaration regressions cover the contract, so no new
-golden review fixture is required.
+`pt-github-review/SKILL.md` now requires an explicit PR `Execution Plans` list;
+CI validates every listed path instead of scanning the branch. Dedicated Node,
+Python, PR-input and Development declaration regressions cover the contract, so
+no new golden review fixture is required.
 
 DWF-D19 removes advancing `expectedHead` from tracked Plan Packages. Review
 must reject schema-v1 packages and any attempt to move current source identity

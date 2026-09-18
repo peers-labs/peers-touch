@@ -322,8 +322,9 @@ Rules:
 - the referenced package must claim the same `workspaceId`;
 - repository/branch scans, Plan status and declaration recency never select a
   Plan;
-- CI does not consume this machine-local record and requires an explicit Plan
-  input.
+- CI does not consume this machine-local record. Pull requests declare one or
+  more repository-relative Plan paths in `## Execution Plans / 执行计划`, and CI
+  validates every declared path explicitly.
 
 ## 6. Active Work Pointer
 

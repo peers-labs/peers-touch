@@ -19,7 +19,7 @@
 | `pt-trae-goal-orchestrator` | Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
-| `execution-plan.py` | Resolves local or explicit Plan input | Loads the immutable workspace binding locally; CI requires an explicit package path |
+| `execution-plan.py` | Resolves local or explicit Plan input | Loads the immutable workspace binding locally; CI validates every Plan path declared by the PR |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
@@ -213,9 +213,9 @@ Rejects:
 
 `execution-plan.py` and `acceptance-plan.py` consume package manifests through a
 structured parser. Local execution loads only the immutable workspace
-`planId + planPath`; synchronized foreign Plans are ignored. CI must pass
-`--plan` or `PT_EXECUTION_PLAN`. The current closure is the current Task's
-`closureId`.
+`planId + planPath`; synchronized foreign Plans are ignored. Pull-request CI
+reads `## Execution Plans / 执行计划` and invokes `--plan` once per declared
+path. The current closure is the current Task's `closureId`.
 
 The dedicated `development-workflow-control-plane` Gate runs package, Session,
 legacy-declaration, package-aware execution-plan and Skill contract tests. It is
