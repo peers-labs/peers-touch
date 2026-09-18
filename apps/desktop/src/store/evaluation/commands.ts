@@ -16,13 +16,14 @@ import {
   UpdateEvaluationBenchmarkRequestSchema,
   UpdateEvaluationDatasetRequestSchema,
   UpdateEvaluationTestCaseRequestSchema,
+  EvaluationRunStatus,
   type EvaluationBenchmark,
   type EvaluationDataset,
   type EvaluationRun,
   type EvaluationTestCase,
 } from '../../gen/proto/domain/agent/evaluation_pb';
 import { EVENT, eventBus } from '../../kernel/events';
-import { api } from '../../services/desktop_api';
+import { api, RustCommandException } from '../../services/desktop_api';
 import { beginMutation, endMutation, toStoreError } from '../revalidation';
 import { upsertById } from './projection';
 import type {
@@ -95,6 +96,15 @@ export function evaluationRevisionMutationKey(
 
 function notifyProjectionChanged(reason: string, runId?: string): void {
   eventBus.publish(EVENT.EVALUATION_PROJECTION_INVALIDATED, { reason, runId });
+}
+
+function isTerminalRun(run: EvaluationRun): boolean {
+  return [
+    EvaluationRunStatus.COMPLETED,
+    EvaluationRunStatus.PARTIAL,
+    EvaluationRunStatus.FAILED,
+    EvaluationRunStatus.CANCELLED,
+  ].includes(run.status);
 }
 
 async function executeMutation<T>(
@@ -506,30 +516,52 @@ export function createEvaluationCommands(
       );
     },
 
-    cancelRun: (run: EvaluationRun) => {
-      const key = evaluationRevisionMutationKey(
-        'run:cancel',
-        run.runId,
-        run.revision,
-      );
-      return executeMutation(
-        context,
-        key,
-        () => api.cancelEvaluationRun(create(
-          CancelEvaluationRunRequestSchema,
-          {
-            runId: run.runId,
-            expectedRevision: run.revision,
-            idempotencyKey: key,
-          },
-        )),
-        (updated) => {
-          set((state) => ({
-            runs: upsertById(state.runs, updated, (item) => item.runId),
-          }));
-          notifyProjectionChanged('run-cancelled', updated.runId);
-        },
-      );
+    cancelRun: async (run: EvaluationRun) => {
+      let current = run;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const key = evaluationRevisionMutationKey(
+          'run:cancel',
+          current.runId,
+          current.revision,
+        );
+        try {
+          return await executeMutation(
+            context,
+            key,
+            () => api.cancelEvaluationRun(create(
+              CancelEvaluationRunRequestSchema,
+              {
+                runId: current.runId,
+                expectedRevision: current.revision,
+                idempotencyKey: key,
+              },
+            )),
+            (updated) => {
+              set((state) => ({
+                runs: upsertById(state.runs, updated, (item) => item.runId),
+              }));
+              notifyProjectionChanged('run-cancelled', updated.runId);
+            },
+          );
+        } catch (error) {
+          if (
+            !(error instanceof RustCommandException)
+            || error.code !== 'CONFLICT'
+          ) {
+            throw error;
+          }
+          const detail = await api.getEvaluationRun(current.runId);
+          if (!detail.run) throw error;
+          current = detail.run;
+          if (isTerminalRun(current)) {
+            set((state) => ({
+              runs: upsertById(state.runs, current, (item) => item.runId),
+            }));
+            return current;
+          }
+        }
+      }
+      throw new Error('agent.evaluationCancelVersionConflict');
     },
 
     deleteRun: async (run: EvaluationRun) => {
@@ -567,33 +599,49 @@ export function createEvaluationCommands(
       return response.deleted;
     },
 
-    retryCases: (run: EvaluationRun, caseIds: string[]) => {
+    retryCases: async (run: EvaluationRun, caseIds: string[]) => {
       const normalizedCaseIds = Array.from(new Set(caseIds)).sort();
-      const key = evaluationRevisionMutationKey(
-        'run:retry',
-        run.runId,
-        run.revision,
-        normalizedCaseIds,
-      );
-      return executeMutation(
-        context,
-        key,
-        () => api.retryEvaluationCases(create(
-          RetryEvaluationCasesRequestSchema,
-          {
-            parentRunId: run.runId,
-            caseIds: normalizedCaseIds,
-            idempotencyKey: key,
-            expectedParentRevision: run.revision,
-          },
-        )),
-        (childRun) => {
-          set((state) => ({
-            runs: upsertById(state.runs, childRun, (item) => item.runId),
-          }));
-          notifyProjectionChanged('run-retried', childRun.runId);
-        },
-      );
+      let current = run;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const key = evaluationRevisionMutationKey(
+          'run:retry',
+          current.runId,
+          current.revision,
+          normalizedCaseIds,
+        );
+        try {
+          return await executeMutation(
+            context,
+            key,
+            () => api.retryEvaluationCases(create(
+              RetryEvaluationCasesRequestSchema,
+              {
+                parentRunId: current.runId,
+                caseIds: normalizedCaseIds,
+                idempotencyKey: key,
+                expectedParentRevision: current.revision,
+              },
+            )),
+            (childRun) => {
+              set((state) => ({
+                runs: upsertById(state.runs, childRun, (item) => item.runId),
+              }));
+              notifyProjectionChanged('run-retried', childRun.runId);
+            },
+          );
+        } catch (error) {
+          if (
+            !(error instanceof RustCommandException)
+            || error.code !== 'CONFLICT'
+          ) {
+            throw error;
+          }
+          const detail = await api.getEvaluationRun(current.runId);
+          if (!detail.run) throw error;
+          current = detail.run;
+        }
+      }
+      throw new Error('agent.evaluationRetryVersionConflict');
     },
   };
 }
