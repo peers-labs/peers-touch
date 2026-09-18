@@ -697,6 +697,178 @@ func (s *subServer) handleGetConversationMembers(
 	return &chatmodel.GetConversationMembersResponse{Members: wireMembers}, nil
 }
 
+func (s *subServer) handleUpdateConversationMember(
+	ctx context.Context,
+	request *chatmodel.UpdateConversationMemberRequest,
+) (*chatmodel.UpdateConversationMemberResponse, error) {
+	result, err := s.submitMemberAuthorityCommand(
+		ctx,
+		request.GetCommand(),
+		chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER,
+	)
+	if err != nil {
+		return nil, err
+	}
+	member, ok := productionSnapshotMember(result.Conversation, result.Event.Fact.MemberAuthority.Target)
+	if !ok {
+		return nil, mapProductionConversationError(
+			ctx,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"production_http.update_member",
+				"post_state",
+				"committed target member is missing",
+			),
+		)
+	}
+	event, err := conversationhttp.MapEvent(result.Event)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+
+	return &chatmodel.UpdateConversationMemberResponse{
+		Member: productionConversationMember(result.Conversation.ID, member),
+		Event:  event,
+	}, nil
+}
+
+func (s *subServer) handleTransferConversationOwnership(
+	ctx context.Context,
+	request *chatmodel.TransferConversationOwnershipRequest,
+) (*chatmodel.TransferConversationOwnershipResponse, error) {
+	result, err := s.submitMemberAuthorityCommand(
+		ctx,
+		request.GetCommand(),
+		chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP,
+	)
+	if err != nil {
+		return nil, err
+	}
+	mutation := result.Event.Fact.MemberAuthority
+	if mutation == nil {
+		return nil, mapProductionConversationError(
+			ctx,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"production_http.transfer_ownership",
+				"event",
+				"committed owner transfer fact is missing",
+			),
+		)
+	}
+	previousOwner, previousOK := productionSnapshotMember(
+		result.Conversation,
+		mutation.PreviousOwner,
+	)
+	newOwner, newOK := productionSnapshotMember(result.Conversation, mutation.Owner)
+	if !previousOK || !newOK {
+		return nil, mapProductionConversationError(
+			ctx,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"production_http.transfer_ownership",
+				"post_state",
+				"committed owner members are missing",
+			),
+		)
+	}
+	event, err := conversationhttp.MapEvent(result.Event)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+
+	return &chatmodel.TransferConversationOwnershipResponse{
+		Conversation:  productionConversation(result.Conversation),
+		PreviousOwner: productionConversationMember(result.Conversation.ID, previousOwner),
+		NewOwner:      productionConversationMember(result.Conversation.ID, newOwner),
+		Event:         event,
+	}, nil
+}
+
+func (s *subServer) submitMemberAuthorityCommand(
+	ctx context.Context,
+	wire *chatmodel.ConversationMemberAuthorityCommand,
+	expected chatmodel.ConversationMemberAuthorityAction,
+) (command.Result, error) {
+	authenticated, operator, err := authenticatedConversationActor(ctx)
+	if err != nil {
+		return command.Result{}, err
+	}
+	if wire == nil || wire.GetAction() != expected {
+		return command.Result{}, server.BadRequest(
+			"Conversation member authority command has the wrong action",
+		)
+	}
+	if wire.GetOperator() == nil ||
+		wire.GetOperator().GetPtid() != authenticated.PTID ||
+		wire.GetOperator().GetDeviceId() != authenticated.DeviceID {
+		return command.Result{}, server.Forbidden(
+			"Conversation member authority operator does not match the authenticated endpoint",
+		)
+	}
+	if wire.GetAuthorityStationPeerId() != string(s.localStation) {
+		return command.Result{}, mapProductionConversationError(
+			ctx,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+				"production_http.member_authority",
+				"authority_station_peer_id",
+				"does not identify the local Conversation authority",
+			),
+		)
+	}
+	conversationID, err := valueobject.NewConversationID(wire.GetConversationId())
+	if err != nil {
+		return command.Result{}, mapProductionConversationError(ctx, err)
+	}
+	verifiedRoutes, err := s.composition.productionCommandRoutes(
+		ctx,
+		s.composition.CommandService,
+		conversationID,
+		operator.Actor,
+	)
+	if err != nil {
+		return command.Result{}, mapProductionConversationError(ctx, err)
+	}
+	preparation, err := s.composition.CommandService.PrepareCommand(
+		ctx,
+		command.PrepareCommandRequest{
+			ConversationID:    conversationID,
+			Sender:            operator,
+			SenderHomeStation: s.localStation,
+			VerifiedRoutes:    verifiedRoutes,
+		},
+	)
+	if err != nil {
+		return command.Result{}, mapProductionConversationError(ctx, err)
+	}
+	mapped, err := conversationhttp.MapMemberAuthorityCommand(
+		authenticated,
+		wire,
+		preparation,
+		s.composition.clock.Now(),
+	)
+	if err != nil {
+		return command.Result{}, mapProductionConversationError(ctx, err)
+	}
+	mapped.VerifiedRoutes = verifiedRoutes
+	result, err := s.composition.CommandService.Submit(ctx, mapped)
+	if err != nil {
+		return command.Result{}, mapProductionConversationError(ctx, err)
+	}
+	if result.PostCommitError != nil {
+		return command.Result{}, mapProductionConversationError(
+			ctx,
+			fmt.Errorf(
+				"publish committed member authority event %s: %w",
+				result.Event.ID,
+				result.PostCommitError,
+			),
+		)
+	}
+	return result, nil
+}
+
 func (s *subServer) handleListConversationEvents(
 	ctx context.Context,
 	request *chatmodel.ListConversationEventsRequest,
@@ -1801,13 +1973,31 @@ func productionConversationMember(
 	conversationID valueobject.ConversationID,
 	member entity.Member,
 ) *chatmodel.ConversationMember {
+	var mutedUntil *timestamppb.Timestamp
+	if member.MutedUntil != nil {
+		mutedUntil = timestamppb.New(member.MutedUntil.UTC())
+	}
 	return &chatmodel.ConversationMember{
 		ConversationId:         string(conversationID),
 		Ptid:                   string(member.Actor),
 		Role:                   productionMemberRoleProto(member.Role),
 		MemberStatus:           productionMemberStatus(member.Status),
 		ActorHomeStationPeerId: string(member.HomeStation),
+		Muted:                  member.Muted,
+		MutedUntil:             mutedUntil,
 	}
+}
+
+func productionSnapshotMember(
+	snapshot aggregate.Snapshot,
+	actor valueobject.PTID,
+) (entity.Member, bool) {
+	for _, member := range snapshot.Members {
+		if member.Actor == actor {
+			return member, true
+		}
+	}
+	return entity.Member{}, false
 }
 
 func productionPublicHead(head query.PublicHead) *chatmodel.ConversationPublicHead {
@@ -2258,7 +2448,8 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 			code,
 			err,
 		)
-	case conversationdomain.ErrorCodeUnauthorized:
+	case conversationdomain.ErrorCodeUnauthorized,
+		conversationdomain.ErrorCodeMemberMuted:
 		return productionConversationHandlerError(
 			http.StatusForbidden,
 			"Conversation operation is not authorized",
@@ -2269,6 +2460,13 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		return productionConversationHandlerError(
 			http.StatusNotFound,
 			"Conversation was not found",
+			code,
+			err,
+		)
+	case conversationdomain.ErrorCodeTargetNotMember:
+		return productionConversationHandlerError(
+			http.StatusNotFound,
+			"Conversation target member was not found",
 			code,
 			err,
 		)
@@ -2284,6 +2482,7 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		conversationdomain.ErrorCodeAuthorityPlanExpired,
 		conversationdomain.ErrorCodeAuthorityPlanState,
 		conversationdomain.ErrorCodeProposalExpired,
+		conversationdomain.ErrorCodeCommandExpired,
 		conversationdomain.ErrorCodeProposalBinding,
 		conversationdomain.ErrorCodeProposalSignature,
 		conversationdomain.ErrorCodeActorKeyRevoked,

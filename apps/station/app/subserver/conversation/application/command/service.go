@@ -144,6 +144,7 @@ type CreateGroupRequest struct {
 type SubmitRequest struct {
 	Command           aggregate.Command
 	Membership        *aggregate.MembershipTransition
+	MemberAuthority   *aggregate.MemberAuthorityCommand
 	Settings          *valueobject.SettingsPatch
 	Dissolve          bool
 	VerifiedRoutes    []ports.EndpointRoute
@@ -1472,6 +1473,25 @@ func (s *Service) submit(
 			}
 			if rejection != nil {
 				return persistRejection(rejection)
+			}
+		case request.MemberAuthority != nil:
+			memberCommand := *request.MemberAuthority
+			memberCommand.Command = request.Command
+			memberCommand.Command.EventSealer = s.eventSealer
+			memberCommand.Command.RequiredEndpoints = eligibleConversationEndpoints(
+				conversation,
+				commandRoutes,
+			)
+			memberCommand.Command.Deliveries, err = bindDeliveryRoutes(
+				memberCommand.Command.Deliveries,
+				commandRoutes,
+			)
+			if err != nil {
+				return persistRejection(err)
+			}
+			transition, err = conversation.ApplyMemberAuthority(memberCommand)
+			if err != nil {
+				return persistRejection(err)
 			}
 		default:
 			if err := validateMessageCommand(

@@ -1,7 +1,10 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { EVENT, eventBus } from '../kernel/events';
 import { useEvaluationStore } from '../store/evaluation';
-import { useAgentCapabilityStore } from '../store/agentCapabilities';
+import {
+  useAgentCapabilityStore,
+  type AgentCapabilityReadinessInput,
+} from '../store/agentCapabilities';
 import { useAgentStore } from '../store/agent';
 import { log } from '../utils/logger';
 
@@ -134,6 +137,17 @@ function clearTimers(): void {
 
 export function refreshEvaluationProjection(): Promise<void> {
   return reconcileProjection('user');
+}
+
+export async function refreshEvaluationTargetProjection(
+  agentId: string,
+  readinessInput: AgentCapabilityReadinessInput = {},
+): Promise<void> {
+  if (!installed || !activeActorPtid) return;
+  await Promise.all([
+    useEvaluationStore.getState().loadProjection(activeActorPtid, 'user'),
+    useAgentCapabilityStore.getState().loadAgent(agentId, readinessInput),
+  ]);
 }
 
 export const evaluationRuntime: RuntimeDescriptor = {

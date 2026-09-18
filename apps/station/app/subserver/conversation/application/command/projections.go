@@ -915,6 +915,20 @@ func deriveFollowerProjection(
 			if err != nil {
 				return repository.FollowerProjection{}, err
 			}
+		} else if event.Fact.Kind == domainevent.KindMemberAuthority {
+			if event.Fact.MemberAuthority == nil {
+				return repository.FollowerProjection{}, followerStateShapeError(
+					"member authority event is missing its mutation",
+				)
+			}
+			snapshot, err = aggregate.ReconcileCommittedMemberAuthorityProjection(
+				current.Conversation,
+				*event.Fact.MemberAuthority,
+				snapshot,
+			)
+			if err != nil {
+				return repository.FollowerProjection{}, err
+			}
 		}
 	case event.Fact.Kind == domainevent.KindConversationSettings:
 		snapshot.Settings = snapshot.Settings.Apply(event.Fact.SettingsPatch)
@@ -992,10 +1006,11 @@ func validateFollowerCreationProjection(
 
 func validateFollowerEventStateShape(event domainevent.Record) error {
 	switch event.Fact.Kind {
-	case domainevent.KindMembershipCommitted:
+	case domainevent.KindMembershipCommitted,
+		domainevent.KindMemberAuthority:
 		if event.Fact.PostState == nil {
 			return followerStateShapeError(
-				"membership event must contain the complete post-transition state",
+				"membership authority event must contain the complete post-transition state",
 			)
 		}
 	case domainevent.KindMessageCommitted,
@@ -1035,9 +1050,19 @@ func validateFollowerEpochTransition(
 	}
 	if event.Fact.Kind == domainevent.KindMembershipCommitted {
 		if event.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
-			event.MLSEpoch != current.Head.MLSEpoch.Next() ||
-			event.MembershipEpoch != event.MLSEpoch {
-			return followerEpochError("membership events must advance both group epochs by exactly one")
+			event.MLSEpoch != current.Head.MLSEpoch.Next() {
+			return followerEpochError(
+				"membership events must advance both group epochs by exactly one",
+			)
+		}
+		return nil
+	}
+	if event.Fact.Kind == domainevent.KindMemberAuthority {
+		if event.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
+			event.MLSEpoch != current.Head.MLSEpoch {
+			return followerEpochError(
+				"member authority events must advance membership epoch only",
+			)
 		}
 		return nil
 	}

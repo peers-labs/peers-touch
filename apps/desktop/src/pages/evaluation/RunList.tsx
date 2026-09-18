@@ -81,12 +81,13 @@ export const EvaluationRunList = memo(() => {
     }
   }, [message, t]);
 
-  const selectedRun = selectedRunId
+  const listedRun = selectedRunId
     ? runs.find((run) => run.runId === selectedRunId)
     : undefined;
-  const detail = selectedRun
-    ? runDetailsById[selectedRun.runId]
+  const detail = listedRun
+    ? runDetailsById[listedRun.runId]
     : undefined;
+  const selectedRun = detail?.run ?? listedRun;
 
   const submitRun = async () => {
     try {

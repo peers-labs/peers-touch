@@ -2119,6 +2119,35 @@ func productionFactFromWire(
 		fact.Kind = domainevent.KindMembershipCommitted
 		fact.MembershipChanges = changes
 		fact.PostState = state
+	case *chatmodel.ConversationEvent_MemberAuthorityCommitted:
+		committed := payload.MemberAuthorityCommitted
+		state, err := productionStateFromWire(committed.GetPostState(), wire.GetSequence())
+		if err != nil {
+			return domainevent.Fact{}, err
+		}
+		mutation := &domainevent.MemberAuthorityMutation{
+			Action:              productionMemberAuthorityActionFromProto(committed.GetAction()),
+			Target:              valueobject.PTID(committed.GetTargetPtid()),
+			PreviousOwner:       valueobject.PTID(committed.GetPreviousOwnerPtid()),
+			Owner:               valueobject.PTID(committed.GetOwnerPtid()),
+			FromMembershipEpoch: valueobject.Epoch(committed.GetFromMembershipEpoch()),
+			ToMembershipEpoch:   valueobject.Epoch(committed.GetToMembershipEpoch()),
+		}
+		if committed.Role != nil {
+			role := productionMemberRole(committed.GetRole())
+			mutation.Role = &role
+		}
+		if committed.Muted != nil {
+			muted := committed.GetMuted()
+			mutation.Muted = &muted
+		}
+		if committed.GetMutedUntil() != nil {
+			mutedUntil := committed.GetMutedUntil().AsTime().UTC()
+			mutation.MutedUntil = &mutedUntil
+		}
+		fact.Kind = domainevent.KindMemberAuthority
+		fact.MemberAuthority = mutation
+		fact.PostState = state
 	case *chatmodel.ConversationEvent_ConversationDissolved:
 		command.Payload = &chatmodel.ChatCommand_DissolveConversation{
 			DissolveConversation: &chatmodel.DissolveConversationIntent{},
@@ -2132,7 +2161,8 @@ func productionFactFromWire(
 			"is not supported",
 		)
 	}
-	if fact.Kind != domainevent.KindConversationCreated {
+	if fact.Kind != domainevent.KindConversationCreated &&
+		fact.Kind != domainevent.KindMemberAuthority {
 		encoded, err := deterministicProductionProto(command)
 		if err != nil {
 			return domainevent.Fact{}, err
@@ -2164,6 +2194,11 @@ func productionStateFromWire(
 			Status:      valueobject.MemberStatusActive,
 			HomeStation: valueobject.StationID(member.GetHomeStationPeerId()),
 			JoinedAt:    1,
+			Muted:       member.GetMuted(),
+		}
+		if member.GetMutedUntil() != nil {
+			mutedUntil := member.GetMutedUntil().AsTime().UTC()
+			mapped.MutedUntil = &mutedUntil
 		}
 		if err := mapped.Validate(); err != nil {
 			return nil, err
@@ -2265,6 +2300,19 @@ func productionMembershipActionFromProto(
 		return entity.MembershipActionAddDevice
 	case chatmodel.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE:
 		return entity.MembershipActionRemoveDevice
+	default:
+		return ""
+	}
+}
+
+func productionMemberAuthorityActionFromProto(
+	action chatmodel.ConversationMemberAuthorityAction,
+) domainevent.MemberAuthorityAction {
+	switch action {
+	case chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER:
+		return domainevent.MemberAuthorityActionUpdateMember
+	case chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP:
+		return domainevent.MemberAuthorityActionTransferOwnership
 	default:
 		return ""
 	}

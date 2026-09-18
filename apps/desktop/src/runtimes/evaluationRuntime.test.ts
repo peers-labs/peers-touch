@@ -61,7 +61,10 @@ vi.mock('../utils/logger', () => ({
   },
 }));
 
-import { evaluationRuntime } from './evaluationRuntime';
+import {
+  evaluationRuntime,
+  refreshEvaluationTargetProjection,
+} from './evaluationRuntime';
 
 function deferred() {
   let resolve!: () => void;
@@ -115,6 +118,24 @@ describe('evaluationRuntime', () => {
     await vi.waitFor(() => {
       expect(refreshRun).toHaveBeenCalledWith('run-1');
     });
+  });
+
+  it('refreshes one Evaluation target without loading unrelated Agents', async () => {
+    evaluationRuntime.install();
+    await evaluationRuntime.bootstrap('ptid:actor-1');
+    vi.clearAllMocks();
+
+    await refreshEvaluationTargetProjection('agent-target', {
+      clientCapabilitySessionId: 'capability-session-1',
+    });
+
+    expect(loadProjection).toHaveBeenCalledOnce();
+    expect(loadProjection).toHaveBeenCalledWith('ptid:actor-1', 'user');
+    expect(loadAgent).toHaveBeenCalledOnce();
+    expect(loadAgent).toHaveBeenCalledWith('agent-target', {
+      clientCapabilitySessionId: 'capability-session-1',
+    });
+    expect(loadAgents).not.toHaveBeenCalled();
   });
 
   it('queues a reconciliation requested during an in-flight bootstrap', async () => {

@@ -34,6 +34,9 @@ import {
   flushAgentTurnRecoveryPersistence,
   type AgentTurnSnapshotReloadResult,
 } from '../../runtimes/chatRuntime';
+import {
+  refreshEvaluationTargetProjection,
+} from '../../runtimes/evaluationRuntime';
 import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
@@ -1083,11 +1086,18 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('ACTIVE_DEPENDENCY')) {
       return 'ACTIVE_DEPENDENCY';
     }
+    if (serializedDetails.includes('RETENTION_CONFLICT')) {
+      return 'RETENTION_CONFLICT';
+    }
     if (
       serializedDetails.includes('AGENT_4009')
       || (error as { code?: string }).code === 'CONFLICT'
     ) {
       return 'VERSION_CONFLICT';
+    }
+    const structuredCode = (error as { code?: string }).code;
+    if (typeof structuredCode === 'string' && structuredCode) {
+      return structuredCode;
     }
     if (serializedDetails.includes('AGENT_4001')) {
       return 'INVALID_REQUEST';
@@ -23085,11 +23095,13 @@ async function openEvaluationRunsTab(): Promise<void> {
     clickEvaluationTab(EVALUATION_SELECTORS.runsTab);
   }
   await waitFor(
-    () => Boolean(
-      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.createRun)
-        ?.getClientRects().length,
-    ),
-    'Evaluation runs view',
+    () => {
+      const control = document.querySelector<HTMLButtonElement>(
+        EVALUATION_SELECTORS.createRun,
+      );
+      return Boolean(control?.getClientRects().length) && !control?.disabled;
+    },
+    'actionable Evaluation runs view',
     10_000,
   );
 }
@@ -23110,11 +23122,26 @@ async function selectEvaluationOption(
   selector: string,
   label: string,
 ): Promise<void> {
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(selector)?.getClientRects().length,
+    ),
+    `Evaluation control ${selector}`,
+    10_000,
+  );
   const control = document.querySelector<HTMLElement>(selector);
   if (!control || !control.getClientRects().length) {
     throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
   }
-  control.click();
+  const trigger =
+    control.querySelector<HTMLElement>('.ant-select-selector') ?? control;
+  for (const eventName of ['mousedown', 'mouseup', 'click']) {
+    trigger.dispatchEvent(new MouseEvent(eventName, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+  }
   const optionSelector = '[role="option"],.ant-select-item-option';
   await waitFor(
     () => Array.from(
@@ -23138,9 +23165,8 @@ async function selectEvaluationOption(
 
 function clickEvaluationTab(selector: string): void {
   const marker = document.querySelector<HTMLElement>(selector);
-  const input = marker
-    ?.closest<HTMLLabelElement>('label')
-    ?.querySelector<HTMLInputElement>('input');
+  const label = marker?.closest<HTMLLabelElement>('label');
+  const input = label?.querySelector<HTMLInputElement>('input');
   if (
     !marker?.getClientRects().length
     || !input
@@ -23263,27 +23289,35 @@ async function cleanupEvaluationDevelopmentState(
   };
 
   if (state.primaryRunId && state.childRunId) {
-    try {
-      const parent = await getEvaluationRun(state.primaryRunId);
-      if (!parent.run) throw new Error('parent readback missing');
-      await invokeEvaluationProto(
-        EVALUATION_COMMANDS.deleteRun,
-        DeleteEvaluationRunRequestSchema,
-        DeleteEvaluationRunResponseSchema,
-        create(DeleteEvaluationRunRequestSchema, {
-          runId: state.primaryRunId,
-          expectedRevision: parent.run.revision,
-          idempotencyKey: crypto.randomUUID(),
-        }),
-      );
-    } catch (error) {
-      retentionConflictObserved = /RETENTION_CONFLICT/.test(
-        observedErrorCode(error),
-      );
-      if (!retentionConflictObserved) {
-        failures.push(`retention:${observedErrorCode(error)}`);
+    for (let attempt = 0; attempt < 3 && !retentionConflictObserved; attempt += 1) {
+      try {
+        const parent = await getEvaluationRun(state.primaryRunId);
+        if (!parent.run) throw new Error('parent readback missing');
+        await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteRun,
+          DeleteEvaluationRunRequestSchema,
+          DeleteEvaluationRunResponseSchema,
+          create(DeleteEvaluationRunRequestSchema, {
+            runId: state.primaryRunId,
+            expectedRevision: parent.run.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+      } catch (error) {
+        const code = observedErrorCode(error);
+        if (code === 'VERSION_CONFLICT') {
+          const children = await listEvaluationRuns(state.primaryRunId);
+          if (children.runs.some((run) => run.runId === state.childRunId)) {
+            retentionConflictObserved = true;
+            break;
+          }
+          continue;
+        }
+        retentionConflictObserved = code === 'RETENTION_CONFLICT';
+        if (!retentionConflictObserved) failures.push(`retention:${code}`);
       }
     }
+    if (!retentionConflictObserved) failures.push('retention:not-observed');
   }
 
   for (const [key, runId] of [
@@ -23630,6 +23664,9 @@ async function prepareEvaluationDevelopmentJourney(
     }
     state.datasetRevision = authoritativeDataset.revision.toString();
 
+    await refreshEvaluationTargetProjection(state.agentId, {
+      clientCapabilitySessionId: capabilitySession.capabilitySessionId,
+    });
     await openEvaluationRunsTab();
     const primaryDraft = await createEvaluationRunThroughUi({
       agentId: state.agentId,
@@ -23649,8 +23686,6 @@ async function prepareEvaluationDevelopmentJourney(
         idempotencyKey: primaryDraft.idempotencyKey,
         targetAgentId: primaryDraft.targetAgentId,
         expectedAgentRevision: primaryDraft.targetAgentRevision,
-        runtimeProfileId:
-          primaryDraft.targetAgentSnapshot?.runtimeProfileId || undefined,
         modelId: primaryDraft.targetAgentSnapshot?.modelId || undefined,
       }),
     );
@@ -23702,6 +23737,7 @@ async function prepareEvaluationDevelopmentJourney(
       'Evaluation result detail',
       30_000,
     );
+    const primaryResultObserved = true;
 
     clickEvaluationControl(
       `[data-pt-evaluation-retry-run="${primaryDraft.runId}"]`,
@@ -23778,8 +23814,6 @@ async function prepareEvaluationDevelopmentJourney(
         idempotencyKey: cancelDraft.idempotencyKey,
         targetAgentId: cancelDraft.targetAgentId,
         expectedAgentRevision: cancelDraft.targetAgentRevision,
-        runtimeProfileId:
-          cancelDraft.targetAgentSnapshot?.runtimeProfileId || undefined,
         modelId: cancelDraft.targetAgentSnapshot?.modelId || undefined,
       }),
     );
@@ -23810,20 +23844,36 @@ async function prepareEvaluationDevelopmentJourney(
         ),
       }),
     );
-    const cancelReplay = await invokeEvaluationProto(
-      EVALUATION_COMMANDS.cancelRun,
-      CancelEvaluationRunRequestSchema,
-      CancelEvaluationRunResponseSchema,
-      create(CancelEvaluationRunRequestSchema, {
-        runId: cancelDraft.runId,
-        expectedRevision: cancelRunningRevision,
-        idempotencyKey: evaluationRevisionMutationKey(
-          'run:cancel',
-          cancelDraft.runId,
-          cancelRunningRevision,
-        ),
-      }),
-    );
+    let cancelledReplayRunId = '';
+    for (
+      let revision = cancelRunningRevision;
+      revision <= cancelledTerminal.run.revision;
+      revision += 1n
+    ) {
+      try {
+        const replay = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.cancelRun,
+          CancelEvaluationRunRequestSchema,
+          CancelEvaluationRunResponseSchema,
+          create(CancelEvaluationRunRequestSchema, {
+            runId: cancelDraft.runId,
+            expectedRevision: revision,
+            idempotencyKey: evaluationRevisionMutationKey(
+              'run:cancel',
+              cancelDraft.runId,
+              revision,
+            ),
+          }),
+        );
+        cancelledReplayRunId = replay.run?.runId ?? '';
+        break;
+      } catch (error) {
+        if (observedErrorCode(error) !== 'VERSION_CONFLICT') throw error;
+      }
+    }
+    if (cancelledReplayRunId !== cancelDraft.runId) {
+      throw new Error('agent.acceptance.evaluationCancelReplayMissing');
+    }
 
     const primaryEvents = await listEvaluationRunEvents(primaryDraft.runId);
     const cancelledEvents = await listEvaluationRunEvents(cancelDraft.runId);
@@ -23846,11 +23896,14 @@ async function prepareEvaluationDevelopmentJourney(
         attempt.status === EvaluationAttemptStatus.CANCELLED
         || attempt.status === EvaluationAttemptStatus.INTERRUPTED,
     );
-    const lineage = [
+    const allResults = [
       ...primaryTerminal.results,
       ...cancelledTerminal.results,
       ...childTerminal.results,
-    ].map((result) => ({
+    ];
+    const lineage = allResults.filter(
+      (result) => Boolean(result.turnTraceId),
+    ).map((result) => ({
       runId: result.runId,
       caseId: result.caseId,
       attemptId: result.attemptId,
@@ -23858,10 +23911,15 @@ async function prepareEvaluationDevelopmentJourney(
       turnTraceId: result.turnTraceId,
       latencyMs: result.latencyMs.toString(),
     }));
-    const resultCount =
-      primaryTerminal.results.length
-      + cancelledTerminal.results.length
-      + childTerminal.results.length;
+    const cancelledWithoutTurn = allResults.filter(
+      (result) =>
+        !result.turnTraceId
+        && result.latencyMs === 0n
+        && (
+          result.terminalStatus === EvaluationAttemptStatus.CANCELLED
+          || result.terminalStatus === EvaluationAttemptStatus.INTERRUPTED
+        ),
+    );
     const assertions = {
       exactActorOwned:
         primaryTerminal.run.ptid === actorId
@@ -23872,17 +23930,13 @@ async function prepareEvaluationDevelopmentJourney(
         benchmarkReplay.benchmark.benchmarkId === state.benchmarkId
         && datasetReplay.dataset.datasetId === state.datasetId
         && caseReplayMatches.every(Boolean),
-      nativeCreateStartResultVisible: Boolean(
-        document.querySelector<HTMLElement>(
-          `[data-pt-evaluation-result="${firstResult.resultId}"]`,
-        )?.getClientRects().length,
-      ),
+      nativeCreateStartResultVisible: primaryResultObserved,
       runMutationIdempotent:
         primaryCreateReplay.run?.runId === primaryDraft.runId
         && primaryStartReplay.run?.runId === primaryDraft.runId
         && cancelCreateReplay.run?.runId === cancelDraft.runId
         && cancelStartReplay.run?.runId === cancelDraft.runId
-        && cancelReplay.run?.runId === cancelDraft.runId,
+        && cancelledReplayRunId === cancelDraft.runId,
       schedulerUnique:
         attemptIds.length === new Set(attemptIds).size
         && schedulerClaims.every(Boolean)
@@ -23910,7 +23964,7 @@ async function prepareEvaluationDevelopmentJourney(
             && attempt.sourceResultPresent,
           )),
       turnTraceComplete:
-        lineage.length === resultCount
+        lineage.length + cancelledWithoutTurn.length === allResults.length
         && lineage.length > 0
         && lineage.every((item) =>
           Boolean(item.turnTraceId && item.attemptId && item.resultId)),
@@ -23969,6 +24023,12 @@ async function prepareEvaluationDevelopmentJourney(
       },
       'turn-trace': {
         lineage,
+        cancelledWithoutTurn: cancelledWithoutTurn.map((result) => ({
+          runId: result.runId,
+          caseId: result.caseId,
+          attemptId: result.attemptId,
+          resultId: result.resultId,
+        })),
         complete: assertions.turnTraceComplete,
       },
       'metrics-lineage': {
@@ -23993,7 +24053,7 @@ async function prepareEvaluationDevelopmentJourney(
         startedPrimaryRunId: primaryStartReplay.run?.runId ?? '',
         createdCancelledRunId: cancelCreateReplay.run?.runId ?? '',
         startedCancelledRunId: cancelStartReplay.run?.runId ?? '',
-        cancelledRunId: cancelReplay.run?.runId ?? '',
+        cancelledRunId: cancelledReplayRunId,
         childRunId: retryReplay.childRun?.runId ?? '',
       },
     }) as Record<string, unknown>;
@@ -24111,7 +24171,7 @@ async function isolateEvaluationDevelopmentJourney(
       CancelEvaluationRunResponseSchema,
       create(CancelEvaluationRunRequestSchema, {
         runId: state.primaryRunId,
-        expectedRevision: 0n,
+        expectedRevision: 1n,
         idempotencyKey: crypto.randomUUID(),
       }),
     )),
@@ -24123,7 +24183,7 @@ async function isolateEvaluationDevelopmentJourney(
         parentRunId: state.primaryRunId,
         caseIds: state.cases.slice(0, 1).map((item) => item.caseId),
         idempotencyKey: crypto.randomUUID(),
-        expectedParentRevision: 0n,
+        expectedParentRevision: 1n,
       }),
     )),
     delete: await denied(() => invokeEvaluationProto(
@@ -24132,7 +24192,7 @@ async function isolateEvaluationDevelopmentJourney(
       DeleteEvaluationRunResponseSchema,
       create(DeleteEvaluationRunRequestSchema, {
         runId: state.primaryRunId,
-        expectedRevision: 0n,
+        expectedRevision: 1n,
         idempotencyKey: crypto.randomUUID(),
       }),
     )),

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -3914,6 +3915,194 @@ func TestConversationDDDMemberSettingsClearCursorSupportsBoundedRestore(t *testi
 	}
 }
 
+func TestConversationDDDMemberAuthorityReplayRollbackAndFollower(t *testing.T) {
+	ctx := context.Background()
+	authority := newDDDComposition(t)
+	owner := dddEndpoint("ptid:member-authority-owner", "owner-1")
+	member := dddEndpoint("ptid:member-authority-member", "member-1")
+	groupID := valueobject.ConversationID("group-member-authority-uow")
+	created := createDDDGroup(t, authority, groupID, owner, member)
+
+	muted := true
+	mutedUntil := authority.clock.Now().Add(time.Hour)
+	muteRequest := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		owner,
+		member.Actor,
+		"mute-member",
+		domainevent.MemberAuthorityActionUpdateMember,
+		nil,
+		&muted,
+		&mutedUntil,
+	)
+	mutedResult, err := authority.commands.Submit(ctx, muteRequest)
+	if err != nil {
+		t.Fatalf("Submit(mute member) error = %v", err)
+	}
+	if mutedResult.Event.Fact.Kind != domainevent.KindMemberAuthority ||
+		mutedResult.Conversation.Head.MembershipEpoch != 2 ||
+		mutedResult.Conversation.Head.MLSEpoch != 1 {
+		t.Fatalf("muted result = %+v", mutedResult)
+	}
+	persisted, err := authority.queries.Get(ctx, groupID, owner.Actor)
+	if err != nil {
+		t.Fatalf("Get(persisted mute) error = %v", err)
+	}
+	persistedMember := dddSnapshotMember(t, persisted.Conversation, member.Actor)
+	if !persistedMember.Muted || persistedMember.MutedUntil == nil ||
+		!persistedMember.MutedUntil.Equal(mutedUntil) {
+		t.Fatalf("persisted member = %+v", persistedMember)
+	}
+
+	replayed, err := authority.commands.Submit(ctx, muteRequest)
+	if err != nil {
+		t.Fatalf("Submit(exact replay) error = %v", err)
+	}
+	if !replayed.Replay || replayed.Event.ID != mutedResult.Event.ID ||
+		replayed.Conversation.Head != mutedResult.Conversation.Head ||
+		replayed.Event.Fact.MemberAuthority == nil ||
+		replayed.Event.Fact.MemberAuthority.Target != member.Actor {
+		t.Fatalf("exact replay = %+v, committed = %+v", replayed, mutedResult)
+	}
+	conflicting := muteRequest
+	conflicting.ExactCommandBytes = []byte("same-command-id-different-bytes")
+	conflicting.Command.Payload = conflicting.ExactCommandBytes
+	if _, err := authority.commands.Submit(
+		ctx,
+		conflicting,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeCommandConflict) {
+		t.Fatalf("conflicting replay error = %v", err)
+	}
+
+	transferRequest := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		owner,
+		member.Actor,
+		"transfer-owner",
+		domainevent.MemberAuthorityActionTransferOwnership,
+		nil,
+		nil,
+		nil,
+	)
+	beforeRollback := persisted.Conversation
+	eventCount := rowCount(t, authority.db, &persistence.ConversationEventModel{})
+	receiptCount := rowCount(t, authority.db, &persistence.ConversationCommandReceiptModel{})
+	inboxCount := rowCount(t, authority.db, &dddDeviceInboxModel{})
+	authority.adapters.failNextInbox = true
+	if _, err := authority.commands.Submit(ctx, transferRequest); err == nil {
+		t.Fatal("Submit(owner transfer with injected inbox failure) succeeded")
+	}
+	rolledBack, err := authority.queries.Get(ctx, groupID, owner.Actor)
+	if err != nil {
+		t.Fatalf("Get(after rollback) error = %v", err)
+	}
+	if rolledBack.Conversation.Owner != beforeRollback.Owner ||
+		rolledBack.Conversation.Head != beforeRollback.Head ||
+		!reflect.DeepEqual(rolledBack.Conversation.Members, beforeRollback.Members) {
+		t.Fatalf("rollback changed Conversation: before=%+v after=%+v", beforeRollback, rolledBack.Conversation)
+	}
+	if rowCount(t, authority.db, &persistence.ConversationEventModel{}) != eventCount ||
+		rowCount(t, authority.db, &persistence.ConversationCommandReceiptModel{}) != receiptCount ||
+		rowCount(t, authority.db, &dddDeviceInboxModel{}) != inboxCount {
+		t.Fatal("rollback left event, receipt, or delivery rows")
+	}
+
+	transferred, err := authority.commands.Submit(ctx, transferRequest)
+	if err != nil {
+		t.Fatalf("Submit(owner transfer retry) error = %v", err)
+	}
+	if transferred.Replay ||
+		transferred.Conversation.Owner != member.Actor ||
+		transferred.Conversation.Head.MembershipEpoch != 3 ||
+		transferred.Conversation.Head.MLSEpoch != 1 {
+		t.Fatalf("owner transfer result = %+v", transferred)
+	}
+	oldOwner := dddSnapshotMember(t, transferred.Conversation, owner.Actor)
+	newOwner := dddSnapshotMember(t, transferred.Conversation, member.Actor)
+	if oldOwner.Role != valueobject.MemberRoleAdmin ||
+		newOwner.Role != valueobject.MemberRoleOwner ||
+		newOwner.Muted ||
+		newOwner.MutedUntil != nil {
+		t.Fatalf("owner transfer members = old %+v, new %+v", oldOwner, newOwner)
+	}
+
+	follower := newDDDCompositionAtStation(t, "station-b")
+	for _, event := range []domainevent.Record{
+		created.Event,
+		mutedResult.Event,
+		transferred.Event,
+	} {
+		if err := follower.commands.ApplyFollowerEvent(ctx, event); err != nil {
+			t.Fatalf("ApplyFollowerEvent(sequence=%d) error = %v", event.Sequence, err)
+		}
+	}
+	followerView, err := follower.queries.Get(ctx, groupID, member.Actor)
+	if err != nil {
+		t.Fatalf("Get(follower owner transfer) error = %v", err)
+	}
+	if followerView.Source != query.SourceFollower ||
+		followerView.Conversation.Owner != transferred.Conversation.Owner ||
+		followerView.Conversation.Head != transferred.Conversation.Head ||
+		!reflect.DeepEqual(
+			followerView.Conversation.Members,
+			transferred.Conversation.Members,
+		) {
+		t.Fatalf(
+			"follower snapshot = %+v, authority = %+v",
+			followerView,
+			transferred.Conversation,
+		)
+	}
+
+	prepareRequest := dddPrepareCommandRequest(t, authority, groupID, member)
+	prepared, err := authority.commands.PrepareCommand(ctx, prepareRequest)
+	if err != nil {
+		t.Fatalf("PrepareCommand(competing updates) error = %v", err)
+	}
+	memberRole := valueobject.MemberRoleMember
+	demoteFormerOwner := dddMemberAuthoritySubmitRequestWithPreparation(
+		t,
+		authority,
+		prepared,
+		prepareRequest.VerifiedRoutes,
+		groupID,
+		member,
+		owner.Actor,
+		"demote-former-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		&memberRole,
+		nil,
+		nil,
+	)
+	muteFormerOwner := dddMemberAuthoritySubmitRequestWithPreparation(
+		t,
+		authority,
+		prepared,
+		prepareRequest.VerifiedRoutes,
+		groupID,
+		member,
+		owner.Actor,
+		"mute-former-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		nil,
+		&muted,
+		nil,
+	)
+	if _, err := authority.commands.Submit(ctx, demoteFormerOwner); err != nil {
+		t.Fatalf("Submit(first competing update) error = %v", err)
+	}
+	if _, err := authority.commands.Submit(
+		ctx,
+		muteFormerOwner,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeStaleMembershipEpoch) {
+		t.Fatalf("stale competing update error = %v", err)
+	}
+}
+
 func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:owner", "owner-1")
@@ -6521,6 +6710,136 @@ func dddSendCommandBytes(
 	return encoded
 }
 
+func dddMemberAuthoritySubmitRequest(
+	t *testing.T,
+	fixture dddFixture,
+	conversationID valueobject.ConversationID,
+	operator valueobject.Endpoint,
+	target valueobject.PTID,
+	commandID valueobject.CommandID,
+	action domainevent.MemberAuthorityAction,
+	role *valueobject.MemberRole,
+	muted *bool,
+	mutedUntil *time.Time,
+) command.SubmitRequest {
+	t.Helper()
+
+	prepareRequest := dddPrepareCommandRequest(t, fixture, conversationID, operator)
+	preparation, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		prepareRequest,
+	)
+	if err != nil {
+		t.Fatalf("PrepareCommand(member authority) error = %v", err)
+	}
+	return dddMemberAuthoritySubmitRequestWithPreparation(
+		t,
+		fixture,
+		preparation,
+		prepareRequest.VerifiedRoutes,
+		conversationID,
+		operator,
+		target,
+		commandID,
+		action,
+		role,
+		muted,
+		mutedUntil,
+	)
+}
+
+func dddMemberAuthoritySubmitRequestWithPreparation(
+	t *testing.T,
+	fixture dddFixture,
+	preparation aggregate.CommandPreparation,
+	verifiedRoutes []ports.EndpointRoute,
+	conversationID valueobject.ConversationID,
+	operator valueobject.Endpoint,
+	target valueobject.PTID,
+	commandID valueobject.CommandID,
+	action domainevent.MemberAuthorityAction,
+	role *valueobject.MemberRole,
+	muted *bool,
+	mutedUntil *time.Time,
+) command.SubmitRequest {
+	t.Helper()
+
+	at := fixture.clock.Now()
+	wire := &chat.ConversationMemberAuthorityCommand{
+		Version:                 1,
+		CommandId:               string(commandID),
+		ConversationId:          string(conversationID),
+		Operator:                dddEndpointProto(operator),
+		TargetPtid:              string(target),
+		Action:                  dddMemberAuthorityActionProto(action),
+		FederationId:            string(dddFederationID),
+		AuthorityStationPeerId:  string(preparation.AuthorityStation),
+		AuthorityEpoch:          int64(dddAuthorityEpoch),
+		AuthoritySequence:       int64(preparation.Head.Sequence),
+		AuthorityHash:           preparation.Head.EventHash.Bytes(),
+		ObservedMembershipEpoch: int64(preparation.Head.MembershipEpoch),
+		ObservedMlsEpoch:        int64(preparation.Head.MLSEpoch),
+		ClientTimestamp:         timestamppb.New(at),
+		Deadline:                timestamppb.New(at.Add(5 * time.Minute)),
+		MutedUntil:              optionalDDDTimestamp(mutedUntil),
+	}
+	if role != nil {
+		mappedRole := dddMemberRoleProto(*role)
+		wire.Role = &mappedRole
+	}
+	if muted != nil {
+		mappedMuted := *muted
+		wire.Muted = &mappedMuted
+	}
+	mapped, err := conversationhttp.MapMemberAuthorityCommand(
+		conversationhttp.AuthenticatedActor{
+			PTID:     string(operator.Actor),
+			DeviceID: string(operator.Device),
+		},
+		wire,
+		preparation,
+		at,
+	)
+	if err != nil {
+		t.Fatalf("MapMemberAuthorityCommand() error = %v", err)
+	}
+	mapped.VerifiedRoutes = append([]ports.EndpointRoute(nil), verifiedRoutes...)
+	return mapped
+}
+
+func dddMemberAuthorityActionProto(
+	action domainevent.MemberAuthorityAction,
+) chat.ConversationMemberAuthorityAction {
+	switch action {
+	case domainevent.MemberAuthorityActionUpdateMember:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER
+	case domainevent.MemberAuthorityActionTransferOwnership:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP
+	default:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UNSPECIFIED
+	}
+}
+
+func dddMemberRoleProto(role valueobject.MemberRole) chat.MemberRole {
+	switch role {
+	case valueobject.MemberRoleMember:
+		return chat.MemberRole_MEMBER_ROLE_MEMBER
+	case valueobject.MemberRoleAdmin:
+		return chat.MemberRole_MEMBER_ROLE_ADMIN
+	case valueobject.MemberRoleOwner:
+		return chat.MemberRole_MEMBER_ROLE_OWNER
+	default:
+		return chat.MemberRole_MEMBER_ROLE_UNSPECIFIED
+	}
+}
+
+func optionalDDDTimestamp(value *time.Time) *timestamppb.Timestamp {
+	if value == nil {
+		return nil
+	}
+	return timestamppb.New(value.UTC())
+}
+
 func dddMembershipCommandBytes(
 	t *testing.T,
 	conversationID valueobject.ConversationID,
@@ -6643,6 +6962,21 @@ func snapshotHasActor(snapshot aggregate.Snapshot, actor valueobject.PTID) bool 
 		}
 	}
 	return false
+}
+
+func dddSnapshotMember(
+	t *testing.T,
+	snapshot aggregate.Snapshot,
+	actor valueobject.PTID,
+) entity.Member {
+	t.Helper()
+	for _, member := range snapshot.Members {
+		if member.Actor == actor {
+			return member
+		}
+	}
+	t.Fatalf("snapshot member %q is missing", actor)
+	return entity.Member{}
 }
 
 func assertCount(t *testing.T, db *gorm.DB, model any, expected int64) {

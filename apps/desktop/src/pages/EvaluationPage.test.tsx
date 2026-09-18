@@ -48,6 +48,7 @@ describe('EvaluationPage contract', () => {
     ]) {
       expect(source).toContain(selector);
     }
+    expect(source).toContain('const selectedRun = detail?.run ?? listedRun');
   });
 
   it('registers an on-visit LRU page backed by Evaluation authority', () => {

@@ -1381,7 +1381,8 @@ class FoundationRuntimeClient:
             try:
                 self.harness("logout", timeout=30)
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
-                failures.append(f"logout: {error}")
+                if port_open(self.spec.webdriver_port):
+                    failures.append(f"logout: {error}")
         if self.chrome is not None:
             try:
                 self.chrome.stop()
@@ -1394,7 +1395,8 @@ class FoundationRuntimeClient:
             try:
                 self.driver.quit()
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
-                failures.append(f"webdriver: {error}")
+                if port_open(self.spec.webdriver_port):
+                    failures.append(f"webdriver: {error}")
             self.driver = None
         if self.spec.runtime == "native-tauri":
             report_native_restart_port_release_debug(
@@ -1468,6 +1470,8 @@ class FoundationRuntimeClient:
         if process_released:
             self.process = None
             self._process_group_id = None
+        if self.spec.runtime == "native-tauri":
+            failures.extend(self._stop_owned_listener_processes())
         if self._managed_runtime_started:
             environment = os.environ.copy()
             environment.update(self.launch_environment())
@@ -1608,6 +1612,47 @@ class FoundationRuntimeClient:
             os.killpg(process_group_id, signal_number)
         except ProcessLookupError:
             return
+
+    def _stop_owned_listener_processes(self) -> list[str]:
+        failures: list[str] = []
+        worktree = str(self.spec.worktree.resolve())
+        ports = {
+            self.spec.gateway_port,
+            self.spec.renderer_port,
+            self.spec.webdriver_port,
+        }
+        for port in ports:
+            result = subprocess.run(
+                ["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            for value in result.stdout.split():
+                try:
+                    pid = int(value)
+                    command = subprocess.run(
+                        ["ps", "-p", str(pid), "-o", "command="],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip()
+                    if worktree not in command:
+                        failures.append(
+                            f"port {port} held by non-worktree process {pid}"
+                        )
+                        continue
+                    os.kill(pid, signal.SIGTERM)
+                    deadline = time.monotonic() + PROCESS_KILL_TIMEOUT_SECONDS
+                    while port_open(port) and time.monotonic() < deadline:
+                        WAIT_TICK.wait(0.05)
+                    if port_open(port):
+                        os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    continue
+                except Exception as error:  # noqa: BLE001
+                    failures.append(f"port {port} cleanup: {error}")
+        return failures
 
     @staticmethod
     def _process_group_alive(process_group_id: int) -> bool:

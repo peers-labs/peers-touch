@@ -104,6 +104,19 @@ type MembershipTransition struct {
 	LeaveIntentID     string
 }
 
+type MemberAuthorityCommand struct {
+	Command
+	Action                 domainevent.MemberAuthorityAction
+	Target                 valueobject.PTID
+	Role                   *valueobject.MemberRole
+	Muted                  *bool
+	MutedUntil             *time.Time
+	ObservedAuthorityHead  valueobject.AuthorityHead
+	ObservedFederationID   valueobject.FederationID
+	ObservedAuthorityEpoch valueobject.AuthorityEpoch
+	Deadline               time.Time
+}
+
 type SettingsCommand struct {
 	Command
 	Patch valueobject.SettingsPatch
@@ -345,12 +358,12 @@ func Rehydrate(snapshot Snapshot) (*Conversation, error) {
 	if snapshot.Kind == valueobject.ConversationKindGroup &&
 		(snapshot.Head.MembershipEpoch == 0 ||
 			snapshot.Head.MLSEpoch == 0 ||
-			snapshot.Head.MembershipEpoch != snapshot.Head.MLSEpoch) {
+			snapshot.Head.MembershipEpoch < snapshot.Head.MLSEpoch) {
 		return nil, conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleMembershipEpoch,
 			"aggregate.rehydrate",
 			"authority_head",
-			"group membership and MLS epochs must be equal and non-zero",
+			"group membership epoch must be at least the non-zero MLS epoch",
 		)
 	}
 	conversation := &Conversation{
@@ -450,6 +463,60 @@ func ReconcileCommittedMembershipProjection(
 	}
 	post.Members = expectedMembers
 	post.Devices = expectedDevices
+
+	return post, nil
+}
+
+func ReconcileCommittedMemberAuthorityProjection(
+	current Snapshot,
+	mutation domainevent.MemberAuthorityMutation,
+	post Snapshot,
+) (Snapshot, error) {
+	conversation, err := Rehydrate(current)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if conversation.kind != valueobject.ConversationKindGroup {
+		return Snapshot{}, membershipProjectionError(
+			"member authority transition requires a group Conversation",
+		)
+	}
+	if post.ID != current.ID ||
+		post.Kind != current.Kind ||
+		post.Status != current.Status ||
+		post.FederationID != current.FederationID ||
+		post.AuthorityStation != current.AuthorityStation ||
+		post.AuthorityEpoch != current.AuthorityEpoch ||
+		post.Settings != current.Settings ||
+		!post.CreatedAt.Equal(current.CreatedAt) ||
+		post.Head.Sequence != current.Head.Sequence.Next() ||
+		post.Head.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
+		post.Head.MLSEpoch != current.Head.MLSEpoch ||
+		mutation.FromMembershipEpoch != current.Head.MembershipEpoch ||
+		mutation.ToMembershipEpoch != post.Head.MembershipEpoch {
+		return Snapshot{}, membershipProjectionError(
+			"member authority post-state does not match the current aggregate head",
+		)
+	}
+	candidate := conversation.clone()
+	if err := candidate.applyMemberAuthorityMutation(mutation); err != nil {
+		return Snapshot{}, membershipProjectionError(err.Error())
+	}
+	candidate.head.MembershipEpoch = post.Head.MembershipEpoch
+	if err := candidate.validateState(post.Head.Sequence); err != nil {
+		return Snapshot{}, membershipProjectionError(err.Error())
+	}
+	expected := candidate.Snapshot()
+	if expected.Owner != post.Owner ||
+		!equalCommittedMembers(activeMembers(expected.Members), post.Members) ||
+		!equalCommittedMemberDevices(activeDevices(expected.Devices), post.Devices) {
+		return Snapshot{}, membershipProjectionError(
+			"member authority mutation does not produce the committed post-state",
+		)
+	}
+	post.Owner = expected.Owner
+	post.Members = activeMembers(expected.Members)
+	post.Devices = activeDevices(expected.Devices)
 
 	return post, nil
 }
@@ -791,6 +858,204 @@ func (c *Conversation) ApplyMembershipTransition(
 	return result, nil
 }
 
+func (c *Conversation) ApplyMemberAuthority(
+	command MemberAuthorityCommand,
+) (Transition, error) {
+	if c.kind != valueobject.ConversationKindGroup {
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeMembershipConflict,
+			"aggregate.apply_member_authority",
+			"conversation",
+			"member authority mutation requires a group conversation",
+		)
+	}
+	if command.Kind != domainevent.KindMemberAuthority {
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnsupportedTransition,
+			"aggregate.apply_member_authority",
+			"kind",
+			"is not a member authority command",
+		)
+	}
+	if err := c.validateCommand(command.Command); err != nil {
+		return Transition{}, err
+	}
+	if command.ObservedFederationID != c.federationID ||
+		command.ObservedAuthorityEpoch != c.authorityEpoch ||
+		command.ObservedAuthorityHead.Sequence != c.head.Sequence ||
+		command.ObservedAuthorityHead.EventHash != c.head.EventHash {
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeStaleAuthorityHead,
+			"aggregate.apply_member_authority",
+			"authority_head",
+			"does not match the current Conversation authority",
+		)
+	}
+	if command.Deadline.IsZero() || !command.Deadline.After(command.CommittedAt) {
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandExpired,
+			"aggregate.apply_member_authority",
+			"deadline",
+			"has expired",
+		)
+	}
+	operator := c.members[command.Sender.Actor]
+	target, exists := c.members[command.Target]
+	if !exists || !target.Active() {
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeTargetNotMember,
+			"aggregate.apply_member_authority",
+			"target_ptid",
+			"is not an active Conversation member",
+		)
+	}
+	mutation := domainevent.MemberAuthorityMutation{
+		Action:              command.Action,
+		Target:              command.Target,
+		Role:                cloneMemberRole(command.Role),
+		Muted:               cloneBool(command.Muted),
+		MutedUntil:          cloneTime(command.MutedUntil),
+		PreviousOwner:       c.owner,
+		Owner:               c.owner,
+		FromMembershipEpoch: c.head.MembershipEpoch,
+		ToMembershipEpoch:   c.head.MembershipEpoch.Next(),
+	}
+	switch command.Action {
+	case domainevent.MemberAuthorityActionUpdateMember:
+		if command.Role == nil && command.Muted == nil {
+			return Transition{}, invalid(
+				"aggregate.apply_member_authority",
+				"patch",
+				"must update role or mute state",
+			)
+		}
+		if command.Target == c.owner {
+			return Transition{}, conversationdomain.NewError(
+				conversationdomain.ErrorCodeOwnerProtected,
+				"aggregate.apply_member_authority",
+				"target_ptid",
+				"owner authority can only change through ownership transfer",
+			)
+		}
+		if command.Role != nil {
+			if *command.Role == valueobject.MemberRoleOwner {
+				return Transition{}, conversationdomain.NewError(
+					conversationdomain.ErrorCodeOwnerProtected,
+					"aggregate.apply_member_authority",
+					"role",
+					"owner role can only change through ownership transfer",
+				)
+			}
+			if *command.Role != valueobject.MemberRoleMember &&
+				*command.Role != valueobject.MemberRoleAdmin {
+				return Transition{}, invalid(
+					"aggregate.apply_member_authority",
+					"role",
+					"must be member or admin",
+				)
+			}
+			if operator.Role != valueobject.MemberRoleOwner {
+				return Transition{}, conversationdomain.NewError(
+					conversationdomain.ErrorCodeUnauthorized,
+					"aggregate.apply_member_authority",
+					"role",
+					"only the owner may assign member or admin role",
+				)
+			}
+		}
+		if command.Muted != nil {
+			if !operator.Role.CanManageMembership() ||
+				operator.Role == valueobject.MemberRoleAdmin &&
+					target.Role != valueobject.MemberRoleMember {
+				return Transition{}, conversationdomain.NewError(
+					conversationdomain.ErrorCodeUnauthorized,
+					"aggregate.apply_member_authority",
+					"muted",
+					"operator cannot manage the target mute state",
+				)
+			}
+			if *command.Muted && command.MutedUntil != nil &&
+				!command.MutedUntil.After(command.CommittedAt) {
+				return Transition{}, conversationdomain.NewError(
+					conversationdomain.ErrorCodeCommandExpired,
+					"aggregate.apply_member_authority",
+					"muted_until",
+					"has expired",
+				)
+			}
+		}
+	case domainevent.MemberAuthorityActionTransferOwnership:
+		if command.Sender.Actor != c.owner ||
+			operator.Role != valueobject.MemberRoleOwner {
+			return Transition{}, conversationdomain.NewError(
+				conversationdomain.ErrorCodeUnauthorized,
+				"aggregate.apply_member_authority",
+				"operator",
+				"only the current owner may transfer ownership",
+			)
+		}
+		if command.Target == c.owner {
+			return Transition{}, conversationdomain.NewError(
+				conversationdomain.ErrorCodeOwnerProtected,
+				"aggregate.apply_member_authority",
+				"target_ptid",
+				"is already the owner",
+			)
+		}
+		if command.Role != nil || command.Muted != nil || command.MutedUntil != nil {
+			return Transition{}, invalid(
+				"aggregate.apply_member_authority",
+				"patch",
+				"owner transfer does not accept member update fields",
+			)
+		}
+		ownerRole := valueobject.MemberRoleOwner
+		unmuted := false
+		mutation.Role = &ownerRole
+		mutation.Muted = &unmuted
+		mutation.Owner = command.Target
+	default:
+		return Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnsupportedTransition,
+			"aggregate.apply_member_authority",
+			"action",
+			"is not supported",
+		)
+	}
+	candidate := c.clone()
+	if err := candidate.applyMemberAuthorityMutation(mutation); err != nil {
+		return Transition{}, err
+	}
+	if command.Action == domainevent.MemberAuthorityActionUpdateMember &&
+		equalMemberAuthorityState(target, candidate.members[command.Target]) {
+		return Transition{}, invalid(
+			"aggregate.apply_member_authority",
+			"patch",
+			"does not change the target member authority state",
+		)
+	}
+	candidate.head.MembershipEpoch = candidate.head.MembershipEpoch.Next()
+	if err := candidate.validateState(candidate.head.Sequence.Next()); err != nil {
+		return Transition{}, err
+	}
+	fact := domainevent.NewMemberAuthorityFact(mutation, command.Payload)
+	fact.PostState = candidate.eventState()
+	result, err := candidate.commit(
+		command.ID,
+		command.Sender,
+		fact,
+		command.Deliveries,
+		command.ObjectIDs,
+		command.CommittedAt,
+		command.EventSealer,
+	)
+	if err != nil {
+		return Transition{}, err
+	}
+	*c = *candidate
+	return result, nil
+}
+
 func (c *Conversation) UpdateSettings(command SettingsCommand) (Transition, error) {
 	if err := c.validateCommand(command.Command); err != nil {
 		return Transition{}, err
@@ -897,6 +1162,14 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 				"aggregate.validate_command",
 				"message",
 				"message identity is required and cannot reference itself",
+			)
+		}
+		if c.members[command.Sender.Actor].MutedAt(command.CommittedAt) {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeMemberMuted,
+				"aggregate.validate_command",
+				"sender",
+				"is muted in this Conversation",
 			)
 		}
 	case domainevent.KindMessageEdited,
@@ -1280,6 +1553,66 @@ func (c *Conversation) applyMembershipChange(
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnsupportedTransition,
 			"aggregate.apply_membership_change",
+			"action",
+			"is not supported",
+		)
+	}
+	return nil
+}
+
+func (c *Conversation) applyMemberAuthorityMutation(
+	mutation domainevent.MemberAuthorityMutation,
+) error {
+	target, exists := c.members[mutation.Target]
+	if !exists || !target.Active() {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeTargetNotMember,
+			"aggregate.apply_member_authority_mutation",
+			"target_ptid",
+			"is not an active Conversation member",
+		)
+	}
+	switch mutation.Action {
+	case domainevent.MemberAuthorityActionUpdateMember:
+		updated, err := target.WithAuthorityState(
+			mutation.Role,
+			mutation.Muted,
+			mutation.MutedUntil,
+		)
+		if err != nil {
+			return err
+		}
+		c.members[mutation.Target] = updated
+	case domainevent.MemberAuthorityActionTransferOwnership:
+		if mutation.PreviousOwner != c.owner ||
+			mutation.Owner != mutation.Target ||
+			mutation.Owner == mutation.PreviousOwner {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeOwnerProtected,
+				"aggregate.apply_member_authority_mutation",
+				"owner",
+				"transfer owner bindings are invalid",
+			)
+		}
+		currentOwner := c.members[c.owner]
+		adminRole := valueobject.MemberRoleAdmin
+		updatedOwner, err := currentOwner.WithAuthorityState(&adminRole, nil, nil)
+		if err != nil {
+			return err
+		}
+		ownerRole := valueobject.MemberRoleOwner
+		unmuted := false
+		updatedTarget, err := target.WithAuthorityState(&ownerRole, &unmuted, nil)
+		if err != nil {
+			return err
+		}
+		c.members[currentOwner.Actor] = updatedOwner
+		c.members[target.Actor] = updatedTarget
+		c.owner = target.Actor
+	default:
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnsupportedTransition,
+			"aggregate.apply_member_authority_mutation",
 			"action",
 			"is not supported",
 		)
@@ -1677,7 +2010,9 @@ func equalCommittedMembers(left []entity.Member, right []entity.Member) bool {
 		if !exists ||
 			member.Role != want.Role ||
 			member.Status != want.Status ||
-			member.HomeStation != want.HomeStation {
+			member.HomeStation != want.HomeStation ||
+			member.Muted != want.Muted ||
+			!equalOptionalTime(member.MutedUntil, want.MutedUntil) {
 			return false
 		}
 		if _, duplicate := seen[member.Actor]; duplicate {
@@ -1686,6 +2021,43 @@ func equalCommittedMembers(left []entity.Member, right []entity.Member) bool {
 		seen[member.Actor] = struct{}{}
 	}
 	return true
+}
+
+func equalOptionalTime(left *time.Time, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
+}
+
+func equalMemberAuthorityState(left entity.Member, right entity.Member) bool {
+	return left.Role == right.Role &&
+		left.Muted == right.Muted &&
+		equalOptionalTime(left.MutedUntil, right.MutedUntil)
+}
+
+func cloneMemberRole(value *valueobject.MemberRole) *valueobject.MemberRole {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := value.UTC().Truncate(time.Microsecond)
+	return &copy
 }
 
 func equalCommittedMemberDevices(left []entity.MemberDevice, right []entity.MemberDevice) bool {

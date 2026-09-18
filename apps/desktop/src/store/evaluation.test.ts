@@ -8,9 +8,10 @@ import {
   EvaluationRunSchema,
   EvaluationRunStatus,
   EvaluationTestCaseSchema,
+  GetEvaluationRunResponseSchema,
 } from '../gen/proto/domain/agent/evaluation_pb';
 import { RuntimeSnapshotSchema } from '../gen/proto/domain/agent/agent_pb';
-import { api } from '../services/desktop_api';
+import { api, RustCommandException } from '../services/desktop_api';
 import {
   evaluationRevisionMutationKey,
   evaluationRunStatusName,
@@ -183,6 +184,66 @@ describe('useEvaluationStore', () => {
     expect(evaluationRunStatusName(
       useEvaluationStore.getState().runs[0]!.status,
     )).toBe('cancelling');
+  });
+
+  it('retries cancellation with the latest authoritative revision', async () => {
+    useEvaluationStore.getState().setActorScope('ptid:actor-1');
+    const stale = run('run-1', EvaluationRunStatus.RUNNING, 4n);
+    const current = run('run-1', EvaluationRunStatus.RUNNING, 5n);
+    useEvaluationStore.setState({ runs: [stale] });
+    const cancel = vi.spyOn(api, 'cancelEvaluationRun')
+      .mockRejectedValueOnce(new RustCommandException(
+        'agent_evaluation_run_cancel',
+        { code: 'CONFLICT', message: 'VERSION_CONFLICT' },
+      ))
+      .mockResolvedValue(run('run-1', EvaluationRunStatus.CANCELLING, 6n));
+    vi.spyOn(api, 'getEvaluationRun').mockResolvedValue(create(
+      GetEvaluationRunResponseSchema,
+      {
+      run: current,
+      attempts: [],
+      results: [],
+      cases: [],
+      },
+    ));
+
+    await useEvaluationStore.getState().cancelRun(stale);
+
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(cancel.mock.calls[1]?.[0]).toMatchObject({
+      expectedRevision: 5n,
+      idempotencyKey: 'evaluation:run:cancel:run-1:revision:5',
+    });
+    expect(useEvaluationStore.getState().runs[0]?.revision).toBe(6n);
+  });
+
+  it('retries failed cases with the latest authoritative parent revision', async () => {
+    useEvaluationStore.getState().setActorScope('ptid:actor-1');
+    const stale = run('run-1', EvaluationRunStatus.PARTIAL, 4n);
+    const current = run('run-1', EvaluationRunStatus.PARTIAL, 5n);
+    useEvaluationStore.setState({ runs: [stale] });
+    const child = run('run-child', EvaluationRunStatus.PENDING, 1n);
+    const retry = vi.spyOn(api, 'retryEvaluationCases')
+      .mockRejectedValueOnce(new RustCommandException(
+        'agent_evaluation_run_retry',
+        { code: 'CONFLICT', message: 'VERSION_CONFLICT' },
+      ))
+      .mockResolvedValue(child);
+    vi.spyOn(api, 'getEvaluationRun').mockResolvedValue(create(
+      GetEvaluationRunResponseSchema,
+      { run: current },
+    ));
+
+    await useEvaluationStore.getState().retryCases(stale, ['case-1']);
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(retry.mock.calls[1]?.[0]).toMatchObject({
+      expectedParentRevision: 5n,
+      parentRunId: 'run-1',
+    });
+    expect(useEvaluationStore.getState().runs.some(
+      (candidate) => candidate.runId === 'run-child',
+    )).toBe(true);
   });
 
   it('deletes a terminal run and clears its projection state', async () => {

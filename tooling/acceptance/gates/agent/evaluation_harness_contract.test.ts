@@ -122,6 +122,23 @@ test('J06 selects the Ant Design Segmented input behind the stable tab marker', 
   assert.match(harness, /input\.click\(\)/);
 });
 
+test('J06 refreshes Station-owned Evaluation projection before driving run UI', () => {
+  assert.match(
+    harness,
+    /await refreshEvaluationTargetProjection\(state\.agentId,\s*\{\s*clientCapabilitySessionId:\s*capabilitySession\.capabilitySessionId/,
+  );
+  assert.match(
+    harness,
+    /Boolean\(control\?\.getClientRects\(\)\.length\) && !control\?\.disabled/,
+  );
+  assert.match(
+    harness,
+    /`Evaluation control \$\{selector\}`/,
+  );
+  assert.match(harness, /\.ant-select-selector/);
+  assert.match(harness, /\['mousedown', 'mouseup', 'click'\]/);
+});
+
 test('J06 Acceptance does not use the legacy Evaluation store', () => {
   const j06Start = harness.indexOf('const EVALUATION_SELECTORS');
   const j06End = harness.indexOf(

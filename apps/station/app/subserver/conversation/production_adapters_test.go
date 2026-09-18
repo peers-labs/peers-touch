@@ -451,6 +451,190 @@ func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing
 	}
 }
 
+func TestProductionMemberAuthorityEventWireRoundTripPreservesAtomicOwnerState(
+	t *testing.T,
+) {
+	oldOwner := valueobject.Endpoint{
+		Actor:  "ptid:wire-old-owner",
+		Device: "old-owner-device",
+	}
+	newOwner := valueobject.Endpoint{
+		Actor:  "ptid:wire-new-owner",
+		Device: "new-owner-device",
+	}
+	previousHash := valueobject.HashBytes([]byte("wire-member-authority-previous"))
+	mutedUntil := productionAdapterTestTime.Add(time.Hour)
+	current := aggregate.Snapshot{
+		ID:               "wire-member-authority-group",
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: "station-authority",
+		AuthorityEpoch:   1,
+		Owner:            oldOwner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       previousHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire group"},
+		Members: []entity.Member{
+			{
+				Actor:       oldOwner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       newOwner.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+				Muted:       true,
+				MutedUntil:  &mutedUntil,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{
+				Endpoint:    oldOwner,
+				HomeStation: "station-authority",
+				Active:      true,
+				JoinedAt:    1,
+			},
+			{
+				Endpoint:    newOwner,
+				HomeStation: "station-remote",
+				Active:      true,
+				JoinedAt:    1,
+			},
+		},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	ownerRole := valueobject.MemberRoleOwner
+	unmuted := false
+	mutation := domainevent.MemberAuthorityMutation{
+		Action:              domainevent.MemberAuthorityActionTransferOwnership,
+		Target:              newOwner.Actor,
+		Role:                &ownerRole,
+		Muted:               &unmuted,
+		PreviousOwner:       oldOwner.Actor,
+		Owner:               newOwner.Actor,
+		FromMembershipEpoch: 1,
+		ToMembershipEpoch:   2,
+	}
+	postState := &domainevent.ConversationState{
+		Kind:           current.Kind,
+		FederationID:   current.FederationID,
+		AuthorityEpoch: current.AuthorityEpoch,
+		Owner:          newOwner.Actor,
+		Settings:       current.Settings,
+		ActiveMembers: []entity.Member{
+			{
+				Actor:       oldOwner.Actor,
+				Role:        valueobject.MemberRoleAdmin,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       newOwner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+			},
+		},
+		ActiveEndpoints: []valueobject.Endpoint{oldOwner, newOwner},
+		ActiveDevices:   current.Devices,
+		MembershipEpoch: 2,
+		MLSEpoch:        1,
+	}
+	fact := domainevent.NewMemberAuthorityFact(mutation, []byte("owner-transfer"))
+	fact.PostState = postState
+	event, err := (conversationhttp.ProtobufEventSealer{}).Seal(
+		domainevent.RecordInput{
+			ID:               "wire-member-authority-event",
+			ConversationID:   current.ID,
+			Sequence:         2,
+			CommandID:        "wire-owner-transfer",
+			Actor:            oldOwner,
+			PreviousHash:     previousHash,
+			CommittedAt:      productionAdapterTestTime,
+			MembershipEpoch:  2,
+			MLSEpoch:         1,
+			AuthorityStation: current.AuthorityStation,
+			DeliveryCommitments: []valueobject.Hash{
+				valueobject.HashBytes([]byte("wire-member-authority-delivery")),
+			},
+			Fact: fact,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := conversationhttp.MapEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := productionRecordFromWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := domainevent.Verify(
+		decoded,
+		conversationhttp.ProtobufEventSealer{},
+	); err != nil {
+		t.Fatalf("verify federated member authority event round-trip: %v", err)
+	}
+	if decoded.Fact.MemberAuthority == nil ||
+		decoded.Fact.MemberAuthority.Action != mutation.Action ||
+		decoded.Fact.MemberAuthority.PreviousOwner != oldOwner.Actor ||
+		decoded.Fact.MemberAuthority.Owner != newOwner.Actor ||
+		decoded.Fact.PostState == nil ||
+		decoded.Fact.PostState.Owner != newOwner.Actor ||
+		decoded.MembershipEpoch != 2 ||
+		decoded.MLSEpoch != 1 {
+		t.Fatalf("decoded member authority event = %+v", decoded)
+	}
+	post := aggregate.Snapshot{
+		ID:               current.ID,
+		Kind:             decoded.Fact.PostState.Kind,
+		Status:           current.Status,
+		FederationID:     decoded.Fact.PostState.FederationID,
+		AuthorityStation: decoded.AuthorityStation,
+		AuthorityEpoch:   decoded.Fact.PostState.AuthorityEpoch,
+		Owner:            decoded.Fact.PostState.Owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        decoded.Sequence,
+			EventHash:       decoded.Hash,
+			MembershipEpoch: decoded.MembershipEpoch,
+			MLSEpoch:        decoded.MLSEpoch,
+		},
+		Settings:  decoded.Fact.PostState.Settings,
+		Members:   decoded.Fact.PostState.ActiveMembers,
+		Devices:   decoded.Fact.PostState.ActiveDevices,
+		CreatedAt: current.CreatedAt,
+		UpdatedAt: decoded.CommittedAt,
+	}
+	reconciled, err := aggregate.ReconcileCommittedMemberAuthorityProjection(
+		current,
+		*decoded.Fact.MemberAuthority,
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile federated member authority projection: %v", err)
+	}
+	if reconciled.Owner != newOwner.Actor ||
+		reconciled.Head.MembershipEpoch != 2 ||
+		reconciled.Head.MLSEpoch != 1 {
+		t.Fatalf("reconciled member authority snapshot = %+v", reconciled)
+	}
+}
+
 // TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle verifies
 // that active-state wire snapshots cannot rewrite retained join history.
 func TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle(t *testing.T) {
