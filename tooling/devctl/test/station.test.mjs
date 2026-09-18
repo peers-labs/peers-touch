@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { machineRegistryPath } from '../../scripts/lib/machine-dev-paths.mjs';
+import { registerWorkspace } from '../../scripts/local-dev/machine-dev-registry.mjs';
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
 import { startStation } from '../station.mjs';
 
@@ -101,36 +102,16 @@ function machineEnvironment(t, root, slot = 0) {
   git(envRepo, 'add', '.');
   git(envRepo, 'commit', '-m', 'fixture');
 
-  const canonicalRoot = fs.realpathSync(root);
-  const workspaceId = createHash('sha256')
-    .update(canonicalRoot)
-    .digest('hex')
-    .slice(0, 16);
-  const now = new Date().toISOString();
-  fs.writeFileSync(
-    path.join(home, '.peers-touch', 'dev', 'registry.json'),
-    `${JSON.stringify({
-      schemaVersion: 1,
-      kind: 'peers-touch-machine-dev-registry',
-      authority: 'machine-control-plane',
-      updatedAt: now,
-      registrations: [{
-        workspaceId,
-        canonicalRoot,
-        name: path.basename(canonicalRoot),
-        branch: git(root, 'branch', '--show-current'),
-        head: git(root, 'rev-parse', 'HEAD'),
-        profile: 'machine-test',
-        slot,
-        allowedCapabilities: ['station.connect'],
-        purpose: 'devctl station test',
-        owner: 'test@example.com',
-        registeredAt: now,
-        updatedAt: now,
-        updatedBy: 'test@example.com',
-      }],
-    }, null, 2)}\n`,
-  );
+  registerWorkspace({
+    workspaceRoot: root,
+    envRepo,
+    registryPath: machineRegistryPath(home),
+    profile: 'machine-test',
+    slot,
+    capabilities: 'station.connect',
+    purpose: 'devctl station test',
+    owner: 'test@example.com',
+  });
   return {
     ...process.env,
     HOME: home,
