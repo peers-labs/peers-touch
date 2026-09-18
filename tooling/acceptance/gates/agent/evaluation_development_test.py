@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.gates.agent.agent_v2_gate import _validate_candidate
 from tooling.acceptance.gates.agent.evaluation_development import (
+    ACTOR_ACCOUNTS,
     AGENT_V2_EVALUATION_GATE,
     EvaluationDevelopmentError,
     ROOT,
@@ -219,7 +220,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
             metadata = {
                 "schemaVersion": 1,
                 "profile": "two",
-                "account": "alice@p.t",
+                "account": ACTOR_ACCOUNTS["alice"],
                 "actorId": "ptid:alice",
                 "stationUrl": "https://station.example",
             }
@@ -249,6 +250,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
                     "https://station.example/",
                     "ptid:alice",
                     station_peer_id,
+                    station_accepted=True,
                 )
 
             self.assertEqual(observed, metadata)
@@ -289,6 +291,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
                     "https://station.example",
                     actor_id,
                     station_peer_id,
+                    station_accepted=True,
                 )
 
             persisted_root = fixture_root / "bob/actor-identity"
@@ -302,6 +305,50 @@ class EvaluationDevelopmentTest(unittest.TestCase):
                 persisted_keys[0].read_text(encoding="utf-8"),
                 "ab" * 32,
             )
+
+    def test_identity_is_not_persisted_before_station_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture_root = root / "fixtures"
+            source_root = root / "transient"
+            stable_key = _stable_identity_key_path(
+                source_root,
+                "station-peer",
+                "ptid:carol",
+            )
+            stable_key.parent.mkdir(parents=True)
+            stable_key.write_text("ab" * 32, encoding="utf-8")
+
+            with (
+                patch(
+                    "tooling.acceptance.gates.agent."
+                    "evaluation_development.IDENTITY_FIXTURE_ROOT",
+                    fixture_root,
+                ),
+                self.assertRaisesRegex(
+                    EvaluationDevelopmentError,
+                    "Station acceptance proof is required",
+                ),
+            ):
+                persist_actor_identity(
+                    "bob",
+                    source_root,
+                    "https://station.example",
+                    "ptid:carol",
+                    "station-peer",
+                    station_accepted=False,
+                )
+
+            self.assertFalse((fixture_root / "bob").exists())
+
+    def test_runtime_actor_pair_avoids_conflicted_alice_identity(self) -> None:
+        self.assertEqual(
+            ACTOR_ACCOUNTS,
+            {
+                "alice": "bob@p.t",
+                "bob": "carol@p.t",
+            },
+        )
 
     def test_accepts_complete_j06_capture(self) -> None:
         capture = valid_capture()

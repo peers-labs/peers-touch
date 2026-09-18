@@ -28066,6 +28066,10 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async waitForCapabilitySession() {
+      return waitForCapabilitySessionEvidence();
+    },
+
     async openBrowserCapabilitySession() {
       await api.openBrowserCapabilitySession();
       return { opened: true };

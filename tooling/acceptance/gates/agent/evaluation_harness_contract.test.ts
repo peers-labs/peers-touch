@@ -86,6 +86,11 @@ test('shared Station binding returns the canonical active peer identity', () => 
   assert.match(harness, /peerIdAvailable: Boolean\(activeStationPeerId\)/);
 });
 
+test('shared harness exposes Station-accepted capability session evidence', () => {
+  assert.match(harness, /async waitForCapabilitySession\(\)/);
+  assert.match(harness, /return waitForCapabilitySessionEvidence\(\)/);
+});
+
 test('J06 Acceptance does not use the legacy Evaluation store', () => {
   const j06Start = harness.indexOf('const EVALUATION_SELECTORS');
   const j06End = harness.indexOf(

@@ -60,8 +60,8 @@ WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J06"
 JOURNEY_ID = "V2-J06"
 PROFILE = "two"
 ACTOR_ACCOUNTS = {
-    "alice": "alice@p.t",
-    "bob": "bob@p.t",
+    "alice": "bob@p.t",
+    "bob": "carol@p.t",
 }
 IDENTITY_FIXTURE_ROOT = (
     Path.home()
@@ -74,6 +74,20 @@ IDENTITY_FIXTURE_ROOT = (
     / "fixtures"
     / "agent-v2-evaluation"
 )
+ACTOR_IDENTITY_FIXTURES = {
+    "alice": (
+        Path.home()
+        / ".peers-touch"
+        / "dev"
+        / "workspaces"
+        / WORKSPACE_ID
+        / "runtime"
+        / PROFILE
+        / "fixtures"
+        / "agent-v2-capability-binding"
+    ),
+    "bob": IDENTITY_FIXTURE_ROOT / "carol",
+}
 MATRIX_PATH = (
     ROOT / "tooling/acceptance/matrices/agent-v2-runtime-matrix.yaml"
 )
@@ -535,8 +549,10 @@ def seed_actor_identity(
     role: str,
     target_root: Path,
     station_url: str,
+    *,
+    fixture: Path | None = None,
 ) -> bool:
-    fixture = IDENTITY_FIXTURE_ROOT / role
+    fixture = fixture or IDENTITY_FIXTURE_ROOT / role
     if not fixture.exists():
         return False
     metadata = json.loads(
@@ -564,8 +580,15 @@ def persist_actor_identity(
     station_url: str,
     actor_id: str,
     station_peer_id: str,
+    *,
+    fixture: Path | None = None,
+    station_accepted: bool,
 ) -> dict[str, Any]:
-    fixture = IDENTITY_FIXTURE_ROOT / role
+    require(
+        station_accepted,
+        "Station acceptance proof is required before retaining actor identity",
+    )
+    fixture = fixture or IDENTITY_FIXTURE_ROOT / role
     metadata = {
         "schemaVersion": 1,
         "profile": PROFILE,
@@ -641,9 +664,23 @@ def authenticate_client(
         and navigation.get("navigated") is True,
         f"Native Agent navigation failed for {account}",
     )
+    capability_session = client.harness(
+        "waitForCapabilitySession",
+        {},
+        timeout=120,
+    )
+    require(
+        isinstance(capability_session, Mapping)
+        and isinstance(
+            capability_session.get("selectedStationSession"),
+            Mapping,
+        ),
+        f"Station did not accept the Native actor identity for {account}",
+    )
     return {
         **dict(login),
         "stationPeerId": station["activeStationPeerId"],
+        "stationAccepted": True,
     }
 
 
@@ -873,10 +910,12 @@ def main() -> int:
         )
         identities: dict[str, Any] = {}
         for role, client in clients.items():
+            fixture = ACTOR_IDENTITY_FIXTURES[role]
             reused = seed_actor_identity(
                 role,
                 client.actor_identity_root,
                 profile_env["PT_STATION_URL"],
+                fixture=fixture,
             )
             client.start()
             login = authenticate_client(
@@ -891,6 +930,8 @@ def main() -> int:
                     profile_env["PT_STATION_URL"],
                     str(login["actorId"]),
                     str(login["stationPeerId"]),
+                    fixture=fixture,
+                    station_accepted=login.get("stationAccepted") is True,
                 ),
                 "reused": reused,
             }
