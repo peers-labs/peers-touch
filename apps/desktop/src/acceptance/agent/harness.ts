@@ -15655,7 +15655,7 @@ async function createGovernedToolRuntimeFixture(
     name: requestedProviderId,
     description: `Development ${purpose}`,
     base_url: baseUrl,
-    api_key: 'mca-j03-fixture-key',
+    api_key: crypto.randomUUID(),
   });
   const providerId = String(created.provider?.id || '');
   if (providerId !== requestedProviderId) {

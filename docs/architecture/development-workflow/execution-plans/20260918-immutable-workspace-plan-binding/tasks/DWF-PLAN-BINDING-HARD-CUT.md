@@ -17,6 +17,7 @@
   "journeyId": "DWF-J18-immutable-plan-binding",
   "runtimeClass": "source-only",
   "writeSet": [
+    "apps/desktop/src/acceptance/agent/harness.ts",
     "apps/dev",
     "AGENTS.md",
     "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",

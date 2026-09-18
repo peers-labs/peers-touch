@@ -37,6 +37,10 @@
   "scope": {
     "sourceClaims": [
       {
+        "pathPrefix": "apps/desktop/src/acceptance/agent/harness.ts",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/dev",
         "mode": "exclusive-write"
       },
