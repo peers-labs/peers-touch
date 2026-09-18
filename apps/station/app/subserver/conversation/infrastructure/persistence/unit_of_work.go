@@ -82,7 +82,7 @@ func requireCanonicalSchema(db *gorm.DB) error {
 		},
 		{
 			model:          &ConversationMemberModel{},
-			columns:        []string{"joined_sequence", "left_sequence"},
+			columns:        []string{"joined_sequence", "left_sequence", "muted", "muted_until"},
 			forbidden:      []string{"id", "joined_at"},
 			primaryColumns: []string{"conversation_id", "ptid"},
 		},

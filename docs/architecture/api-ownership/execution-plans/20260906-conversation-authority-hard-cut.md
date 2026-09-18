@@ -2379,3 +2379,34 @@ blocking gaps. The first submit attempt stopped only because covered review
 documents had advanced beyond the recorded freshness digest; review confirmed
 that the drift contains NDR evidence/scope updates and navigation to the
 already-covered `devctl` architecture, with no change to review semantics.
+
+## W5-OWNER: Canonical Member Authority And Atomic Owner Transfer
+
+**Status**: source complete / runtime unproven
+**Accepted**: 2026-09-18
+**Decision**:
+[`AO-D10`](../proposals/20260918-conversation-member-authority.md)
+
+Scope is limited to Conversation-owned target-member role/mute state and
+atomic owner transfer. Mobile caller migration and deletion of legacy
+`/group-chat/member/update` and `/group-chat/ownership/transfer` remain later
+work; no compatibility shim is permitted.
+
+Required evidence:
+
+- canonical proto and ownership-registry coverage for
+  `/conversation/member/update` and `/conversation/ownership/transfer`;
+- aggregate permission, deadline, stale-head, owner-protection, exactly-one-owner,
+  and unchanged-MLS-epoch tests;
+- one-UOW persistence, exact replay, conflicting replay, rollback, and concurrent
+  stale-command tests;
+- HTTP authentication/error-code tests;
+- Federation follower convergence from the exact committed authority event.
+
+Source closure on 2026-09-18 adds the standalone member-authority command,
+typed member-update and ownership-transfer routes, hash-chained
+`member_authority_committed` event, authority role/mute persistence, atomic
+owner transfer, stable rejection mapping, and follower projection. Focused
+aggregate, mapper, UOW rollback/replay/conflict, persistence, HTTP route/error,
+and Federation wire/follower tests pass. Mobile caller migration, legacy route
+deletion, and native runtime Acceptance remain explicitly outside this slice.

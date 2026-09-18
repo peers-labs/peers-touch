@@ -92,7 +92,8 @@ Owns:
 
 - conversation identity and lifecycle;
 - direct/group creation;
-- membership, roles, settings, and actor read cursor;
+- membership, target-member roles and authority mute deadlines, atomic owner
+  transfer, actor-local settings, and actor read cursor;
 - command admission, command receipt, event ordering, event hash, and authority
   plans;
 - transactional creation of delivery intents.
@@ -190,6 +191,8 @@ where required for security without changing capability ownership.
 /conversation/attachments/*
 /conversation/delivery/receipt
 /conversation/typing
+/conversation/member/update
+/conversation/ownership/transfer
 ```
 
 Each route is owned by the named resource domain. No implementation-shaped public
@@ -261,6 +264,13 @@ source. Human-readable decisions remain authoritative; the registry must match t
 - Duplicate Federation frame: same payload is a no-op; same identity with another hash
   is a security conflict.
 - Missing accepted ownership decision: implementation remains blocked at DESIGN.
+
+For target-member administration, the canonical request must bind the
+authenticated operator and target to the current authority Station, authority
+epoch, authority sequence/hash, membership epoch, MLS epoch, exact command ID,
+and deadline. A member role/mute update or ownership transfer is one
+hash-chained Conversation event and one UOW commit. Ownership transfer may not
+be decomposed into independent role writes. See `AO-D10`.
 
 ## 9. Architecture Gates
 

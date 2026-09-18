@@ -28,13 +28,15 @@ func (*ConversationModel) TableName() string {
 }
 
 type ConversationMemberModel struct {
-	ConversationID string `gorm:"column:conversation_id;size:128;primaryKey"`
-	PTID           string `gorm:"column:ptid;size:255;primaryKey;index"`
-	Role           string `gorm:"column:role;size:32;not null"`
-	Status         string `gorm:"column:member_status;size:32;not null;index"`
-	HomeStation    string `gorm:"column:actor_home_station_peer_id;size:255;not null"`
-	JoinedSequence uint64 `gorm:"column:joined_sequence;not null"`
-	LeftSequence   uint64 `gorm:"column:left_sequence;not null"`
+	ConversationID string     `gorm:"column:conversation_id;size:128;primaryKey"`
+	PTID           string     `gorm:"column:ptid;size:255;primaryKey;index"`
+	Role           string     `gorm:"column:role;size:32;not null"`
+	Status         string     `gorm:"column:member_status;size:32;not null;index"`
+	HomeStation    string     `gorm:"column:actor_home_station_peer_id;size:255;not null"`
+	JoinedSequence uint64     `gorm:"column:joined_sequence;not null"`
+	LeftSequence   uint64     `gorm:"column:left_sequence;not null"`
+	Muted          bool       `gorm:"column:muted;not null"`
+	MutedUntil     *time.Time `gorm:"column:muted_until"`
 }
 
 func (*ConversationMemberModel) TableName() string {

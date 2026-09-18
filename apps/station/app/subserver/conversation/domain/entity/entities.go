@@ -15,6 +15,8 @@ type Member struct {
 	HomeStation valueobject.StationID
 	JoinedAt    valueobject.Sequence
 	LeftAt      valueobject.Sequence
+	Muted       bool
+	MutedUntil  *time.Time
 }
 
 func NewMember(
@@ -45,6 +47,10 @@ func NewMember(
 
 func (m Member) Active() bool {
 	return m.Status == valueobject.MemberStatusActive
+}
+
+func (m Member) MutedAt(at time.Time) bool {
+	return m.Muted && (m.MutedUntil == nil || m.MutedUntil.After(at.UTC()))
 }
 
 func (m Member) Validate() error {
@@ -78,6 +84,22 @@ func (m Member) Validate() error {
 			"must follow the joined sequence for an inactive member",
 		)
 	}
+	if !m.Muted && m.MutedUntil != nil {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"entity.validate_member",
+			"muted_until",
+			"requires muted state",
+		)
+	}
+	if m.MutedUntil != nil && m.MutedUntil.IsZero() {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"entity.validate_member",
+			"muted_until",
+			"must be a valid timestamp",
+		)
+	}
 	return nil
 }
 
@@ -87,6 +109,45 @@ func (m Member) WithRole(role valueobject.MemberRole) (Member, error) {
 	}
 	m.Role = role
 	return m, nil
+}
+
+func (m Member) WithAuthorityState(
+	role *valueobject.MemberRole,
+	muted *bool,
+	mutedUntil *time.Time,
+) (Member, error) {
+	if role != nil {
+		if err := role.Validate(); err != nil {
+			return Member{}, err
+		}
+		m.Role = *role
+	}
+	if muted == nil {
+		if mutedUntil != nil {
+			return Member{}, conversationdomain.NewError(
+				conversationdomain.ErrorCodeInvalidArgument,
+				"entity.update_member_authority",
+				"muted_until",
+				"requires an explicit muted value",
+			)
+		}
+		return m, m.Validate()
+	}
+	m.Muted = *muted
+	m.MutedUntil = nil
+	if *muted && mutedUntil != nil {
+		normalized := mutedUntil.UTC().Truncate(time.Microsecond)
+		m.MutedUntil = &normalized
+	}
+	if !*muted && mutedUntil != nil {
+		return Member{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"entity.update_member_authority",
+			"muted_until",
+			"must be absent when muted is false",
+		)
+	}
+	return m, m.Validate()
 }
 
 func (m Member) Leave(sequence valueobject.Sequence, status valueobject.MemberStatus) (Member, error) {
