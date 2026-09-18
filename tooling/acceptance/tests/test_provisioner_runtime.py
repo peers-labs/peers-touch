@@ -1537,6 +1537,13 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         self.assertNotEqual(alice.storage_root, bob.storage_root)
         self.assertIn("pt-agent-v2-evaluation-", alice.storage_root)
+        alice_identity_root = (
+            Path(alice.storage_root).parent.parent / "actor-identity"
+        )
+        bob_identity_root = (
+            Path(bob.storage_root).parent.parent / "actor-identity"
+        )
+        self.assertNotEqual(alice_identity_root, bob_identity_root)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),

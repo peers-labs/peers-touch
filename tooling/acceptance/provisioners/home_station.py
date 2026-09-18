@@ -524,7 +524,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     )
                 ),
                 profile=f"agent-v2-evaluation-{actor}-native",
-                storage_root=str(run_root / actor / "storage"),
+                storage_root=str(run_root / actor / "runtime" / "storage"),
             )
             for actor in ("alice", "bob")
         )
