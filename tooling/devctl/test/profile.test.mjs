@@ -197,7 +197,10 @@ test('activates and resolves a profile by worktree identity', (t) => {
   assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3530');
   assert.equal(resolved.reference.worktreeId, path.basename(root));
   assert.equal(resolved.reference.authority, 'machine-control-plane');
-  assert.match(resolved.paths.profileData, /workspaces\/[0-9a-f]{16}\/runtime\/local-test\/data$/u);
+  assert.match(
+    resolved.paths.profileData,
+    /workspaces[\\/][0-9a-f]{16}[\\/]runtime[\\/]local-test[\\/]data$/u,
+  );
 });
 
 test('resolves the machine binding instead of a stale legacy pointer', (t) => {
