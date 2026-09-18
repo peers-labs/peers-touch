@@ -59,6 +59,10 @@ Reject regardless of score when:
 - `active_work` or the current Context Anchor disagrees with the verified
   binding; return `WORKTREE_IDENTITY_MISMATCH` without automatically running
   `cd` or changing branch or worktree;
+- the Plan ID/path is unresolved, inferred from branch/repository contents, or
+  differs from `make plan-binding`; return
+  `WORKSPACE_PLAN_BINDING_REQUIRED` or `WORKSPACE_PLAN_BINDING_MISMATCH`;
+- the Goal permits Plan unbind/rebind in the same workspace;
 - any mutating tool call can run without the bound canonical root as explicit
   `workdir`;
 - binding reverification is omitted after resume or context compaction, before

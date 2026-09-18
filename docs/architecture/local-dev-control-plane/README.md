@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -18,6 +18,7 @@
 - `~/.peers-touch/dev/` 的机器级持久化边界。
 - Acceptance Evidence Store 的开发期持久化边界。
 - 每个 worktree 独立选择 profile、slot 和 Station 使用方式的身份模型。
+- 每个 workspace 独立且不可换绑的 Plan 所有权存储边界。
 
 本文档集不定义：
 
@@ -63,6 +64,7 @@ Application Support namespace，不适合承载开发期产物；目标路径统
     Server；OS listener 是唯一在线 Owner。
 14. Peers Dev 通过显式 Plan locator 展示 Task closure 进度，并将工作状态与
     环境健康分开；stale 声明可见但不拥有资源。
+15. 同一仓库或 PR 可同步多个 Plan，但每个 workspace 只解析自己的不可变绑定。
 
 ## 4. Runtime Authority
 
@@ -72,6 +74,7 @@ machine-local authority at:
 ```text
 ~/.peers-touch/dev/registry.json
 ~/.peers-touch/dev/leases/
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
 ```
 
 An existing `authority: observed-snapshot` file remains diagnostic until an

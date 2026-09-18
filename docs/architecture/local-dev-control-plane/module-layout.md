@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Module Layout
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-17 | **Updated**: 2026-09-17
+> **Version**: v1.1
+> **Created**: 2026-09-17 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -31,6 +31,10 @@ tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
 ├── dev-work-ledger.mjs
 └── dev-work.mjs
+
+tooling/scripts/plan/
+├── workspace-plan-binding.mjs
+└── workspace-plan-binding.test.mjs
 ```
 
 ## 2. File Responsibilities
@@ -47,6 +51,7 @@ tooling/scripts/local-dev/
 | `apps/dev/web/styles.css` | Responsive operational UI styling |
 | `tooling/scripts/local-dev/machine-dev-registry.mjs` | Machine registry, profile validation and live lease projection authority |
 | `tooling/scripts/local-dev/dev-work-ledger.mjs` | Machine-wide Development intent authority |
+| `tooling/scripts/plan/workspace-plan-binding.mjs` | Immutable workspace Plan ownership under the machine Dev root |
 | `tooling/make/local-dev.mk` | Thin `make dev-ui` and `make dev-ui-snapshot` entry points |
 
 ## 3. Dependency Direction
@@ -64,6 +69,10 @@ apps/dev/server/status.mjs
 
 tooling Local Dev owners
   -> ~/.peers-touch/dev machine state
+
+Development Workflow Plan binding
+  -> workspace-plan-binding.mjs
+  -> ~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
 ```
 
 Forbidden dependencies:
@@ -73,3 +82,4 @@ Forbidden dependencies:
 - Peers Dev server -> raw credential-bearing profile projection;
 - Peers Dev startup -> PID-file ownership or dynamic fallback ports;
 - future Peers Dev mutation -> direct state-file writes that bypass `devctl`.
+- Plan discovery -> branch or repository-wide active Plan scans.

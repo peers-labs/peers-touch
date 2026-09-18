@@ -50,7 +50,10 @@ def temporary_git_directory() -> Iterator[Path]:
 
         for attempt in range(20):
             try:
-                shutil.rmtree(root, onexc=remove_readonly)
+                try:
+                    shutil.rmtree(root, onexc=remove_readonly)
+                except TypeError:
+                    shutil.rmtree(root, onerror=remove_readonly)
                 break
             except OSError as error:
                 if error.errno != errno.ENOTEMPTY or attempt == 19:

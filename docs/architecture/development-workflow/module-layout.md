@@ -1,8 +1,8 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -29,7 +29,9 @@ tooling/scripts/plan/
 ├── plan-package.mjs
 ├── plan-migration.mjs
 ├── planctl.mjs
-└── planctl.test.mjs
+├── planctl.test.mjs
+├── workspace-plan-binding.mjs
+└── workspace-plan-binding.test.mjs
 
 tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
@@ -45,6 +47,7 @@ tooling/scripts/local-dev/
 ├── work.json
 ├── work.lock
 └── workspaces/<workspaceId>/workflow/
+    ├── plan-binding.json
     ├── <workItemId>/
     │   ├── session.json
     │   ├── events.ndjson
@@ -64,7 +67,7 @@ tooling/scripts/local-dev/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D16 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D19 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -74,6 +77,8 @@ tooling/scripts/local-dev/
 | `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
 | `planctl.mjs` | `validate/current/next/status/advance/migrate` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
+| `workspace-plan-binding.mjs` | One-time immutable workspace-to-Plan binding and direct resolution |
+| `workspace-plan-binding.test.mjs` | Same-branch isolation, idempotence, rebind denial and missing-bound-Plan regressions |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
@@ -102,6 +107,11 @@ planctl.mjs
   -> plan-package.mjs
   -> repository Plan Package files
 
+workspace-plan-binding.mjs
+  -> plan-package.mjs
+  -> machine-dev-paths.mjs
+  -> machine-local immutable plan-binding.json
+
 dev-session.mjs
   -> dev-session-store.mjs
   -> dev-session-schema.mjs
@@ -111,16 +121,19 @@ dev-session.mjs
 dev-work.mjs
   -> dev-work-ledger.mjs
   -> dev-work-schema.mjs
+  -> workspace-plan-binding.mjs
   -> machine-dev-paths.mjs
 
 Acceptance execution_plan.py
-  -> Plan Package manifest contract
+  -> immutable workspace Plan binding
+  -> bound Plan Package manifest contract
   -> current Task status
 ```
 
 Forbidden dependencies:
 
 - plan parser -> machine Session store;
+- Plan discovery -> branch/repository active-Plan scan;
 - Task Slice -> `events.ndjson`;
 - Session store -> Acceptance Evidence Store;
 - archive parser -> current plan/task status;

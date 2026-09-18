@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -42,6 +42,8 @@
 12. **One machine-wide app instance**: Peers Dev binds only
     `127.0.0.1:4177`; the OS listener is the exclusivity authority and every
     compatible worktree launch reuses that instance.
+13. **Immutable Plan ownership**: each workspace has one machine-local Plan
+    binding; repository/PR synchronization cannot replace it.
 
 ## 2. System Architecture
 
@@ -56,6 +58,7 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
+  - immutable workspace Plan bindings
   - public development work declarations
   - human environment-creation authorizations
   - local slot allocation
@@ -106,6 +109,7 @@ not remain as a symlink, fallback, or second read owner.
 | Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
 | Worktree identity | Git + canonical filesystem path | `workspaceId = sha256(realpath(root))[0:16]` |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
+| Worktree Plan ownership | Development Workflow | `workspaces/<workspaceId>/workflow/plan-binding.json` |
 | Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
@@ -163,8 +167,10 @@ Owns durable machine-local declarations:
 - Last observed source and runtime state.
 - Detected conflicts.
 
-It must not contain credentials, JWTs, passwords, private keys, user messages,
-or Acceptance artifacts.
+It does not own Plan selection. Development Workflow stores the immutable Plan
+binding in the workspace workflow namespace beside, not inside, the mutable
+environment registration. The registry must not contain credentials, JWTs,
+passwords, private keys, user messages, or Acceptance artifacts.
 
 Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer
@@ -216,6 +222,9 @@ The ledger does not allocate resources and cannot grant deploy/reset authority.
 Local Dev Control Plane leases remain the live exclusivity owner. A work
 declaration and lease may reference the same resource, but they answer different
 questions: planned use versus current possession.
+
+A tracked declaration must match the immutable workspace Plan binding. Once
+bound, the workspace cannot publish untracked declarations.
 
 ### 4.6 Lease Manager
 

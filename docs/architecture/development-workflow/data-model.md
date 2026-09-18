@@ -1,8 +1,8 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -33,7 +33,7 @@ a runtime Journey.
 
 ```ts
 interface PlanPackage {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: 'peers-touch-plan-package';
   planId: string;
   status:
@@ -47,7 +47,6 @@ interface PlanPackage {
     branch: string;
     workspaceId: string;
     initialHead: string;
-    expectedHead: string;
   };
   workClass: DevelopmentWorkClass;
   architecture: {
@@ -100,9 +99,12 @@ refactor or documentation closures without downgrading product Tasks.
 
 Current Task derives from exactly one manifest Task entry with
 `status: in_progress`. Ready Tasks derive from the same manifest DAG and statuses.
-`expectedHead` changes only after an authorized Git operation; `initialHead`
-follows the immutable binding rules. Sibling worktree inventory is machine
-topology and is not part of this binding.
+`initialHead` is the immutable audit baseline. Advancing source identity is
+owned outside tracked Plan content: Git is physical truth,
+`DevelopmentResourceDeclaration.sourceHead` authorizes the current mutation
+slice, `DevelopmentSession.source.commit` identifies a clean runtime
+checkpoint, and `active_work.expected_head` is the durable resume projection.
+Sibling worktree inventory is machine topology and is not part of this binding.
 
 `planctl status` also derives a read-only progress projection:
 
@@ -289,6 +291,40 @@ Rules:
 - plain Acceptance runs only the current Task closure;
 - completion/full remain explicit and never derive from diff expansion.
 
+## 5.1 Immutable Workspace Plan Binding
+
+```ts
+interface WorkspacePlanBinding {
+  schemaVersion: 1;
+  kind: 'peers-touch-workspace-plan-binding';
+  workspaceId: string;
+  canonicalRoot: string;
+  planId: string;
+  planPath: string;
+  boundAt: string;
+  boundBy: string;
+}
+```
+
+The record is stored at:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+```
+
+Rules:
+
+- creation is explicit and atomic;
+- the same `planId + planPath` request is idempotent;
+- a different tuple returns `WORKSPACE_PLAN_REBIND_DENIED`;
+- no unbind or rebind operation exists;
+- `planPath` is repository-relative and resolves inside `canonicalRoot`;
+- the referenced package must claim the same `workspaceId`;
+- repository/branch scans, Plan status and declaration recency never select a
+  Plan;
+- CI does not consume this machine-local record and requires an explicit Plan
+  input.
+
 ## 6. Active Work Pointer
 
 The tracked-work row becomes:
@@ -311,6 +347,8 @@ last_session
 Ownership:
 
 - `plan`, `stage`, binding and task pointers are a durable locator/index.
+- `plan` must equal the immutable workspace Plan binding. `active_work` cannot
+  establish, replace or repair that binding.
 - `current_task_id/path` mirror the manifest's single `in_progress` Task, or
   both are `NONE` when package status is `blocked` or `completed`.
 - `dev_state` is a projection of the current Development Session, or `NONE`
@@ -406,10 +444,15 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
 The Plan locator fields are an all-or-none tuple. Null means the declaration is
 explicitly untracked; it never means "discover a Plan". A non-null
 `planPath` is repository-relative, resolves inside the declared worktree, and
-must identify a package whose `planId`, binding, and current `taskId` match the
-declaration. During the mixed-version rollout, legacy records may omit the
-tuple; compatible readers normalize absence to a locator-less declaration
-without rewriting the shared ledger.
+must identify a package whose `planId` and binding match the declaration and
+immutable workspace Plan binding. While the package is active, `taskId` must
+name its current Task. A blocked/completed package may retain the exact
+blocked/done Task locator through cleanup and delivery; that terminal locator
+cannot select another Task or resume execution. Once a workspace is bound,
+locator-less declarations are rejected with
+`WORKSPACE_PLAN_DECLARATION_REQUIRED`. During the mixed-version rollout,
+legacy terminal records may omit the tuple; they are historical only and
+cannot authorize new mutation.
 
 Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
@@ -747,7 +790,6 @@ interface PlanMigrationJournal {
     branch: string;
     workspaceId: string;
     initialHead: string;
-    expectedHead: string;
   };
   sourceIdentity: {
     commit: string;

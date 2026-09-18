@@ -144,7 +144,10 @@ make plan-current PLAN=<package-plan.md>
 ```
 
 3. 验证明确选定的 worktree binding。
-4. 仅在 package 校验通过后登记一条 `active_work`：
+4. 运行 `make plan-bind PLAN=<package-plan.md>` 建立该 workspace 唯一且不可
+   换绑的 `planId + planPath`。同值调用幂等；若 workspace 已绑定其他 Plan，
+   返回 `WORKSPACE_PLAN_REBIND_DENIED`，新 Plan 必须使用新 worktree。
+5. 仅在 package 校验和不可变绑定均通过后登记一条 `active_work`：
 
 ```text
 plan
@@ -160,8 +163,9 @@ blocked=false
 last_session
 ```
 
-5. 同一 `workspace_id` 不得存在第二条 non-complete tracked row。
-6. 计划评审通过后，current Task 的选择由 Development Run 通过 owner
+6. 同一 `workspace_id` 不得存在第二条 non-complete tracked row，且该行
+   `plan` 必须等于机器绑定。同步进入仓库的其他 Plan 不参与选择。
+7. 计划评审通过后，current Task 的选择由 Development Run 通过 owner
    command 原子完成；本 Skill 不自行启动 EXECUTE。
 
 ## 6. 修订
@@ -198,6 +202,7 @@ findings。用户决定是否发起 review；本 Skill 不自审自批。
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
 - [ ] Plan Package 和所有 Task Slice 通过 `planctl validate`
+- [ ] workspace 的不可变 Plan binding 已创建且与 package 匹配
 - [ ] package 为 `prepared` 且无 current Task
 - [ ] `Acceptance Execution` 唯一且 closure 完整
 - [ ] scenario/Gate 映射来自 product state 或 concrete risk
@@ -225,4 +230,6 @@ findings。用户决定是否发起 review；本 Skill 不自审自批。
 - 创建 active 单文件计划或第二套状态表；
 - 把 Session 日志、raw output 或 Context Anchor 写进 package；
 - 在 `planctl validate` 前登记 `active_work`；
+- 从 branch、目录或 active Plan 数量推断 workspace Plan；
+- 换绑已有 workspace，或添加 unbind/rebind 兼容路径；
 - 由本 Skill 选择 current Task、执行或宣称完成。

@@ -4,7 +4,7 @@
 .PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
-        plan-validate plan-status plan-current plan-next \
+        plan-bind plan-binding plan-validate plan-status plan-current plan-next \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -17,6 +17,7 @@ LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
 DEV_APP_SCRIPT := apps/dev/server/index.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
+PLAN_BINDING_SCRIPT := tooling/scripts/plan/workspace-plan-binding.mjs
 ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
@@ -74,6 +75,16 @@ dev-ui:
 
 dev-ui-snapshot:
 	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
+
+plan-bind:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-bind PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLAN_BINDING_SCRIPT) bind \
+		--repo-root "$(CURDIR)" \
+		--plan "$(PLAN)" \
+		--owner "$(DEV_OWNER_ARG)"
+
+plan-binding:
+	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
 
 plan-validate:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi

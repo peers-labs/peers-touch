@@ -319,11 +319,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
-        clients = provisioner._clients(
-            "chat-native-two-client-e2e",
-            "run-webdriver-ports",
-            2,
-        )
+        with patch("socket.socket.connect_ex", return_value=1):
+            clients = provisioner._clients(
+                "chat-native-two-client-e2e",
+                "run-webdriver-ports",
+                2,
+            )
 
         self.assertEqual(
             [client.webdriver_port for client in clients],
@@ -338,7 +339,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_DEV_SLOT": "0"},
             clear=True,
-        ):
+        ), patch("socket.socket.connect_ex", return_value=1):
             clients = provisioner._clients(
                 "chat-native-two-client-e2e",
                 "run-profile-slot",
@@ -506,7 +507,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_AGENT_STREAM_WEBDRIVER_PORT": "14449"},
             clear=True,
-        ):
+        ), patch.object(provisioner, "_assert_client_ports_available"):
             client = provisioner._agent_stream_client(
                 "run-stream-resilience",
                 1,
@@ -542,7 +543,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_AGENT_ATTACHMENT_WEBDRIVER_PORT": "14450"},
             clear=True,
-        ):
+        ), patch.object(provisioner, "_assert_client_ports_available"):
             client = provisioner._agent_attachment_client(
                 "run-attachment",
                 1,

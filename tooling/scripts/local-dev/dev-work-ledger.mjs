@@ -40,10 +40,14 @@ import {
   validateDeclaration,
   validateSourcePathContainment,
 } from './dev-work-schema.mjs';
+import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
 const PLANCTL_SCRIPT = fileURLToPath(
   new URL('../plan/planctl.mjs', import.meta.url),
+);
+const PLAN_BINDING_SCRIPT = fileURLToPath(
+  new URL('../plan/workspace-plan-binding.mjs', import.meta.url),
 );
 const LEDGER_KEYS = new Set([
   'schemaVersion',
@@ -511,6 +515,53 @@ function parsePlanStatus(workspaceRoot, planPath, options) {
   }
 }
 
+function parseWorkspacePlanBinding(workspaceRoot, options) {
+  if (options.planBinding) return options.planBinding;
+  const arguments_ = [
+    PLAN_BINDING_SCRIPT,
+    'resolve',
+    '--repo-root',
+    workspaceRoot,
+  ];
+  if (options.home) arguments_.push('--home', options.home);
+  try {
+    const payload = JSON.parse(
+      execFileSync(process.execPath, arguments_, {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    );
+    return payload.binding;
+  } catch (error) {
+    let payload;
+    try {
+      payload = JSON.parse(error?.stderr?.toString() ?? '');
+    } catch {
+      payload = null;
+    }
+    fail(
+      payload?.error?.code ?? 'WORKSPACE_PLAN_BINDING_REQUIRED',
+      payload?.error?.message ?? 'workspace Plan binding is unavailable',
+      payload?.error?.details,
+    );
+  }
+}
+
+function assertUntrackedWorkspace(options, identity) {
+  const bindingFile = workspacePlanBindingPath({
+    home: options.home,
+    repoRoot: identity.workspaceRoot,
+  });
+  if (existsSync(bindingFile)) {
+    fail(
+      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
+      'a Plan-bound workspace cannot publish untracked work',
+      { bindingFile },
+    );
+  }
+}
+
 function resolvePlanLocator(options, existing, identity) {
   const supplied = [
     options.planPath,
@@ -518,7 +569,10 @@ function resolvePlanLocator(options, existing, identity) {
     options.taskId,
   ].some((value) => value !== undefined);
   const existingHasLocator = Object.hasOwn(existing ?? {}, 'planPath');
-  if (!supplied && !existingHasLocator) return null;
+  if (!supplied && !existingHasLocator) {
+    assertUntrackedWorkspace(options, identity);
+    return null;
+  }
 
   const planPath =
     options.planPath === undefined ? existing?.planPath : options.planPath;
@@ -528,6 +582,7 @@ function resolvePlanLocator(options, existing, identity) {
     options.taskId === undefined ? existing?.taskId : options.taskId;
   const values = [planPath, planId, taskId];
   if (values.every((value) => value === null)) {
+    assertUntrackedWorkspace(options, identity);
     return { planPath: null, planId: null, taskId: null };
   }
   if (
@@ -553,19 +608,36 @@ function resolvePlanLocator(options, existing, identity) {
     normalizedPlanPath,
     options,
   );
+  const binding = parseWorkspacePlanBinding(
+    identity.workspaceRoot,
+    options,
+  );
   const normalizedPlanId =
     planId === undefined || planId === null
       ? requiredIdentifier(status.planId, 'planId')
       : requiredIdentifier(planId, 'planId');
+  const declaredTaskStatus = status.taskStatuses?.[normalizedTaskId];
+  const taskMatchesLifecycle =
+    status.currentTaskId === normalizedTaskId ||
+    (status.status === 'completed' && declaredTaskStatus === 'done') ||
+    (status.status === 'blocked' && declaredTaskStatus === 'blocked');
   const mismatches = {};
   for (const [field, expected, actual] of [
     ['planId', normalizedPlanId, status.planId],
-    ['taskId', normalizedTaskId, status.currentTaskId],
     ['workspaceId', identity.workspaceId, status.workspaceId],
     ['branch', identity.branch, status.branch],
-    ['sourceHead', identity.sourceHead, status.expectedHead],
+    ['boundPlanId', normalizedPlanId, binding.planId],
+    ['boundPlanPath', normalizedPlanPath, binding.planPath],
   ]) {
     if (expected !== actual) mismatches[field] = { expected, actual };
+  }
+  if (!taskMatchesLifecycle) {
+    mismatches.taskId = {
+      expected: normalizedTaskId,
+      actual: status.currentTaskId,
+      taskStatus: declaredTaskStatus ?? null,
+      planStatus: status.status ?? null,
+    };
   }
   if (Object.keys(mismatches).length > 0) {
     fail('PLAN_LOCATOR_MISMATCH', 'declared Plan locator does not match', {

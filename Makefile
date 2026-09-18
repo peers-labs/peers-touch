@@ -44,6 +44,8 @@ help:
 	@echo "  make dev-check WORK_ITEM=x     Verify the current declaration before writes/runtime"
 	@echo "  make dev-heartbeat WORK_ITEM=x Extend the current declaration expiry"
 	@echo "  make dev-release WORK_ITEM=x   Release the current development declaration"
+	@echo "  make plan-bind PLAN=<path>     Bind this workspace to one immutable Plan"
+	@echo "  make plan-binding              Show this workspace's immutable Plan binding"
 	@echo ""
 	@echo "  make station                   Ready Station (local start / remote deploy)"
 	@echo "  make station-check             Health-check Station only"

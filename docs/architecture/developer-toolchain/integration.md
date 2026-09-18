@@ -1,8 +1,8 @@
 # Developer Toolchain - Integration And Migration
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v1.1
+> **Created**: 2026-09-12 | **Updated**: 2026-09-18
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
@@ -104,7 +104,7 @@ another Station or profile.
 | Local Station | start/check/status/stop smoke passes on Windows and Unix | local branch of station shell scripts | lifecycle tests plus reference scan |
 | Desktop lifecycle | App/Web composition and cleanup smoke pass | desktop and ensure shell logic | no duplicate lifecycle owner remains |
 | Make entrypoint | all mapped targets call `devctl` | local-dev shell recipes | Makefile policy scan passes |
-| Acceptance execution | current formal plan and closure resolve uniquely | latest Acceptance artifact as implicit execution owner | plan-binding and drift tests pass |
+| Acceptance execution | immutable workspace Plan and current closure resolve directly | branch scan or latest Acceptance artifact as implicit execution owner | plan-binding and drift tests pass |
 | Workflow state | formal plan plus `active_work` index | `.pt-dev-workflow` session schema | no live consumer reference remains |
 
 ## 6. Documentation Updates

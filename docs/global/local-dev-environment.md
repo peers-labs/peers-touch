@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-07-23 | **Updated**: 2026-09-13
+> **Version**: v1.2
+> **Created**: 2026-07-23 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -78,6 +78,17 @@ Development task intent is separately published at:
 It is machine-visible source/runtime intent owned by Development Workflow, not
 Profile allocation or a live lease. Read-only intake may precede it; non-trivial
 tasks must publish and confirm it before the first write or runtime acquisition.
+
+Tracked Plan ownership is stored separately from both environment allocation
+and mutable intent:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+```
+
+`make plan-bind PLAN=<path>` creates this binding once. The same tuple is
+idempotent; a different Plan is rejected. A new Plan requires a new worktree.
+Repository/PR synchronization never changes the binding.
 
 ---
 
@@ -264,6 +275,8 @@ registered and its binding must resolve.
 | `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
 | `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
 | `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
+| `make plan-bind PLAN=<path>` | Bind this workspace once to one Plan Package |
+| `make plan-binding` | Resolve and validate the workspace's bound Plan |
 | `make station` | Ready Station (local start or remote deploy, per mode) |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-web` | Start Desktop in browser |

@@ -75,8 +75,11 @@ Missing required input returns `ACTION_DENIED` with
 Evaluate in this order:
 
 1. **Identity**
-   - canonical worktree, branch, `workspaceId`, and expected HEAD match the
-     persisted binding;
+   - canonical worktree, branch, and `workspaceId` match the persisted
+     worktree identity, while declaration `sourceHead` matches Git;
+   - proposed Plan `planId + planPath` matches the workspace's immutable
+     machine binding; synchronized foreign Plans and branch scans are ignored;
+   - the Plan contributes only its immutable `initialHead` audit baseline;
    - otherwise `WORKTREE_IDENTITY_MISMATCH`.
 2. **Current ownership**
    - the action belongs to the manifest current Task;

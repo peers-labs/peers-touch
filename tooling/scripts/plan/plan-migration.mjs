@@ -256,7 +256,7 @@ function commandJson(command, args, cwd, code, description) {
   }
 }
 
-function defaultVerifyBinding(repoRoot, binding) {
+function defaultVerifyBinding(repoRoot, binding, sourceHead) {
   return commandJson(
     'python3',
     [
@@ -268,7 +268,7 @@ function defaultVerifyBinding(repoRoot, binding) {
       '--workspace-id',
       binding.workspaceId,
       '--head',
-      binding.expectedHead,
+      sourceHead,
     ],
     repoRoot,
     'WORKTREE_IDENTITY_MISMATCH',
@@ -285,7 +285,7 @@ function defaultCaptureSourceIdentity(repoRoot) {
         'import json, sys',
         'from pathlib import Path',
         'from tooling.acceptance.core import source_identity',
-        'print(json.dumps(source_identity(Path(sys.argv[1])), sort_keys=True))',
+        'sys.stdout.write(json.dumps(source_identity(Path(sys.argv[1])), sort_keys=True))',
       ].join('; '),
       repoRoot,
     ],
@@ -302,12 +302,16 @@ async function assertMigrationIdentity(
   { verifySourceDigest = false } = {},
 ) {
   const verifyBinding = options.verifyBinding ?? defaultVerifyBinding;
-  const verified = await verifyBinding(repoRoot, journal.binding);
+  const verified = await verifyBinding(
+    repoRoot,
+    journal.binding,
+    journal.sourceIdentity.commit,
+  );
   const mismatches = {};
   for (const [field, expected, actual] of [
     ['branch', journal.binding.branch, verified?.branch],
     ['workspaceId', journal.binding.workspaceId, verified?.workspaceId],
-    ['expectedHead', journal.binding.expectedHead, verified?.head],
+    ['sourceHead', journal.sourceIdentity.commit, verified?.head],
   ]) {
     if (expected !== actual) mismatches[field] = { expected, actual };
   }
@@ -888,7 +892,7 @@ function normalizeLegacyJournalBinding(journal) {
 function validateBinding(binding) {
   assertClosedObject(
     binding,
-    ['branch', 'workspaceId', 'initialHead', 'expectedHead'],
+    ['branch', 'workspaceId', 'initialHead'],
     'Plan Migration Journal.binding',
   );
   assertString(binding.branch, 'Plan Migration Journal.binding.branch');
@@ -900,11 +904,6 @@ function validateBinding(binding) {
   assertString(
     binding.initialHead,
     'Plan Migration Journal.binding.initialHead',
-    SHA1_PATTERN,
-  );
-  assertString(
-    binding.expectedHead,
-    'Plan Migration Journal.binding.expectedHead',
     SHA1_PATTERN,
   );
 }
@@ -1009,8 +1008,7 @@ export function validatePlanMigrationJournal(journal) {
   validateSourceIdentity(journal.sourceIdentity);
   if (
     journal.binding.workspaceId !== journal.workspaceId ||
-    journal.sourceIdentity.canonicalWorktreeHash !== journal.workspaceId ||
-    journal.sourceIdentity.commit !== journal.binding.expectedHead
+    journal.sourceIdentity.canonicalWorktreeHash !== journal.workspaceId
   ) {
     fail(
       'PLAN_MIGRATION_JOURNAL_INVALID',
@@ -1865,10 +1863,8 @@ export async function preparePlanMigration(options) {
     });
   }
   if (
-    options.sourceIdentity.commit !==
-      planPackage.manifest.binding.expectedHead ||
     options.sourceIdentity.canonicalWorktreeHash !==
-      planPackage.manifest.binding.workspaceId
+    planPackage.manifest.binding.workspaceId
   ) {
     fail(
       'PLAN_MIGRATION_INVALID',

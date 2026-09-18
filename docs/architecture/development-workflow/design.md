@@ -1,8 +1,8 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -25,6 +25,10 @@
    Task 的 Progress Slice，不是单条命令、检查或授权动作。
 10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
     修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
+11. **Workspace-owned Plan**: 仓库和 PR 可包含多个 active Plan；每个
+    workspace 只消费一次建立且不可换绑的 Plan foreign key。
+12. **Stable Plan, advancing source**: Plan 只记录 immutable initial HEAD；
+    当前 Git HEAD、mutation source 与 runtime checkpoint 由外部 Owner 管理。
 
 ## 2. Evidence Ledger
 
@@ -32,7 +36,7 @@
 |---|---|---|---|---|
 | 外层流程是 `PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER` | `verified_fact` | `docs/global/workflow.md`; `pt-dev-workflow` | high | none |
 | 当前 `active_work.current_step` 是自由文本 | `verified_fact` | `AGENTS.md` 和相关 Skills | high | none |
-| 现有 execution-plan parser 只发现 `execution-plans/*.md` | `verified_fact` | `tooling/acceptance/core/execution_plan.py` | high | package parser integration |
+| branch-wide Plan discovery cannot distinguish synchronized worktree ownership | `verified_fact` | pre-DWF-D18 `tooling/acceptance/core/execution_plan.py`; Group Chat reproduction | high | immutable binding regression |
 | Mobile Shell 计划超过 4,000 行并包含大量 dated progress | `verified_fact` | `20260827-mobile-shell-implementation.md` | high | none |
 | `DevelopmentSession` 目前只存在于文档模型 | `verified_fact` | DWF data model 与当前 tooling inventory | high | transition store implementation |
 | compact package 会降低恢复输入且保持证明可追踪 | `proposal` | DWF-D13 | medium | pilot metrics and adversarial simulation |
@@ -83,10 +87,13 @@ accepted product + architecture
 | One execution closure specification and durable snapshot | Task Slice | `tasks/<id>.md` machine block and snapshot | Context Anchor |
 | Current execution transition | Development Session | machine event log + `session.json` projection | `active_work.dev_state` |
 | Attempt history and first failure | Development Session | bounded `events.ndjson` and artifacts | compact failure summary |
-| Source identity | Git | commit/tree | session checkpoint |
+| Current physical source identity | Git | commit/tree | declaration and Session verification |
+| Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
+| Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
 | Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
 | Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
-| Current tracked locator | Plan Package | current Task entry and verified binding | `active_work` + Context Anchor |
+| Workspace Plan ownership | Development Workflow | machine-local immutable `plan-binding.json` | Plan/declaration/`active_work` consistency checks |
+| Current tracked locator | Plan Package | current Task entry | `active_work` + Context Anchor |
 | Chat status | Context Anchor | derived projection only | none |
 
 No owner may copy another owner's complete state. In particular:
@@ -95,6 +102,10 @@ No owner may copy another owner's complete state. In particular:
 - Task files do not copy current Task selection, Session events or raw output.
 - `active_work` mirrors the manifest/session locator; disagreement is repaired
   from those owners before execution.
+- Plan, declaration and `active_work` cannot select or replace the workspace
+  Plan binding.
+- Plan does not own an advancing HEAD. Declaration, Session and `active_work`
+  project their distinct current-source responsibilities directly from Git.
 - Context Anchor does not read `archive/` or scan every task body.
 - Development records do not satisfy formal Acceptance proof.
 
@@ -137,7 +148,9 @@ execution-plans/<date>-<slug>/
 
 `plan.md` owns:
 
-- verified worktree binding and plan identity;
+- plan identity and its claimed worktree binding, verified against the
+  machine-local immutable workspace Plan binding;
+- immutable initial HEAD only, never the advancing source commit;
 - current-worktree binding only; sibling worktree inventory remains
   non-authoritative machine topology;
 - stable goal, scope, non-scope and architecture references;
@@ -162,6 +175,11 @@ Mechanical bounds:
 
 Archive files are excluded from discovery, status, dependency and resume parsing.
 They preserve history only.
+
+The repository may contain multiple active Plan Packages from independent
+worktrees synchronized into one PR. Discovery never scans that set to select an
+owner. `plan-binding.json` names the only Plan visible to the current workspace;
+foreign packages remain ordinary synchronized source files.
 
 ## 6. Task Slice Contract
 
@@ -301,7 +319,9 @@ baseline event with the prior log digest before admitting more transitions.
 Resume is deterministic and bounded:
 
 1. Verify worktree binding from persisted values.
-2. Resolve the one active Plan Package.
+2. Resolve the workspace's immutable `planId + planPath` binding and load that
+   Plan Package directly. Missing or mismatched binding fails closed; no branch
+   scan or alternate Plan fallback runs.
 3. Run `planctl validate`; tooling may scan bounded machine blocks, but no Task
    body or archive content enters agent context.
 4. If package status is `blocked`, validate typed exhaustion and recompute the
@@ -431,6 +451,12 @@ The architecture is implemented only when:
   both the declaration and workspace registration after source HEAD changes;
 - unrelated sibling worktree add/remove/prune operations do not invalidate the
   selected worktree's binding;
+- multiple active Plans may coexist in one repository/PR while each workspace
+  resolves only its immutable binding and rebind attempts fail closed;
+- an authorized checkpoint can advance declaration, Session and `active_work`
+  source identity without editing the tracked Plan or dirtying the checkpoint;
+- CI accepts only an explicitly supplied Plan and never infers ownership from a
+  PR branch;
 - every non-blocked Anchor continuation targets one Task closure and cannot
   terminate successfully with zero durable progress;
 - two independent reviews find no unresolved source-of-truth or runnable gap.

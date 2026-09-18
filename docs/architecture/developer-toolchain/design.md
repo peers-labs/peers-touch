@@ -1,8 +1,8 @@
 # Developer Toolchain - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v1.1
+> **Created**: 2026-09-12 | **Updated**: 2026-09-18
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
@@ -119,7 +119,7 @@ indexes or projections. None may redefine plan scope, progress, or Gate timing.
 | Runtime health | live health endpoint and listening port | status/doctor probes |
 | Product data | Station/Desktop storage roots | product runtimes, never `devctl` |
 | Work scope and progress | formal execution plan | planning/execution stage owner |
-| Active-plan lookup | plan metadata matched to verified worktree | plan registration |
+| Plan lookup | immutable workspace Plan binding, or explicit CI input | Development Workflow binding |
 | Acceptance timing | plan Acceptance Execution contract | planning stage owner |
 | Diff impact | generated Acceptance projection | Acceptance planner |
 
@@ -134,7 +134,7 @@ defines plan-completion and explicit full/release Gate sets.
 
 The runner:
 
-1. discovers exactly one active plan matching the verified worktree;
+1. resolves the verified workspace's immutable Plan binding directly;
 2. reads the current closure from the existing Implementation Status table;
 3. validates actual changed paths against the registry-derived impact
    projection;
@@ -232,7 +232,7 @@ Forbidden:
 - embedding machine names or Station profiles in command definitions;
 - changing Acceptance runtime profile injection;
 - requiring Git Bash for a Windows-native command path.
-- more than one active formal plan for the same worktree;
+- a missing/mismatched Plan binding or any Plan rebind attempt;
 - an Acceptance artifact acting as a second execution plan;
 - default execution of completion, environment, nightly, or release Gates;
 - running full/release Acceptance without an explicit user request;
@@ -252,8 +252,11 @@ Stable CLI error codes:
 | `DEVCTL_START_TIMEOUT` | Runtime did not become ready before the deadline |
 | `DEVCTL_UNSUPPORTED_MODE` | The selected operation is not implemented for the profile mode/platform |
 | `DEVCTL_CHECK_FAILED` | A deterministic source check failed |
-| `EXECUTION_PLAN_REQUIRED` | No active formal plan matches the worktree |
-| `MULTIPLE_ACTIVE_EXECUTION_PLANS` | More than one active plan matches the worktree |
+| `WORKSPACE_PLAN_BINDING_REQUIRED` | The local workspace has no immutable Plan binding |
+| `WORKSPACE_PLAN_BINDING_MISMATCH` | The bound Plan identity/path/workspace does not match |
+| `WORKSPACE_PLAN_REBIND_DENIED` | A different Plan attempted to replace the immutable binding |
+| `WORKSPACE_PLAN_DECLARATION_REQUIRED` | A Plan-bound workspace attempted untracked mutation |
+| `EXECUTION_PLAN_INPUT_REQUIRED` | CI omitted its explicit Plan input |
 | `EXECUTION_PLAN_INVALID` | Plan metadata, status, or Acceptance contract is malformed |
 | `EXECUTION_PLAN_COMPLETE` | Plain run requested after all closures completed |
 | `ACCEPTANCE_PLAN_DRIFT` | Actual diff implies an undeclared Acceptance Gate |

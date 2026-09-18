@@ -36,8 +36,10 @@ include this title or explanatory text in the generated Goal.
 - Canonical runtime worktree root: `<materialized-canonical-absolute-path>`
 - Branch: `<materialized-branch>`
 - `workspaceId`: `<materialized-workspaceId>`
-- Initial HEAD: `<materialized-full-commit>`
-- Expected HEAD: `<initially identical to Initial HEAD; refresh only after an explicitly authorized commit, rebase, or merge>`
+- Bound Plan ID: `<materialized-planId>`
+- Bound Plan path: `<materialized-repository-relative-planPath>`
+- Initial HEAD: `<immutable Plan audit baseline>`
+- Expected HEAD: `<active_work/current-source projection; initially identical to Initial HEAD and refreshed only after an explicitly authorized commit, rebase, or merge>`
 - Capture command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --capture`
 - Verification command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --branch '<materialized-branch>' --workspace-id '<materialized-workspaceId>' --head '<materialized-expected-head>'`
 - Shell quoting: every materialized value is one POSIX shell-safe argument;
@@ -55,9 +57,13 @@ include this title or explanatory text in the generated Goal.
   or context compaction against persisted values without recapturing a new
   baseline, and the integrator reverifies before reconcile and before Slice
   completion.
-- Refresh policy: retain Initial HEAD; refresh Expected HEAD only after an
-  explicitly authorized commit, rebase, or merge. Sibling worktree inventory
-  is topology and does not change this binding.
+- Refresh policy: retain the Plan's Initial HEAD; refresh the external
+  `active_work`/declaration source identity only after an explicitly authorized
+  commit, rebase, or merge. Sibling worktree inventory is topology and does not
+  change either binding.
+- Plan ownership: verify `make plan-binding`; synchronized Plans, branch scans
+  and active status never replace the immutable workspace binding. Rebind is
+  forbidden.
 - Forbidden worktree operations: no `git switch`, `git checkout`,
   `git worktree add`, `git worktree remove`, `git worktree prune`, or new
   worktree unless the user explicitly requests that exact operation.

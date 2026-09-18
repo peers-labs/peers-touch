@@ -32,7 +32,7 @@
       "capability graph links product capabilities to features gates evidence and unproven scope",
       "domain profiles select product domains used to validate acceptance effectiveness",
       "changed paths select required gates through registry rules",
-      "one active formal execution plan schedules the current closure gates",
+      "the immutable workspace Plan binding schedules the current closure gates while synchronized foreign Plans are ignored",
       "diff impact detects undeclared gates without expanding execution",
       "full acceptance requires an explicit release or full-test request",
       "explicit product gates can run independently from the current diff",

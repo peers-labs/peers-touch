@@ -11,10 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import {
-  workspaceIdForRoot,
-  workspaceWorkflowPath,
-} from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { workspaceIdForRoot } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
 import {
   buildDevSnapshot,
   collectProfiles,
@@ -76,7 +73,12 @@ function fixture() {
   return {
     root,
     close() {
-      rmSync(root, { recursive: true, force: true });
+      rmSync(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 20,
+      });
     },
   };
 }
@@ -89,7 +91,7 @@ function fakePlanPackage(workspaceId, head) {
       binding: {
         workspaceId,
         branch: 'main',
-        expectedHead: head,
+        initialHead: head,
       },
       tasks: [
         {
@@ -153,7 +155,7 @@ test('collectProfiles exposes only selected public fields', () => {
   }
 });
 
-test('resolveDeclarationPlan supports explicit, session, mismatch, and legacy states', async () => {
+test('resolveDeclarationPlan uses only declaration and immutable workspace binding', async () => {
   const scope = fixture();
   try {
     const workspaceId = workspaceIdForRoot(scope.root);
@@ -186,10 +188,15 @@ test('resolveDeclarationPlan supports explicit, session, mismatch, and legacy st
       canonicalRoot: scope.root,
     };
     const loadPlanPackage = async () => fakePlanPackage(workspaceId, head);
+    const resolveWorkspacePlanBinding = async () => ({
+      planId: 'TEST-PLAN',
+      planPath: declaration.planPath,
+    });
 
     const direct = await resolveDeclarationPlan(declaration, registration, {
       home: scope.root,
       loadPlanPackage,
+      resolveWorkspacePlanBinding,
     });
     assert.equal(direct.status, 'available');
     assert.equal(direct.locatorSource, 'declaration');
@@ -202,38 +209,7 @@ test('resolveDeclarationPlan supports explicit, session, mismatch, and legacy st
       { completed: 1, total: 2, percentage: 50 },
     );
 
-    const sessionDirectory = workspaceWorkflowPath('TEST-WORK', {
-      home: scope.root,
-      workspaceId,
-    });
-    mkdirSync(sessionDirectory, { recursive: true });
-    writeFileSync(
-      path.join(sessionDirectory, 'session.json'),
-      `${JSON.stringify({
-        schemaVersion: 1,
-        kind: 'peers-touch-development-session',
-        eventCount: 1,
-        eventDigest: '0'.repeat(64),
-        state: {
-          sessionId: 'test-session',
-          workItemId: 'TEST-WORK',
-          planId: 'TEST-PLAN',
-          taskId: 'TEST-CURRENT',
-          workspaceId,
-          branch: 'main',
-          journeyId: 'TEST-J01',
-          executionMode: 'build',
-          state: 'IMPLEMENTING',
-          source: null,
-          runtimeBindingRef: null,
-          currentFailure: null,
-          lastVerification: null,
-          startedAt: '2026-09-17T00:00:00.000Z',
-          updatedAt: '2026-09-17T00:00:00.000Z',
-        },
-      })}\n`,
-    );
-    const sessionDerived = await resolveDeclarationPlan(
+    const boundWithoutLocator = await resolveDeclarationPlan(
       {
         ...declaration,
         planPath: undefined,
@@ -244,25 +220,15 @@ test('resolveDeclarationPlan supports explicit, session, mismatch, and legacy st
       {
         home: scope.root,
         loadPlanPackage,
+        resolveWorkspacePlanBinding,
       },
     );
-    assert.equal(sessionDerived.status, 'available');
-    assert.equal(sessionDerived.locatorSource, 'session');
-
-    const mismatched = await resolveDeclarationPlan(
-      { ...declaration, taskId: 'OTHER-TASK' },
-      registration,
-      { home: scope.root, loadPlanPackage },
+    assert.equal(boundWithoutLocator.status, 'mismatch');
+    assert.equal(
+      boundWithoutLocator.errorCode,
+      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
     );
-    assert.equal(mismatched.status, 'mismatch');
-    assert.equal(mismatched.errorCode, 'PLAN_LOCATOR_MISMATCH');
 
-    const packageTasks = path.join(planDirectory, 'tasks');
-    mkdirSync(packageTasks, { recursive: true });
-    writeFileSync(
-      path.join(packageTasks, 'UNTRACKED-WORK.md'),
-      '# Package task\n\nUNTRACKED-WORK\n',
-    );
     const untracked = await resolveDeclarationPlan(
       {
         workItemId: 'UNTRACKED-WORK',
@@ -271,33 +237,42 @@ test('resolveDeclarationPlan supports explicit, session, mismatch, and legacy st
         sourceHead: head,
       },
       registration,
-      { home: scope.root, loadPlanPackage },
+      {
+        home: scope.root,
+        async resolveWorkspacePlanBinding() {
+          const error = new Error('binding absent');
+          error.code = 'WORKSPACE_PLAN_BINDING_REQUIRED';
+          throw error;
+        },
+      },
     );
     assert.equal(untracked.status, 'untracked');
 
-    writeFileSync(
-      path.join(
-        scope.root,
-        'docs',
-        'architecture',
-        'example',
-        'execution-plans',
-        'legacy.md',
-      ),
-      '# Legacy\n\nLEGACY-W8 remains in progress.\n',
-    );
-    const legacy = await resolveDeclarationPlan(
-      {
-        workItemId: 'LEGACY-W8',
-        workspaceId,
-        branch: 'main',
-        sourceHead: head,
-      },
+    const mismatched = await resolveDeclarationPlan(
+      { ...declaration, taskId: 'OTHER-TASK' },
       registration,
-      { home: scope.root, loadPlanPackage },
+      { home: scope.root, loadPlanPackage, resolveWorkspacePlanBinding },
     );
-    assert.equal(legacy.status, 'legacy');
-    assert.equal(legacy.errorCode, 'LEGACY_PLAN_UNSUPPORTED');
+    assert.equal(mismatched.status, 'mismatch');
+    assert.equal(mismatched.errorCode, 'PLAN_LOCATOR_MISMATCH');
+
+    const bindingMismatch = await resolveDeclarationPlan(
+      declaration,
+      registration,
+      {
+        home: scope.root,
+        loadPlanPackage,
+        async resolveWorkspacePlanBinding() {
+          return {
+            planId: 'FOREIGN-PLAN',
+            planPath:
+              'docs/architecture/example/execution-plans/foreign/plan.md',
+          };
+        },
+      },
+    );
+    assert.equal(bindingMismatch.status, 'mismatch');
+    assert.equal(bindingMismatch.errorCode, 'PLAN_LOCATOR_MISMATCH');
   } finally {
     scope.close();
   }

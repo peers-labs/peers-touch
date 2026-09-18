@@ -67,7 +67,7 @@ function manifestForStatus(status) {
   const selected = statuses[status];
   if (!selected) throw new Error(`unsupported fixture status ${status}`);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-plan-package',
     planId: 'DWF-TEST',
     status,
@@ -75,7 +75,6 @@ function manifestForStatus(status) {
       branch: 'merge-desktop-prototype',
       workspaceId: WORKSPACE_ID,
       initialHead: INITIAL_HEAD,
-      expectedHead: EXPECTED_HEAD,
     },
     workClass: 'infrastructure',
     architecture: {
@@ -197,7 +196,6 @@ function planMarkdown(manifest, acceptance, suffix = '') {
 > **Branch**: ${manifest.binding.branch}
 > **Workspace ID**: ${manifest.binding.workspaceId}
 > **Initial HEAD**: ${manifest.binding.initialHead}
-> **Expected HEAD**: ${manifest.binding.expectedHead}
 
 ## Plan Package
 
@@ -328,7 +326,6 @@ for (const status of ['active', 'prepared', 'blocked', 'completed']) {
     });
     assert.equal(result.manifest.status, status);
     assert.equal(result.manifest.binding.initialHead, INITIAL_HEAD);
-    assert.equal(result.manifest.binding.expectedHead, EXPECTED_HEAD);
     assert.equal(TASK_SLICES_COLLECTION, 'Map');
     assert.ok(result.taskSlices instanceof Map);
     if (status === 'active') {
@@ -345,6 +342,30 @@ test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhau
     const fixture = await makeFixture(t, {
       mutateManifest(manifest) {
         manifest.extra = true;
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('obsolete Plan Package schema version', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateManifest(manifest) {
+        manifest.schemaVersion = 1;
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('obsolete advancing HEAD field', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateManifest(manifest) {
+        manifest.binding.expectedHead = EXPECTED_HEAD;
       },
     });
     await expectPlanError(
@@ -498,15 +519,32 @@ test('renderPlanDocument removes obsolete sibling worktree metadata', () => {
   const manifest = manifestForStatus('prepared');
   const acceptance = acceptanceForTasks(manifest.tasks);
   const source = planMarkdown(manifest, acceptance).replace(
-    `> **Expected HEAD**: ${manifest.binding.expectedHead}`,
+    `> **Initial HEAD**: ${manifest.binding.initialHead}`,
     [
-      `> **Expected HEAD**: ${manifest.binding.expectedHead}`,
+      `> **Initial HEAD**: ${manifest.binding.initialHead}`,
       `> **Worktree-set Digest**: ${'c'.repeat(64)}`,
     ].join('\n'),
   );
 
   const rendered = renderPlanDocument(source, manifest);
   assert.equal(rendered.includes('Worktree-set Digest'), false);
+});
+
+test('renderPlanDocument rejects obsolete Expected HEAD metadata', () => {
+  const manifest = manifestForStatus('prepared');
+  const acceptance = acceptanceForTasks(manifest.tasks);
+  const source = planMarkdown(manifest, acceptance).replace(
+    `> **Initial HEAD**: ${manifest.binding.initialHead}`,
+    [
+      `> **Initial HEAD**: ${manifest.binding.initialHead}`,
+      `> **Expected HEAD**: ${EXPECTED_HEAD}`,
+    ].join('\n'),
+  );
+
+  assert.throws(
+    () => renderPlanDocument(source, manifest),
+    (error) => error.code === 'PLAN_METADATA_MISMATCH',
+  );
 });
 
 test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
@@ -782,8 +820,9 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
     await fsp.writeFile(
       fixture.planPath,
       markdown.replace(
-        `> **Expected HEAD**: ${EXPECTED_HEAD}`,
+        `> **Initial HEAD**: ${INITIAL_HEAD}`,
         [
+          `> **Initial HEAD**: ${INITIAL_HEAD}`,
           `> **Expected HEAD**: ${EXPECTED_HEAD}`,
           `> **Worktree-set Digest**: ${'c'.repeat(64)}`,
         ].join('\n'),
@@ -1010,7 +1049,10 @@ test('planctl validate/current/next/status emit structured JSON through direct a
   assert.equal(status.branch, 'merge-desktop-prototype');
   assert.equal(status.workspaceId, WORKSPACE_ID);
   assert.equal(status.initialHead, INITIAL_HEAD);
-  assert.equal(status.expectedHead, EXPECTED_HEAD);
+  assert.deepEqual(status.taskStatuses, {
+    'task-a': 'in_progress',
+    'task-b': 'pending',
+  });
   assert.deepEqual(status.progress, {
     unit: 'task-closure',
     completed: 0,
@@ -1114,7 +1156,6 @@ test('planctl advance atomically hands off and completes without changing immuta
   assert.equal(handedOff.status, 'active');
   assert.equal(handedOff.currentTaskId, 'task-b');
   assert.equal(handedOff.initialHead, INITIAL_HEAD);
-  assert.equal(handedOff.expectedHead, EXPECTED_HEAD);
 
   const completed = parseCliSuccess(
     invokeCli(['advance', ...common, '--task', 'task-b', '--to', 'done']),

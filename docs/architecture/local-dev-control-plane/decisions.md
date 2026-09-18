@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -25,6 +25,7 @@
 | LDCP-D11 | Provide one read-only Development Control Plane dashboard | accepted |
 | LDCP-D12 | Run one machine-wide Peers Dev application | accepted |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
+| LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -533,3 +534,42 @@ problem without erasing the task.
 - Stale work is visible and clearly non-live.
 - Legacy or unsynchronized worktrees remain visible with typed unavailable
   progress until they adopt the declaration and Plan Package contracts.
+
+## LDCP-D14: Reserve Immutable Workspace Plan Ownership Under The Machine Dev Root
+
+**Status**: accepted
+**Date**: 2026-09-18
+
+### Context
+
+Profile/slot registration and Development declarations are mutable for valid
+operational reasons, while Plan ownership must not change when another
+worktree's commits are synchronized into the same repository or PR branch.
+
+### Decision
+
+Development Workflow owns one immutable
+`workspaces/<workspaceId>/workflow/plan-binding.json` record under the machine
+Dev root. Local Dev supplies the workspace-scoped namespace but does not infer,
+replace, or mutate the Plan binding. Profile, slot, capability, branch and HEAD
+refreshes leave it unchanged.
+
+### Rationale
+
+The machine Dev root is the only workspace-keyed state namespace shared across
+all synchronized source versions. Keeping Plan ownership separate from the
+mutable environment registry preserves both concerns' lifecycle.
+
+### Alternatives Considered
+
+- Add Plan fields to the environment registration: rejected because profile and
+  source refreshes are mutable and must not gain Plan-rebind semantics.
+- Store the binding in the repository: rejected because synchronized files are
+  shared content, not machine workspace identity.
+
+### Consequences
+
+- Removing a worktree's machine state is the only way to retire its Plan
+  binding; no normal command rebinding path exists.
+- Local Dev status may project the binding but cannot use it as environment or
+  runtime authority.

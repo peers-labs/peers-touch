@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -19,6 +19,7 @@
 | `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
 | `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
+| `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json` | Absent before DWF-D18 | Development Workflow immutable Plan ownership |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
 | `apps/dev/` | Peers Dev server, web UI, tests and package entry | Canonical application owner |
 
@@ -47,6 +48,8 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 │   └── station-reset-<station-fixture>.lock
 └── workspaces/
     └── <workspaceId>/
+        ├── workflow/
+        │   └── plan-binding.json
         ├── runtime/
         ├── pids/
         ├── logs/
@@ -72,6 +75,8 @@ Target command behavior:
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
 | `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
 | `make dev-release` | Release the work declaration after cleanup |
+| `make plan-bind PLAN=<path>` | Create the current workspace's immutable Plan binding once |
+| `make plan-binding` | Resolve and validate only the bound Plan |
 | `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
 | `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
 | `make profile <name>` | Call canonical `env-update` behavior for only the current `workspaceId` binding |

@@ -12,9 +12,7 @@ import path from 'node:path';
 import {
   developmentWorkLedgerPath,
   repoRoot,
-  workspaceWorkflowPath,
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
-import { validateSession } from '../../../tooling/scripts/local-dev/dev-session-schema.mjs';
 import { readLedger } from '../../../tooling/scripts/local-dev/dev-work-ledger.mjs';
 import {
   AGENT_CONTROL_MODES,
@@ -24,6 +22,7 @@ import {
   loadPlanPackage,
   summarizePlanProgress,
 } from '../../../tooling/scripts/plan/plan-package.mjs';
+import { resolveWorkspacePlanBinding } from '../../../tooling/scripts/plan/workspace-plan-binding.mjs';
 
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
@@ -41,8 +40,6 @@ const VISIBLE_DECLARATION_STATES = new Set([
   ...LIVE_DECLARATION_STATES,
   'STALE',
 ]);
-const PLAN_DISCOVERY_LIMIT = 512;
-const LEGACY_PLAN_READ_LIMIT = 512 * 1024;
 
 function parseSelectedProfile(text) {
   const values = {};
@@ -101,102 +98,6 @@ function containedPath(root, relativePath) {
   return target;
 }
 
-function executionPlanFiles(workspaceRoot) {
-  const architectureRoot = path.join(workspaceRoot, 'docs', 'architecture');
-  if (!existsSync(architectureRoot)) return [];
-  const files = [];
-  const visit = (directory, insideExecutionPlans = false) => {
-    if (files.length >= PLAN_DISCOVERY_LIMIT) return;
-    let entries;
-    try {
-      entries = readdirSync(directory, { withFileTypes: true }).sort(
-        (left, right) => left.name.localeCompare(right.name),
-      );
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (files.length >= PLAN_DISCOVERY_LIMIT) return;
-      const target = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'archive') continue;
-        visit(target, insideExecutionPlans || entry.name === 'execution-plans');
-      } else if (
-        insideExecutionPlans &&
-        entry.isFile() &&
-        entry.name.endsWith('.md') &&
-        (entry.name === 'plan.md' ||
-          path.basename(directory) === 'execution-plans')
-      ) {
-        files.push(target);
-      }
-    }
-  };
-  visit(architectureRoot);
-  return files;
-}
-
-function planIdFromMarkdown(file) {
-  try {
-    const stats = statSync(file);
-    if (stats.size > LEGACY_PLAN_READ_LIMIT) return null;
-    const markdown = readFileSync(file, 'utf8');
-    return markdown.match(/"planId"\s*:\s*"([^"]+)"/)?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function legacyPlanMentionsWorkItem(files, workItemId) {
-  const needle = workItemId.toLowerCase();
-  return files.some((file) => {
-    if (
-      path.basename(file) === 'plan.md' ||
-      path.basename(path.dirname(file)) !== 'execution-plans'
-    ) {
-      return false;
-    }
-    try {
-      const stats = statSync(file);
-      if (stats.size > LEGACY_PLAN_READ_LIMIT) return false;
-      return readFileSync(file, 'utf8').toLowerCase().includes(needle);
-    } catch {
-      return false;
-    }
-  });
-}
-
-function readSessionLocator(declaration, home) {
-  const sessionFile = path.join(
-    workspaceWorkflowPath(declaration.workItemId, {
-      home,
-      workspaceId: declaration.workspaceId,
-    }),
-    'session.json',
-  );
-  if (!existsSync(sessionFile)) return { locator: null, errorCode: null };
-  try {
-    const session = validateSession(JSON.parse(readFileSync(sessionFile, 'utf8')));
-    const state = session.state;
-    if (
-      state.workspaceId !== declaration.workspaceId ||
-      state.workItemId !== declaration.workItemId ||
-      state.branch !== declaration.branch
-    ) {
-      return { locator: null, errorCode: 'SESSION_IDENTITY_MISMATCH' };
-    }
-    return {
-      locator: {
-        planId: state.planId,
-        taskId: state.taskId,
-      },
-      errorCode: null,
-    };
-  } catch {
-    return { locator: null, errorCode: 'SESSION_SCHEMA_INVALID' };
-  }
-}
-
 function unavailablePlan(status, locator = {}, errorCode = null) {
   return {
     status,
@@ -224,60 +125,62 @@ export async function resolveDeclarationPlan(
     );
   }
 
-  let locator;
-  let planFile;
-  if (declaration.planPath) {
-    locator = {
-      locatorSource: 'declaration',
-      planId: declaration.planId,
-      taskId: declaration.taskId,
-    };
-    planFile = containedPath(workspaceRoot, declaration.planPath);
-    if (!planFile || !existsSync(planFile)) {
-      return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
+  const resolvePlanBinding =
+    options.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
+  let workspacePlanBinding;
+  try {
+    workspacePlanBinding = await resolvePlanBinding({
+      repoRoot: workspaceRoot,
+      home: options.home,
+    });
+  } catch (error) {
+    if (
+      !declaration.planPath &&
+      error?.code === 'WORKSPACE_PLAN_BINDING_REQUIRED'
+    ) {
+      return unavailablePlan('untracked');
     }
-    try {
-      const canonicalRoot = realpathSync(workspaceRoot);
-      const canonicalPlan = realpathSync(planFile);
-      const relative = path.relative(canonicalRoot, canonicalPlan);
-      if (
-        relative === '..' ||
-        relative.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(relative)
-      ) {
-        return unavailablePlan('invalid', locator, 'PLAN_PATH_ESCAPE');
-      }
-      planFile = canonicalPlan;
-    } catch {
-      return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
-    }
-  } else {
-    const planFiles = executionPlanFiles(workspaceRoot);
-    const session = readSessionLocator(declaration, options.home ?? homedir());
-    if (session.errorCode) {
-      return unavailablePlan('invalid', {}, session.errorCode);
-    }
-    if (!session.locator) {
-      return legacyPlanMentionsWorkItem(planFiles, declaration.workItemId)
-        ? unavailablePlan('legacy', {}, 'LEGACY_PLAN_UNSUPPORTED')
-        : unavailablePlan('untracked');
-    }
-    locator = {
-      ...session.locator,
-      locatorSource: 'session',
-    };
-    const candidates = planFiles.filter(
-      (file) =>
-        path.basename(file) === 'plan.md' &&
-        planIdFromMarkdown(file) === locator.planId,
+    return unavailablePlan(
+      'invalid',
+      {},
+      error?.code ?? 'WORKSPACE_PLAN_BINDING_INVALID',
     );
-    if (candidates.length === 0) {
-      return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
+  }
+
+  if (!declaration.planPath) {
+    return unavailablePlan(
+      'mismatch',
+      {
+        locatorSource: 'binding',
+        planId: workspacePlanBinding.planId,
+      },
+      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
+    );
+  }
+
+  const locator = {
+    locatorSource: 'declaration',
+    planId: declaration.planId,
+    taskId: declaration.taskId,
+  };
+  let planFile = containedPath(workspaceRoot, declaration.planPath);
+  if (!planFile || !existsSync(planFile)) {
+    return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
+  }
+  try {
+    const canonicalRoot = realpathSync(workspaceRoot);
+    const canonicalPlan = realpathSync(planFile);
+    const relative = path.relative(canonicalRoot, canonicalPlan);
+    if (
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      return unavailablePlan('invalid', locator, 'PLAN_PATH_ESCAPE');
     }
-    if (candidates.length > 1) {
-      return unavailablePlan('mismatch', locator, 'PLAN_ID_AMBIGUOUS');
-    }
-    [planFile] = candidates;
+    planFile = canonicalPlan;
+  } catch {
+    return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
   }
 
   let planPackage;
@@ -304,7 +207,8 @@ export async function resolveDeclarationPlan(
     workspaceId: declaration.workspaceId,
     branch: declaration.branch,
     declarationSourceHead: declaration.sourceHead,
-    planSourceHead: declaration.sourceHead,
+    boundPlanId: locator.planId,
+    boundPlanPath: declaration.planPath,
   };
   const actual = {
     planId: planPackage.manifest.planId,
@@ -312,7 +216,8 @@ export async function resolveDeclarationPlan(
     workspaceId: planPackage.manifest.binding.workspaceId,
     branch: planPackage.manifest.binding.branch,
     declarationSourceHead: actualHead.ok ? actualHead.output : null,
-    planSourceHead: planPackage.manifest.binding.expectedHead,
+    boundPlanId: workspacePlanBinding.planId,
+    boundPlanPath: workspacePlanBinding.planPath,
   };
   if (
     Object.keys(expected).some((field) => expected[field] !== actual[field])

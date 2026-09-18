@@ -1,8 +1,8 @@
 # Development Workflow Control Plane
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -72,10 +72,16 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [Progress-bearing workflow plan](./execution-plans/20260917-progress-bearing-development-loop/plan.md) | Anchor、Goal、profile policy 与环境看板的落地计划 |
+| [Immutable workspace Plan binding](./execution-plans/20260918-immutable-workspace-plan-binding/plan.md) | 多 Plan 同仓库下的 workspace 单一不可换绑 hard cut |
 | [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | `DWF-B` 自举闭环与首个真实 Plan Package pilot |
 
 ## 5. Current Status
 
-DWF-D01..DWF-D16 已接受，Plan Package pilot 正在由唯一 active Mobile Shell
-计划的
-`DWF-B` workstream 自举工具和最终迁移；不会创建第二个 active plan。
+DWF-D01..DWF-D19 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+workspace 只解析机器级不可变绑定指向的一个 Plan；同步进入分支的外来 Plan 不
+参与本 workspace 的发现。Plan Package 只保留 immutable initial HEAD；当前
+source HEAD 由 Git、Development declaration、Session checkpoint 与
+`active_work` 在各自生命周期中持有。Plan Package pilot 正在由唯一 active
+Mobile Shell 计划的
+`DWF-B` workstream 自举工具和最终迁移；该 pilot workspace 不会绑定第二个
+Plan。

@@ -57,7 +57,10 @@ whose owner is already obvious.
 
 1. Identify the explicitly selected repository/worktree. If multiple candidates
    remain plausible, return `WORKTREE_SELECTION_REQUIRED`.
-2. Classify intent:
+2. For tracked work, resolve that workspace's immutable Plan binding. Ignore
+   other active Plans synchronized into the same repository or PR; never
+   replace an existing binding.
+3. Classify intent:
    - `STATUS_OR_HANDOFF`
    - `NON_TRIVIAL_MUTATION`
    - `STANDALONE_SMALL_FIX`
@@ -66,9 +69,9 @@ whose owner is already obvious.
    - `PLAN`
    - `REVIEW`
    - `TRAE_GOAL`
-3. Select exactly one primary owner from the table below.
-4. Announce the route and reason in one short sentence.
-5. Invoke the owner and stop applying God View logic. The owner may dispatch
+4. Select exactly one primary owner from the table below.
+5. Announce the route and reason in one short sentence.
+6. Invoke the owner and stop applying God View logic. The owner may dispatch
    narrower specialists under its own contract.
 
 ## Route Table
@@ -84,8 +87,8 @@ whose owner is already obvious.
 | Accepted plan model needs repository persistence | `pt-plan-and-document` |
 | TRAE Goal authoring/review/next slice | `pt-trae-goal-orchestrator` |
 | General PR review | `pt-github-review` |
-| Acceptance infrastructure | `pt-acceptance-infra-engineering` |
-| Business Acceptance injection or proof | `pt-acceptance-engineering` |
+| Need to optimize/audit Acceptance Infra | `pt-acceptance-infra-engineering` |
+| Need business Domain Acceptance injection/proof | `pt-acceptance-engineering` |
 | Bug closure with regression protection | `pt-defect-closure` |
 
 When a read-only discussion becomes mutating, reroute to `pt-dev-workflow`

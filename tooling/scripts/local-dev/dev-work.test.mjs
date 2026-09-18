@@ -30,6 +30,7 @@ import {
   statusCurrent,
 } from './dev-work.mjs';
 import { parseRuntimeClaims } from './dev-work-schema.mjs';
+import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 
@@ -127,9 +128,12 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
       currentTaskId: 'DWF-T1',
       workspaceId: 'unused',
       branch: 'merge-desktop-prototype',
-      expectedHead: '7'.repeat(40),
     };
     planStatus.workspaceId = startOrUpdateDeclaration(options(scope)).workspaceId;
+    const planBinding = {
+      planId: planStatus.planId,
+      planPath: 'docs/architecture/example/execution-plans/test/plan.md',
+    };
     const legacy = statusCurrent({
       home: scope.home,
       workspaceRoot: scope.workspaceA,
@@ -146,6 +150,7 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
         planPath: 'docs/architecture/example/execution-plans/test/plan.md',
         taskId: 'DWF-T1',
         planStatus,
+        planBinding,
       }),
     );
     assert.deepEqual(
@@ -161,6 +166,26 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
         taskId: 'DWF-T1',
       },
     );
+    const delivery = startOrUpdateDeclaration(
+      options(scope, {
+        workItemId: 'tracked-task',
+        sessionId: 'tracked-session',
+        sourceClaims: 'exclusive-write:apps/dev',
+        runtimeClaims: '',
+        planPath: tracked.planPath,
+        planId: tracked.planId,
+        taskId: tracked.taskId,
+        planStatus: {
+          ...planStatus,
+          status: 'completed',
+          currentTaskId: null,
+          taskStatuses: { 'DWF-T1': 'done' },
+        },
+        planBinding,
+      }),
+      { requireExisting: true },
+    );
+    assert.equal(delivery.taskId, 'DWF-T1');
 
     expectCode('PLAN_LOCATOR_MISMATCH', () =>
       startOrUpdateDeclaration(
@@ -172,8 +197,46 @@ test('publishes and validates an explicit Plan locator without rewriting legacy 
           planPath: 'docs/architecture/example/execution-plans/test/plan.md',
           taskId: 'DWF-T2',
           planStatus,
+          planBinding,
         }),
       ),
+    );
+
+    expectCode('PLAN_LOCATOR_MISMATCH', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workItemId: 'foreign-plan',
+          sessionId: 'foreign-plan-session',
+          sourceClaims: 'exclusive-write:packages',
+          runtimeClaims: '',
+          planPath: 'docs/architecture/example/execution-plans/foreign/plan.md',
+          planId: 'FOREIGN-PLAN',
+          taskId: 'DWF-T1',
+          planStatus: {
+            ...planStatus,
+            planId: 'FOREIGN-PLAN',
+          },
+          planBinding,
+        }),
+      ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('a Plan-bound workspace cannot publish untracked work', () => {
+  const scope = fixture();
+  try {
+    const bindingFile = workspacePlanBindingPath({
+      home: scope.home,
+      repoRoot: scope.workspaceA,
+    });
+    mkdirSync(path.dirname(bindingFile), { recursive: true });
+    writeFileSync(bindingFile, '{}\n');
+
+    expectCode('WORKSPACE_PLAN_DECLARATION_REQUIRED', () =>
+      startOrUpdateDeclaration(options(scope)),
     );
   } finally {
     scope.close();

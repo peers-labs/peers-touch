@@ -1,8 +1,8 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -19,7 +19,7 @@
 | `pt-trae-goal-orchestrator` | Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
-| `execution-plan.py` | Finds active single-file plans | Finds package `plan.md` and resolves current Task |
+| `execution-plan.py` | Resolves local or explicit Plan input | Loads the immutable workspace binding locally; CI requires an explicit package path |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
@@ -70,8 +70,11 @@ make dev-release WORK_ITEM=<id>
 
 Tracked runs add `PLAN=<repository-relative-package-plan.md>` and
 `TASK=<current-task-id>` to `dev-start` and `dev-update`. Those commands
-validate and publish the Plan locator. Heartbeat runs periodically before
-expiry and preserves the locator.
+validate the Plan locator against the workspace's immutable `plan-bind` record
+before publishing it. A bound workspace cannot publish locator-less work.
+Heartbeat runs periodically before expiry and preserves the locator. During
+cleanup and delivery, a blocked/completed Plan retains its exact blocked/done
+Task locator until the declaration is released.
 
 After commit, merge, or rebase, Dev Workflow runs both `make env-update` and
 `make dev-update` so registration and declaration source identities advance
@@ -87,6 +90,8 @@ read-only locator bridge. The bridge never writes inferred fields back.
 Plan Package:
 
 ```bash
+make plan-bind PLAN=<package-plan.md>
+make plan-binding
 make plan-validate PLAN=<package-plan.md>
 make plan-current PLAN=<package-plan.md>
 make plan-next PLAN=<package-plan.md>
@@ -207,7 +212,10 @@ Rejects:
 ## 5. Acceptance Integration
 
 `execution-plan.py` and `acceptance-plan.py` consume package manifests through a
-structured parser. The current closure is the current Task's `closureId`.
+structured parser. Local execution loads only the immutable workspace
+`planId + planPath`; synchronized foreign Plans are ignored. CI must pass
+`--plan` or `PT_EXECUTION_PLAN`. The current closure is the current Task's
+`closureId`.
 
 The dedicated `development-workflow-control-plane` Gate runs package, Session,
 legacy-declaration, package-aware execution-plan and Skill contract tests. It is
@@ -327,7 +335,8 @@ Requirements:
 - `tooling/acceptance/plans/mobile-shell.json` points to package `plan.md`;
 - all docs references point to package `plan.md`;
 - tree-wide old-path search returns only archive history and migration evidence;
-- plan discovery returns exactly one active plan;
+- the migrated workspace binding resolves the intended package without scanning
+  other active Plans;
 - Mobile source changes remain untouched.
 
 Plan migration uses a non-blocking `PREPARED` journal for DWF-B4 review, then

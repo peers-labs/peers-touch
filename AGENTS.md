@@ -141,9 +141,10 @@ Example:
     instructions, never the execution worktree. Before dispatch and before the
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
-    branch, `workspaceId`, initial HEAD, and expected HEAD.
-    The verified binding remains immutable unless the user explicitly
-    authorizes one of the refresh operations defined in §13.5.1.
+    branch, `workspaceId`, immutable initial HEAD, and current expected HEAD.
+    Expected HEAD is advancing source identity outside the Plan Package; only
+    an explicitly authorized refresh operation defined in §13.5.1 may change
+    it.
 12. **Development declaration first** — Read-only intake may inspect any
     permitted source, but every non-trivial task MUST publish and confirm its
     source/runtime intent through `make dev-start` before the first repository
@@ -547,8 +548,9 @@ edits, status claims, and completion claims.
 5. From the same root, immediately verify all captured values:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
    Every materialized value must be one POSIX shell-safe argument.
-   Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
-   and expected HEAD. On first registration, expected HEAD equals initial HEAD.
+   Bind the verified canonical root, branch, `workspaceId`, immutable initial
+   HEAD, and current expected HEAD. On first registration, expected HEAD equals
+   initial HEAD; it is not stored in the Plan Package.
    A missing verifier or unresolved field is
    `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
    mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
@@ -558,14 +560,27 @@ edits, status claims, and completion claims.
    verifier against it before writing.
 7. Re-run the verifier after resume or context compaction and before every
    status, readiness, handoff, or completion report.
-8. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
-   after a commit, rebase, or merge that the user explicitly authorized.
+8. The initial HEAD remains the Plan audit baseline. The `active_work` and
+   declaration expected/current HEAD may refresh only after a commit, rebase,
+   or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
 9. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
+10. A repository or PR may contain multiple active Plan Packages. Each
+    workspace resolves only
+    `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
+    branch scans, directory order, active status and synchronized foreign Plans
+    never select execution ownership.
+11. `make plan-bind PLAN=<path>` creates the workspace's `planId + planPath`
+    binding once. The same tuple is idempotent. A different tuple returns
+    `WORKSPACE_PLAN_REBIND_DENIED`; there is no unbind/rebind command. A new
+    Plan requires a new worktree.
+12. Plan manifest, tracked declaration, `active_work`, Session and Context
+    Anchor must match the immutable binding. A bound workspace cannot publish
+    untracked work. CI has no machine binding and must receive an explicit Plan.
 
 Legacy `active_work` rows created before the binding fields existed cannot
 resume directly. They may be migrated exactly once only after the user
@@ -644,7 +659,10 @@ application service that coordinates writes through the owning commands.
 **Lifecycle rules:**
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a placeholder row or fabricate a plan path.
-- **Plan created** → append a row with the repository-relative plan path and `stage: PLAN`.
+- **Plan created** → validate it, create the workspace's immutable Plan binding,
+  then append a row with the repository-relative plan path and `stage: PLAN`.
+- **Plan already bound** → the same tuple is idempotent; a different Plan must
+  use another worktree and cannot replace the row in place.
 - **Worktree binding created** → record the verified `workspace_id`,
   `initial_head`, and `expected_head`; initially both HEAD fields are
   identical. Never derive identity from a skill path or copy it from another

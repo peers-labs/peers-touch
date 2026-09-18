@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from tooling.acceptance.core.execution_plan import (
-    ACTIVE_PLAN_REQUIRED,
-    MULTIPLE_ACTIVE_PLANS,
     PLAN_BLOCKED,
+    PLAN_BINDING_MISMATCH,
+    PLAN_BINDING_REQUIRED,
     PLAN_COMPLETE,
     PLAN_INVALID,
     ExecutionPlanError,
+    closure_status_is_complete,
     discover_active_plan,
     load_formal_plan,
     workspace_id,
@@ -36,7 +39,7 @@ def package_manifest_text(
 
 ```json
 {{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "peers-touch-plan-package"
 }}
 ```
@@ -46,16 +49,17 @@ def package_manifest_text(
 def package_status(
     workspace: str,
     *,
+    plan_id: str = "EXAMPLE-PLAN",
     status: str = "active",
     current: bool = True,
 ) -> dict[str, object]:
     return {
         "ok": True,
+        "planId": plan_id,
         "status": status,
         "branch": "feat/example",
         "workspaceId": workspace,
         "initialHead": "a" * 40,
-        "expectedHead": "a" * 40,
         "currentTaskId": "T1" if current else None,
         "currentTaskPath": "tasks/T1.md" if current else None,
         "currentClosure": "C1" if current else None,
@@ -106,6 +110,32 @@ def plan_text(
 
 
 class ExecutionPlanTest(unittest.TestCase):
+    def test_completion_accepts_package_and_legacy_statuses(self) -> None:
+        self.assertTrue(closure_status_is_complete("done"))
+        self.assertTrue(closure_status_is_complete("completed"))
+        self.assertTrue(closure_status_is_complete("completed with evidence"))
+        self.assertFalse(closure_status_is_complete("in_progress"))
+
+    def test_ci_requires_explicit_plan_input(self) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        environment = dict(os.environ)
+        environment.pop("PT_EXECUTION_PLAN", None)
+        completed = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/execution-plan.py",
+                "--ci",
+            ],
+            cwd=repo_root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("EXECUTION_PLAN_INPUT_REQUIRED", completed.stderr)
+
     def test_package_planctl_projection_end_to_end(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
         temporary_root = repo_root / "tmp"
@@ -119,7 +149,7 @@ class ExecutionPlanTest(unittest.TestCase):
             tasks = package / "tasks"
             tasks.mkdir()
             manifest = {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "kind": "peers-touch-plan-package",
                 "planId": "DWF-PYTHON-INTEGRATION",
                 "status": "active",
@@ -127,7 +157,6 @@ class ExecutionPlanTest(unittest.TestCase):
                     "branch": "feat/example",
                     "workspaceId": workspace,
                     "initialHead": "a" * 40,
-                    "expectedHead": "b" * 40,
                 },
                 "workClass": "infrastructure",
                 "architecture": {
@@ -249,7 +278,6 @@ class ExecutionPlanTest(unittest.TestCase):
                         "> **Branch**: feat/example",
                         f"> **Workspace ID**: {workspace}",
                         f"> **Initial HEAD**: {'a' * 40}",
-                        f"> **Expected HEAD**: {'b' * 40}",
                         "",
                         "## Plan Package",
                         "",
@@ -388,32 +416,58 @@ class ExecutionPlanTest(unittest.TestCase):
             plan.gate_ids("closure")
         self.assertEqual(raised.exception.code, PLAN_COMPLETE)
 
-    def test_discovers_exactly_one_plan_for_branch_and_worktree(self) -> None:
+    def test_discovers_only_the_immutable_workspace_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            plan_dir = root / "docs" / "architecture" / "example" / "execution-plans"
+            plan_dir = (
+                root / "docs" / "architecture" / "example" / "execution-plans"
+            )
             plan_dir.mkdir(parents=True)
             expected_workspace = workspace_id(root)
-            active = plan_dir / "active.md"
-            active.write_text(plan_text(expected_workspace), encoding="utf-8")
-            (plan_dir / "completed.md").write_text(
-                plan_text(expected_workspace, status="completed"),
+            bound = plan_dir / "bound" / "plan.md"
+            foreign = plan_dir / "foreign" / "plan.md"
+            bound.parent.mkdir()
+            foreign.parent.mkdir()
+            bound.write_text(
+                package_manifest_text(expected_workspace),
+                encoding="utf-8",
+            )
+            foreign.write_text(
+                package_manifest_text("2" * 16),
                 encoding="utf-8",
             )
 
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._git",
-                return_value="feat/example",
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                    return_value={
+                        "planId": "BOUND-PLAN",
+                        "planPath": bound.relative_to(root).as_posix(),
+                    },
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._git",
+                    return_value="feat/example",
+                ),
+                mock.patch(
+                    "tooling.acceptance.core.execution_plan._package_status",
+                    return_value=package_status(
+                        expected_workspace,
+                        plan_id="BOUND-PLAN",
+                    ),
+                ) as package_projection,
             ):
                 result = discover_active_plan(root)
 
-        self.assertEqual(result.path, active.resolve())
+        self.assertEqual(result.path, bound.resolve())
+        self.assertEqual(result.plan_id, "BOUND-PLAN")
+        package_projection.assert_called_once_with(bound.resolve())
 
-    def test_discovers_active_package_manifest(self) -> None:
+    def test_rejects_a_bound_plan_identity_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             expected_workspace = workspace_id(root)
-            package = (
+            package_directory = (
                 root
                 / "docs"
                 / "architecture"
@@ -421,8 +475,8 @@ class ExecutionPlanTest(unittest.TestCase):
                 / "execution-plans"
                 / "package"
             )
-            package.mkdir(parents=True)
-            manifest = package / "plan.md"
+            package_directory.mkdir(parents=True)
+            manifest = package_directory / "plan.md"
             manifest.write_text(
                 package_manifest_text(expected_workspace),
                 encoding="utf-8",
@@ -430,46 +484,39 @@ class ExecutionPlanTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "tooling.acceptance.core.execution_plan._git",
-                    return_value="feat/example",
+                    "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                    return_value={
+                        "planId": "OTHER-PLAN",
+                        "planPath": manifest.relative_to(root).as_posix(),
+                    },
                 ),
                 mock.patch(
                     "tooling.acceptance.core.execution_plan._package_status",
-                    return_value=package_status(expected_workspace),
+                    return_value=package_status(
+                        expected_workspace,
+                        plan_id="BOUND-PLAN",
+                    ),
                 ),
             ):
-                result = discover_active_plan(root)
+                with self.assertRaises(ExecutionPlanError) as mismatch:
+                    discover_active_plan(root, branch="feat/example")
 
-        self.assertEqual(result.path, manifest.resolve())
-        self.assertEqual(result.plan_format, "package")
+        self.assertEqual(mismatch.exception.code, PLAN_BINDING_MISMATCH)
 
-    def test_rejects_zero_or_multiple_active_plans(self) -> None:
+    def test_propagates_missing_workspace_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "docs").mkdir()
             with mock.patch(
-                "tooling.acceptance.core.execution_plan._git",
-                return_value="feat/example",
+                "tooling.acceptance.core.execution_plan._workspace_plan_binding",
+                side_effect=ExecutionPlanError(
+                    PLAN_BINDING_REQUIRED,
+                    "workspace has no immutable Plan binding",
+                ),
             ):
                 with self.assertRaises(ExecutionPlanError) as missing:
                     discover_active_plan(root)
-            self.assertEqual(missing.exception.code, ACTIVE_PLAN_REQUIRED)
 
-            plan_dir = root / "docs" / "example" / "execution-plans"
-            plan_dir.mkdir(parents=True)
-            expected_workspace = workspace_id(root)
-            for name in ("one.md", "two.md"):
-                (plan_dir / name).write_text(
-                    plan_text(expected_workspace),
-                    encoding="utf-8",
-                )
-            with mock.patch(
-                "tooling.acceptance.core.execution_plan._git",
-                return_value="feat/example",
-            ):
-                with self.assertRaises(ExecutionPlanError) as multiple:
-                    discover_active_plan(root)
-            self.assertEqual(multiple.exception.code, MULTIPLE_ACTIVE_PLANS)
+        self.assertEqual(missing.exception.code, PLAN_BINDING_REQUIRED)
 
 
 if __name__ == "__main__":

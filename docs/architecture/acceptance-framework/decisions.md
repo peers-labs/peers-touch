@@ -1,8 +1,8 @@
 # Acceptance Framework — 设计决策
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-06-03 | **Updated**: 2026-09-13
+> **Version**: v1.3
+> **Created**: 2026-06-03 | **Updated**: 2026-09-18
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -1611,10 +1611,12 @@ closure IDs to immediate Gate IDs and declares separate completion and explicit
 full/release sets. Registry planning remains a conservative impact projection
 used to detect undeclared scope.
 
-Plain Acceptance execution resolves the one active formal plan for the current
-worktree and runs only its current closure. Completion and full execution use
-explicit commands; full execution requires explicit release/full-test user
-intent.
+Plain Acceptance execution resolves the immutable formal Plan binding for the
+current workspace and runs only its current closure. Other active Plans
+synchronized into the repository are ignored. CI must receive an explicit Plan
+input because it has no machine workspace binding. Completion and full
+execution use explicit commands; full execution requires explicit
+release/full-test user intent.
 
 ### Consequences
 

@@ -14,8 +14,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    PLAN_INPUT_REQUIRED,
     PLAN_INVALID,
     ExecutionPlanError,
+    closure_status_is_complete,
     discover_active_plan,
     load_formal_plan,
 )
@@ -30,21 +32,30 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        if args.plan:
-            plan = load_formal_plan(Path(args.plan))
-        else:
-            branch = args.branch or (
-                os.environ.get("GITHUB_HEAD_REF") if args.ci else None
+        explicit_plan = args.plan or os.environ.get("PT_EXECUTION_PLAN")
+        if args.ci and not explicit_plan:
+            raise ExecutionPlanError(
+                PLAN_INPUT_REQUIRED,
+                "CI must provide --plan or PT_EXECUTION_PLAN; branch discovery is forbidden",
             )
+        if explicit_plan:
+            plan = load_formal_plan(Path(explicit_plan))
+        else:
             plan = discover_active_plan(
                 REPO_ROOT,
-                branch=branch,
-                validate_workspace=not args.ci,
+                branch=args.branch,
             )
+        try:
+            relative_plan = plan.path.relative_to(REPO_ROOT).as_posix()
+        except ValueError as error:
+            raise ExecutionPlanError(
+                PLAN_INVALID,
+                "execution Plan must resolve inside the repository",
+            ) from error
         incomplete = {
             closure: status
             for closure, status in plan.closure_statuses.items()
-            if not status.startswith("completed")
+            if not closure_status_is_complete(status)
         }
         if args.require_complete and incomplete:
             raise ExecutionPlanError(
@@ -69,7 +80,8 @@ def main() -> int:
         json.dumps(
             {
                 "ok": True,
-                "plan": plan.path.relative_to(REPO_ROOT).as_posix(),
+                "plan": relative_plan,
+                "planId": plan.plan_id,
                 "planFormat": plan.plan_format,
                 "branch": plan.branch,
                 "workspaceId": plan.workspace_id,

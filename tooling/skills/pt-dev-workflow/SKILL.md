@@ -76,12 +76,17 @@ Before mutation:
 
 1. Bind one explicitly selected worktree. Never infer it from a Skill path,
    branch name, plan path, or nearby repository.
-2. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
-   and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
-   Unrelated sibling worktree inventory is not execution identity.
-3. Resolve user intent, authorization envelope, existing accepted sources, and
+2. Capture and verify canonical root, branch, `workspaceId`, immutable initial
+   HEAD, and current expected HEAD with
+   `tooling/scripts/verify-worktree-binding.py`. Expected HEAD is advancing
+   source identity outside the Plan Package. Unrelated sibling worktree
+   inventory is not execution identity.
+3. Resolve the workspace's immutable Plan binding when present. Repository or
+   PR contents may contain many active Plans; only the bound `planId + planPath`
+   belongs to this workspace. Never scan by branch or rebind in place.
+4. Resolve user intent, authorization envelope, existing accepted sources, and
    whether the work is tracked.
-4. Preserve unrelated dirty files. Never switch branches or worktrees
+5. Preserve unrelated dirty files. Never switch branches or worktrees
    implicitly.
 
 Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
@@ -105,8 +110,11 @@ Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
-  Plan ID, binding, expected HEAD, and single current Task. An untracked run
-  publishes no inferred Plan locator.
+  Plan ID, immutable workspace Plan binding, declaration `sourceHead` against
+  Git, and the active current Task. A blocked/completed Plan may retain only
+  its exact blocked/done Task locator through cleanup and delivery. An unbound
+  workspace may publish untracked pre-Plan work; a bound workspace cannot
+  publish a locator-less declaration.
 - Run `make dev-update` before expanding scope/resources and after Task handoff.
 - Before a long action crosses half of the current heartbeat-to-expiry window,
   run `make dev-heartbeat`; heartbeat extends liveness but cannot change source,
@@ -264,9 +272,10 @@ authorizations.
 
 ## Resume
 
-On resume, verify the persisted binding, run `make dev-check`, validate the
-Plan Package, reconcile current Task/Session/`active_work`, then resume the
-earliest legal action. Do not pause merely to print the Anchor.
+On resume, verify the persisted worktree and immutable Plan bindings, run
+`make dev-check`, validate the bound Plan Package, reconcile current
+Task/Session/`active_work`, then resume the earliest legal action. Synchronized
+foreign Plans are ignored. Do not pause merely to print the Anchor.
 
 ## Verification
 

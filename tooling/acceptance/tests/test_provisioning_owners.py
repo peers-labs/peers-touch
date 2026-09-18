@@ -930,16 +930,18 @@ class ActorFixtureOwnerTests(unittest.TestCase):
 
 
 class ProfileActivationContractTests(unittest.TestCase):
-    def test_profile_activation_checks_declared_identity(self) -> None:
+    def test_profile_activation_uses_machine_binding_owner(self) -> None:
         source = (
             Path(__file__).resolve().parents[3]
             / "tooling"
-            / "scripts"
-            / "local-dev"
-            / "profile.sh"
+            / "make"
+            / "local-dev.mk"
         ).read_text(encoding="utf-8")
-        self.assertIn("Profile identity mismatch", source)
-        self.assertIn('PT_DEV_PROFILE=', source)
+        self.assertIn("profile:", source)
+        self.assertIn(
+            '@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"',
+            source,
+        )
 
 
 if __name__ == "__main__":

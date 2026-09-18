@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -164,6 +164,19 @@ Rules:
 - `station.connect` does not imply deploy or reset.
 - `station.reset` requires explicit run-scoped authorization in addition to the
   durable allowed capability.
+
+### 4.1 Immutable Workspace Plan Binding
+
+Development Workflow owns a separate create-once record:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+```
+
+It contains the canonical root, `workspaceId`, `planId`, repository-relative
+`planPath`, and binding audit fields. It is not part of `WorkspaceRecord`:
+Profile, slot, capabilities, branch and HEAD may change under their existing
+guards, while Plan ownership cannot be rebound.
 
 Activity is derived and not manually asserted:
 
@@ -468,6 +481,10 @@ Registry mutation must:
 7. Flush the containing directory where supported.
 
 Unknown schema versions or unknown mutation variants fail closed.
+
+Plan binding creation uses a complete owner-only temporary file and atomic
+no-replace publication. An existing different tuple returns
+`WORKSPACE_PLAN_REBIND_DENIED`; no mutation or deletion follows.
 
 ## 11. Acceptance Evidence Root
 

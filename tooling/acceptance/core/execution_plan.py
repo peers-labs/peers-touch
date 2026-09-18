@@ -1,4 +1,4 @@
-"""Resolve the one active formal execution plan for a Git worktree."""
+"""Resolve the immutable formal Plan binding for a Git worktree."""
 
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 
-ACTIVE_PLAN_REQUIRED = "EXECUTION_PLAN_REQUIRED"
-MULTIPLE_ACTIVE_PLANS = "MULTIPLE_ACTIVE_EXECUTION_PLANS"
+PLAN_INPUT_REQUIRED = "EXECUTION_PLAN_INPUT_REQUIRED"
+PLAN_BINDING_REQUIRED = "WORKSPACE_PLAN_BINDING_REQUIRED"
+PLAN_BINDING_MISMATCH = "WORKSPACE_PLAN_BINDING_MISMATCH"
 PLAN_INVALID = "EXECUTION_PLAN_INVALID"
 PLAN_COMPLETE = "EXECUTION_PLAN_COMPLETE"
 PLAN_BLOCKED = "EXECUTION_PLAN_BLOCKED"
@@ -35,6 +36,7 @@ class ExecutionPlanError(RuntimeError):
 @dataclass(frozen=True)
 class FormalExecutionPlan:
     path: Path
+    plan_id: str | None
     plan_format: str
     status: str
     branch: str
@@ -68,6 +70,10 @@ class FormalExecutionPlan:
         for values in self.acceptance["closures"].values():
             gates.update(values)
         return gates
+
+
+def closure_status_is_complete(status: str) -> bool:
+    return status == "done" or status.startswith("completed")
 
 
 def _git(root: Path, *args: str) -> str:
@@ -269,6 +275,7 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
         if value is not None and (not isinstance(value, str) or not value):
             raise ExecutionPlanError(PLAN_INVALID, f"{field} is invalid: {path}")
     required_text = {
+        "planId": payload.get("planId"),
         "status": payload.get("status"),
         "branch": payload.get("branch"),
         "workspaceId": payload.get("workspaceId"),
@@ -282,6 +289,7 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
         )
     return FormalExecutionPlan(
         path=path,
+        plan_id=required_text["planId"],
         plan_format="package",
         status=required_text["status"],
         branch=required_text["branch"],
@@ -326,6 +334,7 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
     )
     return FormalExecutionPlan(
         path=resolved,
+        plan_id=None,
         plan_format="legacy",
         status=metadata["Status"],
         branch=metadata["Branch"],
@@ -339,6 +348,65 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
     )
 
 
+def _workspace_plan_binding(root: Path) -> dict[str, str]:
+    script = root / "tooling" / "scripts" / "plan" / "workspace-plan-binding.mjs"
+    if not script.is_file():
+        raise ExecutionPlanError(
+            PLAN_BINDING_REQUIRED,
+            f"workspace Plan binding resolver is missing: {script}",
+        )
+    completed = subprocess.run(
+        [
+            "node",
+            str(script),
+            "resolve",
+            "--repo-root",
+            str(root),
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        payload: dict[str, Any] = {}
+        try:
+            payload = json.loads(completed.stderr)
+        except json.JSONDecodeError:
+            pass
+        error = payload.get("error", payload)
+        raise ExecutionPlanError(
+            error.get("code", PLAN_BINDING_REQUIRED),
+            error.get("message")
+            or completed.stderr.strip()
+            or "workspace Plan binding is unavailable",
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            f"workspace Plan binding resolver returned invalid JSON: {error}",
+        ) from error
+    binding = payload.get("binding")
+    if (
+        payload.get("ok") is not True
+        or not isinstance(binding, dict)
+        or not isinstance(binding.get("planId"), str)
+        or not binding["planId"]
+        or not isinstance(binding.get("planPath"), str)
+        or not binding["planPath"]
+    ):
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            "workspace Plan binding resolver returned an invalid result",
+        )
+    return {
+        "planId": binding["planId"],
+        "planPath": binding["planPath"],
+    }
+
+
 def discover_active_plan(
     root: Path,
     *,
@@ -346,6 +414,21 @@ def discover_active_plan(
     validate_workspace: bool = True,
 ) -> FormalExecutionPlan:
     canonical = root.resolve(strict=True)
+    binding = _workspace_plan_binding(canonical)
+    try:
+        path = (canonical / binding["planPath"]).resolve(strict=True)
+        path.relative_to(canonical)
+    except (FileNotFoundError, ValueError) as error:
+        raise ExecutionPlanError(
+            PLAN_BINDING_MISMATCH,
+            "bound Plan path is missing or outside the current worktree",
+        ) from error
+    plan = load_formal_plan(path)
+    if plan.plan_format != "package" or plan.plan_id != binding["planId"]:
+        raise ExecutionPlanError(
+            PLAN_BINDING_MISMATCH,
+            "bound Plan identity does not match the Plan Package",
+        )
     selected_branch = branch or _git(
         canonical,
         "symbolic-ref",
@@ -353,45 +436,17 @@ def discover_active_plan(
         "--short",
         "HEAD",
     )
-    expected_workspace = workspace_id(canonical)
-    candidates: list[FormalExecutionPlan] = []
-    discovered_paths = {
-        path.resolve()
-        for pattern in (
-            "**/execution-plans/*.md",
-            "**/execution-plans/*/plan.md",
-        )
-        for path in (canonical / "docs").glob(pattern)
-    }
-    for path in sorted(discovered_paths):
-        text = path.read_text(encoding="utf-8")
-        metadata = _metadata(text)
-        status = metadata.get("Status", "").lower()
-        if not (status.startswith("active") or status == "blocked"):
-            continue
-        if metadata.get("Branch") != selected_branch:
-            continue
-        if "Workspace ID" not in metadata:
-            continue
-        plan = load_formal_plan(path)
-        if validate_workspace and plan.workspace_id != expected_workspace:
-            raise ExecutionPlanError(
-                PLAN_INVALID,
-                f"active plan workspace does not match current worktree: {path}",
-            )
-        candidates.append(plan)
-    if not candidates:
+    if plan.branch != selected_branch:
         raise ExecutionPlanError(
-            ACTIVE_PLAN_REQUIRED,
-            f"no active formal execution plan matches branch {selected_branch!r}",
+            PLAN_BINDING_MISMATCH,
+            "bound Plan branch does not match the current worktree",
         )
-    if len(candidates) > 1:
+    if validate_workspace and plan.workspace_id != workspace_id(canonical):
         raise ExecutionPlanError(
-            MULTIPLE_ACTIVE_PLANS,
-            "multiple active formal execution plans match the current worktree: "
-            + ", ".join(str(plan.path) for plan in candidates),
+            PLAN_BINDING_MISMATCH,
+            "bound Plan workspace does not match the current worktree",
         )
-    return candidates[0]
+    return plan
 
 
 def changed_paths_for_plan(root: Path, plan: FormalExecutionPlan) -> list[str]:

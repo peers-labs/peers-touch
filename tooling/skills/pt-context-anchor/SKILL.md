@@ -56,7 +56,8 @@ the owner, then invokes this Skill again.
 | Projected field | Read owner |
 |---|---|
 | Worktree, branch, `workspaceId` | verified Git binding |
-| Initial/expected HEAD | persisted binding |
+| Initial HEAD | Plan Package immutable baseline |
+| Expected HEAD | `active_work` resume projection verified against Git |
 | Main task, scope, architecture/product decisions | accepted sources |
 | Stage and tracked locator | `active_work` |
 | Task lifecycle/current Task/dependencies | Plan Package manifest |
@@ -96,8 +97,10 @@ The Anchor reports a mismatch; it never rewrites the row.
 
 ## Read Procedure
 
-1. Select exactly one matching non-complete `active_work` row.
-2. Verify the persisted worktree binding. Do not recapture a new baseline.
+1. Resolve the workspace's immutable machine Plan binding, then select the one
+   matching non-complete `active_work` row. Ignore synchronized foreign rows.
+2. Verify the persisted worktree and Plan bindings. Do not recapture a new
+   baseline or rebind the workspace.
 3. Run `planctl validate`, `planctl current`, and `planctl status`.
 4. Read compact `plan.md`, only `current_task_path`, and matching
    `session.json`.

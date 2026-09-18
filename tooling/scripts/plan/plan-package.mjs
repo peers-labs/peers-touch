@@ -369,12 +369,18 @@ function assertMetadata(manifest, metadata, sourcePath) {
       { path: sourcePath, key: 'Worktree-set Digest' },
     );
   }
+  if (metadata.has('expectedhead')) {
+    fail(
+      'PLAN_METADATA_MISMATCH',
+      'Obsolete Expected HEAD metadata must be removed',
+      { path: sourcePath, key: 'Expected HEAD' },
+    );
+  }
   const expected = {
     status: manifest.status,
     branch: manifest.binding.branch,
     workspaceid: manifest.binding.workspaceId,
     initialhead: manifest.binding.initialHead,
-    expectedhead: manifest.binding.expectedHead,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (!metadata.has(key) || metadata.get(key) !== value) {
@@ -543,22 +549,19 @@ function validateManifestSchema(manifest) {
     ],
     'Plan Package',
   );
-  if (manifest.schemaVersion !== 1 || manifest.kind !== 'peers-touch-plan-package') {
+  if (manifest.schemaVersion !== 2 || manifest.kind !== 'peers-touch-plan-package') {
     fail('PLAN_SCHEMA_INVALID', 'Plan Package schemaVersion or kind is unsupported');
   }
   assertString(manifest.planId, 'Plan Package.planId', { pattern: ID_PATTERN });
   assertEnum(manifest.status, PLAN_STATUSES, 'Plan Package.status');
   assertClosedObject(
     manifest.binding,
-    ['branch', 'workspaceId', 'initialHead', 'expectedHead'],
+    ['branch', 'workspaceId', 'initialHead'],
     'Plan Package.binding',
   );
   assertString(manifest.binding.branch, 'Plan Package.binding.branch');
   assertString(manifest.binding.workspaceId, 'Plan Package.binding.workspaceId');
   assertString(manifest.binding.initialHead, 'Plan Package.binding.initialHead', {
-    pattern: SHA1_PATTERN,
-  });
-  assertString(manifest.binding.expectedHead, 'Plan Package.binding.expectedHead', {
     pattern: SHA1_PATTERN,
   });
   assertEnum(manifest.workClass, WORK_CLASSES, 'Plan Package.workClass');
@@ -1592,6 +1595,9 @@ export function summarizePlanProgress(planPackage) {
 export function summarizePlanPackage(planPackage) {
   const currentManifestTask =
     planPackage.manifest.tasks.find((task) => task.status === 'in_progress') ?? null;
+  const taskStatuses = Object.fromEntries(
+    planPackage.manifest.tasks.map((task) => [task.id, task.status]),
+  );
   const closureStatuses = Object.fromEntries(
     planPackage.manifest.tasks.map((task) => [
       planPackage.taskSlices.get(task.id).closureId,
@@ -1606,11 +1612,11 @@ export function summarizePlanPackage(planPackage) {
     branch: planPackage.manifest.binding.branch,
     workspaceId: planPackage.manifest.binding.workspaceId,
     initialHead: planPackage.manifest.binding.initialHead,
-    expectedHead: planPackage.manifest.binding.expectedHead,
     progress: summarizePlanProgress(planPackage),
     currentTaskId: currentManifestTask?.id ?? null,
     currentTaskPath: currentManifestTask?.path ?? null,
     currentClosure: planPackage.currentTask?.closureId ?? null,
+    taskStatuses,
     acceptance: planPackage.acceptance,
     closureStatuses,
     closures: closureStatuses,
@@ -1624,12 +1630,18 @@ export function renderPlanDocument(markdown, manifest) {
   validateManifestSchema(manifest);
   validateDagAndLifecycle(manifest);
   const { block } = parseStructuredBlock(markdown, 'Plan Package', '<memory>');
+  if (parseMetadata(markdown, '<memory>').has('expectedhead')) {
+    fail(
+      'PLAN_METADATA_MISMATCH',
+      'Obsolete Expected HEAD metadata must be removed before rendering',
+      { path: '<memory>', key: 'Expected HEAD' },
+    );
+  }
   const replacements = new Map([
     ['status', manifest.status],
     ['branch', manifest.binding.branch],
     ['workspaceid', manifest.binding.workspaceId],
     ['initialhead', manifest.binding.initialHead],
-    ['expectedhead', manifest.binding.expectedHead],
   ]);
 
   function renderWith(serializedManifest) {
@@ -1699,10 +1711,10 @@ const ATOMIC_RENAME_SCRIPT = [
   '    if result != 0:',
   '        error_number = ctypes.get_errno()',
   '        raise OSError(error_number, os.strerror(error_number))',
-  '    print(json.dumps({"ok": True}))',
+  '    sys.stdout.write(json.dumps({"ok": True}) + "\\n")',
   'except (AttributeError, OSError) as error:',
   '    error_number = getattr(error, "errno", None) or errno.ENOTSUP',
-  '    print(json.dumps({"ok": False, "errno": error_number, "code": errno.errorcode.get(error_number, "UNKNOWN"), "message": str(error)}))',
+  '    sys.stdout.write(json.dumps({"ok": False, "errno": error_number, "code": errno.errorcode.get(error_number, "UNKNOWN"), "message": str(error)}) + "\\n")',
 ].join('\n');
 
 function nativeAtomicRename(operation, sourcePath, destinationPath) {

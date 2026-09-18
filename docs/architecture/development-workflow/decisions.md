@@ -1,8 +1,8 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-17
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
@@ -27,6 +27,9 @@
 | DWF-D14 | Separate source completion from functional and formal proof | accepted |
 | DWF-D15 | Make a Task-closing Progress Slice the continuation unit | accepted |
 | DWF-D16 | Bind tracked declarations to an explicit Plan locator | accepted |
+| DWF-D17 | Bind the current worktree, not the sibling inventory | accepted |
+| DWF-D18 | Bind each workspace to one immutable Plan | accepted |
+| DWF-D19 | Keep advancing source identity outside tracked Plan content | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -539,7 +542,10 @@ three fields are either all non-null for tracked work or all null for explicitly
 untracked work. During rollout, legacy records may omit the tuple and remain
 readable without bulk rewrite. `planPath` is repository-relative and
 containment-checked. On publication or update, tracked declarations must match
-the package identity, binding, and single current Task.
+the package identity and immutable workspace binding. An active package must
+match its single current Task. A blocked/completed package may retain only the
+corresponding blocked/done Task locator until cleanup, delivery, and declaration
+release finish.
 
 Task handoff, commit, merge, rebase, or other source-identity change requires
 one declaration update. Heartbeat extends liveness only; it does not change the
@@ -625,3 +631,108 @@ distinguishes sibling worktrees, while branch and HEAD fence source state.
   it no longer mutates another task's identity.
 - Regression coverage must prove that unrelated sibling worktree churn leaves
   capture and verification output unchanged.
+
+## DWF-D18: Bind Each Workspace To One Immutable Plan
+
+**Status**: accepted
+**Date**: 2026-09-18
+
+### Context
+
+Independent Agent and Chat worktrees synchronize into the same PR branch. That
+branch can therefore contain multiple active Plan Packages with different
+workspace owners. Branch-wide discovery treated repository contents as
+execution ownership and returned `MULTIPLE_ACTIVE_EXECUTION_PLANS`, or attached
+a synchronized foreign Plan to the current worktree.
+
+### Decision
+
+- A repository and PR may contain any number of active Plan Packages.
+- Each workspace has exactly one machine-local Plan binding identified by
+  `workspaceId + planId + repository-relative planPath`.
+- The binding lives at
+  `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`.
+  It is created explicitly once, is idempotent for the same tuple, and has no
+  unbind or rebind operation.
+- Starting another Plan requires another worktree and therefore another
+  `workspaceId`.
+- Local Plan discovery resolves the binding directly. It never scans by branch,
+  active status, latest timestamp, directory order, or PR contents.
+- Plan manifest, tracked declaration, `active_work`, Session and Context Anchor
+  must match the immutable binding. They are projections or consumers, not
+  alternative binding owners.
+- A Plan-bound workspace cannot publish untracked work.
+- CI has no machine workspace binding and must receive an explicit Plan path.
+  Missing input returns `EXECUTION_PLAN_INPUT_REQUIRED`.
+
+### Rationale
+
+PR synchronization is source transport, not execution ownership. A
+workspace-keyed immutable foreign key keeps parallel worktrees independent
+while allowing all of their commits and Plan files to coexist in one branch.
+Separating the binding from mutable Plan and declaration state prevents either
+artifact from silently switching the workspace owner.
+
+### Alternatives Considered
+
+- Filter a branch scan by `Workspace ID`: rejected because the Plan file would
+  still define its own selector and two files could claim the same workspace.
+- Use the newest live declaration: rejected because declarations expire and are
+  mutable intent, not durable ownership.
+- Read `active_work` as the runtime binding: rejected because it is a
+  repository/cloud projection and can be synchronized from another worktree.
+- Allow explicit rebind after Plan completion: rejected because it makes resume
+  history ambiguous; create a new worktree for the next Plan instead.
+
+### Consequences
+
+- Existing active worktrees require one explicit initial `plan-bind`.
+- Synchronizing a foreign Plan into a branch has no effect on local execution.
+- Deleting or corrupting the bound Plan fails closed; no other Plan is selected.
+- Tests must cover same-branch multi-Plan isolation, idempotent same binding,
+  rebind denial, missing binding, missing bound Plan, and explicit CI input.
+
+## DWF-D19: Keep Advancing Source Identity Outside Tracked Plan Content
+
+**Status**: accepted
+**Date**: 2026-09-18
+
+### Context
+
+`Plan Package.binding.expectedHead` made every authorized checkpoint commit
+immediately invalidate the tracked Plan that produced it. Updating that field
+inside `plan.md` made the worktree dirty again, so exact-source deployment could
+never converge on a clean commit without another self-referential Plan edit.
+
+### Decision
+
+- `Plan Package.binding` contains only immutable `branch`, `workspaceId`, and
+  `initialHead`.
+- Git owns the current physical HEAD.
+- `DevelopmentResourceDeclaration.sourceHead` owns the source identity
+  authorized for the current mutation slice.
+- `DevelopmentSession.source.commit` owns the clean checkpoint used by a
+  runtime or formal proof.
+- `active_work.expected_head` remains the durable resume projection and is
+  refreshed only after an authorized commit, merge, or rebase.
+- Plan validation compares immutable Plan identity to the workspace binding;
+  declaration and Session validation compare their source identity directly to
+  Git. No component writes an advancing HEAD back into tracked Plan content.
+- The old Plan `expectedHead` field and Markdown metadata are rejected and
+  removed as a hard cut. No compatibility alias or fallback remains.
+
+### Rationale
+
+Stable intent and advancing source identity have different lifecycles. Keeping
+the mutable commit outside the tracked Plan removes the clean-checkpoint
+self-reference while preserving fail-closed resume, mutation, and runtime
+identity checks at their actual owners.
+
+### Consequences
+
+- Existing live Plan Packages remove `expectedHead` before using the new parser.
+- `planctl status` no longer projects an advancing HEAD.
+- Dev declarations and Sessions must continue to reject any mismatch with the
+  actual worktree HEAD.
+- Context Anchor still reports expected/verified HEAD from `active_work` plus
+  the worktree verifier, not from `plan.md`.

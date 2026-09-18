@@ -4,21 +4,19 @@
 > **Branch**: peers-dev-workflow
 > **Workspace ID**: dbd1913c8dd24d52
 > **Initial HEAD**: d8e610d5275014733545a815ac9ed3a0a5c7564c
-> **Expected HEAD**: d8e610d5275014733545a815ac9ed3a0a5c7564c
 
 ## Plan Package
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "peers-touch-plan-package",
   "planId": "DWF-PROGRESS-20260917",
   "status": "completed",
   "binding": {
     "branch": "peers-dev-workflow",
     "workspaceId": "dbd1913c8dd24d52",
-    "initialHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c",
-    "expectedHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c"
+    "initialHead": "d8e610d5275014733545a815ac9ed3a0a5c7564c"
   },
   "workClass": "infrastructure",
   "architecture": {

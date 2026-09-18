@@ -97,7 +97,7 @@ function fixture({
     durableEvidence: [],
   };
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-plan-package',
     planId: 'mobile-shell',
     status: 'active',
@@ -105,7 +105,6 @@ function fixture({
       branch: BRANCH,
       workspaceId: WORKSPACE_ID,
       initialHead: INITIAL_HEAD,
-      expectedHead: EXPECTED_HEAD,
     },
     workClass: planWorkClass ?? workClass,
     tasks: [
@@ -145,15 +144,23 @@ function fixture({
       assert.equal(options.declaration.state, 'ACTIVE');
       return plan;
     },
-    async verifyBinding({ repoRoot, binding }) {
+    async verifyBinding({ repoRoot, binding, sourceHead }) {
       assert.equal(repoRoot, REPO_ROOT);
       assert.equal(binding.initialHead, INITIAL_HEAD);
-      assert.equal(binding.expectedHead, EXPECTED_HEAD);
+      assert.equal(sourceHead, EXPECTED_HEAD);
       return {
         root: REPO_ROOT,
         branch: binding.branch,
         workspaceId: binding.workspaceId,
-        head: binding.expectedHead,
+        head: sourceHead,
+      };
+    },
+    async resolveWorkspacePlanBinding({ repoRoot, home: resolvedHome }) {
+      assert.equal(repoRoot, REPO_ROOT);
+      assert.equal(resolvedHome, home);
+      return {
+        planId: manifest.planId,
+        planPath: 'fake-plan.md',
       };
     },
   };
@@ -196,6 +203,19 @@ function declarationOptions(scope, overrides = {}) {
     sourceHead: EXPECTED_HEAD,
     sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
     runtimeClaims: '',
+    planPath: 'fake-plan.md',
+    planId: scope.plan.manifest.planId,
+    taskId: scope.task.taskId,
+    planStatus: {
+      planId: scope.plan.manifest.planId,
+      currentTaskId: scope.task.taskId,
+      workspaceId: WORKSPACE_ID,
+      branch: BRANCH,
+    },
+    planBinding: {
+      planId: scope.plan.manifest.planId,
+      planPath: 'fake-plan.md',
+    },
     clock: scope.clock,
     ...overrides,
   };
@@ -203,13 +223,7 @@ function declarationOptions(scope, overrides = {}) {
 
 function activateDeclaration(scope) {
   startOrUpdateDeclaration(declarationOptions(scope));
-  return checkDeclaration({
-    home: scope.home,
-    workspaceRoot: REPO_ROOT,
-    workItemId: scope.workItemId,
-    sessionId: scope.sessionId,
-    clock: scope.clock,
-  });
+  return checkDeclaration(declarationOptions(scope));
 }
 
 async function start(scope) {
@@ -284,20 +298,14 @@ async function rejectCode(code, operation) {
   });
 }
 
-test('start requires an ACTIVE declaration and preserves distinct Plan heads', async () => {
+test('start requires an ACTIVE declaration and preserves Plan baseline/source identity', async () => {
   const scope = fixture();
   try {
     startOrUpdateDeclaration(declarationOptions(scope));
     await rejectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
       startDevelopmentSession(scope.baseOptions, scope.dependencies),
     );
-    checkDeclaration({
-      home: scope.home,
-      workspaceRoot: REPO_ROOT,
-      workItemId: scope.workItemId,
-      sessionId: scope.sessionId,
-      clock: scope.clock,
-    });
+    checkDeclaration(declarationOptions(scope));
     const session = await startDevelopmentSession(
       scope.baseOptions,
       scope.dependencies,
@@ -360,13 +368,7 @@ test('start rejects task, journey, declaration scope, and binding mismatch', asy
         sourceClaims: 'exclusive-write:apps/desktop',
       }),
     );
-    checkDeclaration({
-      home: scopeMismatch.home,
-      workspaceRoot: REPO_ROOT,
-      workItemId: scopeMismatch.workItemId,
-      sessionId: scopeMismatch.sessionId,
-      clock: scopeMismatch.clock,
-    });
+    checkDeclaration(declarationOptions(scopeMismatch));
     await rejectCode('SESSION_SCOPE_MISMATCH', () =>
       startDevelopmentSession(
         scopeMismatch.baseOptions,
@@ -377,11 +379,51 @@ test('start rejects task, journey, declaration scope, and binding mismatch', asy
     scopeMismatch.close();
   }
 
+  const locatorMismatch = fixture();
+  try {
+    activateDeclaration(locatorMismatch);
+    locatorMismatch.plan.path = path.join(REPO_ROOT, 'other-plan.md');
+    await rejectCode('SESSION_IDENTITY_MISMATCH', () =>
+      startDevelopmentSession(
+        locatorMismatch.baseOptions,
+        locatorMismatch.dependencies,
+      ),
+    );
+  } finally {
+    locatorMismatch.close();
+  }
+
+  const workspacePlanMismatch = fixture();
+  try {
+    activateDeclaration(workspacePlanMismatch);
+    workspacePlanMismatch.dependencies.resolveWorkspacePlanBinding =
+      async () => ({
+        planId: 'FOREIGN-PLAN',
+        planPath: 'foreign-plan.md',
+      });
+    await rejectCode('SESSION_IDENTITY_MISMATCH', () =>
+      startDevelopmentSession(
+        workspacePlanMismatch.baseOptions,
+        workspacePlanMismatch.dependencies,
+      ),
+    );
+  } finally {
+    workspacePlanMismatch.close();
+  }
+
   const bindingScope = fixture();
   try {
     activateDeclaration(bindingScope);
-    bindingScope.plan.manifest.binding.expectedHead = '9'.repeat(40);
-    await rejectCode('SESSION_IDENTITY_MISMATCH', () =>
+    bindingScope.dependencies.verifyBinding = async ({
+      repoRoot,
+      binding,
+    }) => ({
+      root: repoRoot,
+      branch: binding.branch,
+      workspaceId: binding.workspaceId,
+      head: '9'.repeat(40),
+    });
+    await rejectCode('WORKTREE_IDENTITY_MISMATCH', () =>
       startDevelopmentSession(
         bindingScope.baseOptions,
         bindingScope.dependencies,

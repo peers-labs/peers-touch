@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-17
-covered_docs_hash: 996e22162e181fc6a997aba60d5472e4a568447c94efd80e19fbbbc66e3ba9ff
+last_verified_at: 2026-09-18
+covered_docs_hash: 344f061299ce339f597861ee800d51dd52c60740e845bd0f16d548897bfbf9b5
 
 covered_docs:
   - AGENTS.md
@@ -270,3 +270,22 @@ workspace and expected-HEAD drift, while unrelated worktree add/remove/prune
 operations no longer invalidate another task. The verifier integration test,
 Plan/Session/migration suites, and contract checks cover the hard cut; review
 severity and golden fixtures remain unchanged.
+
+## 2026-09-18 Review
+
+DWF-D18 makes workspace-to-Plan ownership a machine-local create-once binding.
+Review must reject branch/repository Plan scans, synchronized foreign Plan
+selection, locator-less declarations after binding, and any unbind/rebind path.
+`pt-github-review/SKILL.md` now records explicit CI Plan input; dedicated Node,
+Python and Development declaration regressions cover the contract, so no new
+golden review fixture is required.
+
+DWF-D19 removes advancing `expectedHead` from tracked Plan Packages. Review
+must reject schema-v1 packages and any attempt to move current source identity
+back into `plan.md`; declarations, Sessions and `active_work` retain their
+separate source-identity duties. The review Skill now states this hard cut, and
+the Plan, migration, Session and dashboard regressions provide executable
+coverage without a new golden fixture. A declaration may retain only its exact
+blocked/done Task locator while the corresponding Plan is blocked/completed so
+cleanup and delivery can finish; this terminal allowance must not select a new
+Task or reopen execution.

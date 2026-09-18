@@ -9,6 +9,7 @@ import {
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
 import { loadPlanPackage } from '../plan/plan-package.mjs';
+import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
 import { canonicalize } from './dev-work-schema.mjs';
 import { requireActiveDeclaration } from './dev-work-ledger.mjs';
 import {
@@ -89,7 +90,16 @@ function assertDeclarationScope(declaration, task) {
   }
 }
 
-function assertPlanAndDeclaration(options, plan, declaration) {
+function repositoryRelative(root, target) {
+  return path.relative(root, target).split(path.sep).join('/');
+}
+
+function assertPlanAndDeclaration(
+  options,
+  plan,
+  declaration,
+  workspacePlanBinding,
+) {
   const { manifest, currentTask } = plan;
   if (manifest.status !== 'active' || currentTask === null) {
     sessionFail(
@@ -132,14 +142,25 @@ function assertPlanAndDeclaration(options, plan, declaration) {
     });
   }
   const binding = manifest.binding;
+  const planPath = repositoryRelative(plan.repoRoot, plan.path);
   const mismatches = {};
   for (const [field, actual] of [
     ['workspaceId', declaration.workspaceId],
     ['branch', declaration.branch],
-    ['expectedHead', declaration.sourceHead],
   ]) {
     if (binding[field] !== actual) {
       mismatches[field] = { expected: binding[field], actual };
+    }
+  }
+  for (const [field, expected, actual] of [
+    ['declarationPlanId', manifest.planId, declaration.planId],
+    ['declarationPlanPath', planPath, declaration.planPath],
+    ['declarationTaskId', currentTask.taskId, declaration.taskId],
+    ['boundPlanId', manifest.planId, workspacePlanBinding.planId],
+    ['boundPlanPath', planPath, workspacePlanBinding.planPath],
+  ]) {
+    if (expected !== actual) {
+      mismatches[field] = { expected, actual };
     }
   }
   if (
@@ -170,7 +191,7 @@ function assertPlanAndDeclaration(options, plan, declaration) {
   assertDeclarationScope(declaration, currentTask);
 }
 
-function defaultBindingVerifier({ repoRoot: root, binding }) {
+function defaultBindingVerifier({ repoRoot: root, binding, sourceHead }) {
   const verifier = path.join(root, 'tooling', 'scripts', 'verify-worktree-binding.py');
   let output;
   try {
@@ -185,7 +206,7 @@ function defaultBindingVerifier({ repoRoot: root, binding }) {
         '--workspace-id',
         binding.workspaceId,
         '--head',
-        binding.expectedHead,
+        sourceHead,
       ],
       {
         cwd: root,
@@ -196,7 +217,7 @@ function defaultBindingVerifier({ repoRoot: root, binding }) {
   } catch (error) {
     sessionFail(
       'WORKTREE_IDENTITY_MISMATCH',
-      'persisted Plan Package binding does not match the worktree',
+      'Plan identity and declared source HEAD do not match the worktree',
       { cause: error?.stderr?.trim?.() || String(error) },
     );
   }
@@ -215,6 +236,7 @@ async function loadBoundContext(options, dependencies = {}) {
   const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
   let declaration;
   let plan;
+  let workspacePlanBinding;
   try {
     declaration = requireActiveDeclaration({
       home: options.home,
@@ -230,24 +252,40 @@ async function loadBoundContext(options, dependencies = {}) {
       repoRoot: workspaceRoot,
       declaration,
     });
+    const resolvePlanBinding =
+      dependencies.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
+    workspacePlanBinding = await resolvePlanBinding({
+      repoRoot: workspaceRoot,
+      home: options.home,
+    });
   } catch (error) {
     throw asSessionError(error);
   }
-  assertPlanAndDeclaration(options, plan, declaration);
+  assertPlanAndDeclaration(
+    options,
+    plan,
+    declaration,
+    workspacePlanBinding,
+  );
   const verifyBinding = dependencies.verifyBinding ?? defaultBindingVerifier;
   const verified = await verifyBinding({
     repoRoot: plan.repoRoot,
     binding: plan.manifest.binding,
+    sourceHead: declaration.sourceHead,
   });
   if (
     verified?.workspaceId !== plan.manifest.binding.workspaceId ||
     verified?.branch !== plan.manifest.binding.branch ||
-    verified?.head !== plan.manifest.binding.expectedHead
+    verified?.head !== declaration.sourceHead
   ) {
     sessionFail(
       'WORKTREE_IDENTITY_MISMATCH',
-      'worktree verifier result does not match Plan Package binding',
-      { binding: plan.manifest.binding, verified },
+      'worktree verifier result does not match Plan identity and declared source HEAD',
+      {
+        binding: plan.manifest.binding,
+        sourceHead: declaration.sourceHead,
+        verified,
+      },
     );
   }
   return { declaration, plan, workspaceRoot };

@@ -63,7 +63,8 @@ export VITE_PORT=3000
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
-| `execution-plan.py` | 推荐 | 解析当前 worktree 唯一 active formal plan | 校验 current closure，并在 PR 前执行 `--require-complete` |
+| `execution-plan.py` | 推荐 | 解析当前 workspace 不可变绑定的 formal Plan；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
+| `plan/workspace-plan-binding.mjs` | 推荐 | 一次性建立/解析 workspace 的 `planId + planPath` | `make plan-bind PLAN=<path>`；同值幂等，拒绝换绑 |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
 | `acceptance-validate.py` | 推荐 | 按责任范围校验 capability graph、feature/gate、Provisioning contract、registry、run result 与 report；Infra 模式只消费 `acceptance_core_self_validation` | 通过 `make acceptance-infra-validate`、`make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |
