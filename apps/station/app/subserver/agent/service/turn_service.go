@@ -107,6 +107,9 @@ type TurnConfig struct {
 	RequestedBudgetJSON       json.RawMessage
 	RuntimeBudget             *model.RuntimeBudget
 	RuntimeCapabilities       *model.RuntimeCapabilitySnapshot
+	PinnedRuntimeSnapshot     *model.RuntimeSnapshot
+	PinnedReadinessSnapshot   *model.CapabilityReadinessSnapshot
+	ExpectedAgentVersion      uint64
 	Attachments               []*model.AgentAttachmentRef
 	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
@@ -449,6 +452,109 @@ func (s *TurnService) RunExecutionWorker(worker func(context.Context)) bool {
 	return true
 }
 
+// StartAdmittedTurn executes a Turn whose durable admission was committed by
+// another canonical command, such as the atomic Home first-turn command.
+func (s *TurnService) StartAdmittedTurn(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	admission *model.TurnAdmission,
+) bool {
+	if request == nil || admission == nil ||
+		admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+		return false
+	}
+	return s.RunExecutionWorker(func(ctx context.Context) {
+		s.executeAdmittedQueuedTurn(ctx, actorID, &AdmittedTurn{
+			Admission: admission,
+			Request:   request,
+		})
+	})
+}
+
+// StartEvaluationTurn executes an admitted Evaluation case through the same
+// Turn kernel while preserving the server-authored runtime and readiness
+// authority frozen by the Evaluation aggregate.
+func (s *TurnService) StartEvaluationTurn(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	admission *model.TurnAdmission,
+	runtimeSnapshot *model.RuntimeSnapshot,
+	readinessSnapshot *model.CapabilityReadinessSnapshot,
+	expectedAgentVersion uint64,
+) bool {
+	if request == nil || admission == nil || runtimeSnapshot == nil ||
+		readinessSnapshot == nil || expectedAgentVersion == 0 {
+		return false
+	}
+	if admission.GetStatus() !=
+		model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED &&
+		admission.GetStatus() !=
+			model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED {
+		return false
+	}
+	return s.RunExecutionWorker(func(ctx context.Context) {
+		config, err := s.queuedTurnConfig(
+			actorID,
+			request,
+			admission.GetTurnId(),
+		)
+		if err != nil {
+			if settleErr := s.FailAdmittedTurnStart(
+				context.WithoutCancel(ctx),
+				request.GetAgentId(),
+				admission.GetTurnId(),
+				"failed to decode evaluation runtime authority",
+				err,
+			); settleErr != nil {
+				logger.Errorf(
+					ctx,
+					"failed to settle evaluation Turn configuration error: turn_id=%s err=%v",
+					admission.GetTurnId(),
+					settleErr,
+				)
+			}
+			return
+		}
+		config.PinnedRuntimeSnapshot = proto.Clone(
+			runtimeSnapshot,
+		).(*model.RuntimeSnapshot)
+		config.PinnedReadinessSnapshot = proto.Clone(
+			readinessSnapshot,
+		).(*model.CapabilityReadinessSnapshot)
+		config.ExpectedAgentVersion = expectedAgentVersion
+		if _, err := s.ExecuteTurn(ctx, config, request.GetUserInput()); err != nil {
+			logger.Warnf(
+				ctx,
+				"evaluation Turn execution settled with error: turn_id=%s err=%v",
+				admission.GetTurnId(),
+				err,
+			)
+		}
+	})
+}
+
+// FailAdmittedTurnStart settles a committed admission when the Station
+// lifecycle cannot accept its worker. This prevents a rejected Home command
+// from leaving a durable Turn falsely marked as running.
+func (s *TurnService) FailAdmittedTurnStart(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	_, err := s.failTurnWithEvent(
+		ctx,
+		strings.TrimSpace(agentID),
+		strings.TrimSpace(turnID),
+		"",
+		"",
+		strings.TrimSpace(reason),
+		cause,
+	)
+	return err
+}
+
 // StopExecutionLifecycle closes lifecycle admission, cancels every registered
 // operation, and waits for workers and detached turns to drain.
 func (s *TurnService) StopExecutionLifecycle(ctx context.Context) error {
@@ -767,6 +873,92 @@ func (s *TurnService) cancelActiveTurn(turnID string) bool {
 		return false
 	}
 	registration.cancel(errExplicitUserCancellation)
+	return true
+}
+
+// InterruptTurn terminally fences an actor-owned Turn without replaying its
+// provider or tool execution. It invalidates the in-process execution
+// generation before committing the durable interrupted state, so a late worker
+// cannot publish a business result after the fence.
+func (s *TurnService) InterruptTurn(
+	ctx context.Context,
+	ptid string,
+	turnID string,
+	reasonCode string,
+) error {
+	ptid = strings.TrimSpace(ptid)
+	turnID = strings.TrimSpace(turnID)
+	reasonCode = strings.TrimSpace(reasonCode)
+	if ptid == "" || turnID == "" || reasonCode == "" {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"ptid, turn_id and reason_code are required",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var owned struct {
+		Status string
+	}
+	if err := db.WithContext(ctx).
+		Table("agent_turns AS turn_record").
+		Select("turn_record.status").
+		Joins(
+			"JOIN agent_conversations AS conversation ON conversation.id = turn_record.conversation_id",
+		).
+		Where(
+			"turn_record.id = ? AND conversation.actor_ptid = ?",
+			turnID,
+			ptid,
+		).
+		Take(&owned).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(
+				errcode.AgentNotFound,
+				http.StatusNotFound,
+				"turn not found",
+				err,
+			)
+		}
+		return turnTerminalPersistenceError(
+			"verify interruption ownership",
+			err,
+		)
+	}
+	if isTerminalTurnDomainStatus(domain.TurnStatus(owned.Status)) {
+		return nil
+	}
+
+	s.fenceActiveTurnExecution(turnID)
+	_, err = s.interruptTurnWithOutcomeErrorForActor(
+		ctx,
+		"",
+		turnID,
+		"",
+		"",
+		"",
+		reasonCode,
+		errcode.NewLifecycleInterruptedPayload(turnID, reasonCode),
+		ptid,
+	)
+	return err
+}
+
+func (s *TurnService) fenceActiveTurnExecution(turnID string) bool {
+	s.activeTurns.Lock()
+	registration, exists := s.activeTurnCancel[turnID]
+	if exists {
+		delete(s.activeTurnCancel, turnID)
+	}
+	s.activeTurns.Unlock()
+	if !exists || registration.cancel == nil {
+		return false
+	}
+	registration.cancel(errTurnExecutionSuperseded)
 	return true
 }
 
@@ -1182,21 +1374,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.ThinkingMode = thinkingMode
 
-	if s.admissionResolver == nil {
-		cause := errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"runtime admission authority is required",
-			nil,
-		)
-		return nil, settleAdmissionFailure("runtime admission authority is unavailable", cause)
-	}
-	runtimeSnapshot, admitErr := s.admissionResolver.Resolve(
-		ctx,
-		config.ActorID,
-		config.Provider,
-		config.Model,
-	)
+	runtimeSnapshot, admitErr := s.resolveTurnRuntimeSnapshot(ctx, config)
 	if admitErr != nil {
 		return nil, settleAdmissionFailure("runtime admission rejected", admitErr)
 	}
@@ -1314,20 +1492,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		TurnID:  turnID,
 	}
 
-	if s.capabilityReadiness == nil {
-		cause := errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"capability readiness authority is required",
-			nil,
-		)
-		return nil, settleRunningFailure("capability readiness authority is unavailable", cause)
-	}
-	readiness, agentVersion, readinessErr := s.capabilityReadiness.ResolveForTurn(
+	readiness, agentVersion, readinessErr := s.resolveTurnReadiness(
 		ctx,
-		config.ActorID,
-		config.AgentID,
-		config.ClientCapabilitySessionID,
+		config,
 		runtimeSnapshot,
 	)
 	if readinessErr != nil {
@@ -1342,7 +1509,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	); persistErr != nil {
 		return nil, settleRunningFailure("failed to persist runtime authority", persistErr)
 	}
-	if incompatibilityErr := runtimeCapabilityReadinessError(readiness); incompatibilityErr != nil {
+	if incompatibilityErr := capabilityReadinessAdmissionError(readiness); incompatibilityErr != nil {
 		return nil, settleRunningFailure(
 			"runtime capability rejected before execution",
 			incompatibilityErr,
@@ -4357,6 +4524,30 @@ func (s *TurnService) interruptTurnWithOutcomeError(
 	reasonCode string,
 	outcomeError *model.ErrorPayload,
 ) (TurnEvent, error) {
+	return s.interruptTurnWithOutcomeErrorForActor(
+		ctx,
+		agentID,
+		turnID,
+		conversationID,
+		taskID,
+		stepID,
+		reasonCode,
+		outcomeError,
+		"",
+	)
+}
+
+func (s *TurnService) interruptTurnWithOutcomeErrorForActor(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+	outcomeError *model.ErrorPayload,
+	expectedPTID string,
+) (TurnEvent, error) {
 	if outcomeError == nil {
 		outcomeError = errcode.NewLifecycleInterruptedPayload(turnID, reasonCode)
 	}
@@ -4382,6 +4573,20 @@ func (s *TurnService) interruptTurnWithOutcomeError(
 				First(&turn).Error; err != nil {
 				return err
 			}
+			var conversation persistence.Conversation
+			if err := tx.Select("actor_ptid").
+				Where("id = ?", turn.ConversationID).
+				First(&conversation).Error; err != nil {
+				return err
+			}
+			if expectedPTID != "" && conversation.ActorPTID != expectedPTID {
+				return errcode.New(
+					errcode.AgentNotFound,
+					http.StatusNotFound,
+					"turn not found",
+					nil,
+				)
+			}
 			if turn.Status == string(domain.TurnStatusInterrupted) {
 				return nil
 			}
@@ -4401,6 +4606,20 @@ func (s *TurnService) interruptTurnWithOutcomeError(
 				return err
 			}
 			conversationID = turn.ConversationID
+			if agentID == "" {
+				agentID = turn.AgentID
+			}
+			if err := fenceTurnToolExecutionTx(
+				tx,
+				conversation.ActorPTID,
+				turnID,
+				reasonCode,
+				reasonCode+"_after_prepare",
+				invalidatePreparedRecovery,
+				now,
+			); err != nil {
+				return err
+			}
 			if err := tx.Model(&turn).
 				Updates(map[string]interface{}{
 					"status":          string(domain.TurnStatusInterrupted),
@@ -4515,6 +4734,118 @@ func (s *TurnService) interruptTurnWithOutcomeError(
 		s.convService.notifyTurnEvent(conversationID, turnID)
 	}
 	return committedEvent, nil
+}
+
+type preparedRecoveryPolicy uint8
+
+const (
+	invalidatePreparedRecovery preparedRecoveryPolicy = iota
+	preservePreparedRecovery
+)
+
+func fenceTurnToolExecutionTx(
+	tx *gorm.DB,
+	actorPTID string,
+	turnID string,
+	cancelledErrorCode string,
+	sideEffectErrorCode string,
+	recoveryPolicy preparedRecoveryPolicy,
+	now time.Time,
+) error {
+	var calls []persistence.ToolCall
+	if err := tx.Select("id", "tool_call_id", "status").
+		Where("turn_id = ? AND actor_id = ?", turnID, actorPTID).
+		Find(&calls).Error; err != nil {
+		return err
+	}
+	callIDs := make([]string, 0, len(calls))
+	toolCallIDs := make([]string, 0, len(calls))
+	invalidateRecoveryToolCallIDs := make([]string, 0, len(calls))
+	for index := range calls {
+		callIDs = append(callIDs, calls[index].ID)
+		toolCallIDs = append(toolCallIDs, calls[index].ToolCallID)
+		if recoveryPolicy != preservePreparedRecovery ||
+			calls[index].Status != persistence.ToolCallStatusPrepared {
+			invalidateRecoveryToolCallIDs = append(
+				invalidateRecoveryToolCallIDs,
+				calls[index].ToolCallID,
+			)
+		}
+	}
+	if len(callIDs) > 0 {
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where("id IN ? AND status IN ?", callIDs, []string{
+				persistence.ToolCallStatusProposed,
+				persistence.ToolCallStatusWaitingApproval,
+				persistence.ToolCallStatusApproved,
+			}).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusCancelled,
+				"error_code": cancelledErrorCode,
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where(
+				"id IN ? AND status IN ?",
+				callIDs,
+				[]string{
+					persistence.ToolCallStatusDispatchCommitted,
+					persistence.ToolCallStatusPrepared,
+				},
+			).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusUnknownSideEffect,
+				"error_code": sideEffectErrorCode,
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ToolDispatchOutbox{}).
+			Where(
+				"actor_id = ? AND tool_call_id IN ? AND acknowledged_at IS NULL",
+				actorPTID,
+				toolCallIDs,
+			).
+			Update("acknowledged_at", now).Error; err != nil {
+			return err
+		}
+	}
+	if len(invalidateRecoveryToolCallIDs) > 0 {
+		if err := tx.Model(&persistence.ReceiptRecoveryCredential{}).
+			Where(
+				"actor_id = ? AND tool_call_id IN ? AND invalidated_at IS NULL",
+				actorPTID,
+				invalidateRecoveryToolCallIDs,
+			).
+			Update("invalidated_at", now).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&persistence.ToolContinuation{}).
+		Where("turn_id = ? AND status IN ?", turnID, []string{
+			persistence.ToolContinuationStatusReady,
+			persistence.ToolContinuationStatusClaimed,
+			persistence.ToolContinuationStatusReconciliationRequired,
+		}).
+		Updates(map[string]interface{}{
+			"status":           persistence.ToolContinuationStatusCompleted,
+			"lease_expires_at": now,
+			"completed_at":     now,
+			"updated_at":       now,
+		}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&persistence.ToolBatch{}).
+		Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
+		Updates(map[string]interface{}{
+			"status":     persistence.ToolBatchStatusBlocked,
+			"settled_at": now,
+			"updated_at": now,
+		}).Error
 }
 
 func (s *TurnService) ResumeReadyToolContinuation(
@@ -6642,42 +6973,53 @@ func (s *TurnService) failTurnWithEvent(
 				return messageResult.Error
 			}
 			if messageResult.RowsAffected == 0 && len(errorJSON) > 0 {
-				var conversation persistence.Conversation
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("id = ?", turn.ConversationID).
-					First(&conversation).Error; err != nil {
-					return err
-				}
-				var maxSeq struct{ MaxSeq int64 }
+				// Pre-message admission failures must not create an orphan
+				// assistant message, while later failures still append their
+				// terminal outcome to an existing message lineage.
+				var admittedUserMessageCount int64
 				if err := tx.Model(&persistence.AgentMessage{}).
-					Where("conversation_id = ?", turn.ConversationID).
-					Select("COALESCE(MAX(seq), 0) AS max_seq").
-					Scan(&maxSeq).Error; err != nil {
+					Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
+					Count(&admittedUserMessageCount).Error; err != nil {
 					return err
 				}
-				content := ""
-				messageID := generateID("msg")
-				if err := tx.Create(&persistence.AgentMessage{
-					ID:              messageID,
-					ConversationID:  turn.ConversationID,
-					TurnID:          &turnID,
-					Role:            string(domain.MessageRoleAssistant),
-					Status:          string(domain.TurnStatusFailed),
-					Content:         &content,
-					ErrorJSON:       errorJSON,
-					Seq:             maxSeq.MaxSeq + 1,
-					ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
-					CreatedAt:       now,
-					UpdatedAt:       now,
-				}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&conversation).Updates(map[string]interface{}{
-					"active_branch_message_id": messageID,
-					"updated_at":               now,
-					"version":                  gorm.Expr("version + 1"),
-				}).Error; err != nil {
-					return err
+				if admittedUserMessageCount > 0 {
+					var conversation persistence.Conversation
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("id = ?", turn.ConversationID).
+						First(&conversation).Error; err != nil {
+						return err
+					}
+					var maxSeq struct{ MaxSeq int64 }
+					if err := tx.Model(&persistence.AgentMessage{}).
+						Where("conversation_id = ?", turn.ConversationID).
+						Select("COALESCE(MAX(seq), 0) AS max_seq").
+						Scan(&maxSeq).Error; err != nil {
+						return err
+					}
+					content := ""
+					messageID := generateID("msg")
+					if err := tx.Create(&persistence.AgentMessage{
+						ID:              messageID,
+						ConversationID:  turn.ConversationID,
+						TurnID:          &turnID,
+						Role:            string(domain.MessageRoleAssistant),
+						Status:          string(domain.TurnStatusFailed),
+						Content:         &content,
+						ErrorJSON:       errorJSON,
+						Seq:             maxSeq.MaxSeq + 1,
+						ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+						CreatedAt:       now,
+						UpdatedAt:       now,
+					}).Error; err != nil {
+						return err
+					}
+					if err := tx.Model(&conversation).Updates(map[string]interface{}{
+						"active_branch_message_id": messageID,
+						"updated_at":               now,
+						"version":                  gorm.Expr("version + 1"),
+					}).Error; err != nil {
+						return err
+					}
 				}
 			}
 			var boundStep persistence.ExecutionStep
@@ -6858,16 +7200,14 @@ func (s *TurnService) cancelTurnWithResult(
 				}
 				return err
 			}
-			if expectedPtid != "" {
-				var ownerCount int64
-				if err := tx.Model(&persistence.Conversation{}).
-					Where("id = ? AND actor_ptid = ?", turn.ConversationID, expectedPtid).
-					Count(&ownerCount).Error; err != nil {
-					return err
-				}
-				if ownerCount != 1 {
-					return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", nil)
-				}
+			var conversation persistence.Conversation
+			if err := tx.Select("actor_ptid").
+				Where("id = ?", turn.ConversationID).
+				First(&conversation).Error; err != nil {
+				return err
+			}
+			if expectedPtid != "" && conversation.ActorPTID != expectedPtid {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", nil)
 			}
 			result.Status = turn.Status
 			if isTerminalTurnDomainStatus(domain.TurnStatus(turn.Status)) {
@@ -6953,47 +7293,16 @@ func (s *TurnService) cancelTurnWithResult(
 					return err
 				}
 			}
-			var batchIDs []string
-			if err := tx.Model(&persistence.ToolBatch{}).
-				Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
-				Pluck("id", &batchIDs).Error; err != nil {
+			if err := fenceTurnToolExecutionTx(
+				tx,
+				conversation.ActorPTID,
+				turnID,
+				"turn_cancelled",
+				"turn_cancelled_after_dispatch",
+				preservePreparedRecovery,
+				now,
+			); err != nil {
 				return err
-			}
-			if len(batchIDs) > 0 {
-				if err := tx.Model(&persistence.ToolCall{}).
-					Where("tool_batch_id IN ? AND status IN ?", batchIDs, []string{
-						persistence.ToolCallStatusProposed,
-						persistence.ToolCallStatusWaitingApproval,
-						persistence.ToolCallStatusApproved,
-						persistence.ToolCallStatusDispatchCommitted,
-					}).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolCallStatusCancelled,
-						"error_code": "turn_cancelled",
-						"ended_at":   now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ToolCall{}).
-					Where("tool_batch_id IN ? AND status = ?", batchIDs, persistence.ToolCallStatusPrepared).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolCallStatusUnknownSideEffect,
-						"error_code": "turn_cancelled_after_prepare",
-						"ended_at":   now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ToolBatch{}).
-					Where("id IN ? AND status = ?", batchIDs, persistence.ToolBatchStatusOpen).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolBatchStatusBlocked,
-						"settled_at": now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
 			}
 
 			event := TurnEvent{

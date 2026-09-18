@@ -40,7 +40,9 @@ use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
+use crate::application::evaluation as app_evaluation;
 use crate::application::federation as app_federation;
+use crate::application::home as app_home;
 use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
@@ -63,6 +65,7 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
+use crate::interface::tauri_commands::actor::actor_profile_to_json;
 use crate::interface::tauri_commands::oss::{
     safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
     OssUploadAttachmentBytesInput,
@@ -999,6 +1002,74 @@ fn gateway_session(state: &AppState) -> Option<crate::domain::identity::ActiveSe
     state.sessions.get(HTTP_GATEWAY_SESSION_LABEL)
 }
 
+fn gateway_mcp_identity(state: &AppState) -> Result<(String, String), Value> {
+    if std::env::var("PT_CLIENT_SURFACE")
+        .unwrap_or_default()
+        .trim()
+        .eq_ignore_ascii_case("browser")
+    {
+        return Err(to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::NotImplemented,
+            "Local MCP is unavailable in the Browser client",
+            None,
+        )));
+    }
+    let Some(session) = gateway_session(state) else {
+        return Err(to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        )));
+    };
+    if !session.actor.ptid.starts_with("ptid:") || session.jwt.trim().is_empty() {
+        return Err(to_json(AppResult::<StubPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        )));
+    }
+    Ok((session.actor.ptid, session.jwt))
+}
+
+fn gateway_start_mcp_lifecycle(
+    runtime: &GatewayRuntime,
+    actor_ptid: &str,
+    token: &str,
+    input: McpLifecycleOperationInput,
+) -> Value {
+    let target = match gateway_mcp_operation_target(runtime, actor_ptid) {
+        Ok(target) => target,
+        Err(error) => return error,
+    };
+    to_json(app_mcp::mcp_start_lifecycle_operation(
+        actor_ptid,
+        token,
+        &target.device_id,
+        &target.capability_session_id,
+        input,
+    ))
+}
+
+fn gateway_mcp_operation_target(
+    runtime: &GatewayRuntime,
+    actor_ptid: &str,
+) -> Result<crate::application::desktop_executor_worker::supervisor::CapabilityOperationTarget, Value>
+{
+    let app = match runtime.app_handle("mcp_start_lifecycle_operation") {
+        Ok(app) => app,
+        Err(error) => return Err(error),
+    };
+    let supervisor =
+        app.state::<Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+    supervisor.operation_target(actor_ptid).map_err(|error| {
+        to_json(AppResult::<Vec<u8>>::fail(
+            ErrorCode::InvalidArgument,
+            error,
+            None,
+        ))
+    })
+}
+
 fn bind_gateway_session(
     state: &AppState,
     account_id: String,
@@ -1512,6 +1583,22 @@ fn filter_incremental_messages(
 // -------------------------------------------------------------------------
 // Command dispatch - maps cmd string to application-layer calls
 // -------------------------------------------------------------------------
+
+fn dispatch_evaluation(
+    args: Value,
+    state: &AppState,
+    operation: app_evaluation::EvaluationOperation,
+) -> Value {
+    let input = match parse_args::<app_evaluation::EncodedRequestInput>(args) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
+    let token = match http_gateway_bearer_token(state) {
+        Some(token) => token,
+        None => return to_json(unauthorized_error()),
+    };
+    to_json(app_evaluation::forward(input, &token, operation))
+}
 
 /// Dispatch a command by name, returning the result as a JSON Value.
 ///
@@ -2500,10 +2587,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(to_stub(
                 "actor_get_my_profile",
-                json!({
-                    "id": resp.id, "displayName": resp.display_name,
-                    "username": resp.username, "avatar": resp.avatar,
-                }),
+                actor_profile_to_json(&resp),
             ))
         }
 
@@ -2854,6 +2938,32 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             match http_gateway_bearer_token(state) {
                 Some(t) => to_json(app_profile::profile_upload_header_oss(input, &t)),
                 None => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                )),
+            }
+        }
+        "presence_query" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::presence::PresenceQueryInput,
+            >(args)
+            {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            match http_gateway_bearer_token(state) {
+                Some(token) => match station_request_json(
+                    Method::POST,
+                    "/presence/query",
+                    &token,
+                    None,
+                    Some(json!({ "actor_ptids": input.actor_ptids })),
+                ) {
+                    Ok(data) => to_json(AppResult::success(data)),
+                    Err(error) => error,
+                },
+                None => to_json(AppResult::<Value>::fail(
                     ErrorCode::Unauthorized,
                     "authentication required",
                     None,
@@ -3737,6 +3847,138 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_capability_authority::list_manifests(input, &token))
         }
+        "agent_connector_manifest_list" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_connector_manifests(
+                input, &token,
+            ))
+        }
+        "agent_home_projection_get" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::get_projection(input, &token))
+        }
+        "agent_home_chat_submit" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::submit_chat(input, &token))
+        }
+        "agent_home_task_submit" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::submit_task(input, &token))
+        }
+        "agent_evaluation_benchmark_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateBenchmark,
+        ),
+        "agent_evaluation_benchmark_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateBenchmark,
+        ),
+        "agent_evaluation_benchmark_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteBenchmark,
+        ),
+        "agent_evaluation_benchmark_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListBenchmarks,
+        ),
+        "agent_evaluation_dataset_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateDataset,
+        ),
+        "agent_evaluation_dataset_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateDataset,
+        ),
+        "agent_evaluation_dataset_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteDataset,
+        ),
+        "agent_evaluation_dataset_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListDatasets,
+        ),
+        "agent_evaluation_case_create" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::CreateTestCase,
+        ),
+        "agent_evaluation_case_update" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::UpdateTestCase,
+        ),
+        "agent_evaluation_case_delete" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::DeleteTestCase,
+        ),
+        "agent_evaluation_case_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListTestCases,
+        ),
+        "agent_evaluation_run_create" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::CreateRun)
+        }
+        "agent_evaluation_run_start" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::StartRun)
+        }
+        "agent_evaluation_run_cancel" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::CancelRun)
+        }
+        "agent_evaluation_run_retry" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::RetryCases)
+        }
+        "agent_evaluation_run_get" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::GetRun)
+        }
+        "agent_evaluation_run_list" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::ListRuns)
+        }
+        "agent_evaluation_run_events_list" => dispatch_evaluation(
+            args,
+            state,
+            app_evaluation::EvaluationOperation::ListRunEvents,
+        ),
+        "agent_evaluation_run_delete" => {
+            dispatch_evaluation(args, state, app_evaluation::EvaluationOperation::DeleteRun)
+        }
         "agent_capability_binding_list" => {
             let input =
                 match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {
@@ -3943,7 +4185,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Tools (no state)
         // =================================================================
-        "tools_list" => to_json(app_tools::tools_list()),
+        "tools_list" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, _)) => to_json(app_tools::tools_list(&actor_ptid)),
+            Err(error) => error,
+        },
         "tools_search_providers" => to_json(app_tools::tools_search_providers()),
         "tools_set_search_primary" => {
             let input = match parse_args::<SearchPrimaryInput>(args) {
@@ -4299,7 +4544,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_skills_market::skills_market_sync(input))
+            let token = http_gateway_bearer_token(state).unwrap_or_default();
+            to_json(app_skills_market::skills_market_sync(input, &token))
         }
         "skills_market_list_skills" => {
             let input = match parse_args::<SkillMarketListInput>(args) {
@@ -4735,57 +4981,247 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // MCP (no state)
+        // MCP
         // =================================================================
-        "mcp_list_servers" => to_json(app_mcp::mcp_list_servers()),
+        "mcp_list_servers" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, _)) => to_json(app_mcp::mcp_list_servers(&actor_ptid)),
+            Err(error) => error,
+        },
         "mcp_get_server" => {
             let input = match parse_args::<McpNameInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_get_server(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => to_json(app_mcp::mcp_get_server(&actor_ptid, input)),
+                Err(error) => error,
+            }
         }
         "mcp_create_server" => {
             let input = match parse_args::<McpCreateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_create_server(input))
+            let (actor_ptid, token) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
+                Ok(target) => target,
+                Err(error) => return error,
+            };
+            to_json(app_mcp::mcp_create_server_with_lifecycle(
+                &actor_ptid,
+                &token,
+                &target.device_id,
+                &target.capability_session_id,
+                input,
+            ))
         }
         "mcp_update_server" => {
             let input = match parse_args::<McpUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_update_server(input))
+            let (actor_ptid, token) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
+                Ok(target) => target,
+                Err(error) => return error,
+            };
+            to_json(app_mcp::mcp_update_server_with_lifecycle(
+                &actor_ptid,
+                &token,
+                &target.device_id,
+                &target.capability_session_id,
+                input,
+            ))
         }
         "mcp_delete_server" => {
             let input = match parse_args::<McpNameInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_delete_server(input))
+            let (actor_ptid, token) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            gateway_start_mcp_lifecycle(
+                runtime,
+                &actor_ptid,
+                &token,
+                McpLifecycleOperationInput {
+                    name: input.name,
+                    operation_kind: "uninstall".to_string(),
+                    idempotency_key: None,
+                },
+            )
         }
         "mcp_toggle_server" => {
             let input = match parse_args::<McpToggleInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_toggle_server(input))
+            let (actor_ptid, token) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
+                Ok(target) => target,
+                Err(error) => return error,
+            };
+            to_json(app_mcp::mcp_toggle_server_with_lifecycle(
+                &actor_ptid,
+                &token,
+                &target.device_id,
+                &target.capability_session_id,
+                input,
+            ))
         }
-        "mcp_test_server" => {
-            let input = match parse_args::<McpNameInput>(args) {
+        "mcp_start_lifecycle_operation" => {
+            let input = match parse_args::<McpLifecycleOperationInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_test_server(input))
+            let (actor_ptid, token) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            gateway_start_mcp_lifecycle(runtime, &actor_ptid, &token, input)
         }
-        "mcp_execute_tool" => {
-            let input = match parse_args::<McpExecuteToolInput>(args) {
+        "agent_capability_operation_get" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_mcp::mcp_execute_tool(input))
+            match gateway_mcp_identity(state) {
+                Ok((_, token)) => to_json(app_capability_authority::get_operation(input, &token)),
+                Err(error) => error,
+            }
+        }
+        "agent_capability_operation_cancel" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let request = match model::agent::CancelCapabilityOperationRequest::decode(
+                input.request_bytes.as_slice(),
+            ) {
+                Ok(request) => request,
+                Err(_) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.capabilityOperationRequestInvalid",
+                        None,
+                    ));
+                }
+            };
+            match gateway_mcp_identity(state) {
+                Ok((_, token)) => {
+                    let result = app_capability_authority::cancel_operation(input, &token);
+                    if result.ok {
+                        if let Err(error) =
+                            app_mcp::cancel_lifecycle_operation(&request.operation_id)
+                        {
+                            tracing::warn!(
+                                operation_id = %request.operation_id,
+                                error = %error,
+                                "Failed to interrupt cancelled MCP lifecycle process"
+                            );
+                        }
+                    }
+                    to_json(result)
+                }
+                Err(error) => error,
+            }
+        }
+        "agent_capability_operation_reconcile" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match gateway_mcp_identity(state) {
+                Ok((_, token)) => {
+                    to_json(app_capability_authority::reconcile_operation(input, &token))
+                }
+                Err(error) => error,
+            }
+        }
+        "agent_capability_operation_takeover" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let (actor_ptid, _) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            let request = match model::agent::TakeOverCapabilityOperationRequest::decode(
+                input.request_bytes.as_slice(),
+            ) {
+                Ok(request) => request,
+                Err(_) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.capabilityOperationRequestInvalid",
+                        None,
+                    ));
+                }
+            };
+            let app = match runtime.app_handle("agent_capability_operation_takeover") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<Arc<
+                crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
+            >>();
+            match supervisor.take_over_operation(&actor_ptid, request) {
+                Ok(response) => to_json(AppResult::success(response.encode_to_vec())),
+                Err(error) => to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    None,
+                )),
+            }
+        }
+        "agent_capability_operation_cleanup_takeover" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let (actor_ptid, _) = match gateway_mcp_identity(state) {
+                Ok(identity) => identity,
+                Err(error) => return error,
+            };
+            let request = match model::agent::TakeOverCapabilityCleanupRequest::decode(
+                input.request_bytes.as_slice(),
+            ) {
+                Ok(request) => request,
+                Err(_) => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.capabilityOperationRequestInvalid",
+                        None,
+                    ));
+                }
+            };
+            let app = match runtime.app_handle("agent_capability_operation_cleanup_takeover") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<Arc<
+                crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
+            >>();
+            match supervisor.take_over_cleanup(&actor_ptid, request) {
+                Ok(response) => to_json(AppResult::success(response.encode_to_vec())),
+                Err(error) => to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    None,
+                )),
+            }
         }
 
         // =================================================================
@@ -5004,34 +5440,63 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_oauth2::oauth2_handle_callback(input))
         }
-        "oauth2_list_connections" => to_json(app_oauth2::oauth2_list_connections()),
+        "oauth2_list_connections" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_list_connections(&actor_ptid)),
+            Err(error) => error,
+        },
+        "oauth2_sync_connector_manifests" => match gateway_mcp_identity(state) {
+            Ok((actor_ptid, token)) => {
+                to_json(app_oauth2::sync_connector_manifests(&actor_ptid, &token))
+            }
+            Err(error) => error,
+        },
         "oauth2_get_connection" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_get_connection(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_get_connection(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_disconnect" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_disconnect(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, token)) => {
+                    to_json(app_oauth2::oauth2_disconnect(&actor_ptid, &token, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_refresh_token" => {
             let input = match parse_args::<OAuthIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_refresh_token(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_refresh_token(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_call_resource" => {
             let input = match parse_args::<OAuthResourceInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_call_resource(input))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => {
+                    to_json(app_oauth2::oauth2_call_resource(&actor_ptid, input))
+                }
+                Err(error) => error,
+            }
         }
         "oauth2_reload" => to_json(app_oauth2::oauth2_reload()),
         "oauth2_get_page" => {
@@ -5046,7 +5511,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_oauth2::oauth2_start_loopback(input, state.i18n.clone()))
+            match gateway_mcp_identity(state) {
+                Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_start_loopback(
+                    input,
+                    state.i18n.clone(),
+                    &actor_ptid,
+                )),
+                Err(error) => error,
+            }
         }
         "oauth2_poll_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {
@@ -7282,7 +7754,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_list_messages" => {
-            let (account_id, actor_ptid, _) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingListMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7296,32 +7775,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let conversation_id = args
-                .get("conversation_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            match engine.conversation_messages(conversation_id) {
-                Ok(messages) => {
-                    let items: Vec<Value> = messages
-                        .iter()
-                        .map(|m| {
-                            json!({
-                                "event_id": m.event_id,
-                                "event_sequence": m.event_sequence,
-                                "message_id": m.message_id,
-                                "sender_ptid": m.sender_ptid,
-                                "sender_device_id": m.sender_device_id,
-                                "plaintext": m.plaintext,
-                                "attachments": Vec::<Value>::new(),
-                                "state": m.state,
-                                "timestamp_unix_ms": m.timestamp_unix_ms,
-                            })
-                        })
-                        .collect();
-                    to_json(AppResult::success(json!({ "messages": items })))
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_list_messages_result(&engine, &input),
+            )
+        }
+        "messaging_search_messages" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingSearchMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
                 }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_search_messages_result(&engine, &input),
+            )
         }
         "messaging_thread_counts" => {
             let input = match parse_args::<

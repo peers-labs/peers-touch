@@ -1,8 +1,8 @@
 # Modern Chat Agent V2 — 产品级迭代计划
 
 > **Status**: active
-> **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-09-11
+> **Version**: v0.3
+> **Created**: 2026-08-17 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
@@ -17,27 +17,27 @@
 | Field | Current value |
 |---|---|
 | Main task | 将 Peers-Touch 单 Agent Chat 从源码能力对齐推进到 LobeHub 级产品体验与运行可靠性 |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
+| Plan source | `docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md` |
 | Tracking source | this product-level overview、`docs/architecture/agent/modern-chat-agent/`、and `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `EXECUTE` |
-| Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `BASE-TERMINAL_MUTATION` is owner-source complete but `FUNCTIONAL_UNPROVEN`; the 28-family inventory is 23 source-complete, 21 `FUNCTIONAL_PASS`, and 5 source-incomplete |
-| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source Native run `20260915T221919169052Z` on `085874eca` passed `BASE-STALE_VERSION`: exact `resource_id,expected_revision,actual_revision`, visible localized `Reload latest`, authoritative reload without replay, unchanged winner revision/hash, zero stale mutation, projection convergence, and clean runtime/Fixture cleanup |
-| Current action | Rerun the corrected `G-FE1-SC6 / BASE-TERMINAL_MUTATION` exact-source Native Journey after the four unrelated dirty files are resolved by their owner; keep `BASE-UNKNOWN_TOOL`, `BASE-RATE_LIMIT`, and SC1-SC3 amendment/precondition-bound cells parked |
-| Next action | Deploy checkpoint `8314ec660`, run one bounded Native Journey after Station diagnostics reports durable `COMPLETED`, and require typed `Open result`, unchanged terminal hash, zero mutation, Turn Details readback, and clean cleanup; do not run C08 or Foundation |
-| Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
-| Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
-| Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
+| Stage | `PLAN_PERSISTED` |
+| Current workstream | `MCA-J01 / V2-J01 Home Command Center` |
+| Current step | Activate the validated Plan Package and reprove J01 on exact source |
+| Progress | J01/J02 have prior development passes; J03 source fixes are complete; all current package Tasks and seven formal Gates remain uncredited until current-source workflow transitions |
+| Last completed | Validated the 2026-09-17 Plan Package with eight vertical Task Slices and exact worktree binding |
+| Current action | Select MCA-J01, run focused checks, then execute the deterministic native Home Journey |
+| Next action | Advance through J02/J03, implement J04-J06 and X3, then run aggregate Acceptance and update the mind map |
+| Autonomous execution window | Full accepted package through delivery; use one bounded vertical Task at a time and continue while any dependency-ready work remains |
+| Overnight slice result | Legacy foundation and W2-only scheduling are historical inputs, not current lifecycle owners |
+| Parallel policy | Plan lifecycle and shared contracts remain serial; only disjoint read-only investigation or verified source lanes may parallelize |
 | Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
-| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
+| Overnight non-scope | No G-F/BASE matrix expansion, Mobile UI, hosted commercial marketplace/Community, image/video generation, version bump, or unrelated Acceptance repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | no Goal-level blocker; the corrected `BASE-TERMINAL_MUTATION` exact-source rerun is locally blocked by four unrelated formatting-only dirty files that the integrator cannot restore or include without owner authorization; `BASE-UNKNOWN_TOOL` FUNCTIONAL_CHECK requires a real enabled `skills_list` binding on the disposable Agent; `BASE-RATE_LIMIT` requires a deterministic real 429 trigger; SC1-SC3 retain their recorded PRODUCT/DESIGN amendment boundaries |
+| Blockers | none for Plan activation; runtime resources are acquired per current Task and released after each functional Journey |
 | Decisions required | none |
-| Evidence | Exact-source Development run `20260915T134604170541Z` proves `BASE-LEASE_EXPIRED`; run `20260915T143820839970Z` proves normal Native send/stream/terminal/reload/restart/replay on `fe254ca7d`; run `20260915T153420786845Z` proves native `BASE-QUEUE_FULL` recovery on `08da1ba7d`; run `20260915T160019318486Z` proves native `BASE-RUNTIME_UNAVAILABLE` recovery on `3a5e63ed0`; run `20260915T174534211770Z` proves native `BASE-MODEL_UNAVAILABLE` recovery on `d7aa95d4a`; run `20260915T183038836666Z` proves native `BASE-PROVIDER_TIMEOUT` on `20ca64980`; checkpoint `3915b0e7a` closes the `BASE-UNKNOWN_TOOL` owner path, while run `20260915T201143165434Z` records its no-provider-call missing-binding precondition; run `20260915T210907965069Z` proves native `BASE-LOOP_BUDGET_EXHAUSTED` on `42ed40d18`; run `20260915T221919169052Z` proves native `BASE-STALE_VERSION` on `085874eca`; checkpoint `3987b20a2` closes the `BASE-TERMINAL_MUTATION` owner path, failed run `20260915T230015785427Z` records the pre-durable-completion cancellation race with clean cleanup, and `8314ec660` adds the authoritative terminal fence; source inventory is 23/28 complete, 21/28 functionally passed, and 5/28 source-incomplete；C08 and the full Foundation Gate remain `UNPROVEN` |
-| Last updated | 2026-09-16 |
+| Evidence | Accepted MCA-D14-D18/C11-C15/A15-A20 contracts, P4-3, the parity mind map, and the validated 2026-09-17 package; all formal product Gates remain `UNPROVEN` |
+| Last updated | 2026-09-17 |
 
 ---
 
@@ -423,7 +423,7 @@ Gate:
 | Execution F1 Agent/Conversation Authority | complete | 2026-08-18 | C01/C02 source closure、D11 guard、Desktop full check 与 old-path deletion evidence PASS |
 | Execution F2 Runtime/Stream/Capability/Portability | complete | 2026-09-09 | Q4 C06与Q5/C10 source closure完成；Station、Desktop、Rust、Mobile与C03/C05/C06/C10 zero-old-path checks通过；product proof仍由G-F负责 |
 | Execution F3 Context/Resource Intelligence | source complete / product proof unproven | — | C04 core与C08 production source、stable Gate、Home Station provisioning和old-path inventory闭合；`agent-attachment-e2e`未运行 |
-| Phase 2 Home | pending execution dependencies | — | confirmed prototype 仅证明产品意图；生产能力 `UNPROVEN` |
+| Phase 2 Home | current / executing | — | `MCA-V2-H01 / V2-J01` 是当前唯一产品 slice；W2 自己完成 C11 激活与旧路径删除，完整 G-F 不再是 entry dependency |
 | Phase 3 Capability Plane | pending | — | 现有 foundations 不等于 product closure |
 | Phase 4 MCP | pending | — | 需要真实 disposable MCP |
 | Phase 5 Connector | pending | — | C7 lifecycle proof 是基础，不含真实 connector invocation |

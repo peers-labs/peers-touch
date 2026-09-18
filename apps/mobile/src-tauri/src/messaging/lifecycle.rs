@@ -703,17 +703,6 @@ fn run_engine_cycle(
 
     let now = now_unix_ms();
     let attachment_upload_result = engine.resume_attachment_upload_once(now);
-    // #region debug-point A:attachment-upload-cycle
-    {
-        let debug_data = match &attachment_upload_result {
-            Ok(progressed) => serde_json::json!({"progressed": progressed, "error": null}),
-            Err(error) => serde_json::json!({"progressed": false, "error": error}),
-        };
-        thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.attachment_upload","msg":"[DEBUG] Mobile attachment upload cycle completed","data":debug_data}).to_string()).send();
-        });
-    }
-    // #endregion
     let attachment_upload_progressed = attachment_upload_result?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -723,17 +712,6 @@ fn run_engine_cycle(
         return Ok(None);
     }
     let draft_result = engine.resume_message_draft_once(now);
-    // #region debug-point A:attachment-draft-cycle
-    {
-        let debug_data = match &draft_result {
-            Ok(progress) => serde_json::json!({"progress": format!("{progress:?}"), "error": null}),
-            Err(error) => serde_json::json!({"progress": null, "error": error}),
-        };
-        thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.message_draft","msg":"[DEBUG] Mobile attachment draft cycle completed","data":debug_data}).to_string()).send();
-        });
-    }
-    // #endregion
     let draft = draft_result?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -743,17 +721,6 @@ fn run_engine_cycle(
         return Ok(None);
     }
     let command_result = engine.dispatch_command_once();
-    // #region debug-point A-B:attachment-command-cycle
-    {
-        let debug_data = match &command_result {
-            Ok(progress) => serde_json::json!({"progress": format!("{progress:?}"), "error": null}),
-            Err(error) => serde_json::json!({"progress": null, "error": error}),
-        };
-        thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A-B","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.command","msg":"[DEBUG] Mobile attachment command cycle completed","data":debug_data}).to_string()).send();
-        });
-    }
-    // #endregion
     let command = command_result?;
     if !worker_is_running(state) {
         return Ok(None);

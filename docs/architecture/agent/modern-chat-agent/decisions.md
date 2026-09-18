@@ -1,8 +1,8 @@
 # Modern Chat Agent — Design Decisions
 
 > **Status**: approved
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-25
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -37,6 +37,8 @@
 | MCA-D19C | Re-authorize external-idempotency replay through Station fenced takeover | approved |
 | MCA-D19D | Prove conditional runtimes through production advertisement and activity snapshots | approved |
 | MCA-D19E | Attest Browser direct execution without fabricated local capabilities | approved |
+| MCA-D20 | Verify publisher-signed package catalogs and read installation state from target authorities | approved |
+| MCA-D20A | Distribute the official signed catalog through Station without moving publisher trust | approved |
 
 ---
 
@@ -1427,3 +1429,186 @@ cell assertions independently determine whether a ToolCall was expected.
 Revisit only if Browser gains a production local-capability execution path.
 That path must advertise a real capability lease and emit its own fenced
 ToolCall evidence before using `direct_runtime`.
+
+## MCA-D20: Publisher-Signed Package Catalogs And Authority Readback
+
+**Status**: approved
+**Date**: 2026-09-17
+
+### Context
+
+P4-3 requires curated Agent, Skill, and MCP discovery without creating a hosted
+commercial marketplace. The existing Desktop market accepts arbitrary URL JSON,
+stores source-provided trust/risk labels, ignores the configured branch, and
+uses its install ledger as the visible installed state. A new profile can
+therefore be empty, an unsigned source can claim `verified`, and a stale ledger
+can disagree with the Agent, Skill, or MCP authority.
+
+The accepted blueprint already assigns package trust, scan, and version policy
+to governed owners while allowing Desktop Rust to cache discovery data and own
+device-local MCP configuration. X3 closes that contract without adding social,
+commercial, rating, or public publishing behavior.
+
+### Decision
+
+Package discovery consumes versioned `peers.package-catalog.v1` snapshots. A
+snapshot is an envelope containing exact payload bytes, an Ed25519 signature,
+and a signing-key ID. Source registration pins publisher identity, repository,
+branch, manifest path, key ID, and public key. Verification uses the pinned key;
+an envelope cannot supply or replace its own trust root.
+
+The shipped Peers source is built in and includes a verified last-known
+snapshot so first use works without a network round trip. Synchronization uses
+real Git repository, branch, and manifest-path semantics. User-added sources
+must provide an explicit public key and are classified `user-pinned`; legacy
+arbitrary JSON sources become disabled migration records and are never treated
+as trusted input.
+
+Desktop Rust verifies signature, schema version, source/publisher binding,
+package identity/version, artifact hash, and bounded payload size before
+publishing a cache snapshot. Trust is derived from the pinned source class,
+risk and scan verdict are derived from verified artifact bytes, and install
+policy is derived from those facts. Source-provided trust, risk, scan, or policy
+labels are ignored.
+
+Installation is authority-specific:
+
+- Agent packages decode the canonical protobuf package and use Station atomic
+  package import, followed by Station Agent readback.
+- Skills use Station install/scan and Skill readback.
+- MCP packages use the actor-scoped Desktop Rust MCP authority and MCP
+  readback.
+
+The local install ledger records catalog revision, artifact digest, target
+authority, target ID, and observed readback. It is a reconciliation cache, not
+installed-state authority.
+
+A signed source or package revocation blocks new install/update immediately.
+Existing user-owned installed snapshots are marked revoked and require an
+explicit uninstall; revocation never silently deletes user resources. High-risk
+packages require an explicit confirmation before mutation. Invalid signatures,
+hashes, schemas, unsupported encodings, blocked scans, and revoked packages
+fail closed.
+
+### Rationale
+
+Signed immutable snapshots make publisher provenance and revocation
+falsifiable. Key pinning prevents a source from self-asserting trust. Derived
+scan/risk policy prevents signed metadata from being confused with independent
+review. Authority readback prevents the Desktop ledger from becoming a second
+Agent, Skill, or MCP source of truth.
+
+Repository/branch semantics retain a simple distributable catalog while
+avoiding the previous ambiguity where a repository URL was fetched as if it
+were an index document. The embedded verified snapshot provides deterministic
+first-use behavior and remains subject to the same verifier as synchronized
+snapshots.
+
+### Alternatives Considered
+
+- Keep arbitrary JSON URLs and display source labels: rejected because the
+  source can self-assert trust and branch has no meaning.
+- Move installed Agent/Skill/MCP truth into the catalog ledger: rejected
+  because it duplicates existing target authorities.
+- Auto-delete installed resources on catalog revocation: rejected because
+  publisher policy must not silently destroy user-owned state.
+- Add hosted publishing, ratings, or Community: rejected as outside the
+  accepted X3 product boundary.
+
+### Consequences
+
+- The old unsigned JSON source path is retired in one cutover.
+- Catalog list/detail APIs expose cursor pagination, verification provenance,
+  revocation, derived scan/risk, and install policy.
+- Default catalog material and its public verification key ship with Desktop;
+  signing private keys do not.
+- Source sync may retain the last verified snapshot when the network is
+  unavailable, but must visibly report stale/error state and never substitute
+  unverified bytes.
+- Native proof must cover default-source bootstrap, signed sync, pagination,
+  browse/detail, all three target authorities, explicit high-risk
+  confirmation, revocation, uninstall, and cleanup.
+
+### Review Condition
+
+Revisit if catalog publication becomes federated or hosted. That expansion must
+define publisher admission, key rotation, moderation, replication conflict,
+and commercial policy before changing this local curated-source contract.
+
+## MCA-D20A: Station-Distributed, Publisher-Signed Official Catalog
+
+**Status**: approved
+**Date**: 2026-09-17
+
+### Context
+
+Execution proved that the built-in source configured by MCA-D20 cannot perform
+a fresh product synchronization: `peers-labs/peers-touch` is private, its
+default branch is `master` rather than the configured `main`, and anonymous raw
+fetches return HTTP 404. Embedding the verified snapshot still satisfies first
+use, but reloading those bytes cannot establish fresh synchronization.
+
+### Decision
+
+The built-in source uses an authenticated, versioned Station endpoint to
+distribute the exact Peers publisher-signed envelope. Station is transport
+only. Desktop Rust retains the pinned publisher key, validates signature,
+source/publisher identity, artifact hashes, timestamps, revision reuse, and
+rollback, then atomically publishes the verified cache.
+
+Trust and transport are separate:
+
+- `official_station` fixes the Station endpoint and Peers trust root in product
+  code.
+- `user_pinned_github` requires an explicit public GitHub repository, branch,
+  manifest path, publisher, and user-pinned key.
+
+The sole manually maintained envelope lives under
+`packages/agent-catalog/`. Desktop bootstrap consumes it directly. Station
+serves a deterministic generated byte projection whose drift check is part of
+the source Gate. The previous Desktop-local envelope copy is deleted in the
+same cut.
+
+The Station/Desktop wire contract is proto-first and returns bounded envelope
+bytes, media type, distribution identity, and a diagnostic SHA-256. The digest
+checks transport integrity only; Ed25519 verification remains the trust root.
+
+### Rationale
+
+Station is already the authenticated deployment-bound service available to
+every supported Desktop profile. Serving opaque signed bytes makes catalog
+availability independent of GitHub visibility without letting Station assert
+publisher trust or installed-state truth.
+
+A neutral catalog asset prevents Desktop-to-Station source dependency. The
+generated Station projection is mechanically derived and cannot become a
+second manually edited catalog.
+
+### Alternatives Considered
+
+- Private GitHub with a Desktop token: rejected because it distributes a
+  developer credential and couples product availability to repository access.
+- Historical public Station repository: rejected because it is not the current
+  source/deployment mirror and would create another release truth.
+- Embedded-byte sync fallback: rejected because it cannot prove fresh network
+  synchronization.
+- Hosted marketplace service: rejected as outside X3 and the accepted product
+  non-goals.
+
+### Consequences
+
+- `model/domain/agent/package_catalog.proto` adds one read-only response
+  contract.
+- `packages/agent-catalog` becomes the sole signed-asset source and must enter
+  the X3 Plan/declaration write set.
+- Old Stations without the endpoint produce a visible stale verified state.
+- Catalog publication follows Station release cadence.
+- Key rotation requires coordinated Station asset and Desktop key-pin releases.
+- Agent/Skill Station truth and actor-scoped Desktop MCP truth remain unchanged.
+
+### Review Condition
+
+Revisit if the official catalog moves to a separately operated public
+distribution service. That service must preserve exact signed bytes, bounded
+transport, rollback protection, and independence from installed-state
+authority.

@@ -11,9 +11,11 @@ from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
+    INDEXED_ACTOR_VISIBILITY,
     RETIRED_CHAT_TABLES,
     FixtureActorRecord,
     _remote_transport,
+    active_profile_environment,
     acceptance_station_environment,
     duplicate_acceptance_queue_delivery,
     fixture_federation_id,
@@ -78,6 +80,26 @@ class FixtureFederationIdentityTest(unittest.TestCase):
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "resolve_machine_profile_environment",
+        return_value=(
+            "chat-native-disposable",
+            Path("/env/chat-native-disposable/profile.env.example"),
+            3,
+            {
+                "PT_DEV_PROFILE": "chat-native-disposable",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "http://10.37.94.156:18132",
+            },
+        ),
+    )
+    def test_active_profile_uses_machine_control_plane(self, resolver) -> None:
+        values = active_profile_environment()
+
+        resolver.assert_called_once()
+        self.assertEqual(values["PT_DEV_PROFILE"], "chat-native-disposable")
+
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset."
         "active_profile_environment",
@@ -1222,12 +1244,23 @@ ORDER BY owner_ptid
         "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
     )
     @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "active_profile_environment",
+        return_value={
+            "PT_DEV_PROFILE": "chat-native-acceptance",
+            "PT_STATION_MODE": "remote",
+            "PT_STATION_URL": "http://10.37.94.156:18132",
+            "PT_STATION_DEPLOY_ENV": "chat-native-acceptance",
+        },
+    )
+    @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value=DISPOSABLE_ENVIRONMENT,
     )
     def test_station_reset_clears_sessions_and_restores_preset_credentials(
         self,
         _environment,
+        _profile,
         _runtime,
         run,
     ) -> None:
@@ -1251,6 +1284,10 @@ ORDER BY owner_ptid
         self.assertIn("SELECT password_hash INTO STRICT preset_hash", sql)
         self.assertIn(
             "WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t')",
+            sql,
+        )
+        self.assertIn(
+            f"visibility = {INDEXED_ACTOR_VISIBILITY}",
             sql,
         )
         self.assertIn("updated_count <> 3", sql)

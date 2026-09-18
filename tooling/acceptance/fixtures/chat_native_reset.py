@@ -21,6 +21,10 @@ from typing import Iterable
 import urllib.parse
 import urllib.request
 
+from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.provisioner import (
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 
@@ -36,6 +40,7 @@ RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
+INDEXED_ACTOR_VISIBILITY = 3
 CHAT_TABLES = (
     "actor_devices",
     "actor_endpoint_directory_versions",
@@ -162,14 +167,8 @@ def deploy_environment(name: str) -> dict[str, str]:
 
 
 def active_profile_environment() -> dict[str, str]:
-    active_profile = (
-        REPO_ROOT
-        / ".local"
-        / "dev"
-        / "active"
-        / f"{REPO_ROOT.name}.env"
-    )
-    return load_environment_file(active_profile)
+    _, _, _, values = resolve_machine_profile_environment(REPO_ROOT)
+    return values
 
 
 def active_deployment_environment() -> str:
@@ -201,7 +200,7 @@ def _local_source_environment(
 ) -> dict[str, str] | None:
     try:
         profile = active_profile_environment()
-    except RuntimeError:
+    except (BlockedError, RuntimeError):
         return None
     if profile.get("PT_STATION_MODE", "").strip() != "local":
         return None
@@ -2322,7 +2321,8 @@ BEGIN
   WHERE email = 'alice@p.t';
 
   UPDATE touch_actor
-  SET password_hash = preset_hash
+  SET password_hash = preset_hash,
+      visibility = {INDEXED_ACTOR_VISIBILITY}
   WHERE email IN ('alice@p.t', 'bob@p.t', 'carol@p.t');
   GET DIAGNOSTICS updated_count = ROW_COUNT;
   IF updated_count <> 3 THEN

@@ -7787,7 +7787,11 @@ impl CommandResultRepository for MessagingStore {
         MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
     }
 
-    fn command_bytes(&self, conversation_id: &str, command_id: &str) -> Result<Vec<u8>, String> {
+    fn command_bytes(
+        &self,
+        conversation_id: &str,
+        command_id: &str,
+    ) -> Result<Vec<u8>, String> {
         MessagingStore::command_bytes(self, conversation_id, command_id)
     }
 
@@ -10376,6 +10380,56 @@ mod tests {
             store.next_one_time_prekey_id().unwrap_err(),
             "messaging one-time prekey history is incomplete"
         );
+    }
+
+    #[test]
+    fn messaging_schema_backfills_search_for_existing_message_projections() {
+        let store = MessagingStore::in_memory().unwrap();
+        {
+            let connection = store.connection().unwrap();
+            connection
+                .execute(
+                    "DELETE FROM messaging_schema_migrations
+                     WHERE migration_id = 'message-search-backfill-v1'",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        "direct-legacy",
+                        "event-legacy",
+                        1,
+                        "message-legacy",
+                        "ptid:alice",
+                        "alice-device",
+                        "legacy searchable plaintext",
+                        "consumed",
+                        100,
+                    ],
+                )
+                .unwrap();
+        }
+        assert!(store
+            .search_message_projections("direct-legacy", "searchable", None, 10)
+            .unwrap()
+            .is_empty());
+        {
+            let connection = store.connection().unwrap();
+            migrate(&connection).unwrap();
+        }
+
+        let results = store
+            .search_message_projections("direct-legacy", "searchable", None, 10)
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].message_id, "message-legacy");
+        assert_eq!(results[0].plaintext, "legacy searchable plaintext");
     }
 
     #[test]

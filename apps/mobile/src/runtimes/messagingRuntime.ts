@@ -144,15 +144,9 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
 }
 
 function enqueueSessionTransition(session: MobileAuthSession | null): void {
-  // #region debug-point B:messaging-session-enqueued
-  void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'B', location: 'apps/mobile/src/runtimes/messagingRuntime.ts:enqueueSessionTransition', msg: '[DEBUG] Messaging session transition enqueued', data: { hasSession: session !== null }, ts: Date.now() }) }).catch(() => {});
-  // #endregion
   transition = transition
     .then(() => synchronizeSession(session))
     .catch((error) => {
-      // #region debug-point A:messaging-session-failed
-      void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'A', location: 'apps/mobile/src/runtimes/messagingRuntime.ts:enqueueSessionTransition', msg: '[DEBUG] Messaging session transition failed', data: { message: readableErrorMessage(error) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       reportRuntimeError('session-transition', error);
     });
 }
@@ -166,17 +160,11 @@ async function synchronizeSession(session: MobileAuthSession | null): Promise<vo
   }
   if (!session) return;
   const scope = accountInput(session);
-  // #region debug-point A:messaging-activate-start
-  void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'A', location: 'apps/mobile/src/runtimes/messagingRuntime.ts:synchronizeSession', msg: '[DEBUG] Messaging activation starting', data: { scheme: session.stationUrl.split(':', 1)[0], loopback: /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(session.stationUrl) }, ts: Date.now() }) }).catch(() => {});
-  // #endregion
   const status = await messagingActivate({
     ...scope,
     stationOrigin: session.stationUrl,
     accessToken: session.accessToken,
   });
-  // #region debug-point A:messaging-activate-complete
-  void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'A', location: 'apps/mobile/src/runtimes/messagingRuntime.ts:synchronizeSession', msg: '[DEBUG] Messaging activation completed', data: { hasProfileId: Boolean(status.profileId), activationGeneration: status.activationGeneration }, ts: Date.now() }) }).catch(() => {});
-  // #endregion
   if (!status.profileId) throw new Error('mobile.messaging.runtimeProfileMissing');
   activeScope = scope;
   activeProfileId = status.profileId;

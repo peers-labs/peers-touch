@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/evaluation.proto.
  */
 export const file_domain_agent_evaluation: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kb21haW4vYWdlbnQvZXZhbHVhdGlvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEifAoPRXZhbHVhdGlvbkVycm9yEj0KBGNvZGUYASABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRXJyb3JDb2RlEhEKCXJldHJ5YWJsZRgCIAEoCBIXCg9yZWNvdmVyeV9hY3Rpb24YAyABKAkiaQoTRXZhbHVhdGlvbkJlbmNobWFyaxIUCgxiZW5jaG1hcmtfaWQYASABKAkSDAoEcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEg4KBnJ1YnJpYxgEIAEoCRIQCghyZXZpc2lvbhgFIAEoBCJrChFFdmFsdWF0aW9uRGF0YXNldBISCgpkYXRhc2V0X2lkGAEgASgJEhQKDGJlbmNobWFya19pZBgCIAEoCRIMCgRwdGlkGAMgASgJEgwKBG5hbWUYBCABKAkSEAoIcmV2aXNpb24YBSABKAQingEKEkV2YWx1YXRpb25UZXN0Q2FzZRIPCgdjYXNlX2lkGAEgASgJEhIKCmRhdGFzZXRfaWQYAiABKAkSDQoFaW5wdXQYAyABKAkSEAoIZXhwZWN0ZWQYBCABKAkSHAoPcnVicmljX292ZXJyaWRlGAUgASgJSACIAQESEAoIcmV2aXNpb24YBiABKARCEgoQX3J1YnJpY19vdmVycmlkZSKaAQoRRXZhbHVhdGlvbk1ldHJpY3MSEwoLdG90YWxfY2FzZXMYASABKA0SFgoOdGVybWluYWxfY2FzZXMYAiABKA0SFAoMcGFzc2VkX2Nhc2VzGAMgASgNEhUKDWF2ZXJhZ2Vfc2NvcmUYBCABKAESFwoPbWV0cmljc192ZXJzaW9uGAUgASgJEhIKCmNvbXBhcmFibGUYBiABKAgi0AYKDUV2YWx1YXRpb25SdW4SDgoGcnVuX2lkGAEgASgJEgwKBHB0aWQYAiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJEhQKDHBheWxvYWRfaGFzaBgEIAEoCRIQCghyZXZpc2lvbhgFIAEoBBIaCg1wYXJlbnRfcnVuX2lkGAYgASgJSACIAQESRwoMY29tbWFuZF9raW5kGAcgASgOMjEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkNvbW1hbmRLaW5kEhYKDm11dGF0aW9uX3Njb3BlGAggASgJEhsKE2NhbmNlbF9pbnRlbnRfZmVuY2UYCSABKAkSNwoTY2FuY2VsX2Fja19kZWFkbGluZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOdGVybWluYWxfZmVuY2UYCyABKAkSEgoKZGF0YXNldF9pZBgMIAEoCRIYChBkYXRhc2V0X3JldmlzaW9uGA0gASgEEkoKFXRhcmdldF9hZ2VudF9zbmFwc2hvdBgOIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlJ1bnRpbWVTbmFwc2hvdBIdChVyZWFkaW5lc3Nfc25hcHNob3RfaWQYDyABKAkSPwoGc3RhdHVzGBAgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJ1blN0YXR1cxIXCg9jb21wbGV0ZWRfY2FzZXMYESABKA0SEwoLdG90YWxfY2FzZXMYEiABKA0SPgoHbWV0cmljcxgTIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25NZXRyaWNzEi4KCmNyZWF0ZWRfYXQYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3Rlcm1pbmFsX2F0GBUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6CgVlcnJvchgWIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25FcnJvckIQCg5fcGFyZW50X3J1bl9pZCKOBAoVRXZhbHVhdGlvbkNhc2VBdHRlbXB0EhIKCmF0dGVtcHRfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEg8KB2Nhc2VfaWQYAyABKAkSDwoHYXR0ZW1wdBgEIAEoDRIXCg9pZGVtcG90ZW5jeV9rZXkYBSABKAkSHgoRc291cmNlX2F0dGVtcHRfaWQYBiABKAlIAIgBARIdChBzb3VyY2VfcmVzdWx0X2lkGAcgASgJSAGIAQESDwoHdHVybl9pZBgIIAEoCRJDCgZzdGF0dXMYCSABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uQXR0ZW1wdFN0YXR1cxISCgpvdXRwdXRfcmVmGAogASgJEhIKBXNjb3JlGAsgASgBSAKIAQESOgoFZXJyb3IYDCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRXJyb3ISNwoTY2FuY2VsbGF0aW9uX2Fja19hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLdGVybWluYWxfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQhQKEl9zb3VyY2VfYXR0ZW1wdF9pZEITChFfc291cmNlX3Jlc3VsdF9pZEIICgZfc2NvcmUikwIKEEV2YWx1YXRpb25SZXN1bHQSEQoJcmVzdWx0X2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIPCgdjYXNlX2lkGAMgASgJEhIKCmF0dGVtcHRfaWQYBCABKAkSEgoKb3V0cHV0X3JlZhgFIAEoCRINCgVzY29yZRgGIAEoARIWCg5ydWJyaWNfdmVyc2lvbhgHIAEoCRJMCg90ZXJtaW5hbF9zdGF0dXMYCCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uQXR0ZW1wdFN0YXR1cxIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK3AgoSRXZhbHVhdGlvblJ1bkV2ZW50Eg4KBnJ1bl9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoBBI/CgZzdGF0dXMYAyABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uUnVuU3RhdHVzEhcKD2NvbXBsZXRlZF9jYXNlcxgEIAEoDRITCgt0b3RhbF9jYXNlcxgFIAEoDRIPCgdjYXNlX2lkGAYgASgJEhIKCmF0dGVtcHRfaWQYByABKAkSOgoFZXJyb3IYCCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRXJyb3ISLwoLb2NjdXJyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlkKIENyZWF0ZUV2YWx1YXRpb25CZW5jaG1hcmtSZXF1ZXN0EgwKBG5hbWUYASABKAkSDgoGcnVicmljGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSJnCiFDcmVhdGVFdmFsdWF0aW9uQmVuY2htYXJrUmVzcG9uc2USQgoJYmVuY2htYXJrGAEgASgLMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkJlbmNobWFyayKCAQoeQ3JlYXRlRXZhbHVhdGlvbkRhdGFzZXRSZXF1ZXN0EhQKDGJlbmNobWFya19pZBgBIAEoCRIMCgRuYW1lGAIgASgJEiMKG2V4cGVjdGVkX2JlbmNobWFya19yZXZpc2lvbhgDIAEoBBIXCg9pZGVtcG90ZW5jeV9rZXkYBCABKAkiYQofQ3JlYXRlRXZhbHVhdGlvbkRhdGFzZXRSZXNwb25zZRI+CgdkYXRhc2V0GAEgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkRhdGFzZXQixAEKH0NyZWF0ZUV2YWx1YXRpb25UZXN0Q2FzZVJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCRINCgVpbnB1dBgCIAEoCRIQCghleHBlY3RlZBgDIAEoCRIcCg9ydWJyaWNfb3ZlcnJpZGUYBCABKAlIAIgBARIhChlleHBlY3RlZF9kYXRhc2V0X3JldmlzaW9uGAUgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgGIAEoCUISChBfcnVicmljX292ZXJyaWRlImUKIENyZWF0ZUV2YWx1YXRpb25UZXN0Q2FzZVJlc3BvbnNlEkEKCXRlc3RfY2FzZRgBIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25UZXN0Q2FzZSLOAQoaQ3JlYXRlRXZhbHVhdGlvblJ1blJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCRIYChBkYXRhc2V0X3JldmlzaW9uGAIgASgEEkoKFXRhcmdldF9hZ2VudF9zbmFwc2hvdBgDIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlJ1bnRpbWVTbmFwc2hvdBIdChVyZWFkaW5lc3Nfc25hcHNob3RfaWQYBCABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJIlUKG0NyZWF0ZUV2YWx1YXRpb25SdW5SZXNwb25zZRI2CgNydW4YASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uUnVuIl8KGVN0YXJ0RXZhbHVhdGlvblJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSJUChpTdGFydEV2YWx1YXRpb25SdW5SZXNwb25zZRI2CgNydW4YASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uUnVuImAKGkNhbmNlbEV2YWx1YXRpb25SdW5SZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoBBIXCg9pZGVtcG90ZW5jeV9rZXkYAyABKAkiVQobQ2FuY2VsRXZhbHVhdGlvblJ1blJlc3BvbnNlEjYKA3J1bhgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW4iXwobUmV0cnlFdmFsdWF0aW9uQ2FzZXNSZXF1ZXN0EhUKDXBhcmVudF9ydW5faWQYASABKAkSEAoIY2FzZV9pZHMYAiADKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIlwKHFJldHJ5RXZhbHVhdGlvbkNhc2VzUmVzcG9uc2USPAoJY2hpbGRfcnVuGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJ1biIpChdHZXRFdmFsdWF0aW9uUnVuUmVxdWVzdBIOCgZydW5faWQYASABKAki1gEKGEdldEV2YWx1YXRpb25SdW5SZXNwb25zZRI2CgNydW4YASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uUnVuEkMKCGF0dGVtcHRzGAIgAygLMjEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkNhc2VBdHRlbXB0Ej0KB3Jlc3VsdHMYAyADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uUmVzdWx0KosDChNFdmFsdWF0aW9uUnVuU3RhdHVzEiUKIUVWQUxVQVRJT05fUlVOX1NUQVRVU19VTlNQRUNJRklFRBAAEh8KG0VWQUxVQVRJT05fUlVOX1NUQVRVU19EUkFGVBABEiEKHUVWQUxVQVRJT05fUlVOX1NUQVRVU19QRU5ESU5HEAISIQodRVZBTFVBVElPTl9SVU5fU1RBVFVTX1JVTk5JTkcQAxIxCi1FVkFMVUFUSU9OX1JVTl9TVEFUVVNfQ0FOQ0VMX0lOVEVOVF9DT01NSVRURUQQBBIkCiBFVkFMVUFUSU9OX1JVTl9TVEFUVVNfQ0FOQ0VMTElORxAFEiMKH0VWQUxVQVRJT05fUlVOX1NUQVRVU19DT01QTEVURUQQBhIhCh1FVkFMVUFUSU9OX1JVTl9TVEFUVVNfUEFSVElBTBAHEiAKHEVWQUxVQVRJT05fUlVOX1NUQVRVU19GQUlMRUQQCBIjCh9FVkFMVUFUSU9OX1JVTl9TVEFUVVNfQ0FOQ0VMTEVEEAkqtQIKF0V2YWx1YXRpb25BdHRlbXB0U3RhdHVzEikKJUVWQUxVQVRJT05fQVRURU1QVF9TVEFUVVNfVU5TUEVDSUZJRUQQABIlCiFFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX1BFTkRJTkcQARIlCiFFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX1JVTk5JTkcQAhInCiNFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX0NPTVBMRVRFRBADEiQKIEVWQUxVQVRJT05fQVRURU1QVF9TVEFUVVNfRkFJTEVEEAQSJwojRVZBTFVBVElPTl9BVFRFTVBUX1NUQVRVU19DQU5DRUxMRUQQBRIpCiVFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX0lOVEVSUlVQVEVEEAYq4AEKFUV2YWx1YXRpb25Db21tYW5kS2luZBInCiNFVkFMVUFUSU9OX0NPTU1BTkRfS0lORF9VTlNQRUNJRklFRBAAEiYKIkVWQUxVQVRJT05fQ09NTUFORF9LSU5EX0NSRUFURV9SVU4QARIlCiFFVkFMVUFUSU9OX0NPTU1BTkRfS0lORF9TVEFSVF9SVU4QAhImCiJFVkFMVUFUSU9OX0NPTU1BTkRfS0lORF9DQU5DRUxfUlVOEAMSJwojRVZBTFVBVElPTl9DT01NQU5EX0tJTkRfUkVUUllfQ0FTRVMQBCqRAwoTRXZhbHVhdGlvbkVycm9yQ29kZRIlCiFFVkFMVUFUSU9OX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABIzCi9FVkFMVUFUSU9OX0VSUk9SX0NPREVfREFUQVNFVF9SRVZJU0lPTl9DT05GTElDVBABEjEKLUVWQUxVQVRJT05fRVJST1JfQ09ERV9UQVJHRVRfU05BUFNIT1RfSU5WQUxJRBACEi0KKUVWQUxVQVRJT05fRVJST1JfQ09ERV9SVU5fTk9UX0NBTkNFTExBQkxFEAMSLQopRVZBTFVBVElPTl9FUlJPUl9DT0RFX0NBU0VfUkVUUllfQ09ORkxJQ1QQBBIvCitFVkFMVUFUSU9OX0VSUk9SX0NPREVfRVZBTFVBVE9SX1VOQVZBSUxBQkxFEAUSLgoqRVZBTFVBVElPTl9FUlJPUl9DT0RFX0lERU1QT1RFTkNZX0NPTkZMSUNUEAYSLAooRVZBTFVBVElPTl9FUlJPUl9DT0RFX0NBTkNFTF9BQ0tfVElNRU9VVBAHQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_agent_agent, file_google_protobuf_timestamp]);
+  fileDesc("Ch1kb21haW4vYWdlbnQvZXZhbHVhdGlvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEinQIKD0V2YWx1YXRpb25FcnJvchI9CgRjb2RlGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkVycm9yQ29kZRIRCglyZXRyeWFibGUYAiABKAgSFwoPcmVjb3ZlcnlfYWN0aW9uGAMgASgJEhIKCmxvY2FsZV9rZXkYBCABKAkSEAoIdGVybWluYWwYBSABKAgSSQoHZGV0YWlscxgGIAMoCzI4LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25FcnJvci5EZXRhaWxzRW50cnkaLgoMRGV0YWlsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi+QEKE0V2YWx1YXRpb25CZW5jaG1hcmsSFAoMYmVuY2htYXJrX2lkGAEgASgJEgwKBHB0aWQYAiABKAkSDAoEbmFtZRgDIAEoCRIOCgZydWJyaWMYBCABKAkSEAoIcmV2aXNpb24YBSABKAQSLgoKY3JlYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZGVsZXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAikAIKEUV2YWx1YXRpb25EYXRhc2V0EhIKCmRhdGFzZXRfaWQYASABKAkSFAoMYmVuY2htYXJrX2lkGAIgASgJEgwKBHB0aWQYAyABKAkSDAoEbmFtZRgEIAEoCRIQCghyZXZpc2lvbhgFIAEoBBITCgtkZXNjcmlwdGlvbhgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpkZWxldGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK8AgoSRXZhbHVhdGlvblRlc3RDYXNlEg8KB2Nhc2VfaWQYASABKAkSEgoKZGF0YXNldF9pZBgCIAEoCRINCgVpbnB1dBgDIAEoCRIQCghleHBlY3RlZBgEIAEoCRIcCg9ydWJyaWNfb3ZlcnJpZGUYBSABKAlIAIgBARIQCghyZXZpc2lvbhgGIAEoBBIMCgR0YWdzGAcgAygJEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmRlbGV0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQhIKEF9ydWJyaWNfb3ZlcnJpZGUinAEKGUV2YWx1YXRpb25SdW5DYXNlU25hcHNob3QSDwoHY2FzZV9pZBgBIAEoCRINCgVpbnB1dBgCIAEoCRIQCghleHBlY3RlZBgDIAEoCRIOCgZydWJyaWMYBCABKAkSFgoOcnVicmljX3ZlcnNpb24YBSABKAkSDAoEdGFncxgGIAMoCRIXCg9zb3VyY2VfcmV2aXNpb24YByABKAQiyQEKEUV2YWx1YXRpb25NZXRyaWNzEhMKC3RvdGFsX2Nhc2VzGAEgASgNEhYKDnRlcm1pbmFsX2Nhc2VzGAIgASgNEhQKDHBhc3NlZF9jYXNlcxgDIAEoDRIVCg1hdmVyYWdlX3Njb3JlGAQgASgBEhcKD21ldHJpY3NfdmVyc2lvbhgFIAEoCRISCgpjb21wYXJhYmxlGAYgASgIEhQKDGZhaWxlZF9jYXNlcxgHIAEoDRIXCg9jYW5jZWxsZWRfY2FzZXMYCCABKA0i6AcKDUV2YWx1YXRpb25SdW4SDgoGcnVuX2lkGAEgASgJEgwKBHB0aWQYAiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJEhQKDHBheWxvYWRfaGFzaBgEIAEoCRIQCghyZXZpc2lvbhgFIAEoBBIaCg1wYXJlbnRfcnVuX2lkGAYgASgJSACIAQESRwoMY29tbWFuZF9raW5kGAcgASgOMjEucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkNvbW1hbmRLaW5kEhYKDm11dGF0aW9uX3Njb3BlGAggASgJEhsKE2NhbmNlbF9pbnRlbnRfZmVuY2UYCSABKAkSNwoTY2FuY2VsX2Fja19kZWFkbGluZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOdGVybWluYWxfZmVuY2UYCyABKAkSEgoKZGF0YXNldF9pZBgMIAEoCRIYChBkYXRhc2V0X3JldmlzaW9uGA0gASgEEkoKFXRhcmdldF9hZ2VudF9zbmFwc2hvdBgOIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlJ1bnRpbWVTbmFwc2hvdBIdChVyZWFkaW5lc3Nfc25hcHNob3RfaWQYDyABKAkSPwoGc3RhdHVzGBAgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJ1blN0YXR1cxIXCg9jb21wbGV0ZWRfY2FzZXMYESABKA0SEwoLdG90YWxfY2FzZXMYEiABKA0SPgoHbWV0cmljcxgTIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25NZXRyaWNzEi4KCmNyZWF0ZWRfYXQYFCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3Rlcm1pbmFsX2F0GBUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI6CgVlcnJvchgWIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25FcnJvchIXCg90YXJnZXRfYWdlbnRfaWQYFyABKAkSHQoVdGFyZ2V0X2FnZW50X3JldmlzaW9uGBggASgEEi4KCnVwZGF0ZWRfYXQYGSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmRlbGV0ZWRfYXQYGiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQhAKDl9wYXJlbnRfcnVuX2lkItcEChVFdmFsdWF0aW9uQ2FzZUF0dGVtcHQSEgoKYXR0ZW1wdF9pZBgBIAEoCRIOCgZydW5faWQYAiABKAkSDwoHY2FzZV9pZBgDIAEoCRIPCgdhdHRlbXB0GAQgASgNEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCRIeChFzb3VyY2VfYXR0ZW1wdF9pZBgGIAEoCUgAiAEBEh0KEHNvdXJjZV9yZXN1bHRfaWQYByABKAlIAYgBARIPCgd0dXJuX2lkGAggASgJEkMKBnN0YXR1cxgJIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25BdHRlbXB0U3RhdHVzEhIKCm91dHB1dF9yZWYYCiABKAkSEgoFc2NvcmUYCyABKAFIAogBARI6CgVlcnJvchgMIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25FcnJvchI3ChNjYW5jZWxsYXRpb25fYWNrX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgt0ZXJtaW5hbF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKc3RhcnRlZF9hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPc2NoZWR1bGVyX2NsYWltGBAgASgJQhQKEl9zb3VyY2VfYXR0ZW1wdF9pZEITChFfc291cmNlX3Jlc3VsdF9pZEIICgZfc2NvcmUizgIKEEV2YWx1YXRpb25SZXN1bHQSEQoJcmVzdWx0X2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIPCgdjYXNlX2lkGAMgASgJEhIKCmF0dGVtcHRfaWQYBCABKAkSEgoKb3V0cHV0X3JlZhgFIAEoCRINCgVzY29yZRgGIAEoARIWCg5ydWJyaWNfdmVyc2lvbhgHIAEoCRJMCg90ZXJtaW5hbF9zdGF0dXMYCCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uQXR0ZW1wdFN0YXR1cxIuCgpjcmVhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZvdXRwdXQYCiABKAkSEgoKbGF0ZW5jeV9tcxgLIAEoBBIVCg10dXJuX3RyYWNlX2lkGAwgASgJIsoCChJFdmFsdWF0aW9uUnVuRXZlbnQSDgoGcnVuX2lkGAEgASgJEhAKCHNlcXVlbmNlGAIgASgEEj8KBnN0YXR1cxgDIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW5TdGF0dXMSFwoPY29tcGxldGVkX2Nhc2VzGAQgASgNEhMKC3RvdGFsX2Nhc2VzGAUgASgNEg8KB2Nhc2VfaWQYBiABKAkSEgoKYXR0ZW1wdF9pZBgHIAEoCRI6CgVlcnJvchgIIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25FcnJvchIvCgtvY2N1cnJlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJcmVzdWx0X2lkGAogASgJIlkKIENyZWF0ZUV2YWx1YXRpb25CZW5jaG1hcmtSZXF1ZXN0EgwKBG5hbWUYASABKAkSDgoGcnVicmljGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSJnCiFDcmVhdGVFdmFsdWF0aW9uQmVuY2htYXJrUmVzcG9uc2USQgoJYmVuY2htYXJrGAEgASgLMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkJlbmNobWFyayKKAQogVXBkYXRlRXZhbHVhdGlvbkJlbmNobWFya1JlcXVlc3QSFAoMYmVuY2htYXJrX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGcnVicmljGAMgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAQgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCSJnCiFVcGRhdGVFdmFsdWF0aW9uQmVuY2htYXJrUmVzcG9uc2USQgoJYmVuY2htYXJrGAEgASgLMi8ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkJlbmNobWFyayJsCiBEZWxldGVFdmFsdWF0aW9uQmVuY2htYXJrUmVxdWVzdBIUCgxiZW5jaG1hcmtfaWQYASABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAQSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIjQKIURlbGV0ZUV2YWx1YXRpb25CZW5jaG1hcmtSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIIiEKH0xpc3RFdmFsdWF0aW9uQmVuY2htYXJrc1JlcXVlc3QiZwogTGlzdEV2YWx1YXRpb25CZW5jaG1hcmtzUmVzcG9uc2USQwoKYmVuY2htYXJrcxgBIAMoCzIvLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25CZW5jaG1hcmsilwEKHkNyZWF0ZUV2YWx1YXRpb25EYXRhc2V0UmVxdWVzdBIUCgxiZW5jaG1hcmtfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIjChtleHBlY3RlZF9iZW5jaG1hcmtfcmV2aXNpb24YAyABKAQSFwoPaWRlbXBvdGVuY3lfa2V5GAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJIqUBCh9DcmVhdGVFdmFsdWF0aW9uRGF0YXNldFJlc3BvbnNlEj4KB2RhdGFzZXQYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRGF0YXNldBJCCgliZW5jaG1hcmsYAiABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uQmVuY2htYXJrIosBCh5VcGRhdGVFdmFsdWF0aW9uRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAQgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgFIAEoCSJhCh9VcGRhdGVFdmFsdWF0aW9uRGF0YXNldFJlc3BvbnNlEj4KB2RhdGFzZXQYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRGF0YXNldCJoCh5EZWxldGVFdmFsdWF0aW9uRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgCIAEoBBIXCg9pZGVtcG90ZW5jeV9rZXkYAyABKAkiMgofRGVsZXRlRXZhbHVhdGlvbkRhdGFzZXRSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIIjUKHUxpc3RFdmFsdWF0aW9uRGF0YXNldHNSZXF1ZXN0EhQKDGJlbmNobWFya19pZBgBIAEoCSJhCh5MaXN0RXZhbHVhdGlvbkRhdGFzZXRzUmVzcG9uc2USPwoIZGF0YXNldHMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRGF0YXNldCLSAQofQ3JlYXRlRXZhbHVhdGlvblRlc3RDYXNlUmVxdWVzdBISCgpkYXRhc2V0X2lkGAEgASgJEg0KBWlucHV0GAIgASgJEhAKCGV4cGVjdGVkGAMgASgJEhwKD3J1YnJpY19vdmVycmlkZRgEIAEoCUgAiAEBEiEKGWV4cGVjdGVkX2RhdGFzZXRfcmV2aXNpb24YBSABKAQSFwoPaWRlbXBvdGVuY3lfa2V5GAYgASgJEgwKBHRhZ3MYByADKAlCEgoQX3J1YnJpY19vdmVycmlkZSKlAQogQ3JlYXRlRXZhbHVhdGlvblRlc3RDYXNlUmVzcG9uc2USQQoJdGVzdF9jYXNlGAEgASgLMi4ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblRlc3RDYXNlEj4KB2RhdGFzZXQYAiABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRGF0YXNldCLHAQofVXBkYXRlRXZhbHVhdGlvblRlc3RDYXNlUmVxdWVzdBIPCgdjYXNlX2lkGAEgASgJEg0KBWlucHV0GAIgASgJEhAKCGV4cGVjdGVkGAMgASgJEhwKD3J1YnJpY19vdmVycmlkZRgEIAEoCUgAiAEBEgwKBHRhZ3MYBSADKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YBiABKAQSFwoPaWRlbXBvdGVuY3lfa2V5GAcgASgJQhIKEF9ydWJyaWNfb3ZlcnJpZGUipQEKIFVwZGF0ZUV2YWx1YXRpb25UZXN0Q2FzZVJlc3BvbnNlEkEKCXRlc3RfY2FzZRgBIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25UZXN0Q2FzZRI+CgdkYXRhc2V0GAIgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvbkRhdGFzZXQiZgofRGVsZXRlRXZhbHVhdGlvblRlc3RDYXNlUmVxdWVzdBIPCgdjYXNlX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSJzCiBEZWxldGVFdmFsdWF0aW9uVGVzdENhc2VSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIEj4KB2RhdGFzZXQYAiABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uRGF0YXNldCI0Ch5MaXN0RXZhbHVhdGlvblRlc3RDYXNlc1JlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSJlCh9MaXN0RXZhbHVhdGlvblRlc3RDYXNlc1Jlc3BvbnNlEkIKCnRlc3RfY2FzZXMYASADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5FdmFsdWF0aW9uVGVzdENhc2UitQIKGkNyZWF0ZUV2YWx1YXRpb25SdW5SZXF1ZXN0EhIKCmRhdGFzZXRfaWQYASABKAkSGAoQZGF0YXNldF9yZXZpc2lvbhgCIAEoBBIdChVyZWFkaW5lc3Nfc25hcHNob3RfaWQYBCABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAUgASgJEhcKD3RhcmdldF9hZ2VudF9pZBgGIAEoCRIfChdleHBlY3RlZF9hZ2VudF9yZXZpc2lvbhgHIAEoBBIfChJydW50aW1lX3Byb2ZpbGVfaWQYCCABKAlIAIgBARIVCghtb2RlbF9pZBgJIAEoCUgBiAEBQhUKE19ydW50aW1lX3Byb2ZpbGVfaWRCCwoJX21vZGVsX2lkSgQIAxAEUhV0YXJnZXRfYWdlbnRfc25hcHNob3QiVQobQ3JlYXRlRXZhbHVhdGlvblJ1blJlc3BvbnNlEjYKA3J1bhgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW4iXwoZU3RhcnRFdmFsdWF0aW9uUnVuUmVxdWVzdBIOCgZydW5faWQYASABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAiABKAQSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIlQKGlN0YXJ0RXZhbHVhdGlvblJ1blJlc3BvbnNlEjYKA3J1bhgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW4iYAoaQ2FuY2VsRXZhbHVhdGlvblJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSJVChtDYW5jZWxFdmFsdWF0aW9uUnVuUmVzcG9uc2USNgoDcnVuGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJ1biKBAQobUmV0cnlFdmFsdWF0aW9uQ2FzZXNSZXF1ZXN0EhUKDXBhcmVudF9ydW5faWQYASABKAkSEAoIY2FzZV9pZHMYAiADKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJEiAKGGV4cGVjdGVkX3BhcmVudF9yZXZpc2lvbhgEIAEoBCJcChxSZXRyeUV2YWx1YXRpb25DYXNlc1Jlc3BvbnNlEjwKCWNoaWxkX3J1bhgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW4iKQoXR2V0RXZhbHVhdGlvblJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIpwCChhHZXRFdmFsdWF0aW9uUnVuUmVzcG9uc2USNgoDcnVuGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJ1bhJDCghhdHRlbXB0cxgCIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25DYXNlQXR0ZW1wdBI9CgdyZXN1bHRzGAMgAygLMiwucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXZhbHVhdGlvblJlc3VsdBJECgVjYXNlcxgEIAMoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW5DYXNlU25hcHNob3QiagoZTGlzdEV2YWx1YXRpb25SdW5zUmVxdWVzdBIaCg1wYXJlbnRfcnVuX2lkGAEgASgJSACIAQESDAoEcGFnZRgCIAEoDRIRCglwYWdlX3NpemUYAyABKA1CEAoOX3BhcmVudF9ydW5faWQiZAoaTGlzdEV2YWx1YXRpb25SdW5zUmVzcG9uc2USNwoEcnVucxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW4SDQoFdG90YWwYAiABKAQiSAoeTGlzdEV2YWx1YXRpb25SdW5FdmVudHNSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRIWCg5hZnRlcl9zZXF1ZW5jZRgCIAEoBCJ6Ch9MaXN0RXZhbHVhdGlvblJ1bkV2ZW50c1Jlc3BvbnNlEj4KBmV2ZW50cxgBIAMoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV2YWx1YXRpb25SdW5FdmVudBIXCg9sYXRlc3Rfc2VxdWVuY2UYAiABKAQiYAoaRGVsZXRlRXZhbHVhdGlvblJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCSIuChtEZWxldGVFdmFsdWF0aW9uUnVuUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCqLAwoTRXZhbHVhdGlvblJ1blN0YXR1cxIlCiFFVkFMVUFUSU9OX1JVTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIfChtFVkFMVUFUSU9OX1JVTl9TVEFUVVNfRFJBRlQQARIhCh1FVkFMVUFUSU9OX1JVTl9TVEFUVVNfUEVORElORxACEiEKHUVWQUxVQVRJT05fUlVOX1NUQVRVU19SVU5OSU5HEAMSMQotRVZBTFVBVElPTl9SVU5fU1RBVFVTX0NBTkNFTF9JTlRFTlRfQ09NTUlUVEVEEAQSJAogRVZBTFVBVElPTl9SVU5fU1RBVFVTX0NBTkNFTExJTkcQBRIjCh9FVkFMVUFUSU9OX1JVTl9TVEFUVVNfQ09NUExFVEVEEAYSIQodRVZBTFVBVElPTl9SVU5fU1RBVFVTX1BBUlRJQUwQBxIgChxFVkFMVUFUSU9OX1JVTl9TVEFUVVNfRkFJTEVEEAgSIwofRVZBTFVBVElPTl9SVU5fU1RBVFVTX0NBTkNFTExFRBAJKrUCChdFdmFsdWF0aW9uQXR0ZW1wdFN0YXR1cxIpCiVFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX1VOU1BFQ0lGSUVEEAASJQohRVZBTFVBVElPTl9BVFRFTVBUX1NUQVRVU19QRU5ESU5HEAESJQohRVZBTFVBVElPTl9BVFRFTVBUX1NUQVRVU19SVU5OSU5HEAISJwojRVZBTFVBVElPTl9BVFRFTVBUX1NUQVRVU19DT01QTEVURUQQAxIkCiBFVkFMVUFUSU9OX0FUVEVNUFRfU1RBVFVTX0ZBSUxFRBAEEicKI0VWQUxVQVRJT05fQVRURU1QVF9TVEFUVVNfQ0FOQ0VMTEVEEAUSKQolRVZBTFVBVElPTl9BVFRFTVBUX1NUQVRVU19JTlRFUlJVUFRFRBAGKuABChVFdmFsdWF0aW9uQ29tbWFuZEtpbmQSJwojRVZBTFVBVElPTl9DT01NQU5EX0tJTkRfVU5TUEVDSUZJRUQQABImCiJFVkFMVUFUSU9OX0NPTU1BTkRfS0lORF9DUkVBVEVfUlVOEAESJQohRVZBTFVBVElPTl9DT01NQU5EX0tJTkRfU1RBUlRfUlVOEAISJgoiRVZBTFVBVElPTl9DT01NQU5EX0tJTkRfQ0FOQ0VMX1JVThADEicKI0VWQUxVQVRJT05fQ09NTUFORF9LSU5EX1JFVFJZX0NBU0VTEAQqrQQKE0V2YWx1YXRpb25FcnJvckNvZGUSJQohRVZBTFVBVElPTl9FUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASMwovRVZBTFVBVElPTl9FUlJPUl9DT0RFX0RBVEFTRVRfUkVWSVNJT05fQ09ORkxJQ1QQARIxCi1FVkFMVUFUSU9OX0VSUk9SX0NPREVfVEFSR0VUX1NOQVBTSE9UX0lOVkFMSUQQAhItCilFVkFMVUFUSU9OX0VSUk9SX0NPREVfUlVOX05PVF9DQU5DRUxMQUJMRRADEi0KKUVWQUxVQVRJT05fRVJST1JfQ09ERV9DQVNFX1JFVFJZX0NPTkZMSUNUEAQSLworRVZBTFVBVElPTl9FUlJPUl9DT0RFX0VWQUxVQVRPUl9VTkFWQUlMQUJMRRAFEi4KKkVWQUxVQVRJT05fRVJST1JfQ09ERV9JREVNUE9URU5DWV9DT05GTElDVBAGEiwKKEVWQUxVQVRJT05fRVJST1JfQ09ERV9DQU5DRUxfQUNLX1RJTUVPVVQQBxI1CjFFVkFMVUFUSU9OX0VSUk9SX0NPREVfQkVOQ0hNQVJLX1JFVklTSU9OX0NPTkZMSUNUEAgSNQoxRVZBTFVBVElPTl9FUlJPUl9DT0RFX1RFU1RfQ0FTRV9SRVZJU0lPTl9DT05GTElDVBAJEiwKKEVWQUxVQVRJT05fRVJST1JfQ09ERV9SRVRFTlRJT05fQ09ORkxJQ1QQCkJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_agent_agent, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationError
@@ -34,6 +34,21 @@ export type EvaluationError = Message<"peers_touch.model.agent.v1.EvaluationErro
    * @generated from field: string recovery_action = 3;
    */
   recoveryAction: string;
+
+  /**
+   * @generated from field: string locale_key = 4;
+   */
+  localeKey: string;
+
+  /**
+   * @generated from field: bool terminal = 5;
+   */
+  terminal: boolean;
+
+  /**
+   * @generated from field: map<string, string> details = 6;
+   */
+  details: { [key: string]: string };
 };
 
 /**
@@ -71,6 +86,21 @@ export type EvaluationBenchmark = Message<"peers_touch.model.agent.v1.Evaluation
    * @generated from field: uint64 revision = 5;
    */
   revision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 7;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp deleted_at = 8;
+   */
+  deletedAt?: Timestamp | undefined;
 };
 
 /**
@@ -108,6 +138,26 @@ export type EvaluationDataset = Message<"peers_touch.model.agent.v1.EvaluationDa
    * @generated from field: uint64 revision = 5;
    */
   revision: bigint;
+
+  /**
+   * @generated from field: string description = 6;
+   */
+  description: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 7;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 8;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp deleted_at = 9;
+   */
+  deletedAt?: Timestamp | undefined;
 };
 
 /**
@@ -150,6 +200,26 @@ export type EvaluationTestCase = Message<"peers_touch.model.agent.v1.EvaluationT
    * @generated from field: uint64 revision = 6;
    */
   revision: bigint;
+
+  /**
+   * @generated from field: repeated string tags = 7;
+   */
+  tags: string[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 8;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 9;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp deleted_at = 10;
+   */
+  deletedAt?: Timestamp | undefined;
 };
 
 /**
@@ -158,6 +228,53 @@ export type EvaluationTestCase = Message<"peers_touch.model.agent.v1.EvaluationT
  */
 export const EvaluationTestCaseSchema: GenMessage<EvaluationTestCase> = /*@__PURE__*/
   messageDesc(file_domain_agent_evaluation, 3);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.EvaluationRunCaseSnapshot
+ */
+export type EvaluationRunCaseSnapshot = Message<"peers_touch.model.agent.v1.EvaluationRunCaseSnapshot"> & {
+  /**
+   * @generated from field: string case_id = 1;
+   */
+  caseId: string;
+
+  /**
+   * @generated from field: string input = 2;
+   */
+  input: string;
+
+  /**
+   * @generated from field: string expected = 3;
+   */
+  expected: string;
+
+  /**
+   * @generated from field: string rubric = 4;
+   */
+  rubric: string;
+
+  /**
+   * @generated from field: string rubric_version = 5;
+   */
+  rubricVersion: string;
+
+  /**
+   * @generated from field: repeated string tags = 6;
+   */
+  tags: string[];
+
+  /**
+   * @generated from field: uint64 source_revision = 7;
+   */
+  sourceRevision: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.EvaluationRunCaseSnapshot.
+ * Use `create(EvaluationRunCaseSnapshotSchema)` to create a new message.
+ */
+export const EvaluationRunCaseSnapshotSchema: GenMessage<EvaluationRunCaseSnapshot> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 4);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationMetrics
@@ -192,6 +309,16 @@ export type EvaluationMetrics = Message<"peers_touch.model.agent.v1.EvaluationMe
    * @generated from field: bool comparable = 6;
    */
   comparable: boolean;
+
+  /**
+   * @generated from field: uint32 failed_cases = 7;
+   */
+  failedCases: number;
+
+  /**
+   * @generated from field: uint32 cancelled_cases = 8;
+   */
+  cancelledCases: number;
 };
 
 /**
@@ -199,7 +326,7 @@ export type EvaluationMetrics = Message<"peers_touch.model.agent.v1.EvaluationMe
  * Use `create(EvaluationMetricsSchema)` to create a new message.
  */
 export const EvaluationMetricsSchema: GenMessage<EvaluationMetrics> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 4);
+  messageDesc(file_domain_agent_evaluation, 5);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationRun
@@ -314,6 +441,26 @@ export type EvaluationRun = Message<"peers_touch.model.agent.v1.EvaluationRun"> 
    * @generated from field: peers_touch.model.agent.v1.EvaluationError error = 22;
    */
   error?: EvaluationError | undefined;
+
+  /**
+   * @generated from field: string target_agent_id = 23;
+   */
+  targetAgentId: string;
+
+  /**
+   * @generated from field: uint64 target_agent_revision = 24;
+   */
+  targetAgentRevision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 25;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp deleted_at = 26;
+   */
+  deletedAt?: Timestamp | undefined;
 };
 
 /**
@@ -321,7 +468,7 @@ export type EvaluationRun = Message<"peers_touch.model.agent.v1.EvaluationRun"> 
  * Use `create(EvaluationRunSchema)` to create a new message.
  */
 export const EvaluationRunSchema: GenMessage<EvaluationRun> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 5);
+  messageDesc(file_domain_agent_evaluation, 6);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationCaseAttempt
@@ -396,6 +543,16 @@ export type EvaluationCaseAttempt = Message<"peers_touch.model.agent.v1.Evaluati
    * @generated from field: google.protobuf.Timestamp terminal_at = 14;
    */
   terminalAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp started_at = 15;
+   */
+  startedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string scheduler_claim = 16;
+   */
+  schedulerClaim: string;
 };
 
 /**
@@ -403,7 +560,7 @@ export type EvaluationCaseAttempt = Message<"peers_touch.model.agent.v1.Evaluati
  * Use `create(EvaluationCaseAttemptSchema)` to create a new message.
  */
 export const EvaluationCaseAttemptSchema: GenMessage<EvaluationCaseAttempt> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 6);
+  messageDesc(file_domain_agent_evaluation, 7);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationResult
@@ -453,6 +610,21 @@ export type EvaluationResult = Message<"peers_touch.model.agent.v1.EvaluationRes
    * @generated from field: google.protobuf.Timestamp created_at = 9;
    */
   createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string output = 10;
+   */
+  output: string;
+
+  /**
+   * @generated from field: uint64 latency_ms = 11;
+   */
+  latencyMs: bigint;
+
+  /**
+   * @generated from field: string turn_trace_id = 12;
+   */
+  turnTraceId: string;
 };
 
 /**
@@ -460,7 +632,7 @@ export type EvaluationResult = Message<"peers_touch.model.agent.v1.EvaluationRes
  * Use `create(EvaluationResultSchema)` to create a new message.
  */
 export const EvaluationResultSchema: GenMessage<EvaluationResult> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 7);
+  messageDesc(file_domain_agent_evaluation, 8);
 
 /**
  * @generated from message peers_touch.model.agent.v1.EvaluationRunEvent
@@ -510,6 +682,11 @@ export type EvaluationRunEvent = Message<"peers_touch.model.agent.v1.EvaluationR
    * @generated from field: google.protobuf.Timestamp occurred_at = 9;
    */
   occurredAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string result_id = 10;
+   */
+  resultId: string;
 };
 
 /**
@@ -517,7 +694,7 @@ export type EvaluationRunEvent = Message<"peers_touch.model.agent.v1.EvaluationR
  * Use `create(EvaluationRunEventSchema)` to create a new message.
  */
 export const EvaluationRunEventSchema: GenMessage<EvaluationRunEvent> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 8);
+  messageDesc(file_domain_agent_evaluation, 9);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationBenchmarkRequest
@@ -544,7 +721,7 @@ export type CreateEvaluationBenchmarkRequest = Message<"peers_touch.model.agent.
  * Use `create(CreateEvaluationBenchmarkRequestSchema)` to create a new message.
  */
 export const CreateEvaluationBenchmarkRequestSchema: GenMessage<CreateEvaluationBenchmarkRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 9);
+  messageDesc(file_domain_agent_evaluation, 10);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationBenchmarkResponse
@@ -561,7 +738,135 @@ export type CreateEvaluationBenchmarkResponse = Message<"peers_touch.model.agent
  * Use `create(CreateEvaluationBenchmarkResponseSchema)` to create a new message.
  */
 export const CreateEvaluationBenchmarkResponseSchema: GenMessage<CreateEvaluationBenchmarkResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 10);
+  messageDesc(file_domain_agent_evaluation, 11);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationBenchmarkRequest
+ */
+export type UpdateEvaluationBenchmarkRequest = Message<"peers_touch.model.agent.v1.UpdateEvaluationBenchmarkRequest"> & {
+  /**
+   * @generated from field: string benchmark_id = 1;
+   */
+  benchmarkId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string rubric = 3;
+   */
+  rubric: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 4;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 5;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationBenchmarkRequest.
+ * Use `create(UpdateEvaluationBenchmarkRequestSchema)` to create a new message.
+ */
+export const UpdateEvaluationBenchmarkRequestSchema: GenMessage<UpdateEvaluationBenchmarkRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 12);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationBenchmarkResponse
+ */
+export type UpdateEvaluationBenchmarkResponse = Message<"peers_touch.model.agent.v1.UpdateEvaluationBenchmarkResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationBenchmark benchmark = 1;
+   */
+  benchmark?: EvaluationBenchmark | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationBenchmarkResponse.
+ * Use `create(UpdateEvaluationBenchmarkResponseSchema)` to create a new message.
+ */
+export const UpdateEvaluationBenchmarkResponseSchema: GenMessage<UpdateEvaluationBenchmarkResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 13);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationBenchmarkRequest
+ */
+export type DeleteEvaluationBenchmarkRequest = Message<"peers_touch.model.agent.v1.DeleteEvaluationBenchmarkRequest"> & {
+  /**
+   * @generated from field: string benchmark_id = 1;
+   */
+  benchmarkId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationBenchmarkRequest.
+ * Use `create(DeleteEvaluationBenchmarkRequestSchema)` to create a new message.
+ */
+export const DeleteEvaluationBenchmarkRequestSchema: GenMessage<DeleteEvaluationBenchmarkRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 14);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationBenchmarkResponse
+ */
+export type DeleteEvaluationBenchmarkResponse = Message<"peers_touch.model.agent.v1.DeleteEvaluationBenchmarkResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationBenchmarkResponse.
+ * Use `create(DeleteEvaluationBenchmarkResponseSchema)` to create a new message.
+ */
+export const DeleteEvaluationBenchmarkResponseSchema: GenMessage<DeleteEvaluationBenchmarkResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 15);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationBenchmarksRequest
+ */
+export type ListEvaluationBenchmarksRequest = Message<"peers_touch.model.agent.v1.ListEvaluationBenchmarksRequest"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationBenchmarksRequest.
+ * Use `create(ListEvaluationBenchmarksRequestSchema)` to create a new message.
+ */
+export const ListEvaluationBenchmarksRequestSchema: GenMessage<ListEvaluationBenchmarksRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 16);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationBenchmarksResponse
+ */
+export type ListEvaluationBenchmarksResponse = Message<"peers_touch.model.agent.v1.ListEvaluationBenchmarksResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationBenchmark benchmarks = 1;
+   */
+  benchmarks: EvaluationBenchmark[];
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationBenchmarksResponse.
+ * Use `create(ListEvaluationBenchmarksResponseSchema)` to create a new message.
+ */
+export const ListEvaluationBenchmarksResponseSchema: GenMessage<ListEvaluationBenchmarksResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 17);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationDatasetRequest
@@ -586,6 +891,11 @@ export type CreateEvaluationDatasetRequest = Message<"peers_touch.model.agent.v1
    * @generated from field: string idempotency_key = 4;
    */
   idempotencyKey: string;
+
+  /**
+   * @generated from field: string description = 5;
+   */
+  description: string;
 };
 
 /**
@@ -593,7 +903,7 @@ export type CreateEvaluationDatasetRequest = Message<"peers_touch.model.agent.v1
  * Use `create(CreateEvaluationDatasetRequestSchema)` to create a new message.
  */
 export const CreateEvaluationDatasetRequestSchema: GenMessage<CreateEvaluationDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 11);
+  messageDesc(file_domain_agent_evaluation, 18);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationDatasetResponse
@@ -603,6 +913,11 @@ export type CreateEvaluationDatasetResponse = Message<"peers_touch.model.agent.v
    * @generated from field: peers_touch.model.agent.v1.EvaluationDataset dataset = 1;
    */
   dataset?: EvaluationDataset | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationBenchmark benchmark = 2;
+   */
+  benchmark?: EvaluationBenchmark | undefined;
 };
 
 /**
@@ -610,7 +925,139 @@ export type CreateEvaluationDatasetResponse = Message<"peers_touch.model.agent.v
  * Use `create(CreateEvaluationDatasetResponseSchema)` to create a new message.
  */
 export const CreateEvaluationDatasetResponseSchema: GenMessage<CreateEvaluationDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 12);
+  messageDesc(file_domain_agent_evaluation, 19);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationDatasetRequest
+ */
+export type UpdateEvaluationDatasetRequest = Message<"peers_touch.model.agent.v1.UpdateEvaluationDatasetRequest"> & {
+  /**
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 4;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 5;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationDatasetRequest.
+ * Use `create(UpdateEvaluationDatasetRequestSchema)` to create a new message.
+ */
+export const UpdateEvaluationDatasetRequestSchema: GenMessage<UpdateEvaluationDatasetRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 20);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationDatasetResponse
+ */
+export type UpdateEvaluationDatasetResponse = Message<"peers_touch.model.agent.v1.UpdateEvaluationDatasetResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationDataset dataset = 1;
+   */
+  dataset?: EvaluationDataset | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationDatasetResponse.
+ * Use `create(UpdateEvaluationDatasetResponseSchema)` to create a new message.
+ */
+export const UpdateEvaluationDatasetResponseSchema: GenMessage<UpdateEvaluationDatasetResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 21);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationDatasetRequest
+ */
+export type DeleteEvaluationDatasetRequest = Message<"peers_touch.model.agent.v1.DeleteEvaluationDatasetRequest"> & {
+  /**
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationDatasetRequest.
+ * Use `create(DeleteEvaluationDatasetRequestSchema)` to create a new message.
+ */
+export const DeleteEvaluationDatasetRequestSchema: GenMessage<DeleteEvaluationDatasetRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 22);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationDatasetResponse
+ */
+export type DeleteEvaluationDatasetResponse = Message<"peers_touch.model.agent.v1.DeleteEvaluationDatasetResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationDatasetResponse.
+ * Use `create(DeleteEvaluationDatasetResponseSchema)` to create a new message.
+ */
+export const DeleteEvaluationDatasetResponseSchema: GenMessage<DeleteEvaluationDatasetResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 23);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationDatasetsRequest
+ */
+export type ListEvaluationDatasetsRequest = Message<"peers_touch.model.agent.v1.ListEvaluationDatasetsRequest"> & {
+  /**
+   * @generated from field: string benchmark_id = 1;
+   */
+  benchmarkId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationDatasetsRequest.
+ * Use `create(ListEvaluationDatasetsRequestSchema)` to create a new message.
+ */
+export const ListEvaluationDatasetsRequestSchema: GenMessage<ListEvaluationDatasetsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 24);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationDatasetsResponse
+ */
+export type ListEvaluationDatasetsResponse = Message<"peers_touch.model.agent.v1.ListEvaluationDatasetsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationDataset datasets = 1;
+   */
+  datasets: EvaluationDataset[];
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationDatasetsResponse.
+ * Use `create(ListEvaluationDatasetsResponseSchema)` to create a new message.
+ */
+export const ListEvaluationDatasetsResponseSchema: GenMessage<ListEvaluationDatasetsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 25);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationTestCaseRequest
@@ -645,6 +1092,11 @@ export type CreateEvaluationTestCaseRequest = Message<"peers_touch.model.agent.v
    * @generated from field: string idempotency_key = 6;
    */
   idempotencyKey: string;
+
+  /**
+   * @generated from field: repeated string tags = 7;
+   */
+  tags: string[];
 };
 
 /**
@@ -652,7 +1104,7 @@ export type CreateEvaluationTestCaseRequest = Message<"peers_touch.model.agent.v
  * Use `create(CreateEvaluationTestCaseRequestSchema)` to create a new message.
  */
 export const CreateEvaluationTestCaseRequestSchema: GenMessage<CreateEvaluationTestCaseRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 13);
+  messageDesc(file_domain_agent_evaluation, 26);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse
@@ -662,6 +1114,11 @@ export type CreateEvaluationTestCaseResponse = Message<"peers_touch.model.agent.
    * @generated from field: peers_touch.model.agent.v1.EvaluationTestCase test_case = 1;
    */
   testCase?: EvaluationTestCase | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationDataset dataset = 2;
+   */
+  dataset?: EvaluationDataset | undefined;
 };
 
 /**
@@ -669,7 +1126,159 @@ export type CreateEvaluationTestCaseResponse = Message<"peers_touch.model.agent.
  * Use `create(CreateEvaluationTestCaseResponseSchema)` to create a new message.
  */
 export const CreateEvaluationTestCaseResponseSchema: GenMessage<CreateEvaluationTestCaseResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 14);
+  messageDesc(file_domain_agent_evaluation, 27);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationTestCaseRequest
+ */
+export type UpdateEvaluationTestCaseRequest = Message<"peers_touch.model.agent.v1.UpdateEvaluationTestCaseRequest"> & {
+  /**
+   * @generated from field: string case_id = 1;
+   */
+  caseId: string;
+
+  /**
+   * @generated from field: string input = 2;
+   */
+  input: string;
+
+  /**
+   * @generated from field: string expected = 3;
+   */
+  expected: string;
+
+  /**
+   * @generated from field: optional string rubric_override = 4;
+   */
+  rubricOverride?: string | undefined;
+
+  /**
+   * @generated from field: repeated string tags = 5;
+   */
+  tags: string[];
+
+  /**
+   * @generated from field: uint64 expected_revision = 6;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 7;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationTestCaseRequest.
+ * Use `create(UpdateEvaluationTestCaseRequestSchema)` to create a new message.
+ */
+export const UpdateEvaluationTestCaseRequestSchema: GenMessage<UpdateEvaluationTestCaseRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 28);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse
+ */
+export type UpdateEvaluationTestCaseResponse = Message<"peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationTestCase test_case = 1;
+   */
+  testCase?: EvaluationTestCase | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationDataset dataset = 2;
+   */
+  dataset?: EvaluationDataset | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse.
+ * Use `create(UpdateEvaluationTestCaseResponseSchema)` to create a new message.
+ */
+export const UpdateEvaluationTestCaseResponseSchema: GenMessage<UpdateEvaluationTestCaseResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 29);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationTestCaseRequest
+ */
+export type DeleteEvaluationTestCaseRequest = Message<"peers_touch.model.agent.v1.DeleteEvaluationTestCaseRequest"> & {
+  /**
+   * @generated from field: string case_id = 1;
+   */
+  caseId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationTestCaseRequest.
+ * Use `create(DeleteEvaluationTestCaseRequestSchema)` to create a new message.
+ */
+export const DeleteEvaluationTestCaseRequestSchema: GenMessage<DeleteEvaluationTestCaseRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 30);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationTestCaseResponse
+ */
+export type DeleteEvaluationTestCaseResponse = Message<"peers_touch.model.agent.v1.DeleteEvaluationTestCaseResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.EvaluationDataset dataset = 2;
+   */
+  dataset?: EvaluationDataset | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationTestCaseResponse.
+ * Use `create(DeleteEvaluationTestCaseResponseSchema)` to create a new message.
+ */
+export const DeleteEvaluationTestCaseResponseSchema: GenMessage<DeleteEvaluationTestCaseResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 31);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationTestCasesRequest
+ */
+export type ListEvaluationTestCasesRequest = Message<"peers_touch.model.agent.v1.ListEvaluationTestCasesRequest"> & {
+  /**
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationTestCasesRequest.
+ * Use `create(ListEvaluationTestCasesRequestSchema)` to create a new message.
+ */
+export const ListEvaluationTestCasesRequestSchema: GenMessage<ListEvaluationTestCasesRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 32);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationTestCasesResponse
+ */
+export type ListEvaluationTestCasesResponse = Message<"peers_touch.model.agent.v1.ListEvaluationTestCasesResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationTestCase test_cases = 1;
+   */
+  testCases: EvaluationTestCase[];
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationTestCasesResponse.
+ * Use `create(ListEvaluationTestCasesResponseSchema)` to create a new message.
+ */
+export const ListEvaluationTestCasesResponseSchema: GenMessage<ListEvaluationTestCasesResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 33);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationRunRequest
@@ -686,11 +1295,6 @@ export type CreateEvaluationRunRequest = Message<"peers_touch.model.agent.v1.Cre
   datasetRevision: bigint;
 
   /**
-   * @generated from field: peers_touch.model.agent.v1.RuntimeSnapshot target_agent_snapshot = 3;
-   */
-  targetAgentSnapshot?: RuntimeSnapshot | undefined;
-
-  /**
    * @generated from field: string readiness_snapshot_id = 4;
    */
   readinessSnapshotId: string;
@@ -699,6 +1303,26 @@ export type CreateEvaluationRunRequest = Message<"peers_touch.model.agent.v1.Cre
    * @generated from field: string idempotency_key = 5;
    */
   idempotencyKey: string;
+
+  /**
+   * @generated from field: string target_agent_id = 6;
+   */
+  targetAgentId: string;
+
+  /**
+   * @generated from field: uint64 expected_agent_revision = 7;
+   */
+  expectedAgentRevision: bigint;
+
+  /**
+   * @generated from field: optional string runtime_profile_id = 8;
+   */
+  runtimeProfileId?: string | undefined;
+
+  /**
+   * @generated from field: optional string model_id = 9;
+   */
+  modelId?: string | undefined;
 };
 
 /**
@@ -706,7 +1330,7 @@ export type CreateEvaluationRunRequest = Message<"peers_touch.model.agent.v1.Cre
  * Use `create(CreateEvaluationRunRequestSchema)` to create a new message.
  */
 export const CreateEvaluationRunRequestSchema: GenMessage<CreateEvaluationRunRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 15);
+  messageDesc(file_domain_agent_evaluation, 34);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CreateEvaluationRunResponse
@@ -723,7 +1347,7 @@ export type CreateEvaluationRunResponse = Message<"peers_touch.model.agent.v1.Cr
  * Use `create(CreateEvaluationRunResponseSchema)` to create a new message.
  */
 export const CreateEvaluationRunResponseSchema: GenMessage<CreateEvaluationRunResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 16);
+  messageDesc(file_domain_agent_evaluation, 35);
 
 /**
  * @generated from message peers_touch.model.agent.v1.StartEvaluationRunRequest
@@ -750,7 +1374,7 @@ export type StartEvaluationRunRequest = Message<"peers_touch.model.agent.v1.Star
  * Use `create(StartEvaluationRunRequestSchema)` to create a new message.
  */
 export const StartEvaluationRunRequestSchema: GenMessage<StartEvaluationRunRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 17);
+  messageDesc(file_domain_agent_evaluation, 36);
 
 /**
  * @generated from message peers_touch.model.agent.v1.StartEvaluationRunResponse
@@ -767,7 +1391,7 @@ export type StartEvaluationRunResponse = Message<"peers_touch.model.agent.v1.Sta
  * Use `create(StartEvaluationRunResponseSchema)` to create a new message.
  */
 export const StartEvaluationRunResponseSchema: GenMessage<StartEvaluationRunResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 18);
+  messageDesc(file_domain_agent_evaluation, 37);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CancelEvaluationRunRequest
@@ -794,7 +1418,7 @@ export type CancelEvaluationRunRequest = Message<"peers_touch.model.agent.v1.Can
  * Use `create(CancelEvaluationRunRequestSchema)` to create a new message.
  */
 export const CancelEvaluationRunRequestSchema: GenMessage<CancelEvaluationRunRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 19);
+  messageDesc(file_domain_agent_evaluation, 38);
 
 /**
  * @generated from message peers_touch.model.agent.v1.CancelEvaluationRunResponse
@@ -811,7 +1435,7 @@ export type CancelEvaluationRunResponse = Message<"peers_touch.model.agent.v1.Ca
  * Use `create(CancelEvaluationRunResponseSchema)` to create a new message.
  */
 export const CancelEvaluationRunResponseSchema: GenMessage<CancelEvaluationRunResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 20);
+  messageDesc(file_domain_agent_evaluation, 39);
 
 /**
  * @generated from message peers_touch.model.agent.v1.RetryEvaluationCasesRequest
@@ -831,6 +1455,11 @@ export type RetryEvaluationCasesRequest = Message<"peers_touch.model.agent.v1.Re
    * @generated from field: string idempotency_key = 3;
    */
   idempotencyKey: string;
+
+  /**
+   * @generated from field: uint64 expected_parent_revision = 4;
+   */
+  expectedParentRevision: bigint;
 };
 
 /**
@@ -838,7 +1467,7 @@ export type RetryEvaluationCasesRequest = Message<"peers_touch.model.agent.v1.Re
  * Use `create(RetryEvaluationCasesRequestSchema)` to create a new message.
  */
 export const RetryEvaluationCasesRequestSchema: GenMessage<RetryEvaluationCasesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 21);
+  messageDesc(file_domain_agent_evaluation, 40);
 
 /**
  * @generated from message peers_touch.model.agent.v1.RetryEvaluationCasesResponse
@@ -855,7 +1484,7 @@ export type RetryEvaluationCasesResponse = Message<"peers_touch.model.agent.v1.R
  * Use `create(RetryEvaluationCasesResponseSchema)` to create a new message.
  */
 export const RetryEvaluationCasesResponseSchema: GenMessage<RetryEvaluationCasesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 22);
+  messageDesc(file_domain_agent_evaluation, 41);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetEvaluationRunRequest
@@ -872,7 +1501,7 @@ export type GetEvaluationRunRequest = Message<"peers_touch.model.agent.v1.GetEva
  * Use `create(GetEvaluationRunRequestSchema)` to create a new message.
  */
 export const GetEvaluationRunRequestSchema: GenMessage<GetEvaluationRunRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 23);
+  messageDesc(file_domain_agent_evaluation, 42);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetEvaluationRunResponse
@@ -892,6 +1521,11 @@ export type GetEvaluationRunResponse = Message<"peers_touch.model.agent.v1.GetEv
    * @generated from field: repeated peers_touch.model.agent.v1.EvaluationResult results = 3;
    */
   results: EvaluationResult[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationRunCaseSnapshot cases = 4;
+   */
+  cases: EvaluationRunCaseSnapshot[];
 };
 
 /**
@@ -899,7 +1533,144 @@ export type GetEvaluationRunResponse = Message<"peers_touch.model.agent.v1.GetEv
  * Use `create(GetEvaluationRunResponseSchema)` to create a new message.
  */
 export const GetEvaluationRunResponseSchema: GenMessage<GetEvaluationRunResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_evaluation, 24);
+  messageDesc(file_domain_agent_evaluation, 43);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationRunsRequest
+ */
+export type ListEvaluationRunsRequest = Message<"peers_touch.model.agent.v1.ListEvaluationRunsRequest"> & {
+  /**
+   * @generated from field: optional string parent_run_id = 1;
+   */
+  parentRunId?: string | undefined;
+
+  /**
+   * @generated from field: uint32 page = 2;
+   */
+  page: number;
+
+  /**
+   * @generated from field: uint32 page_size = 3;
+   */
+  pageSize: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationRunsRequest.
+ * Use `create(ListEvaluationRunsRequestSchema)` to create a new message.
+ */
+export const ListEvaluationRunsRequestSchema: GenMessage<ListEvaluationRunsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 44);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationRunsResponse
+ */
+export type ListEvaluationRunsResponse = Message<"peers_touch.model.agent.v1.ListEvaluationRunsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationRun runs = 1;
+   */
+  runs: EvaluationRun[];
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationRunsResponse.
+ * Use `create(ListEvaluationRunsResponseSchema)` to create a new message.
+ */
+export const ListEvaluationRunsResponseSchema: GenMessage<ListEvaluationRunsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 45);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationRunEventsRequest
+ */
+export type ListEvaluationRunEventsRequest = Message<"peers_touch.model.agent.v1.ListEvaluationRunEventsRequest"> & {
+  /**
+   * @generated from field: string run_id = 1;
+   */
+  runId: string;
+
+  /**
+   * @generated from field: uint64 after_sequence = 2;
+   */
+  afterSequence: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationRunEventsRequest.
+ * Use `create(ListEvaluationRunEventsRequestSchema)` to create a new message.
+ */
+export const ListEvaluationRunEventsRequestSchema: GenMessage<ListEvaluationRunEventsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 46);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.ListEvaluationRunEventsResponse
+ */
+export type ListEvaluationRunEventsResponse = Message<"peers_touch.model.agent.v1.ListEvaluationRunEventsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.agent.v1.EvaluationRunEvent events = 1;
+   */
+  events: EvaluationRunEvent[];
+
+  /**
+   * @generated from field: uint64 latest_sequence = 2;
+   */
+  latestSequence: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.ListEvaluationRunEventsResponse.
+ * Use `create(ListEvaluationRunEventsResponseSchema)` to create a new message.
+ */
+export const ListEvaluationRunEventsResponseSchema: GenMessage<ListEvaluationRunEventsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 47);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationRunRequest
+ */
+export type DeleteEvaluationRunRequest = Message<"peers_touch.model.agent.v1.DeleteEvaluationRunRequest"> & {
+  /**
+   * @generated from field: string run_id = 1;
+   */
+  runId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string idempotency_key = 3;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationRunRequest.
+ * Use `create(DeleteEvaluationRunRequestSchema)` to create a new message.
+ */
+export const DeleteEvaluationRunRequestSchema: GenMessage<DeleteEvaluationRunRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 48);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.DeleteEvaluationRunResponse
+ */
+export type DeleteEvaluationRunResponse = Message<"peers_touch.model.agent.v1.DeleteEvaluationRunResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.DeleteEvaluationRunResponse.
+ * Use `create(DeleteEvaluationRunResponseSchema)` to create a new message.
+ */
+export const DeleteEvaluationRunResponseSchema: GenMessage<DeleteEvaluationRunResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_evaluation, 49);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.EvaluationRunStatus
@@ -1087,6 +1858,21 @@ export enum EvaluationErrorCode {
    * @generated from enum value: EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT = 7;
    */
   CANCEL_ACK_TIMEOUT = 7,
+
+  /**
+   * @generated from enum value: EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT = 8;
+   */
+  BENCHMARK_REVISION_CONFLICT = 8,
+
+  /**
+   * @generated from enum value: EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT = 9;
+   */
+  TEST_CASE_REVISION_CONFLICT = 9,
+
+  /**
+   * @generated from enum value: EVALUATION_ERROR_CODE_RETENTION_CONFLICT = 10;
+   */
+  RETENTION_CONFLICT = 10,
 }
 
 /**

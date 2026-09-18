@@ -19,7 +19,9 @@
   "writeSet": [
     "apps/dev",
     "AGENTS.md",
+    "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
     "docs/architecture/acceptance-framework/decisions.md",
+    "docs/architecture/chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md",
     "docs/architecture/developer-toolchain",
     "docs/architecture/development-workflow",
     "docs/architecture/local-dev-control-plane",
@@ -27,6 +29,7 @@
     "docs/knowledge",
     "Makefile",
     "tooling/acceptance",
+    "tooling/devctl",
     "tooling/make",
     "tooling/scripts",
     "tooling/skills"

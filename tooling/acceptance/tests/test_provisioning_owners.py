@@ -135,14 +135,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "station.example ssh-ed25519 test-key\n",
                 encoding="utf-8",
             )
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
+            environment = root / "station-three.env.example"
             environment.write_text(
                 "\n".join(
                     (
@@ -163,8 +156,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 stderr="",
             )
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity.resolve_deployment_environment_path",
+                return_value=environment,
             ), patch(
                 "tooling.acceptance.transports.ssh.subprocess.run",
                 return_value=completed,
@@ -199,14 +192,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-three.env"
-            )
-            environment.parent.mkdir(parents=True)
+            environment = root / "station-three.env.example"
             environment.write_text(
                 "\n".join(
                     (
@@ -221,8 +207,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
             )
 
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity.resolve_deployment_environment_path",
+                return_value=environment,
             ), self.assertRaisesRegex(
                 BlockedError,
                 "SSH contract is invalid",
@@ -236,14 +222,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            environment = (
-                root
-                / ".local"
-                / "deploy"
-                / "envs"
-                / "station-four.env"
-            )
-            environment.parent.mkdir(parents=True)
+            environment = root / "station-four.env.example"
             environment.write_text(
                 "\n".join(
                     (
@@ -262,8 +241,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 stderr="",
             )
             with patch(
-                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
-                root,
+                "tooling.acceptance.provisioners.remote_source_identity.resolve_deployment_environment_path",
+                return_value=environment,
             ), patch(
                 "tooling.acceptance.transports.ssh.subprocess.run",
                 return_value=completed,
@@ -941,6 +920,28 @@ class ProfileActivationContractTests(unittest.TestCase):
         self.assertIn(
             '@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"',
             source,
+        )
+
+    def test_profile_activation_checks_declared_identity(self) -> None:
+        root = Path(__file__).resolve().parents[3]
+        registry_source = (
+            root
+            / "tooling"
+            / "scripts"
+            / "local-dev"
+            / "machine-dev-registry.mjs"
+        ).read_text(encoding="utf-8")
+        runtime_source = (
+            root / "tooling" / "scripts" / "local-dev" / "env.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("values.PT_DEV_PROFILE !== profile", registry_source)
+        self.assertIn(
+            "profile identity does not match its directory",
+            registry_source,
+        )
+        self.assertIn(
+            '"$PT_DEV_PROFILE" != "$PT_MACHINE_PROFILE"',
+            runtime_source,
         )
 
 

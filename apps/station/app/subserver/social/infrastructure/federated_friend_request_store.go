@@ -233,10 +233,26 @@ func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
 	}
 
 	query := s.db.WithContext(ctx).
-		Model(&federatedFriendRequestProjectionModel{}).
-		Where("sender_ptid = ? OR receiver_ptid = ?", actorPTID, actorPTID)
+		Table("social_friend_requests AS requests").
+		Where(
+			"requests.sender_ptid = ? OR requests.receiver_ptid = ?",
+			actorPTID,
+			actorPTID,
+		).
+		Where(
+			"requests.state <> ? OR EXISTS ("+
+				"SELECT 1 FROM social_relationship_projections AS relationships "+
+				"WHERE relationships.owner_ptid = ? "+
+				"AND relationships.peer_ptid = CASE "+
+				"WHEN requests.sender_ptid = ? THEN requests.receiver_ptid "+
+				"ELSE requests.sender_ptid END "+
+				"AND relationships.request_id = requests.request_id)",
+			int32(model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED),
+			actorPTID,
+			actorPTID,
+		)
 	if state != model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED {
-		query = query.Where("state = ?", int32(state))
+		query = query.Where("requests.state = ?", int32(state))
 	}
 
 	var total int64
@@ -246,7 +262,7 @@ func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
 
 	var persisted []federatedFriendRequestProjectionModel
 	if err := query.
-		Order("created_at DESC, request_id DESC").
+		Order("requests.created_at DESC, requests.request_id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&persisted).Error; err != nil {

@@ -208,10 +208,14 @@
 - 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
+- Chat 全生命周期：`architecture/chat-lifecycle/README.md`（active；定义从找人、
+  好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
+  恢复的唯一产品完成口径与当前执行计划）
 - Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
-  Federation API 由各自资源 owner 暴露；CA-HC hard-cut plan 已批准）
+  Federation API 由各自 resource owner 暴露；其 20260808 执行计划已终止并作为
+  Chat Lifecycle 的下游历史实现证据）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
 - Social 私密 Moments 产品合同：`architecture/social/product-definition.md`
   （active；定义好友/关注者语义、私密内容 E2EE、设备恢复、Browser 降级和验收矩阵）

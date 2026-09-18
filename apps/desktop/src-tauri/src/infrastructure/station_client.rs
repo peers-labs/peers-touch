@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
 use std::sync::{LazyLock, OnceLock, RwLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
@@ -835,6 +835,33 @@ where
     })?;
     if !status.is_success() {
         let body = String::from_utf8_lossy(&bytes).to_string();
+        // #region debug-point A-E:device-enrollment-conflict
+        if path == "/device/enroll" {
+            if let Ok(debug_url) = std::env::var("DEBUG_SERVER_URL") {
+                let event = serde_json::json!({
+                    "sessionId": std::env::var("DEBUG_SESSION_ID")
+                        .unwrap_or_else(|_| "device-enrollment-conflict".to_string()),
+                    "runId": std::env::var("DEBUG_RUN_ID")
+                        .unwrap_or_else(|_| "pre-fix".to_string()),
+                    "hypothesisId": "A-E",
+                    "location": "station_client.rs:request_proto_for_device_at",
+                    "msg": "[DEBUG] Station device enrollment rejected",
+                    "data": {
+                        "status": status.as_u16(),
+                        "errorCode": headers.get("x-peers-error-code"),
+                        "localeKey": headers.get("x-peers-error-locale-key"),
+                        "details": headers.get("x-peers-error-details"),
+                        "body": &body,
+                    },
+                    "ts": SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis(),
+                });
+                let _ = client.post(debug_url).json(&event).send();
+            }
+        }
+        // #endregion
         tracing::warn!(
             path = %path,
             status = status.as_u16(),

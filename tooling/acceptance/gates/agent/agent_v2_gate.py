@@ -108,8 +108,10 @@ GATE_ROLES = {
         "runner-attestation",
     ),
     "agent-v2-evaluation-lab-e2e": (
+        "cell-results",
         "receiver-dom",
         "station-readback",
+        "runtime-events",
         "turn-trace",
         "metrics-lineage",
         "runtime-attestation-set",

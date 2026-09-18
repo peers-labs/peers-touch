@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ERROR_CODES, fail } from './errors.mjs';
+import { DevctlError, ERROR_CODES, fail } from './errors.mjs';
 import {
   MachineDevError,
   checkWorkspace,
+  updateWorkspace,
 } from '../scripts/local-dev/machine-dev-registry.mjs';
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
@@ -97,9 +98,24 @@ function selectedProfileName(activePath) {
   }
 }
 
-function resolveMachineWorkspace(root, environment) {
+function machineOperation(operation) {
   try {
-    return checkWorkspace({
+    return operation();
+  } catch (error) {
+    if (error instanceof MachineDevError) {
+      throw new DevctlError(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
+function resolveMachineWorkspace(
+  root,
+  environment,
+  machineResolver = checkWorkspace,
+) {
+  try {
+    return machineResolver({
       workspaceRoot: root,
       envRepo: resolveEnvRepo(root, environment),
       home: environment.HOME,
@@ -241,10 +257,14 @@ export function validateProfile(profile, expectedName, filePath) {
   return profile;
 }
 
-export function resolveProfile(root, environment = process.env) {
+export function resolveProfile(
+  root,
+  environment = process.env,
+  machineResolver = checkWorkspace,
+) {
   const paths = localDevPaths(root);
   const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  const machine = resolveMachineWorkspace(root, environment);
+  const machine = resolveMachineWorkspace(root, environment, machineResolver);
   const explicit = resolveAcceptanceProfilePath(environment);
   const resolvedPath = explicit ?? machine.profile.profileFile;
   const selectedProfile = validateProfile(
@@ -312,8 +332,16 @@ export function listProfiles(root, environment = process.env) {
     }
   }
 
-  const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  const active = fs.existsSync(activePath) ? selectedProfileName(activePath) : undefined;
+  let active;
+  try {
+    active = checkWorkspace({
+      workspaceRoot: root,
+      envRepo: environment.PT_ENV_REPO,
+      home: environment.HOME,
+    }).binding.profile;
+  } catch {
+    active = undefined;
+  }
   return [...names].sort().map((name) => ({ name, active: name === active }));
 }
 
@@ -321,29 +349,12 @@ export function activateProfile(root, name, environment = process.env) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(name)) {
     fail(ERROR_CODES.PROFILE_INVALID, `Invalid profile name: ${name}`, { name });
   }
-
-  const paths = localDevPaths(root);
-  fs.mkdirSync(paths.profiles, { recursive: true });
-  fs.mkdirSync(paths.active, { recursive: true });
-
-  const localPath = path.join(paths.profiles, `${name}.env`);
-  const envRepo = resolveEnvRepo(root, environment);
-  const canonicalPath = envRepo
-    ? path.join(envRepo, 'peers-touch', name, 'profile.env.example')
-    : undefined;
-  if (canonicalPath && fs.existsSync(canonicalPath)) {
-    fs.copyFileSync(canonicalPath, localPath);
-  } else if (!fs.existsSync(localPath)) {
-    fail(ERROR_CODES.PROFILE_REQUIRED, `Profile '${name}' was not found`, {
-      localPath,
-      canonicalPath,
-    });
-  }
-
-  validateProfile(readEnvFile(localPath), name, localPath);
-  const activePath = path.join(paths.active, `${worktreeId(root)}.env`);
-  fs.rmSync(activePath, { force: true });
-  fs.symlinkSync(path.relative(path.dirname(activePath), localPath), activePath, 'file');
+  machineOperation(() => updateWorkspace({
+    workspaceRoot: root,
+    envRepo: environment.PT_ENV_REPO,
+    home: environment.HOME,
+    profile: name,
+  }));
   return resolveProfile(root, environment);
 }
 

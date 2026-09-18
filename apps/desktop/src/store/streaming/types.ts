@@ -113,6 +113,12 @@ export interface ToolApprovalRequiredPayload {
   serverName: string;
   arguments: string;
   source?: string;
+  toolCallId?: string;
+  decisionId?: string;
+  decisionRevision?: number;
+  expiresAt?: string;
+  payloadHash?: string;
+  turnId?: string;
 }
 
 export interface InterventionRequestPayload {

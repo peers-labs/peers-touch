@@ -916,14 +916,6 @@ fn wake_after_durable_prepare(
     actor_ptid: &str,
 ) {
     let wake_result = runtime.wake(station_peer_id, actor_ptid);
-    // #region debug-point A:attachment-worker-wake
-    {
-        let debug_error = wake_result.as_ref().err().map(ToString::to_string);
-        std::thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/commands.rs:wake_after_durable_prepare","msg":"[DEBUG] Mobile messaging worker wake requested","data":{"error":debug_error}}).to_string()).send();
-        });
-    }
-    // #endregion
     if let Err(error) = wake_result {
         log::warn!("mobile messaging worker wake failed after durable preparation: {error}");
     }

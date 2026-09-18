@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 const maxTypedRequestBodyBytes int64 = 64 << 20
@@ -100,7 +102,43 @@ func newTypedHandler[Req, Resp any](
 				Err:     readErr,
 			}
 		}
-		queryJSON, hasQuery := queryParamsToJSON(req.Path())
+		queryValues, hasQuery, queryErr := queryParams(req.Path())
+		if queryErr != nil {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
+		pathValues, pathErr := routePathParams(path, req)
+		if pathErr != nil {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
+		for name := range pathValues {
+			if _, exists := queryValues[name]; exists {
+				writeTypedRequestError(
+					resp,
+					http.StatusBadRequest,
+					"Invalid request format",
+				)
+				return nil
+			}
+		}
+		queryJSON, queryMarshalErr := json.Marshal(queryValues)
+		if queryMarshalErr != nil {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
 		rawQuery := ""
 		if index := strings.Index(req.Path(), "?"); index >= 0 {
 			rawQuery = req.Path()[index+1:]
@@ -138,22 +176,33 @@ func newTypedHandler[Req, Resp any](
 					Err:     err,
 				}
 			}
-		} else if hasQuery {
-			// For requests with no body (typically GET), populate the typed request
-			// from URL query params via ProtoJSONSerializer (accepts snake_case field names).
-			querySerializer := &ProtoJSONSerializer{RejectUnknown: strict}
-			if err := querySerializer.Unmarshal(queryJSON, &request); err != nil {
-				if strict {
-					writeTypedRequestError(
-						resp,
-						http.StatusBadRequest,
-						"Invalid request format",
-					)
-					return nil
+		} else {
+			if hasQuery {
+				// For requests with no body (typically GET), populate the typed
+				// request from URL query params before authoritative path binding.
+				querySerializer := &ProtoJSONSerializer{RejectUnknown: strict}
+				if err := querySerializer.Unmarshal(queryJSON, &request); err != nil {
+					if strict {
+						writeTypedRequestError(
+							resp,
+							http.StatusBadRequest,
+							"Invalid request format",
+						)
+						return nil
+					}
+					logger.Warn(ctx, "Failed to deserialize query params into request", "error", err, "path", req.Path())
 				}
-				logger.Warn(ctx, "Failed to deserialize query params into request", "error", err, "path", req.Path())
+			} else if strict && rawQuery != "" {
+				writeTypedRequestError(
+					resp,
+					http.StatusBadRequest,
+					"Invalid request format",
+				)
+				return nil
 			}
-		} else if strict && rawQuery != "" {
+		}
+		if err := bindTypedPathParams(pathValues, &request); err != nil {
+			logger.Warn(ctx, "Failed to bind path params into request", "error", err, "path", req.Path())
 			writeTypedRequestError(
 				resp,
 				http.StatusBadRequest,
@@ -275,17 +324,132 @@ func readBoundedTypedRequestBody(request Request) ([]byte, error) {
 	return body, nil
 }
 
+type nativeRequestContextGetter interface {
+	GetHertzContext() interface{}
+}
+
+type routePathParamReader interface {
+	Param(string) string
+}
+
+func routePathParams(routePath string, request Request) (map[string]interface{}, error) {
+	names := routePathParamNames(routePath)
+	if len(names) == 0 {
+		return map[string]interface{}{}, nil
+	}
+
+	contextGetter, ok := request.(nativeRequestContextGetter)
+	if !ok {
+		return nil, errors.New("request adapter does not expose route parameters")
+	}
+	nativeContext := contextGetter.GetHertzContext()
+	if nativeContext == nil {
+		return nil, errors.New("request adapter does not expose route parameters")
+	}
+	paramReader, ok := nativeContext.(routePathParamReader)
+	if !ok {
+		return nil, errors.New("request adapter context does not expose route parameters")
+	}
+
+	values := make(map[string]interface{}, len(names))
+	for _, name := range names {
+		if _, exists := values[name]; exists {
+			return nil, fmt.Errorf("route parameter %q is duplicated", name)
+		}
+		value := paramReader.Param(name)
+		if value == "" {
+			return nil, fmt.Errorf("route parameter %q is missing", name)
+		}
+		values[name] = value
+	}
+
+	return values, nil
+}
+
+func routePathParamNames(routePath string) []string {
+	segments := strings.Split(routePath, "/")
+	names := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		if strings.HasPrefix(segment, ":") && len(segment) > 1 {
+			names = append(names, segment[1:])
+		}
+	}
+
+	return names
+}
+
+func bindTypedPathParams(values map[string]interface{}, request interface{}) error {
+	if len(values) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+
+	message, ok := request.(proto.Message)
+	if !ok {
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		decoder.DisallowUnknownFields()
+
+		return decoder.Decode(request)
+	}
+
+	target := message.ProtoReflect()
+	pathMessage := target.Type().New()
+	if err := (&ProtoJSONSerializer{RejectUnknown: true}).Unmarshal(
+		data,
+		pathMessage.Interface(),
+	); err != nil {
+		return err
+	}
+	fields := target.Descriptor().Fields()
+	for name := range values {
+		var field protoreflect.FieldDescriptor
+		for index := 0; index < fields.Len(); index++ {
+			candidate := fields.Get(index)
+			if string(candidate.Name()) == name || candidate.JSONName() == name {
+				field = candidate
+				break
+			}
+		}
+		if field == nil || field.IsList() || field.IsMap() ||
+			field.Message() != nil {
+			return fmt.Errorf("route parameter %q is not a scalar request field", name)
+		}
+		target.Set(field, pathMessage.Get(field))
+	}
+
+	return nil
+}
+
 // queryParamsToJSON extracts URL query parameters and encodes them as a JSON object.
 // This enables TypedHandler to populate typed request structs from GET query strings
 // via ProtoJSONSerializer, which accepts proto field names (snake_case).
 func queryParamsToJSON(path string) ([]byte, bool) {
-	idx := strings.Index(path, "?")
-	if idx == -1 {
+	values, ok, err := queryParams(path)
+	if err != nil || !ok {
 		return nil, false
 	}
-	values, err := url.ParseQuery(path[idx+1:])
-	if err != nil || len(values) == 0 {
+	data, err := json.Marshal(values)
+	if err != nil {
 		return nil, false
+	}
+
+	return data, true
+}
+
+func queryParams(path string) (map[string]interface{}, bool, error) {
+	idx := strings.Index(path, "?")
+	if idx == -1 {
+		return map[string]interface{}{}, false, nil
+	}
+	values, err := url.ParseQuery(path[idx+1:])
+	if err != nil {
+		return nil, false, err
+	}
+	if len(values) == 0 {
+		return map[string]interface{}{}, false, nil
 	}
 	m := make(map[string]interface{}, len(values))
 	for k, v := range values {
@@ -295,11 +459,8 @@ func queryParamsToJSON(path string) ([]byte, bool) {
 			m[k] = v
 		}
 	}
-	data, err := json.Marshal(m)
-	if err != nil {
-		return nil, false
-	}
-	return data, true
+
+	return m, true, nil
 }
 
 // TypedHandlerFunc is a convenience type for handlers that don't need typed request/response

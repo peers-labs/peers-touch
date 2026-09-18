@@ -266,7 +266,6 @@ class MobileMessagingJourney:
             "social.people.search",
             {
                 "query": receiver.federated_handle,
-                "federationId": sender.federation_id,
             },
         )
         if not isinstance(results, list):

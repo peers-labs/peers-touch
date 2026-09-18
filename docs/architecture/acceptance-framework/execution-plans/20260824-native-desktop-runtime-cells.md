@@ -1,14 +1,23 @@
 # Native Desktop Runtime Cells — Execution Plan
 
-> **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-24 | **Updated**: 2026-09-13
+> **Status**: superseded
+> **Version**: v1.2
+> **Created**: 2026-08-24 | **Updated**: 2026-09-16
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `fix/deploy-env-host-guard`
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-13, D-14, D-15, D-16, D-17, D-18
 
 ---
+
+This execution plan was terminated for active Chat work on 2026-09-16. Its
+runtime-cell implementation and source-bound evidence remain historical inputs,
+but its status tables, Goal IDs, Ready Queue, and completion percentages no
+longer drive this worktree.
+
+The replacement product plan is:
+
+[`../../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)
 
 ## 1. Goal And Claims
 

@@ -38,6 +38,18 @@ CREATE TABLE friend_chat_friendships (
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
 	}
+	if err := gdb.Exec(`
+CREATE TABLE social_relationship_projections (
+	owner_ptid text,
+	peer_ptid text,
+	request_id text,
+	accepted_event_id text,
+	accepted_event_hash blob,
+	accepted_at datetime,
+	PRIMARY KEY (owner_ptid, peer_ptid)
+)`).Error; err != nil {
+		t.Fatalf("migrate relationship projections: %v", err)
+	}
 	seedFixtureActors(t, gdb)
 	repos := infrastructure.NewRepos(gdb)
 	return &relationshipFixture{
@@ -84,6 +96,89 @@ func TestRelationshipStatusSuppressesBlockedEdges(t *testing.T) {
 	}
 	if relationship.Following || relationship.FollowedBy {
 		t.Fatalf("expected blocked relationship to suppress edges, got following=%v followedBy=%v", relationship.Following, relationship.FollowedBy)
+	}
+}
+
+func TestRelationshipUnfollowRetiresCanonicalFriendship(t *testing.T) {
+	f := newRelationshipFixture(t)
+	ctx := context.Background()
+	const (
+		alice = "ptid:v1:actor:peers:p:user-1:fingerprint-1"
+		bob   = "ptid:v1:actor:peers:p:user-2:fingerprint-2"
+	)
+	if err := f.repos.Follows.Follow(ctx, alice, bob); err != nil {
+		t.Fatalf("seed Alice follow: %v", err)
+	}
+	if err := f.repos.Follows.Follow(ctx, bob, alice); err != nil {
+		t.Fatalf("seed Bob follow: %v", err)
+	}
+	if err := f.gdb.Exec(
+		`INSERT INTO friend_chat_friendships
+			(actor_ptid, peer_ptid, status) VALUES (?, ?, 2), (?, ?, 2)`,
+		alice,
+		bob,
+		bob,
+		alice,
+	).Error; err != nil {
+		t.Fatalf("seed friendship rows: %v", err)
+	}
+	if err := f.gdb.Exec(
+		`INSERT INTO social_relationship_projections
+			(owner_ptid, peer_ptid, request_id, accepted_event_id,
+			 accepted_event_hash, accepted_at)
+		 VALUES (?, ?, 'request-1', 'event-1', X'01', CURRENT_TIMESTAMP),
+		        (?, ?, 'request-1', 'event-1', X'01', CURRENT_TIMESTAMP)`,
+		alice,
+		bob,
+		bob,
+		alice,
+	).Error; err != nil {
+		t.Fatalf("seed relationship projections: %v", err)
+	}
+
+	if err := f.service.Unfollow(ctx, alice, bob); err != nil {
+		t.Fatalf("unfollow: %v", err)
+	}
+
+	var friendshipCount int64
+	if err := f.gdb.Table("friend_chat_friendships").
+		Where(
+			"(actor_ptid = ? AND peer_ptid = ?) OR "+
+				"(actor_ptid = ? AND peer_ptid = ?)",
+			alice,
+			bob,
+			bob,
+			alice,
+		).
+		Count(&friendshipCount).Error; err != nil {
+		t.Fatalf("count friendship rows: %v", err)
+	}
+	var projectionCount int64
+	if err := f.gdb.Table("social_relationship_projections").
+		Where(
+			"(owner_ptid = ? AND peer_ptid = ?) OR "+
+				"(owner_ptid = ? AND peer_ptid = ?)",
+			alice,
+			bob,
+			bob,
+			alice,
+		).
+		Count(&projectionCount).Error; err != nil {
+		t.Fatalf("count relationship projections: %v", err)
+	}
+	if friendshipCount != 0 || projectionCount != 0 {
+		t.Fatalf(
+			"unfollow left active friendship truth: friendships=%d projections=%d",
+			friendshipCount,
+			projectionCount,
+		)
+	}
+	relationship, err := f.service.GetRelationship(ctx, alice, bob)
+	if err != nil {
+		t.Fatalf("get relationship: %v", err)
+	}
+	if relationship.Following {
+		t.Fatal("unfollow kept the caller's follow edge")
 	}
 }
 

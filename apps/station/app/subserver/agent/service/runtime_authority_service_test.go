@@ -1698,6 +1698,407 @@ func TestExecuteTurnRejectsRuntimeIncompatibleCapabilityBeforeProviderOrToolExec
 	}
 }
 
+type capabilityAdmissionSessionResolver struct {
+	session *model.ClientCapabilitySession
+}
+
+func (r capabilityAdmissionSessionResolver) GetActiveCapabilitySession(
+	_ context.Context,
+	_ string,
+	sessionID string,
+) (*model.ClientCapabilitySession, error) {
+	if r.session == nil || r.session.GetSessionId() != sessionID {
+		return nil, nil
+	}
+	return proto.Clone(r.session).(*model.ClientCapabilitySession), nil
+}
+
+func TestExecuteTurnEnforcesCapabilityReadinessAdmission(t *testing.T) {
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
+
+	tests := []struct {
+		name                        string
+		databaseName                string
+		omitManifest                bool
+		retireManifest              bool
+		disableBinding              bool
+		staleBinding                bool
+		availability                model.CapabilityAvailability
+		executionOwner              model.ToolExecutionOwner
+		requiredRuntimeCapabilities []string
+		modelCapabilities           string
+		clientSessionID             string
+		wantState                   model.CapabilityReadinessState
+		wantReasonCode              string
+		wantRejected                bool
+		wantAuthorized              bool
+	}{
+		{
+			name:           "ready admits and authorizes",
+			databaseName:   "capability_admission_ready",
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+			wantReasonCode: "capability_ready",
+			wantAuthorized: true,
+		},
+		{
+			name:           "disabled binding is ignored",
+			databaseName:   "capability_admission_disabled",
+			disableBinding: true,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			wantReasonCode: bindingDisabledReasonCode,
+		},
+		{
+			name:           "degraded manifest admits without authorization",
+			databaseName:   "capability_admission_degraded",
+			availability:   model.CapabilityAvailability_CAPABILITY_AVAILABILITY_DEGRADED,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_DEGRADED,
+			wantReasonCode: manifestDegradedReasonCode,
+		},
+		{
+			name:           "stale binding rejects",
+			databaseName:   "capability_admission_stale_binding",
+			staleBinding:   true,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			wantReasonCode: "binding_agent_revision_stale",
+			wantRejected:   true,
+		},
+		{
+			name:           "missing manifest rejects",
+			databaseName:   "capability_admission_missing_manifest",
+			omitManifest:   true,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNKNOWN,
+			wantReasonCode: "manifest_missing",
+			wantRejected:   true,
+		},
+		{
+			name:           "retired manifest rejects",
+			databaseName:   "capability_admission_retired_manifest",
+			retireManifest: true,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			wantReasonCode: "manifest_retired",
+			wantRejected:   true,
+		},
+		{
+			name:           "client session required rejects",
+			databaseName:   "capability_admission_client_session_required",
+			executionOwner: model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			wantReasonCode: "client_session_required",
+			wantRejected:   true,
+		},
+		{
+			name:            "client capability unavailable rejects",
+			databaseName:    "capability_admission_client_capability_unavailable",
+			executionOwner:  model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
+			clientSessionID: "client-session-unavailable",
+			wantState:       model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			wantReasonCode:  "client_capability_unavailable",
+			wantRejected:    true,
+		},
+		{
+			name:                        "runtime capability unavailable rejects",
+			databaseName:                "capability_admission_runtime_unavailable",
+			requiredRuntimeCapabilities: []string{"native-tools"},
+			modelCapabilities:           `{"native-tools":false}`,
+			wantState:                   model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			wantReasonCode:              runtimeCapabilityUnavailableReasonCode,
+			wantRejected:                true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openAdmissionTestDB(t, test.databaseName)
+			if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+				t.Fatalf("migrate capability admission tables: %v", err)
+			}
+			now := time.Now().UTC()
+			agent := &persistence.Agent{
+				ID:             "agent-capability-admission",
+				Name:           "Capability Admission Agent",
+				ProviderID:     "test-provider",
+				ModelName:      "test-model",
+				ThinkingMode:   string(domain.ThinkingModeDisabled),
+				Visibility:     string(domain.AgentVisibilityPrivate),
+				OwnerActorPTID: "ptid:person:owner",
+				ConfigJSON:     `{"tools":["skills_list"]}`,
+				Version:        1,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if err := db.Create(agent).Error; err != nil {
+				t.Fatalf("seed capability admission agent: %v", err)
+			}
+			conversationID := "conversation-capability-admission"
+			if err := db.Create(&persistence.Conversation{
+				ID:         conversationID,
+				AgentID:    agent.ID,
+				ActorPTID:  agent.OwnerActorPTID,
+				Title:      "Capability admission",
+				ProviderID: agent.ProviderID,
+				Status:     string(domain.ConversationStatusActive),
+				Version:    1,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			}).Error; err != nil {
+				t.Fatalf("seed capability admission conversation: %v", err)
+			}
+			seedTestProvider(
+				t,
+				db,
+				agent.OwnerActorPTID,
+				agent.ProviderID,
+				true,
+				`{"api_key":"test-key"}`,
+			)
+			modelCapabilities := test.modelCapabilities
+			if modelCapabilities == "" {
+				modelCapabilities = `{"native-tools":true,"streaming":true}`
+			}
+			seedTestModel(
+				t,
+				db,
+				agent.OwnerActorPTID,
+				agent.ProviderID,
+				agent.ModelName,
+				true,
+				128000,
+				modelCapabilities,
+			)
+			if err := db.Create(&persistence.Credential{
+				ID:        "credential-capability-admission",
+				ActorPTID: agent.OwnerActorPTID,
+				Provider:  agent.ProviderID,
+				AuthType:  "api_key",
+				Source:    "test",
+				Status:    string(domain.CredentialStatusActive),
+				Version:   1,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}).Error; err != nil {
+				t.Fatalf("seed capability admission credential: %v", err)
+			}
+
+			const capabilityID = "tool:skills_list"
+			requiredCapabilitiesJSON, err := json.Marshal(test.requiredRuntimeCapabilities)
+			if err != nil {
+				t.Fatalf("encode required runtime capabilities: %v", err)
+			}
+			availability := test.availability
+			if availability == model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNSPECIFIED {
+				availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
+			}
+			executionOwner := test.executionOwner
+			if executionOwner == model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED {
+				executionOwner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION
+			}
+			var retiredAt *time.Time
+			if test.retireManifest {
+				retiredAt = &now
+			}
+			if !test.omitManifest {
+				if err := db.Create(&persistence.CapabilityManifest{
+					CapabilityID:             capabilityID,
+					Version:                  "1",
+					SourceKind:               int32(model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL),
+					SourceInstanceID:         "skills_list",
+					DisplayMetadataJSON:      "{}",
+					InputSchemaRef:           "schema://skills_list/input",
+					OutputSchemaRef:          "schema://skills_list/output",
+					ExecutionOwner:           int32(executionOwner),
+					RequiredCapabilitiesJSON: string(requiredCapabilitiesJSON),
+					RiskClass:                "read",
+					DefaultApprovalPolicy:    int32(model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO),
+					SecretBoundary:           "station",
+					Availability:             int32(availability),
+					PayloadHash:              "capability-admission-payload",
+					CreatedAt:                now,
+					RetiredAt:                retiredAt,
+				}).Error; err != nil {
+					t.Fatalf("seed capability admission manifest: %v", err)
+				}
+			}
+			bindingAgentVersion := uint64(agent.Version)
+			if test.staleBinding {
+				bindingAgentVersion++
+			}
+			if err := db.Create(&persistence.AgentCapabilityBinding{
+				BindingID:         "binding-capability-admission",
+				Ptid:              agent.OwnerActorPTID,
+				AgentID:           agent.ID,
+				CapabilityID:      capabilityID,
+				CapabilityVersion: "1",
+				Enabled:           !test.disableBinding,
+				ApprovalPolicy:    int32(model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO),
+				AgentVersion:      bindingAgentVersion,
+				Revision:          1,
+				UpdatedAt:         now,
+			}).Error; err != nil {
+				t.Fatalf("seed capability admission binding: %v", err)
+			}
+
+			registry := NewToolRegistryService(nil, nil)
+			definitions := registry.Definitions([]string{"skills_list"})
+			if len(definitions) != 1 {
+				t.Fatalf("skills_list registry definition count = %d", len(definitions))
+			}
+			toolExecutions := 0
+			skillsList := *definitions[0]
+			skillsList.Handler = func(
+				context.Context,
+				*domain.ToolCallMeta,
+				json.RawMessage,
+			) (*domain.ToolResult, error) {
+				toolExecutions++
+				return &domain.ToolResult{Content: "unexpected"}, nil
+			}
+			registry.Register(&skillsList)
+
+			admission := NewRuntimeAdmissionResolver(
+				NewProviderConfigService(),
+				NewModelConfigService(),
+			)
+			readiness := NewCapabilityAuthorityReadinessService(
+				NewCapabilityAuthorityService(db),
+				NewAgentService(),
+				admission,
+			)
+			if test.clientSessionID != "" {
+				readiness.SetCapabilitySessionResolver(
+					capabilityAdmissionSessionResolver{
+						session: &model.ClientCapabilitySession{
+							SessionId:     test.clientSessionID,
+							ConnectionId:  "connection-capability-admission",
+							LeaseRevision: 1,
+						},
+					},
+				)
+			}
+			memory := NewMemoryService(nil)
+			service := NewTurnService(
+				NewErrorClassifierService(),
+				memory,
+				nil,
+				NewPromptAssemblyService(memory, nil),
+				NewCompressionService(),
+				nil,
+				NewCredentialPoolService(),
+				nil,
+				registry,
+				nil,
+				nil,
+				NewConversationService(),
+			)
+			service.SetAdmissionResolver(admission)
+			service.SetCapabilityReadiness(readiness)
+			service.SetAttachmentAdmissionService(NewAttachmentAdmissionService(nil))
+			providerCalls := 0
+			service.providerCall = func(
+				ctx context.Context,
+				request *ProviderCallRequest,
+			) (*ProviderCallResponse, error) {
+				if err := request.BeforeDispatch(ctx); err != nil {
+					return nil, err
+				}
+				providerCalls++
+				return &ProviderCallResponse{
+					Content: "admitted",
+					Model:   agent.ModelName,
+				}, nil
+			}
+
+			config := &TurnConfig{
+				AgentID:                   agent.ID,
+				ActorID:                   agent.OwnerActorPTID,
+				ConversationID:            conversationID,
+				Identity:                  "identity",
+				AgentConfigPrompt:         "prompt",
+				Provider:                  agent.ProviderID,
+				Model:                     agent.ModelName,
+				ThinkingMode:              domain.ThinkingModeDisabled,
+				ContextWindowSize:         128000,
+				MaxRetries:                1,
+				MemoryDisabled:            true,
+				ClientCapabilitySessionID: test.clientSessionID,
+			}
+			turn, executeErr := service.ExecuteTurn(
+				context.Background(),
+				config,
+				"question",
+			)
+
+			var readinessRecord persistence.CapabilityReadinessSnapshot
+			if err := db.First(&readinessRecord).Error; err != nil {
+				t.Fatalf("load capability admission readiness snapshot: %v", err)
+			}
+			var readinessSnapshot model.CapabilityReadinessSnapshot
+			if err := proto.Unmarshal(readinessRecord.Payload, &readinessSnapshot); err != nil {
+				t.Fatalf("decode capability admission readiness snapshot: %v", err)
+			}
+			assertCapabilityReadiness(
+				t,
+				&readinessSnapshot,
+				capabilityID,
+				test.wantState,
+				test.wantReasonCode,
+			)
+
+			var messageCount int64
+			if err := db.Model(&persistence.AgentMessage{}).
+				Where("conversation_id = ?", conversationID).
+				Count(&messageCount).Error; err != nil {
+				t.Fatalf("count capability admission messages: %v", err)
+			}
+
+			if test.wantRejected {
+				var bizErr *errcode.BizError
+				if !errors.As(executeErr, &bizErr) {
+					t.Fatalf("capability admission error = %T: %v", executeErr, executeErr)
+				}
+				if bizErr.Code != errcode.AgentRuntimeIncompatibleCapability ||
+					bizErr.Payload == nil ||
+					bizErr.Payload.GetDetails()["capability_id"] != capabilityID ||
+					bizErr.Payload.GetDetails()["reason_code"] != test.wantReasonCode {
+					t.Fatalf("capability admission payload = %+v", bizErr)
+				}
+				if providerCalls != 0 || toolExecutions != 0 || messageCount != 0 {
+					t.Fatalf(
+						"rejected capability executed work: provider=%d tool=%d message=%d",
+						providerCalls,
+						toolExecutions,
+						messageCount,
+					)
+				}
+				assertNoPersistedToolExecution(t, db)
+				return
+			}
+
+			if executeErr != nil {
+				t.Fatalf("admitted capability turn failed: %v", executeErr)
+			}
+			if turn == nil || turn.Status != domain.TurnStatusCompleted ||
+				providerCalls != 1 || toolExecutions != 0 || messageCount != 2 {
+				t.Fatalf(
+					"admitted capability result: turn=%+v provider=%d tool=%d message=%d",
+					turn,
+					providerCalls,
+					toolExecutions,
+					messageCount,
+				)
+			}
+			_, authorized := config.AuthorizedCapabilities.Capability(capabilityID, "1")
+			if authorized != test.wantAuthorized {
+				t.Fatalf(
+					"capability authorization = %v, want %v",
+					authorized,
+					test.wantAuthorized,
+				)
+			}
+		})
+	}
+}
+
 func TestExecuteTurnRejectsUnsupportedStreamingBeforeProviderOrToolExecution(t *testing.T) {
 	assertExecuteTurnRejectedWithoutExecution(
 		t,

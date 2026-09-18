@@ -14,6 +14,6 @@ export function registerHomePage(): void {
     factory: () => <HomePageContainer />,
     preload: 'eager',
     keepAlive: 'forever',
-    runtimes: [],
+    runtimes: ['home'],
   });
 }

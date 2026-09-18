@@ -12,12 +12,19 @@ interface FriendIdentitySelection {
   federatedHandle: string;
   homeStationDomain: string;
   homeStationPeerId: string;
+  homeStationName?: string;
 }
 
 export type ContactSelection =
   | FriendIdentitySelection & {
       kind: 'friend';
       conversationId?: string;
+    }
+  | FriendIdentitySelection & {
+      kind: 'person';
+      requestState: number;
+      requestDirection: 'incoming' | 'outgoing';
+      requestAttemptCount: number;
     }
   | {
       kind: 'group';
@@ -52,6 +59,9 @@ export function beginDirectConversationOpen(
     federatedHandle: contact.federatedHandle,
     homeStationDomain: contact.homeStationDomain,
     homeStationPeerId: contact.homeStationPeerId,
+    ...(contact.homeStationName
+      ? { homeStationName: contact.homeStationName }
+      : {}),
   };
 }
 
@@ -70,7 +80,7 @@ export function findContactConversation(
   selection: ContactSelection,
   conversations: DesktopIMConversationProjection[],
 ): DesktopIMConversationProjection | undefined {
-  if (selection.conversationId) {
+  if ('conversationId' in selection && selection.conversationId) {
     return conversations.find(
       (conversation) => (
         conversation.kind === selection.kind
@@ -108,5 +118,32 @@ export function friendContactSelection(
     federatedHandle: identity.federatedHandle,
     homeStationDomain: identity.homeStationDomain,
     homeStationPeerId: identity.homeStationPeerId,
+    ...(identity.homeStationName
+      ? { homeStationName: identity.homeStationName }
+      : {}),
+  };
+}
+
+export function personContactSelection(
+  identity: ChatActorIdentityProjection,
+  requestState: number,
+  requestDirection: 'incoming' | 'outgoing',
+  requestAttemptCount: number,
+): ContactSelection {
+  return {
+    kind: 'person',
+    peerPtid: identity.actorPtid,
+    federationId: identity.federationId,
+    federationName: identity.federationName,
+    displayName: identity.displayName,
+    avatar: identity.avatarUrl,
+    username: identity.username,
+    federatedHandle: identity.federatedHandle,
+    homeStationDomain: identity.homeStationDomain,
+    homeStationPeerId: identity.homeStationPeerId,
+    homeStationName: identity.homeStationName,
+    requestState,
+    requestDirection,
+    requestAttemptCount,
   };
 }

@@ -47,6 +47,7 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+NATIVE_DEV_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def is_native_tauri_url(value: str) -> bool:
@@ -73,7 +74,7 @@ def is_native_tauri_url(value: str) -> bool:
             or (
                 native_dev
                 and parsed.scheme == "http"
-                and parsed.hostname == "localhost"
+                and parsed.hostname in NATIVE_DEV_LOOPBACK_HOSTS
                 and port is not None
             )
         )

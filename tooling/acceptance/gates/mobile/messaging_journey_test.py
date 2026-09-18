@@ -113,14 +113,13 @@ class FakeMessagingSession:
                 "state": "projected",
             }
         if action == "social.people.search":
+            if set(body) != {"query"}:
+                raise AssertionError("search must not accept asserted identity evidence")
             query = str(body["query"])
-            federation_id = str(body["federationId"])
-            if federation_id != "federation-1":
-                raise AssertionError("unexpected explicit Federation identity")
             return [
                 {
                     "ptid": actor.ptid,
-                    "federationId": federation_id,
+                    "federationId": actor.federation_id,
                     "homeStationPeerId": actor.station_peer_id,
                 }
                 for actor in self.network.actors.values()

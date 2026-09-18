@@ -138,15 +138,10 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
   };
 }
 
-async function loadKnownAccountUsers(sessionAuthenticated: boolean): Promise<SessionUser[]> {
+async function loadKnownAccountUsers(): Promise<SessionUser[]> {
   const accounts = await api.accountListRestorable();
   if (!Array.isArray(accounts) || accounts.length === 0) return [];
   const mapped = accounts.map(accountToSessionUser);
-  if (!sessionAuthenticated) {
-    mapped.forEach((account) => {
-      if (!account.hasPin) account.hasSession = false;
-    });
-  }
   return mapped;
 }
 
@@ -467,7 +462,7 @@ class IdentityRuntime {
     this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
     try {
       await useAccountIdentityStore.getState().load();
-      const refreshedAccounts = await loadKnownAccountUsers(true);
+      const refreshedAccounts = await loadKnownAccountUsers();
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [refreshedUser];
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: currentSessionUser() ?? refreshedUser });
     } catch {
@@ -616,7 +611,7 @@ class IdentityRuntime {
     this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
     try {
       await useAccountIdentityStore.getState().load();
-      const refreshedAccounts = await loadKnownAccountUsers(true);
+      const refreshedAccounts = await loadKnownAccountUsers();
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [reconciledUser];
       const latestUser = currentSessionUser() ?? reconciledUser;
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
@@ -644,7 +639,7 @@ class IdentityRuntime {
     const oauth2 = useOAuth2Store.getState();
     const [, restorableAccounts] = await Promise.all([
       oauth2.loadAll().catch(() => {}),
-      loadKnownAccountUsers(false).catch(() => [] as SessionUser[]),
+      loadKnownAccountUsers().catch(() => [] as SessionUser[]),
     ]);
     this.knownAccounts = restorableAccounts;
     this.dataReady = true;
@@ -660,8 +655,7 @@ class IdentityRuntime {
     }
     if (this.authGateIdentityUnsubscribe) return;
     const refreshKnownAccounts = () => {
-      const { authenticated } = useSessionStore.getState();
-      loadKnownAccountUsers(authenticated).then((accounts) => {
+      loadKnownAccountUsers().then((accounts) => {
         this.knownAccounts = accounts;
         this.emit();
       }).catch(() => {

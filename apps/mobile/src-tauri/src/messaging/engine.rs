@@ -44,10 +44,9 @@ use messaging_core::outbox::{
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, Conversation,
-    ConversationCommandResultDelivery, ConversationKind, ConversationStatus, CryptoEndpoint,
-    DeviceInboxPayloadType, DurableDeviceInboxItem, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, SubmitConversationReadCursorRequest,
-    SubmitConversationTypingRequest,
+    ConversationKind, ConversationStatus, CryptoEndpoint, DurableDeviceInboxItem,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    SubmitConversationReadCursorRequest, SubmitConversationTypingRequest,
 };
 use messaging_core::proto::social::{
     AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, FriendRequestAction,
@@ -244,64 +243,6 @@ impl CommandResultLifecycle for MobileMlsItemConsumer {
 }
 
 type CoreItemConsumer = MessagingItemConsumer<MobileMessagingStore, MobileMlsItemConsumer>;
-
-#[derive(Clone)]
-struct InstrumentedMobileItemConsumer {
-    inner: Arc<CoreItemConsumer>,
-}
-
-impl ClaimedItemConsumer for InstrumentedMobileItemConsumer {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
-        // #region debug-point V-X:command-result-item
-        {
-            let debug_data = serde_json::json!({
-                "itemId": item.item_id,
-                "conversationId": item.conversation_id,
-                "eventId": item.event_id,
-                "laneSequence": item.lane_sequence,
-                "consumerEpoch": consumer_epoch,
-                "payloadType": item.payload_type,
-                "payloadSize": item.opaque_payload.len(),
-            });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
-        }
-        // #endregion
-        // #region debug-point X-Y:command-result-shape
-        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
-            == Some(DeviceInboxPayloadType::CommandResult)
-        {
-            let decoded = ConversationCommandResultDelivery::decode(item.opaque_payload.as_slice());
-            let debug_data = match decoded {
-                Ok(delivery) => serde_json::json!({
-                    "decoded": true,
-                    "conversationId": delivery.conversation_id,
-                    "commandId": delivery.command_id,
-                    "state": delivery.state,
-                    "resultAccepted": delivery.result.as_ref().map(|result| result.accepted),
-                    "resultEventPresent": delivery.result.as_ref().and_then(|result| result.event.as_ref()).is_some(),
-                }),
-                Err(error) => serde_json::json!({
-                    "decoded": false,
-                    "error": error.to_string(),
-                }),
-            };
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
-        }
-        // #endregion
-        let result = self.inner.consume(item, consumer_epoch);
-        // #region debug-point V-W:command-result-dispatch
-        {
-            let debug_data = serde_json::json!({
-                "itemId": item.item_id,
-                "payloadType": item.payload_type,
-                "result": result.as_ref().err(),
-            });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
-        }
-        // #endregion
-        result
-    }
-}
 
 pub struct MobileMessagingEngine {
     profile_id: String,
@@ -1185,20 +1126,6 @@ impl MobileMessagingEngine {
         let token = self.access_token()?;
         let plan = self.prepare_send_plan(&token, conversation_id)?;
         let command_id = Ulid::new().to_string();
-        // #region debug-point R-S:interaction-command-route
-        {
-            let debug_data = serde_json::json!({
-                "commandId": command_id,
-                "conversationId": conversation_id,
-                "homeStationPeerId": self.scope.station_peer_id,
-                "authorityStationPeerId": plan.authority_station_peer_id,
-                "authoritySequence": plan.authority_sequence,
-            });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"post-fix","hypothesisId":"R-S","location":"apps/mobile/src-tauri/src/messaging/engine.rs:submit_metadata_interaction","msg":"[DEBUG] Mobile prepared metadata interaction route","data":debug_data}).to_string()).send();
-            });
-        }
-        // #endregion
         self.prepare_metadata_with_plan(
             &plan,
             &command_id,
@@ -1464,10 +1391,7 @@ impl MobileMessagingEngine {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        InstrumentedMobileItemConsumer {
-            inner: self.consumer.clone(),
-        }
-        .consume(item, consumer_epoch)
+        self.consumer.consume(item, consumer_epoch)
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -1491,9 +1415,7 @@ impl MobileMessagingEngine {
                 token,
                 self.scope.device_id.clone(),
             )?,
-            InstrumentedMobileItemConsumer {
-                inner: self.consumer.clone(),
-            },
+            self.consumer.clone(),
             actor_device_ref(self.scope.actor_ptid.clone(), self.scope.device_id.clone()),
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
@@ -1589,46 +1511,9 @@ impl MobileMessagingEngine {
         let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
             return Ok(false);
         };
-        let transfer_before = self.store.attachment_transfer(&attachment_id)?;
         let progress = self
             .attachment_transfer_worker()?
             .run_upload_once(&attachment_id, now_unix_ms);
-        let transfer_after = self.store.attachment_transfer(&attachment_id);
-        // #region debug-point F:attachment-upload-result
-        {
-            let debug_data = serde_json::json!({
-                "attachmentId": attachment_id,
-                "progress": progress.as_ref().map(|value| format!("{value:?}")).ok(),
-                "error": progress.as_ref().err(),
-                "before": transfer_before.as_ref().map(|transfer| serde_json::json!({
-                    "state": transfer.state,
-                    "attemptCount": transfer.attempt_count,
-                    "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
-                    "lastErrorCode": transfer.last_error_code,
-                    "hasUploadId": !transfer.upload_id.is_empty(),
-                    "generation": transfer.generation,
-                    "descriptorCommitted": transfer.descriptor_sha256 != vec![0; 32],
-                    "completedChunkBitmap": transfer.completed_chunk_bitmap,
-                })),
-                "after": transfer_after.as_ref().ok().and_then(|transfer| {
-                    transfer.as_ref().map(|transfer| serde_json::json!({
-                        "state": transfer.state,
-                        "attemptCount": transfer.attempt_count,
-                        "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
-                        "lastErrorCode": transfer.last_error_code,
-                        "hasUploadId": !transfer.upload_id.is_empty(),
-                        "generation": transfer.generation,
-                        "descriptorCommitted": transfer.descriptor_sha256 != vec![0; 32],
-                        "completedChunkBitmap": transfer.completed_chunk_bitmap,
-                    }))
-                }),
-                "snapshotError": transfer_after.as_ref().err(),
-            });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
-            });
-        }
-        // #endregion
         progress?;
         Ok(true)
     }
@@ -1657,7 +1542,6 @@ impl MobileMessagingEngine {
                 "mobile messaging attachment plaintext commitment is invalid".to_string()
             })?;
         let cache_ref = self.attachment_cache_ref(&attachment_id)?;
-        let transfer_before = self.store.attachment_transfer(&attachment_id)?;
         let progress = self.attachment_transfer_worker()?.run_download_once(
             &attachment_id,
             descriptor,
@@ -1665,36 +1549,6 @@ impl MobileMessagingEngine {
             &cache_ref,
             now_unix_ms,
         );
-        let transfer_after = self.store.attachment_transfer(&attachment_id);
-        // #region debug-point H-J:attachment-download-result
-        {
-            let debug_data = serde_json::json!({
-                "attachmentId": attachment_id,
-                "progress": progress.as_ref().map(|value| format!("{value:?}")).ok(),
-                "error": progress.as_ref().err(),
-                "before": transfer_before.as_ref().map(|transfer| serde_json::json!({
-                    "state": transfer.state,
-                    "attemptCount": transfer.attempt_count,
-                    "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
-                    "lastErrorCode": transfer.last_error_code,
-                    "completedChunkBitmap": transfer.completed_chunk_bitmap,
-                })),
-                "after": transfer_after.as_ref().ok().and_then(|transfer| {
-                    transfer.as_ref().map(|transfer| serde_json::json!({
-                        "state": transfer.state,
-                        "attemptCount": transfer.attempt_count,
-                        "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
-                        "lastErrorCode": transfer.last_error_code,
-                        "completedChunkBitmap": transfer.completed_chunk_bitmap,
-                    }))
-                }),
-                "snapshotError": transfer_after.as_ref().err(),
-            });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"H-J","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_download_once","msg":"[DEBUG] Mobile attachment download result persisted","data":debug_data}).to_string()).send();
-            });
-        }
-        // #endregion
         progress?;
         Ok(true)
     }

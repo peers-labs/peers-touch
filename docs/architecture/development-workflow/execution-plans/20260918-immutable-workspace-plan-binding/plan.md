@@ -53,6 +53,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/architecture/chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/architecture/developer-toolchain",
         "mode": "exclusive-write"
       },
@@ -74,6 +82,10 @@
       },
       {
         "pathPrefix": "tooling/acceptance",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/devctl",
         "mode": "exclusive-write"
       },
       {

@@ -146,6 +146,9 @@ func (s *CapabilityBackfillService) Run(
 	now := s.now()
 	var report *CapabilityBackfillReport
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := retireLegacyConnectorPlaceholder(tx, now); err != nil {
+			return err
+		}
 		for _, seed := range manifests {
 			imported, err := upsertBackfillManifest(tx, seed.manifest, now)
 			if err != nil {
@@ -202,6 +205,24 @@ func (s *CapabilityBackfillService) Run(
 	}
 
 	return report, nil
+}
+
+func retireLegacyConnectorPlaceholder(tx *gorm.DB, now time.Time) error {
+	result := tx.Model(&persistence.CapabilityManifest{}).
+		Where(
+			"source_kind = ? AND source_instance_id = ? AND retired_at IS NULL",
+			int32(model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR),
+			"oauth_connector_call",
+		).
+		Updates(map[string]interface{}{
+			"availability":      int32(model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED),
+			"retired_at":        now,
+			"retirement_reason": "connector_resource_projection_required",
+		})
+	if result.Error != nil {
+		return fmt.Errorf("retire legacy Connector placeholder: %w", result.Error)
+	}
+	return nil
 }
 
 func (s *CapabilityBackfillService) scan(
@@ -770,10 +791,19 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 	if err := s.db.WithContext(ctx).Order("session_id").Find(&rows).Error; err != nil {
 		return nil, nil, err
 	}
-	known := make(map[string]struct{}, len(knownManifests))
+	knownCapabilityIDs := make(map[string]struct{}, len(knownManifests))
 	for _, seed := range knownManifests {
-		key := seed.manifest.GetCapabilityId() + "\x00" + seed.manifest.GetVersion()
-		known[key] = struct{}{}
+		knownCapabilityIDs[seed.manifest.GetCapabilityId()] = struct{}{}
+	}
+	var persistedCapabilityIDs []string
+	if err := s.db.WithContext(ctx).
+		Model(&persistence.CapabilityManifest{}).
+		Distinct("capability_id").
+		Pluck("capability_id", &persistedCapabilityIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, capabilityID := range persistedCapabilityIDs {
+		knownCapabilityIDs[strings.TrimSpace(capabilityID)] = struct{}{}
 	}
 	var manifests []capabilityManifestSeed
 	var rejections []CapabilityBackfillRejection
@@ -796,7 +826,7 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 				))
 				continue
 			}
-			if _, exists := known[capabilityID+"\x00"+version]; exists {
+			if _, exists := knownCapabilityIDs[capabilityID]; exists {
 				continue
 			}
 			manifests = append(manifests, capabilityManifestSeed{
@@ -852,19 +882,12 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	case definition.Name == "local_mcp":
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
+		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
 		capabilityID = "mcp.invoke"
 		requiredRuntimeCapabilities = nil
-		version = "1"
-	case definition.Name == "oauth_connector_call":
-		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR
-		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE
-		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
-		secretBoundary = "client"
-		requiredRuntimeCapabilities = nil
+		version = "2"
 	case strings.HasPrefix(definition.Name, "local_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
@@ -1001,7 +1024,8 @@ func bindingFromManifest(
 		enabled:           enabled,
 		approvalPolicy:    manifest.GetDefaultApprovalPolicy(),
 		reconcileVersion: manifest.GetSourceKind() ==
-			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL,
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL ||
+			manifest.GetCapabilityId() == "mcp.invoke",
 	}
 }
 

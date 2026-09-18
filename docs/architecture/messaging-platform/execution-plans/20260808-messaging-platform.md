@@ -1,19 +1,26 @@
 # Messaging Platform — 执行计划
 
-> **Status**: superseded for Station authority/API execution by
-> [`../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`](../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md);
-> retained as pre-consolidation implementation evidence and Device Messaging
-> Engine history
-> **Version**: v1.5
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Status**: superseded
+> **Version**: v1.6
+> **Created**: 2026-08-08 | **Updated**: 2026-09-16
 > **Owner**: Messaging Platform Team
 
 ---
 
-The CA-HC plan is authoritative for Conversation, Device, Inbox, Recovery, Key
-Exchange, Federation API ownership, and removal of `/messaging/*`. This plan does
-not define an alternate public route. Its Desktop/Mobile Device Messaging Engine
-terminology remains valid for the internal runtime.
+This execution plan was terminated for active Chat work on 2026-09-16. It is
+retained only as pre-consolidation implementation and evidence history.
+
+The replacement product plan is:
+
+[`../../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)
+
+`20260906-conversation-authority-hard-cut.md` remains a separate
+`peers-access-gate` worktree concern. It is not the active plan for this
+worktree and is not modified by this replacement.
+
+The Desktop/Mobile Device Messaging Engine terminology remains valid for the
+internal runtime. The historical workstream and evidence records below do not
+define current progress or current readiness.
 
 ## 1. Plan Sources And Gate
 

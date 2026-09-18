@@ -1,8 +1,8 @@
 # Acceptance Framework
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-06-03 | **Updated**: 2026-09-13
+> **Version**: v2.3
+> **Created**: 2026-06-03 | **Updated**: 2026-09-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -92,7 +92,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
 | [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
 | [execution-plans/20260817-domain-structural-validation-context-anchor.md](./execution-plans/20260817-domain-structural-validation-context-anchor.md) | Domain structural closure 与 Context Anchor 治理修复计划 |
-| [execution-plans/20260824-native-desktop-runtime-cells.md](./execution-plans/20260824-native-desktop-runtime-cells.md) | macOS/Linux/Windows Native Desktop runtime cells 与远端 Linux proof 计划 |
+| [execution-plans/20260824-native-desktop-runtime-cells.md](./execution-plans/20260824-native-desktop-runtime-cells.md) | 已终止的 Native Desktop runtime-cell 历史实现与证据计划；当前 Chat 执行见 `../chat-lifecycle/` |
 | [execution-plans/20260830-ephemeral-gate-launch-context.md](./execution-plans/20260830-ephemeral-gate-launch-context.md) | D-18 non-persisted Provisioner-to-Gate capability handoff 执行计划 |
 
 当前Evidence Store architecture由`D-11`约束：

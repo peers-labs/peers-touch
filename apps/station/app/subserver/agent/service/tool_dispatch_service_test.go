@@ -4310,11 +4310,50 @@ func TestTurnServiceCancelWaitingToolTurnBlocksBatch(t *testing.T) {
 	for i := range calls {
 		statusByID[calls[i].ToolCallID] = calls[i].Status
 	}
-	if statusByID["tool-call-unprepared"] != persistence.ToolCallStatusCancelled {
-		t.Fatalf("unprepared tool call must be cancelled, got %s", statusByID["tool-call-unprepared"])
+	if statusByID["tool-call-unprepared"] != persistence.ToolCallStatusUnknownSideEffect {
+		t.Fatalf(
+			"dispatch-committed tool call must become unknown side effect, got %s",
+			statusByID["tool-call-unprepared"],
+		)
 	}
 	if statusByID["tool-call-prepared"] != persistence.ToolCallStatusUnknownSideEffect {
 		t.Fatalf("prepared tool call must become unknown side effect, got %s", statusByID["tool-call-prepared"])
+	}
+	var pendingOutbox int64
+	if err := fixture.db.Model(&persistence.ToolDispatchOutbox{}).
+		Where("tool_call_id IN ? AND acknowledged_at IS NULL", []string{
+			"tool-call-unprepared",
+			"tool-call-prepared",
+		}).
+		Count(&pendingOutbox).Error; err != nil {
+		t.Fatalf("count pending cancellation outbox: %v", err)
+	}
+	if pendingOutbox != 0 {
+		t.Fatalf("cancel left %d dispatch envelopes deliverable", pendingOutbox)
+	}
+	var activePreparedRecovery int64
+	if err := fixture.db.Model(&persistence.ReceiptRecoveryCredential{}).
+		Where("tool_call_id = ? AND invalidated_at IS NULL", "tool-call-prepared").
+		Count(&activePreparedRecovery).Error; err != nil {
+		t.Fatalf("count prepared recovery credentials: %v", err)
+	}
+	if activePreparedRecovery != 1 {
+		t.Fatalf(
+			"cancel left %d prepared recovery credentials active, want 1",
+			activePreparedRecovery,
+		)
+	}
+	var activeUnpreparedRecovery int64
+	if err := fixture.db.Model(&persistence.ReceiptRecoveryCredential{}).
+		Where("tool_call_id = ? AND invalidated_at IS NULL", "tool-call-unprepared").
+		Count(&activeUnpreparedRecovery).Error; err != nil {
+		t.Fatalf("count unprepared recovery credentials: %v", err)
+	}
+	if activeUnpreparedRecovery != 0 {
+		t.Fatalf(
+			"cancel left %d unprepared recovery credentials active",
+			activeUnpreparedRecovery,
+		)
 	}
 }
 

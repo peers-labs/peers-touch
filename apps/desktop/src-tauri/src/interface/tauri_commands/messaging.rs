@@ -1741,6 +1741,17 @@ pub fn messaging_list_messages(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_list_messages_result(&engine, &input)
+}
+
+pub(crate) fn messaging_list_messages_result(
+    engine: &crate::messaging::MessagingEngine,
+    input: &MessagingListMessagesInput,
+) -> AppResult<Value> {
     if input.conversation_id.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -1748,10 +1759,6 @@ pub fn messaging_list_messages(
             None,
         );
     }
-    let (_, _, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
     let messages = match engine.conversation_messages(&input.conversation_id) {
         Ok(messages) => messages,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
@@ -1928,6 +1935,17 @@ pub fn messaging_search_messages(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_search_messages_result(&engine, &input)
+}
+
+pub(crate) fn messaging_search_messages_result(
+    engine: &crate::messaging::MessagingEngine,
+    input: &MessagingSearchMessagesInput,
+) -> AppResult<Value> {
     let before = match (
         input.before_timestamp_unix_ms,
         input.before_message_id.as_deref(),
@@ -1941,10 +1959,6 @@ pub fn messaging_search_messages(
                 None,
             )
         }
-    };
-    let (_, _, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return error,
     };
     let messages =
         match engine.search_messages(&input.conversation_id, &input.query, before, input.limit) {

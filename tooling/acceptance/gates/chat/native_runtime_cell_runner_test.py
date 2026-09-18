@@ -88,6 +88,8 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         )
         for url in (
             "http://localhost:3210",
+            "http://127.0.0.1:3410/#/chat",
+            "http://[::1]:3410/#/chat",
             "https://tauri.localhost",
             "http://tauri.localhost:3210",
             "http://user@tauri.localhost",
@@ -101,8 +103,17 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             self.assertTrue(
                 is_native_tauri_url("http://localhost:3410/#/chat")
             )
+            self.assertTrue(
+                is_native_tauri_url("http://127.0.0.1:3410/#/chat")
+            )
+            self.assertTrue(
+                is_native_tauri_url("http://[::1]:3410/#/chat")
+            )
             self.assertFalse(
                 is_native_tauri_url("https://localhost:3410/#/chat")
+            )
+            self.assertFalse(
+                is_native_tauri_url("http://192.0.2.1:3410/#/chat")
             )
 
     def test_selected_runtime_fails_closed_and_uses_binding(self) -> None:

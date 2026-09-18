@@ -188,10 +188,17 @@ function runRemoteStationBridge(root, resolved, environment) {
     );
   }
   fs.mkdirSync(resolved.paths.profileLogs, { recursive: true });
+  const stdio = ['ignore', 'pipe', 'pipe'];
+  const leaseFd = Number(runtimeEnv.PT_MACHINE_LEASE_FD);
+  if (Number.isInteger(leaseFd) && leaseFd >= 3) {
+    while (stdio.length <= leaseFd) stdio.push('ignore');
+    stdio[leaseFd] = leaseFd;
+  }
   const result = spawnSync(bash, [script], {
     cwd: root,
     env: runtimeEnv,
     encoding: 'utf8',
+    stdio,
     timeout: 1_800_000,
     windowsHide: true,
   });

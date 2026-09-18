@@ -2,6 +2,7 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import {
   ToolCallStatus as AgentToolCallStatus,
+  ToolExecutionOwner,
   type TurnDiagnosticToolFact,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
@@ -32,8 +33,17 @@ export interface ToolProjection {
   decisionId?: string;
   decisionRevision: number;
   payloadHash?: string;
+  expiresAt?: string;
   approvalActor?: string;
   decidedAt?: string;
+  executionOwner?: ToolExecutionOwner;
+  approvalPolicy?: string;
+  manifestId?: string;
+  manifestVersion?: string;
+  bindingId?: string;
+  bindingRevision?: number;
+  readinessSnapshotId?: string;
+  targetDeviceId?: string;
   decisionErrorCode?: string;
   decisionOutcome?: AgentTypedErrorPayload;
   delegationResults?: DelegationTaskInfo[];
@@ -52,6 +62,7 @@ const CLIENT_EXECUTOR_UNAVAILABLE = 'CLIENT_EXECUTOR_UNAVAILABLE';
 const EXECUTOR_UNAVAILABLE_DECISION_ERROR_CODE =
   'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE';
 const EXECUTOR_UNAVAILABLE_LOCALE_KEY = 'agent.errors.executorUnavailable';
+const TOOL_RECONCILE_INTERVAL_MS = 60_000;
 
 function stringValue(data: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -252,9 +263,7 @@ export function reduceToolProjection(
     ));
   }
   if (event.event === 'done') {
-    return updateTurnProjections(state, turnId, (projection) => (
-      projection.pending ? { ...projection, status: 'success', pending: false } : projection
-    ));
+    return state;
   }
   if (event.event === 'cancelled') {
     return updateTurnProjections(state, turnId, (projection) => (
@@ -307,6 +316,9 @@ export function reduceToolProjection(
       decisionId: decisionId || current?.decisionId,
       decisionRevision,
       payloadHash: payloadHash || current?.payloadHash,
+      expiresAt:
+        stringValue(data, 'expiresAt', 'expires_at')
+        || current?.expiresAt,
     };
     return { ...state, [toolCallId]: next };
   }
@@ -342,6 +354,7 @@ export function reduceToolProjection(
   if (event.event === 'tool_result') {
     if (!current) return state;
     const error = stringValue(data, 'error', 'errorCode', 'error_code');
+    const localizedError = connectorErrorLocaleKey(error) || error;
     const result = stringValue(data, 'content', 'result');
     const delegationResults = current.toolName === 'delegate_task'
       ? parseDelegationResults(result)
@@ -350,10 +363,10 @@ export function reduceToolProjection(
       ...state,
       [toolCallId]: {
         ...current,
-        status: error ? 'error' : 'success',
+        status: localizedError ? 'error' : 'success',
         pending: false,
         result,
-        error: error || undefined,
+        error: localizedError || undefined,
         delegationResults: delegationResults.length > 0
           ? delegationResults
           : current.delegationResults,
@@ -382,6 +395,15 @@ function toToolCallInfo(projection: ToolProjection): ToolCallInfo {
     decisionId: projection.decisionId,
     decisionRevision: projection.decisionRevision,
     payloadHash: projection.payloadHash,
+    expiresAt: projection.expiresAt,
+    executionOwner: projection.executionOwner,
+    approvalPolicy: projection.approvalPolicy,
+    manifestId: projection.manifestId,
+    manifestVersion: projection.manifestVersion,
+    bindingId: projection.bindingId,
+    bindingRevision: projection.bindingRevision,
+    readinessSnapshotId: projection.readinessSnapshotId,
+    targetDeviceId: projection.targetDeviceId,
     error:
       projection.error
       || decisionOutcomeError(projection.decisionOutcome)
@@ -398,7 +420,11 @@ export function resolveToolCallProjection(
 
   const sourceIsTerminal = isTerminalToolStatus(source.status);
   const projectionAddsTypedTerminalOutcome = (
-    (projection.status === 'denied' || projection.status === 'expired')
+    (
+      projection.status === 'denied'
+      || projection.status === 'expired'
+      || projection.status === 'unknown_side_effect'
+    )
     && Boolean(
       projection.error
       || decisionOutcomeError(projection.decisionOutcome)
@@ -448,12 +474,10 @@ function toolStatusFromDiagnostic(
   if (status === AgentToolCallStatus.DENIED) return 'denied';
   if (status === AgentToolCallStatus.CANCELLED) return 'cancelled';
   if (status === AgentToolCallStatus.EXPIRED) return 'expired';
-  if (
-    status === AgentToolCallStatus.FAILED
-    || status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT
-  ) {
-    return 'error';
+  if (status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT) {
+    return 'unknown_side_effect';
   }
+  if (status === AgentToolCallStatus.FAILED) return 'error';
   return undefined;
 }
 
@@ -472,7 +496,8 @@ function isTerminalToolStatus(
     || status === 'error'
     || status === 'denied'
     || status === 'cancelled'
-    || status === 'expired';
+    || status === 'expired'
+    || status === 'unknown_side_effect';
 }
 
 function diagnosticToolError(
@@ -491,7 +516,23 @@ function diagnosticToolError(
   ) {
     return 'agent.errors.toolApprovalDenied';
   }
-  return fact.errorCode || source.error;
+  if (fact.status === AgentToolCallStatus.UNKNOWN_SIDE_EFFECT) {
+    return 'agent.errors.toolUnknownSideEffect';
+  }
+  return connectorErrorLocaleKey(fact.errorCode) || fact.errorCode || source.error;
+}
+
+function connectorErrorLocaleKey(errorCode: string): string | undefined {
+  const localeKeys: Record<string, string> = {
+    CONNECTOR_OAUTH_EXPIRED: 'agent.errors.connectorOAuthExpired',
+    CONNECTOR_SCOPE_DENIED: 'agent.errors.connectorScopeDenied',
+    CONNECTOR_RESOURCE_REMOVED: 'agent.errors.connectorResourceRemoved',
+    CONNECTOR_MANIFEST_STALE: 'agent.errors.connectorManifestStale',
+    CONNECTOR_DISCONNECTED: 'agent.errors.connectorDisconnected',
+    CONNECTOR_PROVIDER_REVOKED: 'agent.errors.connectorProviderRevoked',
+    CONNECTOR_REVOCATION_UNCONFIRMED: 'agent.errors.connectorRevocationUnconfirmed',
+  };
+  return localeKeys[errorCode];
 }
 
 function sameToolProjection(
@@ -514,8 +555,17 @@ function sameToolProjection(
     && left.decisionId === right.decisionId
     && left.decisionRevision === right.decisionRevision
     && left.payloadHash === right.payloadHash
+    && left.expiresAt === right.expiresAt
     && left.approvalActor === right.approvalActor
     && left.decidedAt === right.decidedAt
+    && left.executionOwner === right.executionOwner
+    && left.approvalPolicy === right.approvalPolicy
+    && left.manifestId === right.manifestId
+    && left.manifestVersion === right.manifestVersion
+    && left.bindingId === right.bindingId
+    && left.bindingRevision === right.bindingRevision
+    && left.readinessSnapshotId === right.readinessSnapshotId
+    && left.targetDeviceId === right.targetDeviceId
     && left.decisionErrorCode === right.decisionErrorCode
     && left.decisionOutcome === right.decisionOutcome
     && left.delegationResults === right.delegationResults;
@@ -563,8 +613,23 @@ export function reconcileToolProjectionState(
           progress: projection.progress ?? current.progress,
           progressPct: projection.progressPct ?? current.progressPct,
           payloadHash: projection.payloadHash ?? current.payloadHash,
+          expiresAt: projection.expiresAt ?? current.expiresAt,
           approvalActor: projection.approvalActor ?? current.approvalActor,
           decidedAt: projection.decidedAt ?? current.decidedAt,
+          executionOwner:
+            projection.executionOwner ?? current.executionOwner,
+          approvalPolicy:
+            projection.approvalPolicy ?? current.approvalPolicy,
+          manifestId: projection.manifestId ?? current.manifestId,
+          manifestVersion:
+            projection.manifestVersion ?? current.manifestVersion,
+          bindingId: projection.bindingId ?? current.bindingId,
+          bindingRevision:
+            projection.bindingRevision ?? current.bindingRevision,
+          readinessSnapshotId:
+            projection.readinessSnapshotId ?? current.readinessSnapshotId,
+          targetDeviceId:
+            projection.targetDeviceId ?? current.targetDeviceId,
           decisionErrorCode:
             projection.decisionErrorCode ?? current.decisionErrorCode,
           decisionOutcome:
@@ -612,6 +677,16 @@ function projectionFromDiagnostic(
       ? decisionRevision
       : 0,
     payloadHash: source.payloadHash,
+    expiresAt: source.expiresAt,
+    executionOwner: fact.executionOwner,
+    approvalPolicy: fact.approvalPolicy || source.approvalPolicy,
+    manifestId: fact.manifestId || source.manifestId,
+    manifestVersion: fact.manifestVersion || source.manifestVersion,
+    bindingId: fact.bindingId || source.bindingId,
+    bindingRevision: Number(fact.bindingRevision) || source.bindingRevision,
+    readinessSnapshotId:
+      fact.readinessSnapshotId || source.readinessSnapshotId,
+    targetDeviceId: fact.targetDeviceId || source.targetDeviceId,
   };
 }
 
@@ -623,6 +698,7 @@ class ToolRuntime implements RuntimeDescriptor {
   private listeners = new Set<Listener>();
   private actorId: string | null = null;
   private installed = false;
+  private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private pendingDecisions = new Map<string, Promise<AgentToolDecisionIntentResponse>>();
   private pendingExecutorReconnects = new Map<string, Promise<void>>();
   private decisionIntentIds = new Map<string, string>();
@@ -631,11 +707,22 @@ class ToolRuntime implements RuntimeDescriptor {
   install(): void {
     if (this.installed) return;
     this.installed = true;
+    this.reconcileTimer = setInterval(() => {
+      void this.reconcile('periodic').catch((error) => {
+        log.warn('toolRuntime', 'Periodic ToolCall reconciliation failed', {
+          error: String(error),
+        });
+      });
+    }, TOOL_RECONCILE_INTERVAL_MS);
   }
 
   teardown(): void {
     if (!this.installed) return;
     this.installed = false;
+    if (this.reconcileTimer !== null) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = null;
+    }
     this.actorId = null;
     this.pendingDecisions.clear();
     this.pendingExecutorReconnects.clear();
@@ -656,6 +743,22 @@ class ToolRuntime implements RuntimeDescriptor {
 
   getSnapshot = (): ToolProjectionState => this.state;
 
+  async reconcile(reason: string): Promise<void> {
+    const tracked = Object.values(this.state).filter(
+      (projection) =>
+        projection.pending || projection.status === 'unknown_side_effect',
+    );
+    if (tracked.length === 0) return;
+    log.info('toolRuntime', 'Reconciling Station ToolCall projections', {
+      reason,
+      count: tracked.length,
+    });
+    await this.reconcileMessages(tracked.map((projection) => ({
+      turnId: projection.turnId,
+      toolCalls: [toToolCallInfo(projection)],
+    })));
+  }
+
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -675,6 +778,22 @@ class ToolRuntime implements RuntimeDescriptor {
     const next = reduceToolProjection(this.state, event);
     if (next === this.state) return false;
     this.replaceState(next);
+    if (event.event === 'tool_approval_required') {
+      const { toolCallId } = projectionIdentity(event.data);
+      const proposal = next[toolCallId];
+      if (proposal?.turnId) {
+        void this.reconcileMessages([{
+          turnId: proposal.turnId,
+          toolCalls: [toToolCallInfo(proposal)],
+        }]).catch((error) => {
+          log.warn(
+            'toolRuntime',
+            'Failed to hydrate ToolCall proposal from Station diagnostics',
+            { turnId: proposal.turnId, toolCallId, error: String(error) },
+          );
+        });
+      }
+    }
     return true;
   }
 
@@ -689,6 +808,7 @@ class ToolRuntime implements RuntimeDescriptor {
         return (
           !current
           || current.pending
+          || current.status === 'unknown_side_effect'
           || (current.status === 'error' && !current.decisionErrorCode)
         );
       });
@@ -759,8 +879,17 @@ class ToolRuntime implements RuntimeDescriptor {
             decisionId: persisted.decisionId,
             decisionRevision: persisted.decisionRevision ?? 0,
             payloadHash: persisted.payloadHash,
+            expiresAt: persisted.expiresAt,
             approvalActor: persisted.approvalActor,
             decidedAt: persisted.approvedAt,
+            executionOwner: persisted.executionOwner,
+            approvalPolicy: persisted.approvalPolicy,
+            manifestId: persisted.manifestId,
+            manifestVersion: persisted.manifestVersion,
+            bindingId: persisted.bindingId,
+            bindingRevision: persisted.bindingRevision,
+            readinessSnapshotId: persisted.readinessSnapshotId,
+            targetDeviceId: persisted.targetDeviceId,
             delegationResults: persisted.delegationResults,
           },
         };

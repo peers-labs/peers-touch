@@ -430,7 +430,14 @@ func TestExecutionLifecycleShutdownWaitsForActiveTurnAndWorker(t *testing.T) {
 
 func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	db := openConversationAuthorityDB(t, "lifecycle_interrupts_direct_turn")
-	if err := db.AutoMigrate(&persistence.TurnAttempt{}); err != nil {
+	if err := db.AutoMigrate(
+		&persistence.TurnAttempt{},
+		&persistence.ToolBatch{},
+		&persistence.ToolCall{},
+		&persistence.ToolDispatchOutbox{},
+		&persistence.ReceiptRecoveryCredential{},
+		&persistence.ToolContinuation{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -561,6 +568,290 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}
 	if turn.TerminalReason != "station_lifecycle_interrupted" {
 		t.Fatalf("repeat lifecycle interruption replaced terminal reason: %+v", turn)
+	}
+}
+
+func TestInterruptTurnEnforcesActorOwnershipAndFencesLateExecution(t *testing.T) {
+	db := openConversationAuthorityDB(t, "turn_actor_owned_interrupt")
+	if err := db.AutoMigrate(
+		&persistence.ToolBatch{},
+		&persistence.ToolCall{},
+		&persistence.ToolDispatchOutbox{},
+		&persistence.ReceiptRecoveryCredential{},
+		&persistence.ToolContinuation{},
+	); err != nil {
+		t.Fatalf("migrate Turn fence models: %v", err)
+	}
+	now := time.Now().UTC()
+	turnID := "turn-owned-interrupt"
+	attemptID := "attempt-owned-interrupt"
+	batchID := "batch-owned-interrupt"
+	records := []interface{}{
+		&persistence.Conversation{
+			ID:        "conversation-owned-interrupt",
+			AgentID:   "agent-1",
+			ActorPTID: "ptid:person:owner",
+			Title:     "Interrupt",
+			Status:    "active",
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		&persistence.AgentTurn{
+			ID:             turnID,
+			ConversationID: "conversation-owned-interrupt",
+			AgentID:        "agent-1",
+			Status:         string(domain.TurnStatusWaitingLocalTool),
+			StartedAt:      now,
+		},
+		&persistence.TurnAttempt{
+			ID:           attemptID,
+			TurnID:       turnID,
+			AttemptIndex: 1,
+			Status:       string(domain.TurnStatusWaitingLocalTool),
+			StartedAt:    now,
+		},
+		&persistence.ToolBatch{
+			ID: batchID, ActorID: "ptid:person:owner", TurnID: turnID,
+			AttemptID: attemptID, ConversationID: "conversation-owned-interrupt",
+			AgentID: "agent-1", Provider: "provider", Model: "model",
+			SystemPrompt: "system", Iteration: 1, MaxRetries: 1,
+			ContextWindowSize: 1024, ExpectedCallCount: 3,
+			Status:    persistence.ToolBatchStatusOpen,
+			CreatedAt: now, UpdatedAt: now,
+		},
+		&persistence.ToolCall{
+			ID: "call-approved", ActorID: "ptid:person:owner", TurnID: turnID,
+			AttemptID: attemptID, ToolBatchID: batchID, ToolName: "tool-ready",
+			ToolCallID: "tool-call-approved", CapabilityID: "tool-ready",
+			BoundedArguments: []byte(`{}`), ResourceRefs: []byte(`{}`),
+			Status:    persistence.ToolCallStatusApproved,
+			CreatedAt: now, UpdatedAt: now,
+		},
+		&persistence.ToolCall{
+			ID: "call-dispatched", ActorID: "ptid:person:owner", TurnID: turnID,
+			AttemptID: attemptID, ToolBatchID: batchID, ToolName: "tool-a",
+			ToolCallID: "tool-call-dispatched", CapabilityID: "tool-a",
+			BoundedArguments: []byte(`{}`), ResourceRefs: []byte(`{}`),
+			Status:    persistence.ToolCallStatusDispatchCommitted,
+			CreatedAt: now, UpdatedAt: now,
+		},
+		&persistence.ToolCall{
+			ID: "call-prepared", ActorID: "ptid:person:owner", TurnID: turnID,
+			AttemptID: attemptID, ToolBatchID: batchID, ToolName: "tool-b",
+			ToolCallID: "tool-call-prepared", CapabilityID: "tool-b",
+			BoundedArguments: []byte(`{}`), ResourceRefs: []byte(`{}`),
+			Status:    persistence.ToolCallStatusPrepared,
+			CreatedAt: now, UpdatedAt: now,
+		},
+		&persistence.ToolContinuation{
+			ID: "continuation-owned-interrupt", TurnID: turnID,
+			AttemptID: attemptID, ToolBatchID: batchID,
+			Status:  persistence.ToolContinuationStatusClaimed,
+			LeaseID: "continuation-lease", FencingToken: 1,
+			CreatedAt: now, UpdatedAt: now,
+		},
+	}
+	for _, record := range records {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed Turn fence record %T: %v", record, err)
+		}
+	}
+	for index, toolCallID := range []string{
+		"tool-call-dispatched",
+		"tool-call-prepared",
+	} {
+		if err := db.Create(&persistence.ToolDispatchOutbox{
+			RequestID: "request-" + toolCallID,
+			ActorID:   "ptid:person:owner", CapabilitySessionID: "session-1",
+			TargetDeviceID: "device-1", DispatchSequence: uint64(index + 1),
+			ToolCallID: toolCallID, FencingToken: 1,
+			PayloadHash: "payload", Envelope: []byte{1},
+			ExecutionDeadline:      now.Add(time.Minute),
+			ReconciliationDeadline: now.Add(2 * time.Minute),
+			CreatedAt:              now,
+		}).Error; err != nil {
+			t.Fatalf("seed dispatch outbox: %v", err)
+		}
+		if err := db.Create(&persistence.ReceiptRecoveryCredential{
+			ID: "recovery-" + toolCallID, ActorID: "ptid:person:owner",
+			DeviceID: "device-1", DeviceSigningKeyID: "key-1",
+			RequestID: "request-" + toolCallID, ToolCallID: toolCallID,
+			ExecutionClaimID:        "claim-" + toolCallID,
+			CapabilityLeaseRevision: 1, FencingToken: 1,
+			PayloadHash: "payload", ScopeHash: "scope",
+			NonceHash:              "nonce-" + toolCallID,
+			ExecutionDeadline:      now.Add(time.Minute),
+			ReconciliationDeadline: now.Add(2 * time.Minute),
+			IssuedAt:               now, ExpiresAt: now.Add(2 * time.Minute),
+		}).Error; err != nil {
+			t.Fatalf("seed recovery credential: %v", err)
+		}
+	}
+
+	svc := TurnService{convService: NewConversationService()}
+	executionCtx, release := svc.RegisterTurn(context.Background(), turnID)
+	defer release()
+	if err := svc.InterruptTurn(
+		context.Background(),
+		"ptid:person:other",
+		turnID,
+		"evaluation_cancel_ack_timeout",
+	); !isAgentServiceError(err, errcode.AgentNotFound) {
+		t.Fatalf("foreign actor interrupt error = %v", err)
+	}
+	select {
+	case <-executionCtx.Done():
+		t.Fatal("foreign actor fenced the live Turn")
+	default:
+	}
+
+	if err := svc.InterruptTurn(
+		context.Background(),
+		"ptid:person:owner",
+		turnID,
+		"evaluation_cancel_ack_timeout",
+	); err != nil {
+		t.Fatalf("interrupt actor-owned Turn: %v", err)
+	}
+	select {
+	case <-executionCtx.Done():
+	default:
+		t.Fatal("durable interruption did not fence the live execution")
+	}
+	var turn persistence.AgentTurn
+	if err := db.First(&turn, "id = ?", turnID).Error; err != nil {
+		t.Fatalf("load interrupted Turn: %v", err)
+	}
+	if turn.Status != string(domain.TurnStatusInterrupted) ||
+		turn.TerminalReason != "evaluation_cancel_ack_timeout" {
+		t.Fatalf("Turn was not durably interrupted: %+v", turn)
+	}
+	var calls []persistence.ToolCall
+	if err := db.Order("id ASC").Find(&calls, "turn_id = ?", turnID).Error; err != nil {
+		t.Fatalf("load fenced tool calls: %v", err)
+	}
+	if len(calls) != 3 ||
+		calls[0].Status != persistence.ToolCallStatusCancelled ||
+		calls[1].Status != persistence.ToolCallStatusUnknownSideEffect ||
+		calls[2].Status != persistence.ToolCallStatusUnknownSideEffect {
+		t.Fatalf("tool calls were not fenced: %+v", calls)
+	}
+	if calls[1].ErrorCode != "evaluation_cancel_ack_timeout_after_prepare" ||
+		calls[2].ErrorCode != "evaluation_cancel_ack_timeout_after_prepare" {
+		t.Fatalf("side-effect-capable calls lost UNKNOWN visibility: %+v", calls)
+	}
+	var pendingOutbox int64
+	if err := db.Model(&persistence.ToolDispatchOutbox{}).
+		Where("acknowledged_at IS NULL").
+		Count(&pendingOutbox).Error; err != nil {
+		t.Fatalf("count pending outbox rows: %v", err)
+	}
+	if pendingOutbox != 0 {
+		t.Fatalf("interruption left %d dispatch envelopes deliverable", pendingOutbox)
+	}
+	var activeRecovery int64
+	if err := db.Model(&persistence.ReceiptRecoveryCredential{}).
+		Where("invalidated_at IS NULL").
+		Count(&activeRecovery).Error; err != nil {
+		t.Fatalf("count active recovery credentials: %v", err)
+	}
+	if activeRecovery != 0 {
+		t.Fatalf("interruption left %d recovery credentials active", activeRecovery)
+	}
+	var continuation persistence.ToolContinuation
+	if err := db.First(
+		&continuation,
+		"id = ?",
+		"continuation-owned-interrupt",
+	).Error; err != nil {
+		t.Fatalf("load fenced continuation: %v", err)
+	}
+	if continuation.Status != persistence.ToolContinuationStatusCompleted {
+		t.Fatalf("continuation remained executable: %+v", continuation)
+	}
+	if err := svc.completeTurn(
+		context.Background(),
+		&TurnConfig{
+			AgentID:        "agent-1",
+			ConversationID: "conversation-owned-interrupt",
+			AttemptID:      attemptID,
+		},
+		turnID,
+		"late result",
+		0,
+	); err == nil {
+		t.Fatal("late Turn result committed after interruption fence")
+	}
+}
+
+func TestInterruptTurnFailsClosedWhenDurableFenceFails(t *testing.T) {
+	db := openConversationAuthorityDB(t, "turn_interrupt_durable_failure")
+	if err := db.AutoMigrate(
+		&persistence.ToolBatch{},
+		&persistence.ToolCall{},
+		&persistence.ToolDispatchOutbox{},
+		&persistence.ReceiptRecoveryCredential{},
+		&persistence.ToolContinuation{},
+	); err != nil {
+		t.Fatalf("migrate Turn fence models: %v", err)
+	}
+	now := time.Now().UTC()
+	turnID := "turn-interrupt-failure"
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conversation-interrupt-failure",
+		AgentID:   "agent-1",
+		ActorPTID: "ptid:person:owner",
+		Title:     "Interrupt failure",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             turnID,
+		ConversationID: "conversation-interrupt-failure",
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusRunning),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed Turn: %v", err)
+	}
+	if err := db.Create(&persistence.TurnAttempt{
+		ID:           "attempt-interrupt-failure",
+		TurnID:       turnID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusRunning),
+		StartedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed Turn attempt: %v", err)
+	}
+
+	svc := TurnService{convService: NewConversationService()}
+	executionCtx, release := svc.RegisterTurn(context.Background(), turnID)
+	defer release()
+	if err := db.Migrator().DropTable(&persistence.TurnEvent{}); err != nil {
+		t.Fatalf("remove durable event table: %v", err)
+	}
+	if err := svc.InterruptTurn(
+		context.Background(),
+		"ptid:person:owner",
+		turnID,
+		"evaluation_cancel_ack_timeout",
+	); err == nil {
+		t.Fatal("interruption succeeded without durable terminal event")
+	}
+	select {
+	case <-executionCtx.Done():
+	default:
+		t.Fatal("failed durable interruption left live execution unfenced")
+	}
+	var turn persistence.AgentTurn
+	if err := db.First(&turn, "id = ?", turnID).Error; err != nil {
+		t.Fatalf("reload rolled-back Turn: %v", err)
+	}
+	if turn.Status != string(domain.TurnStatusRunning) || turn.EndedAt != nil {
+		t.Fatalf("failed durable interruption partially committed: %+v", turn)
 	}
 }
 
@@ -1049,10 +1340,16 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 					ID: attemptID, TurnID: turnID, AttemptIndex: 1,
 					Status: string(domain.TurnStatusRunning), StartedAt: now,
 				}},
+				{name: "user message", value: &persistence.AgentMessage{
+					ID: "user_message_" + test.name, ConversationID: "conv_" + test.name,
+					TurnID: &turnID, Role: string(domain.MessageRoleUser),
+					Status: "completed", Content: &pendingContent, Seq: 1,
+					CreatedAt: now, UpdatedAt: now,
+				}},
 				{name: "assistant message", value: &persistence.AgentMessage{
 					ID: "message_" + test.name, ConversationID: "conv_" + test.name,
 					TurnID: &turnID, Role: string(domain.MessageRoleAssistant),
-					Status: assistantStatus, Content: &pendingContent, Seq: 1,
+					Status: assistantStatus, Content: &pendingContent, Seq: 2,
 					CreatedAt: now, UpdatedAt: now,
 				}},
 				{name: "task", value: &persistence.TaskRun{
@@ -1203,6 +1500,9 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 		&persistence.TurnAttempt{},
 		&persistence.ToolCall{},
 		&persistence.ToolBatch{},
+		&persistence.ToolDispatchOutbox{},
+		&persistence.ReceiptRecoveryCredential{},
+		&persistence.ToolContinuation{},
 	); err != nil {
 		t.Fatalf("migrate cancellation dependencies: %v", err)
 	}
@@ -1249,6 +1549,54 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed assistant message: %v", err)
 	}
+	if err := db.Create(&persistence.ToolBatch{
+		ID: "batch_cancel", ActorID: "actor_1", TurnID: "turn_cancel",
+		AttemptID: "attempt_cancel", ConversationID: "conv_cancel",
+		AgentID: "agent_1", Provider: "provider", Model: "model",
+		SystemPrompt: "system", Iteration: 1, MaxRetries: 1,
+		ContextWindowSize: 1024, ExpectedCallCount: 1,
+		Status:    persistence.ToolBatchStatusOpen,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed tool batch: %v", err)
+	}
+	if err := db.Create(&persistence.ToolCall{
+		ID: "call_cancel", ActorID: "actor_1", TurnID: "turn_cancel",
+		AttemptID: "attempt_cancel", ToolBatchID: "batch_cancel",
+		ToolName: "tool-a", ToolCallID: "tool-call-cancel",
+		CapabilityID: "tool-a", BoundedArguments: []byte(`{}`),
+		ResourceRefs: []byte(`{}`),
+		Status:       persistence.ToolCallStatusDispatchCommitted,
+		CreatedAt:    now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed dispatched tool call: %v", err)
+	}
+	if err := db.Create(&persistence.ToolDispatchOutbox{
+		RequestID: "request-tool-call-cancel",
+		ActorID:   "actor_1", CapabilitySessionID: "session-1",
+		TargetDeviceID: "device-1", DispatchSequence: 1,
+		ToolCallID: "tool-call-cancel", FencingToken: 1,
+		PayloadHash: "payload", Envelope: []byte{1},
+		ExecutionDeadline:      now.Add(time.Minute),
+		ReconciliationDeadline: now.Add(2 * time.Minute),
+		CreatedAt:              now,
+	}).Error; err != nil {
+		t.Fatalf("seed dispatch outbox: %v", err)
+	}
+	if err := db.Create(&persistence.ReceiptRecoveryCredential{
+		ID: "recovery-tool-call-cancel", ActorID: "actor_1",
+		DeviceID: "device-1", DeviceSigningKeyID: "key-1",
+		RequestID: "request-tool-call-cancel", ToolCallID: "tool-call-cancel",
+		ExecutionClaimID:        "claim-tool-call-cancel",
+		CapabilityLeaseRevision: 1, FencingToken: 1,
+		PayloadHash: "payload", ScopeHash: "scope",
+		NonceHash:              "nonce-tool-call-cancel",
+		ExecutionDeadline:      now.Add(time.Minute),
+		ReconciliationDeadline: now.Add(2 * time.Minute),
+		IssuedAt:               now, ExpiresAt: now.Add(2 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("seed recovery credential: %v", err)
+	}
 
 	svc := TurnService{convService: NewConversationService()}
 	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel")
@@ -1290,6 +1638,31 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}
 	assertLifecycleCancelledJSON(t, message.ErrorJSON)
 	assertLifecycleCancelledPayload(t, &messageError, "turn_cancel")
+	var call persistence.ToolCall
+	if err := db.First(&call, "id = ?", "call_cancel").Error; err != nil {
+		t.Fatalf("load fenced tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusUnknownSideEffect {
+		t.Fatalf("dispatch-committed call status = %q", call.Status)
+	}
+	var pendingOutbox int64
+	if err := db.Model(&persistence.ToolDispatchOutbox{}).
+		Where("request_id = ? AND acknowledged_at IS NULL", "request-tool-call-cancel").
+		Count(&pendingOutbox).Error; err != nil {
+		t.Fatalf("count pending cancellation outbox: %v", err)
+	}
+	if pendingOutbox != 0 {
+		t.Fatalf("cancel left %d dispatch envelopes deliverable", pendingOutbox)
+	}
+	var activeRecovery int64
+	if err := db.Model(&persistence.ReceiptRecoveryCredential{}).
+		Where("id = ? AND invalidated_at IS NULL", "recovery-tool-call-cancel").
+		Count(&activeRecovery).Error; err != nil {
+		t.Fatalf("count active cancellation recovery credential: %v", err)
+	}
+	if activeRecovery != 0 {
+		t.Fatalf("cancel left %d recovery credentials active", activeRecovery)
+	}
 }
 
 func assertLifecycleCancelledJSON(t *testing.T, encoded []byte) {
@@ -1502,6 +1875,9 @@ func TestRequestCancelAllowsCurrentExecutionToFinalizeUsageAndTrace(t *testing.T
 	if err := db.AutoMigrate(
 		&persistence.ToolCall{},
 		&persistence.ToolBatch{},
+		&persistence.ToolDispatchOutbox{},
+		&persistence.ReceiptRecoveryCredential{},
+		&persistence.ToolContinuation{},
 		&persistence.TurnTrace{},
 	); err != nil {
 		t.Fatalf("migrate cancellation finalization dependencies: %v", err)

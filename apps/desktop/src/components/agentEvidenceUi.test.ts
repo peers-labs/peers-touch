@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
@@ -17,21 +18,13 @@ import {
 import {
   AGENT_ATTACHMENT_REJECTED_ERROR_TYPE,
   AGENT_CONTEXT_LIMIT_ERROR_TYPE,
-  type AvailableModel,
 } from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
-import type { ExportTurnDiagnosticsResponse } from '../gen/proto/domain/agent/agent_pb';
-
-const model: AvailableModel = {
-  id: 'text-model',
-  display_name: 'Text model',
-  provider_id: 'provider',
-  provider_name: 'Provider',
-  type: 'chat',
-  context_window: 8192,
-  enabled: true,
-  vision: false,
-};
+import {
+  RuntimeCapabilitySnapshotSchema,
+  type ExportTurnDiagnosticsResponse,
+} from '../gen/proto/domain/agent/agent_pb';
+import { CapabilityReadinessSnapshotSchema } from '../gen/proto/domain/agent/capability_pb';
 
 const assistantMessage: ChatMessage = {
   id: 'message-1',
@@ -172,19 +165,29 @@ describe('Agent evidence UI projections', () => {
     expect(agentAttachmentDraftsBlockSend([{ status: 'ready' }])).toBe(false);
   });
 
-  it('blocks image submission only when the selected model explicitly lacks vision', () => {
+  it('blocks image submission only when Station readiness lacks vision', () => {
     const attachment = {
       cid: 'attachment-1',
       filename: 'proof.png',
       mime_type: 'image/png',
       size: 10,
     };
+    const withoutVision = create(CapabilityReadinessSnapshotSchema, {
+      modelCapabilities: create(RuntimeCapabilitySnapshotSchema, {
+        input: { image: false },
+      }),
+    });
+    const withVision = create(CapabilityReadinessSnapshotSchema, {
+      modelCapabilities: create(RuntimeCapabilitySnapshotSchema, {
+        input: { image: true },
+      }),
+    });
 
-    expect(selectAgentCapabilityWarning(model, [attachment])).toMatchObject({
+    expect(selectAgentCapabilityWarning(withoutVision, [attachment])).toMatchObject({
       kind: 'image_input_unsupported',
       blocking: true,
     });
-    expect(selectAgentCapabilityWarning({ ...model, vision: true }, [attachment])).toBeNull();
+    expect(selectAgentCapabilityWarning(withVision, [attachment])).toBeNull();
   });
 
   it('rejects mismatched diagnostics and exports with the loaded replay identity', () => {
@@ -232,6 +235,13 @@ describe('Agent evidence UI projections', () => {
     expect(assistant).toContain("resource: 'sessions'");
     expect(assistant).toContain('<LogOut size={14} />');
     expect(assistant).toContain('await identityRuntime.logout()');
+    expect(composer).toContain('data-pt-agent-runtime-snapshot');
+    expect(composer).toContain('data-pt-agent-readiness-snapshot');
+    expect(composer).toContain('data-pt-agent-readiness-state');
+    expect(composer).toContain('data-pt-agent-model-compatibility');
+    expect(composer).toContain('data-pt-agent-selected-provider');
+    expect(composer).toContain('data-pt-agent-selected-model');
+    expect(composer).toContain('!latestReadiness.canSend');
     expect(desktopApi).toContain("label: 'agent.recovery.chooseCompatibleModel'");
     expect(desktopApi).toContain("label: 'agent.recovery.switchAccount'");
     expect(desktopApi).toContain("label: 'agent.recovery.recover'");
@@ -247,5 +257,17 @@ describe('Agent evidence UI projections', () => {
     expect(details).toContain('data-turn-details');
     expect(details).toContain('data-turn-diagnostics-export');
     expect(details).toContain('requestId !== loadRequestRef.current');
+  });
+
+  it('mounts the Connector projection on the Agent capability surface', () => {
+    const profile = readFileSync(
+      new URL('../pages/AgentProfilePage.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(profile).toContain(
+      "import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';",
+    );
+    expect(profile).toContain('<AgentConnectorsPanel agentId={agent.id} />');
   });
 });

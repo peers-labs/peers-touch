@@ -188,6 +188,42 @@ test(
 );
 
 test(
+  'remote deployment bridge preserves the inherited lease descriptor',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const port = await startHealthServer(t);
+    const profilePath = writeProfile(root, 'remote-lease', 'remote', port);
+    const environment = machineEnvironment(t, root);
+    const leasePath = path.join(root, 'lease.lock');
+    fs.writeFileSync(leasePath, 'lease\n');
+    const leaseFd = fs.openSync(leasePath, 'r');
+    t.after(() => fs.closeSync(leaseFd));
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'eval ": <&${PT_MACHINE_LEASE_FD}"',
+        'printf "inherited\\n" > "$PWD/remote-lease-inherited"',
+        '',
+      ].join('\n'),
+    );
+
+    await startStation(root, {
+      ...environment,
+      PT_DEV_PROFILE_FILE: profilePath,
+      PT_MACHINE_LEASE_FD: String(leaseFd),
+    });
+
+    assert.equal(
+      fs.readFileSync(path.join(root, 'remote-lease-inherited'), 'utf8'),
+      'inherited\n',
+    );
+  },
+);
+
+test(
   'remote deployment bridge failure returns a typed bounded error',
   { skip: process.platform === 'win32' },
   async (t) => {
