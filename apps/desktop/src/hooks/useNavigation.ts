@@ -152,6 +152,9 @@ export function useNavigation(router: HashRouter): Navigation {
         case 'marketplace':
           router.setPage('marketplace');
           break;
+        case 'evaluation':
+          router.setPage('evaluation');
+          break;
         case 'documents':
           router.setPage('notes');
           break;

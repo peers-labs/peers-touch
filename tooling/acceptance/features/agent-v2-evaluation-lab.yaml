@@ -7,6 +7,7 @@
     "model/domain/agent/evaluation.proto",
     "apps/station/app/subserver/agent/**/evaluation*",
     "apps/desktop/src/store/evaluation.ts",
+    "apps/desktop/src/hooks/useNavigation.ts",
     "apps/desktop/src/pages/EvaluationPage.tsx"
   ],
   "truth_sources": [

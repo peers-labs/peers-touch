@@ -10,6 +10,10 @@ const harness = readFileSync(
   ),
   'utf8',
 );
+const navigation = readFileSync(
+  resolve(process.cwd(), 'apps/desktop/src/hooks/useNavigation.ts'),
+  'utf8',
+);
 const evaluationPage = [
   'apps/desktop/src/pages/EvaluationPage.tsx',
   'apps/desktop/src/pages/evaluation/RunList.tsx',
@@ -89,6 +93,17 @@ test('shared Station binding returns the canonical active peer identity', () => 
 test('shared harness exposes Station-accepted capability session evidence', () => {
   assert.match(harness, /async waitForCapabilitySession\(\)/);
   assert.match(harness, /return waitForCapabilitySessionEvidence\(\)/);
+});
+
+test('J06 native navigation reaches the production Evaluation page', () => {
+  assert.match(
+    harness,
+    /EVENT\.NAVIGATION_REQUESTED,\s*\{\s*resource:\s*['"]evaluation['"]\s*\}/,
+  );
+  assert.match(
+    navigation,
+    /case\s+['"]evaluation['"]:\s*router\.setPage\(['"]evaluation['"]\)/,
+  );
 });
 
 test('J06 Acceptance does not use the legacy Evaluation store', () => {
