@@ -7,29 +7,47 @@
     "model/domain/agent/evaluation.proto",
     "apps/station/app/subserver/agent/**/evaluation*",
     "apps/desktop/src/store/evaluation.ts",
+    "apps/desktop/src/hooks/useNavigation.ts",
     "apps/desktop/src/pages/EvaluationPage.tsx"
   ],
   "truth_sources": [
-    "Station benchmark, dataset, case, run, attempt, result, target snapshot, cancellation, and metrics records"
+    "Station benchmark, dataset, case, run, attempt, result, target snapshot, cancellation, and metrics records",
+    "Station run event cursor and Agent TurnTrace lineage"
   ],
   "visible_surfaces": [
-    {"type": "native-tauri", "surface": "Evaluation Lab draft, run, cancel, retry, result, and recovery states"},
+    {"type": "native-tauri", "surface": "Evaluation Lab benchmark, dataset, case, draft, run, cancel, retry, result, deletion, and restart recovery states"},
     {"type": "station-readback", "surface": "Evaluation run, case result, metrics, and lineage"}
   ],
+  "fixtures": {
+    "profile": "two",
+    "actors": ["alice@p.t", "bob@p.t"],
+    "target_agent": "one disposable Agent bound to the deterministic Evaluation provider",
+    "benchmark": "one actor-owned benchmark with a revision-pinned rubric",
+    "dataset": "one actor-owned dataset pinned to the benchmark revision",
+    "cases": [
+      "one successful case",
+      "one deterministic failed case",
+      "one cancellable in-flight case"
+    ]
+  },
   "required_gates": ["agent-v2-evaluation-lab-e2e"],
   "acceptance": {
     "service": [
       "evaluation uses the canonical Agent Turn kernel and durable Station lifecycle",
-      "duplicate scheduling, cancellation races, retry, restart, retention, and actor isolation preserve unique lineage"
+      "duplicate scheduling and mutation replay return the same durable command result without duplicate attempts or results",
+      "cancellation records a durable intent and per-attempt acknowledgement before terminal partial or cancelled state",
+      "failed-case retry creates a unique child run with immutable parent, source attempt, source result, Turn, and metric lineage",
+      "restart, retention, ordered deletion, and actor isolation are read back from Station"
     ],
     "visible": [
-      "the user can run durable cases, cancel or retry, inspect metrics, and recover after restart",
+      "the native user can create and start a run, cancel or retry it, inspect results and metrics, and recover the same run after Desktop restart",
       "partial and failed outcomes expose exact terminal case lineage"
     ]
   },
   "negative": [
     "localStorage runs or quick completion must not prove Evaluation",
     "retry must not mutate the terminal parent run or its metrics",
-    "missing TurnTrace, metrics lineage, replay, or cleanup keeps the Gate UNPROVEN"
+    "another actor must not read, mutate, retry, or delete the owner actor's Evaluation resources",
+    "missing any reviewed runtime tuple, native selector, cancellation acknowledgement, TurnTrace, metrics lineage, replay, retention, isolation, or cleanup evidence keeps the Gate UNPROVEN"
   ]
 }

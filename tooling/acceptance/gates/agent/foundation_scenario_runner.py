@@ -20,12 +20,14 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import re
 import sys
 import time
+import urllib.request
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +42,10 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.redaction import (
+    is_sensitive_key,
+    redact_text_with_values,
+)
 from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     GATE_ID,
     FoundationAdapters,
@@ -77,11 +83,83 @@ class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
 
 
+# #region debug-point A-D:capability-session-enrollment
+def _report_capability_session_enrollment_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, object],
+) -> None:
+    if os.environ.get("DEBUG_SESSION_ID") != "capability-session-enrollment":
+        return
+    url = os.environ.get(
+        "DEBUG_SERVER_URL",
+        "http://127.0.0.1:7789/event",
+    )
+    payload = json.dumps(
+        {
+            "sessionId": "capability-session-enrollment",
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_scenario_runner.py:_authenticate_clients"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
+def _failure_summary(
+    error: BaseException | None,
+    profile_env: Mapping[str, str],
+) -> list[dict[str, str]]:
+    secret_values = tuple(
+        value
+        for key, value in profile_env.items()
+        if value and is_sensitive_key(key)
+    )
+    summaries: list[dict[str, str]] = []
+    current = error
+    for _ in range(4):
+        if current is None:
+            break
+        summaries.append(
+            {
+                "type": type(current).__name__,
+                "message": redact_text_with_values(
+                    str(current),
+                    secret_values,
+                )[:4096],
+            }
+        )
+        current = current.__cause__
+    return summaries
+
+
 DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F04": 900,
     "AS-F07": 900,
     "BASE-APPROVAL_EXPIRED": 1200,
 }
+LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
+LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -238,11 +316,886 @@ def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class FoundationExecutorUnavailableCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-EXECUTOR_UNAVAILABLE has no receiver for {platform}"
+        )
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-EXECUTOR_UNAVAILABLE locale did not converge"
+            )
+        target = executor.harness(
+            "getFoundationClientExecutorTarget",
+            timeout=60,
+        )
+        if not isinstance(target, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-EXECUTOR_UNAVAILABLE target is invalid"
+            )
+        lifecycle_input = {
+            "targetCapabilitySessionId": target.get("capabilitySessionId"),
+            "targetDeviceId": target.get("targetDeviceId"),
+            "targetCapabilityId": target.get("targetCapabilityId"),
+        }
+        executor_available = True
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            prepared = receiver.harness(
+                "prepareFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    **lifecycle_input,
+                },
+                timeout=180,
+            )
+            if not isinstance(prepared, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE preparation is invalid"
+                )
+            executor_stop = executor.harness(
+                "setFoundationClientExecutorAvailable",
+                {
+                    "available": False,
+                    **lifecycle_input,
+                },
+                timeout=60,
+            )
+            if not isinstance(executor_stop, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE withdrawal is invalid"
+                )
+            executor_available = False
+            rejected = receiver.harness(
+                "rejectFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "executorStop": dict(executor_stop),
+                },
+                timeout=180,
+            )
+            if not isinstance(rejected, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE rejection is invalid"
+                )
+            executor_start = executor.harness(
+                "setFoundationClientExecutorAvailable",
+                {
+                    "available": True,
+                    **lifecycle_input,
+                },
+                timeout=60,
+            )
+            if not isinstance(executor_start, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE restoration is invalid"
+                )
+            executor_available = True
+            recovered = receiver.harness(
+                "recoverFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "rejectedScenario": dict(rejected),
+                    "executorStart": dict(executor_start),
+                },
+                timeout=60,
+            )
+            if not isinstance(recovered, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE recovery is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "preparedScenario": dict(recovered),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if not executor_available:
+                try:
+                    executor.harness(
+                        "setFoundationClientExecutorAvailable",
+                        {
+                            "available": True,
+                            **lifecycle_input,
+                        },
+                        timeout=60,
+                    )
+                except BaseException as error:
+                    cleanup_errors.append(f"executor restore: {error}")
+            try:
+                receiver.harness(
+                    "abortFoundationExecutorUnavailable",
+                    {"scenarioKey": scenario_key},
+                    timeout=120,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"scenario cleanup: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
+def _wait_for_lease_dispatch_window(source_expires_at_ms: int) -> None:
+    now_ms = time.time_ns() // 1_000_000
+    dispatch_delay_ms = (
+        source_expires_at_ms
+        - now_ms
+        - LEASE_EXPIRED_DISPATCH_WINDOW_MS
+    )
+    if dispatch_delay_ms > 0:
+        time.sleep(dispatch_delay_ms / 1000)
+    dispatch_lead_ms = source_expires_at_ms - time.time_ns() // 1_000_000
+    if dispatch_lead_ms < LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS:
+        raise ScenarioRunnerError(
+            "BASE-LEASE_EXPIRED dispatch window was missed"
+        )
+
+
+class FoundationLeaseExpiredCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-LEASE_EXPIRED has no receiver for {platform}"
+        )
+
+    @staticmethod
+    def _target_value(target: Mapping[str, Any], key: str) -> str:
+        value = target.get(key)
+        if not isinstance(value, str) or not value:
+            raise ScenarioRunnerError(
+                f"BASE-LEASE_EXPIRED target {key} is invalid"
+            )
+        return value
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-LEASE_EXPIRED locale did not converge"
+            )
+        target = executor.harness(
+            "getFoundationClientExecutorTarget",
+            timeout=60,
+        )
+        if not isinstance(target, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-LEASE_EXPIRED target is invalid"
+            )
+        target_session_id = self._target_value(
+            target,
+            "capabilitySessionId",
+        )
+        lifecycle_input = {
+            "targetCapabilitySessionId": target_session_id,
+            "targetDeviceId": self._target_value(target, "targetDeviceId"),
+            "targetCapabilityId": self._target_value(
+                target,
+                "targetCapabilityId",
+            ),
+        }
+        capability_session_id_hash = hashlib.sha256(
+            target_session_id.encode("utf-8")
+        ).hexdigest()
+        expiry_control_finished = False
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            pause = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "leasePause",
+                    "capabilitySessionIdHash": capability_session_id_hash,
+                },
+                timeout=60,
+            )
+            if (
+                not isinstance(pause, Mapping)
+                or pause.get("control") != "leasePause"
+                or pause.get("availability") != "available"
+                or pause.get("capabilitySessionIdHash")
+                != capability_session_id_hash
+                or pause.get("workerPaused") is not True
+                or type(pause.get("sourceExpiresAtMs")) is not int
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED lease pause is invalid"
+                )
+            source_expires_at_ms = int(pause["sourceExpiresAtMs"])
+            _wait_for_lease_dispatch_window(source_expires_at_ms)
+            prepared = receiver.harness(
+                "prepareFoundationLeaseExpired",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    **lifecycle_input,
+                },
+                timeout=180,
+            )
+            if not isinstance(prepared, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED preparation is invalid"
+                )
+            dispatched = receiver.harness(
+                "dispatchFoundationLeaseExpired",
+                {"scenarioKey": scenario_key},
+                timeout=180,
+            )
+            if not isinstance(dispatched, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED dispatch is invalid"
+                )
+            dispatch_baseline = dispatched.get("dispatchBaseline")
+            if not isinstance(dispatch_baseline, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED dispatch baseline is invalid"
+                )
+            lease_control = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "leaseExpired",
+                    "capabilitySessionIdHash": capability_session_id_hash,
+                },
+                timeout=360,
+            )
+            expiry_control_finished = True
+            if (
+                not isinstance(lease_control, Mapping)
+                or lease_control.get("control") != "leaseExpired"
+                or lease_control.get("availability") != "available"
+                or lease_control.get("capabilitySessionIdHash")
+                != capability_session_id_hash
+                or lease_control.get("workerPaused") is not False
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED expiry control is invalid"
+                )
+            completed = receiver.harness(
+                "completeFoundationLeaseExpired",
+                {
+                    "scenarioKey": scenario_key,
+                    "leaseControl": dict(lease_control),
+                    "dispatchBaseline": dict(dispatch_baseline),
+                },
+                timeout=180,
+            )
+            if not isinstance(completed, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED completion is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "preparedScenario": dict(completed),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            try:
+                receiver.harness(
+                    "abortFoundationLeaseExpired",
+                    {"scenarioKey": scenario_key},
+                    timeout=120,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"scenario cleanup: {error}")
+            if not expiry_control_finished:
+                for available in (False, True):
+                    try:
+                        restored = executor.harness(
+                            "setFoundationClientExecutorAvailable",
+                            {
+                                "available": available,
+                                **lifecycle_input,
+                            },
+                            timeout=60,
+                        )
+                        if not isinstance(restored, Mapping):
+                            raise ScenarioRunnerError(
+                                "executor restore returned invalid evidence"
+                            )
+                    except BaseException as error:
+                        action = "withdraw" if not available else "restore"
+                        cleanup_errors.append(f"executor {action}: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
+class FoundationInvalidResourceReferenceCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _receiver(
+        runtime_pair: "FoundationRuntimePair",
+        platform: str,
+    ) -> Any:
+        if platform == "desktop_app":
+            return runtime_pair.native
+        if platform == "browser":
+            return runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-INVALID_RESOURCE_REF has no receiver for {platform}"
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    @staticmethod
+    def _counter(value: Mapping[str, Any], key: str) -> int:
+        candidate = value.get(key)
+        if isinstance(candidate, bool) or not isinstance(candidate, int):
+            raise ScenarioRunnerError(
+                f"BASE-INVALID_RESOURCE_REF {key} is invalid"
+            )
+        if candidate < 0:
+            raise ScenarioRunnerError(
+                f"BASE-INVALID_RESOURCE_REF {key} is negative"
+            )
+        return candidate
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(self._runtime_pair, probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        scenario: Mapping[str, Any] | None = None
+        result: Mapping[str, Any] | None = None
+        primary_error: BaseException | None = None
+        try:
+            locale = receiver.harness(
+                "setFoundationLocale",
+                {"locale": probe_input.locale},
+                timeout=30,
+            )
+            if (
+                not isinstance(locale, Mapping)
+                or locale.get("locale") != probe_input.locale
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF locale did not converge"
+                )
+            target = receiver.harness(
+                "resolveFoundationInvalidResourceExecutorTarget",
+                timeout=60,
+            )
+            if not isinstance(target, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor target is invalid"
+                )
+            target_input = {
+                "targetCapabilitySessionId": target.get(
+                    "capabilitySessionId"
+                ),
+                "targetDeviceId": target.get("targetDeviceId"),
+                "targetCapabilityId": target.get("targetCapabilityId"),
+            }
+            before = executor.harness(
+                "getFoundationClientExecutorCounters",
+                target_input,
+                timeout=60,
+            )
+            if not isinstance(before, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor counters are invalid"
+                )
+            candidate = receiver.harness(
+                "runDevelopmentInvalidResourceReference",
+                {
+                    "sampleId": probe_input.sample_id,
+                    "capabilitySessionId": target.get("capabilitySessionId"),
+                    "deferConversationCleanup": True,
+                    "externalExecutorEvidence": True,
+                    "scenarioKey": scenario_key,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF shared Journey result is invalid"
+                )
+            scenario = dict(candidate)
+            after = executor.harness(
+                "getFoundationClientExecutorCounters",
+                target_input,
+                timeout=60,
+            )
+            if not isinstance(after, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor readback is invalid"
+                )
+            for hash_key in (
+                "capabilitySessionIdHash",
+                "targetDeviceIdHash",
+            ):
+                if (
+                    not isinstance(target.get(hash_key), str)
+                    or len(str(target.get(hash_key))) != 64
+                    or before.get(hash_key) != target.get(hash_key)
+                    or after.get(hash_key) != target.get(hash_key)
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INVALID_RESOURCE_REF executor identity changed"
+                    )
+            if (
+                target.get("targetCapabilityId") != "filesystem.read"
+                or target.get("targetPlatform") != "desktop"
+                or before.get("targetCapabilityId")
+                != target.get("targetCapabilityId")
+                or after.get("targetCapabilityId")
+                != target.get("targetCapabilityId")
+                or before.get("targetPlatform") != target.get("targetPlatform")
+                or after.get("targetPlatform") != target.get("targetPlatform")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor capability changed"
+                )
+            facts = scenario.get("facts")
+            if not isinstance(facts, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF Journey facts are missing"
+                )
+            scenario["facts"] = {
+                **dict(facts),
+                "executor": {
+                    "evidenceSource": "native-executor-coordinator",
+                    "capabilitySessionIdHash": target.get(
+                        "capabilitySessionIdHash"
+                    ),
+                    "targetDeviceIdHash": target.get("targetDeviceIdHash"),
+                    "targetCapabilityId": target.get("targetCapabilityId"),
+                    "targetPlatform": target.get("targetPlatform"),
+                    "executionAttemptCountBefore": self._counter(
+                        before,
+                        "executionAttemptCount",
+                    ),
+                    "executionAttemptCountAfter": self._counter(
+                        after,
+                        "executionAttemptCount",
+                    ),
+                    "sideEffectCountBefore": self._counter(
+                        before,
+                        "sideEffectCount",
+                    ),
+                    "sideEffectCountAfter": self._counter(
+                        after,
+                        "sideEffectCount",
+                    ),
+                },
+            }
+            captured = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "preparedScenario": scenario,
+                },
+                timeout=300,
+            )
+            if not isinstance(captured, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF direct capture is invalid"
+                )
+            result = dict(captured)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            cleanup = result.get("cleanup") if result is not None else None
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if not cleanup_is_clean:
+                try:
+                    cleanup_request: dict[str, Any] = {
+                        "scenarioKey": scenario_key,
+                    }
+                    if scenario is not None:
+                        conversation_id = str(
+                            scenario.get("conversationId") or ""
+                        )
+                        turn_id = str(scenario.get("turnId") or "")
+                        if conversation_id:
+                            cleanup_request["conversationId"] = conversation_id
+                        if turn_id:
+                            cleanup_request["turnId"] = turn_id
+                    receiver.harness(
+                        "abortFoundationInvalidResourceReference",
+                        cleanup_request,
+                        timeout=120,
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; "
+                            f"CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+
+class FoundationForbiddenActorCoordinator:
+    def __init__(
+        self,
+        runtime_pair: "FoundationRuntimePair",
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-FORBIDDEN_ACTOR has no receiver for {platform}"
+        )
+
+    def _owner(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.browser
+        if platform == "browser":
+            return self._runtime_pair.native
+        raise ScenarioRunnerError(
+            f"BASE-FORBIDDEN_ACTOR has no owner client for {platform}"
+        )
+
+    def _login(self, client: Any, account: str) -> None:
+        login = client.harness(
+            "loginWithPassword",
+            {"account": account, "password": self._password},
+            timeout=120,
+        )
+        if (
+            not isinstance(login, Mapping)
+            or login.get("authenticated") is not True
+            or not str(login.get("actorId") or "")
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} login is invalid"
+            )
+        navigation = client.harness("navigateToAgent", {}, timeout=60)
+        if (
+            not isinstance(navigation, Mapping)
+            or navigation.get("navigated") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+            )
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        owner = self._owner(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-FORBIDDEN_ACTOR locale did not converge"
+            )
+
+        owner_fixture: Mapping[str, Any] | None = None
+        owner_is_bob = False
+        receiver_is_alice = True
+        owner_cleaned = False
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            self._login(owner, "bob@p.t")
+            owner_is_bob = True
+            owner_fixture = owner.harness(
+                "prepareFoundationForbiddenActorOwner",
+                {
+                    "scenarioKey": scenario_key,
+                    "sampleId": probe_input.sample_id,
+                },
+                timeout=120,
+            )
+            if (
+                not isinstance(owner_fixture, Mapping)
+                or owner_fixture.get("scenarioKey") != scenario_key
+                or not str(owner_fixture.get("conversationId") or "")
+                or not str(owner_fixture.get("agentId") or "")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner fixture is invalid"
+                )
+
+            receiver_is_alice = False
+            rejected = receiver.harness(
+                "rejectFoundationForbiddenActor",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    "ownerFixture": dict(owner_fixture),
+                },
+                timeout=180,
+            )
+            if (
+                not isinstance(rejected, Mapping)
+                or rejected.get("scenarioKey") != scenario_key
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR receiver rejection is invalid"
+                )
+
+            owner_readback = owner.harness(
+                "readFoundationForbiddenActorOwner",
+                {"scenarioKey": scenario_key},
+                timeout=60,
+            )
+            if not isinstance(owner_readback, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner readback is invalid"
+                )
+
+            owner_cleanup = owner.harness(
+                "cleanupFoundationForbiddenActorOwner",
+                {"scenarioKey": scenario_key},
+                timeout=120,
+            )
+            if (
+                not isinstance(owner_cleanup, Mapping)
+                or owner_cleanup.get("resourceDeleted") is not True
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner cleanup is invalid"
+                )
+            owner_cleaned = True
+
+            self._login(owner, "alice@p.t")
+            owner_is_bob = False
+            self._login(receiver, "alice@p.t")
+            receiver_is_alice = True
+
+            recovered = receiver.harness(
+                "completeFoundationForbiddenActorRecovery",
+                {
+                    "scenarioKey": scenario_key,
+                    "rejectedScenario": dict(rejected),
+                    "ownerReadback": dict(owner_readback),
+                    "ownerCleanup": dict(owner_cleanup),
+                },
+                timeout=60,
+            )
+            if not isinstance(recovered, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR recovery is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "preparedScenario": dict(recovered),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if owner_fixture is not None and not owner_cleaned:
+                try:
+                    if not owner_is_bob:
+                        self._login(owner, "bob@p.t")
+                        owner_is_bob = True
+                    owner.harness(
+                        "cleanupFoundationForbiddenActorOwner",
+                        {"scenarioKey": scenario_key},
+                        timeout=120,
+                    )
+                    owner_cleaned = True
+                except BaseException as error:
+                    cleanup_errors.append(f"owner resource cleanup: {error}")
+            if owner_is_bob:
+                try:
+                    self._login(owner, "alice@p.t")
+                    owner_is_bob = False
+                except BaseException as error:
+                    cleanup_errors.append(f"owner identity restore: {error}")
+            if not receiver_is_alice:
+                try:
+                    self._login(receiver, "alice@p.t")
+                    receiver_is_alice = True
+                except BaseException as error:
+                    cleanup_errors.append(f"receiver identity restore: {error}")
+            try:
+                receiver.harness(
+                    "abortFoundationForbiddenActor",
+                    {"scenarioKey": scenario_key},
+                    timeout=60,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"receiver projection cleanup: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
 def _make_direct_probe(
     client: Any,
     *,
     f06_coordinator: "FoundationF06Coordinator | None" = None,
     f12_coordinator: "FoundationF12Coordinator | None" = None,
+    interrupted_coordinator:
+        "FoundationInterruptedCoordinator | None" = None,
+    executor_unavailable_coordinator:
+        "FoundationExecutorUnavailableCoordinator | None" = None,
+    lease_expired_coordinator:
+        "FoundationLeaseExpiredCoordinator | None" = None,
+    invalid_resource_reference_coordinator:
+        "FoundationInvalidResourceReferenceCoordinator | None" = None,
+    forbidden_actor_coordinator:
+        "FoundationForbiddenActorCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -251,6 +1204,36 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "BASE-FORBIDDEN_ACTOR":
+            if forbidden_actor_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR requires two-actor orchestration"
+                )
+            return forbidden_actor_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-EXECUTOR_UNAVAILABLE":
+            if executor_unavailable_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR_UNAVAILABLE requires executor orchestration"
+                )
+            return executor_unavailable_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-LEASE_EXPIRED":
+            if lease_expired_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED requires lease orchestration"
+                )
+            return lease_expired_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-INVALID_RESOURCE_REF":
+            if invalid_resource_reference_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF requires executor orchestration"
+                )
+            return invalid_resource_reference_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-INTERRUPTED":
+            if interrupted_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED requires Station restart orchestration"
+                )
+            return interrupted_coordinator.capture(probe_input)
         if probe_input.cell == "AS-F06":
             if f06_coordinator is None:
                 raise ScenarioRunnerError(
@@ -532,12 +1515,9 @@ class FoundationF06Coordinator:
         except BaseException as error:
             primary_error = error
 
-        cleanup_errors = (
-            self._restore_clients_for_cleanup()
-            if primary_error is not None
-            else []
-        )
-        cleanup_errors.extend(self._cleanup_prepared(prepared))
+        cleanup_errors = self._cleanup_prepared(prepared)
+        if primary_error is not None:
+            cleanup_errors.extend(self._restore_clients_for_cleanup())
         if cleanup_errors:
             detail = "; ".join(cleanup_errors)
             if primary_error is not None:
@@ -554,6 +1534,7 @@ class FoundationF06Coordinator:
         probe_input: DirectRuntimeProbeInput,
     ) -> None:
         durable_reload_evidence: Mapping[str, Any] | None = None
+        restart_handoff: Mapping[str, Any] | None = None
         transport_restored = False
 
         def observe_recovery_failures(outage_deadline: float) -> None:
@@ -583,7 +1564,7 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            nonlocal durable_reload_evidence, transport_restored
+            nonlocal durable_reload_evidence, restart_handoff, transport_restored
             client = self._client(probe_input.platform)
             client.restore_station_transport()
             transport_restored = True
@@ -640,6 +1621,31 @@ class FoundationF06Coordinator:
                     f"AS-F06 durable reload source delivery is invalid for "
                     f"{self._scenario_key(probe_input)}: {result!r}"
                 )
+            if probe_input.platform == "desktop_app":
+                remaining = operation_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ScenarioRunnerError(
+                        "AS-F06 Station restart deadline expired "
+                        "while exporting the native restart handoff"
+                    )
+                exported = client.harness(
+                    "foundationF06ExportRestartHandoff",
+                    {"scenarioKey": self._scenario_key(probe_input)},
+                    timeout=remaining,
+                )
+                if (
+                    not isinstance(exported, Mapping)
+                    or exported.get("scenarioKey")
+                    != self._scenario_key(probe_input)
+                    or exported.get("platform") != probe_input.platform
+                    or exported.get("locale") != probe_input.locale
+                    or exported.get("sampleId") != probe_input.sample_id
+                ):
+                    raise ScenarioRunnerError(
+                        "AS-F06 native restart handoff export is invalid for "
+                        f"{self._scenario_key(probe_input)}"
+                    )
+                restart_handoff = dict(exported)
             durable_reload_evidence = dict(result)
 
         client = self._client(probe_input.platform)
@@ -662,6 +1668,31 @@ class FoundationF06Coordinator:
             require_existing_session=True,
             recovery_boundary="client-restart",
         )
+        if probe_input.platform == "desktop_app":
+            if restart_handoff is None:
+                raise ScenarioRunnerError(
+                    "AS-F06 native restart handoff is missing for "
+                    f"{self._scenario_key(probe_input)}"
+                )
+            imported = client.harness(
+                "foundationF06ImportRestartHandoff",
+                {
+                    "scenarioKey": self._scenario_key(probe_input),
+                    "platform": probe_input.platform,
+                    "handoff": restart_handoff,
+                },
+                timeout=60,
+            )
+            if (
+                not isinstance(imported, Mapping)
+                or imported.get("scenarioKey")
+                != self._scenario_key(probe_input)
+                or imported.get("platform") != probe_input.platform
+            ):
+                raise ScenarioRunnerError(
+                    "AS-F06 native restart handoff import is invalid for "
+                    f"{self._scenario_key(probe_input)}"
+                )
         if durable_reload_evidence is None:
             raise ScenarioRunnerError(
                 f"AS-F06 durable reload evidence is missing for "
@@ -710,6 +1741,270 @@ class FoundationF06Coordinator:
                 f"AS-F06 tuple was not prepared: "
                 f"{self._scenario_key(probe_input)}"
             )
+        return capture
+
+
+class FoundationInterruptedCoordinator:
+    """Produce one independent interrupted Turn per direct-runtime tuple."""
+
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = runtime_manifest
+        self._profile_env = dict(profile_env)
+        self._captures: dict[
+            tuple[str, str, str, str],
+            Mapping[str, Any],
+        ] = {}
+
+    @staticmethod
+    def _capture_key(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> tuple[str, str, str, str]:
+        return (
+            probe_input.platform,
+            probe_input.locale,
+            probe_input.cell,
+            probe_input.sample_id,
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _client(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-INTERRUPTED has no direct client for {platform}"
+        )
+
+    def _set_locale(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> None:
+        result = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED locale did not converge for "
+                f"{self._scenario_key(probe_input)}"
+            )
+
+    def _cleanup(
+        self,
+        client: Any,
+        *,
+        scenario_key: str,
+        conversation_id: str,
+        turn_id: str,
+    ) -> None:
+        result = client.harness(
+            "foundationF06Cleanup",
+            {
+                "scenarioKey": scenario_key,
+                "conversationId": conversation_id,
+                "turnId": turn_id,
+            },
+            timeout=60,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("cleanupComplete") is not True
+        ):
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED cleanup proof is invalid for "
+                f"{scenario_key}: {result!r}"
+            )
+
+    def _execute_active(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        client = self._client(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        handoff: Mapping[str, Any] | None = None
+        result: Mapping[str, Any] | None = None
+        transport_restored = False
+        primary_error: BaseException | None = None
+        try:
+            def prepare_before_outage() -> None:
+                nonlocal handoff
+                self._set_locale(client, probe_input)
+                prepared = client.prepare_foundation_f06(
+                    {
+                        "scenarioKey": scenario_key,
+                        "platform": probe_input.platform,
+                        "locale": probe_input.locale,
+                        "sampleId": probe_input.sample_id,
+                        "faultBoundary": "provider-started",
+                    },
+                    timeout=300,
+                )
+                if (
+                    not isinstance(prepared, Mapping)
+                    or not str(prepared.get("conversationId") or "")
+                    or not str(prepared.get("turnId") or "")
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED prepare returned invalid evidence for "
+                        f"{scenario_key}: {prepared!r}"
+                    )
+                handoff = prepared
+
+            def finalize_during_outage(_deadline: float) -> None:
+                if handoff is None:
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED restart did not prepare a handoff for "
+                        f"{scenario_key}"
+                    )
+                finalized = client.harness(
+                    "foundationF06FinalizePreparation",
+                    {"scenarioKey": scenario_key},
+                    timeout=60,
+                )
+                if (
+                    not isinstance(finalized, Mapping)
+                    or finalized.get("conversationId")
+                    != handoff.get("conversationId")
+                    or finalized.get("turnId") != handoff.get("turnId")
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED finalized handoff is invalid for "
+                        f"{scenario_key}"
+                    )
+
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+                before_outage=prepare_before_outage,
+                during_outage=finalize_during_outage,
+                prearm_outage=True,
+            )
+            if handoff is None:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED restart did not prepare a handoff for "
+                    f"{scenario_key}"
+                )
+            client.restore_station_transport()
+            transport_restored = True
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                clients=(client,),
+                require_existing_session=True,
+                recovery_boundary="base-interrupted-station-restart",
+            )
+            restored = client.harness(
+                "foundationF06RestoreCapabilityIsolation",
+                {"scenarioKey": scenario_key},
+                timeout=60,
+            )
+            restoration_error = _capability_isolation_restoration_error(
+                probe_input.platform,
+                restored.get("toolIsolation")
+                if isinstance(restored, Mapping)
+                else None,
+                allow_empty=True,
+            )
+            if restoration_error:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED capability-isolation restoration "
+                    f"failed for {scenario_key}: {restoration_error}"
+                )
+            self._set_locale(client, probe_input)
+            candidate = client.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "stationRestart": station_restart,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED direct probe returned invalid "
+                    f"evidence for {scenario_key}"
+                )
+            result = dict(candidate)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if not transport_restored:
+                client.restore_station_transport()
+            cleanup = (
+                result.get("cleanup")
+                if isinstance(result, Mapping)
+                else None
+            )
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if handoff is not None and not cleanup_is_clean:
+                try:
+                    _authenticate_clients(
+                        self._runtime_pair,
+                        self._profile_env,
+                        clients=(client,),
+                        require_existing_session=True,
+                        recovery_boundary="base-interrupted-cleanup",
+                    )
+                    self._cleanup(
+                        client,
+                        scenario_key=scenario_key,
+                        conversation_id=str(handoff["conversationId"]),
+                        turn_id=str(handoff["turnId"]),
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; "
+                            f"CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        if probe_input.cell != "BASE-INTERRUPTED":
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED coordinator received "
+                f"{probe_input.cell}"
+            )
+        capture_key = self._capture_key(probe_input)
+        capture = self._captures.get(capture_key)
+        if capture is None:
+            capture = dict(self._execute_active(probe_input))
+            self._captures[capture_key] = capture
         return capture
 
 
@@ -1284,7 +2579,14 @@ def _authenticate_clients(
     for client in selected_clients:
         client_deadline = _time.monotonic() + 90
         established = False
+        poll_count = 0
+        _report_capability_session_enrollment_debug(
+            "A-D",
+            "capability-session-wait-started",
+            {"runtime": client.spec.runtime},
+        )
         while _time.monotonic() < client_deadline:
+            poll_count += 1
             try:
                 cap_result = client.harness(
                     "getFoundationCapabilitySessions",
@@ -1293,6 +2595,48 @@ def _authenticate_clients(
                 )
             except Exception:
                 cap_result = None
+            local_result = (
+                cap_result.get("local")
+                if isinstance(cap_result, Mapping)
+                else None
+            )
+            station_result = (
+                cap_result.get("station")
+                if isinstance(cap_result, Mapping)
+                else None
+            )
+            local_sessions = (
+                local_result.get("sessions")
+                if isinstance(local_result, Mapping)
+                else None
+            )
+            station_sessions = (
+                station_result.get("sessions")
+                if isinstance(station_result, Mapping)
+                else None
+            )
+            _report_capability_session_enrollment_debug(
+                "A-D",
+                "capability-session-poll",
+                {
+                    "runtime": client.spec.runtime,
+                    "pollCount": poll_count,
+                    "localSessionCount": (
+                        len(local_sessions)
+                        if isinstance(local_sessions, list)
+                        else None
+                    ),
+                    "stationSessionCount": (
+                        len(station_sessions)
+                        if isinstance(station_sessions, list)
+                        else None
+                    ),
+                    "selectedSessionPresent": bool(
+                        isinstance(cap_result, Mapping)
+                        and cap_result.get("selectedStationSession")
+                    ),
+                },
+            )
             if isinstance(cap_result, Mapping) and cap_result.get(
                 "selectedStationSession"
             ):
@@ -1333,6 +2677,14 @@ def _authenticate_clients(
                 f"{client.spec.runtime} capability session not established "
                 f"after 90s polling.{diag}"
             )
+        _report_capability_session_enrollment_debug(
+            "A-D",
+            "capability-session-wait-completed",
+            {
+                "runtime": client.spec.runtime,
+                "pollCount": poll_count,
+            },
+        )
 
 
 def _capability_isolation_restoration_error(
@@ -1536,6 +2888,24 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_manifest,
             profile_env,
         )
+        executor_unavailable_coordinator = (
+            FoundationExecutorUnavailableCoordinator(runtime_pair)
+        )
+        lease_expired_coordinator = FoundationLeaseExpiredCoordinator(
+            runtime_pair
+        )
+        invalid_resource_reference_coordinator = (
+            FoundationInvalidResourceReferenceCoordinator(runtime_pair)
+        )
+        interrupted_coordinator = FoundationInterruptedCoordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+        )
+        forbidden_actor_coordinator = FoundationForbiddenActorCoordinator(
+            runtime_pair,
+            profile_env,
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
@@ -1543,6 +2913,15 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.native,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                interrupted_coordinator=interrupted_coordinator,
+                executor_unavailable_coordinator=(
+                    executor_unavailable_coordinator
+                ),
+                lease_expired_coordinator=lease_expired_coordinator,
+                invalid_resource_reference_coordinator=(
+                    invalid_resource_reference_coordinator
+                ),
+                forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
 
@@ -1552,6 +2931,15 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.browser,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                interrupted_coordinator=interrupted_coordinator,
+                executor_unavailable_coordinator=(
+                    executor_unavailable_coordinator
+                ),
+                lease_expired_coordinator=lease_expired_coordinator,
+                invalid_resource_reference_coordinator=(
+                    invalid_resource_reference_coordinator
+                ),
+                forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
 
@@ -1595,6 +2983,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         cleanup_result = runtime_pair.stop(
             remove_storage=not restoration_errors,
         )
+        primary_failure = _failure_summary(primary_error, profile_env)
+        if primary_failure:
+            cleanup_result["primaryFailure"] = primary_failure
         if restoration_errors:
             cleanup_result["status"] = "failed"
             cleanup_result["capabilityIsolationFailures"] = restoration_errors
@@ -1603,14 +2994,20 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             cleanup_result,
         )
     if cleanup_result.get("status") != "clean":
-        primary_kind = type(primary_error).__name__ if primary_error else "none"
+        primary_summary = (
+            f"{primary_failure[0]['type']}: "
+            f"{primary_failure[0]['message']}"
+            if primary_failure
+            else "none"
+        )
         cleanup_kind = (
             "capability isolation restoration"
             if restoration_errors
             else "runtime release"
         )
         raise ScenarioRunnerError(
-            f"CLEANUP_FAILED: {cleanup_kind} failed; primary={primary_kind}"
+            f"CLEANUP_FAILED: {cleanup_kind} failed; "
+            f"primary={primary_summary}"
         ) from primary_error
     if primary_error is not None:
         raise primary_error

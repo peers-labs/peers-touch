@@ -75,8 +75,16 @@ At minimum, or when reconstructing manually, collect:
 tooling/scripts/review/route-change.sh --range <base>...<head>
 tooling/scripts/review/knowledge-match.sh --range <base>...<head> --strict
 tooling/scripts/review/hard-rules.sh --range <base>...<head>
-python3 tooling/scripts/acceptance-plan.py --range <base>...<head>
+python3 tooling/scripts/execution-plan.py --require-complete
+python3 tooling/scripts/acceptance-plan.py --active-plan --completion
 ```
+
+CI has no machine workspace binding. The PR body must declare every owned Plan
+under `## Execution Plans / 执行计划`; CI passes each path through `--plan` and
+must not infer a Plan from the PR branch.
+Reject Plan Packages that retain mutable `expectedHead`; current source
+identity belongs to the Development declaration, Session checkpoint, and
+`active_work` projection rather than tracked Plan content.
 
 If the PR touches review or skill infrastructure, also run:
 
@@ -89,7 +97,7 @@ If the PR touches acceptance infrastructure, also run:
 ```bash
 make acceptance-validate
 make acceptance-coverage-report
-make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
+make acceptance-plan
 ```
 
 For selected acceptance gates, record which were run, which were not run, and
@@ -187,7 +195,9 @@ Scripts are evidence producers:
 - `route-change.sh` identifies review profiles.
 - `hard-rules.sh` catches simple blocking patterns.
 - `knowledge-match.sh` finds knowledge entries that must be read.
-- `acceptance-plan.py` selects product features and acceptance gates.
+- The formal execution plan schedules Acceptance Gates.
+- `acceptance-plan.py --active-plan` validates actual diff impact and projects
+  the current or completion Gate set without becoming a second plan.
 - `acceptance-validate.py` validates acceptance structure and, with
   `--require-proven`, latest gate evidence.
 - `skill-check.sh` proves review skill structure and fixtures.

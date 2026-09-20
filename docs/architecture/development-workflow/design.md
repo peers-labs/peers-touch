@@ -1,300 +1,462 @@
 # Development Workflow Control Plane - Architecture Design
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Status**: accepted
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
 
 ---
 
 ## 1. Core Principles
 
-1. **Journey before matrix**: 开发进度先由一个真实用户 Journey 是否闭环决定，不由
-   测试数量、Gate 数量或文档数量决定。
+1. **Journey before matrix**: 产品进度由真实用户 Journey 是否闭环决定，不由测试、
+   Gate 或文档数量决定。
 2. **Functional before formal proof**: 产品源码先在 exact-source 开发运行时通过
    功能验证，再补齐或执行正式 Acceptance。
-3. **One state owner**: Development Workflow 只拥有执行推进状态；产品语义、
-   机器资源、正式证据和合并判断仍由各自架构拥有。
-4. **Declare before use**: Dev Session 启动前必须把源码写域和资源意图发布到机器级
-   公共账本，并完成冲突检查和读回确认。
-5. **First failure first**: 每次运行只返回首个可行动失败，修复后回到同一 Journey，
-   禁止失败后自动扩展为全量验证。
-6. **Bounded execution**: 每个检查、部署、Journey 和清理都有显式预算；无隐式无限
-   等待、无静默重试。
-7. **No evidence inflation**: 开发诊断不写 Acceptance Evidence Store；仓库计划不追加
-   原始运行日志。
-8. **Exact runtime identity**: 远端或 Native 功能结论必须绑定已提交 source、resolved
-   profile、service binding、client identity 和 live runtime。
-9. **One journey implementation**: Dev Runner 与 Acceptance Runner 可以采用不同执行
-   策略，但不得复制或分叉同一业务 Journey 的动作与断言。
+3. **One owner per state**: Plan manifest 拥有 Task 生命周期和 current
+   selection；Task、Session、Git、runtime lease 和 Evidence 各自只拥有其余事实。
+4. **Declare before mutate**: 首次写入或占用运行资源前，必须发布并确认机器级资源声明。
+5. **First failure first**: 一次运行只保留首个可行动失败；修复后回到同一 Task/Journey。
+6. **Compact current state**: Git 只保存稳定计划、当前 Task 快照和 durable evidence
+   引用；attempt、日志和截图留在机器 Dev root。
+7. **Bounded resume**: 恢复只读取 active pointer、manifest、当前 Task 和当前 Session。
+8. **No dual truth**: 迁移完成后，旧计划只能作为 archive 输入，不能继续承载状态。
+9. **Progress-bearing continuation**: Context Anchor 的续作单位是可关闭一个
+   Task 的 Progress Slice，不是单条命令、检查或授权动作。
+10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
+    修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
+11. **Workspace-owned Plan**: 仓库和 PR 可包含多个 active Plan；每个
+    workspace 只消费一次建立且不可换绑的 Plan foreign key。
+12. **Stable Plan, advancing source**: Plan 只记录 immutable initial HEAD；
+    当前 Git HEAD、mutation source 与 runtime checkpoint 由外部 Owner 管理。
 
 ## 2. Evidence Ledger
+
 | Claim | Class | Evidence | Confidence | Missing Proof |
 |---|---|---|---|---|
-| 外层流程只定义 `PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER` | `verified_fact` | `docs/global/workflow.md`; `tooling/skills/pt-dev-workflow/SKILL.md` | high | none |
-| `EXECUTE` 没有强制复现、checkpoint、部署、功能通过后才能 Acceptance 的子状态机 | `verified_fact` | `pt-dev-workflow` Stage EXECUTE；`pt-execution-plan-guardian` workflow | high | none |
-| 远端 `make station` 只部署当前 Git HEAD，未提交修改不会部署 | `verified_fact` | `docs/global/local-dev-environment.md` §3.2 | high | none |
-| Acceptance Framework 是产品证明层，不替代单元测试或产品实现 | `verified_fact` | `docs/architecture/acceptance-framework/README.md` | high | none |
-| static/typecheck Gate 不能证明 receiver-visible Native 行为 | `verified_fact` | Acceptance design §4.5、Quality proof model | high | none |
-| Local Dev Control Plane 已定义 workspace/profile/slot/lease 的机器级 Owner | `verified_fact` | `docs/architecture/local-dev-control-plane/` | high | runtime migration remains pending |
-| 当前长计划和外部 Evidence Store 已积累高数量历史运行记录 | `verified_fact` | NDR plan 5,679 lines；legacy Evidence Store 8,742 run directories at audit time | high | exact retention policy outside this scope |
-| 产品优先 Dev Loop 可降低无效 Gate 运行和错误 readiness claim | `proposal` | failure analysis above | medium | Chat pilot and measured cycle comparison |
+| 外层流程是 `PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER` | `verified_fact` | `docs/global/workflow.md`; `pt-dev-workflow` | high | none |
+| 当前 `active_work.current_step` 是自由文本 | `verified_fact` | `AGENTS.md` 和相关 Skills | high | none |
+| branch-wide Plan discovery cannot distinguish synchronized worktree ownership | `verified_fact` | pre-DWF-D18 `tooling/acceptance/core/execution_plan.py`; Group Chat reproduction | high | immutable binding regression |
+| Mobile Shell 计划超过 4,000 行并包含大量 dated progress | `verified_fact` | `20260827-mobile-shell-implementation.md` | high | none |
+| `DevelopmentSession` 目前只存在于文档模型 | `verified_fact` | DWF data model 与当前 tooling inventory | high | transition store implementation |
+| compact package 会降低恢复输入且保持证明可追踪 | `proposal` | DWF-D13 | medium | pilot metrics and adversarial simulation |
+| Context Anchor 的 `Next action` 是无结构自由文本 | `verified_fact` | `tooling/skills/pt-context-anchor/SKILL.md` | high | none |
+| `planctl status` 未输出 Task closure 进度和下一关闭效果 | `verified_fact` | `tooling/scripts/plan/plan-package.mjs` | high | none |
 
 ## 3. System Architecture
 
 ```text
-PRODUCT / DESIGN / PLAN
-           |
-           | accepted Journey + architecture + workstream
-           v
+accepted product + architecture
+              |
+              v
 ┌──────────────────────────────────────────────────────────────┐
-│              Development Workflow Control Plane              │
-│                                                              │
-│  Work Item -> Dev Session -> Journey State Machine           │
-│       |            |              |                           │
-│       |            |              +-> first failure / budget │
-│       |            +-> checkpoint + verification ledger      │
-│       +-> public work.json + authorization envelope          │
-└───────────┬──────────────────┬──────────────────┬─────────────┘
-            │                  │                  │
-            ▼                  ▼                  ▼
-   Product source       Local Dev Control   Domain Journey
-   + focused checks     Plane               implementation
-                       profile/lease/       real UI/action/
-                       deploy/runtime       receiver assertion
-            │                  │                  │
-            └──────────────────┴──────────────────┘
-                               |
-                               v
-                       FUNCTIONAL_PASS
-                               |
-              ┌────────────────┴────────────────┐
-              ▼                                 ▼
-     Acceptance Framework                Quality Framework
-     formal product proof                review / delivery
+│ Plan Package                                                 │
+│ plan.md: goal / scope / DAG / task index / global gates      │
+│ tasks/<id>.md: one resumable closure + durable current state │
+└───────────────┬──────────────────────────────────────────────┘
+                │ current task
+                v
+┌──────────────────────────────────────────────────────────────┐
+│ Development Session                                          │
+│ session.json: current transition state + first failure       │
+│ events.ndjson: bounded transition history                    │
+└──────────┬───────────────────┬───────────────────────────────┘
+           │                   │
+           v                   v
+       Git checkpoint     Local Dev Control Plane
+       source identity    profile / slot / lease / runtime
+           │                   │
+           └─────────┬─────────┘
+                     ├──────────────► SOURCE_READY
+                     │                source claim only
+                     v
+               FUNCTIONAL_PASS
+                     |
+          ┌──────────┴──────────┐
+          v                     v
+  Acceptance Evidence      Quality / delivery
 ```
 
 ## 4. Sources Of Truth And Ownership
-| Concern | Owner | Canonical Source | Must Not Own |
+
+| Concern | Owner | Canonical Source | Projection |
 |---|---|---|---|
-| Product outcome and visible states | Product/domain contract | accepted product docs, prototype and acceptance IDs | runtime allocation |
-| Architecture and implementation boundary | Architecture docs | `docs/architecture/**` | progress state |
-| Workstream scope and dependency | Execution plan | plan status table | raw logs and process state |
-| Development transition and resource intent | Development Workflow | Dev Session + machine `work.json` | runtime allocation or formal proof |
-| Source identity | Git | checkpoint commit | deployment endpoint |
-| Workspace/profile/slot/lease | Local Dev Control Plane | machine registry + live observation | task completion |
-| Runtime deployment and launch | Make/platform runtime owners | resolved runtime manifest | product assertion |
-| Journey actions and assertions | Business Domain | shared Journey implementation | provisioning or evidence publication |
-| Formal product evidence | Acceptance Framework | Evidence Store | development progress |
-| Review and merge judgment | Quality Framework | quality evidence + code review | product implementation |
+| Product behavior | Product/domain docs | accepted journeys and acceptance IDs | Task references |
+| Architecture | Architecture docs | `docs/architecture/**` | manifest references |
+| Stable goal, scope, DAG and Task lifecycle | Plan Package | `plan.md` machine block | `planctl status` |
+| One execution closure specification and durable snapshot | Task Slice | `tasks/<id>.md` machine block and snapshot | Context Anchor |
+| Current execution transition | Development Session | machine event log + `session.json` projection | `active_work.dev_state` |
+| Attempt history and first failure | Development Session | bounded `events.ndjson` and artifacts | compact failure summary |
+| Current physical source identity | Git | commit/tree | declaration and Session verification |
+| Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
+| Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
+| Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
+| Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
+| Workspace Plan ownership | Development Workflow | machine-local immutable `plan-binding.json` | Plan/declaration/`active_work` consistency checks |
+| Current tracked locator | Plan Package | current Task entry | `active_work` + Context Anchor |
+| Chat status | Context Anchor | derived projection only | none |
 
-## 5. Execute-State Machine
-```text
-DECLARING
-  -> BOUND
-  -> REPRODUCING
-  -> REPRODUCED
-  -> IMPLEMENTING
-  -> FOCUSED_CHECKING
-  -> FOCUSED_PASS
-  -> CHECKPOINTING
-  -> CHECKPOINTED
-  -> DEPLOYING
-  -> DEPLOYED
-  -> FUNCTIONAL_RUNNING
-  -> FUNCTIONAL_PASS
-  -> ACCEPTANCE_READY
-  -> ACCEPTANCE_UPDATING
-  -> FINAL_CHECKPOINTED
-  -> ACCEPTANCE_RUNNING
-  -> ACCEPTANCE_PASS
-  -> DELIVERY_READY
+No owner may copy another owner's complete state. In particular:
 
-REPRODUCING | FOCUSED_CHECKING | DEPLOYING | FUNCTIONAL_RUNNING
-  -> BLOCKED
+- `plan.md` owns compact Task lifecycle fields, not Task body/status narratives.
+- Task files do not copy current Task selection, Session events or raw output.
+- `active_work` mirrors the manifest/session locator; disagreement is repaired
+  from those owners before execution.
+- Plan, declaration and `active_work` cannot select or replace the workspace
+  Plan binding.
+- Plan does not own an advancing HEAD. Declaration, Session and `active_work`
+  project their distinct current-source responsibilities directly from Git.
+- Context Anchor does not read `archive/` or scan every task body.
+- Development records do not satisfy formal Acceptance proof.
 
-FOCUSED_CHECKING -> FAILED -> IMPLEMENTING
-FUNCTIONAL_RUNNING -> FAILED -> IMPLEMENTING
-source/runtime identity drift -> STALE -> earliest invalidated state
-cancellation -> CLEANING -> CANCELLED
-```
+### 4.1 Methodology Runtime Boundaries
 
-Transition rules:
-
-- `BOUND` requires an atomically published, conflict-free resource declaration
-  that is read back from the machine-wide ledger.
-- `REPRODUCED` requires a named Journey and one concrete first failure.
-- `FOCUSED_PASS` proves only the touched source boundary.
-- `CHECKPOINTED` requires a clean, Git-addressable local commit.
-- `DEPLOYED` requires observed runtime identity matching the checkpoint.
-- `FUNCTIONAL_PASS` requires its work-class boundary; product behavior requires the real product path and receiver perspective.
-- `ACCEPTANCE_READY` permits Acceptance injection; it is not Acceptance proof.
-- `FINAL_CHECKPOINTED` binds the promoted Journey and its adapters to final
-  source. Product/Journey changes return to focused checking; Acceptance-only
-  packaging proceeds to formal execution.
-- `DELIVERY_READY` requires the execution plan's required Acceptance and Quality
-  obligations, not only `FUNCTIONAL_PASS`.
-- A failed product Journey returns to implementation. A runtime/provisioning
-  failure becomes `BLOCKED` and must not be reported as a product failure.
-
-## 6. Development Loop
-
-```text
-Reproduce once
-  -> identify owning layer and first failure
-  -> implement root-cause correction
-  -> run focused source checks
-  -> create local checkpoint commit
-  -> resolve profile and acquire capabilities
-  -> deploy exact checkpoint through Make
-  -> run one real Journey
-       -> FAIL: return first failure to implementation
-       -> BLOCKED: park environment edge
-       -> PASS: promote to Acceptance-ready
-```
-
-The loop excludes coverage, broad Gate matrices, cross-platform cells, Gap
-Detector, Completion Auditor and submit-time review. Unit and contract tests
-remain mandatory; only formal Acceptance execution and growth are deferred.
-
-## 7. Shared Journey Contract
-A Journey is a business-owned sequence with:
-
-- a stable ID and product acceptance references;
-- required actors, clients and service roles;
-- visible user actions;
-- receiver-perspective assertions;
-- negative and recovery assertions;
-- explicit runtime class;
-- focused and functional budgets;
-- promotion targets in Acceptance.
-
-One Journey implementation is consumed by:
-
-```text
-Dev Runner
-  - current work item only
-  - first-failure output
-  - machine-local transient artifacts
-  - no product readiness publication
-
-Acceptance Runner
-  - full provisioning and source attestation
-  - immutable Evidence Store output
-  - complete cleanup and proof semantics
-  - product capability publication
-```
-
-The Journey contract exists before implementation. Its first executable adapter
-may be built for reproduction and Dev execution, then promoted into the
-Acceptance Gate rather than rewritten. Runtime setup, evidence finalization and
-reporting remain runner-specific.
-
-## 8. Checkpoint And Authorization Contract
-Every execution plan declares one authorization envelope:
-
-```yaml
-checkpoint:
-  localCommit: allowed
-  amend: allowed | denied
-delivery:
-  push: allowed | denied
-  pullRequest: allowed | denied
-runtime:
-  deployProfiles: [<profile-id>]
-  destructiveResetScopes: []
-history:
-  rewrite: denied
-```
-
-Rules:
-
-- `localCommit: allowed` permits bounded checkpoint commits throughout the
-  approved workstream without repeated prompts.
-- A checkpoint commit is a deployable source identity, not a delivery claim.
-- Push, PR, destructive reset and history rewrite remain separate capabilities.
-- Deployment still acquires the Local Dev Control Plane's exclusive
-  `station.deploy` lease.
-- Reset additionally requires a run-scoped `station.reset` authorization.
-- Dirty-source overlay, rsync and remote manual edit are forbidden.
-
-## 9. Verification Classes
-| Class | Meaning | Can Claim Product Works |
+| Role | Owner | May mutate durable state? |
 |---|---|---|
-| `SOURCE_CHECK` | unit, typecheck, compile or focused contract check passed | no |
-| `STRUCTURAL_CHECK` | registry, static source or schema relation passed | no |
-| `UX_REVIEW` | prototype or screenshot contract reviewed | no |
-| `FUNCTIONAL_CHECK` | exact-source real product Journey passed | only that Journey |
-| `ACCEPTANCE_PROOF` | required formal Gate evidence is current and valid | only declared capability scope |
+| Facade/router | `pt-god-view` | No |
+| Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/`active_work` commands |
+| Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents/package and initial tracked locator |
+| Scheduler / WHAT runs next | `pt-trae-goal-orchestrator` | No |
+| Policy / MAY this action run | `pt-execution-plan-guardian` | No |
+| Chat projection | `pt-context-anchor` | No |
 
-The Development Workflow never translates `SOURCE_CHECK`,
-`STRUCTURAL_CHECK`, or `UX_REVIEW` into `FUNCTIONAL_PASS`.
+The runtime call direction is:
 
-## 10. Budget And Retry Semantics
-- Every command has a declared timeout and one purpose.
-- Every Journey defines focused-check and functional-run budgets; no implicit
-  unbounded default is legal.
-- A timeout stops the current action, captures the first failure and enters
-  cleanup.
-- Idempotent observation may retry once when the Journey contract permits it.
-- Deploy, reset and other mutation are never automatically retried.
-- The same `(checkpoint, journey, runtime binding, command digest)` result is
-  reused within one Dev Session instead of rerun.
-- A source, profile, service binding or live runtime identity change invalidates
-  the affected result.
+```text
+God View -> Dev Workflow -> Scheduler -> Guardian -> Dev Workflow executes
+                               |                         |
+                               +------ read only --------+
+Dev Workflow -> owner commands persist -> Context Anchor projects
+```
 
-## 11. Concurrency And Resource Semantics
-- One Dev Session owns one active Journey.
-- Product source work may use parallel lanes only for disjoint write sets.
-- Checkpoint creation, deployment, shared Fixture mutation and final Journey
-  execution have one integrator owner.
-- Worktrees may share `station.connect`; deploy/reset remain exclusive.
-- Two Journey runs cannot share client storage, local slot or mutable Fixture.
-- Cancellation always performs reverse-order client, process, port and lease
-  cleanup.
+No scheduler or policy result is itself a Task/Session transition. No
+projection repairs its inputs.
 
-## 12. Allowed And Forbidden Relationships
+## 5. Plan Package Contract
+
+An active formal plan is a directory:
+
+```text
+execution-plans/<date>-<slug>/
+├── plan.md
+├── tasks/
+│   └── <task-id>.md
+└── archive/
+    └── <historical-input>.md
+```
+
+`plan.md` owns:
+
+- plan identity and its claimed worktree binding, verified against the
+  machine-local immutable workspace Plan binding;
+- immutable initial HEAD only, never the advancing source commit;
+- current-worktree binding only; sibling worktree inventory remains
+  non-authoritative machine topology;
+- stable goal, scope, non-scope and architecture references;
+- task ID/path/dependency graph, Task lifecycle status and compact blocker reference;
+- one machine-readable Acceptance Execution contract;
+- global authorization, completion gates and non-claims.
+
+The manifest is stable in scope and bounded in mutable state. Its Task index is
+the sole owner of `pending | in_progress | blocked | done`; exactly one
+`in_progress` entry identifies the current Task. It does not store Development
+transition state, first failure, per-attempt evidence or dated progress.
+When fixed-point exhaustion leaves no ready Task, package status becomes
+`blocked` with zero `in_progress` entries. Resume must re-audit the DAG before
+reactivating one Task.
+
+Mechanical bounds:
+
+- manifest: at most 300 lines and 20 KiB;
+- Task Slice: at most 200 lines and 12 KiB;
+- current snapshot section: at most 30 lines;
+- no `## Context Anchor`, dated progress appendix, raw command output or run-ID list.
+
+Archive files are excluded from discovery, status, dependency and resume parsing.
+They preserve history only.
+
+The repository may contain multiple active Plan Packages from independent
+worktrees synchronized into one PR. Discovery never scans that set to select an
+owner. `plan-binding.json` names the only Plan visible to the current workspace;
+foreign packages remain ordinary synchronized source files.
+
+## 6. Task Slice Contract
+
+A Task Slice is the smallest execution closure that can be verified and left
+internally consistent. It is split by responsibility/Journey, not by file count
+or individual test case.
+
+One legacy workstream may map to multiple Task Slices. A dependency-ready source
+slice and a completion/proof slice keep the same `workstreamId` but have distinct
+Task IDs and dependencies. Source successors depend on predecessor source
+Tasks; proof successors depend on their own source plus required predecessor
+proof Tasks. An aggregate partial workstream is never made current by bypassing
+incomplete completion dependencies.
+
+Each Task Slice owns:
+
+- stable task ID and plan ID;
+- one functional boundary or Journey;
+- exact in/out scope and target paths;
+- dependencies, completion criteria and failure behavior;
+- closure Gate reference, budgets and durable evidence references;
+- a compact current snapshot.
+
+Task lifecycle defines the progress unit. One completed Task contributes exactly
+one closure unit. Commands, checks, declarations, leases, diagnostics and
+individual Session transitions are execution activity, not independent progress.
+Task weights are intentionally forbidden: if one Task is too broad to serve as
+one meaningful progress unit, the plan owner must split it into independently
+closable Task Slices.
+
+Exactly one Task must be `in_progress` in an active package. A `pending` Task is
+ready only when every dependency is `done`. `blocked` parks that branch; it does
+not block independent ready Tasks. One worktree has one current Task; parallel
+subagents are lanes inside that Task, not concurrently current Tasks.
+
+Task handoff is one atomic manifest update performed by `planctl advance`:
+
+1. verify the current Session is terminal or absent;
+2. mark the old Task `done` or `blocked`;
+3. select an explicit dependency-ready successor, or no successor when complete;
+4. mark that successor `in_progress`;
+5. atomically replace `plan.md`;
+6. let `pt-dev-workflow` update `active_work` through its owner path.
+
+If execution stops after step 5, `pt-dev-workflow` repairs `active_work` from
+the manifest during resume. `pt-context-anchor` only reports the mismatch, and
+no component reverses the manifest from a stale projection.
+
+If a blocked Task has no ready successor, the same atomic update sets package
+status `blocked`. If a ready Task exists, the package remains `active` and that
+Task becomes the sole `in_progress` entry.
+
+### 6.1 Progress Slice Contract
+
+A Progress Slice is the user-facing continuation boundary projected from the
+current Task. It is not another durable graph or status owner.
+
+`planctl status` derives:
+
+- completed and total Task closures;
+- the current Task closure;
+- the exact `in_progress -> done` target transition;
+- the resulting completed-count and percentage delta;
+- Task IDs unlocked when that closure completes.
+
+`pt-trae-goal-orchestrator` may schedule multiple supporting actions inside the
+Slice, but the Slice completion boundary is the Task closure. `pt-dev-workflow`
+does not hand control back after a successful setup, inspection, authorization,
+or diagnostic action. It continues until:
+
+1. the target Task is `done` and the progress delta is durable; or
+2. a hard product, architecture, worktree, ownership, authorization, or
+   unavailable-resource boundary prevents closure.
+
+If the current Task hard-blocks while another Task is dependency-ready, the
+workflow parks the blocked branch and continues with a new Progress Slice.
+Only fixed-point exhaustion may produce a zero-delta blocked handoff.
+
+## 7. Development Session State Machine
+
+```text
+BOUND -> REPRODUCING -> REPRODUCED
+  -> IMPLEMENTING -> FOCUSED_CHECKING -> FOCUSED_PASS
+  -> SOURCE_READY
+
+FOCUSED_PASS
+  -> CHECKPOINTING -> CHECKPOINTED -> DEPLOYING -> DEPLOYED
+  -> FUNCTIONAL_RUNNING -> FUNCTIONAL_PASS -> ACCEPTANCE_READY
+  -> ACCEPTANCE_UPDATING -> FINAL_CHECKPOINTED
+  -> ACCEPTANCE_RUNNING -> ACCEPTANCE_PASS -> DELIVERY_READY
+
+active action -> FAILED | BLOCKED | STALE | CLEANING -> CANCELLED
+
+build-mode BOUND -> IMPLEMENTING
+```
+
+Transition guards are closed, work-class aware and fail-closed:
+
+- declaration must be ACTIVE before session start;
+- Task must be the package's single `in_progress` Task;
+- dependency status must be `done`;
+- defect repair uses reproduction; new/refactor/infrastructure/documentation
+  build mode enters implementation directly without fabricating a failure;
+- forward transitions must be legal for the current state;
+- `FUNCTIONAL_PASS` requires a `FUNCTIONAL_CHECK/PASS` record;
+- `ACCEPTANCE_PASS` requires an `ACCEPTANCE_PROOF/PASS` reference;
+- `completionClass=source` uses `runtimeClass=source-only`, owns no formal Gate,
+  and terminates at `SOURCE_READY` without a functional or product claim;
+- every non-documentation source Task has exactly one direct same-workstream
+  functional proof successor; documentation source Tasks terminate at
+  `SOURCE_READY` without inventing a runtime proof;
+- `completionClass=functional` owns the development Journey execution and is
+  the only class that may produce `FUNCTIONAL_PASS`;
+- `completionClass=acceptance-aggregate` owns no new functional claim and may
+  aggregate formal Acceptance only after every referenced product Journey has
+  a current `FUNCTIONAL_CHECK/PASS`; aggregation never creates or substitutes
+  functional proof;
+- failure records exactly one owner and first failure;
+- functional `source-only` refactor/infrastructure work may go
+  `FOCUSED_PASS -> FUNCTIONAL_RUNNING` without checkpoint/deploy;
+  service/native work requires checkpoint and runtime identity;
+- documentation work may close at `FOCUSED_PASS` without a product-functional claim;
+- transition commit atomically replaces the bounded event log, then materializes
+  `session.json`; a stale/missing snapshot is rebuilt by replay;
+- unknown fields, unknown states and source/task mismatch reject before mutation.
+
+The event log is the transition transaction journal. Every event carries the full
+post-transition Session snapshot and a digest chain. Under one session lock, a
+transition validates all events, appends one event in memory, atomically replaces
+the bounded `events.ndjson`, then atomically replaces `session.json`. If execution
+stops between replacements, replay deterministically rebuilds the snapshot. A
+snapshot ahead of the event log is invalid. Bounded compaction writes one full
+baseline event with the prior log digest before admitting more transitions.
+
+## 8. Resume Protocol
+
+Resume is deterministic and bounded:
+
+1. Verify worktree binding from persisted values.
+2. Resolve the workspace's immutable `planId + planPath` binding and load that
+   Plan Package directly. Missing or mismatched binding fails closed; no branch
+   scan or alternate Plan fallback runs.
+3. Run `planctl validate`; tooling may scan bounded machine blocks, but no Task
+   body or archive content enters agent context.
+4. If package status is `blocked`, validate typed exhaustion and recompute the
+   frontier without reading a Task body. Reactivate an explicit ready Task and
+   clear exhaustion, or report no current Task.
+5. Otherwise resolve the manifest's one `in_progress` Task.
+6. Read that Task only and replay/repair its matching Session store, if present.
+7. Reconcile `active_work.current_task_id`, `current_task_path` and `dev_state`.
+8. Derive ready/parked next Tasks from the manifest DAG.
+9. Emit or update Context Anchor, then continue the next legal transition.
+
+The emitted Anchor is a compact long-running execution contract. It carries the
+stable mission, execution horizon, current closure, machine-derived progress,
+the next Progress Slice and its expected delta. It does not enumerate every
+supporting action or stop after administrative work.
+
+Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
+`SESSION_IDENTITY_MISMATCH`; it never causes history reconstruction from chat.
+
+## 9. Concurrency And Cutover
+
+- Manifest, active pointer, shared parser, generated outputs, commit, deployment,
+  Fixture mutation and final Gates have one integrator owner.
+- Development and Acceptance execution consume the same Journey/provisioning
+  adapters. The runner selects an explicit `development` or `acceptance`
+  execution policy. Development writes only under the current machine Dev
+  Session artifact root, emits `FUNCTIONAL_CHECK` records, and cannot finalize
+  an Acceptance manifest, publish a latest pointer, or emit `PROVEN`.
+  Acceptance runs later and alone owns formal proof.
+- A formal single-Gate run may use a caller-supplied, format-validated,
+  previously unused run ID. The ID is generated before the evidence URI is
+  written into the Task snapshot; run allocation fails closed on collision and
+  never substitutes another ID.
+- Independent source lanes inside one Task may run in parallel only after
+  manifest/schema is frozen and write sets are disjoint. Different Tasks are
+  not concurrently current in one worktree.
+- A plan migration is atomic to readers under a migration lock and journal:
+  1. create a `prepared` package and byte-identical archive copy;
+  2. record old/new hashes, the reviewed crosswalk digest, every live reference
+     and the directly observed `active_work` disposition in a non-blocking
+     `PREPARED` journal;
+  3. bind the journal to actual worktree identity and the frozen formal Gate
+     `workspaceDigest`, then validate package, archive hash, crosswalk,
+     reference rewrite set and projection precondition;
+  4. require the exact independently reviewed journal SHA-256 and preserve that
+     PREPARED input as `migration.json.reviewed`;
+  5. acquire an owner-token plan migration lock and enter `LOCKED`, making
+     discovery fail closed through the fixed
+     `workflow/plan-migration/{migration.json,migration.lock}` path; public
+     readers cannot override that locator, writers derive `workspaceId` from
+     the canonical repository root before journal access, and unknown journal
+     phases are rejected; each reader fences the journal/lock digests before
+     reading and rechecks that fence after manifest validation and again after
+     the complete Task/crosswalk read window;
+  6. preflight atomic exchange and no-replace support on both the package and
+     journal filesystems before acquiring the migration lock; require global
+     uniqueness across every target/prepared/backup path, materialize the
+     after-image carrier, journal the exact source/destination file snapshots
+     before the syscall, then use the platform atomic primitive and verify the
+     resulting file objects; an originally absent target uses atomic no-replace
+     creation, while legacy removal atomically moves the live path into its
+     backup before validating the captured bytes;
+  7. set the reviewed target status (`prepared`, `active` or `blocked`), verify
+     the caller-declared live-plan count and record the projection disposition;
+  8. rehash every applied target and mark the journal committed; initialize one
+     journaled cleanup batch, capture every expected backup, revalidate the full
+     terminal target/archive fence and every stable capture, persist
+     `VALIDATED`, then delete the captures and release only the owned lock.
+
+On interruption, the journal either completes the remaining idempotent replaces
+or restores backups with the same exchange/no-replace primitives under an
+exclusive recovery claim before releasing the owned lock. Every filesystem
+mutation has one durable `pendingOperation` containing hashes, device/inode and
+size/mtime/ctime version fences, so recovery distinguishes pre-syscall,
+post-syscall and conflicting states without guessing. Locks and recovery claims
+bind PID to boot/start identity, preventing PID reuse from impersonating a live
+owner. Stale claim and lock takeover atomically move the observed inode to a
+private capture before validating or discarding it. Cleanup first captures the
+whole backup set; a pre-validation mismatch restores every capture, while only
+a durable `VALIDATED` batch may delete captures. Rollback rehashes every
+restored target before `ROLLED_BACK`. A changed or missing COMMITTED archive
+fails closed; recovery never reconstructs reviewed history. Recovery
+revalidates reviewed-journal lineage, actual worktree binding, the
+registry-backed `active_work` observation, crosswalk, reference inventory and
+replacement hashes. No reader falls through to a partially migrated plan.
+- No compatibility alias may keep both old and new status owners live.
+
+## 10. Allowed And Forbidden Relationships
+
 Allowed:
 
-- Development Workflow publishes source/resource intent to machine `work.json`.
-- Development Workflow asks Local Dev Control Plane to resolve and lease
-  resources.
-- Dev Runner reuses business Journey functions and platform driver primitives.
-- Acceptance Runner promotes the same Journey after `FUNCTIONAL_PASS`.
-- Quality Framework consumes formal Acceptance evidence at delivery time.
+- `planctl` reads structured blocks from `plan.md` and `tasks/*.md`.
+- Dev Session records refer to plan/task IDs and Git/runtime identities.
+- Acceptance planner consumes the package's single Acceptance contract.
+- Context Anchor projects manifest + current Task + current Session.
 
 Forbidden:
 
-- Editing or runtime acquisition before the public declaration is confirmed.
-- Treating a declaration as proof that a process or runtime lease is active.
-- Acceptance planner automatically expands and runs broad Gates inside the red
-  development loop.
-- A static Gate marks a Dev Session `FUNCTIONAL_PASS`.
-- A Gate deploys Station, selects Profile or resets Fixture.
-- A page, Harness or API-only shortcut replaces a visible user action required by
-  the Journey.
-- Plan documents accumulate raw command output or per-attempt narratives.
-- One failed Journey launches unrelated platform or Domain Gates.
-- Missing authorization falls back to implicit commit, deploy, reset, push or
-  history rewrite.
+- Plan or Task appending raw events, dated run narratives or full logs.
+- Session files being committed or stored in the Evidence Store.
+- `active_work.current_step` remaining as a parallel free-text truth after cutover.
+- Archive files affecting current status.
+- Static/source checks producing `FUNCTIONAL_PASS`.
+- Acceptance expanding before `FUNCTIONAL_PASS`.
+- A Task file per test case or per command.
 
-## 13. Architecture Quality Gates
-The architecture is successfully implemented only when:
+## 11. Architecture Quality Gates
 
-- A synthetic product change cannot enter Acceptance before `FUNCTIONAL_PASS`.
-- Two worktrees with overlapping exclusive write/resource declarations cannot
-  both enter `BOUND`.
-- A backend-only, UI, infrastructure and refactor work item each resolve a valid
-  Journey or verification class.
-- A remote Journey cannot run before checkpoint commit and runtime source match.
-- A static-only pass cannot produce a product-functional claim.
-- A product failure reports exactly one first failed Journey step.
-- A provisioning failure remains distinct from product failure.
-- Duplicate execution of the same run identity is rejected or reused.
-- Cancellation and timeout release every acquired lease and process.
-- Dev artifacts write only under the machine Dev root.
-- The execution plan remains a compact current-state ledger.
-- Chat Direct and three-client Group Journeys complete through Dev Runner, then
-  the same business assertions complete through Acceptance Runner.
-- The Chat pilot records `broadAcceptanceRunsBeforeFunctionalPass=0`,
-  `duplicateRunCount=0` and bounded `timeToFirstFailureMs`.
+The architecture is implemented only when:
+
+- a 4,000-line legacy plan migrates under lock/journal without content loss or
+  dual active truth;
+- resume exposes only manifest, current Task and current Session to agent context;
+- plan/task bounds fail closed mechanically;
+- invalid DAG, duplicate current Task and dependency violations fail;
+- legal and illegal Session transitions are covered deterministically;
+- symlinked CLI invocation executes rather than silently returning success;
+- clock-dependent tests use an injected/current clock;
+- Acceptance current-closure selection reads the Plan Package;
+- work-class-specific Tasks have legal completion paths without false product claims;
+- Context Anchor contains stable task pointers, not prose recovery state;
+- `planctl status` exposes deterministic Task-closure progress and the next
+  closure's expected delta/unlock effect;
+- tracked Development declarations publish the exact Plan Package and current
+  Task locator; Peers Dev never infers progress from a work item or branch;
+- Dev Workflow heartbeats long-running declarations before expiry and refreshes
+  both the declaration and workspace registration after source HEAD changes;
+- unrelated sibling worktree add/remove/prune operations do not invalidate the
+  selected worktree's binding;
+- multiple active Plans may coexist in one repository/PR while each workspace
+  resolves only its immutable binding and rebind attempts fail closed;
+- an authorized checkpoint can advance declaration, Session and `active_work`
+  source identity without editing the tracked Plan or dirtying the checkpoint;
+- CI accepts only an explicitly supplied Plan and never infers ownership from a
+  PR branch;
+- every non-blocked Anchor continuation targets one Task closure and cannot
+  terminate successfully with zero durable progress;
+- two independent reviews find no unresolved source-of-truth or runnable gap.

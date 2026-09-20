@@ -148,8 +148,7 @@ fn validate_results(
                     "messaging command reconciliation response identity mismatch".to_string()
                 })?;
             if result.command_sha256 != submitted.command_sha256
-                || Sha256::digest(&submitted.command_bytes).as_slice()
-                    != submitted.command_sha256
+                || Sha256::digest(&submitted.command_bytes).as_slice() != submitted.command_sha256
             {
                 return Err("messaging command reconciliation command hash mismatch".to_string());
             }
@@ -197,9 +196,7 @@ fn validate_result(
         }
         ConversationCommandResolutionState::Accepted => {
             if terminal_code != ConversationCommandRejectCode::Unspecified {
-                return Err(
-                    "messaging accepted reconciliation has terminal error code".to_string(),
-                );
+                return Err("messaging accepted reconciliation has terminal error code".to_string());
             }
             validate_accepted_result(
                 command,

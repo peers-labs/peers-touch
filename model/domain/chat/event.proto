@@ -75,6 +75,8 @@ message ConversationAuthorityMember {
   string ptid = 1;
   string role = 2;
   string home_station_peer_id = 3;
+  bool muted = 4;
+  google.protobuf.Timestamp muted_until = 5;
 }
 
 message ConversationAuthorityEndpoint {
@@ -112,6 +114,19 @@ message MembershipTransitionCommittedFact {
   bytes mls_commit_sha256 = 7;
   string leave_intent_id = 8;
   ConversationAuthoritySnapshot post_state = 9;
+}
+
+message ConversationMemberAuthorityCommittedFact {
+  ConversationMemberAuthorityAction action = 1;
+  string target_ptid = 2;
+  optional MemberRole role = 3;
+  optional bool muted = 4;
+  google.protobuf.Timestamp muted_until = 5;
+  string previous_owner_ptid = 6;
+  string owner_ptid = 7;
+  int64 from_membership_epoch = 8;
+  int64 to_membership_epoch = 9;
+  ConversationAuthoritySnapshot post_state = 10;
 }
 
 // Sending-endpoint lane payload. It advances the same authority chain without
@@ -168,6 +183,7 @@ message ConversationEvent {
     MembershipTransitionCommittedFact membership_transition_committed = 26;
     ConversationCreatedFact conversation_created = 27;
     ConversationDissolvedFact conversation_dissolved = 28;
+    ConversationMemberAuthorityCommittedFact member_authority_committed = 29;
   }
 }
 

@@ -73,8 +73,8 @@ export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
     ),
     status: numberValue(record.state),
     message: stringValue(record.message),
-    createdAt: stringValue(record.createdAt, record.created_at),
-    respondedAt: stringValue(record.respondedAt, record.responded_at),
+    createdAt: timestampString(record.createdAt, record.created_at),
+    respondedAt: timestampString(record.respondedAt, record.responded_at),
     senderDisplayName: stringValue(record.senderDisplayName, record.sender_display_name),
     senderAvatar: stringValue(record.senderAvatar, record.sender_avatar),
     receiverDisplayName: stringValue(record.receiverDisplayName, record.receiver_display_name),
@@ -107,6 +107,26 @@ function numberValue(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function timestampString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string') return value;
+    const timestamp = recordFromUnknown(value);
+    const seconds = timestamp.seconds;
+    if (
+      typeof seconds === 'number'
+      || typeof seconds === 'bigint'
+      || (typeof seconds === 'string' && seconds.trim())
+    ) {
+      const milliseconds = Number(seconds) * 1000
+        + Math.floor(numberValue(timestamp.nanos) / 1_000_000);
+      if (Number.isFinite(milliseconds)) {
+        return new Date(milliseconds).toISOString();
+      }
+    }
+  }
+  return '';
 }
 
 const CONVERSATION_KIND_MAP: Record<string, number> = {

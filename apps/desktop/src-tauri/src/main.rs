@@ -9,6 +9,8 @@ mod infrastructure;
 mod interface;
 mod messaging;
 mod model;
+mod secure_content;
+mod social;
 mod state;
 
 // Prost-generated `peers.actor` (session_api) and auth/oauth use `super::super::peers_touch::...`
@@ -36,16 +38,21 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
     agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
-    desktop_capture, federation, frontend_log, frontend_telemetry, group_chat, host_events, i18n,
-    ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    runtime_evidence, search, settings, skills, skills_market, social, station, system, tools, tts,
+    desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, group_chat, home,
+    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
+    messaging_recovery, model_config, notebook, notification, oauth2, oss, presence, profile,
+    provider, realtime, runtime_evidence, search, settings, skills, skills_market,
+    social as social_commands, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
+
+fn should_prevent_headless_browser_exit(client_surface: &str, exit_code: Option<i32>) -> bool {
+    client_surface.trim().eq_ignore_ascii_case("browser") && exit_code.is_none()
+}
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
@@ -392,6 +399,48 @@ fn main() {
     let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
 
     let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("private-media", |context, request| {
+            if request.method() != tauri::http::Method::GET {
+                return tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::METHOD_NOT_ALLOWED)
+                    .body(Vec::new())
+                    .expect("private media method response");
+            }
+            let grant_id = request
+                .uri()
+                .path()
+                .trim_start_matches('/')
+                .split('/')
+                .next()
+                .unwrap_or_default();
+            if grant_id
+                .parse::<ulid::Ulid>()
+                .map(|value| value.to_string() != grant_id)
+                .unwrap_or(true)
+            {
+                return tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::BAD_REQUEST)
+                    .body(Vec::new())
+                    .expect("private media bad-request response");
+            }
+            let state = context.app_handle().state::<Arc<state::AppState>>();
+            match state
+                .secure_content
+                .read_private_media(context.webview_label(), grant_id)
+            {
+                Ok((bytes, media_type)) => tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::OK)
+                    .header(tauri::http::header::CONTENT_TYPE, media_type)
+                    .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                    .body(bytes)
+                    .expect("private media response"),
+                Err(_) => tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::NOT_FOUND)
+                    .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                    .body(Vec::new())
+                    .expect("private media not-found response"),
+            }
+        })
         .plugin(tauri_plugin_deep_link::init())
         .plugin(desktop_capture::global_shortcut_plugin());
 
@@ -404,6 +453,9 @@ fn main() {
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
         .setup(|app| {
+            app.state::<Arc<state::AppState>>()
+                .secure_content
+                .bind_app_handle(app.handle().clone());
             #[cfg(feature = "acceptance-webdriver")]
             if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
                 let minimum_window_width = app
@@ -543,33 +595,43 @@ fn main() {
             settings::settings_set,
             settings::settings_reset,
             desktop_capture::chat_screenshot_shortcut_register,
-            social::social_create_moment,
-            social::social_get_moment,
-            social::social_delete_moment,
-            social::social_list_by_author,
-            social::social_get_timeline,
-            social::social_sync_moments_projection,
-            social::social_station_moderation_upsert,
-            social::social_station_moderation_delete,
-            social::social_station_moderation_list,
-            social::social_react,
-            social::social_unreact,
-            social::social_get_comments,
-            social::social_create_comment,
-            social::social_delete_comment,
-            social::social_follow,
-            social::social_unfollow,
-            social::social_get_followers,
-            social::social_get_following,
-            social::social_get_relationship,
-            social::social_circle_create,
-            social::social_circle_rename,
-            social::social_circle_delete,
-            social::social_circle_list_mine,
-            social::social_circle_add_members,
-            social::social_circle_remove_members,
-            social::social_circle_list_members,
-            social::social_get_my_stats,
+            social_commands::social_create_moment,
+            social_commands::social_get_moment,
+            social_commands::social_delete_moment,
+            social_commands::social_list_by_author,
+            social_commands::social_get_timeline,
+            social_commands::social_sync_moments_projection,
+            social_commands::social_station_moderation_upsert,
+            social_commands::social_station_moderation_delete,
+            social_commands::social_station_moderation_list,
+            social_commands::social_react,
+            social_commands::social_unreact,
+            social_commands::social_get_comments,
+            social_commands::social_create_comment,
+            social_commands::social_delete_comment,
+            social_commands::social_follow,
+            social_commands::social_unfollow,
+            social_commands::social_get_followers,
+            social_commands::social_get_following,
+            social_commands::social_get_relationship,
+            social_commands::social_circle_create,
+            social_commands::social_circle_rename,
+            social_commands::social_circle_delete,
+            social_commands::social_circle_list_mine,
+            social_commands::social_circle_add_members,
+            social_commands::social_circle_remove_members,
+            social_commands::social_circle_list_members,
+            social_commands::social_get_my_stats,
+            social::social_private_moments_bootstrap,
+            social::social_private_moments_reconcile,
+            social::social_private_moment_publish,
+            social::social_private_moment_read,
+            social::social_private_moment_media_open,
+            social::social_private_moment_recover,
+            social::social_private_moment_purge,
+            social::social_private_moments_teardown,
+            #[cfg(feature = "acceptance-webdriver")]
+            social::social_private_moments_acceptance_runtime_identity,
             profile::profile_get,
             profile::peer_profile_get,
             profile::profile_update,
@@ -608,6 +670,7 @@ fn main() {
             provider::model_toggle,
             provider::model_delete,
             provider::model_add,
+            provider::model_update,
             agents::agents_list,
             agents::agents_get_selected,
             agents::agents_set_selected,
@@ -619,6 +682,29 @@ fn main() {
             agents::agents_delete,
             agents::agents_duplicate,
             agents::agents_search,
+            home::agent_home_projection_get,
+            home::agent_home_chat_submit,
+            home::agent_home_task_submit,
+            evaluation::agent_evaluation_benchmark_create,
+            evaluation::agent_evaluation_benchmark_update,
+            evaluation::agent_evaluation_benchmark_delete,
+            evaluation::agent_evaluation_benchmark_list,
+            evaluation::agent_evaluation_dataset_create,
+            evaluation::agent_evaluation_dataset_update,
+            evaluation::agent_evaluation_dataset_delete,
+            evaluation::agent_evaluation_dataset_list,
+            evaluation::agent_evaluation_case_create,
+            evaluation::agent_evaluation_case_update,
+            evaluation::agent_evaluation_case_delete,
+            evaluation::agent_evaluation_case_list,
+            evaluation::agent_evaluation_run_create,
+            evaluation::agent_evaluation_run_start,
+            evaluation::agent_evaluation_run_cancel,
+            evaluation::agent_evaluation_run_retry,
+            evaluation::agent_evaluation_run_get,
+            evaluation::agent_evaluation_run_list,
+            evaluation::agent_evaluation_run_events_list,
+            evaluation::agent_evaluation_run_delete,
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn_stream,
@@ -638,6 +724,7 @@ fn main() {
             capability_authority::agent_capability_binding_upsert,
             capability_authority::agent_capability_binding_delete,
             capability_authority::agent_capability_readiness,
+            capability_authority::agent_connector_manifest_list,
             capability_authority::agent_knowledge_descriptor_create,
             capability_authority::agent_knowledge_descriptor_update,
             capability_authority::agent_knowledge_descriptor_list,
@@ -647,6 +734,8 @@ fn main() {
             runtime_evidence::agent_capability_sessions,
             runtime_evidence::agent_browser_capability_session_open,
             runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_client_executor_supervisor_start,
+            runtime_evidence::agent_client_executor_supervisor_stop,
             runtime_evidence::agent_runtime_activity_station,
             runtime_evidence::agent_runtime_activity_local,
             runtime_evidence::agent_capability_session_snapshot,
@@ -783,8 +872,12 @@ fn main() {
             mcp::mcp_update_server,
             mcp::mcp_delete_server,
             mcp::mcp_toggle_server,
-            mcp::mcp_test_server,
-            mcp::mcp_execute_tool,
+            mcp::mcp_start_lifecycle_operation,
+            mcp::agent_capability_operation_get,
+            mcp::agent_capability_operation_cancel,
+            mcp::agent_capability_operation_reconcile,
+            mcp::agent_capability_operation_takeover,
+            mcp::agent_capability_operation_cleanup_takeover,
             cron::cron_status,
             cron::cron_list_jobs,
             cron::cron_create_job,
@@ -819,6 +912,7 @@ fn main() {
             oauth2::oauth2_authorize,
             oauth2::oauth2_handle_callback,
             oauth2::oauth2_list_connections,
+            oauth2::oauth2_sync_connector_manifests,
             oauth2::oauth2_get_connection,
             oauth2::oauth2_disconnect,
             oauth2::oauth2_refresh_token,
@@ -841,6 +935,7 @@ fn main() {
             account::account_begin_pin_recovery,
             account::account_reset_pin,
             account::account_get_device_id,
+            presence::presence_query,
             presence::presence_notify,
             oss::oss_pick_local_file,
             oss::oss_pick_local_folder,
@@ -883,10 +978,10 @@ fn main() {
             messaging_recovery::messaging_recovery_status,
             messaging_recovery::messaging_recovery_list_revisions,
             ice::ice_get_servers,
-            social::social_friend_request_send,
-            social::social_friend_request_accept,
-            social::social_friend_request_reject,
-            social::social_friend_request_list,
+            social_commands::social_friend_request_send,
+            social_commands::social_friend_request_accept,
+            social_commands::social_friend_request_reject,
+            social_commands::social_friend_request_list,
             group_chat::group_chat_list_groups,
             group_chat::group_chat_list_messages,
             group_chat::group_chat_list_thread_messages,
@@ -956,6 +1051,8 @@ fn main() {
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,
             #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_create_restorable_command,
+            #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_prepare_submitted_command,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_resume_lifecycle,
@@ -983,9 +1080,9 @@ fn main() {
             conversation::conversation_list_messages,
             conversation::conversation_list_thread_messages,
             conversation::conversation_sync_from_station,
-            conversation::keypackage_upload,
-            conversation::keypackage_fetch,
-            conversation::keypackage_count,
+            key_exchange::keypackage_upload,
+            key_exchange::keypackage_fetch,
+            key_exchange::keypackage_count,
             conversation::device_list,
             conversation::device_revoke,
             conversation::dkx_send,
@@ -1012,7 +1109,15 @@ fn main() {
                     );
                 }
             }
-            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                let client_surface = std::env::var("PT_CLIENT_SURFACE").unwrap_or_default();
+                if should_prevent_headless_browser_exit(&client_surface, *code) {
+                    api.prevent_exit();
+                    tracing::info!(
+                        "prevented automatic exit for headless browser gateway"
+                    );
+                    return;
+                }
                 let capability_supervisor = app
                     .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
                 if let Err(error) = capability_supervisor.shutdown() {
@@ -1022,6 +1127,12 @@ fn main() {
                     );
                 }
                 let state = app.state::<Arc<state::AppState>>();
+                if let Err(error) = state.secure_content.shutdown() {
+                    tracing::warn!(
+                        error = %error,
+                        "secure content supervisor shutdown failed"
+                    );
+                }
                 if let Err(error) = state.messaging_engines.deactivate_all() {
                     tracing::warn!(
                         error = %error,
@@ -1064,4 +1175,17 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_prevent_headless_browser_exit;
+
+    #[test]
+    fn headless_browser_prevents_only_automatic_exit() {
+        assert!(should_prevent_headless_browser_exit("browser", None));
+        assert!(should_prevent_headless_browser_exit(" Browser ", None));
+        assert!(!should_prevent_headless_browser_exit("desktop", None));
+        assert!(!should_prevent_headless_browser_exit("browser", Some(0)));
+    }
 }

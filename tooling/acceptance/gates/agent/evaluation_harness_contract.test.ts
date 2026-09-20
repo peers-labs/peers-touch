@@ -1,0 +1,154 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { resolve } from 'node:path';
+
+const harness = readFileSync(
+  resolve(
+    process.cwd(),
+    'apps/desktop/src/acceptance/agent/harness.ts',
+  ),
+  'utf8',
+);
+const navigation = readFileSync(
+  resolve(process.cwd(), 'apps/desktop/src/hooks/useNavigation.ts'),
+  'utf8',
+);
+const evaluationPage = [
+  'apps/desktop/src/pages/EvaluationPage.tsx',
+  'apps/desktop/src/pages/evaluation/RunList.tsx',
+  'apps/desktop/src/pages/evaluation/RunDetail.tsx',
+].map((path) => readFileSync(resolve(process.cwd(), path), 'utf8')).join('\n');
+
+const canonicalSelectors = [
+  'data-pt-evaluation-page',
+  'data-pt-evaluation-tab',
+  'data-pt-evaluation-create-run',
+  'data-pt-evaluation-target-agent',
+  'data-pt-evaluation-dataset',
+  'data-pt-evaluation-create-run-submit',
+  'data-pt-evaluation-run',
+  'data-pt-evaluation-start-run',
+  'data-pt-evaluation-cancel-run',
+  'data-pt-evaluation-retry-run',
+  'data-pt-evaluation-result',
+  'data-pt-evaluation-back-to-runs',
+] as const;
+
+test('J06 harness uses production Evaluation commands and native selectors', () => {
+  for (const command of [
+    'agent_evaluation_benchmark_create',
+    'agent_evaluation_dataset_create',
+    'agent_evaluation_case_create',
+    'agent_evaluation_run_create',
+    'agent_evaluation_run_start',
+    'agent_evaluation_run_cancel',
+    'agent_evaluation_run_retry',
+    'agent_evaluation_run_get',
+    'agent_evaluation_run_list',
+    'agent_evaluation_run_events_list',
+    'agent_evaluation_run_delete',
+  ]) {
+    assert.match(harness, new RegExp(`['"]${command}['"]`));
+  }
+  for (const selector of canonicalSelectors) {
+    assert.match(harness, new RegExp(selector));
+  }
+});
+
+test('J06 harness selector contract matches the production page', () => {
+  for (const selector of canonicalSelectors) {
+    assert.match(evaluationPage, new RegExp(selector));
+  }
+  for (const staleSelector of [
+    'data-pt-evaluation-lab',
+    'data-pt-evaluation-run-open',
+    'data-pt-evaluation-run-start',
+    'data-pt-evaluation-run-cancel',
+    'data-pt-evaluation-retry-failed',
+  ]) {
+    assert.doesNotMatch(harness, new RegExp(staleSelector));
+  }
+});
+
+test('J06 harness exposes phased recovery, isolation, and cleanup', () => {
+  assert.match(harness, /runEvaluationDevelopment/);
+  assert.match(harness, /case 'prepare'/);
+  assert.match(harness, /case 'recover'/);
+  assert.match(harness, /case 'isolate'/);
+  assert.match(harness, /case 'cleanup'/);
+  assert.match(harness, /retentionConflictObserved/);
+  assert.match(harness, /cancellationAcknowledged/);
+  assert.match(harness, /sourceAttemptId/);
+  assert.match(harness, /sourceResultId/);
+  assert.match(harness, /schedulerClaim/);
+});
+
+test('shared Station binding returns the canonical active peer identity', () => {
+  assert.match(harness, /const activeStationPeerId = \(/);
+  assert.match(harness, /activeStationPeerId,/);
+  assert.match(harness, /peerIdAvailable: Boolean\(activeStationPeerId\)/);
+});
+
+test('shared harness exposes Station-accepted capability session evidence', () => {
+  assert.match(harness, /async waitForCapabilitySession\(\)/);
+  assert.match(harness, /return waitForCapabilitySessionEvidence\(\)/);
+});
+
+test('J06 native navigation reaches the production Evaluation page', () => {
+  assert.match(
+    harness,
+    /EVENT\.NAVIGATION_REQUESTED,\s*\{\s*resource:\s*['"]evaluation['"]\s*\}/,
+  );
+  assert.match(
+    navigation,
+    /case\s+['"]evaluation['"]:\s*router\.setPage\(['"]evaluation['"]\)/,
+  );
+});
+
+test('J06 selects the Ant Design Segmented input behind the stable tab marker', () => {
+  assert.match(
+    harness,
+    /clickEvaluationTab\(EVALUATION_SELECTORS\.runsTab\)/,
+  );
+  assert.match(
+    harness,
+    /\.closest<HTMLLabelElement>\(['"]label['"]\)/,
+  );
+  assert.match(
+    harness,
+    /\.querySelector<HTMLInputElement>\(['"]input['"]\)/,
+  );
+  assert.match(harness, /input\.click\(\)/);
+});
+
+test('J06 refreshes Station-owned Evaluation projection before driving run UI', () => {
+  assert.match(
+    harness,
+    /await refreshEvaluationTargetProjection\(state\.agentId,\s*\{\s*clientCapabilitySessionId:\s*capabilitySession\.capabilitySessionId/,
+  );
+  assert.match(
+    harness,
+    /Boolean\(control\?\.getClientRects\(\)\.length\) && !control\?\.disabled/,
+  );
+  assert.match(
+    harness,
+    /`Evaluation control \$\{selector\}`/,
+  );
+  assert.match(harness, /\.ant-select-selector/);
+  assert.match(harness, /\['mousedown', 'mouseup', 'click'\]/);
+});
+
+test('J06 Acceptance does not use the legacy Evaluation store', () => {
+  const j06Start = harness.indexOf('const EVALUATION_SELECTORS');
+  const j06End = harness.indexOf(
+    'async function runGovernedToolDevelopmentJourney',
+    j06Start,
+  );
+  assert.notEqual(j06Start, -1);
+  assert.notEqual(j06End, -1);
+  const j06 = harness.slice(j06Start, j06End);
+  assert.doesNotMatch(j06, /useEvaluationStore/);
+  assert.doesNotMatch(j06, /localStorage/);
+  assert.doesNotMatch(j06, /quickCompletion/);
+});

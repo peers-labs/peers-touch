@@ -9,7 +9,7 @@ import {
   MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
-import { useSocialChatStore } from './socialChat';
+import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
 
 describe('social chat conversation projection', () => {
   beforeEach(() => {
@@ -72,5 +72,42 @@ describe('social chat conversation projection', () => {
         federationId: 'federation-chat',
       }),
     ]));
+  });
+
+  it('derives message-search targets from canonical Conversation projections', () => {
+    const conversations = useSocialChatStore.getState().conversations;
+
+    expect(resolveMessageSearchTargets(
+      conversations,
+      'friend',
+      'direct-conversation',
+    )).toEqual([{
+      conversationId: 'direct-conversation',
+      scope: 'friend',
+    }]);
+    expect(resolveMessageSearchTargets(conversations)).toEqual([
+      { conversationId: 'direct-conversation', scope: 'friend' },
+      { conversationId: 'group-conversation', scope: 'group' },
+    ]);
+  });
+
+  it('keeps an immediate background preview ephemeral and conversation-scoped', () => {
+    const store = useSocialChatStore.getState();
+    store.setConversationBackgroundPreview(
+      'friend',
+      'direct-conversation',
+      'asset://localhost/background.png',
+    );
+
+    expect(useSocialChatStore.getState().conversationBackgroundPreviews).toEqual({
+      'friend:direct-conversation': 'asset://localhost/background.png',
+    });
+
+    useSocialChatStore.getState().setConversationBackgroundPreview(
+      'friend',
+      'direct-conversation',
+      null,
+    );
+    expect(useSocialChatStore.getState().conversationBackgroundPreviews).toEqual({});
   });
 });

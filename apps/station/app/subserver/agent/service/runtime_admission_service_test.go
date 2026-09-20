@@ -197,6 +197,18 @@ func TestRuntimeAdmissionResolveRejectsDisabledProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for disabled provider, got nil")
 	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentRuntimeUnavailable ||
+		bizErr.HTTPStatus != 503 ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeUnavailable) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeUnavailableLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["runtime_kind"] != "direct_model" ||
+		bizErr.Payload.GetDetails()["reason_code"] != "provider_disabled" {
+		t.Fatalf("disabled provider payload = %+v", bizErr)
+	}
 }
 
 func TestRuntimeAdmissionResolveRejectsMissingCredential(t *testing.T) {
@@ -693,6 +705,57 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	}
 	if models[0].ID != "test-model" {
 		t.Fatalf("expected test-model, got %s", models[0].ID)
+	}
+	if !models[0].Capabilities["streaming"] ||
+		!models[0].Capabilities["native-tools"] {
+		t.Fatalf("available model dropped runtime capabilities: %+v", models[0])
+	}
+}
+
+func TestRuntimeAdmissionListAvailableModelsIncludesGovernedToolCustomProvider(t *testing.T) {
+	catalog.SetForTesting(nil)
+	defer catalog.RestoreForTesting()
+	db := openAdmissionTestDB(t, "admission_list_custom_provider")
+
+	keyVaults, _ := json.Marshal(map[string]string{"api_key": "test-key"})
+	seedTestProvider(t, db, "actor-1", "custom-provider", true, string(keyVaults))
+	if err := db.Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ?", "actor-1", "custom-provider").
+		Update("display_name", "Custom Provider").Error; err != nil {
+		t.Fatalf("set custom provider display name: %v", err)
+	}
+	seedTestModel(
+		t,
+		db,
+		"actor-1",
+		"custom-provider",
+		"custom-model",
+		true,
+		8192,
+		`{"streaming":true,"native-tools":true}`,
+	)
+
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	models, err := resolver.ListAvailableModels(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("list available models: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("expected custom provider model, got %+v", models)
+	}
+	got := models[0]
+	if got.ID != "custom-model" ||
+		got.ProviderID != "custom-provider" ||
+		got.ProviderName != "Custom Provider" ||
+		got.Type != "chat" ||
+		!got.Enabled ||
+		got.ContextWindow != 8192 ||
+		!got.Capabilities["streaming"] ||
+		!got.Capabilities["native-tools"] {
+		t.Fatalf("custom provider model projection = %+v", got)
 	}
 }
 

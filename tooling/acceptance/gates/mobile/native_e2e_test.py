@@ -21,6 +21,8 @@ from tooling.acceptance.gates.mobile.native_e2e import (
     PRODUCTION_OAUTH_PURGE_ACTION,
     PROVIDER_CAPABILITY,
     REQUIRED_ACCESS_VARIANTS,
+    SCENARIO_GATES,
+    SCENARIO_METADATA,
     SECURE_STORAGE_ABSENCE_FIELDS,
     STATION_FIXTURE_CAPABILITY,
     AccessVariantLedger,
@@ -680,6 +682,61 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
             ["MS-AG07", "MS-AG08", "MS-AG11"],
         )
         self.assertNotIn("MS-AG03", platform["spec"])
+
+    def test_every_registered_scenario_can_emit_typed_blocked_evidence(self) -> None:
+        self.assertEqual(set(SCENARIO_METADATA), set(SCENARIO_GATES))
+
+        class Store:
+            workspace_id = "a" * 16
+
+        class Artifacts:
+            run_id = artifact_ref("unused")["runId"]
+            store = Store()
+
+            def __enter__(self) -> "Artifacts":
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def complete(self, **values: object) -> None:
+                self.completed = values
+
+            def write_json(
+                self,
+                _path: str,
+                payload: dict[str, Any],
+                **_kwargs: object,
+            ) -> None:
+                self.report = payload
+
+        for scenario in (
+            "recovery",
+            "recovery-ui",
+            "social-convergence",
+            "chat-contacts",
+            "moments",
+            "settings",
+        ):
+            with self.subTest(scenario=scenario):
+                artifacts = Artifacts()
+                with patch(
+                    "tooling.acceptance.gates.mobile.native_e2e.ArtifactSession",
+                    return_value=artifacts,
+                ):
+                    exit_code = MobileNativeGate(scenario).execute()
+
+                self.assertEqual(exit_code, 2)
+                self.assertEqual(artifacts.report["status"], "BLOCKED")
+                self.assertEqual(
+                    artifacts.report["blockedResource"],
+                    f"mobile-scenario:{scenario}",
+                )
+                self.assertEqual(artifacts.completed["status"], "BLOCKED")
+                self.assertEqual(
+                    artifacts.completed["proof_status"],
+                    "UNPROVEN",
+                )
 
 
 class PhysicalScenarioBranchTests(unittest.TestCase):

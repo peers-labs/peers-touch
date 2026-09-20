@@ -8,7 +8,6 @@ import hashlib
 import json
 import subprocess
 import sys
-from collections.abc import Iterable
 from pathlib import Path
 from typing import NoReturn
 
@@ -30,13 +29,13 @@ def fail(code: str, message: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def run_git(root: Path, *args: str, binary: bool = False) -> str | bytes:
+def run_git(root: Path, *args: str) -> str:
     try:
         result = subprocess.run(
             ["git", "-C", str(root), *args],
             check=False,
             capture_output=True,
-            text=not binary,
+            text=True,
         )
     except OSError as error:
         raise IdentityUnavailableError("unable to execute git") from error
@@ -89,44 +88,6 @@ def current_branch(root: Path) -> str:
     return branch
 
 
-def worktree_paths_from_porcelain(output: bytes) -> set[str]:
-    paths: set[str] = set()
-    for field in output.split(b"\0"):
-        if not field.startswith(b"worktree "):
-            continue
-        try:
-            raw_path = field[len(b"worktree ") :].decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise IdentityUnavailableError(
-                "git returned a non-UTF-8 worktree path"
-            ) from error
-        paths.add(raw_path)
-    return paths
-
-
-def digest_worktree_paths(paths: Iterable[str]) -> str:
-    unique_paths = set(paths)
-    if not unique_paths:
-        raise IdentityUnavailableError("git returned no worktree paths")
-
-    payload = "\n".join(sorted(unique_paths)).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-def worktree_set_digest(root: Path) -> str:
-    output = run_git(root, "worktree", "list", "--porcelain", "-z", binary=True)
-    if not isinstance(output, bytes):
-        raise IdentityUnavailableError("git returned invalid worktree data")
-
-    paths = {
-        str(canonical_path(Path(raw_path), "listed worktree path"))
-        for raw_path in worktree_paths_from_porcelain(output)
-    }
-    if not paths:
-        raise IdentityUnavailableError("git returned no worktree paths")
-    return digest_worktree_paths(paths)
-
-
 def inspect_identity(requested_root: Path) -> dict[str, str]:
     if not requested_root.is_absolute():
         fail(MISMATCH, "requested root must be an absolute path")
@@ -135,8 +96,6 @@ def inspect_identity(requested_root: Path) -> dict[str, str]:
     if cwd != root:
         fail(MISMATCH, "current working directory is not the bound worktree root")
     toplevel_output = run_git(root, "rev-parse", "--show-toplevel")
-    if not isinstance(toplevel_output, str):
-        raise IdentityUnavailableError("git returned invalid toplevel data")
     toplevel = canonical_path(
         Path(toplevel_output.strip()),
         "git toplevel",
@@ -148,11 +107,6 @@ def inspect_identity(requested_root: Path) -> dict[str, str]:
     head_output = run_git(root, "rev-parse", "HEAD")
     git_dir_output = run_git(root, "rev-parse", "--git-dir")
     common_dir_output = run_git(root, "rev-parse", "--git-common-dir")
-    if not all(
-        isinstance(value, str)
-        for value in (head_output, git_dir_output, common_dir_output)
-    ):
-        raise IdentityUnavailableError("git returned invalid identity data")
 
     root_text = str(root)
     return {
@@ -170,7 +124,6 @@ def inspect_identity(requested_root: Path) -> dict[str, str]:
                 "git common directory",
             )
         ),
-        "worktreeSetDigest": worktree_set_digest(root),
     }
 
 
@@ -181,7 +134,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--branch")
     parser.add_argument("--workspace-id")
     parser.add_argument("--head")
-    parser.add_argument("--worktree-set-digest")
     return parser.parse_args()
 
 
@@ -196,7 +148,6 @@ def main() -> int:
         args.branch,
         args.workspace_id,
         args.head,
-        args.worktree_set_digest,
     )
     if args.capture:
         if any(value is not None for value in supplied):
@@ -206,14 +157,13 @@ def main() -> int:
     if any(value is None for value in supplied):
         fail(
             UNAVAILABLE,
-            "verification requires branch, workspace ID, HEAD, and worktree-set digest",
+            "verification requires branch, workspace ID, and HEAD",
         )
 
     expected = (
         ("branch", args.branch),
         ("workspaceId", args.workspace_id),
         ("head", args.head),
-        ("worktreeSetDigest", args.worktree_set_digest),
     )
     mismatched = [
         field

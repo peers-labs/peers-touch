@@ -353,7 +353,16 @@ def detect(
 
     if canonical_plan is not None:
         canonical_selected = set(gate_entries(canonical_plan))
-        supplied_selected = set(selected)
+        projected_candidates = plan.get("candidate_gates")
+        supplied_selected = (
+            {
+                str(gate_id)
+                for gate_id in projected_candidates
+                if isinstance(gate_id, str) and gate_id
+            }
+            if isinstance(projected_candidates, list)
+            else set(selected)
+        )
         missing_canonical_gates = sorted(
             canonical_selected - supplied_selected
         )

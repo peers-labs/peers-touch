@@ -198,6 +198,50 @@ class FoundationStationRestartTest(unittest.TestCase):
             run.call_args.args[0],
         )
 
+    def test_prearmed_remote_kill_waits_for_explicit_trigger(self) -> None:
+        process = Mock()
+        stdin = Mock()
+        process.stdin = stdin
+        process.stdout = Mock()
+        process.stdout.readline.return_value = "READY\n"
+        process.stderr = Mock()
+        process.communicate.return_value = (CONTAINER_ID, "")
+        process.returncode = 0
+        selector = Mock()
+        selector.select.return_value = [(Mock(), 1)]
+        with (
+            patch.object(
+                foundation_station_restart.subprocess,
+                "Popen",
+                return_value=process,
+            ) as popen,
+            patch.object(
+                foundation_station_restart.selectors,
+                "DefaultSelector",
+                return_value=selector,
+            ),
+        ):
+            armed = foundation_station_restart._ArmedRemoteKill(
+                {
+                    "PT_DEPLOY_HOST": "station.example",
+                    "PT_DEPLOY_USER": "acceptance",
+                },
+                CONTAINER_ID,
+                deadline=foundation_station_restart.time.monotonic() + 30,
+            )
+            result = armed.trigger(
+                deadline=foundation_station_restart.time.monotonic() + 30,
+            )
+
+        self.assertEqual(result, CONTAINER_ID)
+        stdin.write.assert_called_once_with("KILL\n")
+        stdin.flush.assert_called_once_with()
+        stdin.close.assert_called_once_with()
+        command = popen.call_args.args[0]
+        self.assertIn("BatchMode=yes", command)
+        self.assertIn("printf 'READY\\n'", command[-1])
+        self.assertIn(f"docker kill --signal KILL {CONTAINER_ID}", command[-1])
+
     def test_restart_is_source_bound_and_preserves_container_image(self) -> None:
         remote_outputs = iter(
             (
@@ -299,6 +343,9 @@ class FoundationStationRestartTest(unittest.TestCase):
             evidence = foundation_station_restart.restart_foundation_station(
                 runtime_manifest(),
                 repo_root=self.repo_root,
+                before_outage=lambda: phases.append(
+                    ("before-outage", 0.0)
+                ),
                 during_outage=lambda deadline: phases.append(
                     ("outage", deadline)
                 ),
@@ -309,9 +356,9 @@ class FoundationStationRestartTest(unittest.TestCase):
 
         self.assertEqual(
             [phase for phase, _deadline in phases],
-            ["outage", "restarted"],
+            ["before-outage", "outage", "restarted"],
         )
-        self.assertLess(phases[0][1], phases[1][1])
+        self.assertLess(phases[1][1], phases[2][1])
         stop_deadline = next(
             call.kwargs["deadline"]
             for call in remote.call_args_list
@@ -326,7 +373,7 @@ class FoundationStationRestartTest(unittest.TestCase):
             start_deadline - stop_deadline,
             foundation_station_restart.RESTORE_RESERVE_SECONDS,
         )
-        self.assertEqual(start_deadline, phases[1][1])
+        self.assertEqual(start_deadline, phases[2][1])
         self.assertIs(evidence["outageObserved"], True)
         self.assertEqual(evidence["deadlineSeconds"], 180)
         commands = [call.args[1] for call in remote.call_args_list]
@@ -336,6 +383,125 @@ class FoundationStationRestartTest(unittest.TestCase):
         )
         self.assertIn(f"docker start {CONTAINER_ID}", commands)
         self.assertFalse(any(command.startswith("docker restart") for command in commands))
+
+    def test_prearmed_outage_triggers_kill_before_outage_callback(self) -> None:
+        remote_outputs = iter(
+            (
+                CONTAINER_ID[:12],
+                inspect_payload("2026-08-28T00:00:00Z"),
+                CONTAINER_ID,
+                CONTAINER_ID[:12],
+                inspect_payload("2026-08-28T00:01:00Z"),
+            )
+        )
+        phases: list[str] = []
+        armed_kill = Mock()
+
+        def arm(*_args: object, **_kwargs: object) -> Mock:
+            phases.append("armed")
+            return armed_kill
+
+        def trigger(*, deadline: float) -> str:
+            self.assertGreater(deadline, 0)
+            phases.append("killed")
+            return CONTAINER_ID
+
+        armed_kill.trigger.side_effect = trigger
+        with (
+            patch.dict(os.environ, self.authorized_env),
+            patch.object(
+                foundation_station_restart,
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_station_version",
+                side_effect=(
+                    {"build_commit": SOURCE_COMMIT[:12]},
+                    {"build_commit": SOURCE_COMMIT[:12]},
+                ),
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_station_healthy",
+                side_effect=(False, True),
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_ArmedRemoteKill",
+                side_effect=arm,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+                side_effect=lambda *_args, **_kwargs: next(remote_outputs),
+            ) as remote,
+        ):
+            foundation_station_restart.restart_foundation_station(
+                runtime_manifest(),
+                repo_root=self.repo_root,
+                before_outage=lambda: phases.append("prepared"),
+                during_outage=lambda _deadline: phases.append("finalized"),
+                prearm_outage=True,
+            )
+
+        self.assertEqual(
+            phases,
+            ["armed", "prepared", "killed", "finalized"],
+        )
+        armed_kill.abort.assert_not_called()
+        commands = [call.args[1] for call in remote.call_args_list]
+        self.assertFalse(any("docker kill" in command for command in commands))
+        self.assertIn(f"docker start {CONTAINER_ID}", commands)
+
+    def test_prearmed_outage_aborts_when_prepare_fails(self) -> None:
+        armed_kill = Mock()
+        remote_outputs = iter(
+            (
+                CONTAINER_ID[:12],
+                inspect_payload("2026-08-28T00:00:00Z"),
+            )
+        )
+        with (
+            patch.dict(os.environ, self.authorized_env),
+            patch.object(
+                foundation_station_restart,
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_station_version",
+                return_value={"build_commit": SOURCE_COMMIT[:12]},
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_ArmedRemoteKill",
+                return_value=armed_kill,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+                side_effect=lambda *_args, **_kwargs: next(remote_outputs),
+            ) as remote,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "prepare failed"):
+                foundation_station_restart.restart_foundation_station(
+                    runtime_manifest(),
+                    repo_root=self.repo_root,
+                    before_outage=lambda: (_ for _ in ()).throw(
+                        RuntimeError("prepare failed")
+                    ),
+                    during_outage=lambda _deadline: None,
+                    prearm_outage=True,
+                )
+
+        armed_kill.abort.assert_called_once_with()
+        armed_kill.trigger.assert_not_called()
+        commands = [call.args[1] for call in remote.call_args_list]
+        self.assertFalse(any("docker kill" in command for command in commands))
+        self.assertFalse(any("docker start" in command for command in commands))
 
     def test_bounded_outage_restores_station_before_propagating_callback_error(
         self,
@@ -391,6 +557,49 @@ class FoundationStationRestartTest(unittest.TestCase):
 
         commands = [call.args[1] for call in remote.call_args_list]
         self.assertIn(f"docker start {CONTAINER_ID}", commands)
+
+    def test_before_outage_failure_prevents_station_mutation(self) -> None:
+        def fail_prepare() -> None:
+            raise RuntimeError("prepare failed")
+
+        remote_outputs = iter(
+            (
+                CONTAINER_ID[:12],
+                inspect_payload("2026-08-28T00:00:00Z"),
+            )
+        )
+        with (
+            patch.dict(
+                os.environ,
+                self.authorized_env,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_station_version",
+                return_value={"build_commit": SOURCE_COMMIT[:12]},
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+                side_effect=lambda *_args, **_kwargs: next(remote_outputs),
+            ) as remote,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "prepare failed"):
+                foundation_station_restart.restart_foundation_station(
+                    runtime_manifest(),
+                    repo_root=self.repo_root,
+                    before_outage=fail_prepare,
+                    during_outage=lambda _deadline: None,
+                )
+
+        commands = [call.args[1] for call in remote.call_args_list]
+        self.assertFalse(any("docker kill" in command for command in commands))
+        self.assertFalse(any("docker start" in command for command in commands))
 
     def test_bounded_outage_restores_after_kill_identity_error(self) -> None:
         remote_outputs = iter(

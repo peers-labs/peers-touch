@@ -1,8 +1,10 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: profile profile-authorize profile-init profiles config \
+.PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
+        profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        plan-bind plan-binding plan-validate plan-status plan-current plan-next \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -10,12 +12,24 @@
         mobile mobile-stop mobile-restart \
         status stop restart
 
+DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
+MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
+DEV_APP_SCRIPT := apps/dev/server/index.mjs
+PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
+PLAN_BINDING_SCRIPT := tooling/scripts/plan/workspace-plan-binding.mjs
+ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
 SLOT_ARG := $(or $(SLOT),0)
+ENV_OWNER_ARG := $(or $(OWNER),$(shell git config user.email 2>/dev/null))
+ENV_CAPABILITIES_ARG := $(CAPABILITIES)
+ENV_PURPOSE_ARG := $(PURPOSE)
+ENV_BUDGET_SECONDS_ARG := $(or $(BUDGET_SECONDS),1200)
 DEV_WORK_ITEM_ARG := $(or $(WORK_ITEM),$(DEV_WORK_ITEM))
 DEV_SESSION_ARG := $(or $(SESSION),$(DEV_SESSION))
 DEV_JOURNEY_ARG := $(or $(JOURNEY),$(DEV_JOURNEY))
+DEV_PLAN_ARG := $(or $(DEV_PLAN),$(PLAN))
+DEV_TASK_ARG := $(or $(DEV_TASK),$(TASK))
 DEV_OWNER_EXPLICIT_ARG := $(or $(OWNER),$(DEV_OWNER))
 DEV_OWNER_ARG := $(or $(DEV_OWNER_EXPLICIT_ARG),$(shell git config user.email 2>/dev/null))
 DEV_PURPOSE_ARG := $(or $(PURPOSE),$(DEV_PURPOSE))
@@ -25,9 +39,72 @@ DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
 
+env-register:
+	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
+		echo "Usage: make env-register PROFILE=<name> SLOT=<n> CAPABILITIES='station.connect[,station.deploy]' PURPOSE='<text>'"; \
+		exit 1; \
+	fi
+	@node $(MACHINE_DEV_SCRIPT) register \
+		--profile "$(PROFILE)" \
+		--slot "$(SLOT)" \
+		--capabilities "$(ENV_CAPABILITIES_ARG)" \
+		--purpose "$(ENV_PURPOSE_ARG)" \
+		--owner "$(ENV_OWNER_ARG)"
+
+env-update:
+	@node $(MACHINE_DEV_SCRIPT) update \
+		$(if $(PROFILE),--profile "$(PROFILE)",) \
+		$(if $(SLOT),--slot "$(SLOT)",) \
+		$(if $(ENV_CAPABILITIES_ARG),--capabilities "$(ENV_CAPABILITIES_ARG)",) \
+		$(if $(ENV_PURPOSE_ARG),--purpose "$(ENV_PURPOSE_ARG)",) \
+		$(if $(OWNER),--owner "$(OWNER)",)
+
+env-check:
+	@node $(MACHINE_DEV_SCRIPT) check \
+		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",) \
+		$(if $(PROFILE),--profile "$(PROFILE)",) \
+		$(if $(SLOT),--slot "$(SLOT)",) \
+		$(if $(ENV_CAPABILITIES_ARG),--capabilities "$(ENV_CAPABILITIES_ARG)",) \
+		--budget-seconds "$(ENV_BUDGET_SECONDS_ARG)"
+
+env-status-all:
+	@node $(MACHINE_DEV_SCRIPT) status-all
+
+dev-ui:
+	@node $(DEV_APP_SCRIPT) serve --env-repo "$(ENV_REPO_ARG)"
+
+dev-ui-snapshot:
+	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
+
+plan-bind:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-bind PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLAN_BINDING_SCRIPT) bind \
+		--repo-root "$(CURDIR)" \
+		--plan "$(PLAN)" \
+		--owner "$(DEV_OWNER_ARG)"
+
+plan-binding:
+	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
+
+plan-validate:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) validate --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-status:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-status PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) status --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-current:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-current PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) current --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-next:
+	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-next PLAN=<package-plan.md>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) next --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
 profile:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh activate $(PROFILE_ARG)
+	@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"
 
 profile-authorize:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-authorize <name> [SLOT=0]  or  make profile-authorize PROFILE=<name> [SLOT=0]"; exit 1; fi
@@ -38,14 +115,14 @@ profile-init:
 	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE_ARG)
 
 profiles:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh list
+	@$(DEVCTL) profile list
 
 config:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/config.sh
+	@$(DEVCTL) config
 
 dev-start:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_PURPOSE_ARG)" ] || [ -z "$(DEV_SOURCE_CLAIMS_ARG)" ]; then \
-		echo "Usage: make dev-start WORK_ITEM=<id> PURPOSE='<text>' SOURCE_CLAIMS='<mode>:<path>[;...]' [JOURNEY=<id>] [RUNTIME_CLAIMS='<mode>:<kind>:<id>[;...]']"; \
+		echo "Usage: make dev-start WORK_ITEM=<id> PURPOSE='<text>' SOURCE_CLAIMS='<mode>:<path>[;...]' [PLAN=<path> TASK=<id>] [JOURNEY=<id>] [RUNTIME_CLAIMS='<mode>:<kind>:<id>[;...]']"; \
 		exit 1; \
 	fi
 	@node $(DEV_WORK_SCRIPT) start \
@@ -56,7 +133,9 @@ dev-start:
 		--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)" \
 		--expires-minutes "$(DEV_EXPIRES_MINUTES_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",) \
-		$(if $(DEV_JOURNEY_ARG),--journey "$(DEV_JOURNEY_ARG)",)
+		$(if $(DEV_JOURNEY_ARG),--journey "$(DEV_JOURNEY_ARG)",) \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",) \
+		$(if $(DEV_TASK_ARG),--task "$(DEV_TASK_ARG)",)
 
 dev-update:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-update WORK_ITEM=<id> [SOURCE_CLAIMS='...'] [RUNTIME_CLAIMS='...']"; exit 1; fi
@@ -68,7 +147,9 @@ dev-update:
 		$(if $(DEV_OWNER_EXPLICIT_ARG),--owner "$(DEV_OWNER_EXPLICIT_ARG)",) \
 		$(if $(DEV_PURPOSE_ARG),--purpose "$(DEV_PURPOSE_ARG)",) \
 		$(if $(DEV_SOURCE_CLAIMS_ARG),--source-claims "$(DEV_SOURCE_CLAIMS_ARG)",) \
-		$(if $(DEV_RUNTIME_CLAIMS_SPECIFIED),--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)",)
+		$(if $(DEV_RUNTIME_CLAIMS_SPECIFIED),--runtime-claims "$(DEV_RUNTIME_CLAIMS_ARG)",) \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",) \
+		$(if $(DEV_TASK_ARG),--task "$(DEV_TASK_ARG)",)
 
 dev-status:
 	@node $(DEV_WORK_SCRIPT) status $(if $(DEV_WORK_ITEM_ARG),--work-item "$(DEV_WORK_ITEM_ARG)",)
@@ -96,76 +177,76 @@ dev-release:
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
 
 station:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-dev.sh
+	@$(DEVCTL) station start
 
 station-check:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-check.sh
+	@$(DEVCTL) station check
 
 station-status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-status.sh
+	@$(DEVCTL) station status
 
 station-logs:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-logs.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/station-logs.sh
 
 station-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh station
+	@$(DEVCTL) station stop
 
 station-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh station
+	@$(DEVCTL) station restart
 
 relay:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-dev.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-dev.sh
 
 relay-check:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-check.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-check.sh
 
 relay-status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-status.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-status.sh
 
 relay-logs:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-logs.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-logs.sh
 
 relay-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh relay
+	@bash $(LOCAL_DEV_SCRIPTS)/stop.sh relay
 
 relay-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
+	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app
+	@$(DEVCTL) desktop start --mode app
 
 desktop-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
+	@$(DEVCTL) desktop stop --mode app
 
 desktop-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop
+	@$(DEVCTL) desktop restart --mode app
 
 desktop-web:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh web
+	@$(DEVCTL) desktop start --mode web
 
 desktop-web-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
+	@$(DEVCTL) desktop stop --mode web
 
 desktop-web-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop-web
+	@$(DEVCTL) desktop restart --mode web
 
 mobile:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
 
 mobile-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
+	@bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
 
 mobile-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh mobile
+	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh mobile
 
 status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/status.sh
+	@$(DEVCTL) status
 
 stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh all
+	@$(DEVCTL) stop all
 
 restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh all
+	@$(DEVCTL) restart all
 
 .DEFAULT:
 	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-authorize" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \

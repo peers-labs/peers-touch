@@ -1,8 +1,7 @@
-use super::attachment_validation::{
-    validate_encrypted_object_descriptor, ATTACHMENT_MAX_PLAINTEXT_SIZE,
-};
+use crate::attachment::validate_chat_encrypted_object_descriptor;
 use crate::proto::chat::{AttachmentPlaintextMetadata, MessagePrivateContent};
 use prost::Message;
+use secure_content_core::object::OBJECT_MAX_PLAINTEXT_SIZE;
 use std::collections::HashSet;
 
 pub const MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION: u32 = 1;
@@ -62,7 +61,7 @@ pub fn validate_message_private_content(content: &MessagePrivateContent) -> Resu
             .checked_add(attachment.plaintext_size)
             .ok_or_else(|| "messaging attachment aggregate size exceeds policy".to_string())?;
     }
-    if total_plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE {
+    if total_plaintext_size > OBJECT_MAX_PLAINTEXT_SIZE {
         return Err("messaging attachment aggregate size exceeds policy".to_string());
     }
     Ok(())
@@ -81,16 +80,15 @@ pub fn validate_attachment_plaintext_metadata(
         || attachment.mime_type.trim().is_empty()
         || attachment.mime_type.len() > 255
         || attachment.plaintext_size == 0
-        || attachment.plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE
+        || attachment.plaintext_size > OBJECT_MAX_PLAINTEXT_SIZE
         || attachment.plaintext_sha256.len() != 32
         || attachment.object_key.len() != 32
         || attachment.base_nonce.len() != 12
         || attachment.base_nonce[8..] != [0, 0, 0, 0]
-        || attachment.mime_type != object.media_type
     {
         return Err("messaging attachment private metadata is invalid".to_string());
     }
-    validate_encrypted_object_descriptor(object)?;
+    validate_chat_encrypted_object_descriptor(object)?;
     let expected_chunk_count = attachment
         .plaintext_size
         .div_ceil(u64::from(object.chunk_size));
@@ -107,14 +105,14 @@ pub fn validate_attachment_plaintext_metadata(
 
 #[cfg(test)]
 pub(crate) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlaintextMetadata {
-    use super::attachment_validation::{ATTACHMENT_CHUNK_SIZE, ATTACHMENT_TAG_SIZE};
     use crate::proto::chat::{
         AttachmentEncryptionSuite, AttachmentNonceStrategy, EncryptedObjectDescriptor,
     };
+    use secure_content_core::object::{OBJECT_CHUNK_SIZE, OBJECT_TAG_SIZE};
     use sha2::{Digest, Sha256};
 
     let plaintext_size = 7_u64;
-    let ciphertext = vec![3_u8; plaintext_size as usize + ATTACHMENT_TAG_SIZE as usize];
+    let ciphertext = vec![3_u8; plaintext_size as usize + OBJECT_TAG_SIZE as usize];
     AttachmentPlaintextMetadata {
         attachment_id: attachment_id.to_string(),
         filename: "report.txt".to_string(),
@@ -128,11 +126,11 @@ pub(crate) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
             storage_ref: format!("opaque/{attachment_id}"),
             ciphertext_size: ciphertext.len() as u64,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            media_type: "text/plain".to_string(),
-            chunk_size: ATTACHMENT_CHUNK_SIZE,
+            media_type: "application/octet-stream".to_string(),
+            chunk_size: OBJECT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,
-            tag_size: ATTACHMENT_TAG_SIZE,
+            tag_size: OBJECT_TAG_SIZE,
             nonce_strategy: AttachmentNonceStrategy::Counter32Be as i32,
             chunk_ciphertext_sha256: vec![Sha256::digest(&ciphertext).to_vec()],
         }),

@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -124,11 +124,15 @@ class SyntheticRemoteNativeLifecycle:
             "activate_process",
             "focused_control",
             "reveal_file_chooser_location_to_process",
+            "select_file_chooser_path_to_process",
         }:
             return {
                 "kind": (
                     "text-field"
-                    if operation == "reveal_file_chooser_location_to_process"
+                    if operation in {
+                        "reveal_file_chooser_location_to_process",
+                        "select_file_chooser_path_to_process",
+                    }
                     else "window"
                 ),
                 "actualFrontmostPid": payload["processId"],
@@ -228,10 +232,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         revealed_control = (
             binding.native_adapter.reveal_file_chooser_location_to_process(712)
         )
+        path_control = binding.native_adapter.select_file_chooser_path_to_process(
+            712,
+            r"C:\acceptance\fixture.png",
+        )
         activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
         self.assertIsNotNone(revealed_control)
         self.assertEqual(revealed_control.kind, "text-field")
+        self.assertIsNotNone(path_control)
+        self.assertEqual(path_control.kind, "text-field")
         self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
@@ -279,6 +289,19 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (
                 "execute_adapter",
                 (
+                    "select_file_chooser_path_to_process",
+                    {
+                        "processId": 712,
+                        "path": r"C:\acceptance\fixture.png",
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
                     "post_key_sequence_to_process",
                     {
                         "processId": 712,
@@ -316,6 +339,29 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             binding.native_file_sha256("alice", staged),
             "b" * 64,
+        )
+
+    def test_windows_clipboard_write_retries_one_broker_failure(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            r"C:\acceptance\actors\alice\fixture.png"
+        )
+        lifecycle.execute_adapter = Mock(
+            side_effect=[DriverError("broker timeout"), {}],
+        )
+        binding = WindowsNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+
+        binding.native_adapter.write_clipboard(b"replacement")
+
+        self.assertEqual(lifecycle.execute_adapter.call_count, 2)
+        lifecycle.execute_adapter.assert_called_with(
+            "write_clipboard",
+            {
+                "content": base64.b64encode(b"replacement").decode("ascii"),
+            },
         )
 
     def test_remote_binding_delegates_session_endpoint_and_cleanup(self) -> None:
@@ -541,6 +587,101 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(session.launcher.gateway_port, 3140)
         self.assertEqual(session.launcher.renderer_port, 3410)
         self.assertEqual(session.launcher.profile, "chat-native-alice")
+
+    def test_make_launcher_uses_allocated_ports_after_managed_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "peers-group-chat"
+            active = root / ".local" / "dev" / "active"
+            profiles = root / ".local" / "dev" / "profiles"
+            active.mkdir(parents=True)
+            profiles.mkdir(parents=True)
+            (root / "Makefile").write_text("desktop-stop:\n\t@true\n", encoding="utf-8")
+            profile = profiles / "four.env"
+            profile.write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=four",
+                        "PT_DEV_SLOT=3",
+                        "PT_DESKTOP_APP_GATEWAY_PORT=3140",
+                        "PT_DESKTOP_APP_WEB_PORT=3410",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (active / "peers-group-chat.env").symlink_to(
+                Path("..") / "profiles" / "four.env"
+            )
+            launcher = MakeDesktopLauncher(
+                worktree=root,
+                port=4476,
+                gateway_port=3141,
+                renderer_port=3411,
+                profile="four-app",
+                storage_root=str(root / "storage"),
+            )
+            process = Mock(pid=1234)
+            process.poll.return_value = 0
+            response = Mock()
+
+            with patch(
+                "tooling.acceptance.drivers.tauri.subprocess.Popen",
+                return_value=process,
+            ), patch(
+                "tooling.acceptance.drivers.tauri.urllib.request.urlopen",
+                return_value=response,
+            ), patch.object(
+                launcher,
+                "_managed_process_pid",
+                return_value=5678,
+            ), patch.object(
+                launcher,
+                "_owned_listener_pid",
+                return_value=9012,
+            ) as owned_listener:
+                metadata = launcher.start()
+
+            self.assertEqual(metadata.process_id, 9012)
+            owned_listener.assert_called_once_with(4476, 5678)
+            runtime_profile = Path(
+                launcher._launch_environment["PT_DEV_PROFILE_FILE"]
+            )
+            rendered = runtime_profile.read_text(encoding="utf-8")
+            self.assertIn("PT_DEV_PROFILE=four-app", rendered)
+            self.assertIn("PT_DESKTOP_APP_GATEWAY_PORT=3141", rendered)
+            self.assertIn("PT_DESKTOP_APP_WEB_PORT=3411", rendered)
+            self.assertEqual(
+                launcher._launch_environment[
+                    "PT_DEV_PROFILE_FILE_AUTHORITY"
+                ],
+                "acceptance-runtime-manifest",
+            )
+            self.assertEqual(
+                launcher._launch_environment["PT_DESKTOP_E2E"],
+                "true",
+            )
+            self.assertEqual(
+                launcher._launch_environment["VITE_ACCEPTANCE_HARNESS"],
+                "1",
+            )
+            self.assertEqual(
+                launcher._launch_environment["TAURI_WEBDRIVER_PORT"],
+                "4476",
+            )
+
+            stopped = Mock(returncode=0, stdout="", stderr="")
+            runtime_profile_root = runtime_profile.parent
+            with patch(
+                "tooling.acceptance.drivers.tauri.subprocess.run",
+                return_value=stopped,
+            ) as run:
+                launcher.stop()
+
+            self.assertIn(
+                ["make", "desktop-stop"],
+                [call.args[0] for call in run.call_args_list],
+            )
+            self.assertFalse(runtime_profile_root.exists())
 
     def test_macos_cleanup_retains_persistent_client_storage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

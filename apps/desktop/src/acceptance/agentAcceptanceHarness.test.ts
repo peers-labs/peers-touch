@@ -6,6 +6,8 @@ import {
   CapabilityApprovalPolicy,
   CapabilityManifestSchema,
   CapabilitySourceKind,
+  ConnectorResourceManifestSchema,
+  type ConnectorResourceManifest,
 } from '../gen/proto/domain/agent/capability_pb';
 
 const mocks = vi.hoisted(() => ({
@@ -46,6 +48,7 @@ const mocks = vi.hoisted(() => ({
       provider: string;
       status: 'connected';
     }>,
+    resourceManifests: [] as ConnectorResourceManifest[],
     loadConnectors: vi.fn(),
   },
 }));
@@ -98,6 +101,14 @@ const connectorBinding = create(AgentCapabilityBindingSchema, {
   approvalPolicy: CapabilityApprovalPolicy.MANUAL,
   revision: 4n,
 });
+const connectorResource = create(ConnectorResourceManifestSchema, {
+  connectorId: 'github',
+  resourceId: 'connection.status',
+  toolManifests: [{
+    capabilityId: connectorManifest.capabilityId,
+    capabilityVersion: connectorManifest.version,
+  }],
+});
 
 function acceptanceHarness() {
   const harness = window.__PT_AGENT_ACCEPTANCE__;
@@ -118,6 +129,7 @@ describe('Agent acceptance harness capability authority', () => {
       provider: 'github',
       status: 'connected',
     }];
+    mocks.connectorState.resourceManifests = [connectorResource];
     mocks.api.listAgentCapabilityBindings.mockResolvedValue([
       knowledgeBinding,
       connectorBinding,
@@ -171,6 +183,7 @@ describe('Agent acceptance harness capability authority', () => {
         capabilityId: 'connector:github',
         capabilityVersion: 'legacy-v1',
         connectorId: 'github',
+        resourceId: 'connection.status',
         enabled: true,
         revision: '4',
       }],

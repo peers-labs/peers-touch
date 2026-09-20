@@ -64,7 +64,7 @@ Per-actor model list within a provider.
 | model_id | varchar(128) NOT NULL | Model identifier (e.g. "gpt-4.1", "Test-O-New-Thinking") |
 | display_name | varchar(256) | |
 | enabled | boolean NOT NULL DEFAULT true | |
-| capabilities_json | jsonb | {"vision": true, "tools": true, "reasoning": true, ...} |
+| capabilities_json | jsonb | Canonical runtime capability flags, e.g. `{"streaming":true,"native-tools":true,"reasoning":false}` |
 | context_window | integer | Token limit |
 | version | bigint NOT NULL DEFAULT 1 | Monotonic version |
 | created_at | timestamptz | |
@@ -170,15 +170,23 @@ POST /sub-agent/agent/model/list
 { provider_id }
 → { models: [CachedModel...] }
 
+POST /sub-agent/agent/model/create
+{ provider_id, model_id, display_name, enabled, context_window, capabilities: { flags: { "streaming": true, ... } } }
+→ 200: { model: CachedModel }
+
 POST /sub-agent/agent/model/fetch-remote
 { provider_id }
 → { models: [...newly discovered models...], version: N }
 
 POST /sub-agent/agent/model/update
-{ provider_id, model_id, version, changes: { enabled?, display_name? } }
+{ provider_id, model_id, version, enabled?, display_name?, context_window?, capabilities?: { flags: {...} } }
 → 200: { model: {..., version: N+1} }
 → 409: { error: "VERSION_CONFLICT", current_version: M }
 ```
+
+Capability keys are the canonical `RuntimeCapabilitySnapshot` IDs. A present
+`capabilities` message carries explicit overrides; `false` values are preserved
+so a user model override can disable a catalog capability.
 
 ### 3.4 Turn Stream (unchanged path, for reference)
 

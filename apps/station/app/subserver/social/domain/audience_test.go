@@ -38,6 +38,11 @@ func (v Viewer) following(authorPTIDs ...string) Viewer {
 	return v
 }
 
+func (v Viewer) friendsWith(actorPTIDs ...string) Viewer {
+	v.Friends = setStrings(actorPTIDs...)
+	return v
+}
+
 func (v Viewer) inCircles(ids ...uint64) Viewer {
 	v.MemberOfCircles = setU64(ids...)
 	return v
@@ -112,6 +117,35 @@ func TestCanRead_Followers(t *testing.T) {
 		ok, _ := CanRead(v, authorID, a, false)
 		if !ok {
 			t.Fatal("author always allowed")
+		}
+	})
+}
+
+func TestCanRead_Friends(t *testing.T) {
+	a := &model.Audience{Kind: model.Audience_FRIENDS}
+
+	for name, v := range map[string]Viewer{
+		"anonymous":     anon(),
+		"non-friend":    viewer(7, "did:peers:eve"),
+		"follower-only": viewer(8, "did:peers:bob").following(authorID),
+	} {
+		t.Run(name+" denied", func(t *testing.T) {
+			ok, _ := CanRead(v, authorID, a, false)
+			if ok {
+				t.Fatalf("%s should be denied for FRIENDS", name)
+			}
+		})
+	}
+
+	t.Run("accepted friend allowed", func(t *testing.T) {
+		ok, _ := CanRead(
+			viewer(7, "did:peers:bob").friendsWith(authorID),
+			authorID,
+			a,
+			false,
+		)
+		if !ok {
+			t.Fatal("accepted friend should be allowed")
 		}
 	})
 }

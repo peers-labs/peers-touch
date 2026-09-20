@@ -59,6 +59,28 @@ function reportFoundationLaunchContextDebug(
 }
 // #endregion
 
+// #region debug-point C-D:forbidden-actor-account-gate
+function reportFoundationForbiddenActorAccountGateDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'identityRuntime.ts:logout',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export function clearWarmResume(): void {
   try {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
@@ -116,15 +138,10 @@ function accountToSessionUser(account: AccountIdentity): SessionUser {
   };
 }
 
-async function loadKnownAccountUsers(sessionAuthenticated: boolean): Promise<SessionUser[]> {
+async function loadKnownAccountUsers(): Promise<SessionUser[]> {
   const accounts = await api.accountListRestorable();
   if (!Array.isArray(accounts) || accounts.length === 0) return [];
   const mapped = accounts.map(accountToSessionUser);
-  if (!sessionAuthenticated) {
-    mapped.forEach((account) => {
-      if (!account.hasPin) account.hasSession = false;
-    });
-  }
   return mapped;
 }
 
@@ -445,7 +462,7 @@ class IdentityRuntime {
     this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
     try {
       await useAccountIdentityStore.getState().load();
-      const refreshedAccounts = await loadKnownAccountUsers(true);
+      const refreshedAccounts = await loadKnownAccountUsers();
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [refreshedUser];
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: currentSessionUser() ?? refreshedUser });
     } catch {
@@ -466,14 +483,68 @@ class IdentityRuntime {
   };
 
   logout = async (): Promise<void> => {
+    // #region debug-point C-D:forbidden-actor-identity-logout
+    reportFoundationForbiddenActorAccountGateDebug('C-D', 'logout-entered', {
+      phaseKind: this.phase.kind,
+      lifecycleState: this.snapshot.lifecycle.state,
+      dataReady: this.dataReady,
+      authenticated: useSessionStore.getState().authenticated,
+    });
+    // #endregion
     this.dispatch({ type: 'LOGOUT_REQUESTED' });
+    // #region debug-point C-D:forbidden-actor-identity-logout-requested
+    reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'logout-requested-dispatched',
+      {
+        phaseKind: this.phase.kind,
+        lifecycleState: this.snapshot.lifecycle.state,
+        authenticated: useSessionStore.getState().authenticated,
+      },
+    );
+    // #endregion
     let cleanupError: unknown;
     try {
       await useSessionStore.getState().logout();
+      // #region debug-point C-D:forbidden-actor-session-logout-resolved
+      reportFoundationForbiddenActorAccountGateDebug(
+        'C-D',
+        'session-logout-resolved',
+        {
+          phaseKind: this.phase.kind,
+          authenticated: useSessionStore.getState().authenticated,
+        },
+      );
+      // #endregion
     } catch (error) {
       cleanupError = error;
+      // #region debug-point C-D:forbidden-actor-session-logout-rejected
+      reportFoundationForbiddenActorAccountGateDebug(
+        'C-D',
+        'session-logout-rejected',
+        {
+          phaseKind: this.phase.kind,
+          authenticated: useSessionStore.getState().authenticated,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      // #endregion
     }
     await this.loadAuthGate('logout', false);
+    // #region debug-point A-D:forbidden-actor-account-gate-loaded
+    reportFoundationForbiddenActorAccountGateDebug(
+      'A-D',
+      'account-gate-loaded',
+      {
+        phaseKind: this.phase.kind,
+        lifecycleState: this.snapshot.lifecycle.state,
+        dataReady: this.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+        knownAccountCount: this.knownAccounts.length,
+        cleanupErrorPresent: cleanupError !== undefined,
+      },
+    );
+    // #endregion
     if (cleanupError) {
       throw cleanupError;
     }
@@ -540,7 +611,7 @@ class IdentityRuntime {
     this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_STARTED' });
     try {
       await useAccountIdentityStore.getState().load();
-      const refreshedAccounts = await loadKnownAccountUsers(true);
+      const refreshedAccounts = await loadKnownAccountUsers();
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [reconciledUser];
       const latestUser = currentSessionUser() ?? reconciledUser;
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
@@ -568,7 +639,7 @@ class IdentityRuntime {
     const oauth2 = useOAuth2Store.getState();
     const [, restorableAccounts] = await Promise.all([
       oauth2.loadAll().catch(() => {}),
-      loadKnownAccountUsers(false).catch(() => [] as SessionUser[]),
+      loadKnownAccountUsers().catch(() => [] as SessionUser[]),
     ]);
     this.knownAccounts = restorableAccounts;
     this.dataReady = true;
@@ -584,8 +655,7 @@ class IdentityRuntime {
     }
     if (this.authGateIdentityUnsubscribe) return;
     const refreshKnownAccounts = () => {
-      const { authenticated } = useSessionStore.getState();
-      loadKnownAccountUsers(authenticated).then((accounts) => {
+      loadKnownAccountUsers().then((accounts) => {
         this.knownAccounts = accounts;
         this.emit();
       }).catch(() => {

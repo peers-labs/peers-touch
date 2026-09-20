@@ -386,6 +386,31 @@ class DomainContractClosureTests(unittest.TestCase):
         ):
             MODULE.latest_passed_gates(store, "", True)
 
+    def test_structural_validation_ignores_stale_proof_results(self) -> None:
+        store = self.latest_store(
+            json.dumps(
+                {
+                    "source": {
+                        **self.SOURCE,
+                        "commit": "stale-head",
+                    },
+                    "results": [
+                        {
+                            "id": "stale-gate",
+                            "status": "passed",
+                            "completionStatus": "DONE",
+                            "proofStatus": "PROVEN",
+                        }
+                    ],
+                }
+            )
+        )
+
+        self.assertEqual(
+            MODULE.latest_passed_gates(store, "", False),
+            set(),
+        )
+
     def test_current_results_supersede_stale_latest_source_identity(self) -> None:
         store = self.latest_store(
             json.dumps(
@@ -791,6 +816,15 @@ class DomainContractClosureTests(unittest.TestCase):
                 )
 
             self.assertEqual(report["domain"], "selected")
+            self.assertEqual(
+                report["artifactKind"],
+                "acceptance-domain-validation-report",
+            )
+            self.assertEqual(report["gate"], "selected-validation")
+            self.assertEqual(report["gateId"], "selected-validation")
+            self.assertEqual(report["phase"], "Acceptance Domain Validation")
+            self.assertEqual(report["bom"], ["selected-capability"])
+            self.assertEqual(report["spec"], ["selected-feature"])
             self.assertEqual(results[0]["status"], "structurally_valid")
 
     @staticmethod

@@ -462,11 +462,13 @@ class RemoteSourceSynchronizer:
                 tunnel,
                 local_server_started,
             ) = self._publish_source()
+            checkout_script = _remote_checkout_script()
+            windows_remote = request.remote_platform == RemotePlatform.WINDOWS
             remote = self.transport.run_argv(
                 [
                     _remote_python(request.remote_platform),
-                    "-c",
-                    _remote_checkout_script(),
+                    "-" if windows_remote else "-c",
+                    *(() if windows_remote else (checkout_script,)),
                     request.environment_name,
                     request.deploy_path,
                     fetch_kind,
@@ -482,6 +484,7 @@ class RemoteSourceSynchronizer:
                 ],
                 timeout=300,
                 check=False,
+                input_text=checkout_script if windows_remote else None,
             )
         finally:
             if tunnel is not None:

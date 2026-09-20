@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
@@ -19,16 +19,25 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  ListOrdered,
+  LogOut,
   Minimize2,
+  RotateCcw,
   Settings,
+  X,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
-import { parseAgentChatConfig, api } from '../../services/desktop_api';
+import {
+  api,
+  isAgentContextOverflowError,
+  parseAgentChatConfig,
+} from '../../services/desktop_api';
 import { EVENT, eventBus } from '../../kernel/events';
+import { identityRuntime } from '../../kernel/identityRuntime';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
@@ -350,7 +359,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryMessage = useChatStore(s => s.retryMessage);
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
+  const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
+  const syncTurnQueue = useChatStore(s => s.syncTurnQueue);
+  const requestComposerReferenceRemoval = useChatStore(
+    s => s.requestComposerReferenceRemoval,
+  );
+  const requestComposerResourceSelection = useChatStore(
+    s => s.requestComposerResourceSelection,
+  );
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
@@ -369,13 +386,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
-  const isContextOverflow =
-    message.typedError?.error_type === 'CONTEXT_OVERFLOW';
+  const isContextOverflow = isAgentContextOverflowError(message.typedError);
   const resolutionLabel = message.resolution?.label.startsWith('agent.')
     ? t(message.resolution.label, { ns: 'agent' })
     : message.resolution?.label;
@@ -383,7 +400,33 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     ? 'configure-credential'
     : message.resolution?.type === 'openOriginal'
       ? 'open-original'
-      : 'true';
+      : message.resolution?.type === 'openResult'
+        ? 'open-result'
+      : message.resolution?.type === 'editQueue'
+        ? 'edit-queue'
+        : message.resolution?.type === 'selectRuntime'
+          ? 'select-runtime'
+        : message.resolution?.type === 'retryLater'
+          ? 'retry-later'
+        : message.resolution?.type === 'retry'
+          ? 'retry'
+        : message.resolution?.type === 'inspectBudget'
+          ? 'inspect-budget'
+        : message.resolution?.type === 'switchAccount'
+          ? 'switch-account'
+        : message.resolution?.type === 'chooseCompatibleModel'
+          ? 'choose-compatible-model'
+          : message.resolution?.type === 'chooseTool'
+            ? 'choose-tool'
+          : message.resolution?.type === 'recover'
+            ? 'recover'
+            : message.resolution?.type === 'reconcile'
+              ? 'reconcile'
+            : message.resolution?.type === 'chooseResourceAgain'
+              ? 'choose-resource-again'
+            : message.resolution?.type === 'removeReference'
+              ? 'remove-reference'
+            : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -420,9 +463,87 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     void reloadTurnSnapshot(currentSessionKey);
   }, [currentSessionKey, reloadTurnSnapshot]);
 
+  const handleReconcileClientLease = useCallback(() => {
+    const resolution = message.resolution;
+    if (resolution?.type !== 'reconcile') return Promise.resolve();
+    if (!resolution.sessionId || !resolution.leaseId) {
+      throw new Error('agent.errors.clientLeaseExpired');
+    }
+    return reconcileClientLease(
+      currentSessionKey,
+      message.id,
+      resolution.sessionId,
+      resolution.leaseId,
+      message.turnId,
+    );
+  }, [
+    currentSessionKey,
+    message.id,
+    message.resolution,
+    message.turnId,
+    reconcileClientLease,
+  ]);
+
+  const handleEditQueue = useCallback(async () => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'editQueue'
+      || !resolution.conversationId
+      || resolution.conversationId !== currentSessionKey
+    ) {
+      throw new Error('agent.errors.queueFull');
+    }
+    await syncTurnQueue(resolution.conversationId);
+    const tray = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-turn-queue]'),
+    ).find((candidate) => (
+      candidate.dataset.ptAgentTurnQueue === resolution.conversationId
+      && candidate.getClientRects().length > 0
+    ));
+    if (!tray) {
+      throw new Error('agent.errors.queueFull');
+    }
+    tray.scrollIntoView({ block: 'nearest' });
+    tray.focus({ preventScroll: true });
+  }, [currentSessionKey, message.resolution, syncTurnQueue]);
+
   const handleOpenTurnDetails = useCallback(() => {
     if (message.turnId) openTurnDetails(message.id, message.turnId);
   }, [message.id, message.turnId, openTurnDetails]);
+
+  const handleInspectBudget = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'inspectBudget'
+      || !resolution.turnId
+      || resolution.turnId !== message.turnId
+    ) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(message.id, resolution.turnId);
+  }, [message.id, message.resolution, message.turnId, openTurnDetails, t]);
+
+  const handleOpenResult = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'openResult'
+      || !resolution.turnId
+      || resolution.turnId !== message.turnId
+      || resolution.terminalStatus !== message.terminalStatus
+    ) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(message.id, resolution.turnId);
+  }, [
+    message.id,
+    message.resolution,
+    message.terminalStatus,
+    message.turnId,
+    openTurnDetails,
+    t,
+  ]);
 
   const handleOpenOriginal = useCallback((turnId: string) => {
     const originalMessage = useChatStore.getState().messages.find(
@@ -438,6 +559,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     }
     openTurnDetails(originalMessage.id, turnId);
   }, [message.id, openTurnDetails, t]);
+
+  const handleChooseCompatibleModel = useCallback(() => {
+    if (!activeAgent) {
+      toast.error(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    setAgentSurface(activeAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }, [activeAgent, setAgentSurface, t]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -463,6 +593,52 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     }));
   }, [sendMessage, t]);
 
+  // #region debug-point R-T:lease-expired-message-render
+  useEffect(() => {
+    if (
+      import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1'
+      || (
+        message.typedError?.error_type !== 'CLIENT_LEASE_EXPIRED'
+        && !message.toolCalls?.some(
+          (toolCall) => toolCall.name === 'local_clipboard_read',
+        )
+      )
+    ) {
+      return;
+    }
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'lease-approval-stall',
+        runId: 'post-ui-projection-fix',
+        hypothesisId: 'R-T',
+        location: 'components/messages/AssistantMessage.tsx:render-projection',
+        msg: '[DEBUG] Assistant message render projection observed',
+        data: {
+          messageId: message.id,
+          role: message.role,
+          turnId: message.turnId ?? null,
+          error: message.error ?? null,
+          errorType: message.typedError?.error_type ?? null,
+          resolution: message.resolution?.type ?? null,
+          loading: message.loading === true,
+          terminalStatus: message.terminalStatus ?? null,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [
+    message.error,
+    message.id,
+    message.loading,
+    message.resolution,
+    message.terminalStatus,
+    message.toolCalls,
+    message.turnId,
+    message.typedError,
+  ]);
+  // #endregion
+
   return (
     <Flexbox
       data-pt-agent-message="assistant"
@@ -470,7 +646,26 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-terminal-status={message.terminalStatus}
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
+      data-pt-agent-error-resource-ref-hash={message.typedError?.details.resource_ref_hash}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
+      data-pt-agent-error-terminal-status={message.typedError?.details.terminal_status}
+      data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
+      data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
+      data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
+      data-pt-agent-error-provider-id={message.typedError?.details.provider_id}
+      data-pt-agent-error-model-id={message.typedError?.details.model_id}
+      data-pt-agent-error-deadline={message.typedError?.details.deadline}
+      data-pt-agent-error-retry-after-ms={message.typedError?.details.retry_after_ms}
+      data-pt-agent-error-tool-id={message.typedError?.details.tool_id}
+      data-pt-agent-error-tool-version={message.typedError?.details.tool_version}
+      data-pt-agent-error-budget-kind={message.typedError?.details.budget_kind}
+      data-pt-agent-error-budget-limit={message.typedError?.details.limit}
+      data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
+      data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
+      data-pt-agent-error-session-id={message.typedError?.details.session_id}
+      data-pt-agent-error-lease-id={message.typedError?.details.lease_id}
+      data-pt-agent-error-expired-at={message.typedError?.details.expired_at}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -562,19 +757,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               <span style={{ fontSize: 12 }}>
                 {t(`chat.message.budget.kind.${message.budgetNotice.kind}`, {
                   limit: message.budgetNotice.limit,
-                  consumed: message.budgetNotice.consumed,
                 })}
               </span>
-              <Flexbox horizontal gap={8}>
-                <Button size="small" onClick={handleRetry}>
-                  {t('chat.message.budget.retry')}
+              {message.resolution?.type === 'inspectBudget' && (
+                <Button
+                  data-pt-agent-message-error-recovery="inspect-budget"
+                  icon={<Activity size={14} />}
+                  size="small"
+                  type="primary"
+                  onClick={handleInspectBudget}
+                >
+                  {resolutionLabel}
                 </Button>
-                {message.turnId && (
-                  <Button size="small" type="text" onClick={handleOpenTurnDetails}>
-                    {t('chat.message.action.turnDetails')}
-                  </Button>
-                )}
-              </Flexbox>
+              )}
             </Flexbox>
           )}
 
@@ -583,6 +778,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             <ToolCallsBlock
               toolCalls={message.toolCalls}
               messageId={message.id}
+              turnId={message.turnId}
               onRequestAgain={handleRetry}
             />
           )}
@@ -684,6 +880,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           {message.error && !message.budgetNotice && (
             <div
               className="selectable"
+              data-pt-agent-error-conversation-id={
+                message.resolution?.type === 'editQueue'
+                  ? message.resolution.conversationId
+                  : undefined
+              }
+              data-pt-agent-error-queue-capacity={
+                message.resolution?.type === 'editQueue'
+                  ? message.resolution.capacity
+                  : undefined
+              }
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -699,7 +905,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             >
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
-                <div>{presentedError}</div>
+                <div data-pt-agent-message-error-text={message.error}>{presentedError}</div>
                 {isContextOverflow && (
                   <Button
                     data-pt-agent-message-error-recovery="reduce-context"
@@ -718,13 +924,50 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     data-pt-agent-message-error-recovery={resolutionTarget}
                     type="primary"
                     size="small"
-                    danger={message.resolution.type !== 'openOriginal'}
+                    danger={
+                      message.resolution.type !== 'openOriginal'
+                      && message.resolution.type !== 'openResult'
+                      && message.resolution.type !== 'editQueue'
+                      && message.resolution.type !== 'selectRuntime'
+                      && message.resolution.type !== 'retryLater'
+                      && message.resolution.type !== 'retry'
+                      && message.resolution.type !== 'inspectBudget'
+                      && message.resolution.type !== 'switchAccount'
+                      && message.resolution.type !== 'chooseCompatibleModel'
+                      && message.resolution.type !== 'chooseTool'
+                      && message.resolution.type !== 'chooseResourceAgain'
+                      && message.resolution.type !== 'reconcile'
+                      && message.resolution.type !== 'recover'
+                    }
                     icon={
                       message.resolution.type === 'openProviderSettings'
+                      || message.resolution.type === 'chooseCompatibleModel'
+                      || message.resolution.type === 'chooseTool'
+                      || message.resolution.type === 'selectRuntime'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
-                          : undefined
+                          : message.resolution.type === 'openResult'
+                            ? <Activity size={14} />
+                          : message.resolution.type === 'editQueue'
+                            ? <ListOrdered size={14} />
+                            : message.resolution.type === 'switchAccount'
+                              ? <LogOut size={14} />
+                            : message.resolution.type === 'retryLater'
+                              ? <RotateCcw size={14} />
+                            : message.resolution.type === 'retry'
+                              ? <RotateCcw size={14} />
+                            : message.resolution.type === 'inspectBudget'
+                              ? <Activity size={14} />
+                            : message.resolution.type === 'recover'
+                              ? <RotateCcw size={14} />
+                              : message.resolution.type === 'reconcile'
+                                ? <RotateCcw size={14} />
+                              : message.resolution.type === 'chooseResourceAgain'
+                                ? <FileText size={14} />
+                              : message.resolution.type === 'removeReference'
+                                ? <X size={14} />
+                                : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -740,6 +983,64 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         if (message.resolution!.type === 'openOriginal') {
                           handleOpenOriginal(
                             message.resolution!.existingCommandId ?? '',
+                          );
+                          return;
+                        }
+                        if (message.resolution!.type === 'openResult') {
+                          handleOpenResult();
+                          return;
+                        }
+                        if (message.resolution!.type === 'editQueue') {
+                          await handleEditQueue();
+                          return;
+                        }
+                        if (message.resolution!.type === 'selectRuntime') {
+                          handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'retryLater') {
+                          await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'retry') {
+                          await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'inspectBudget') {
+                          handleInspectBudget();
+                          return;
+                        }
+                        if (message.resolution!.type === 'switchAccount') {
+                          await identityRuntime.logout();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseCompatibleModel') {
+                          handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseTool') {
+                          handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'recover') {
+                          await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'reconcile') {
+                          await handleReconcileClientLease();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseResourceAgain') {
+                          requestComposerResourceSelection(
+                            message.resolution!.resourceKind ?? '',
+                            message.resolution!.resourceRefHash ?? '',
+                          );
+                          return;
+                        }
+                        if (message.resolution!.type === 'removeReference') {
+                          requestComposerReferenceRemoval(
+                            message.resolution!.referenceKind ?? '',
+                            message.resolution!.referenceHash ?? '',
                           );
                           return;
                         }

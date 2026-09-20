@@ -31,6 +31,7 @@ interface ConnectorBindingSnapshot {
   capabilityId: string;
   capabilityVersion: string;
   connectorId: string;
+  resourceId: string;
   enabled: boolean;
   revision: string;
 }
@@ -205,18 +206,26 @@ export function installAgentAcceptanceHarness(): void {
         connectorStore.loadConnectors(),
         listBindingsBySource(agentId, CapabilitySourceKind.CONNECTOR),
       ]);
+      const resources = useAgentConnectorStore.getState().resourceManifests;
       return {
         available: useAgentConnectorStore.getState().availableConnectors,
         configured: projections
           .filter(({ binding }) => binding.enabled && !binding.tombstonedAt)
-          .map(({ binding, manifest }) => ({
-            bindingId: binding.bindingId,
-            capabilityId: binding.capabilityId,
-            capabilityVersion: binding.capabilityVersion,
-            connectorId: manifest.sourceInstanceId,
-            enabled: binding.enabled,
-            revision: binding.revision.toString(),
-          })),
+          .flatMap(({ binding, manifest }) => {
+            const resource = resources.find((candidate) =>
+              candidate.toolManifests.some((reference) =>
+                reference.capabilityId === manifest.capabilityId
+                && reference.capabilityVersion === manifest.version));
+            return resource ? [{
+              bindingId: binding.bindingId,
+              capabilityId: binding.capabilityId,
+              capabilityVersion: binding.capabilityVersion,
+              connectorId: resource.connectorId,
+              resourceId: resource.resourceId,
+              enabled: binding.enabled,
+              revision: binding.revision.toString(),
+            }] : [];
+          }),
       };
     },
 

@@ -845,526 +845,6 @@ func (x *ListTopicCommentsResponse) GetComments() []*TopicComment {
 	return nil
 }
 
-type EvalDatasetItem struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Input          string                 `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
-	ExpectedOutput string                 `protobuf:"bytes,3,opt,name=expected_output,json=expectedOutput,proto3" json:"expected_output,omitempty"`
-	Tags           []string               `protobuf:"bytes,4,rep,name=tags,proto3" json:"tags,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *EvalDatasetItem) Reset() {
-	*x = EvalDatasetItem{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EvalDatasetItem) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EvalDatasetItem) ProtoMessage() {}
-
-func (x *EvalDatasetItem) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EvalDatasetItem.ProtoReflect.Descriptor instead.
-func (*EvalDatasetItem) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *EvalDatasetItem) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *EvalDatasetItem) GetInput() string {
-	if x != nil {
-		return x.Input
-	}
-	return ""
-}
-
-func (x *EvalDatasetItem) GetExpectedOutput() string {
-	if x != nil {
-		return x.ExpectedOutput
-	}
-	return ""
-}
-
-func (x *EvalDatasetItem) GetTags() []string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
-}
-
-type EvalDataset struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Items         []*EvalDatasetItem     `protobuf:"bytes,4,rep,name=items,proto3" json:"items,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EvalDataset) Reset() {
-	*x = EvalDataset{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EvalDataset) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EvalDataset) ProtoMessage() {}
-
-func (x *EvalDataset) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EvalDataset.ProtoReflect.Descriptor instead.
-func (*EvalDataset) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *EvalDataset) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *EvalDataset) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *EvalDataset) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *EvalDataset) GetItems() []*EvalDatasetItem {
-	if x != nil {
-		return x.Items
-	}
-	return nil
-}
-
-func (x *EvalDataset) GetCreatedAt() string {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return ""
-}
-
-type CreateEvalDatasetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	Items         []*EvalDatasetItem     `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateEvalDatasetRequest) Reset() {
-	*x = CreateEvalDatasetRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateEvalDatasetRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateEvalDatasetRequest) ProtoMessage() {}
-
-func (x *CreateEvalDatasetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateEvalDatasetRequest.ProtoReflect.Descriptor instead.
-func (*CreateEvalDatasetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *CreateEvalDatasetRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CreateEvalDatasetRequest) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *CreateEvalDatasetRequest) GetItems() []*EvalDatasetItem {
-	if x != nil {
-		return x.Items
-	}
-	return nil
-}
-
-type CreateEvalDatasetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Dataset       *EvalDataset           `protobuf:"bytes,1,opt,name=dataset,proto3" json:"dataset,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateEvalDatasetResponse) Reset() {
-	*x = CreateEvalDatasetResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateEvalDatasetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateEvalDatasetResponse) ProtoMessage() {}
-
-func (x *CreateEvalDatasetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateEvalDatasetResponse.ProtoReflect.Descriptor instead.
-func (*CreateEvalDatasetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *CreateEvalDatasetResponse) GetDataset() *EvalDataset {
-	if x != nil {
-		return x.Dataset
-	}
-	return nil
-}
-
-type UpdateEvalDatasetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Items         []*EvalDatasetItem     `protobuf:"bytes,4,rep,name=items,proto3" json:"items,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateEvalDatasetRequest) Reset() {
-	*x = UpdateEvalDatasetRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateEvalDatasetRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateEvalDatasetRequest) ProtoMessage() {}
-
-func (x *UpdateEvalDatasetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateEvalDatasetRequest.ProtoReflect.Descriptor instead.
-func (*UpdateEvalDatasetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *UpdateEvalDatasetRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *UpdateEvalDatasetRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *UpdateEvalDatasetRequest) GetDescription() string {
-	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *UpdateEvalDatasetRequest) GetItems() []*EvalDatasetItem {
-	if x != nil {
-		return x.Items
-	}
-	return nil
-}
-
-type UpdateEvalDatasetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Dataset       *EvalDataset           `protobuf:"bytes,1,opt,name=dataset,proto3" json:"dataset,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateEvalDatasetResponse) Reset() {
-	*x = UpdateEvalDatasetResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateEvalDatasetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateEvalDatasetResponse) ProtoMessage() {}
-
-func (x *UpdateEvalDatasetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateEvalDatasetResponse.ProtoReflect.Descriptor instead.
-func (*UpdateEvalDatasetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *UpdateEvalDatasetResponse) GetDataset() *EvalDataset {
-	if x != nil {
-		return x.Dataset
-	}
-	return nil
-}
-
-type DeleteEvalDatasetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteEvalDatasetRequest) Reset() {
-	*x = DeleteEvalDatasetRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteEvalDatasetRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteEvalDatasetRequest) ProtoMessage() {}
-
-func (x *DeleteEvalDatasetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteEvalDatasetRequest.ProtoReflect.Descriptor instead.
-func (*DeleteEvalDatasetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *DeleteEvalDatasetRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type DeleteEvalDatasetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteEvalDatasetResponse) Reset() {
-	*x = DeleteEvalDatasetResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteEvalDatasetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteEvalDatasetResponse) ProtoMessage() {}
-
-func (x *DeleteEvalDatasetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteEvalDatasetResponse.ProtoReflect.Descriptor instead.
-func (*DeleteEvalDatasetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{23}
-}
-
-type ListEvalDatasetsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListEvalDatasetsRequest) Reset() {
-	*x = ListEvalDatasetsRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListEvalDatasetsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListEvalDatasetsRequest) ProtoMessage() {}
-
-func (x *ListEvalDatasetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListEvalDatasetsRequest.ProtoReflect.Descriptor instead.
-func (*ListEvalDatasetsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{24}
-}
-
-type ListEvalDatasetsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Datasets      []*EvalDataset         `protobuf:"bytes,1,rep,name=datasets,proto3" json:"datasets,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListEvalDatasetsResponse) Reset() {
-	*x = ListEvalDatasetsResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListEvalDatasetsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListEvalDatasetsResponse) ProtoMessage() {}
-
-func (x *ListEvalDatasetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListEvalDatasetsResponse.ProtoReflect.Descriptor instead.
-func (*ListEvalDatasetsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *ListEvalDatasetsResponse) GetDatasets() []*EvalDataset {
-	if x != nil {
-		return x.Datasets
-	}
-	return nil
-}
-
 type CustomPlugin struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1383,7 +863,7 @@ type CustomPlugin struct {
 
 func (x *CustomPlugin) Reset() {
 	*x = CustomPlugin{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[26]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1395,7 +875,7 @@ func (x *CustomPlugin) String() string {
 func (*CustomPlugin) ProtoMessage() {}
 
 func (x *CustomPlugin) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[26]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1408,7 +888,7 @@ func (x *CustomPlugin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CustomPlugin.ProtoReflect.Descriptor instead.
 func (*CustomPlugin) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CustomPlugin) GetId() string {
@@ -1496,7 +976,7 @@ type CreateCustomPluginRequest struct {
 
 func (x *CreateCustomPluginRequest) Reset() {
 	*x = CreateCustomPluginRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[27]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1508,7 +988,7 @@ func (x *CreateCustomPluginRequest) String() string {
 func (*CreateCustomPluginRequest) ProtoMessage() {}
 
 func (x *CreateCustomPluginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[27]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1521,7 +1001,7 @@ func (x *CreateCustomPluginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCustomPluginRequest.ProtoReflect.Descriptor instead.
 func (*CreateCustomPluginRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateCustomPluginRequest) GetName() string {
@@ -1582,7 +1062,7 @@ type CreateCustomPluginResponse struct {
 
 func (x *CreateCustomPluginResponse) Reset() {
 	*x = CreateCustomPluginResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[28]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1594,7 +1074,7 @@ func (x *CreateCustomPluginResponse) String() string {
 func (*CreateCustomPluginResponse) ProtoMessage() {}
 
 func (x *CreateCustomPluginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[28]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1607,7 +1087,7 @@ func (x *CreateCustomPluginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCustomPluginResponse.ProtoReflect.Descriptor instead.
 func (*CreateCustomPluginResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateCustomPluginResponse) GetPlugin() *CustomPlugin {
@@ -1634,7 +1114,7 @@ type UpdateCustomPluginRequest struct {
 
 func (x *UpdateCustomPluginRequest) Reset() {
 	*x = UpdateCustomPluginRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[29]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1646,7 +1126,7 @@ func (x *UpdateCustomPluginRequest) String() string {
 func (*UpdateCustomPluginRequest) ProtoMessage() {}
 
 func (x *UpdateCustomPluginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[29]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1659,7 +1139,7 @@ func (x *UpdateCustomPluginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCustomPluginRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCustomPluginRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UpdateCustomPluginRequest) GetId() string {
@@ -1734,7 +1214,7 @@ type UpdateCustomPluginResponse struct {
 
 func (x *UpdateCustomPluginResponse) Reset() {
 	*x = UpdateCustomPluginResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[30]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1746,7 +1226,7 @@ func (x *UpdateCustomPluginResponse) String() string {
 func (*UpdateCustomPluginResponse) ProtoMessage() {}
 
 func (x *UpdateCustomPluginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[30]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1759,7 +1239,7 @@ func (x *UpdateCustomPluginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCustomPluginResponse.ProtoReflect.Descriptor instead.
 func (*UpdateCustomPluginResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateCustomPluginResponse) GetPlugin() *CustomPlugin {
@@ -1778,7 +1258,7 @@ type DeleteCustomPluginRequest struct {
 
 func (x *DeleteCustomPluginRequest) Reset() {
 	*x = DeleteCustomPluginRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[31]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1790,7 +1270,7 @@ func (x *DeleteCustomPluginRequest) String() string {
 func (*DeleteCustomPluginRequest) ProtoMessage() {}
 
 func (x *DeleteCustomPluginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[31]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1803,7 +1283,7 @@ func (x *DeleteCustomPluginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCustomPluginRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCustomPluginRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteCustomPluginRequest) GetId() string {
@@ -1821,7 +1301,7 @@ type DeleteCustomPluginResponse struct {
 
 func (x *DeleteCustomPluginResponse) Reset() {
 	*x = DeleteCustomPluginResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[32]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1833,7 +1313,7 @@ func (x *DeleteCustomPluginResponse) String() string {
 func (*DeleteCustomPluginResponse) ProtoMessage() {}
 
 func (x *DeleteCustomPluginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[32]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1846,7 +1326,7 @@ func (x *DeleteCustomPluginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCustomPluginResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCustomPluginResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{22}
 }
 
 type ListCustomPluginsRequest struct {
@@ -1857,7 +1337,7 @@ type ListCustomPluginsRequest struct {
 
 func (x *ListCustomPluginsRequest) Reset() {
 	*x = ListCustomPluginsRequest{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[33]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1869,7 +1349,7 @@ func (x *ListCustomPluginsRequest) String() string {
 func (*ListCustomPluginsRequest) ProtoMessage() {}
 
 func (x *ListCustomPluginsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[33]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1882,7 +1362,7 @@ func (x *ListCustomPluginsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCustomPluginsRequest.ProtoReflect.Descriptor instead.
 func (*ListCustomPluginsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{33}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{23}
 }
 
 type ListCustomPluginsResponse struct {
@@ -1894,7 +1374,7 @@ type ListCustomPluginsResponse struct {
 
 func (x *ListCustomPluginsResponse) Reset() {
 	*x = ListCustomPluginsResponse{}
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[34]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +1386,7 @@ func (x *ListCustomPluginsResponse) String() string {
 func (*ListCustomPluginsResponse) ProtoMessage() {}
 
 func (x *ListCustomPluginsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_ecosystem_proto_msgTypes[34]
+	mi := &file_domain_agent_ecosystem_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +1399,7 @@ func (x *ListCustomPluginsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCustomPluginsResponse.ProtoReflect.Descriptor instead.
 func (*ListCustomPluginsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{34}
+	return file_domain_agent_ecosystem_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListCustomPluginsResponse) GetPlugins() []*CustomPlugin {
@@ -1986,38 +1466,7 @@ const file_domain_agent_ecosystem_proto_rawDesc = "" +
 	"\x18ListTopicCommentsRequest\x12\x1b\n" +
 	"\ttopic_key\x18\x01 \x01(\tR\btopicKey\"S\n" +
 	"\x19ListTopicCommentsResponse\x126\n" +
-	"\bcomments\x18\x01 \x03(\v2\x1a.domain.agent.TopicCommentR\bcomments\"t\n" +
-	"\x0fEvalDatasetItem\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
-	"\x05input\x18\x02 \x01(\tR\x05input\x12'\n" +
-	"\x0fexpected_output\x18\x03 \x01(\tR\x0eexpectedOutput\x12\x12\n" +
-	"\x04tags\x18\x04 \x03(\tR\x04tags\"\xa7\x01\n" +
-	"\vEvalDataset\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x123\n" +
-	"\x05items\x18\x04 \x03(\v2\x1d.domain.agent.EvalDatasetItemR\x05items\x12\x1d\n" +
-	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\x85\x01\n" +
-	"\x18CreateEvalDatasetRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\x123\n" +
-	"\x05items\x18\x03 \x03(\v2\x1d.domain.agent.EvalDatasetItemR\x05items\"P\n" +
-	"\x19CreateEvalDatasetResponse\x123\n" +
-	"\adataset\x18\x01 \x01(\v2\x19.domain.agent.EvalDatasetR\adataset\"\x95\x01\n" +
-	"\x18UpdateEvalDatasetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x123\n" +
-	"\x05items\x18\x04 \x03(\v2\x1d.domain.agent.EvalDatasetItemR\x05items\"P\n" +
-	"\x19UpdateEvalDatasetResponse\x123\n" +
-	"\adataset\x18\x01 \x01(\v2\x19.domain.agent.EvalDatasetR\adataset\"*\n" +
-	"\x18DeleteEvalDatasetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1b\n" +
-	"\x19DeleteEvalDatasetResponse\"\x19\n" +
-	"\x17ListEvalDatasetsRequest\"Q\n" +
-	"\x18ListEvalDatasetsResponse\x125\n" +
-	"\bdatasets\x18\x01 \x03(\v2\x19.domain.agent.EvalDatasetR\bdatasets\"\xa6\x02\n" +
+	"\bcomments\x18\x01 \x03(\v2\x1a.domain.agent.TopicCommentR\bcomments\"\xa6\x02\n" +
 	"\fCustomPlugin\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -2072,7 +1521,7 @@ func file_domain_agent_ecosystem_proto_rawDescGZIP() []byte {
 	return file_domain_agent_ecosystem_proto_rawDescData
 }
 
-var file_domain_agent_ecosystem_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_domain_agent_ecosystem_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_domain_agent_ecosystem_proto_goTypes = []any{
 	(*AgentGroup)(nil),                 // 0: domain.agent.AgentGroup
 	(*CreateAgentGroupRequest)(nil),    // 1: domain.agent.CreateAgentGroupRequest
@@ -2090,25 +1539,15 @@ var file_domain_agent_ecosystem_proto_goTypes = []any{
 	(*DeleteTopicCommentResponse)(nil), // 13: domain.agent.DeleteTopicCommentResponse
 	(*ListTopicCommentsRequest)(nil),   // 14: domain.agent.ListTopicCommentsRequest
 	(*ListTopicCommentsResponse)(nil),  // 15: domain.agent.ListTopicCommentsResponse
-	(*EvalDatasetItem)(nil),            // 16: domain.agent.EvalDatasetItem
-	(*EvalDataset)(nil),                // 17: domain.agent.EvalDataset
-	(*CreateEvalDatasetRequest)(nil),   // 18: domain.agent.CreateEvalDatasetRequest
-	(*CreateEvalDatasetResponse)(nil),  // 19: domain.agent.CreateEvalDatasetResponse
-	(*UpdateEvalDatasetRequest)(nil),   // 20: domain.agent.UpdateEvalDatasetRequest
-	(*UpdateEvalDatasetResponse)(nil),  // 21: domain.agent.UpdateEvalDatasetResponse
-	(*DeleteEvalDatasetRequest)(nil),   // 22: domain.agent.DeleteEvalDatasetRequest
-	(*DeleteEvalDatasetResponse)(nil),  // 23: domain.agent.DeleteEvalDatasetResponse
-	(*ListEvalDatasetsRequest)(nil),    // 24: domain.agent.ListEvalDatasetsRequest
-	(*ListEvalDatasetsResponse)(nil),   // 25: domain.agent.ListEvalDatasetsResponse
-	(*CustomPlugin)(nil),               // 26: domain.agent.CustomPlugin
-	(*CreateCustomPluginRequest)(nil),  // 27: domain.agent.CreateCustomPluginRequest
-	(*CreateCustomPluginResponse)(nil), // 28: domain.agent.CreateCustomPluginResponse
-	(*UpdateCustomPluginRequest)(nil),  // 29: domain.agent.UpdateCustomPluginRequest
-	(*UpdateCustomPluginResponse)(nil), // 30: domain.agent.UpdateCustomPluginResponse
-	(*DeleteCustomPluginRequest)(nil),  // 31: domain.agent.DeleteCustomPluginRequest
-	(*DeleteCustomPluginResponse)(nil), // 32: domain.agent.DeleteCustomPluginResponse
-	(*ListCustomPluginsRequest)(nil),   // 33: domain.agent.ListCustomPluginsRequest
-	(*ListCustomPluginsResponse)(nil),  // 34: domain.agent.ListCustomPluginsResponse
+	(*CustomPlugin)(nil),               // 16: domain.agent.CustomPlugin
+	(*CreateCustomPluginRequest)(nil),  // 17: domain.agent.CreateCustomPluginRequest
+	(*CreateCustomPluginResponse)(nil), // 18: domain.agent.CreateCustomPluginResponse
+	(*UpdateCustomPluginRequest)(nil),  // 19: domain.agent.UpdateCustomPluginRequest
+	(*UpdateCustomPluginResponse)(nil), // 20: domain.agent.UpdateCustomPluginResponse
+	(*DeleteCustomPluginRequest)(nil),  // 21: domain.agent.DeleteCustomPluginRequest
+	(*DeleteCustomPluginResponse)(nil), // 22: domain.agent.DeleteCustomPluginResponse
+	(*ListCustomPluginsRequest)(nil),   // 23: domain.agent.ListCustomPluginsRequest
+	(*ListCustomPluginsResponse)(nil),  // 24: domain.agent.ListCustomPluginsResponse
 }
 var file_domain_agent_ecosystem_proto_depIdxs = []int32{
 	0,  // 0: domain.agent.CreateAgentGroupResponse.group:type_name -> domain.agent.AgentGroup
@@ -2116,20 +1555,14 @@ var file_domain_agent_ecosystem_proto_depIdxs = []int32{
 	0,  // 2: domain.agent.ListAgentGroupsResponse.groups:type_name -> domain.agent.AgentGroup
 	9,  // 3: domain.agent.CreateTopicCommentResponse.comment:type_name -> domain.agent.TopicComment
 	9,  // 4: domain.agent.ListTopicCommentsResponse.comments:type_name -> domain.agent.TopicComment
-	16, // 5: domain.agent.EvalDataset.items:type_name -> domain.agent.EvalDatasetItem
-	16, // 6: domain.agent.CreateEvalDatasetRequest.items:type_name -> domain.agent.EvalDatasetItem
-	17, // 7: domain.agent.CreateEvalDatasetResponse.dataset:type_name -> domain.agent.EvalDataset
-	16, // 8: domain.agent.UpdateEvalDatasetRequest.items:type_name -> domain.agent.EvalDatasetItem
-	17, // 9: domain.agent.UpdateEvalDatasetResponse.dataset:type_name -> domain.agent.EvalDataset
-	17, // 10: domain.agent.ListEvalDatasetsResponse.datasets:type_name -> domain.agent.EvalDataset
-	26, // 11: domain.agent.CreateCustomPluginResponse.plugin:type_name -> domain.agent.CustomPlugin
-	26, // 12: domain.agent.UpdateCustomPluginResponse.plugin:type_name -> domain.agent.CustomPlugin
-	26, // 13: domain.agent.ListCustomPluginsResponse.plugins:type_name -> domain.agent.CustomPlugin
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	16, // 5: domain.agent.CreateCustomPluginResponse.plugin:type_name -> domain.agent.CustomPlugin
+	16, // 6: domain.agent.UpdateCustomPluginResponse.plugin:type_name -> domain.agent.CustomPlugin
+	16, // 7: domain.agent.ListCustomPluginsResponse.plugins:type_name -> domain.agent.CustomPlugin
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_ecosystem_proto_init() }
@@ -2143,7 +1576,7 @@ func file_domain_agent_ecosystem_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_ecosystem_proto_rawDesc), len(file_domain_agent_ecosystem_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -23,6 +23,7 @@ _SAFE_EXACT_KEYS = frozenset(
         "fence_token",
         "fencing_token",
         "has_token_accounting",
+        "host_key_sha256",
         "idempotency_key_hash",
         "input_tokens",
         "locale_key",

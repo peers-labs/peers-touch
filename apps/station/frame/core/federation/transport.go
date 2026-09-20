@@ -3,6 +3,7 @@ package federation
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -345,11 +346,44 @@ func (t *routedTransport) Deliver(
 			errors.New("frame is nil"),
 		)
 	}
-	if frame.GetTargetStationPeerId() == t.localStationPeerID {
-		return t.local.Deliver(ctx, frame)
+	isLocal := frame.GetTargetStationPeerId() == t.localStationPeerID
+	// #region debug-point F-G:federation-route-selection
+	if payload, err := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "post-fix", "hypothesisId": "F-G", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Federation route selected", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "sourceStationPeerId": frame.GetSourceStationPeerId(), "targetStationPeerId": frame.GetTargetStationPeerId(), "runtimeLocalStationPeerId": t.localStationPeerID, "isLocal": isLocal}, "ts": time.Now().UnixMilli()}); err == nil {
+		go func() {
+			response, _ := http.Post("http://10.0.0.31:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	if isLocal {
+		result, err := t.local.Deliver(ctx, frame)
+		// #region debug-point F:same-station-delivery-result
+		if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "post-fix", "hypothesisId": "F", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Same-Station Federation delivery completed", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "disposition": result.Disposition, "errorCode": result.ErrorCode, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+			go func() {
+				response, _ := http.Post("http://10.0.0.31:7784/event", "application/json", bytes.NewReader(payload))
+				if response != nil {
+					_ = response.Body.Close()
+				}
+			}()
+		}
+		// #endregion
+		return result, err
 	}
 
-	return t.remote.Deliver(ctx, frame)
+	result, err := t.remote.Deliver(ctx, frame)
+	// #region debug-point I:remote-delivery-result
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "typing-pre-fix", "hypothesisId": "I", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Remote Federation delivery completed", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "targetStationPeerId": frame.GetTargetStationPeerId(), "disposition": result.Disposition, "errorCode": result.ErrorCode, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.0.0.31:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	return result, err
 }
 
 var (

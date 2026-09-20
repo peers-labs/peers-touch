@@ -30,14 +30,12 @@ import {
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import {
-  chatActorIdentityMetadata,
   projectChatFriendContacts,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import {
   useActiveChatFederationSlice,
-  useActiveChatRelationshipsSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
@@ -139,6 +137,7 @@ function conversationWithActorIdentity(
     federatedHandle: identity.federatedHandle,
     homeStationDomain: identity.homeStationDomain,
     homeStationPeerId: identity.homeStationPeerId,
+    homeStationName: identity.homeStationName,
     federationId: identity.federationId,
     federationName: identity.federationName,
   };
@@ -204,17 +203,31 @@ export function ChatSessionList({
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
-  const mutualFriends = useActiveChatRelationshipsSlice(
-    (state) => state.mutualFriends,
-  );
-  const federations = useActiveChatFederationSlice(
-    (state) => state.federations,
-  );
+  const {
+    actorStationEntries,
+    federations,
+    memberStationsByFederation,
+  } = useActiveChatFederationSlice((state) => ({
+    actorStationEntries: state.actorStationEntries,
+    federations: state.federations,
+    memberStationsByFederation: state.memberStationsByFederation,
+  }));
 
   const [searchText, setSearchText] = useState('');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
+  const stationNamesByPeerId = useMemo(() => Object.fromEntries(
+    Object.values(memberStationsByFederation)
+      .flat()
+      .map((station) => [station.stationPeerId.trim(), station.stationName.trim()])
+      .filter(([peerId, name]) => Boolean(peerId && name)),
+  ), [memberStationsByFederation]);
+  const stationNamesByActorPtid = useMemo(() => Object.fromEntries(
+    Object.values(actorStationEntries)
+      .map((entry) => [entry.actorPtid.trim(), entry.homeStationName.trim()])
+      .filter(([actorPtid, name]) => Boolean(actorPtid && name)),
+  ), [actorStationEntries]);
 
   // NOTE: Initial data loading (sessions, groups, previews) is owned by
   // `SocialChatPage`'s `tick()` effect — see comment there. We deliberately
@@ -239,20 +252,22 @@ export function ChatSessionList({
   );
   const friendIdentities = useMemo(
     () => projectChatFriendContacts({
-      mutualFriends,
       conversations: conversationProjection,
       friendRequests,
       peerProfiles,
       currentUserPtid: currentUserPtid || '',
       federations,
+      stationNamesByPeerId,
+      stationNamesByActorPtid,
     }),
     [
       conversationProjection,
       federations,
       friendRequests,
-      mutualFriends,
       currentUserPtid,
       peerProfiles,
+      stationNamesByActorPtid,
+      stationNamesByPeerId,
     ],
   );
   const friendIdentitiesByPtid = useMemo(
@@ -270,9 +285,10 @@ export function ChatSessionList({
           return conversation;
         }
         const identity = friendIdentitiesByPtid.get(conversation.peerPtid);
-        return identity
+        const projected = identity
           ? conversationWithActorIdentity(conversation, identity)
           : conversation;
+        return projected;
       }),
     [conversationProjection, friendIdentitiesByPtid],
   );
@@ -544,15 +560,11 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
-              const identityMetadata = c.kind === 'friend' && c.peerPtid
-                ? chatActorIdentityMetadata({
-                    actorPtid: c.peerPtid,
-                    federatedHandle: c.federatedHandle || '',
-                    homeStationDomain: c.homeStationDomain || '',
-                    homeStationPeerId: c.homeStationPeerId || '',
-                    federationId: c.federationId || '',
-                    federationName: c.federationName || '',
-                  })
+              const identityMetadata = c.kind === 'friend'
+                ? [
+                    c.homeStationName || c.homeStationDomain,
+                    c.federationName,
+                  ].filter(Boolean).join(' · ')
                 : '';
 
               let subtitle = '';

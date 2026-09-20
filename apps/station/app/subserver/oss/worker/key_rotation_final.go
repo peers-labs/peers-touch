@@ -9,8 +9,8 @@
 // short-lived JWTs can still validate while they refresh
 // capabilities.
 //
-// Once the wall-clock distance between the prev row's
-// GeneratedAt and now exceeds `Grace`, the previous keypair is
+// Once the wall-clock distance between the prev row's rotation
+// timestamp and now exceeds `Grace`, the previous keypair is
 // no longer useful — any token signed by it has long since
 // expired. The finalizer drops the `prev` row and audits the
 // closure with action=key_rotate, reason=rotation_finalized.
@@ -102,13 +102,18 @@ func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
 	}
 
 	cutoff := w.now().Add(-w.cfg.Grace)
-	if prev.GeneratedAt.After(cutoff) {
+	if prev.UpdatedAt.IsZero() || prev.UpdatedAt.After(cutoff) {
 		// Still inside the dual-sign window — leave the
 		// `prev` slot in place.
 		return nil
 	}
 
-	if err := w.cfg.Keys.ClearPrev(ctx); err != nil {
+	cleared, err := w.cfg.Keys.ClearPrev(
+		ctx,
+		prev.Kid,
+		prev.UpdatedAt,
+	)
+	if err != nil {
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
 			Action:  ossmodel.AuditActionKeyRotate,
 			Outcome: ossmodel.AuditOutcomeError,
@@ -116,11 +121,14 @@ func (w *KeyRotationFinalizer) RunOnce(ctx context.Context) error {
 		})
 		return err
 	}
+	if !cleared {
+		return nil
+	}
 	if err := w.cfg.Audit.Append(ctx, ossmodel.Audit{
 		Action:  ossmodel.AuditActionKeyRotate,
 		Outcome: ossmodel.AuditOutcomeOK,
-		Reason: fmt.Sprintf("rotation_finalized prev_kid=%s prev_generated_at=%s",
-			prev.Kid, prev.GeneratedAt.UTC().Format(time.RFC3339)),
+		Reason: fmt.Sprintf("rotation_finalized prev_kid=%s prev_rotated_at=%s",
+			prev.Kid, prev.UpdatedAt.UTC().Format(time.RFC3339)),
 	}); err != nil {
 		log.Warnf(ctx, "[oss-worker] key_rotation audit append failed: %v", err)
 	}

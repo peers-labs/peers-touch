@@ -115,6 +115,35 @@ message MembershipTransitionIntent {
 
 message DissolveConversationIntent {}
 
+enum ConversationMemberAuthorityAction {
+  CONVERSATION_MEMBER_AUTHORITY_ACTION_UNSPECIFIED = 0;
+  CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER = 1;
+  CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP = 2;
+}
+
+// Exact authority command for target-member administration. This command is
+// intentionally separate from actor-local MemberSettings.
+message ConversationMemberAuthorityCommand {
+  uint32 version = 1;
+  string command_id = 2;
+  string conversation_id = 3;
+  CryptoEndpoint operator = 4;
+  string target_ptid = 5;
+  ConversationMemberAuthorityAction action = 6;
+  optional MemberRole role = 7;
+  optional bool muted = 8;
+  google.protobuf.Timestamp muted_until = 9;
+  string federation_id = 10;
+  string authority_station_peer_id = 11;
+  int64 authority_epoch = 12;
+  int64 authority_sequence = 13;
+  bytes authority_hash = 14;
+  int64 observed_membership_epoch = 15;
+  int64 observed_mls_epoch = 16;
+  google.protobuf.Timestamp client_timestamp = 17;
+  google.protobuf.Timestamp deadline = 18;
+}
+
 // Durable client intent. The exact deterministic bytes are replayed until the
 // authority returns a terminal result.
 message ChatCommand {

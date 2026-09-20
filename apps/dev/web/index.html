@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peers Dev</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <p class="eyebrow">Peers Touch</p>
+      <h1>Peers Dev</h1>
+      <p class="product-surface">Development Control Plane</p>
+    </div>
+    <div class="topbar-actions">
+      <div class="server-meta">
+        <span id="server-source" class="server-source">Resolving server source</span>
+        <span id="observed-at" class="observed-at">Loading</span>
+      </div>
+      <button id="refresh" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
+        ↻
+      </button>
+    </div>
+  </header>
+
+  <section class="summary" aria-label="Development summary">
+    <div class="metric">
+      <span class="metric-label">Worktrees</span>
+      <strong id="worktree-count">0</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Requirements</span>
+      <strong id="requirement-count">0</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Runtime Active</span>
+      <strong id="runtime-count">0</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Blocked</span>
+      <strong id="blocked-count">0</strong>
+    </div>
+    <div class="metric">
+      <span class="metric-label">Profiles</span>
+      <strong id="profile-count">0</strong>
+    </div>
+  </section>
+
+  <p id="status-message" class="status-message" role="status"></p>
+
+  <section class="section">
+    <div class="section-heading">
+      <h2>Worktree Delivery Board</h2>
+      <span id="authority" class="authority">Authority unknown</span>
+    </div>
+    <div class="table-wrap">
+      <table class="worktree-table">
+        <thead>
+          <tr>
+            <th>Worktree</th>
+            <th>Branch</th>
+            <th>Work</th>
+            <th>Environment</th>
+            <th>Requirements / Journeys</th>
+            <th>Profile / Slot</th>
+            <th>Station</th>
+            <th>Relay</th>
+            <th>Data &amp; Other</th>
+            <th>Live Leases</th>
+          </tr>
+        </thead>
+        <tbody id="worktree-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-heading">
+      <h2>Profile Capacity</h2>
+      <span id="profile-capacity-count" class="count">0</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Profile</th>
+            <th>State</th>
+            <th>Agent Control</th>
+            <th>Station</th>
+            <th>Relay</th>
+            <th>Source</th>
+            <th>Worktrees</th>
+            <th>Slots</th>
+            <th>Requirements</th>
+          </tr>
+        </thead>
+        <tbody id="occupancy-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

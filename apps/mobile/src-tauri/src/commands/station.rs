@@ -6,6 +6,7 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{MobileError, MobileResult};
+use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
 
 mod station_identity_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
@@ -116,12 +117,13 @@ fn verify_station_identity_proof(
         return Err(identity_error("expired"));
     }
 
-    let canonical_origin = normalize_origin(&statement.canonical_origin)
-        .ok_or_else(|| identity_error("invalidCanonicalOrigin"))?;
+    let origin_policy = StationOriginPolicy::current_build();
+    let canonical_origin = normalize_station_origin(&statement.canonical_origin, origin_policy)
+        .map_err(|_| identity_error("invalidCanonicalOrigin"))?;
     if canonical_origin != statement.canonical_origin {
         return Err(identity_error("nonCanonicalOrigin"));
     }
-    if normalize_origin(&input.requested_origin).is_none() {
+    if normalize_station_origin(&input.requested_origin, origin_policy).is_err() {
         return Err(identity_error("invalidRequestedOrigin"));
     }
 
@@ -146,27 +148,6 @@ fn verify_station_identity_proof(
         capabilities: statement.capabilities,
         verified_at: now_unix_ms as u64,
     })
-}
-
-fn normalize_origin(value: &str) -> Option<String> {
-    let parsed = tauri::Url::parse(value.trim()).ok()?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || parsed.username() != ""
-        || parsed.password().is_some()
-        || parsed.path() != "/"
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return None;
-    }
-    let host = parsed.host_str()?.to_ascii_lowercase();
-    let port = parsed.port_or_known_default()?;
-    let authority = if host.contains(':') {
-        format!("[{host}]:{port}")
-    } else {
-        format!("{host}:{port}")
-    };
-    Some(format!("{}://{authority}", parsed.scheme()))
 }
 
 fn identity_error(reason: &str) -> MobileError {
