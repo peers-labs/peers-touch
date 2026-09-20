@@ -3,6 +3,13 @@
 <!-- EN: Brief description of what this PR does and why -->
 <!-- CN: 简要描述本 PR 做了什么、为什么做 -->
 
+## Execution Plans / 执行计划
+
+<!-- Declare every Plan Package owned by this PR. CI validates each path explicitly. -->
+<!-- 声明本 PR 拥有的每个 Plan Package；CI 会逐个显式校验。 -->
+
+- `docs/architecture/<domain>/execution-plans/<plan>/plan.md`
+
 ## Changes / 变更内容
 
 <!-- EN: List the key changes made in this PR -->

@@ -1,10 +1,11 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
-> **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
+> **Module**: `model/domain/agent/`, `packages/agent-catalog/`,
+> `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
 ---
 
@@ -77,13 +78,22 @@ A Modern Chat Agent is:
 | [data-model.md](./data-model.md) | Canonical entities, state machines, event ordering, persistence, and proto roots |
 | [module-layout.md](./module-layout.md) | Target ownership packages, registries, dependency direction, and forbidden imports |
 | [integration.md](./integration.md) | Current-code mapping, product acceptance contract, canonical completion locator, and planning handoff |
+| [MCA-D20A catalog distribution amendment](./proposals/20260917-mca-d20a-catalog-distribution.md) | **ACCEPTED** — replace the unreachable private-GitHub default sync with Station distribution of the same publisher-signed envelope |
+| [MCA-D20A review record](./proposals/20260917-mca-d20a-catalog-distribution-review.md) | Approval criteria and Owner verdict for the catalog distribution amendment |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
-| [Execution plan](../execution-plans/20260817-modern-chat-agent-v2.md) | **ACTIVE PRODUCT PLAN** — V2 scope reconciliation, prototype review, architecture handoff, and later execution phases |
-| [Formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Dependency DAG, W0/F1-F4/W1-W9 closures, atomic cutovers, Gates, and acceptance scenarios |
+| [Current V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **CURRENT EXECUTION SOURCE** — V2-J01..V2-J06, X3 trusted catalog, and aggregate Acceptance as bounded vertical Task Slices |
+| [Product plan](../execution-plans/20260817-modern-chat-agent-v2.md) | Active product and scope source; execution tracking moved to the current Plan Package |
+| [Legacy formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Superseded execution source retained for the detailed historical DAG, cutovers, Gates, and scenarios |
 | [Reviewed V2 runtime matrix](../execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml) | Immutable Gate/platform/runtime/cell/locale/order/sample expansion, Mobile semantic-contract cells, and frozen P12/CLI non-advertisement |
 | [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
 | [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |
 
+The Owner accepted the MCA-D20 publisher-signed package catalog and
+authority-readback contract on 2026-09-17 as the X3/P4-3 closure boundary.
+Execution then proved that the configured private GitHub repository cannot
+serve the default source anonymously. The Owner accepted MCA-D20A on
+2026-09-17, making Station the byte-distribution transport without changing
+the publisher trust root.
 The Owner accepted the MCA-D19 result-identity, ToolBatch barrier, and durable
 continuation core on 2026-08-21. The G1-C entry audit then exposed missing
 receipt-recovery, replay-policy, lease-lifecycle, deadline, and opaque-resource

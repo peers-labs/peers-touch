@@ -8,7 +8,8 @@ import (
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 )
 
-// CapabilityOperationHandlers remain unregistered until the W8b consumer cutover.
+// CapabilityOperationHandlers expose the Station-owned lifecycle for
+// device-local capability work.
 type CapabilityOperationHandlers struct {
 	operations *service.CapabilityOperationService
 }

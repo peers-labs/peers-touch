@@ -46,6 +46,7 @@ export interface MockConversation {
   detailHint: string;
   myNickname?: string;
   background?: string;
+  backgroundImage?: string;
 }
 
 export type MockGroupRole = 'owner' | 'admin' | 'member';

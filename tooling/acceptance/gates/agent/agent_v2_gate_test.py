@@ -125,6 +125,23 @@ class AgentV2GateContractTest(unittest.TestCase):
                 )
                 self.assertEqual(gate["required_artifact_roles"], list(roles))
 
+    def test_evaluation_gate_requires_external_j06_candidate(self) -> None:
+        catalog = json.loads(
+            (REPO_ROOT / "tooling/acceptance/gates.yaml").read_text()
+        )["gates"]
+        gate = catalog["agent-v2-evaluation-lab-e2e"]
+
+        self.assertEqual(
+            gate["command"],
+            (
+                "python3 tooling/acceptance/gates/agent/agent_v2_gate.py "
+                "--gate agent-v2-evaluation-lab-e2e"
+            ),
+        )
+        self.assertEqual(gate["runtime_matrix"]["expected_tuple_count"], 57)
+        self.assertIn("cell-results", gate["required_artifact_roles"])
+        self.assertIn("runtime-events", gate["required_artifact_roles"])
+
     def test_complete_external_candidate_is_candidate_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -34,6 +34,7 @@ const (
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT   FederatedDomainPayloadKind = 6
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT  FederatedDomainPayloadKind = 7
 	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING            FederatedDomainPayloadKind = 8
+	FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR       FederatedDomainPayloadKind = 9
 )
 
 // Enum value maps for FederatedDomainPayloadKind.
@@ -48,6 +49,7 @@ var (
 		6: "FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT",
 		7: "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT",
 		8: "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING",
+		9: "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR",
 	}
 	FederatedDomainPayloadKind_value = map[string]int32{
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_UNSPECIFIED":                    0,
@@ -59,6 +61,7 @@ var (
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT":   6,
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT":  7,
 		"FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING":            8,
+		"FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR":       9,
 	}
 )
 
@@ -662,7 +665,7 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	"#DeliverFederatedDomainFrameResponse\x12b\n" +
 	"\vdisposition\x18\x01 \x01(\x0e2@.peers_touch.model.federation.v1.FederatedDomainFrameDispositionR\vdisposition\x12]\n" +
 	"\n" +
-	"error_code\x18\x02 \x01(\x0e2>.peers_touch.model.federation.v1.FederatedDomainFrameErrorCodeR\terrorCode*\xc6\x04\n" +
+	"error_code\x18\x02 \x01(\x0e2>.peers_touch.model.federation.v1.FederatedDomainFrameErrorCodeR\terrorCode*\x82\x05\n" +
 	"\x1aFederatedDomainPayloadKind\x12-\n" +
 	")FEDERATED_DOMAIN_PAYLOAD_KIND_UNSPECIFIED\x10\x00\x12>\n" +
 	":FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DEVICE_DELIVERY\x10\x01\x12@\n" +
@@ -672,7 +675,8 @@ const file_domain_federation_delivery_proto_rawDesc = "" +
 	"9FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT\x10\x05\x12>\n" +
 	":FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT\x10\x06\x12?\n" +
 	";FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT\x10\a\x125\n" +
-	"1FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING\x10\b*\xed\x02\n" +
+	"1FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING\x10\b\x12:\n" +
+	"6FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR\x10\t*\xed\x02\n" +
 	"\x1fFederatedDomainFrameDisposition\x122\n" +
 	".FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED\x10\x00\x12/\n" +
 	"+FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED\x10\x01\x120\n" +

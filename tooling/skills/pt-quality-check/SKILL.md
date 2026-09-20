@@ -52,8 +52,10 @@ If no target is available, ask for one. Do not produce a generic checklist.
    python3 tooling/scripts/acceptance-plan.py --range <base>...<head>
    ```
 
-5. Run deterministic gates that are cheap and relevant. Do not run environment
-   gates unless the requested environment is available.
+5. Resolve the current formal plan and run only its completion Gates that are
+   deterministic and cheap. Environment availability is not authorization:
+   do not run environment/full Gates unless the user explicitly requested
+   release or full Acceptance.
 6. Record every selected gate that was not run and why.
 7. Read acceptance feature/capability contracts for selected features and copy
    their proven/unproven scope into the report.

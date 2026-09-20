@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 )
 
 func TestDelegatedTurnConfigInheritsActorDepthAndPinnedBudget(t *testing.T) {
@@ -83,7 +84,7 @@ func TestDelegatedToolRestrictionRejectsUnlistedProviderTool(t *testing.T) {
 		AvailableTools:  []string{"tool-a"},
 		RestrictedTools: []string{"tool-a"},
 	}
-	err := validateProviderToolCallsBeforePersistence(
+	err := (&TurnService{}).validateProviderToolCallsBeforePersistence(
 		config,
 		[]toolCallEntry{{ToolName: "tool-b"}},
 	)
@@ -94,8 +95,246 @@ func TestDelegatedToolRestrictionRejectsUnlistedProviderTool(t *testing.T) {
 	}
 }
 
+func TestProcessToolCallsRejectsUnknownToolBeforePersistence(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	registry := NewToolRegistryService(nil, nil)
+	expectedVersion, ok := registry.ManifestVersion("skills_list")
+	if !ok || expectedVersion == "" {
+		t.Fatal("skills_list manifest version is unavailable")
+	}
+	service := &TurnService{
+		toolDispatch: fixture.service,
+		toolRegistry: registry,
+	}
+	config := &TurnConfig{
+		TurnID:        "turn-unknown-tool",
+		AttemptID:     "attempt-unknown-tool",
+		RuntimeBudget: defaultRuntimeBudget(128000),
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+		AuthorizedCapabilities: &AuthorizedCapabilitySet{},
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{{
+			ID:        "provider-call-1",
+			Name:      "skills_list",
+			Arguments: `{}`,
+		}},
+		0,
+	)
+	var toolErr *errcode.BizError
+	if !errors.As(err, &toolErr) ||
+		toolErr.Code != errcode.AgentToolUnknown ||
+		toolErr.Payload.GetErrorType() != string(errcode.AgentToolUnknown) ||
+		toolErr.Payload.GetLocaleKey() != errcode.AgentToolUnknownLocaleKey ||
+		toolErr.Payload.GetRetryable() ||
+		!toolErr.Payload.GetTerminal() ||
+		len(toolErr.Payload.GetDetails()) != 2 ||
+		toolErr.Payload.GetDetails()["tool_id"] != "skills_list" ||
+		toolErr.Payload.GetDetails()["tool_version"] != expectedVersion {
+		t.Fatalf("unexpected unknown Tool rejection: %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"unknown Tool changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	for name, record := range map[string]interface{}{
+		"assistant message": &persistence.AgentMessage{},
+		"turn event":        &persistence.TurnEvent{},
+		"tool call":         &persistence.ToolCall{},
+		"tool batch":        &persistence.ToolBatch{},
+	} {
+		var count int64
+		if err := fixture.db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("unknown Tool rejection persisted %d %s rows", count, name)
+		}
+	}
+}
+
+func TestProcessToolCallsMapsDisabledAdvertisedToolToUnknownBeforePersistence(t *testing.T) {
+	fixture, service, config, providerToolCall := setupProviderToolAuthorityFixture(
+		t,
+		"disabled-advertised-tool",
+	)
+	authorized, ok := config.AuthorizedCapabilities.Tool(providerToolCall.Name)
+	if !ok {
+		t.Fatal("advertised Tool authority is unavailable")
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", authorized.Binding.GetBindingId()).
+		Updates(map[string]interface{}{
+			"enabled":  false,
+			"revision": authorized.Binding.GetRevision() + 1,
+		}).Error; err != nil {
+		t.Fatalf("disable advertised Tool binding: %v", err)
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{providerToolCall},
+		0,
+	)
+	var toolErr *errcode.BizError
+	if !errors.As(err, &toolErr) ||
+		toolErr.Code != errcode.AgentToolUnknown ||
+		toolErr.Payload.GetErrorType() != string(errcode.AgentToolUnknown) ||
+		toolErr.Payload.GetLocaleKey() != errcode.AgentToolUnknownLocaleKey ||
+		toolErr.Payload.GetRetryable() ||
+		!toolErr.Payload.GetTerminal() ||
+		len(toolErr.Payload.GetDetails()) != 2 ||
+		toolErr.Payload.GetDetails()["tool_id"] != providerToolCall.Name ||
+		toolErr.Payload.GetDetails()["tool_version"] !=
+			authorized.Manifest.GetVersion() {
+		t.Fatalf("disabled advertised Tool rejection = %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"disabled advertised Tool changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	assertNoProviderToolPersistence(t, fixture.db)
+}
+
+func TestProcessToolCallsRejectsEnabledBindingRevisionDriftAsInvalidSourceState(
+	t *testing.T,
+) {
+	fixture, service, config, providerToolCall := setupProviderToolAuthorityFixture(
+		t,
+		"enabled-binding-revision-drift",
+	)
+	authorized, ok := config.AuthorizedCapabilities.Tool(providerToolCall.Name)
+	if !ok {
+		t.Fatal("advertised Tool authority is unavailable")
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", authorized.Binding.GetBindingId()).
+		Update("revision", authorized.Binding.GetRevision()+1).Error; err != nil {
+		t.Fatalf("advance advertised Tool binding revision: %v", err)
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{providerToolCall},
+		0,
+	)
+	var stateErr *errcode.BizError
+	if !errors.As(err, &stateErr) ||
+		stateErr.Code != errcode.AgentInvalidSourceState {
+		t.Fatalf("enabled binding revision drift error = %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"binding revision drift changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	assertNoProviderToolPersistence(t, fixture.db)
+}
+
+func setupProviderToolAuthorityFixture(
+	t *testing.T,
+	suffix string,
+) (toolDispatchFixture, *TurnService, *TurnConfig, ProviderToolCall) {
+	t.Helper()
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposalForOwner(
+		t,
+		suffix,
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+	)
+	fixture.seedTurnAuthority(t, proposal)
+	if err := fixture.db.Model(&persistence.TurnAttempt{}).
+		Where("id = ?", proposal.AttemptID).
+		Update("readiness_snapshot_id", proposal.ReadinessSnapshotID).Error; err != nil {
+		t.Fatalf("bind readiness snapshot to turn attempt: %v", err)
+	}
+	config := &TurnConfig{
+		AgentID:                   proposal.AgentID,
+		ActorID:                   proposal.ActorID,
+		ConversationID:            proposal.ConversationID,
+		TurnID:                    proposal.TurnID,
+		AttemptID:                 proposal.AttemptID,
+		ClientCapabilitySessionID: proposal.ClientCapabilitySessionID,
+		RuntimeBudget:             defaultRuntimeBudget(128000),
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+	}
+	authorized, err := LoadAuthorizedCapabilitySet(
+		context.Background(),
+		fixture.db,
+		config,
+	)
+	if err != nil {
+		t.Fatalf("load advertised Tool authority: %v", err)
+	}
+	config.AuthorizedCapabilities = authorized
+	return fixture, &TurnService{
+			toolDispatch: fixture.service,
+		}, config, ProviderToolCall{
+			ID:        "provider-call-" + suffix,
+			Name:      proposal.Calls[0].ToolName,
+			Arguments: `{}`,
+		}
+}
+
+func assertNoProviderToolPersistence(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for name, record := range map[string]interface{}{
+		"assistant message": &persistence.AgentMessage{},
+		"turn event":        &persistence.TurnEvent{},
+		"tool call":         &persistence.ToolCall{},
+		"tool batch":        &persistence.ToolBatch{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("provider Tool rejection persisted %d %s rows", count, name)
+		}
+	}
+}
+
 func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 	config := &TurnConfig{
+		TurnID:        "turn-delegation-budget",
 		RuntimeBudget: &model.RuntimeBudget{MaxDelegationDepth: 1},
 		Depth:         1,
 	}
@@ -106,7 +345,12 @@ func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 	var budgetErr *errcode.BizError
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
-		budgetErr.Message != maxDelegationDepthExhaustedReason {
+		budgetErr.Message != maxDelegationDepthExhaustedReason ||
+		budgetErr.Payload == nil ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "delegation_depth" ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("unexpected delegation budget rejection: %#v", err)
 	}
 }
@@ -114,6 +358,7 @@ func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	ctx, cancel := withRuntimeBudgetDeadline(
 		context.Background(),
+		"turn-wall-time-budget",
 		&model.RuntimeBudget{WallTimeMs: 25},
 		time.Now().Add(-time.Second),
 	)
@@ -125,7 +370,11 @@ func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 		budgetErr.Message != wallTimeExhaustedReason ||
-		!budgetErr.Payload.GetTerminal() {
+		!budgetErr.Payload.GetTerminal() ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != "turn-wall-time-budget" ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "wall_time" ||
+		budgetErr.Payload.GetDetails()["limit"] != "25" {
 		t.Fatalf("wall-time deadline lost typed budget exhaustion: %#v", err)
 	}
 }
@@ -164,7 +413,11 @@ func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
 	var budgetErr *errcode.BizError
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
-		budgetErr.Message != maxAttemptsExhaustedReason {
+		budgetErr.Message != maxAttemptsExhaustedReason ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "attempts" ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("continuation reset provider-attempt budget: %T %v", err, err)
 	}
 	var turn persistence.AgentTurn
@@ -287,7 +540,7 @@ func TestToolLoopBudgetStopsProviderContinuationAtBound(t *testing.T) {
 	}
 	providerCalls := 0
 
-	if err := state.exhaustionBeforeContinuation(budget); err == nil {
+	if err := state.exhaustionBeforeContinuation("turn-total-budget", budget); err == nil {
 		providerCalls++
 	}
 
@@ -309,7 +562,7 @@ func TestToolLoopBudgetStopsProviderContinuationAtIdenticalBound(t *testing.T) {
 	}
 	providerCalls := 0
 
-	if err := state.exhaustionBeforeContinuation(budget); err == nil {
+	if err := state.exhaustionBeforeContinuation("turn-identical-budget", budget); err == nil {
 		providerCalls++
 	}
 
@@ -400,6 +653,7 @@ func TestInputBudgetPreflightReturnsContextOverflow(t *testing.T) {
 func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
 	err := validateAdmittedInputBudget(
 		NewCompressionService(),
+		"turn-input-budget",
 		&model.RuntimeBudget{MaxInputTokens: 1},
 		"oversized",
 	)
@@ -413,10 +667,46 @@ func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
 		bizErr.Payload.GetRetryable() ||
 		!bizErr.Payload.GetTerminal() ||
 		len(bizErr.Payload.GetDetails()) != 3 ||
-		bizErr.Payload.GetDetails()["reason"] != maxInputTokensExhaustedReason ||
-		bizErr.Payload.GetDetails()["limit"] != "1" ||
-		bizErr.Payload.GetDetails()["consumed"] != "12" {
+		bizErr.Payload.GetDetails()["turn_id"] != "turn-input-budget" ||
+		bizErr.Payload.GetDetails()["budget_kind"] != "input_tokens" ||
+		bizErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("admitted input budget error = %T %+v", err, bizErr)
+	}
+}
+
+func TestTurnRuntimeBudgetExhaustionUsesCanonicalDetails(t *testing.T) {
+	tests := []struct {
+		reason string
+		kind   string
+	}{
+		{maxAttemptsExhaustedReason, "attempts"},
+		{maxToolCallsExhaustedReason, "tool_calls"},
+		{maxIdenticalToolCallsExhaustedReason, "identical_tool_calls"},
+		{maxAgentStepsExhaustedReason, "agent_steps"},
+		{maxDelegationDepthExhaustedReason, "delegation_depth"},
+		{maxInputTokensExhaustedReason, "input_tokens"},
+		{maxOutputTokensExhaustedReason, "output_tokens"},
+		{wallTimeExhaustedReason, "wall_time"},
+	}
+	for _, test := range tests {
+		t.Run(test.kind, func(t *testing.T) {
+			err := turnRuntimeBudgetExhausted("turn-budget", test.reason, 7)
+			var budgetErr *errcode.BizError
+			if !errors.As(err, &budgetErr) ||
+				budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+				budgetErr.Message != test.reason ||
+				budgetErr.Payload == nil ||
+				budgetErr.Payload.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+				budgetErr.Payload.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+				budgetErr.Payload.GetRetryable() ||
+				!budgetErr.Payload.GetTerminal() ||
+				len(budgetErr.Payload.GetDetails()) != 3 ||
+				budgetErr.Payload.GetDetails()["turn_id"] != "turn-budget" ||
+				budgetErr.Payload.GetDetails()["budget_kind"] != test.kind ||
+				budgetErr.Payload.GetDetails()["limit"] != "7" {
+				t.Fatalf("canonical budget error = %T %+v", err, budgetErr)
+			}
+		})
 	}
 }
 
@@ -588,7 +878,11 @@ func assertToolBatchRejectedBeforeDispatchAtIteration(
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 		budgetErr.Message != wantReason ||
-		!budgetErr.Payload.GetTerminal() {
+		!budgetErr.Payload.GetTerminal() ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != runtimeBudgetKind(wantReason) ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("unexpected budget exhaustion: %#v", err)
 	}
 	if iterations != startingIterations || paused {

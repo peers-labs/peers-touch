@@ -22,6 +22,13 @@
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
+    "acceptance-workflow-contract": {
+      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs apps/dev/server/status.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate immutable workspace Plan resolution across Plan, declaration, Session and Peers Dev consumers, current-closure scheduling, diff drift rejection, explicit completion/full selection, and runner projection refresh."
+    },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
       "timeout_seconds": 30,
@@ -30,11 +37,11 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.friend_request_gateway_e2e_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop messaging_schema_backfills_search_for_existing_message_projections && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.friend_request_gateway_e2e_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Station relationship-list identity hydration, remote Actor PTID refresh, typed Group preparation errors, recoverable Group UI state, native runner fail-closed evidence, mutual-friend projection, virtual timeline/composer geometry, bundled avatar rendering, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
+      "description": "Validate the CHAT-UR01 through CHAT-UR13 regression-to-closure contract, retained-account resume wiring, PTID-keyed request-history consolidation, human-readable Station identity with copyable details, authoritative presence reconciliation, immediate background preview, canonical message search, bounded history restore, Station relationship-list identity hydration, remote Actor PTID refresh, typed Group preparation errors, recoverable Group UI state, native runner fail-closed evidence, mutual-friend projection, virtual timeline/composer geometry, bundled avatar rendering, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
@@ -227,6 +234,29 @@
       "tier": "ci-cheap",
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
+    "chat-lifecycle-safety-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Fail closed on undeclared Chat debug egress and request-echoed identity evidence."
+    },
+    "chat-lifecycle-onboarding-e2e": {
+      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_onboarding_e2e",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-current-profile",
+      "provisioner": "native-tauri-current-profile",
+      "tier": "env-evidence",
+      "description": "Run two synchronized current-profile Native Desktop clients through retained no-PIN account restart without credential prompts; local, federated-handle, and Station-scoped discovery; PTID-keyed selectable request-history consolidation; authoritative Station-name summary with expandable copyable identity details; reject and retry; accept; Direct reuse or creation; and bidirectional exact plaintext."
+    },
+    "chat-lifecycle-direct-e2e": {
+      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_direct",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-current-profile",
+      "provisioner": "native-tauri-current-profile",
+      "tier": "env-evidence",
+      "description": "Run two synchronized current-profile Native Desktop clients through bidirectional Direct messaging, authoritative Station identity and presence, immediate local background preview with durable persistence, canonical local message search, and bounded clear/restore history."
+    },
     "chat-desktop-gateway-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,
@@ -263,7 +293,7 @@
       "timeout_seconds": 60,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate dev-runtime multi-instance isolation: per-worktree port offsets, PID files, bundle IDs, and proto ownership without launching processes."
+      "description": "Validate dev-runtime multi-instance isolation: machine-registry slots, OS-held leases, reviewed profile resolution, PID files, bundle IDs, and proto ownership without launching processes."
     },
     "desktop-dev-runtime-multi-instance": {
       "command": "python3 tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",
@@ -636,6 +666,23 @@
       "tier": "env-evidence",
       "description": "Ecosystem: publish, discover, install, rate, federation sharing."
     },
+    "agent-marketplace-catalog-e2e": {
+      "command": "PT_ACCEPTANCE_APPROVED_PROFILE=two python3 tooling/acceptance/gates/agent/marketplace_catalog_development.py",
+      "timeout_seconds": 1200,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "X3 trusted package catalog: canonical bootstrap, authenticated Station signed sync, transport digest, pagination, native browse/detail, Agent/Skill/MCP authority readback, revocation, uninstall, and cleanup.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "catalog-source",
+        "target-readback",
+        "revocation",
+        "cleanup",
+        "source-identity"
+      ]
+    },
     "agent-task-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey task",
       "timeout_seconds": 300,
@@ -996,8 +1043,10 @@
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [
+        "cell-results",
         "receiver-dom",
         "station-readback",
+        "runtime-events",
         "turn-trace",
         "metrics-lineage",
         "runtime-attestation-set",

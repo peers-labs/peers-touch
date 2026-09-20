@@ -721,8 +721,9 @@ func (s *subServer) handleFederatedAttachmentObject(
 	response server.Response,
 ) error {
 	input := &chatmodel.GetFederatedConversationAttachmentObjectRequest{}
-	if err := productionDecodeMetadataHeader(request, input); err != nil {
-		return err
+	decodeErr := productionDecodeMetadataHeader(request, input)
+	if decodeErr != nil {
+		return decodeErr
 	}
 	objectID, err := productionPathValue(
 		request.Path(),

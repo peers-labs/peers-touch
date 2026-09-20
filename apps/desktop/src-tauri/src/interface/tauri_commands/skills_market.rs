@@ -96,8 +96,13 @@ pub fn skills_market_remove(input: SkillMarketIdInput) -> AppResult<StubPayload>
 }
 
 #[tauri::command]
-pub fn skills_market_sync(input: SkillMarketSyncInput) -> AppResult<StubPayload> {
-    application_skills_market::skills_market_sync(input)
+pub fn skills_market_sync(
+    input: SkillMarketSyncInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_skills_market::skills_market_sync(input, &token)
 }
 
 #[tauri::command]

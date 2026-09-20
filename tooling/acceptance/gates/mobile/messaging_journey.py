@@ -40,6 +40,8 @@ class MessagingActor:
     station_peer_id: str
     ptid: str
     account_ref: str
+    federated_handle: str
+    federation_id: str
 
 
 class MobileMessagingJourney:
@@ -109,7 +111,7 @@ class MobileMessagingJourney:
             raise GateError(
                 f"{actor.client_id} authenticated identity does not match its Fixture"
             )
-        self._activate_authenticated_shell(session, actor.client_id)
+        self._activate_authenticated_shell(session, actor)
         return {
             "clientId": actor.client_id,
             "stationPeerId": actor.station_peer_id,
@@ -226,6 +228,7 @@ class MobileMessagingJourney:
                     "conversationId": group_id,
                     "name": f"Acceptance {journey_id}",
                     "memberPtids": [sender.ptid, receiver.ptid],
+                    "federationId": sender.federation_id,
                 },
             ),
             "Group creation",
@@ -257,10 +260,56 @@ class MobileMessagingJourney:
         sender: MessagingActor,
         receiver: MessagingActor,
     ) -> str:
+        if sender.federation_id != receiver.federation_id:
+            raise GateError("Mobile actors do not share one explicit Federation")
+        results = sender_session.call_action(
+            "social.people.search",
+            {
+                "query": receiver.federated_handle,
+            },
+        )
+        if not isinstance(results, list):
+            raise GateError("Federated actor search must return a list")
+        result = next(
+            (
+                dict(value)
+                for value in results
+                if isinstance(value, Mapping)
+                and value.get("ptid") == receiver.ptid
+            ),
+            None,
+        )
+        if result is None:
+            populated_ptids = sum(
+                1
+                for value in results
+                if isinstance(value, Mapping)
+                and isinstance(value.get("ptid"), str)
+                and bool(value["ptid"].strip())
+            )
+            raise GateError(
+                f"{sender.client_id} did not resolve the receiver identity "
+                f"(results={len(results)}, populatedPtids={populated_ptids})"
+            )
+        receiver_home_station_peer_id = self._text(
+            result.get("homeStationPeerId"),
+            "Receiver Home Station peer ID",
+        )
+        if receiver_home_station_peer_id != receiver.station_peer_id:
+            raise GateError(
+                f"{sender.client_id} resolved the receiver to the wrong Home Station"
+            )
+        federation_id = self._text(result.get("federationId"), "Federation ID")
+        if federation_id != sender.federation_id:
+            raise GateError(
+                f"{sender.client_id} resolved the receiver in the wrong Federation"
+            )
         sender_session.call_action(
             "social.request.send",
             {
                 "receiverPtid": receiver.ptid,
+                "receiverHomeStationPeerId": receiver_home_station_peer_id,
+                "federationId": federation_id,
                 "message": "mobile acceptance",
             },
         )
@@ -493,6 +542,10 @@ class MobileMessagingJourney:
             raise GateError("Receiver lifecycle restart was not acknowledged")
         receiver_session.refresh_webview()
         receiver_session.switch_to_app_webview()
+        self._await_authenticated_runtime_scope(
+            receiver_session,
+            receiver,
+        )
         self._await_message(
             receiver_session,
             conversation_id,
@@ -565,6 +618,30 @@ class MobileMessagingJourney:
         elapsed_ms = self._await_condition(check, label)
         return observed, elapsed_ms
 
+    def _await_authenticated_runtime_scope(
+        self,
+        session: MessagingJourneySession,
+        actor: MessagingActor,
+    ) -> int:
+        def ready() -> bool:
+            scope = self._mapping(
+                session.call_action("lifecycle.scope.read"),
+                f"{actor.client_id} lifecycle scope",
+            )
+            return (
+                scope.get("phase") == "ACTIVE"
+                and scope.get("activeStationPeerId")
+                == actor.station_peer_id
+                and scope.get("runtimeStationPeerId")
+                == actor.station_peer_id
+                and scope.get("activeActorPtid") == actor.ptid
+            )
+
+        return self._await_condition(
+            ready,
+            f"{actor.client_id} authenticated runtime",
+        )
+
     def _projection(
         self,
         session: MessagingJourneySession,
@@ -636,21 +713,22 @@ class MobileMessagingJourney:
     def _activate_authenticated_shell(
         self,
         session: MessagingJourneySession,
-        client_id: str,
+        actor: MessagingActor,
     ) -> None:
         restart = self._mapping(
             session.call_action("lifecycle.restart"),
-            f"{client_id} post-login restart",
+            f"{actor.client_id} post-login restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError(
-                f"{client_id} post-login restart was not acknowledged"
+                f"{actor.client_id} post-login restart was not acknowledged"
             )
         session.refresh_webview()
         session.switch_to_app_webview()
+        self._await_authenticated_runtime_scope(session, actor)
         self._await_condition(
-            lambda: self._social_runtime_active(session, client_id),
-            f"{client_id} Social runtime activation",
+            lambda: self._social_runtime_active(session, actor.client_id),
+            f"{actor.client_id} Social runtime activation",
         )
 
     @staticmethod

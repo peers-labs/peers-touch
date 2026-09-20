@@ -1561,20 +1561,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("control.frontmost", self.source)
         self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
+        self.assertIn("NativeKey.A,", self.source)
         self.assertIn(
-            "self.native_adapter.post_key_to_process(\n"
-            "            client.process_id or 0,\n"
-            "            NativeKey.A,\n"
-            "            modifiers=(NativeModifier.PRIMARY,),",
+            "self.native_adapter.select_file_chooser_path_to_process(",
             self.source,
         )
-        self.assertIn(
-            "client.process_id or 0,\n"
-            "            NativeKey.DELETE,\n"
-            "            private_source=True,",
-            self.source,
-        )
-        self.assertIn('control.value == ""', self.source)
+        self.assertNotIn("def location_field_cleared(", self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
             self.source,
@@ -1586,7 +1578,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
-            "revealed_control = "
             "self.native_adapter.reveal_file_chooser_location_to_process(",
             self.source,
         )
@@ -1604,13 +1595,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
             self.source,
         )
-        self.assertIn(
-            "self.native_adapter.post_key_to_process(\n"
-            "                client.process_id or 0,\n"
-            "                NativeKey.V,\n"
-            "                modifiers=(NativeModifier.PRIMARY,),",
-            self.source,
-        )
+        self.assertIn("NativeKey.V,", self.source)
         self.assertIn("NativeKey.ENTER", self.source)
         self.assertIn(
             '"Native Accessibility probe timed out"',

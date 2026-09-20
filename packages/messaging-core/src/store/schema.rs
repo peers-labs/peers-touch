@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS messaging_prekey_bundle (
     signed_prekey_id INTEGER NOT NULL,
     signed_prekey_private BLOB NOT NULL CHECK(length(signed_prekey_private) = 32),
     state TEXT NOT NULL,
-    created_at_unix_ms INTEGER NOT NULL
+    created_at_unix_ms INTEGER NOT NULL,
+    one_time_prekey_high_watermark INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messaging_one_time_prekeys (
     prekey_id INTEGER PRIMARY KEY,
@@ -361,6 +362,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     attachment_filenames,
     tokenize = 'unicode61'
 );
+CREATE TABLE IF NOT EXISTS messaging_schema_migrations (
+    migration_id TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS messaging_trust (
     peer_ptid TEXT PRIMARY KEY,
     fingerprint TEXT NOT NULL,
@@ -498,9 +502,17 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         column: "edited_text",
         definition: "TEXT",
     },
+    RequiredColumn {
+        table: "messaging_prekey_bundle",
+        column: "one_time_prekey_high_watermark",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
 ];
 
 pub const POST_COLUMN_MIGRATION_SQL: &str = r#"
+UPDATE messaging_prekey_bundle
+SET one_time_prekey_high_watermark = -1
+WHERE one_time_prekey_high_watermark = 0;
 UPDATE messaging_conversation_members
 SET role = 3
 WHERE role = 0
@@ -542,6 +554,35 @@ SET conversation_id = COALESCE(
         ),
         0
     );
+INSERT INTO messaging_message_search_fts(
+    conversation_id, message_id, plaintext, attachment_filenames
+)
+SELECT
+    message.conversation_id,
+    message.message_id,
+    COALESCE(NULLIF(message.edited_text, ''), message.plaintext),
+    COALESCE(
+        (
+            SELECT group_concat(attachment.filename, char(10))
+            FROM messaging_attachment_projections attachment
+            WHERE attachment.message_id = message.message_id
+        ),
+        ''
+    )
+FROM messaging_message_projections message
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM messaging_schema_migrations
+    WHERE migration_id = 'message-search-backfill-v1'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM messaging_message_search_fts search
+    WHERE search.conversation_id = message.conversation_id
+      AND search.message_id = message.message_id
+);
+INSERT OR IGNORE INTO messaging_schema_migrations(migration_id)
+VALUES ('message-search-backfill-v1');
 "#;
 
 pub trait MessagingSchemaBackend {
@@ -621,9 +662,11 @@ fn migrate_legacy_mobile_schema<B: MessagingSchemaBackend>(backend: &B) -> Resul
         }
         backend.execute_batch(
             "INSERT INTO messaging_prekey_bundle(
-                id, signed_prekey_id, signed_prekey_private, state, created_at_unix_ms
+                id, signed_prekey_id, signed_prekey_private, state,
+                created_at_unix_ms, one_time_prekey_high_watermark
              )
-             SELECT 1, prekey_id, private_key, 'published', 1
+             SELECT 1, prekey_id, private_key, 'published', 1,
+                    -1
              FROM messaging_prekeys
              WHERE kind = 'signed'
              ON CONFLICT(id) DO NOTHING;

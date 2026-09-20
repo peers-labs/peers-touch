@@ -359,15 +359,10 @@ mod test_support {
                 if let Some(provider_pool) = commit.provider_pool_state {
                     state.provider_pool = Some(provider_pool.to_vec());
                 }
-                if let Some(projection) = commit.join_projection {
-                    state
-                        .conversations
-                        .insert(commit.conversation_id.to_string(), projection.clone());
-                } else if let Some(projection) = state.conversations.get_mut(commit.conversation_id)
-                {
-                    projection.membership_epoch = commit.to_membership_epoch;
-                    projection.mls_epoch = commit.to_mls_epoch;
-                }
+                state.conversations.insert(
+                    commit.conversation_id.to_string(),
+                    commit.authority_projection.clone(),
+                );
                 Self::update_authority_head(
                     &mut state,
                     commit.conversation_id,
@@ -390,17 +385,10 @@ mod test_support {
                     commit.session_state.to_vec(),
                 );
                 state.pending_transitions.remove(commit.conversation_id);
-                if let Some(projection) = commit.genesis_projection {
-                    state
-                        .conversations
-                        .insert(commit.conversation_id.to_string(), projection.clone());
-                } else if let Some(projection) = state.conversations.get_mut(commit.conversation_id)
-                {
-                    projection.membership_epoch = commit.membership_epoch;
-                    projection.mls_epoch = commit.mls_epoch;
-                } else {
-                    return Err("test MLS conversation projection is unavailable".to_string());
-                }
+                state.conversations.insert(
+                    commit.conversation_id.to_string(),
+                    commit.authority_projection.clone(),
+                );
                 Self::update_authority_head(
                     &mut state,
                     commit.conversation_id,

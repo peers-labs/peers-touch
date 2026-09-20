@@ -24,6 +24,17 @@ automatic labeling, and issue linking using the `gh` CLI.
 
 ### 1. Pre-flight Checks
 
+Before push or PR creation, require the bound formal execution plan to have no
+incomplete closure:
+
+```bash
+python3 tooling/scripts/execution-plan.py --require-complete
+```
+
+An incomplete or ambiguous plan blocks a normal ready-for-review PR. It may be
+opened as draft only when the body names the incomplete closure and the user
+explicitly requests that draft.
+
 ```bash
 # Verify gh auth
 gh auth status
@@ -146,6 +157,7 @@ Use the project PR template structure. Fill in each section based on actual chan
 
 ## Quality Evidence / 质量证据
 
+- Execution plan:
 - Range:
 - Review profiles:
 - Matched knowledge:

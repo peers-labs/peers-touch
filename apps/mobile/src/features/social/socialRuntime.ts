@@ -12,7 +12,10 @@ import {
 import type { SocialState } from './socialStore';
 import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
-import { readableErrorMessage } from './socialTypes';
+import {
+  readableErrorMessage,
+  type ActorSearchResult,
+} from './socialTypes';
 import type { GroupMembershipKind } from './socialWire';
 
 const RECONCILE_INTERVAL_MS = 30000;
@@ -125,6 +128,14 @@ export async function reconcileSocialRuntime(): Promise<SocialRuntimePublicProje
   return readSocialRuntimeProjection();
 }
 
+export async function searchSocialPeople(query: string): Promise<ActorSearchResult[]> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().searchPeople(query);
+  const state = useSocialStore.getState();
+  if (state.peopleSearchError) throw state.peopleSearchError;
+  return [...state.peopleSearchResults];
+}
+
 function requireActiveSocialRuntime(): void {
   if (!activeRuntime) throw new Error('mobile.social.runtimeUnavailable');
 }
@@ -164,7 +175,9 @@ export function startSocialRuntime(
     onReceipt: wakeMessaging,
     onMutation: wakeMessaging,
     onTyping: (...args) => {
-      if (!cancelled) store.applyTypingState(...args);
+      if (!cancelled) {
+        store.applyTypingState(...args);
+      }
     },
     onPresence: (...args) => {
       if (!cancelled) store.setPeerOnline(...args);
@@ -275,9 +288,9 @@ async function superviseRealtimeStream(
     try {
       await startRealtimeStream(session, signal, handlers);
       reconnectDelay = REALTIME_RECONNECT_BASE_MS;
-	} catch {
-	  if (signal.aborted) return;
-	}
+    } catch {
+      if (signal.aborted) return;
+    }
 
     if (signal.aborted) return;
     await reconcileActiveThreads(store, groupStore);

@@ -178,9 +178,9 @@ func newQueryService(
 	}}
 	service, err := NewService(&queryUnitOfWork{transaction: ports.Transaction{
 		Repositories: repository.Repositories{
-			Authority: authority,
-			Events:    events,
-			Followers: &queryFollowerRepository{},
+			Authority:    authority,
+			Events:       events,
+			Followers:    &queryFollowerRepository{},
 			LeaveIntents: intents,
 		},
 	}})

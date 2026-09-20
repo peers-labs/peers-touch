@@ -67,26 +67,44 @@ impl<'a> CapabilityOperationWorker<'a> {
                 operation.attempt_epoch,
                 operation.fencing_token,
             )?;
-            self.ledger
-                .store(self.station_url, &operation, "received")?;
+            let reconciled = self
+                .transport
+                .reconcile_operation(&operation.operation_id, operation.last_event_sequence)?;
+            let current = reconciled
+                .operation
+                .ok_or_else(|| "CAPABILITY_OPERATION_RECONCILIATION_MISSING".to_string())?;
+            self.ledger.store(self.station_url, &current, "received")?;
             let kernel = FencedOperationExecutor::new(
                 self.device_id,
                 self.session_id,
                 self.executor,
                 self.transport,
             );
-            let terminal = if checkpoint.is_some() {
-                let reconciled = self
-                    .transport
-                    .reconcile_operation(&operation.operation_id, operation.last_event_sequence)?;
-                let current = reconciled
-                    .operation
-                    .ok_or_else(|| "CAPABILITY_OPERATION_RECONCILIATION_MISSING".to_string())?;
+            let execution = if checkpoint.is_some()
+                || current.status
+                    != crate::model::agent::CapabilityOperationStatus::Dispatched as i32
+            {
                 kernel.reconcile_at(current, now_ms)?
             } else {
-                kernel.consume_at(operation.clone(), now_ms)?
+                match kernel.consume_at(current.clone(), now_ms) {
+                    Ok(terminal) => terminal,
+                    Err(execution_error) => {
+                        let reconciled = self.transport.reconcile_operation(
+                            &current.operation_id,
+                            current.last_event_sequence,
+                        )?;
+                        let authoritative = reconciled.operation.ok_or_else(|| {
+                            "CAPABILITY_OPERATION_RECONCILIATION_MISSING".to_string()
+                        })?;
+                        if authoritative.revision <= current.revision {
+                            return Err(execution_error);
+                        }
+                        kernel.reconcile_at(authoritative, now_ms)?
+                    }
+                }
             };
-            self.ledger.store(self.station_url, &terminal, "terminal")?;
+            self.ledger
+                .store(self.station_url, &execution, "terminal")?;
             self.ledger.advance_cursor(
                 self.station_url,
                 self.session_id,
@@ -122,8 +140,7 @@ mod tests {
     impl LocalOperationExecutor for Executor {
         fn execute(
             &self,
-            _operation_kind: &str,
-            _bounded_arguments: &[u8],
+            _operation: &CapabilityOperation,
             _external_idempotency_key: Option<&str>,
         ) -> Result<String, CapabilityOperationError> {
             *self.calls.borrow_mut() += 1;
@@ -227,6 +244,43 @@ mod tests {
         );
         assert_eq!(restarted.tick_at(1_001).unwrap(), 1);
         assert_eq!(*executor.calls.borrow(), 1);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn capability_operation_worker_reconciles_cancellation_before_side_effect() {
+        let path = std::env::temp_dir().join(format!(
+            "peers-operation-worker-cancelled-{}.sqlite3",
+            ulid::Ulid::new()
+        ));
+        let ledger = OperationLedger::open_test(&path).expect("open ledger");
+        let executor = Executor {
+            calls: RefCell::new(0),
+        };
+        let mut cancelled = operation();
+        cancelled.status = CapabilityOperationStatus::SettlingCleanup as i32;
+        cancelled.desired_terminal_outcome = CapabilityOperationStatus::Cancelled as i32;
+        cancelled.cleanup_lease_id = "cleanup-1".to_string();
+        cancelled.cleanup_epoch = 1;
+        cancelled.cleanup_fencing_token = 1;
+        let transport = Transport {
+            operation: RefCell::new(cancelled),
+        };
+        let worker = CapabilityOperationWorker::new(
+            "http://station",
+            "device-1",
+            "session-1",
+            &ledger,
+            &executor,
+            &transport,
+        );
+
+        assert_eq!(worker.tick_at(1_000).unwrap(), 1);
+        assert_eq!(*executor.calls.borrow(), 0);
+        assert_eq!(
+            transport.operation.borrow().status,
+            CapabilityOperationStatus::Cancelled as i32,
+        );
         let _ = std::fs::remove_file(path);
     }
 

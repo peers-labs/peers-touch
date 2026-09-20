@@ -77,7 +77,7 @@ func MigrateIdentityColumns(db *gorm.DB) error {
 
 type federationModel struct {
 	ID                     int64     `gorm:"primaryKey;autoIncrement"`
-	FederationID           string    `gorm:"uniqueIndex;type:varchar(30);not null"`
+	FederationID           string    `gorm:"unique;type:varchar(30);not null"`
 	Name                   string    `gorm:"type:varchar(255);not null"`
 	Description            string    `gorm:"type:text;not null;default:''"`
 	Status                 string    `gorm:"type:varchar(20);not null;default:'active';index"`
@@ -96,7 +96,7 @@ func (federationModel) TableName() string { return "federation" }
 
 type ledgerEventModel struct {
 	ID                     int64  `gorm:"primaryKey;autoIncrement"`
-	EventID                string `gorm:"uniqueIndex;type:varchar(30);not null"`
+	EventID                string `gorm:"unique;type:varchar(30);not null"`
 	FederationID           string `gorm:"type:varchar(30);not null;index:idx_ledger_event_federation_seq"`
 	Seq                    int64  `gorm:"not null;index:idx_ledger_event_federation_seq"`
 	PrevHash               []byte `gorm:"type:bytea;not null"`
@@ -146,7 +146,7 @@ func (actorRoleModel) TableName() string { return "federation_actor_role" }
 
 type actorSigningKeyModel struct {
 	ID        int64      `gorm:"primaryKey;autoIncrement"`
-	ActorPTID string     `gorm:"column:actor_ptid;uniqueIndex;type:varchar(255);not null"`
+	ActorPTID string     `gorm:"column:actor_ptid;unique;type:varchar(255);not null"`
 	PublicKey []byte     `gorm:"type:bytea;not null"`
 	Seed      []byte     `gorm:"column:encrypted_private_key;type:bytea;not null"`
 	CreatedAt time.Time  `gorm:"not null;autoCreateTime"`

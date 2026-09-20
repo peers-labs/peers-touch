@@ -182,6 +182,9 @@ Check:
 - Old docs do not contradict new architecture.
 - The `active_work` row matches the actual worktree and branch, and agrees with
   the plan status table, tracking source, evidence, blockers, and next action.
+- The immutable workspace binding resolves exactly one formal Plan, every closure is
+  complete before merge, and the plan's Acceptance Execution contract matches
+  the actual diff impact.
 - `active_work`, todos, dashboards, and chat projections do not claim progress
   stronger than the plan status table and repository evidence.
 - Acceptance Infra readiness is judged from `acceptance_core_self_validation`

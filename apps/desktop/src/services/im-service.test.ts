@@ -66,6 +66,22 @@ describe('IM service boundary', () => {
     expect(devices[0]?.status).toBe(2)
     expect(devices[0]?.profileVersion).toBe(1n)
   })
+
+  it('binds device revocation to the observed profile version', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {},
+    })
+
+    await imServiceV1.device.revoke('device-alice', 7n)
+
+    expect(invokeMock).toHaveBeenCalledWith('device_revoke', {
+      input: {
+        device_id: 'device-alice',
+        observed_profile_version: 7,
+      },
+    })
+  })
 })
 
 describe('normalizeConversationEvents', () => {

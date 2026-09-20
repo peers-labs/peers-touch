@@ -18,6 +18,18 @@ import (
 	"gorm.io/gorm"
 )
 
+const testDashboardStationPeerID = "station-dashboard-test"
+
+type contentProofVerificationKeyTestRow struct {
+	StationPeerID    string
+	SigningKeyID     string
+	Ed25519PublicKey []byte
+}
+
+func (contentProofVerificationKeyTestRow) TableName() string {
+	return federation.ContentProofVerificationKeyTable
+}
+
 func newOSSTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -29,10 +41,11 @@ func newOSSTestDB(t *testing.T) *gorm.DB {
 		&ossmodel.Bucket{},
 		&ossmodel.Audit{},
 		&ossmodel.Meta{},
-		&federation.AuthLocalKeyRow{},
-		&federation.PeerKeyRow{},
 	); err != nil {
-		t.Fatalf("automigrate: %v", err)
+		t.Fatalf("migrate OSS schema: %v", err)
+	}
+	if err := federation.MigrateSchema(context.Background(), db); err != nil {
+		t.Fatalf("migrate Federation schema: %v", err)
 	}
 	return db
 }
@@ -84,7 +97,7 @@ func seedAudit(t *testing.T, db *gorm.DB, rows ...ossmodel.Audit) {
 
 func TestOSSRepository_ListAndGetBuckets(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 
 	seedBuckets(t, db,
 		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerPTID: "actor-a", Kind: "system", SystemKey: "chat", DefaultVisibility: "chat", QuotaBytes: 100, UsedBytes: 30},
@@ -136,7 +149,7 @@ func TestOSSRepository_ListAndGetBuckets(t *testing.T) {
 
 func TestOSSRepository_ListObjects_Filters(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 
 	seedFiles(t, db,
 		ossmodel.FileMeta{Key: "kA", Name: "1", BucketID: "b1", OwnerPTID: "actor-a", Visibility: "public", Mime: "image/png", Backend: "local", Size: 10},
@@ -171,7 +184,7 @@ func TestOSSRepository_ListObjects_Filters(t *testing.T) {
 
 func TestOSSRepository_ListAudit_FiltersAndPaging(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	seedAudit(t, db,
@@ -209,7 +222,7 @@ func TestOSSRepository_ListAudit_FiltersAndPaging(t *testing.T) {
 
 func TestOSSRepository_Usage(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 
 	seedBuckets(t, db,
 		ossmodel.Bucket{ID: "b1", Name: "chat", OwnerPTID: "actor-a", Kind: "system", SystemKey: "chat"},
@@ -238,7 +251,7 @@ func TestOSSRepository_Usage(t *testing.T) {
 
 func TestOSSRepository_FederationLocalAndPeers(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 
 	// Federation-me reads two oss_meta keys (pub + kid). When neither
 	// is set, the response is `{generated:false}` — that path is what
@@ -314,7 +327,7 @@ func TestOSSRepository_FederationLocalAndPeers(t *testing.T) {
 
 func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	got, err := repo.CreateBucket(ctx, BucketCreateInput{
@@ -354,7 +367,7 @@ func TestOSSRepository_CreateBucket_HappyAndConflict(t *testing.T) {
 
 func TestOSSRepository_UpdateBucket_PartialPatchAndNotFound(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedBuckets(t, db, ossmodel.Bucket{
@@ -394,7 +407,7 @@ func TestOSSRepository_UpdateBucket_PartialPatchAndNotFound(t *testing.T) {
 
 func TestOSSRepository_DeleteBucket_GuardsAndForce(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedBuckets(t, db,
@@ -439,7 +452,7 @@ func TestOSSRepository_DeleteBucket_GuardsAndForce(t *testing.T) {
 
 func TestOSSRepository_GetObject_FoundAndMissing(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
@@ -466,7 +479,7 @@ func TestOSSRepository_GetObject_FoundAndMissing(t *testing.T) {
 
 func TestOSSRepository_AdminPatchObject_UpdatesAndBumpsCapability(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
@@ -508,7 +521,7 @@ func TestOSSRepository_AdminPatchObject_UpdatesAndBumpsCapability(t *testing.T) 
 
 func TestOSSRepository_AdminPatchObject_RejectsChatWithoutSession(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
@@ -533,7 +546,7 @@ func TestOSSRepository_AdminPatchObject_RejectsChatWithoutSession(t *testing.T) 
 
 func TestOSSRepository_AdminPatchObject_AwayFromChatClearsSession(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
@@ -553,7 +566,7 @@ func TestOSSRepository_AdminPatchObject_AwayFromChatClearsSession(t *testing.T) 
 
 func TestOSSRepository_AdminPatchObject_RejectsDeletedRow(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	now := time.Now()
@@ -570,7 +583,7 @@ func TestOSSRepository_AdminPatchObject_RejectsDeletedRow(t *testing.T) {
 
 func TestOSSRepository_AdminDeleteObject_HappyAndIdempotent(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	seedFiles(t, db, ossmodel.FileMeta{
@@ -603,7 +616,7 @@ func TestOSSRepository_AdminDeleteObject_HappyAndIdempotent(t *testing.T) {
 
 func TestOSSRepository_RecordOSSAudit_AppendsRow(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	if err := repo.RecordOSSAudit(ctx, OSSAuditAppend{
@@ -651,7 +664,7 @@ func readSlotForTest(t *testing.T, db *gorm.DB, slot string) federation.AuthLoca
 
 func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	resp, err := repo.RotateFederationLocalKey(ctx)
@@ -686,7 +699,7 @@ func TestOSSRepository_RotateFederationLocalKey_FirstRotationGreenfield(t *testi
 
 func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	first, err := repo.RotateFederationLocalKey(ctx)
@@ -717,6 +730,17 @@ func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 	if prev.PrivPEM != firstPriv {
 		t.Errorf("prev slot priv: should hold the demoted priv, got mismatch")
 	}
+	var archived contentProofVerificationKeyTestRow
+	if err := db.Where(
+		"station_peer_id = ? AND signing_key_id = ?",
+		testDashboardStationPeerID,
+		first.NewKID,
+	).Take(&archived).Error; err != nil {
+		t.Fatalf("read archived public key: %v", err)
+	}
+	if len(archived.Ed25519PublicKey) == 0 {
+		t.Fatal("rotation did not archive the outgoing public key")
+	}
 
 	cur := readSlotForTest(t, db, federation.SlotCurrent)
 	if cur.Kid != second.NewKID {
@@ -733,7 +757,7 @@ func TestOSSRepository_RotateFederationLocalKey_DemotesPrevious(t *testing.T) {
 
 func TestOSSRepository_ForgetPeer_DropsRowAndIsIdempotent(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	now := time.Now().UTC()
@@ -769,7 +793,7 @@ func TestOSSRepository_ForgetPeer_DropsRowAndIsIdempotent(t *testing.T) {
 
 func TestOSSRepository_ListWorkers_ProjectsHeartbeats(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	now := time.Now().UTC()
@@ -826,7 +850,7 @@ func TestOSSRepository_ListWorkers_ProjectsHeartbeats(t *testing.T) {
 
 func TestOSSRepository_ListWorkers_DefaultsLookbackTo24h(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	got, err := repo.ListWorkers(ctx, 0)
@@ -859,7 +883,7 @@ func TestParseWorkerHeartbeatReason(t *testing.T) {
 
 func TestOSSRepository_RotateFederationLocalKey_BumpsCapabilityVersion(t *testing.T) {
 	db := newOSSTestDB(t)
-	repo := NewOSSRepository(db)
+	repo := NewOSSRepository(db, testDashboardStationPeerID)
 	ctx := context.Background()
 
 	// Seed an initial capability_version so we can prove the

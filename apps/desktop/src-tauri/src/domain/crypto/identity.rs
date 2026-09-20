@@ -10,6 +10,7 @@ use std::sync::{Mutex, OnceLock};
 use ed25519_dalek::VerifyingKey;
 use sha2::{Digest, Sha256};
 use x25519_dalek::PublicKey as X25519Public;
+use zeroize::Zeroizing;
 
 use super::error::CryptoError;
 
@@ -28,8 +29,8 @@ const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
 const ACTOR_IDENTITY_ROOT_ENV: &str = "PEERS_ACTOR_IDENTITY_ROOT";
 const STORAGE_ROOT_ENV: &str = "PEERS_STORAGE_ROOT";
 
-fn identity_cache() -> &'static Mutex<HashMap<String, [u8; 32]>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, [u8; 32]>>> = OnceLock::new();
+fn identity_cache() -> &'static Mutex<HashMap<String, Zeroizing<[u8; 32]>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Zeroizing<[u8; 32]>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -85,6 +86,7 @@ fn load_scoped_identity_key(
 ) -> Result<Option<IdentityKeyPair>, CryptoError> {
     match fs::read_to_string(path) {
         Ok(content) => {
+            let content = Zeroizing::new(content);
             harden_path(path)?;
             parse_hex_seed(identity_key_ref, content.trim())
         }
@@ -94,7 +96,7 @@ fn load_scoped_identity_key(
 }
 
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), CryptoError> {
-    let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
+    let hex_seed = Zeroizing::new(seed.iter().map(|b| format!("{b:02x}")).collect::<String>());
 
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         if let Some(parent) = path.parent() {
@@ -103,7 +105,7 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
         fs::write(&path, hex_seed.as_str()).map_err(|e| CryptoError::IoError(e.to_string()))?;
         harden_path(&path)?;
         if let Ok(mut cache) = identity_cache().lock() {
-            cache.insert(identity_key_ref.to_string(), *seed);
+            cache.insert(identity_key_ref.to_string(), Zeroizing::new(*seed));
         }
         return Ok(());
     }
@@ -113,7 +115,7 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
         .set_password(&hex_seed)
         .map_err(|e| CryptoError::KeyringAccess(e.to_string()))?;
     if let Ok(mut cache) = identity_cache().lock() {
-        cache.insert(identity_key_ref.to_string(), *seed);
+        cache.insert(identity_key_ref.to_string(), Zeroizing::new(*seed));
     }
     Ok(())
 }
@@ -121,7 +123,7 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
 pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, CryptoError> {
     if let Ok(cache) = identity_cache().lock() {
         if let Some(seed) = cache.get(identity_key_ref) {
-            return Ok(Some(IdentityKeyPair::from_seed(seed)));
+            return Ok(Some(IdentityKeyPair::from_seed(&**seed)));
         }
     }
 
@@ -131,7 +133,10 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
 
     let entry = keyring_entry(identity_key_ref)?;
     match entry.get_password() {
-        Ok(pw) => parse_hex_seed(identity_key_ref, &pw),
+        Ok(password) => {
+            let password = Zeroizing::new(password);
+            parse_hex_seed(identity_key_ref, &password)
+        }
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(CryptoError::KeyringAccess(e.to_string())),
     }
@@ -142,7 +147,7 @@ pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair,
         return Ok(kp);
     }
     let kp = IdentityKeyPair::generate();
-    let seed = kp.seed_bytes();
+    let seed = Zeroizing::new(kp.seed_bytes());
     store_identity_key(identity_key_ref, &seed)?;
     Ok(kp)
 }
@@ -173,13 +178,13 @@ fn parse_hex_seed(
             "stored identity key is not 64 hex chars".into(),
         ));
     }
-    let mut seed = [0u8; 32];
+    let mut seed = Zeroizing::new([0u8; 32]);
     for i in 0..32 {
         seed[i] = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
             .map_err(|_| CryptoError::InvalidKeyFormat("hex decode failed".into()))?;
     }
     if let Ok(mut cache) = identity_cache().lock() {
-        cache.insert(identity_key_ref.to_string(), seed);
+        cache.insert(identity_key_ref.to_string(), seed.clone());
     }
     Ok(Some(IdentityKeyPair::from_seed(&seed)))
 }

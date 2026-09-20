@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
 import { Modal, Select, Tag, theme, Tooltip, Typography } from 'antd';
@@ -50,8 +51,13 @@ import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatFederationSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 import { imServiceV1 } from '../../services/im-service';
+import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache';
+import { resolveFederationStationName } from '../../store/federation';
 
 const { Text } = Typography;
 
@@ -603,6 +609,7 @@ export function ChatDetailPanel() {
     setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
     loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
+    setConversationBackgroundPreview,
     getIMConversations,
     messages,
     encryptionEnabled,
@@ -629,6 +636,7 @@ export function ChatDetailPanel() {
     selectGroup: s.selectGroup,
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
+    setConversationBackgroundPreview: s.setConversationBackgroundPreview,
     getIMConversations: s.getIMConversations,
     messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
@@ -639,6 +647,13 @@ export function ChatDetailPanel() {
     peerProfiles: s.peerProfiles,
     loadPeerProfile: s.loadPeerProfile,
     setGroupSecurityState: s.setGroupSecurityState,
+  }));
+  const {
+    actorStationEntries,
+    memberStationsByFederation,
+  } = useActiveChatFederationSlice((state) => ({
+    actorStationEntries: state.actorStationEntries,
+    memberStationsByFederation: state.memberStationsByFederation,
   }));
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
@@ -655,6 +670,13 @@ export function ChatDetailPanel() {
   const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
     || (activeConversation?.avatar || '');
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
+  const authorityStationName = resolveFederationStationName({
+    actorPtid: activeConversation?.peerPtid,
+    federationId: activeConversation?.federationId,
+    stationPeerId: authorityStationId,
+    actorStationEntries,
+    memberStationsByFederation,
+  });
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -832,15 +854,33 @@ export function ChatDetailPanel() {
   const applyHistoryClearedAt = async (clearedAt: number) => {
     if (!activeUlid) return;
     setHistoryActionPending(true);
+    // #region debug-point E:history-clear-marker
+    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:start', msg: '[DEBUG] History marker update started', data: { kind: activeTab, conversationId: activeUlid, previousClearedAt: clearHistoryClearedAt, requestedClearedAt: clearedAt }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     try {
       await updateConversationLocalState(activeTab, activeUlid, { clearedAt });
-      await loadMessages(activeUlid, activeTab);
-      await loadConversationPreviews();
       setHistoryNow(Date.now());
+      const refreshResults = await Promise.allSettled([
+        loadMessages(activeUlid, activeTab),
+        loadConversationPreviews(),
+      ]);
+      if (refreshResults.some((result) => result.status === 'rejected')) {
+        log.warn('chat', 'conversation history committed; projection refresh deferred', {
+          kind: activeTab,
+          ulid: activeUlid,
+          clearedAt,
+        });
+      }
+      // #region debug-point E:history-clear-marker-result
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:success', msg: '[DEBUG] History marker update completed', data: { kind: activeTab, conversationId: activeUlid, requestedClearedAt: clearedAt }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       toast.success(clearedAt > 0
         ? t('chat.social.detail.clearHistorySuccess')
         : t('chat.social.detail.restoreHistorySuccess'));
     } catch (error) {
+      // #region debug-point E:history-clear-marker-error
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:error', msg: '[DEBUG] History marker update failed', data: { kind: activeTab, conversationId: activeUlid, previousClearedAt: clearHistoryClearedAt, requestedClearedAt: clearedAt, error: String(error) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       log.error('chat', 'conversation history action failed', { kind: activeTab, ulid: activeUlid, clearedAt, error });
       presentError(error, {
         mapper: mapChatError,
@@ -910,11 +950,16 @@ export function ChatDetailPanel() {
     }
   };
 
-  const handleUploadBackgroundImage = async (filePath: string) => {
+  const handleUploadBackgroundImage = async (filePath: string, previewUrl: string) => {
     if (!activeUlid) return;
     if (conversationActionPending) return;
+    setConversationBackgroundPreview(activeTab, activeUlid, previewUrl);
     setBackgroundRetryPath(filePath);
     setConversationActionPending('background-image');
+    const backgroundStartedAt = performance.now();
+    // #region debug-point B:background-selection
+    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:start', msg: '[DEBUG] Background upload started after local preview commit', data: { kind: activeTab, conversationId: activeUlid, filePathLength: filePath.length, currentBackgroundImage: activeLocalState?.backgroundImage || '' }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     try {
       const uploaded = await api.ossUploadLocalFile({
         file_path: filePath,
@@ -922,10 +967,19 @@ export function ChatDetailPanel() {
         visibility: 'private',
         chat_session_id: null,
       });
+      // #region debug-point B:background-uploaded
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:uploaded', msg: '[DEBUG] Background upload completed', data: { kind: activeTab, conversationId: activeUlid, elapsedMs: Math.round(performance.now() - backgroundStartedAt), cid: uploaded.cid }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
+      setCachedOssAttachmentUrl(uploaded.cid, { src: previewUrl });
       await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
+      setConversationBackgroundPreview(activeTab, activeUlid, null);
+      // #region debug-point B:background-committed
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:committed', msg: '[DEBUG] Background durable commit completed after preview', data: { kind: activeTab, conversationId: activeUlid, elapsedMs: Math.round(performance.now() - backgroundStartedAt), cid: uploaded.cid }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       setBackgroundRetryPath(null);
       toast.success(t('chat.social.detail.backgroundImageUpdated'));
     } catch (error) {
+      setConversationBackgroundPreview(activeTab, activeUlid, null);
       log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
       presentError(error, {
         mapper: mapChatError,
@@ -944,8 +998,9 @@ export function ChatDetailPanel() {
     } catch {
       return;
     }
+    const previewUrl = convertFileSrc(filePath);
     Modal.destroyAll();
-    await handleUploadBackgroundImage(filePath);
+    void handleUploadBackgroundImage(filePath, previewUrl);
   };
 
   const confirmClearHistory = () => {
@@ -1184,7 +1239,10 @@ export function ChatDetailPanel() {
               loading={conversationActionPending === 'background-image'}
               onClick={() => {
                 Modal.destroyAll();
-                void handleUploadBackgroundImage(backgroundRetryPath);
+                void handleUploadBackgroundImage(
+                  backgroundRetryPath,
+                  convertFileSrc(backgroundRetryPath),
+                );
               }}
             >
               {t('chat.social.detail.retryBackgroundImage')}
@@ -1398,6 +1456,9 @@ export function ChatDetailPanel() {
                 peerIsOnline,
                 encryptionEnabled,
                 cachedPeerProfile,
+                authorityStationId,
+                authorityStationName,
+                federationId: activeConversation?.federationId || '',
                 t,
               })}
             />
@@ -1407,6 +1468,7 @@ export function ChatDetailPanel() {
         <Flexbox
           data-chat-station="authority"
           data-chat-station-id={authorityStationId}
+          data-chat-station-name={authorityStationName}
           data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
           horizontal
           align="center"
@@ -1415,11 +1477,11 @@ export function ChatDetailPanel() {
         >
           <Text
             type="secondary"
-            ellipsis={authorityStationId ? { tooltip: authorityStationId } : false}
+            ellipsis={authorityStationName ? { tooltip: authorityStationName } : false}
             style={{ maxWidth: '100%', fontSize: 11 }}
           >
-            {authorityStationId
-              ? t('chat.social.detail.authorityStation', { station: authorityStationId })
+            {authorityStationName
+              ? t('chat.social.detail.authorityStation', { station: authorityStationName })
               : t('chat.social.detail.authorityStationUnavailable')}
           </Text>
         </Flexbox>
@@ -1836,6 +1898,9 @@ interface BuildChatDetailProfileArgs {
   peerIsOnline: boolean | null | undefined;
   encryptionEnabled: boolean;
   cachedPeerProfile: AccountProfile | null | undefined;
+  authorityStationId: string;
+  authorityStationName: string;
+  federationId: string;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }
 
@@ -1855,6 +1920,9 @@ function buildChatDetailProfile({
   peerIsOnline,
   encryptionEnabled,
   cachedPeerProfile,
+  authorityStationId,
+  authorityStationName,
+  federationId,
   t,
 }: BuildChatDetailProfileArgs): PublicProfileModel {
   const presenceLabel = isGroup
@@ -1863,7 +1931,7 @@ function buildChatDetailProfile({
       ? peerIsOnline
         ? t('chat.social.detail.online')
         : t('chat.social.detail.offline')
-      : t('chat.social.detail.directMessage');
+      : t('chat.social.detail.presenceUnavailable');
   const encryptionBadge = {
     label: encryptionEnabled
       ? t('chat.social.detail.encrypted')
@@ -1923,6 +1991,32 @@ function buildChatDetailProfile({
     links: (cachedPeerProfile?.links ?? []).filter((l) => l && (l.label || l.url)),
     relationLabel: presenceLabel,
     relationTone: peerIsOnline ? 'success' : 'default',
+    identityMetadata: authorityStationName
+      ? [t('chat.social.identity.station', { station: authorityStationName })]
+      : undefined,
+    technicalDetails: [
+      {
+        id: 'actor-ptid',
+        label: t('chat.social.identity.details.actorPtid'),
+        value: cachedPeerProfile?.id?.trim() || peerPtid,
+      },
+      {
+        id: 'station-peer-id',
+        label: t('chat.social.identity.details.stationPeerId'),
+        value: authorityStationId,
+      },
+      {
+        id: 'federation-id',
+        label: t('chat.social.identity.details.federationId'),
+        value: federationId,
+      },
+    ].filter((detail) => detail.value).map((detail) => ({
+      ...detail,
+      copyLabel: t('chat.social.identity.details.copy', { label: detail.label }),
+      copiedLabel: t('chat.social.identity.details.copied', { label: detail.label }),
+      copyFailedLabel: t('chat.social.identity.details.copyFailed', { label: detail.label }),
+    })),
+    technicalDetailsLabel: t('chat.social.identity.details.title'),
     badges: [encryptionBadge],
     stats: stats.length > 0 ? stats : undefined,
   };

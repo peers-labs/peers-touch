@@ -489,18 +489,12 @@ func (s *ossSubServer) Init(ctx context.Context, opts ...option.Option) error {
 			// schema sentinel and seeds capability_version);
 			// re-running it here keeps Init self-contained when
 			// the InitTableHooks pre-pass missed a model.
-			//
-			// The framework `auth/federation` tables ride along
-			// here for now because OSS is the only consumer; a
-			// future framework-level Init will move them out.
 			_ = rds.AutoMigrate(
 				&ossmodel.Audit{},
 				&ossmodel.Blob{},
 				&ossmodel.Bucket{},
 				&ossmodel.FileMeta{},
 				&ossmodel.Meta{},
-				&federation.AuthLocalKeyRow{},
-				&federation.PeerKeyRow{},
 			)
 			// Bootstrap stamps the schema version sentinel and
 			// seeds `capability_version`. Idempotent — repeat

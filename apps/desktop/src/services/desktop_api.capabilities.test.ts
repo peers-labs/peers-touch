@@ -22,7 +22,11 @@ import {
   UpdateKnowledgeResourceDescriptorResponseSchema,
   UpsertAgentCapabilityBindingResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
-import { api, isAgentCapabilityReady } from './desktop_api';
+import {
+  api,
+  isAgentCapabilityReady,
+  RustCommandException,
+} from './desktop_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -199,6 +203,37 @@ describe('Desktop capability authority API', () => {
         expectedBindingRevision: 4,
         idempotencyKey: 'delete-key',
         reason: 'retired',
+      },
+    });
+  });
+
+  it('preserves typed conflict metadata from protobuf mutations', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'CONFLICT',
+        message: 'agent.capabilityBindingUpsertFailed',
+        details: {
+          error_code: 'AGENT_4009',
+        },
+      },
+    });
+
+    const error = await api.upsertAgentCapabilityBinding({
+      bindingId: 'binding-1',
+      agentId: 'agent-1',
+      capabilityId: 'filesystem.read',
+      capabilityVersion: '1',
+      enabled: true,
+      approvalPolicy: 1,
+      expectedAgentVersion: 7n,
+    }, 3n, 'stale-upsert').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RustCommandException);
+    expect(error).toMatchObject({
+      code: 'CONFLICT',
+      details: {
+        error_code: 'AGENT_4009',
       },
     });
   });

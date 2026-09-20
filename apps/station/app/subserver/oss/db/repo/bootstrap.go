@@ -6,7 +6,6 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
-	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
 )
@@ -76,11 +75,6 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		&ossmodel.Bucket{},
 		&ossmodel.FileMeta{},
 		&ossmodel.Meta{},
-		// Framework auth/federation tables live alongside the
-		// OSS schema while OSS is the only consumer; a future
-		// framework-level Bootstrap will move them out.
-		&federation.AuthLocalKeyRow{},
-		&federation.PeerKeyRow{},
 	); err != nil {
 		return nil, err
 	}

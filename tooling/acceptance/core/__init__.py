@@ -44,9 +44,11 @@ from .evidence_store import (
     current_artifact_path,
     current_run_directory,
     latest_artifact_path,
+    new_run_id,
     resolve_artifact_root,
     source_identity,
     validate_external_output_path,
+    validate_run_id,
     write_current_artifact,
     workspace_id,
 )
@@ -110,6 +112,20 @@ from .runtime_cell import (
     parse_required_runtime_cells,
 )
 from .provisioner import EnvironmentProvisioner
+from .execution_plan import (
+    PLAN_BINDING_MISMATCH,
+    PLAN_BINDING_REQUIRED,
+    PLAN_COMPLETE,
+    PLAN_DRIFT,
+    PLAN_INPUT_REQUIRED,
+    PLAN_INVALID,
+    ExecutionPlanError,
+    FormalExecutionPlan,
+    changed_paths_for_plan,
+    closure_status_is_complete,
+    discover_active_plan,
+    load_formal_plan,
+)
 
 __all__ = [
     "GateError",
@@ -201,6 +217,18 @@ __all__ = [
     "RuntimeCellState",
     "parse_required_runtime_cells",
     "EnvironmentProvisioner",
+    "PLAN_BINDING_MISMATCH",
+    "PLAN_BINDING_REQUIRED",
+    "PLAN_COMPLETE",
+    "PLAN_DRIFT",
+    "PLAN_INPUT_REQUIRED",
+    "PLAN_INVALID",
+    "ExecutionPlanError",
+    "FormalExecutionPlan",
+    "changed_paths_for_plan",
+    "closure_status_is_complete",
+    "discover_active_plan",
+    "load_formal_plan",
     "ARTIFACT_ROOT_ENV",
     "REDACTION_VALUES_ENV",
     "RUN_GATE_ENV",
@@ -216,9 +244,11 @@ __all__ = [
     "current_artifact_path",
     "current_run_directory",
     "latest_artifact_path",
+    "new_run_id",
     "resolve_artifact_root",
     "source_identity",
     "validate_external_output_path",
+    "validate_run_id",
     "write_current_artifact",
     "workspace_id",
 ]

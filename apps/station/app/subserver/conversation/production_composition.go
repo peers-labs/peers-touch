@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
@@ -42,13 +43,6 @@ const (
 	defaultProductionQueueAttempts           = 8
 	defaultProductionQueueRetryInitial       = time.Second
 	defaultProductionQueueRetryMaximum       = time.Minute
-	defaultProductionAttachmentUploadTTL     = 24 * time.Hour
-	defaultProductionAttachmentObjectTTL     = 24 * time.Hour
-	defaultProductionAttachmentVerifyLease   = time.Hour
-	defaultProductionAttachmentCleanupLease  = 5 * time.Minute
-	defaultProductionAttachmentActive        = 4
-	defaultProductionAttachmentParts         = 4
-	defaultProductionAttachmentCleanupBatch  = 100
 	defaultProductionTypingPulseInterval     = 3 * time.Second
 	defaultProductionTypingTTL               = 10 * time.Second
 	defaultProductionTypingClockSkew         = time.Minute
@@ -174,6 +168,7 @@ type ProductionComposition struct {
 	database               *gorm.DB
 	localStation           valueobject.StationID
 	clock                  productionClock
+	realtime               ProductionRealtime
 	deviceInboxLimits      deliveryapp.QueueLimits
 	transactionalAdapters  *ProductionTransactionalAdapterFactory
 	federationSender       *conversationfederation.Sender
@@ -235,13 +230,13 @@ func DefaultProductionCompositionConfig(
 			MaxRetryDelay:  defaultProductionQueueRetryMaximum,
 		},
 		AttachmentPolicy: attachmentapp.Policy{
-			UploadTTL:               defaultProductionAttachmentUploadTTL,
-			UnattachedObjectTTL:     defaultProductionAttachmentObjectTTL,
-			VerificationLeaseTTL:    defaultProductionAttachmentVerifyLease,
-			CleanupLeaseTTL:         defaultProductionAttachmentCleanupLease,
-			MaximumActiveUploads:    defaultProductionAttachmentActive,
-			MaximumConcurrentParts:  defaultProductionAttachmentParts,
-			MaximumCleanupBatchSize: defaultProductionAttachmentCleanupBatch,
+			UploadTTL:               securecontent.MaximumUploadTTL,
+			UnattachedObjectTTL:     securecontent.MaximumUnattachedObjectTTL,
+			VerificationLeaseTTL:    securecontent.MaximumVerificationLeaseTTL,
+			CleanupLeaseTTL:         securecontent.MaximumCleanupLeaseTTL,
+			MaximumActiveUploads:    securecontent.MaximumActiveUploadCount,
+			MaximumConcurrentParts:  securecontent.MaximumConcurrentPartCount,
+			MaximumCleanupBatchSize: securecontent.MaximumCleanupBatchSize,
 		},
 		InteractionPolicy: interactionapp.Policy{
 			MinimumPulseInterval:   defaultProductionTypingPulseInterval,
@@ -393,6 +388,12 @@ func NewProductionComposition(
 		clock:        config.Clock,
 		localStation: config.LocalStationID,
 	}
+	readCursorForwarder := &productionReadCursorForwarder{
+		database:     config.Database,
+		sender:       adapterFactory.federationSender,
+		clock:        config.Clock,
+		localStation: config.LocalStationID,
+	}
 	receiptCommitter := &productionDeliveryReceiptCommitter{
 		database:     config.Database,
 		adapters:     adapterFactory,
@@ -403,6 +404,7 @@ func NewProductionComposition(
 		queryService,
 		productionInteractionDeviceDirectory{identity: identityDirectory},
 		commandService,
+		readCursorForwarder,
 		receiptCommitter,
 		receiptForwarder,
 		config.Realtime,
@@ -439,6 +441,7 @@ func NewProductionComposition(
 		database:              config.Database,
 		localStation:          config.LocalStationID,
 		clock:                 config.Clock,
+		realtime:              config.Realtime,
 		deviceInboxLimits:     config.DeviceInboxLimits,
 		transactionalAdapters: adapterFactory,
 		federationSender:      adapterFactory.federationSender,
@@ -740,6 +743,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -752,6 +756,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
+		expectedHomeStationPeerID,
 		deviceID,
 		signingKeyID,
 	)

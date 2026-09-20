@@ -37,11 +37,15 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 GATE_ID = "chat-native-current-profile-two-client-e2e"
+LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
+LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
 SUPPORTED_GATE_IDS = {
     GATE_ID,
+    LIFECYCLE_ONBOARDING_GATE_ID,
+    LIFECYCLE_DIRECT_GATE_ID,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
 }
 CLIENT_ROLES = ("alice", "bob")
@@ -53,6 +57,9 @@ CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
 PERSISTENT_STORAGE_ROOTS_ENV = "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS"
 PERSISTENT_STORAGE_MARKER = ".pt-current-profile-state.json"
 PERSISTENT_STORAGE_RESET_ENV = "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE"
+PERSISTENT_STORAGE_POLICIES = frozenset(
+    {"persistent-acceptance", "retained-engine-acceptance"}
+)
 RETAINED_ENGINE_STATE_ROLES_ENV = (
     "PT_CHAT_NATIVE_RETAINED_ENGINE_STATE_ROLES"
 )
@@ -72,6 +79,21 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
     """Provision two native clients against the active non-destructive profile."""
 
     environment_id = "native-tauri-current-profile"
+
+    @staticmethod
+    def _storage_marker_matches_identity(
+        actual: object,
+        expected: dict[str, object],
+    ) -> bool:
+        if not isinstance(actual, dict) or set(actual) != set(expected):
+            return False
+        if actual.get("devicePolicy") not in PERSISTENT_STORAGE_POLICIES:
+            return False
+        return all(
+            actual.get(field) == value
+            for field, value in expected.items()
+            if field != "devicePolicy"
+        )
 
     @staticmethod
     def _storage_seeds(
@@ -223,7 +245,18 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     ),
                     resource=f"client-persistent-storage:{role}",
                 ) from error
-            if actual_marker != expected_marker or not (
+            marker_matches = actual_marker == expected_marker
+            reset_identity_matches = (
+                reset_authorized
+                and cls._storage_marker_matches_identity(
+                    actual_marker,
+                    expected_marker,
+                )
+            )
+            if (
+                not marker_matches
+                and not reset_identity_matches
+            ) or not (
                 storage_root / "peers-touch"
             ).is_dir():
                 raise BlockedError(

@@ -128,7 +128,10 @@ export const federationRuntime: RuntimeDescriptor = {
     log.debug('federation', 'reconcile', { reason });
     const store = useFederationStore.getState();
     const tasks: Promise<unknown>[] = [store.refreshHealth()];
-    if (lastActorPtid) tasks.push(store.refreshSelf());
+    if (lastActorPtid) {
+      tasks.push(store.refreshSelf());
+      tasks.push(store.refreshFederations());
+    }
     await Promise.allSettled(tasks);
   },
 };

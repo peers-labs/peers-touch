@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: persistence models for
-//   EcosystemAgentGroup, EcosystemTopicComment, EcosystemEvalDataset, EcosystemCustomPlugin.
+//   EcosystemAgentGroup, EcosystemTopicComment, EcosystemCustomPlugin.
 
 package persistence
 
@@ -30,19 +30,6 @@ type EcosystemTopicComment struct {
 }
 
 func (EcosystemTopicComment) TableName() string { return "ecosystem_topic_comments" }
-
-// EcosystemEvalDataset holds evaluation datasets for agent quality assessment.
-type EcosystemEvalDataset struct {
-	ID             string    `gorm:"primaryKey;type:varchar(36)"`
-	Name           string    `gorm:"not null;type:text"`
-	Description    string    `gorm:"type:text"`
-	ItemsJSON      string    `gorm:"type:text"` // JSON array of evaluation items
-	OwnerActorPTID string    `gorm:"column:owner_actor_ptid;not null;type:text;index"`
-	CreatedAt      time.Time `gorm:"not null;autoCreateTime"`
-	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime"`
-}
-
-func (EcosystemEvalDataset) TableName() string { return "ecosystem_eval_datasets" }
 
 // EcosystemCustomPlugin defines a user-registered external plugin endpoint.
 type EcosystemCustomPlugin struct {

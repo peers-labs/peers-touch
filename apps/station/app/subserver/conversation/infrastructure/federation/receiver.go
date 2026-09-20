@@ -38,6 +38,7 @@ type ReceiverConfig struct {
 	AuthorityResults   AuthorityResultPort
 	DeviceDeliveries   DeviceDeliveryPort
 	DeliveryReceipts   DeliveryReceiptPort
+	ReadCursors        ReadCursorPort
 	Typing             interactionapp.FederatedTypingReceiver
 	Sender             *Sender
 	Clock              federationdelivery.Clock
@@ -52,6 +53,7 @@ type Receiver struct {
 	authorityResults   AuthorityResultPort
 	deviceDeliveries   DeviceDeliveryPort
 	deliveryReceipts   DeliveryReceiptPort
+	readCursors        ReadCursorPort
 	typing             interactionapp.FederatedTypingReceiver
 	sender             *Sender
 	clock              federationdelivery.Clock
@@ -67,6 +69,7 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		config.AuthorityResults == nil ||
 		config.DeviceDeliveries == nil ||
 		config.DeliveryReceipts == nil ||
+		config.ReadCursors == nil ||
 		config.Sender == nil ||
 		config.Clock == nil {
 		return nil, federationdelivery.NewError(
@@ -83,6 +86,7 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		authorityResults:   config.AuthorityResults,
 		deviceDeliveries:   config.DeviceDeliveries,
 		deliveryReceipts:   config.DeliveryReceipts,
+		readCursors:        config.ReadCursors,
 		typing:             config.Typing,
 		sender:             config.Sender,
 		clock:              config.Clock,
@@ -107,6 +111,7 @@ func RegisterReceivers(
 		federationdelivery.PayloadKindConversationDeviceDelivery,
 		federationdelivery.PayloadKindConversationDeliveryReceipt,
 		federationdelivery.PayloadKindConversationTyping,
+		federationdelivery.PayloadKindConversationReadCursor,
 	} {
 		if _, exists := registry.Lookup(kind); exists {
 			return federationdelivery.NewError(
@@ -153,6 +158,16 @@ func RegisterReceivers(
 			return &chatmodel.DeviceConsumptionReceipt{}
 		},
 		receiver.receiveDeliveryReceipt,
+	); err != nil {
+		return err
+	}
+	if err := federationdelivery.RegisterProtoReceiver(
+		registry,
+		federationdelivery.PayloadKindConversationReadCursor,
+		func() *chatmodel.FederatedConversationReadCursor {
+			return &chatmodel.FederatedConversationReadCursor{}
+		},
+		receiver.receiveReadCursor,
 	); err != nil {
 		return err
 	}
@@ -221,6 +236,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		ctx,
 		transaction,
 		proposal.GetActorPtid(),
+		frame.GetSourceStationPeerId(),
 		proposal.GetActorDeviceId(),
 		proposal.GetActorSigningKeyId(),
 	)
@@ -493,6 +509,48 @@ func (r *Receiver) receiveDeliveryReceipt(
 		)
 	case replay:
 		return federationdelivery.DuplicateResult(), nil
+	default:
+		return federationdelivery.AcceptedResult(), nil
+	}
+}
+
+func (r *Receiver) receiveReadCursor(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	cursor *chatmodel.FederatedConversationReadCursor,
+	frame *federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return federationdelivery.Result{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"receive Conversation read cursor",
+			fmt.Errorf("transaction-bound database is required"),
+		)
+	}
+	if err := validateCanonicalFramePayload(frame, cursor); err != nil ||
+		validateReadCursorFrame(cursor, frame, r.localStationPeerID) != nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorInvalidFrame,
+		), nil
+	}
+	err := r.readCursors.ApplyReadCursor(
+		ctx,
+		transaction,
+		proto.Clone(cursor).(*chatmodel.FederatedConversationReadCursor),
+		frame.GetSourceStationPeerId(),
+	)
+	switch {
+	case errors.Is(err, ErrReadCursorConflict):
+		return federationdelivery.PayloadHashConflictResult(), nil
+	case errors.Is(err, ErrReadCursorRejected):
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorDomainRejected,
+		), nil
+	case err != nil:
+		return federationdelivery.Result{}, fmt.Errorf(
+			"conversation Federation: apply read cursor: %w",
+			err,
+		)
 	default:
 		return federationdelivery.AcceptedResult(), nil
 	}
@@ -1033,6 +1091,42 @@ func validateDeliveryReceiptFrame(
 		frame.GetIssuedAt() == nil ||
 		!frame.GetIssuedAt().IsValid() {
 		return fmt.Errorf("delivery receipt frame binding is invalid")
+	}
+
+	return nil
+}
+
+func validateReadCursorFrame(
+	cursor *chatmodel.FederatedConversationReadCursor,
+	frame *federationdelivery.Frame,
+	localStationPeerID string,
+) error {
+	if cursor == nil ||
+		cursor.GetFormatVersion() != conversationReadCursorVersion ||
+		cursor.GetReader() == nil ||
+		cursor.GetFederationId() == "" ||
+		cursor.GetConversationId() == "" ||
+		cursor.GetAuthorityStationPeerId() != localStationPeerID ||
+		cursor.GetAuthorityEpoch() == 0 ||
+		cursor.GetReader().GetPtid() == "" ||
+		cursor.GetReader().GetDeviceId() == "" ||
+		cursor.GetReaderHomeStationPeerId() == "" ||
+		cursor.GetLastReadSequence() <= 0 {
+		return fmt.Errorf("read cursor is incomplete")
+	}
+	payloadID, err := ReadCursorPayloadID(cursor)
+	if err != nil {
+		return err
+	}
+	if frame.GetPayloadKind() !=
+		federationdelivery.PayloadKindConversationReadCursor ||
+		frame.GetSourceStationPeerId() != cursor.GetReaderHomeStationPeerId() ||
+		frame.GetTargetStationPeerId() != cursor.GetAuthorityStationPeerId() ||
+		frame.GetPayloadId() != payloadID ||
+		frame.GetIdempotencyKey() != readCursorFrameDomain+":"+payloadID ||
+		frame.GetOrderingKey() != readCursorOrderingKey(cursor) ||
+		frame.GetOrderingSequence() != cursor.GetLastReadSequence() {
+		return fmt.Errorf("read cursor frame binding is invalid")
 	}
 
 	return nil

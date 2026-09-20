@@ -10,11 +10,11 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 const DEFAULT_AGENT_ID: &str = "assistant";
-const SKILL_LIST_PATH: &str = "/sub-agent/agent/skill/list";
+pub(crate) const SKILL_LIST_PATH: &str = "/sub-agent/agent/skill/list";
 const SKILL_GET_PATH: &str = "/sub-agent/agent/skill/get";
-const SKILL_INSTALL_PATH: &str = "/sub-agent/agent/skill/install";
+pub(crate) const SKILL_INSTALL_PATH: &str = "/sub-agent/agent/skill/install";
 const SKILL_UPDATE_PATH: &str = "/sub-agent/agent/skill/update";
-const SKILL_DELETE_PATH: &str = "/sub-agent/agent/skill/delete";
+pub(crate) const SKILL_DELETE_PATH: &str = "/sub-agent/agent/skill/delete";
 const SKILL_VERSIONS_PATH: &str = "/sub-agent/agent/growth/skill/versions";
 const SKILL_ROLLBACK_PATH: &str = "/sub-agent/agent/growth/skill/rollback";
 

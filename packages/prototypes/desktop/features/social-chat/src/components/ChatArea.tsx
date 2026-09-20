@@ -23,6 +23,7 @@ import {
   VideoOff,
   Wifi,
   WifiOff,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from '../theme';
@@ -35,6 +36,7 @@ interface ChatAreaProps {
   onToggleDetail: () => void;
   onSendMessage: (conversationId: string, content: string) => void;
   onRestoreHistory: (conversationId: string) => void;
+  backgroundImageUrl?: string;
   compact?: boolean;
 }
 
@@ -715,6 +717,7 @@ export function ChatArea({
   onToggleDetail,
   onSendMessage,
   onRestoreHistory,
+  backgroundImageUrl,
   compact = false,
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState('');
@@ -726,6 +729,8 @@ export function ChatArea({
   const [camOn, setCamOn] = useState(true);
   const [duration, setDuration] = useState(0);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const callTimer = useRef<number | null>(null);
   const historyClearedAt = conversation?.historyClearedAt ?? 0;
   const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
@@ -737,6 +742,11 @@ export function ChatArea({
   const visibleMessages = historyClearedAt > 0
     ? messages.filter((message) => message.timestamp > historyClearedAt)
     : messages;
+  const searchResults = searchQuery.trim()
+    ? visibleMessages.filter((message) =>
+        message.content.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+      )
+    : [];
 
   useEffect(() => {
     setNow(Date.now());
@@ -868,11 +878,11 @@ export function ChatArea({
           <span style={{ display: 'block', fontSize: T.fontXs, color: T.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {conversation.type === 'group'
               ? `${conversation.memberCount} members · ${conversation.detailHint}`
-              : `${conversation.online ? 'Online' : 'Offline'} · ${conversation.detailHint}`}
+              : `${conversation.online === undefined ? 'Presence unavailable' : conversation.online ? 'Online' : 'Offline'} · ${conversation.detailHint}`}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: T.space1, position: 'relative' }}>
-          <HeaderIconButton icon={Search} title="Search messages" />
+          <HeaderIconButton icon={Search} title="Search messages" onClick={() => setSearchOpen(true)} />
           <HeaderIconButton icon={Phone} title="Start voice call" onClick={() => startCall('audio')} />
           <HeaderIconButton icon={Video} title="Start video call" onClick={() => startCall('video')} />
           <HeaderIconButton icon={MoreHorizontal} title="Conversation actions" active={actionsOpen} onClick={() => setActionsOpen((value) => !value)} />
@@ -893,6 +903,46 @@ export function ChatArea({
         </div>
       </div>
 
+      {searchOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: `${T.headerHeight}px 0 0`,
+            zIndex: 24,
+            background: 'rgba(15,23,42,0.28)',
+            display: 'flex',
+            justifyContent: 'center',
+            padding: T.space5,
+          }}
+        >
+          <div style={{ width: 'min(620px, 100%)', alignSelf: 'flex-start', background: T.bg, borderRadius: T.radiusLg, boxShadow: T.shadowLg, padding: T.space4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: T.space3 }}>
+              <strong>Search messages</strong>
+              <button type="button" aria-label="Close search" onClick={() => setSearchOpen(false)} style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: T.space2, border: `1px solid ${T.border}`, borderRadius: T.radiusMd, padding: `0 ${T.space3}px`, height: 40 }}>
+              <Search size={16} color={T.textTertiary} />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search in messages..." style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent' }} />
+              {searchQuery && (
+                <button type="button" aria-label="Clear search" onClick={() => setSearchQuery('')} style={{ width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div style={{ marginTop: T.space3, display: 'flex', flexDirection: 'column', gap: T.space1 }}>
+              {searchQuery && searchResults.length === 0 && <span style={{ color: T.textTertiary }}>No messages found</span>}
+              {searchResults.map((message) => (
+                <button key={message.id} type="button" style={{ border: 'none', background: 'transparent', textAlign: 'left', padding: `${T.space2}px 0`, cursor: 'pointer', color: T.text }}>
+                  {message.content}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div
         style={{
@@ -903,7 +953,9 @@ export function ChatArea({
           display: 'flex',
           flexDirection: 'column',
           gap: T.space2,
-          background: conversation.background === 'Graphite' ? '#f7f7f8' : T.bg,
+          background: backgroundImageUrl
+            ? `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${backgroundImageUrl}") center / cover`
+            : conversation.background === 'Graphite' ? '#f7f7f8' : T.bg,
         }}
       >
         {!compact && <div style={{ display: 'flex', justifyContent: 'center', padding: `${T.space1}px 0 ${T.space2}px` }}>

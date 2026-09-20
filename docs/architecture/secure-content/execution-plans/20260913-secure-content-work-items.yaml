@@ -1,0 +1,829 @@
+schemaVersion: 1
+planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+items:
+  - schemaVersion: 1
+    id: secure-content-w0
+    workClass: documentation
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W0
+    productRefs: [SOC-SEC-C01, SOC-SEC-C09]
+    architectureRefs: [SC-A01, SC-A08, SC-D01, SC-D13]
+    journeyIds: []
+    scope:
+      include: [docs/architecture/secure-content, docs/architecture/social, docs/README.md]
+      exclude: [model, apps, packages, tooling/acceptance]
+    resources:
+      sourceClaims:
+        - { pathPrefix: docs/architecture/secure-content, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/social, mode: exclusive-write }
+        - { pathPrefix: docs/README.md, mode: exclusive-write }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w0r
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W0R
+    productRefs: []
+    architectureRefs: [LDCP-D01, LDCP-D02, LDCP-D03, LDCP-D04, LDCP-D05, LDCP-D06, LDCP-D08, LDCP-D09]
+    journeyIds: [sc-dj-runtime-lease-control]
+    scope:
+      include: [Makefile, tooling/make/local-dev.mk, tooling/scripts/lib/machine-dev-paths.mjs, tooling/scripts/lib/machine-dev-paths.test.mjs, tooling/scripts/local-dev, tooling/scripts/local_dev_profile_resolution_test.py, tooling/scripts/deploy/deploy.sh, tooling/acceptance/tests/test_profile_lease.py, tooling/skills/pt-local-dev-env, docs/architecture/local-dev-control-plane, docs/global/local-dev-environment.md]
+      exclude: [env profile definitions, environment creation grants, product runtime, Acceptance fixtures]
+    resources:
+      sourceClaims:
+        - { pathPrefix: Makefile, mode: exclusive-write }
+        - { pathPrefix: tooling/make/local-dev.mk, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/lib/machine-dev-paths.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/lib/machine-dev-paths.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local_dev_profile_resolution_test.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/deploy/deploy.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/tests/test_profile_lease.py, mode: exclusive-write }
+        - { pathPrefix: tooling/skills/pt-local-dev-env, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
+        - { pathPrefix: docs/global/local-dev-environment.md, mode: exclusive-write }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w14
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W14
+    productRefs: []
+    architectureRefs: [SC-A01, SC-A03, SC-D02]
+    journeyIds: []
+    scope:
+      include: [tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.test.mjs]
+      exclude: [model/domain, generated outputs, Rust build inputs, runtime]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w1
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W1
+    productRefs: [SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C08, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS08, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS16]
+    architectureRefs: [SC-A03, SC-A04, SC-A08, SC-D02, SC-D05, SC-D07, SC-D09, SC-D12, SC-D14]
+    journeyIds: [sc-dj-contract-consumers]
+    scope:
+      include: [model/domain/common, model/domain/secure_content, model/domain/social, model/domain/key_exchange, tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.test.mjs, apps/station/frame/core/types, apps/station/frame/touch/model, apps/station/app/subserver/key_exchange/model, apps/desktop/src/gen/proto/domain/common, apps/desktop/src/gen/proto/domain/secure_content, apps/desktop/src/gen/proto/domain/social, apps/desktop/src/gen/proto/domain/key_exchange, apps/desktop/src/contracts/secureContentContract.test.ts, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/model/mod.rs, apps/mobile/src/gen/proto/domain/common, apps/mobile/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/social, apps/mobile/src/gen/proto/domain/key_exchange, apps/mobile/src/contracts/secureContentContract.test.ts, apps/mobile/src-tauri/build.rs, apps/mobile/src-tauri/src/lib.rs, apps/mobile/src-tauri/src/secure_content/mod.rs, apps/mobile/src-tauri/src/secure_content/proto.rs]
+      exclude: [unrelated proto inputs and generated outputs, apps/applets, packages/messaging-core, apps/station/app/subserver/conversation, runtime]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model/domain/common, mode: exclusive-write }
+        - { pathPrefix: model/domain/secure_content, mode: exclusive-write }
+        - { pathPrefix: model/domain/social, mode: exclusive-write }
+        - { pathPrefix: model/domain/key_exchange, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange/model, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/common, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/social, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/key_exchange, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/contracts/secureContentContract.test.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/build.rs, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/src/model/mod.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/common, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/social, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/key_exchange, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/contracts/secureContentContract.test.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/build.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/lib.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/secure_content/mod.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/secure_content/proto.rs, mode: exclusive-write }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2a
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2A
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: []
+    scope:
+      include: [packages/secure-content-core, apps/station/app/internal/securecontent, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, apps/desktop/src-tauri/src/messaging, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/src/messaging, tooling/development/secure_content/work_item.py, tooling/development/secure_content/test_work_item.py, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py]
+      exclude: [runtime, model/domain/chat, conversation routes, conversation tables, Direct, MLS, recovery query and consumer]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: exclusive-write }
+        - { pathPrefix: packages/messaging-core, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/Cargo.toml, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/Cargo.lock, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/src/messaging, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/Cargo.toml, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/Cargo.lock, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/messaging, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
+        - { pathPrefix: model/domain/chat, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2d
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2D
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: []
+    scope:
+      include: [tooling/development/secure_content/drivers, tooling/development/secure_content/scenarios/chat_attachment.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py]
+      exclude: [runtime execution, formal Acceptance evidence, product or architecture changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/development/secure_content/drivers, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment_mobile.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/test_chat_attachment.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/drivers/native, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/drivers/tauri, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/gates/chat, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/gates/mobile, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2b-desktop
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2B-DESKTOP
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: [sc-dj-chat-attachment-atomic]
+    scope:
+      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/desktop/src-tauri, tooling/development/secure_content]
+      exclude: [source mutation, Mobile proof, model/domain/chat, Conversation route/table/grant changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core, mode: shared-read }
+        - { pathPrefix: packages/messaging-core, mode: shared-read }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
+        - { pathPrefix: apps/desktop/src-tauri, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-desktop, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2b-mobile
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2B-MOBILE
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: [sc-dj-chat-attachment-mobile]
+    scope:
+      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/mobile/src-tauri, tooling/development/secure_content]
+      exclude: [source mutation, Desktop proof, model/domain/chat, Conversation route/table/grant changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core, mode: shared-read }
+        - { pathPrefix: packages/messaging-core, mode: shared-read }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
+        - { pathPrefix: apps/mobile/src-tauri, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-android-bob, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-android, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w3
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W3
+    productRefs: [SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-AS08, SOC-SEC-AS16]
+    architectureRefs: [SC-A04, SC-A08, SC-D05, SC-D09, SC-D12, SC-D15]
+    journeyIds: [sc-dj-content-prekey]
+    scope:
+      include: [model/domain/secure_content/prekey.proto, apps/station/frame/core/types/securecontent, apps/station/app/internal/securecontent, apps/station/app/subserver/actor_identity, apps/station/app/subserver/key_exchange, packages/secure-content-core, apps/desktop/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/secure_content, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.sh, tooling/development/secure_content/scenarios/content_prekey.py]
+      exclude: [Direct, MLS, Social policy]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model/domain/secure_content/prekey.proto, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/actor_identity, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
+        - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: shared-read }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/scenarios/content_prekey.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w4
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W4
+    productRefs: [SOC-SEC-C03, SOC-SEC-AS04]
+    architectureRefs: [SC-A05, SC-D08]
+    journeyIds: [sc-dj-optional-auth]
+    scope:
+      include: [apps/station/frame/core/auth, apps/station/app/subserver/social/subserver.go, apps/station/app/subserver/social/handler.go, apps/station/app/subserver/social/handler_test.go, tooling/development/secure_content]
+      exclude: [Social authorization policy, private persistence, later Secure Content scenario logic]
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/station/frame/core/auth, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/subserver.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler_test.go, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content, mode: exclusive-write }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w5
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W5
+    productRefs: [SOC-SEC-C04, SOC-SEC-C06, SOC-SEC-C08, SOC-SEC-AS08]
+    architectureRefs: [SC-A02, SC-A08, SC-D05, SC-D09, SC-D16, SC-D17]
+    journeyIds: [sc-dj-recovery-consumer]
+    scope:
+      include: [packages/secure-content-core/src/recovery.rs, apps/station/app/subserver/recovery, apps/station/app/subserver/social, tooling/development/secure_content/scenarios/recovery_consumer.py]
+      exclude: [Desktop UI, Mobile UI, Messaging history redesign]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core/src/recovery.rs, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/recovery, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/recovery_consumer.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w6
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W6
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS15, SOC-SEC-AS16]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13, SC-D15, SC-D17, SC-D18, SC-D19]
+    journeyIds: [sc-dj-social-uow-atomicity]
+    scope:
+      include: [model/domain/social/post.proto, model/domain/social/private_content.proto, model/domain/secure_content/content.proto, model/domain/secure_content/object.proto, apps/station/frame/core/auth/federation, apps/station/frame/core/server, apps/station/frame/core/plugin/server/hertz, apps/station/frame/core/plugin/native/server, apps/station/frame/core/types/securecontent, apps/station/frame/touch/model/post.pb.go, apps/station/frame/touch/model/privatecontent/private_content.pb.go, apps/desktop/src/gen/proto/domain/social, apps/mobile/src/gen/proto/domain/social, apps/desktop/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/secure_content, apps/station/app/subserver/social, apps/station/app/subserver/key_exchange, apps/station/app/subserver/oss, apps/station/app/subserver/dashboard, apps/station/frame/touch/model/db, tooling/development/secure_content/scenarios/social_uow_atomicity.py]
+      exclude: [remaining private subtypes, Mobile, Chat behavior]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model/domain/social/post.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/social/private_content.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/secure_content/content.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/secure_content/object.proto, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/federation, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/server/hertz, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/native/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/content.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/object.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/post.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/privatecontent/private_content.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/social/post_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/social/private_content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/social/post_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/social/private_content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/object_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/object_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/oss, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/dashboard, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/db, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/social_uow_atomicity.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w7s
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W7S
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS13, SOC-SEC-AS15]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D11, SC-D12, SC-D13, SC-D16, SC-D20]
+    journeyIds: []
+    scope:
+      include: [docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, apps/desktop, apps/station/app/subserver/social/application/private_content_service.go, apps/station/app/subserver/social/application/private_content_service_test.go, apps/station/app/subserver/social/application/private_object_service.go, apps/station/app/subserver/social/application/private_object_service_test.go, apps/station/app/subserver/social/infrastructure/private_content_store.go, apps/station/app/subserver/social/infrastructure/private_content_store_test.go, apps/station/app/subserver/social/private_content_ports.go, apps/station/app/subserver/social/handler.go, apps/station/app/subserver/social/handler_test.go, apps/station/app/subserver/social/recovery_handler_test.go, apps/station/app/subserver/social/subserver.go, apps/station/frame/core/auth/adapter/http/http.go, apps/station/frame/core/auth/adapter/http/http_test.go, packages/messaging-core/src/identity/enrollment.rs, packages/secure-content-core, packages/locales/en/moments.json, packages/locales/zh-CN/moments.json, packages/locales/metadata.json, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py, tooling/development/secure_content/attached_client.py, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
+      exclude: [remaining private subtypes, Mobile, formal Acceptance, runtime acquisition]
+    resources:
+      sourceClaims:
+        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, mode: exclusive-write }
+        - { pathPrefix: apps/desktop, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_content_service.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_content_service_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_object_service.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_object_service_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure/private_content_store.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure/private_content_store_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/private_content_ports.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/recovery_handler_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/subserver.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/adapter/http/http.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/adapter/http/http_test.go, mode: exclusive-write }
+        - { pathPrefix: packages/messaging-core/src/identity/enrollment.rs, mode: exclusive-write }
+        - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
+        - { pathPrefix: packages/locales/en/moments.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/zh-CN/moments.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/metadata.json, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/attached_client.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/domain, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w7
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W7
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS13, SOC-SEC-AS15]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D11, SC-D12, SC-D13, SC-D16, SC-D20]
+    journeyIds: [sc-dj-desktop-pilot, sc-dj-browser-private-boundary]
+    scope:
+      include: [apps/desktop, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
+      exclude: [remaining private subtypes, Mobile, formal Acceptance]
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/desktop, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-desktop-pilot, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-browser-boundary, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w7a
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W7A
+    productRefs: [SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C08]
+    architectureRefs: [SC-A03, SC-A04, SC-A08, SC-D05, SC-D09, SC-D15, SC-D16, SC-D20]
+    journeyIds: [sc-dj-content-prekey-client-boundary]
+    scope:
+      include: [model/domain/secure_content/prekey.proto, model/domain/error/error.proto, apps/station/frame/core/types/securecontent/prekey.pb.go, apps/station/frame/touch/model/error.pb.go, apps/station/frame/touch/model/errors.go, apps/desktop/src/gen/proto/domain/secure_content/prekey_pb.ts, apps/desktop/src/gen/proto/domain/error/error_pb.ts, apps/mobile/src/gen/proto/domain/secure_content/prekey_pb.ts, apps/mobile/src/gen/proto/domain/error/error_pb.ts, apps/mobile/src-tauri/build.rs, apps/mobile/src-tauri/src/secure_content/proto.rs, apps/station/frame/core/server, apps/station/frame/core/auth/adapter/http, apps/station/frame/core/plugin/native/server/wrapper, apps/station/app/subserver/key_exchange, apps/station/app/cmd/station_api_ownership, packages/locales/en/errors.json, packages/locales/zh-CN/errors.json, packages/locales/metadata.json, docs/architecture/api-ownership/design.md, docs/architecture/api-ownership/station-api-capabilities.yaml, docs/architecture/i18n/i18n-architecture.md, docs/architecture/secure-content/design.md, docs/architecture/secure-content/data-model.md, docs/architecture/secure-content/integration.md, docs/architecture/secure-content/module-layout.md, docs/architecture/secure-content/operations.md, docs/architecture/secure-content/security.md, docs/global/coding-guide/common/error-handling.md, docs/global/coding-guide/common/proto.md, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.test.mjs, tooling/scripts/check-content-prekey-errors.mjs, tooling/scripts/check-content-prekey-errors.test.mjs, tooling/scripts/run-content-prekey-postgres-tests.mjs, tooling/scripts/run-content-prekey-postgres-tests.test.mjs, tooling/scripts/test-secure-content-core.sh, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py, tooling/development/secure_content/scenarios/content_prekey_client_boundary.py]
+      exclude: [Desktop UI/runtime, Mobile UI/runtime, Content PreKey claim routes, Direct, MLS]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model/domain/secure_content/prekey.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/error/error.proto, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/prekey.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/error.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/errors.go, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/prekey_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/error/error_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/prekey_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/error/error_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/build.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/secure_content/proto.rs, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/adapter/http, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/native/server/wrapper, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/cmd/station_api_ownership, mode: exclusive-write }
+        - { pathPrefix: packages/locales/en/errors.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/zh-CN/errors.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/metadata.json, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/api-ownership/design.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/api-ownership/station-api-capabilities.yaml, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/i18n/i18n-architecture.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/design.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/data-model.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/integration.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/module-layout.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/operations.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/security.md, mode: exclusive-write }
+        - { pathPrefix: docs/global/coding-guide/common/error-handling.md, mode: exclusive-write }
+        - { pathPrefix: docs/global/coding-guide/common/proto.md, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/check-content-prekey-errors.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/check-content-prekey-errors.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/run-content-prekey-postgres-tests.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/run-content-prekey-postgres-tests.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/test-secure-content-core.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/content_prekey_client_boundary.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/gates.yaml, mode: shared-read }
+      runtimeClaims:
+        - { kind: fixture, resourceId: secure-content-w7a-postgres, mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w8
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W8
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C09, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS15, SOC-SEC-AS16]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13]
+    journeyIds: [sc-dj-social-expansion]
+    scope:
+      include: [apps/station/app/subserver/social, apps/desktop, tooling/development/secure_content/scenarios/social_expansion.py]
+      exclude: [Mobile, Chat wire/API/schema]
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
+        - { pathPrefix: apps/desktop, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/social_expansion.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-desktop-expansion, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w9
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W9
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13]
+    journeyIds: [sc-dj-mobile-matrix]
+    scope:
+      include: [apps/mobile, tooling/development/secure_content/scenarios/mobile_matrix.py]
+      exclude: [Chat authority changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/mobile, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/mobile_matrix.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-mobile-matrix, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w10
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W10
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: [sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    scope:
+      include: [tooling/development/secure_content, apps/desktop, apps/mobile]
+      exclude: [model/domain/chat, Conversation routes, Conversation tables]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+        - { pathPrefix: packages/messaging-core, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
+        - { pathPrefix: apps/desktop, mode: shared-read }
+        - { pathPrefix: apps/mobile, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-chat-android-bob, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-android, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-revalidation, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w11
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W11
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-C09, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16, MP-C13, MP-G13]
+    architectureRefs: [SC-A07, SC-D02, SC-D03, SC-D10, SC-D11, SC-D13, MP-D23]
+    journeyIds: [sc-dj-hardcut-regression, sc-dj-hardcut-mobile-regression, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    scope:
+      include: [model, apps/station/app/subserver/social, apps/station/app/subserver/oss, apps/station/app/subserver/dashboard, apps/station/frame/touch/model, apps/desktop, apps/mobile, packages, tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/secure-content-hard-cut-check.py, tooling/development/secure_content, tooling/acceptance, docs/architecture/secure-content, docs/architecture/social, docs/architecture/messaging-platform, docs/architecture/api-ownership, docs/architecture/encryption, docs/global, docs/knowledge]
+      exclude: [destructive runtime reset, physical legacy-table deletion, private-media purge]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/oss, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/dashboard, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model, mode: exclusive-write }
+        - { pathPrefix: apps/desktop, mode: exclusive-write }
+        - { pathPrefix: apps/mobile, mode: exclusive-write }
+        - { pathPrefix: packages, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/secure-content-hard-cut-check.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/social, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/messaging-platform, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/api-ownership, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/encryption, mode: exclusive-write }
+        - { pathPrefix: docs/global, mode: exclusive-write }
+        - { pathPrefix: docs/knowledge, mode: exclusive-write }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-four-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-ios-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-android-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-browser-boundary, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-hardcut, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w12
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W12
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-C09, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16, MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, MP-D23]
+    journeyIds: [sc-dj-authorized-reset, sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    scope:
+      include: [tooling/development/secure_content, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md]
+      exclude: [formal Acceptance, product/design changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md, mode: exclusive-write }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: station.reset, resourceId: station-four-social-private, mode: exclusive }
+        - { kind: station.reset, resourceId: station-five-arm-social-private, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-browser-boundary, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-final, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime:
+        deployProfiles: [four, fiveArm]
+        destructiveResetScopes:
+          [station-four-social-private, station-five-arm-social-private]
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w13
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W13
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-C09, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16, MP-G13]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, SC-D14, SC-D15, SC-D16, SC-D17, SC-D18, SC-D19, SC-D20, MP-D23]
+    journeyIds: [sc-dj-content-prekey-client-boundary, sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    scope:
+      include: [tooling/acceptance, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md]
+      exclude: [product/design changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/acceptance, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+        - { pathPrefix: apps, mode: shared-read }
+        - { pathPrefix: packages, mode: shared-read }
+        - { pathPrefix: model, mode: shared-read }
+        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md, mode: exclusive-write }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-browser-boundary, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-acceptance, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }

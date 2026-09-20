@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, theme } from 'antd';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useDecryptedOssAttachmentUrl, useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
-import type { Audience, ImageAttachment } from '../../gen/proto/domain/social/post_pb';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 // ImageLightbox — full-screen modal viewer for one or more attached
 // images. Keyboard controls:
@@ -17,9 +16,6 @@ import type { Audience, ImageAttachment } from '../../gen/proto/domain/social/po
 
 interface ImageLightboxProps {
   cids: string[];
-  images?: ImageAttachment[];
-  audience?: Audience | null;
-  authorPtid?: string | null;
   alts?: string[];
   startIndex: number;
   onClose: () => void;
@@ -27,9 +23,6 @@ interface ImageLightboxProps {
 
 export function ImageLightbox({
   cids,
-  images,
-  audience,
-  authorPtid,
   alts,
   startIndex,
   onClose,
@@ -40,21 +33,9 @@ export function ImageLightbox({
 
   const total = cids.length;
   const cid = cids[index];
-  const attachment = images?.[index];
   const isHttp = cid.startsWith('http://') || cid.startsWith('https://');
-  const encryptedAttachment = useMemo(
-    () => ({
-      cid: isHttp ? undefined : cid,
-      mimeType: 'image/*',
-      mediaEncryption: attachment?.mediaEncryption,
-      audience,
-      authorPtid,
-    }),
-    [attachment?.mediaEncryption, audience, authorPtid, cid, isHttp],
-  );
-  const decryptedSrc = useDecryptedOssAttachmentUrl(encryptedAttachment);
-  const plainSrc = useOssAttachmentUrl(isHttp || attachment?.mediaEncryption ? null : cid);
-  const src = isHttp ? cid : (attachment?.mediaEncryption ? decryptedSrc : plainSrc);
+  const resolved = useOssAttachmentUrl(isHttp ? null : cid);
+  const src = isHttp ? cid : resolved;
 
   const prev = useCallback(
     () => setIndex((i) => (i - 1 + total) % total),

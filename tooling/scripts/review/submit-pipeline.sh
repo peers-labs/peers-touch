@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ! command -v make >/dev/null 2>&1; then
+  if command -v gmake >/dev/null 2>&1; then
+    make() {
+      gmake "$@"
+    }
+  else
+    echo "submit-pipeline: GNU Make is required" >&2
+    exit 127
+  fi
+fi
+
 usage() {
   cat <<'USAGE'
 Usage: submit-pipeline.sh [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
@@ -63,7 +74,8 @@ scope_plan="$(mktemp)"
 trap 'rm -f "$scope_plan"' EXIT
 python3 tooling/scripts/acceptance-plan.py \
   --root tooling/acceptance \
-  --range "$diff_range" \
+  --active-plan \
+  --completion \
   --output "$scope_plan" >/dev/null
 infra_only="$(
   python3 - "$scope_plan" <<'PY'
@@ -83,6 +95,10 @@ echo "range: $diff_range"
 echo "acceptance_scope: $([[ "$infra_only" == "1" ]] && echo infra || echo business-or-mixed)"
 
 echo
+echo "== Execution plan completion =="
+python3 tooling/scripts/execution-plan.py --require-complete
+
+echo
 echo "== Quality evidence =="
 make quality-evidence REVIEW_RANGE="$diff_range"
 
@@ -98,7 +114,9 @@ else
   make acceptance-validate
 fi
 make acceptance-coverage-report
-make acceptance-plan ACCEPTANCE_RANGE="$diff_range"
+python3 tooling/scripts/acceptance-plan.py \
+  --active-plan \
+  --completion
 
 if [[ "$skip_ci_gates" -eq 1 ]]; then
   echo
@@ -107,7 +125,7 @@ if [[ "$skip_ci_gates" -eq 1 ]]; then
 else
   echo
   echo "== Acceptance CI gates =="
-  make acceptance-run-ci
+  make acceptance-run-ci PLAN="$scope_plan"
   make acceptance-report
 fi
 
@@ -115,7 +133,8 @@ echo
 echo "== Acceptance gap detector =="
 python3 tooling/scripts/acceptance-gap-detect.py \
   --claim "Change range $diff_range is ready for PR review" \
-  --range "$diff_range"
+  --range "$diff_range" \
+  --plan "$scope_plan"
 
 echo
 echo "submit-pipeline: pass"

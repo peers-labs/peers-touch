@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -140,7 +141,7 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if granted.EventID != "event-1" ||
-		granted.State != attachmentapp.ObjectStateAttached {
+		granted.State != securecontent.ObjectStateAttached {
 		t.Fatalf("granted object = %+v", granted)
 	}
 	var grantCount int64
@@ -213,7 +214,7 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 	if err := database.First(&unchanged, "object_id = ?", string(atomic.ObjectID)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if unchanged.State != string(attachmentapp.ObjectStateCompleteUnattached) ||
+	if unchanged.State != string(securecontent.ObjectStateCompleteUnattached) ||
 		unchanged.EventID != "" {
 		t.Fatalf("failed batch mutated valid object: %+v", unchanged)
 	}
@@ -234,7 +235,7 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 		"large-a",
 		"message-large",
 		"ptid:alice",
-		attachmentapp.MaximumPlaintextSize/2+1,
+		securecontent.MaximumObjectPlaintextSize/2+1,
 	)
 	largeB := seedGrantObject(
 		t,
@@ -243,7 +244,7 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 		"large-b",
 		"message-large",
 		"ptid:alice",
-		attachmentapp.MaximumPlaintextSize/2+1,
+		securecontent.MaximumObjectPlaintextSize/2+1,
 	)
 	if err := repository.GrantBatch(context.Background(), ports.ObjectGrantBatch{
 		ConversationID: "conversation-1",
@@ -257,7 +258,7 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 		t.Fatalf("aggregate plaintext quota error = %v", err)
 	}
 
-	tooMany := make([]valueobject.ObjectID, attachmentapp.MaximumMessageObjects+1)
+	tooMany := make([]valueobject.ObjectID, securecontent.MaximumObjectsPerResource+1)
 	for index := range tooMany {
 		tooMany[index] = valueobject.ObjectID(fmt.Sprintf("too-many-%02d", index))
 	}
@@ -271,6 +272,18 @@ func TestRepositoryGrantBatchIsAtomicExactAndIdempotent(t *testing.T) {
 		GrantedAt:      now,
 	}); !attachmentapp.IsCode(err, attachmentapp.ErrorCodeInvalidArgument) {
 		t.Fatalf("object count bound error = %v", err)
+	}
+
+	if err := database.Model(&attachment.ObjectModel{}).
+		Where("object_id = ?", string(first.ObjectID)).
+		Update("media_type", "image/png").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.GrantBatch(
+		context.Background(),
+		grant,
+	); !attachmentapp.IsCode(err, attachmentapp.ErrorCodeInvalidArgument) {
+		t.Fatalf("non-canonical media type grant error = %v", err)
 	}
 }
 
@@ -327,7 +340,7 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 		t.Fatalf("concurrent cleanup claims=%d first=%+v", claimed, first)
 	}
 
-	retryAt := now.Add(attachmentapp.MinimumCleanupRetryDelay)
+	retryAt := now.Add(securecontent.MinimumCleanupRetryDelay)
 	retry, err := repository.RetryObjectCleanup(
 		context.Background(),
 		first,
@@ -399,7 +412,7 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if object.State != attachmentapp.ObjectStateGarbageCollected ||
+	if object.State != securecontent.ObjectStateGarbageCollected ||
 		object.StorageKey != "" ||
 		object.CleanupCompletedAt.IsZero() {
 		t.Fatalf("finalized object = %+v", object)
@@ -493,7 +506,7 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleanedUpload.State != attachmentapp.TransferStateTerminal ||
+	if cleanedUpload.State != securecontent.TransferStateTerminal ||
 		cleanedUpload.VerificationStorageKey != "" ||
 		cleanedUpload.CleanupCompletedAt.IsZero() {
 		t.Fatalf("finalized incomplete upload = %+v", cleanedUpload)
@@ -504,7 +517,7 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 		Where("upload_id = ?", "upload-terminal").
 		Update(
 			"cleanup_attempt_count",
-			attachmentapp.MaximumCleanupAttemptCount-1,
+			securecontent.MaximumCleanupAttemptCount-1,
 		).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -516,14 +529,14 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 		1,
 	)
 	if err != nil || len(terminalClaims) != 1 ||
-		terminalClaims[0].Attempt != attachmentapp.MaximumCleanupAttemptCount {
+		terminalClaims[0].Attempt != securecontent.MaximumCleanupAttemptCount {
 		t.Fatalf("terminal cleanup claim = %+v, error=%v", terminalClaims, err)
 	}
 	terminalRetry, err := repository.RetryUploadCleanup(
 		context.Background(),
 		terminalClaims[0],
 		now,
-		now.Add(attachmentapp.MaximumCleanupRetryDelay),
+		now.Add(securecontent.MaximumCleanupRetryDelay),
 	)
 	if err != nil || !terminalRetry.Terminal {
 		t.Fatalf("terminal cleanup retry = %+v, error=%v", terminalRetry, err)
@@ -536,7 +549,7 @@ func TestRepositoryCleanupLeaseFencingRetryAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if terminalUpload.State != attachmentapp.TransferStateCleanupFailed ||
+	if terminalUpload.State != securecontent.TransferStateCleanupFailed ||
 		!terminalUpload.CleanupCompletedAt.IsZero() {
 		t.Fatalf("terminal cleanup state = %+v", terminalUpload)
 	}
@@ -582,13 +595,13 @@ func seedGrantObject(
 		commitment,
 	)
 	chunkCount := uint32(
-		(plaintextSize + uint64(attachmentapp.ChunkSize) - 1) /
-			uint64(attachmentapp.ChunkSize),
+		(plaintextSize + uint64(securecontent.ObjectChunkSize) - 1) /
+			uint64(securecontent.ObjectChunkSize),
 	)
 	if chunkCount == 0 {
 		chunkCount = 1
 	}
-	ciphertextSize := plaintextSize + uint64(chunkCount)*uint64(attachmentapp.TagSize)
+	ciphertextSize := plaintextSize + uint64(chunkCount)*uint64(securecontent.AES256GCMTagSize)
 	chunkHashes := make([]valueobject.Hash, chunkCount)
 	encodedChunkHashes := make([]byte, 0, int(chunkCount)*len(hash))
 	for index := range chunkHashes {
@@ -619,15 +632,15 @@ func seedGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           hash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 chunkCount,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      encodedChunkHashes,
 		DescriptorCommitmentSHA256: commitment.Bytes(),
 		IdempotencyKey:             "idempotency-" + suffix,
-		State:                      int32(attachmentapp.TransferStateComplete),
+		State:                      int32(securecontent.TransferStateComplete),
 		ReceivedChunkBitmap:        make([]byte, (chunkCount+7)/8),
 		ObjectID:                   string(objectID),
 		StorageRef:                 storageRef,
@@ -654,14 +667,14 @@ func seedGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           hash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 chunkCount,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      encodedChunkHashes,
 		DescriptorCommitmentSHA256: commitment.Bytes(),
-		State:                      string(attachmentapp.ObjectStateCompleteUnattached),
+		State:                      string(securecontent.ObjectStateCompleteUnattached),
 		ExpiresAt:                  expiresAt,
 		CleanupNextAttemptAt:       expiresAt,
 		CreatedAt:                  createdAt,
@@ -682,15 +695,15 @@ func seedGrantObject(
 			CiphertextSize: ciphertextSize,
 			CiphertextHash: hash,
 			MediaType:      "application/octet-stream",
-			ChunkSize:      attachmentapp.ChunkSize,
+			ChunkSize:      securecontent.ObjectChunkSize,
 			ChunkCount:     chunkCount,
-			Encryption:     attachmentapp.EncryptionSuiteAES256GCMChunked,
-			TagSize:        attachmentapp.TagSize,
-			NonceStrategy:  attachmentapp.NonceStrategyCounter32BE,
+			Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+			TagSize:        securecontent.AES256GCMTagSize,
+			NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 			ChunkHashes:    chunkHashes,
 		},
 		DescriptorCommitment: commitment,
-		State:                attachmentapp.ObjectStateCompleteUnattached,
+		State:                securecontent.ObjectStateCompleteUnattached,
 		ExpiresAt:            expiresAt,
 		CleanupNextAttemptAt: expiresAt,
 		CreatedAt:            createdAt,
@@ -742,18 +755,18 @@ func seedCleanupObjectWithID(
 		AttachmentID:               "attachment-cleanup",
 		UploaderPTID:               "ptid:alice",
 		UploaderDeviceID:           "device-1",
-		CiphertextSize:             uint64(attachmentapp.TagSize + 1),
+		CiphertextSize:             uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSHA256:           hash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      hash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
 		IdempotencyKey:             "idempotency-" + string(objectID),
-		State:                      int32(attachmentapp.TransferStateComplete),
+		State:                      int32(securecontent.TransferStateComplete),
 		ReceivedChunkBitmap:        []byte{1},
 		ObjectID:                   string(objectID),
 		StorageRef:                 storageRef,
@@ -774,7 +787,7 @@ func seedCleanupObjectWithID(
 		Generation:       1,
 		ChunkIndex:       0,
 		ByteOffset:       0,
-		CiphertextSize:   uint64(attachmentapp.TagSize + 1),
+		CiphertextSize:   uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSHA256: hash.Bytes(),
 		StorageKey: attachmentapp.ImmutablePartStorageKey(
 			uploadID,
@@ -794,17 +807,17 @@ func seedCleanupObjectWithID(
 		MessageID:                  "message-cleanup",
 		AttachmentID:               "attachment-cleanup",
 		UploaderPTID:               "ptid:alice",
-		CiphertextSize:             uint64(attachmentapp.TagSize + 1),
+		CiphertextSize:             uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSHA256:           hash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      hash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
-		State:                      string(attachmentapp.ObjectStateCompleteUnattached),
+		State:                      string(securecontent.ObjectStateCompleteUnattached),
 		ExpiresAt:                  expiresAt,
 		CleanupNextAttemptAt:       expiresAt,
 		CreatedAt:                  now.Add(-time.Hour),
@@ -832,18 +845,18 @@ func seedIncompleteUpload(
 		AttachmentID:               "attachment-incomplete",
 		UploaderPTID:               "ptid:alice",
 		UploaderDeviceID:           "device-1",
-		CiphertextSize:             uint64(attachmentapp.TagSize + 1),
+		CiphertextSize:             uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSHA256:           hash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      hash.Bytes(),
 		DescriptorCommitmentSHA256: valueobject.HashBytes([]byte(uploadID)).Bytes(),
 		IdempotencyKey:             "idempotency-" + uploadID,
-		State:                      int32(attachmentapp.TransferStateTransferring),
+		State:                      int32(securecontent.TransferStateTransferring),
 		ReceivedChunkBitmap:        []byte{1},
 		ExpiresAt:                  expiresAt,
 		CleanupNextAttemptAt:       expiresAt,
@@ -857,7 +870,7 @@ func seedIncompleteUpload(
 		Generation:       1,
 		ChunkIndex:       0,
 		ByteOffset:       0,
-		CiphertextSize:   uint64(attachmentapp.TagSize + 1),
+		CiphertextSize:   uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSHA256: hash.Bytes(),
 		StorageKey: attachmentapp.ImmutablePartStorageKey(
 			uploadID,

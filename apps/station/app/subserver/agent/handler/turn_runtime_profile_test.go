@@ -26,8 +26,15 @@ func TestValidateFrozenDirectModelRequest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := validateFrozenDirectModelRequest(request)
 			var biz *errcode.BizError
-			if !errors.As(err, &biz) || biz.Code != errcode.AgentInvalidRequest {
-				t.Fatalf("expected invalid request, got %T: %v", err, err)
+			if !errors.As(err, &biz) ||
+				biz.Code != errcode.AgentRuntimeUnavailable ||
+				biz.Payload.GetErrorType() != string(errcode.AgentRuntimeUnavailable) ||
+				biz.Payload.GetLocaleKey() != errcode.AgentRuntimeUnavailableLocaleKey ||
+				!biz.Payload.GetRetryable() ||
+				!biz.Payload.GetTerminal() ||
+				biz.Payload.GetDetails()["runtime_kind"] != "direct_model" ||
+				biz.Payload.GetDetails()["reason_code"] != "runtime_not_advertised" {
+				t.Fatalf("unexpected runtime-unavailable payload: %T %+v", err, biz)
 			}
 		})
 	}

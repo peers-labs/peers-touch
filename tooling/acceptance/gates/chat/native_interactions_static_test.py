@@ -108,7 +108,10 @@ class NativeInteractionContractsTest(unittest.TestCase):
         gateway = self.source(
             "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
         )
-        self.assertIn('#[cfg(feature = "acceptance-webdriver")]', store)
+        self.assertIn(
+            '#[cfg(any(test, feature = "acceptance-webdriver"))]',
+            store,
+        )
         self.assertIn("acceptance_interaction_snapshot", store)
         self.assertIn('#[cfg(feature = "acceptance-webdriver")]', gateway)
         self.assertIn("messaging_acceptance_interaction_snapshot", gateway)

@@ -7,17 +7,25 @@ import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { currentAuthenticatedActorPtid } from '../../store/session';
 import {
   projectChatFriendContacts,
+  projectChatFriendRequestPeers,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
+import { remoteProfileHandle } from '../../store/socialProfileProjection';
+import type { FriendRequestData } from '../../store/socialNormalizers';
+import {
+  presentError,
+  type PresentedError,
+} from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
   useActiveChatFederationSlice,
-  useActiveChatRelationshipsSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import {
   friendContactSelection,
+  personContactSelection,
   type ContactSelection,
 } from './contactSelection';
 import { ChatActorIdentityRow } from './ChatActorIdentityRow';
@@ -41,6 +49,9 @@ export function ChatContactsPanel({
   const { t } = useTranslation('chat');
   const {
     friendRequests,
+    friendRequestsLoading,
+    friendRequestsLoadedAt,
+    friendRequestsError,
     peerProfiles,
     currentUserPtid,
     conversationRecords,
@@ -53,6 +64,9 @@ export function ChatContactsPanel({
     rejectFriendRequest,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
+    friendRequestsLoading: s.friendRequestsLoading,
+    friendRequestsLoadedAt: s.friendRequestsLoadedAt,
+    friendRequestsError: s.friendRequestsError,
     peerProfiles: s.peerProfiles,
     currentUserPtid: s.currentUserPtid,
     conversationRecords: s.conversations,
@@ -65,21 +79,17 @@ export function ChatContactsPanel({
     rejectFriendRequest: s.rejectFriendRequest,
   }));
   const {
-    mutualFriends,
-    mutualFriendsActorPtid,
-    mutualFriendsLoading,
-    mutualFriendsLoadedAt,
-    mutualFriendsError,
-  } = useActiveChatRelationshipsSlice((s) => ({
-    mutualFriends: s.mutualFriends,
-    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
-    mutualFriendsLoading: s.mutualFriendsLoading,
-    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
-    mutualFriendsError: s.mutualFriendsError,
+    federations,
+    memberStationsByFederation,
+    actorStationEntries,
+  } = useActiveChatFederationSlice((s) => ({
+    federations: s.federations,
+    memberStationsByFederation: s.memberStationsByFederation,
+    actorStationEntries: s.actorStationEntries,
   }));
-  const federations = useActiveChatFederationSlice((s) => s.federations);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
+  const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
   const conversations = useMemo(
     () => {
       // getIMConversations reads the store imperatively. Referencing its
@@ -109,25 +119,61 @@ export function ChatContactsPanel({
   const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
   const friendshipReady = Boolean(
     myDid
-    && mutualFriendsActorPtid === myDid
-    && mutualFriendsLoadedAt,
+    && friendRequestsLoadedAt,
+  );
+  const stationNamesByPeerId = useMemo(() => {
+    const candidates = new Map<string, Set<string>>();
+    Object.values(memberStationsByFederation).flat().forEach((station) => {
+      const peerId = station.stationPeerId.trim();
+      const name = station.stationName.trim();
+      if (!peerId || !name) return;
+      const names = candidates.get(peerId) ?? new Set<string>();
+      names.add(name);
+      candidates.set(peerId, names);
+    });
+    Object.values(actorStationEntries).forEach((entry) => {
+      const peerId = entry.homeStationPeerId.trim();
+      const name = entry.homeStationName.trim();
+      if (!peerId || !name) return;
+      const names = candidates.get(peerId) ?? new Set<string>();
+      names.add(name);
+      candidates.set(peerId, names);
+    });
+    return Object.fromEntries(
+      [...candidates.entries()]
+        .filter(([, names]) => names.size === 1)
+        .map(([peerId, names]) => [peerId, [...names][0] ?? '']),
+    );
+  }, [actorStationEntries, memberStationsByFederation]);
+  const stationNamesByActorPtid = useMemo(
+    () => Object.fromEntries(
+      Object.entries(actorStationEntries)
+        .filter(([, entry]) => entry.homeStationName.trim())
+        .map(([actorPtid, entry]) => [
+          actorPtid,
+          entry.homeStationName.trim(),
+        ]),
+    ),
+    [actorStationEntries],
   );
   const friendContacts = useMemo(
     () => projectChatFriendContacts({
-      mutualFriends,
       conversations,
       friendRequests,
       peerProfiles,
       currentUserPtid: myDid,
       federations,
+      stationNamesByPeerId,
+      stationNamesByActorPtid,
     }),
     [
       conversations,
       federations,
       friendRequests,
-      mutualFriends,
       myDid,
       peerProfiles,
+      stationNamesByPeerId,
+      stationNamesByActorPtid,
     ],
   );
   const friendContactsByPtid = useMemo(
@@ -144,33 +190,9 @@ export function ChatContactsPanel({
 
   const totalContacts = friendContacts.length;
 
-  const unifiedRequests = useMemo(() => {
-    if (!myDid) return [];
-    return friendRequests
-      .filter((request) => request.senderPtid === myDid || request.receiverPtid === myDid)
-      .map((request) => {
-        const outgoing = request.senderPtid === myDid;
-        return {
-          request,
-          direction: outgoing ? 'outgoing' as const : 'incoming' as const,
-          peerPtid: outgoing ? request.receiverPtid : request.senderPtid,
-          peerName: outgoing ? request.receiverDisplayName : request.senderDisplayName,
-          peerAvatar: outgoing ? request.receiverAvatar : request.senderAvatar,
-          federationId: request.federationId,
-        };
-      })
-      .sort((left, right) => {
-        const leftTime = Date.parse(left.request.createdAt) || 0;
-        const rightTime = Date.parse(right.request.createdAt) || 0;
-        return rightTime - leftTime;
-      });
-  }, [friendRequests, myDid]);
-
-  const pendingIncomingCount = useMemo(
-    () => unifiedRequests.filter(
-      ({ direction, request }) => direction === 'incoming' && request.status === 1,
-    ).length,
-    [unifiedRequests],
+  const requestPeers = useMemo(
+    () => projectChatFriendRequestPeers(friendRequests, myDid),
+    [friendRequests, myDid],
   );
 
   const requestCardStyle: CSSProperties = {
@@ -213,71 +235,206 @@ export function ChatContactsPanel({
 
   const selectAcceptedActor = (identity: ChatActorIdentityProjection) => {
     const selection = friendContactSelection(identity, friendConversations);
-    if (selection.conversationId) selectSession(selection.conversationId);
+    if (
+      selection.kind === 'friend'
+      && selection.conversationId
+    ) {
+      selectSession(selection.conversationId);
+    }
     onSelectContact(selection);
   };
 
-  const newFriendsContent = unifiedRequests.length === 0 ? (
+  const runRequestAction = async (
+    request: FriendRequestData,
+    action: 'accept' | 'reject',
+  ) => {
+    // #region debug-point B-C:friend-request-accept-handler
+    void fetch('http://127.0.0.1:7782/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'friend-request-accept',
+        runId: 'pre-fix',
+        hypothesisId: 'B-C',
+        location: 'ChatContactsPanel.tsx:runRequestAction:entry',
+        msg: '[DEBUG] Friend request decision handler entered',
+        data: {
+          action,
+          currentUserPtid: myDid,
+          request: {
+            id: request.id,
+            senderPtid: request.senderPtid,
+            receiverPtid: request.receiverPtid,
+            senderHomeStationPeerId: request.senderHomeStationPeerId,
+            receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+            federationId: request.federationId,
+            status: request.status,
+          },
+          matchingRequests: friendRequests
+            .filter((candidate) => (
+              candidate.senderPtid === request.senderPtid
+              && candidate.receiverPtid === request.receiverPtid
+            ))
+            .map((candidate) => ({
+              id: candidate.id,
+              status: candidate.status,
+              federationId: candidate.federationId,
+            })),
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
+    setBusyAction({ id: request.id, kind: action });
+    setRequestActionErrors((current) => {
+      if (!(request.id in current)) return current;
+      const next = { ...current };
+      delete next[request.id];
+      return next;
+    });
+    try {
+      if (action === 'accept') {
+        await acceptFriendRequest(request);
+      } else {
+        await rejectFriendRequest(request);
+      }
+      // #region debug-point B-D:friend-request-accept-handler-success
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'B-D',
+          location: 'ChatContactsPanel.tsx:runRequestAction:success',
+          msg: '[DEBUG] Friend request decision handler succeeded',
+          data: { action, requestId: request.id, currentUserPtid: myDid },
+        }),
+      }).catch(() => {});
+      // #endregion
+    } catch (error) {
+      // #region debug-point B-D:friend-request-accept-handler-error
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'B-D',
+          location: 'ChatContactsPanel.tsx:runRequestAction:error',
+          msg: '[DEBUG] Friend request decision handler failed',
+          data: {
+            action,
+            requestId: request.id,
+            currentUserPtid: myDid,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
+      log.error('contacts', `${action}FriendRequest failed`, error);
+      setRequestActionErrors((current) => ({
+        ...current,
+        [request.id]: presentError(error, {
+          mode: 'inline',
+          fallbackKey: 'error.chat.conversationActionFailed',
+        }),
+      }));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const newFriendsContent = requestPeers.length === 0 ? (
     <Empty
       image={Empty.PRESENTED_IMAGE_SIMPLE}
       description={t('chat.social.contacts.noPendingRequests')}
     />
   ) : (
     <Flexbox gap={8}>
-      {unifiedRequests.map(({
+      {requestPeers.map(({
         request,
         direction,
         peerPtid,
-        peerName,
-        peerAvatar,
-        federationId,
+        attemptCount,
       }) => {
+        const peerName = direction === 'outgoing'
+          ? request.receiverDisplayName
+          : request.senderDisplayName;
+        const peerAvatar = direction === 'outgoing'
+          ? request.receiverAvatar
+          : request.senderAvatar;
+        const federationId = request.federationId;
         const cachedProfile = peerProfiles[peerPtid];
         const peerLabel = cachedProfile?.display_name?.trim()
           || cachedProfile?.username?.trim()
           || peerName
           || t('chat.social.sessionList.unknown');
         const resolvedAvatar = cachedProfile?.avatar?.trim() || peerAvatar;
+        const federatedHandle = cachedProfile
+          ? remoteProfileHandle(cachedProfile)
+          : '';
+        const homeStationPeerId = direction === 'incoming'
+          ? request.senderHomeStationPeerId
+          : request.receiverHomeStationPeerId;
         const projectedIdentity = friendContactsByPtid.get(peerPtid) ?? {
           actorPtid: peerPtid,
           username: cachedProfile?.username?.trim() || '',
           displayName: peerLabel,
           avatarUrl: resolvedAvatar,
-          federatedHandle: '',
-          homeStationDomain: '',
-          homeStationPeerId: direction === 'incoming'
-            ? request.senderHomeStationPeerId
-            : request.receiverHomeStationPeerId,
+          federatedHandle,
+          homeStationDomain: homeStationDomainFromHandle(federatedHandle),
+          homeStationPeerId,
+          homeStationName: stationNamesByActorPtid[peerPtid]
+            || stationNamesByPeerId[homeStationPeerId]
+            || '',
           federationId,
           federationName: federationNames.get(federationId) || '',
         };
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
-        const isAccepted = request.status === 2;
-        const isSelected = selectedContact?.kind === 'friend'
-          && selectedContact.peerPtid === peerPtid;
+        const actionError = requestActionErrors[request.id];
+        const isSelected = Boolean(
+          selectedContact
+          && selectedContact.kind !== 'group'
+          && selectedContact.peerPtid === peerPtid
+        );
+        const selection = request.status === 2
+          ? friendContactSelection(projectedIdentity, friendConversations)
+          : personContactSelection(
+              projectedIdentity,
+              request.status,
+              direction,
+              attemptCount,
+            );
+        const selectRequestActor = () => {
+          if (
+            selection.kind === 'friend'
+            && selection.conversationId
+          ) {
+            selectSession(selection.conversationId);
+          }
+          onSelectContact(selection);
+        };
         return (
           <Flexbox
-            key={request.id}
+            key={peerPtid}
+            data-chat-friend-request-id={request.id}
+            data-chat-friend-request-peer-ptid={peerPtid}
+            data-chat-friend-request-direction={direction}
+            data-chat-friend-request-status={request.status}
+            data-chat-friend-request-attempt-count={attemptCount}
             horizontal
             align="flex-start"
             gap={10}
             title={peerLabel}
-            role={isAccepted ? 'button' : undefined}
-            tabIndex={isAccepted ? 0 : undefined}
-            onClick={isAccepted
-              ? () => selectAcceptedActor(projectedIdentity)
-              : undefined}
-            onKeyDown={isAccepted
-              ? (event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  selectAcceptedActor(projectedIdentity);
-                }
-              : undefined}
+            role="button"
+            tabIndex={0}
+            onClick={selectRequestActor}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              selectRequestActor();
+            }}
             style={{
               ...requestCardStyle,
               ...(isSelected ? selectedRowStyle : {}),
-              cursor: isAccepted ? 'pointer' : 'default',
+              cursor: 'pointer',
             }}
           >
             <UserSquareAvatar remoteUrl={resolvedAvatar} name={peerLabel} size={36} />
@@ -309,45 +466,73 @@ export function ChatContactsPanel({
                   {t(`chat.social.contacts.direction.${direction}`)}
                 </Tag>
                 {statusTag(request.status)}
+                <Tag>
+                  {t('chat.social.contacts.requestAttempts', {
+                    count: attemptCount,
+                  })}
+                </Tag>
               </Flexbox>
               {isPendingIncoming ? (
                 <Flexbox horizontal gap={6}>
                   <Button
+                    data-chat-friend-request-action="accept"
                     size="small"
                     type="primary"
                     icon={<Check size={12} />}
                     loading={busyAction?.id === request.id && busyAction?.kind === 'accept'}
-                    onClick={async () => {
-                      setBusyAction({ id: request.id, kind: 'accept' });
-                      try {
-                        await acceptFriendRequest(request);
-                      } catch (error) {
-                        log.error('contacts', 'acceptFriendRequest failed', error);
-                      } finally {
-                        setBusyAction(null);
-                      }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      // #region debug-point A-B:friend-request-accept-click
+                      void fetch('http://127.0.0.1:7782/event', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          sessionId: 'friend-request-accept',
+                          runId: 'pre-fix',
+                          hypothesisId: 'A-B',
+                          location: 'ChatContactsPanel.tsx:accept:onClick',
+                          msg: '[DEBUG] Friend request accept clicked',
+                          data: {
+                            requestId: request.id,
+                            senderPtid: request.senderPtid,
+                            receiverPtid: request.receiverPtid,
+                            status: request.status,
+                            currentUserPtid: myDid,
+                          },
+                        }),
+                      }).catch(() => {});
+                      // #endregion
+                      void runRequestAction(request, 'accept');
                     }}
                   >
                     {t('chat.social.contacts.accept')}
                   </Button>
                   <Button
+                    data-chat-friend-request-action="reject"
                     size="small"
                     icon={<X size={12} />}
                     loading={busyAction?.id === request.id && busyAction?.kind === 'reject'}
-                    onClick={async () => {
-                      setBusyAction({ id: request.id, kind: 'reject' });
-                      try {
-                        await rejectFriendRequest(request);
-                      } catch (error) {
-                        log.error('contacts', 'rejectFriendRequest failed', error);
-                      } finally {
-                        setBusyAction(null);
-                      }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void runRequestAction(request, 'reject');
                     }}
                   >
                     {t('chat.social.contacts.reject')}
                   </Button>
                 </Flexbox>
+              ) : null}
+              {actionError ? (
+                <div data-chat-friend-request-error={request.id}>
+                  <PresentedErrorAlert
+                    error={actionError}
+                    onClose={() => {
+                      setRequestActionErrors((current) => {
+                        const next = { ...current };
+                        delete next[request.id];
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
               ) : null}
             </Flexbox>
           </Flexbox>
@@ -360,10 +545,15 @@ export function ChatContactsPanel({
     {
       key: 'new-friends',
       label: (
-        <Flexbox horizontal align="center" gap={8}>
+        <Flexbox
+          data-chat-friend-request-section
+          horizontal
+          align="center"
+          gap={8}
+        >
           <UserPlus size={14} style={{ color: token.colorTextSecondary }} />
           <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.newFriendsCount', { count: pendingIncomingCount })}
+            {t('chat.social.contacts.newFriendsCount', { count: requestPeers.length })}
           </Text>
         </Flexbox>
       ),
@@ -464,13 +654,13 @@ export function ChatContactsPanel({
         </Flexbox>
       ),
       children:
-        mutualFriendsError ? (
+        friendRequestsError ? (
           <Alert
             type="error"
             showIcon
             message={t('chat.social.findPeople.friendshipUnavailable')}
           />
-        ) : !friendshipReady || mutualFriendsLoading ? (
+        ) : !friendshipReady || friendRequestsLoading ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Spin size="small" />
           </Flexbox>
@@ -496,6 +686,7 @@ export function ChatContactsPanel({
                   data-chat-contact-federated-handle={friend.federatedHandle}
                   data-chat-contact-home-station-domain={friend.homeStationDomain}
                   data-chat-contact-home-station-peer-id={friend.homeStationPeerId}
+                  data-chat-contact-home-station-name={friend.homeStationName ?? ''}
                   data-chat-contact-avatar-src={friend.avatarUrl}
                   horizontal
                   align="center"
@@ -537,7 +728,7 @@ export function ChatContactsPanel({
     <Flexbox
       data-chat-contacts
       data-chat-friendship-state={
-        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+        friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
       }
       style={{
         width: PANEL_WIDTH,
@@ -558,4 +749,10 @@ export function ChatContactsPanel({
       </Flexbox>
     </Flexbox>
   );
+}
+
+function homeStationDomainFromHandle(handle: string): string {
+  const value = handle.trim().replace(/^@/, '');
+  const separator = value.indexOf('@');
+  return separator >= 0 ? value.slice(separator + 1) : '';
 }

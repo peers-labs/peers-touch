@@ -41,6 +41,203 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def resolve_machine_profile_environment(
+    repo_root: Path | None = None,
+    *,
+    require_identity_match: bool = True,
+) -> tuple[str, Path, int, dict[str, str]]:
+    root = (repo_root or REPO_ROOT).resolve()
+    machine_dev = (
+        root
+        / "tooling"
+        / "scripts"
+        / "local-dev"
+        / "machine-dev.mjs"
+    )
+    try:
+        completed = subprocess.run(
+            [
+                "node",
+                str(machine_dev),
+                "check",
+                "--workspace-root",
+                str(root),
+                "--env-repo",
+                str(root.parent / "env"),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise BlockedError(
+            reason=f"Machine Dev profile binding is unavailable: {error}",
+            resource="profile:machine-control-plane",
+        ) from error
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise BlockedError(
+            reason=(
+                "Machine Dev profile binding is unavailable: "
+                f"{detail or 'machine-dev check returned no output'}"
+            ),
+            resource="profile:machine-control-plane",
+        )
+    try:
+        resolved = json.loads(completed.stdout)
+        binding = resolved["binding"]
+        profile = resolved["profile"]
+        ports = resolved["ports"]
+        profile_name = binding["profile"]
+        slot = binding["slot"]
+        profile_file = Path(profile["profileFile"]).resolve(strict=True)
+    except (
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+    ) as error:
+        raise BlockedError(
+            reason=f"Machine Dev profile binding is invalid: {error}",
+            resource="profile:machine-control-plane",
+        ) from error
+
+    values = load_env_file(profile_file)
+    if (
+        not isinstance(profile_name, str)
+        or not profile_name
+        or not isinstance(slot, int)
+        or isinstance(slot, bool)
+        or slot < 0
+    ):
+        raise BlockedError(
+            reason="Machine Dev profile binding has invalid identity or slot",
+            resource="profile:machine-control-plane",
+        )
+    if (
+        resolved.get("authority") != "machine-control-plane"
+        or profile.get("sourceState") != "tracked-clean"
+    ):
+        raise BlockedError(
+            reason="Machine Dev profile binding is not authoritative",
+            resource="profile:machine-control-plane",
+        )
+    declared_profile = values.get("PT_DEV_PROFILE", "")
+    if require_identity_match and declared_profile != profile_name:
+        raise BlockedError(
+            reason=(
+                f"Profile identity mismatch: PT_DEV_PROFILE={declared_profile} "
+                f"but machine binding is {profile_name}"
+            ),
+            resource=f"profile:identity:{profile_name}",
+        )
+    port_fields = {
+        "desktopAppGateway": "PT_DESKTOP_APP_GATEWAY_PORT",
+        "desktopAppWeb": "PT_DESKTOP_APP_WEB_PORT",
+        "desktopWebGateway": "PT_DESKTOP_WEB_GATEWAY_PORT",
+        "desktopWebWeb": "PT_DESKTOP_WEB_WEB_PORT",
+        "mobileWeb": "PT_MOBILE_WEB_PORT",
+    }
+    values["PT_DEV_SLOT"] = str(slot)
+    for machine_field, environment_field in port_fields.items():
+        port = ports.get(machine_field)
+        if not isinstance(port, int) or isinstance(port, bool) or port <= 0:
+            raise BlockedError(
+                reason=(
+                    "Machine Dev profile binding has an invalid "
+                    f"{machine_field} port"
+                ),
+                resource="profile:machine-control-plane",
+            )
+        values[environment_field] = str(port)
+    return profile_name, profile_file, slot, values
+
+
+def resolve_deployment_environment_path(
+    environment_name: str,
+    *,
+    repo_root: Path | None = None,
+) -> Path:
+    root = REPO_ROOT if repo_root is None else repo_root
+    resolver = root / "tooling" / "scripts" / "deploy" / "deploy.sh"
+    resource = f"deployment-environment:{environment_name}"
+    try:
+        completed = subprocess.run(
+            ["/bin/bash", str(resolver), "resolve", environment_name],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {error}"
+            ),
+            resource=resource,
+        ) from error
+
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"resolver exited with status {completed.returncode}"
+        )
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} could not be "
+                f"resolved: {detail}"
+            ),
+            resource=resource,
+        )
+
+    candidates = [
+        line.strip()
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    ]
+    if len(candidates) != 1:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned {len(candidates)} paths; expected exactly one"
+            ),
+            resource=resource,
+        )
+    candidate = Path(candidates[0])
+    if not candidate.is_absolute():
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} resolver "
+                f"returned a non-absolute path: {candidate}"
+            ),
+            resource=resource,
+        )
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} path cannot be "
+                f"resolved: {candidate}: {error}"
+            ),
+            resource=resource,
+        ) from error
+    if not resolved.is_file():
+        raise BlockedError(
+            reason=(
+                f"Deployment environment {environment_name!r} is not a file: "
+                f"{resolved}"
+            ),
+            resource=resource,
+        )
+    return resolved
+
+
 class EnvironmentProvisioner(ABC):
     environment_id = ""
 
@@ -238,21 +435,7 @@ class EnvironmentProvisioner(ABC):
                 ),
                 resource="source-lease:invalid-resource",
             )
-        environment_path = (
-            REPO_ROOT
-            / ".local"
-            / "deploy"
-            / "envs"
-            / f"{environment_name}.env"
-        )
-        if not environment_path.is_file():
-            raise BlockedError(
-                reason=(
-                    "Station deployment environment is missing: "
-                    f"{environment_path}"
-                ),
-                resource=f"station-deployment:{environment_name}",
-            )
+        environment_path = resolve_deployment_environment_path(environment_name)
         environment = load_env_file(environment_path)
         try:
             lease = RemoteGitSourceLease(
@@ -303,50 +486,10 @@ class EnvironmentProvisioner(ABC):
             return "unknown"
 
     def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:
-        worktree_id = REPO_ROOT.name
-        active_file = (
-            REPO_ROOT / ".local" / "dev" / "active" / f"{worktree_id}.env"
+        return resolve_machine_profile_environment(
+            REPO_ROOT,
+            require_identity_match=self.contract.profile.identity_match,
         )
-        if not active_file.exists() and not active_file.is_symlink():
-            raise BlockedError(
-                reason=(
-                    f"No active profile for worktree {worktree_id!r}. "
-                    "Run: make profile PROFILE=<name>"
-                ),
-                resource=f"profile:active:{worktree_id}",
-            )
-        try:
-            profile_file = active_file.resolve(strict=True)
-        except (OSError, RuntimeError) as error:
-            raise BlockedError(
-                reason=f"Active profile cannot be resolved: {active_file}: {error}",
-                resource=f"profile:symlink:{active_file}",
-            ) from error
-
-        values = load_env_file(profile_file)
-        profile_name = values.get("PT_DEV_PROFILE", "")
-        try:
-            slot = int(values.get("PT_DEV_SLOT", "0"))
-        except ValueError as error:
-            raise BlockedError(
-                reason=f"Profile {profile_file} has invalid PT_DEV_SLOT",
-                resource=f"profile:slot:{profile_file}",
-            ) from error
-        if not profile_name:
-            raise BlockedError(
-                reason=f"Profile {profile_file} is missing PT_DEV_PROFILE",
-                resource=f"profile:content:{profile_file}",
-            )
-        expected_name = profile_file.stem
-        if self.contract.profile.identity_match and profile_name != expected_name:
-            raise BlockedError(
-                reason=(
-                    f"Profile identity mismatch: PT_DEV_PROFILE={profile_name} "
-                    f"but filename is {expected_name}.env"
-                ),
-                resource=f"profile:identity:{expected_name}",
-            )
-        return profile_name, profile_file, slot, values
 
     def _station_ready(self, station_url: str, health_url: str = "") -> bool:
         url = health_url or f"{station_url.rstrip('/')}/api/oauth/providers"

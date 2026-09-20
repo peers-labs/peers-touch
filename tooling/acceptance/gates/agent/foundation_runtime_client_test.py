@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import os
+import signal
 import socket
 import socketserver
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tooling.acceptance.gates.agent import foundation_runtime_client
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
     FoundationClientSpec,
@@ -175,10 +181,12 @@ class FoundationClientSpecTest(unittest.TestCase):
             browser = self.spec(root, "browser")
 
         self.assertEqual((native.make_target, native.surface), ("desktop", "desktop"))
+        self.assertEqual(native.devctl_mode, "app")
         self.assertEqual(
             (browser.make_target, browser.surface),
             ("desktop-web", "browser"),
         )
+        self.assertEqual(browser.devctl_mode, "web")
         self.assertEqual(
             native.cargo_target_dir,
             root.resolve()
@@ -217,6 +225,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.stop()
 
         self.assertEqual(environment["PT_DEV_PROFILE"], "one")
+        self.assertEqual(client.runtime_profile.name, "one.env")
         self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
         self.assertEqual(
             environment["PT_DEV_PROFILE_FILE_AUTHORITY"],
@@ -229,6 +238,8 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(environment["VITE_ACCEPTANCE_HARNESS"], "1")
+        self.assertEqual(environment["PT_AGENT_GFE1_EXECUTOR_CONTROL"], "1")
         self.assertEqual(
             environment["CARGO_TARGET_DIR"],
             str(
@@ -245,6 +256,108 @@ class FoundationClientSpecTest(unittest.TestCase):
             str(root / "actor-identity"),
         )
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
+    def test_runtime_profile_filename_matches_approved_profile_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_APPROVED_PROFILE": "chat-native-disposable"},
+        ):
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={
+                    "PT_DEV_PROFILE": "chat-native-disposable",
+                    "PT_STATION_DEPLOY_ENV": "station-1",
+                },
+            )
+
+            environment = client.launch_environment()
+
+            self.assertEqual(
+                client.runtime_profile.name,
+                "chat-native-disposable.env",
+            )
+            self.assertEqual(
+                environment["PT_DEV_PROFILE"],
+                "chat-native-disposable",
+            )
+            self.assertEqual(
+                environment["PT_DEV_PROFILE_FILE"],
+                str(client.runtime_profile),
+            )
+            client.stop()
+        self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
+
+    def test_managed_launcher_clean_exit_keeps_runtime_readiness_alive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 0
+            client._managed_runtime_started = True
+
+            self.assertTrue(client._process_alive())
+            client._managed_runtime_started = False
+            client.stop()
+
+    def test_managed_launcher_failure_still_fails_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 2
+            client._managed_runtime_started = True
+
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "browser exited with code 2",
+            ):
+                client._process_alive()
+            client._managed_runtime_started = False
+            client.stop()
+
+    def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 0
+
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "browser exited with code 0",
+            ):
+                client._process_alive()
+            client.stop()
+
+    def test_browser_window_debug_snapshot_reports_handle_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            raw_driver = Mock()
+            raw_driver.window_handles = ["application", "attachment"]
+            raw_driver.current_window_handle = "attachment"
+            client.driver = Mock(driver=raw_driver)
+
+            snapshot = client._browser_window_debug_snapshot()
+
+            self.assertEqual(snapshot["windowCount"], 2)
+            self.assertTrue(snapshot["currentWindowAvailable"])
+            self.assertTrue(snapshot["currentWindowInHandles"])
+            self.assertEqual(snapshot["errorType"], "")
+            client.driver = None
+            client.stop()
 
     def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -567,6 +680,140 @@ class FoundationClientSpecTest(unittest.TestCase):
             self.assertTrue(result["storagePreserved"])
             self.assertIsNone(result["storageReleased"])
             self.assertEqual(journal.read_text(encoding="utf-8"), "retained")
+
+    def test_stop_runtime_uses_devctl_for_managed_children(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = FoundationRuntimeClient(
+                self.spec(root, "native-tauri"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            client._managed_runtime_started = True
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=False,
+                ),
+                patch.object(
+                    foundation_runtime_client,
+                    "_native_restart_debug_env",
+                    return_value=None,
+                ),
+                patch(
+                    "tooling.acceptance.gates.agent."
+                    "foundation_runtime_client.subprocess.run",
+                    return_value=subprocess.CompletedProcess(
+                        args=[],
+                        returncode=0,
+                        stdout="",
+                        stderr="",
+                    ),
+                ) as run,
+            ):
+                result = client._stop_runtime(
+                    logout=False,
+                    remove_storage=False,
+                )
+
+            self.assertEqual(result["status"], "clean")
+            self.assertFalse(client._managed_runtime_started)
+            command = run.call_args.args[0]
+            self.assertEqual(
+                command,
+                [
+                    "node",
+                    "tooling/devctl/index.mjs",
+                    "desktop",
+                    "stop",
+                    "--mode",
+                    "app",
+                ],
+            )
+            self.assertEqual(run.call_args.kwargs["cwd"], root.resolve())
+            self.assertEqual(
+                run.call_args.kwargs["env"]["VITE_ACCEPTANCE_HARNESS"],
+                "1",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_stop_runtime_kills_descendants_after_group_leader_exits(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                renderer_port = int(reservation.getsockname()[1])
+            spec = replace(
+                self.spec(root, "browser"),
+                renderer_port=renderer_port,
+            )
+            client = FoundationRuntimeClient(
+                spec,
+                station_url="http://station.example",
+                profile_env={},
+            )
+            child_code = (
+                "import signal,socket,time;"
+                "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                "listener=socket.socket();"
+                "listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+                f"listener.bind(('127.0.0.1',{renderer_port}));"
+                "listener.listen();"
+                "time.sleep(60)"
+            )
+            leader_code = (
+                "import subprocess,sys;"
+                "subprocess.Popen("
+                "[sys.executable,'-c',sys.argv[1]],"
+                "stdin=subprocess.DEVNULL,"
+                "stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,"
+                "close_fds=True)"
+            )
+            leader = subprocess.Popen(
+                [sys.executable, "-c", leader_code, child_code],
+                start_new_session=True,
+            )
+            process_group_id = leader.pid
+            client.process = leader
+            client._process_group_id = process_group_id
+            try:
+                leader.wait(timeout=5)
+                foundation_runtime_client.wait_until(
+                    lambda: foundation_runtime_client.port_open(renderer_port),
+                    "orphaned renderer",
+                    5,
+                )
+                with (
+                    patch.object(
+                        foundation_runtime_client,
+                        "PROCESS_TERMINATION_TIMEOUT_SECONDS",
+                        0.05,
+                    ),
+                    patch.object(
+                        foundation_runtime_client,
+                        "PROCESS_KILL_TIMEOUT_SECONDS",
+                        2.0,
+                    ),
+                ):
+                    result = client._stop_runtime(
+                        logout=False,
+                        remove_storage=False,
+                    )
+
+                self.assertEqual(result["status"], "clean")
+                self.assertTrue(result["portsReleased"]["renderer"])
+                self.assertIsNone(client.process)
+                self.assertIsNone(client._process_group_id)
+                self.assertFalse(client._process_group_alive(process_group_id))
+            finally:
+                try:
+                    os.killpg(process_group_id, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 if __name__ == "__main__":

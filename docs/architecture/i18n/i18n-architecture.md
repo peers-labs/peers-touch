@@ -2,7 +2,7 @@
 
 > **Multi-Platform Internationalization Architecture**
 >
-> Created: 2026-04-09 | Updated: 2026-04-11
+> Created: 2026-04-09 | Updated: 2026-09-15
 
 ---
 
@@ -346,7 +346,10 @@ Rust: AppResult::fail("error.auth.accountRequired")
 
 **核心策略：Station 只返回 ErrorCode 数字码，客户端负责翻译。**
 
-Station 通过 protobuf `ErrorCode` 枚举（10001–30017）返回错误码，客户端收到后：
+Station 通过 protobuf `ErrorCode` 枚举返回错误码。当前已分配
+`10001..10010`、`20001..20008`、`30001..30017`、`30101..30110` 和
+`40001..40008`；proposed `SC-D20` reserves `30201..30209` for Content
+PreKey client errors. 客户端收到后：
 
 ```typescript
 function handleStationError(response: ErrorResponse) {
@@ -366,6 +369,8 @@ function handleStationError(response: ErrorResponse) {
 ```
 
 Station 侧无需 i18n 改动。Touch framework 已有 `ErrorResponse` 结构体携带 `ErrorCode`。
+W7A must add `error.30201` through `error.30209` to the shared English and
+Chinese error catalogs before the SC-D20 routes become active.
 
 **Dashboard jsonError 扩展**（可选扩展）：新增 `error_key` 字符串字段供 Desktop 客户端直接使用 i18n key。
 

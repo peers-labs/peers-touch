@@ -29,6 +29,54 @@ export function MessageList({ scrollRef }: MessageListProps) {
     overscan: 5,
   });
 
+  // #region debug-point S-U:lease-expired-list-commit
+  useEffect(() => {
+    if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+    const messageIndex = messages.findIndex((message) => (
+      message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+      || message.toolCalls?.some(
+        (toolCall) => toolCall.name === 'local_clipboard_read',
+      )
+    ));
+    if (messageIndex < 0) return;
+    const message = messages[messageIndex];
+    const virtualItem = virtualizer.getVirtualItems().find(
+      (item) => item.index === messageIndex,
+    );
+    const selector = `[data-pt-agent-message-id="${message.id}"]`;
+    const rendered = Array.from(
+      document.querySelectorAll<HTMLElement>(selector),
+    );
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'lease-approval-stall',
+        runId: 'post-ui-projection-fix',
+        hypothesisId: 'S-U',
+        location: 'components/MessageList.tsx:messages-commit',
+        msg: '[DEBUG] Message list commit observed',
+        data: {
+          messageId: message.id,
+          role: message.role,
+          turnId: message.turnId ?? null,
+          messageIndex,
+          error: message.error ?? null,
+          errorType: message.typedError?.error_type ?? null,
+          resolution: message.resolution?.type ?? null,
+          loading: message.loading === true,
+          virtualItemPresent: Boolean(virtualItem),
+          virtualItemKey: virtualItem?.key ?? null,
+          renderedCount: rendered.length,
+          renderedErrorTypes: rendered.map(
+            (element) => element.getAttribute('data-pt-agent-error-type'),
+          ),
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [messages, virtualizer]);
+  // #endregion
+
   const handleScroll = useCallback(() => {
     const el = scrollRef?.current;
     if (!el) return;

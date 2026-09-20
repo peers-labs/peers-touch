@@ -287,7 +287,8 @@ type OSSAuditAppend struct {
 }
 
 type ossRepository struct {
-	db *gorm.DB
+	db                 *gorm.DB
+	localStationPeerID string
 
 	// Federation surfaces are reached through the framework's
 	// auth/federation package. Storing them as fields lets tests
@@ -298,16 +299,14 @@ type ossRepository struct {
 	peerStore federation.PeerKeyStore
 }
 
-// NewOSSRepository returns an OSSRepository bound to the shared
-// *gorm.DB handle the dashboard already owns. No separate
-// connection pool is created. The federation key + peer stores
-// are derived from the same handle so a dashboard restart sees
-// the same canonical state OSS does.
-func NewOSSRepository(db *gorm.DB) OSSRepository {
+// NewOSSRepository returns an OSSRepository bound to the shared *gorm.DB and
+// the explicit local Station identity. No separate connection pool is created.
+func NewOSSRepository(db *gorm.DB, localStationPeerID string) OSSRepository {
 	return &ossRepository{
-		db:        db,
-		keyStore:  federation.NewKeyStoreGORMWithDB(db),
-		peerStore: federation.NewPeerKeyStoreGORMWithDB(db),
+		db:                 db,
+		localStationPeerID: strings.TrimSpace(localStationPeerID),
+		keyStore:           federation.NewKeyStoreGORMWithDB(db),
+		peerStore:          federation.NewPeerKeyStoreGORMWithDB(db),
 	}
 }
 
@@ -1156,7 +1155,15 @@ func (r *ossRepository) RotateFederationLocalKey(ctx context.Context) (*domain.O
 	if r.keyStore == nil {
 		return nil, errors.New("federation key store not configured")
 	}
-	res, err := federation.RotateLocalKey(ctx, r.keyStore, nil)
+	if r.localStationPeerID == "" {
+		return nil, errors.New("local Station peer ID is not configured")
+	}
+	res, err := federation.RotateLocalKey(
+		ctx,
+		r.localStationPeerID,
+		r.keyStore,
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}

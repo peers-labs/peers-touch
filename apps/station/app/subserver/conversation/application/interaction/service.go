@@ -4,7 +4,9 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
@@ -19,6 +21,7 @@ type Service struct {
 	conversations ConversationReader
 	devices       DeviceDirectory
 	readCursors   ReadCursorAdvancer
+	cursorForward ReadCursorForwarder
 	receipts      DeliveryReceiptCommitter
 	forwarder     DeliveryReceiptForwarder
 	typing        TypingPublisher
@@ -34,6 +37,7 @@ func NewService(
 	conversations ConversationReader,
 	devices DeviceDirectory,
 	readCursors ReadCursorAdvancer,
+	cursorForward ReadCursorForwarder,
 	receipts DeliveryReceiptCommitter,
 	forwarder DeliveryReceiptForwarder,
 	typing TypingPublisher,
@@ -42,7 +46,7 @@ func NewService(
 	policy Policy,
 	localStation valueobject.StationID,
 ) (*Service, error) {
-	if conversations == nil || devices == nil || readCursors == nil ||
+	if conversations == nil || devices == nil || readCursors == nil || cursorForward == nil ||
 		receipts == nil || forwarder == nil || typing == nil ||
 		pulses == nil || clock == nil ||
 		localStation == "" {
@@ -50,7 +54,7 @@ func NewService(
 			ErrorCodeInvalidArgument,
 			"interaction.new_service",
 			"dependencies",
-			"Conversation reader, device directory, read cursor, receipt committer, receipt forwarder, typing, pulse ledger, clock, and local Station are required",
+			"Conversation reader, device directory, read cursor advancer and forwarder, receipt committer and forwarder, typing, pulse ledger, clock, and local Station are required",
 		)
 	}
 	if policy.MinimumPulseInterval <= 0 ||
@@ -69,6 +73,7 @@ func NewService(
 		conversations: conversations,
 		devices:       devices,
 		readCursors:   readCursors,
+		cursorForward: cursorForward,
 		receipts:      receipts,
 		forwarder:     forwarder,
 		typing:        typing,
@@ -99,6 +104,29 @@ func (s *Service) BindAuthorityPorts(
 	bound.conversations = conversations
 	bound.devices = devices
 	bound.receipts = receipts
+
+	return &bound, nil
+}
+
+// BindReadCursorAuthorityPorts replaces only the authority persistence views
+// used while applying an authenticated Federation read cursor.
+func (s *Service) BindReadCursorAuthorityPorts(
+	conversations ConversationReader,
+	devices DeviceDirectory,
+	readCursors ReadCursorAdvancer,
+) (*Service, error) {
+	if s == nil || conversations == nil || devices == nil || readCursors == nil {
+		return nil, NewError(
+			ErrorCodeInvalidArgument,
+			"interaction.bind_read_cursor_authority_ports",
+			"dependencies",
+			"service, Conversation reader, device directory, and read cursor advancer are required",
+		)
+	}
+	bound := *s
+	bound.conversations = conversations
+	bound.devices = devices
+	bound.readCursors = readCursors
 
 	return &bound, nil
 }
@@ -140,13 +168,12 @@ func (s *Service) SubmitTyping(
 	}
 	now := s.clock.Now().UTC()
 	expiresAt := pulse.ExpiresAt.UTC()
-	if !expiresAt.After(now) ||
-		expiresAt.After(now.Add(s.policy.MaximumTypingTTL)) {
+	if !s.typingExpiryWithinBounds(expiresAt, now) {
 		return TypingResult{}, NewError(
 			ErrorCodeInvalidArgument,
 			"interaction.submit_typing",
 			"expires_at",
-			"must be fresh and within the configured typing TTL",
+			"must be fresh and within the configured typing TTL and clock skew",
 		)
 	}
 	pulse.ExpiresAt = expiresAt
@@ -462,8 +489,7 @@ func (s *Service) validateFederatedTypingSignal(
 		signal.SenderHomeStation == "" ||
 		signal.Generation == 0 ||
 		signal.ExpiresAt.IsZero() ||
-		!signal.ExpiresAt.After(now) ||
-		signal.ExpiresAt.After(now.Add(s.policy.MaximumTypingTTL)) ||
+		!s.typingExpiryWithinBounds(signal.ExpiresAt, now) ||
 		len(signal.Recipients) > maximumTypingRecipients {
 		return NewError(
 			ErrorCodeInvalidArgument,
@@ -564,6 +590,17 @@ func (s *Service) admitFederatedPulse(
 	)
 }
 
+func (s *Service) typingExpiryWithinBounds(
+	expiresAt time.Time,
+	now time.Time,
+) bool {
+	latest := now.
+		Add(s.policy.MaximumTypingTTL).
+		Add(s.policy.MaximumFutureClockSkew)
+
+	return expiresAt.After(now) && !expiresAt.After(latest)
+}
+
 func typingPulseFromSignal(
 	signal FederatedTypingSignal,
 	scope string,
@@ -618,6 +655,82 @@ func (s *Service) SubmitReadCursor(
 			"interaction.submit_read_cursor",
 			"cursor",
 			"must bind conversation, reader endpoint, and positive sequence",
+		)
+	}
+	view, _, err := s.authorizeMemberEndpoint(
+		ctx,
+		request.ConversationID,
+		request.Reader,
+		request.SourceStation,
+		"interaction.submit_read_cursor",
+	)
+	if err != nil {
+		return ReadCursorResult{}, err
+	}
+	if request.Sequence > view.Conversation.Head.Sequence {
+		return ReadCursorResult{}, NewError(
+			ErrorCodeIntegrityFailed,
+			"interaction.submit_read_cursor",
+			"sequence",
+			"cannot exceed the authority head",
+		)
+	}
+	switch view.Source {
+	case query.SourceFollower:
+		if request.SourceStation != "" ||
+			view.FollowerStatus != repository.FollowerStatusActive ||
+			view.Conversation.AuthorityStation == s.localStation {
+			return ReadCursorResult{}, NewError(
+				ErrorCodeIntegrityFailed,
+				"interaction.submit_read_cursor",
+				"authority",
+				"follower read cursor route is inconsistent",
+			)
+		}
+		replay, err := s.cursorForward.ForwardReadCursor(
+			ctx,
+			view.Conversation.AuthorityStation,
+			view.Conversation.FederationID,
+			view.Conversation.AuthorityEpoch,
+			request,
+		)
+		if err != nil {
+			if CodeOf(err) != "" {
+				return ReadCursorResult{}, err
+			}
+			return ReadCursorResult{}, WrapError(
+				ErrorCodePersistence,
+				"interaction.submit_read_cursor.forward",
+				err,
+			)
+		}
+		return ReadCursorResult{
+			Result: command.ReadCursorResult{
+				Cursor: repository.ReadCursor{
+					ConversationID: request.ConversationID,
+					Actor:          request.Reader.Actor,
+					Sequence:       request.Sequence,
+					UpdatedAt:      s.clock.Now().UTC(),
+				},
+			},
+			Replay:    replay,
+			Forwarded: true,
+		}, nil
+	case query.SourceAuthority:
+		if view.Conversation.AuthorityStation != s.localStation {
+			return ReadCursorResult{}, NewError(
+				ErrorCodeIntegrityFailed,
+				"interaction.submit_read_cursor",
+				"authority",
+				"does not identify the local Station",
+			)
+		}
+	default:
+		return ReadCursorResult{}, NewError(
+			ErrorCodeIntegrityFailed,
+			"interaction.submit_read_cursor",
+			"source",
+			"is not a canonical Conversation projection",
 		)
 	}
 	result, err := s.readCursors.AdvanceReadCursor(

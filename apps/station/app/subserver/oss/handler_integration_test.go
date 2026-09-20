@@ -70,9 +70,11 @@ func initOSSIntegStore(t *testing.T) *gorm.DB {
 			&ossmodel.Audit{},
 			&ossmodel.Meta{},
 			&ossmodel.Blob{},
-			&federation.AuthLocalKeyRow{},
-			&federation.PeerKeyRow{},
 		)
+		if ossIntegErr != nil {
+			return
+		}
+		ossIntegErr = federation.MigrateSchema(context.Background(), ossIntegDB)
 		if ossIntegErr != nil {
 			return
 		}
@@ -89,7 +91,9 @@ func resetOSSInteg(t *testing.T, db *gorm.DB) {
 	for _, tbl := range []string{
 		"oss_files", "oss_buckets", "oss_audit",
 		"oss_meta", "oss_blobs",
-		federation.PeerKeyTable, federation.AuthLocalKeyTable,
+		federation.PeerKeyTable,
+		federation.AuthLocalKeyTable,
+		federation.ContentProofVerificationKeyTable,
 	} {
 		if err := db.Exec("DELETE FROM " + tbl).Error; err != nil {
 			t.Fatalf("reset %s: %v", tbl, err)
