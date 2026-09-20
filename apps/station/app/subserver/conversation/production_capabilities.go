@@ -487,7 +487,7 @@ func (c *ProductionComposition) cancelFederatedAttachmentUpload(
 
 func (c *ProductionComposition) getFederatedAttachmentObject(
 	ctx context.Context,
-	_ string,
+	sourceHomeStationPeerID string,
 	request *chatmodel.GetFederatedConversationAttachmentObjectRequest,
 	startInclusive int64,
 	endInclusive int64,
@@ -500,9 +500,10 @@ func (c *ProductionComposition) getFederatedAttachmentObject(
 	if err != nil {
 		return nil, nil, err
 	}
-	result, err := c.AttachmentHandler.Download(
+	result, err := c.AttachmentHandler.DownloadFromVerifiedHome(
 		ctx,
 		authenticated,
+		sourceHomeStationPeerID,
 		request.GetRequest(),
 		startInclusive,
 		endInclusive,

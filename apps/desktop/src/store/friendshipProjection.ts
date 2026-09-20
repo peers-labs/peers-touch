@@ -14,6 +14,7 @@ export interface MutualFriendProjection {
   federatedHandle: string;
   homeStationDomain: string;
   homeStationPeerId: string;
+  homeStationName?: string;
 }
 
 export interface ChatActorIdentityProjection extends MutualFriendProjection {
@@ -34,13 +35,21 @@ export interface ChatActorIdentityMetadataParts {
   station: string;
 }
 
+export interface ChatFriendRequestPeerProjection {
+  peerPtid: string;
+  request: FriendRequestData;
+  direction: 'incoming' | 'outgoing';
+  attemptCount: number;
+}
+
 export interface ProjectChatFriendContactsInput {
-  mutualFriends: readonly MutualFriendProjection[];
   conversations: readonly DesktopIMConversationProjection[];
   friendRequests: readonly FriendRequestData[];
   peerProfiles: Readonly<Record<string, AccountProfile | null>>;
   currentUserPtid: string;
   federations: readonly ChatFederationProjection[];
+  stationNamesByPeerId?: Readonly<Record<string, string>>;
+  stationNamesByActorPtid?: Readonly<Record<string, string>>;
 }
 
 export function singleFederationId(
@@ -82,12 +91,13 @@ export function projectMutualFriends(
 }
 
 export function projectChatFriendContacts({
-  mutualFriends,
   conversations,
   friendRequests,
   peerProfiles,
   currentUserPtid,
   federations,
+  stationNamesByPeerId = {},
+  stationNamesByActorPtid = {},
 }: ProjectChatFriendContactsInput): ChatFriendContactProjection[] {
   const conversationsByPeer = new Map(
     conversations
@@ -103,7 +113,14 @@ export function projectChatFriendContacts({
       : request.receiverPtid === currentUserPtid
         ? request.senderPtid
         : '';
-    if (peerPtid) {
+    if (
+      peerPtid
+      && (
+        !acceptedRequestByPeer.has(peerPtid)
+        || friendRequestTime(request)
+          >= friendRequestTime(acceptedRequestByPeer.get(peerPtid)!)
+      )
+    ) {
       acceptedRequestByPeer.set(peerPtid, request);
     }
   }
@@ -116,57 +133,126 @@ export function projectChatFriendContacts({
     ]),
   );
 
-  return mutualFriends.map((friend) => {
-    const conversation = conversationsByPeer.get(friend.actorPtid);
-    const request = acceptedRequestByPeer.get(friend.actorPtid);
-    const profile = peerProfiles[friend.actorPtid];
+  return [...acceptedRequestByPeer.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([actorPtid, request]) => {
+    const conversation = conversationsByPeer.get(actorPtid);
+    const profile = peerProfiles[actorPtid];
     const profileHandle = canonicalFederatedHandle(profile);
-    const federatedHandle = profileHandle || friend.federatedHandle;
-    const requestAvatar = request
-      ? request.senderPtid === friend.actorPtid
-        ? request.senderAvatar
-        : request.receiverAvatar
-      : '';
-    const requestDisplayName = request
-      ? request.senderPtid === friend.actorPtid
-        ? request.senderDisplayName
-        : request.receiverDisplayName
-      : '';
+    const federatedHandle = profileHandle;
+    const requestAvatar = request.senderPtid === actorPtid
+      ? request.senderAvatar
+      : request.receiverAvatar;
+    const requestDisplayName = request.senderPtid === actorPtid
+      ? request.senderDisplayName
+      : request.receiverDisplayName;
     const homeStationDomain = homeStationDomainFromHandle(profileHandle)
-      || friend.homeStationDomain
       || homeStationDomainFromHandle(federatedHandle);
-    const homeStationPeerId = friend.homeStationPeerId
-      || (request
-        ? request.senderPtid === friend.actorPtid
-          ? request.senderHomeStationPeerId
-          : request.receiverHomeStationPeerId
-        : '');
+    const homeStationPeerId = request.senderPtid === actorPtid
+      ? request.senderHomeStationPeerId
+      : request.receiverHomeStationPeerId;
     const federationId = conversation?.federationId
-      || request?.federationId
+      || request.federationId
       || defaultFederationId;
+    const username = profile?.username?.trim()
+      || localPartFromHandle(federatedHandle);
 
     return {
-      ...friend,
+      actorPtid,
       ...(conversation ? { conversationId: conversation.id } : {}),
-      username: profile?.username?.trim() || friend.username,
+      username,
       displayName: profile?.display_name?.trim()
-        || friend.displayName
-        || friend.username
-        || conversation?.title
         || requestDisplayName
-        || friend.actorPtid,
+        || username
+        || conversation?.title
+        || actorPtid,
       avatarUrl: profile?.avatar?.trim()
-        || friend.avatarUrl
-        || conversation?.avatar
         || requestAvatar
+        || conversation?.avatar
         || '',
       federatedHandle,
       homeStationDomain,
       homeStationPeerId,
+      homeStationName: stationNamesByActorPtid[actorPtid]?.trim()
+        || stationNamesByPeerId[homeStationPeerId]?.trim()
+        || '',
       federationId,
       federationName: federationNames.get(federationId) || '',
     };
   });
+}
+
+export function projectChatFriendRequestPeers(
+  friendRequests: readonly FriendRequestData[],
+  currentUserPtid: string,
+): ChatFriendRequestPeerProjection[] {
+  const currentPtid = currentUserPtid.trim();
+  if (!currentPtid) return [];
+
+  const byPeer = new Map<string, {
+    peerPtid: string;
+    request: FriendRequestData;
+    direction: 'incoming' | 'outgoing';
+    attemptCount: number;
+    latestTime: number;
+    latestIndex: number;
+  }>();
+
+  friendRequests.forEach((request, index) => {
+    const outgoing = request.senderPtid === currentPtid;
+    const incoming = request.receiverPtid === currentPtid;
+    if (!outgoing && !incoming) return;
+    const peerPtid = outgoing ? request.receiverPtid : request.senderPtid;
+    if (!peerPtid) return;
+    const direction = outgoing ? 'outgoing' as const : 'incoming' as const;
+    const requestTime = friendRequestTime(request);
+    const current = byPeer.get(peerPtid);
+    if (!current) {
+      byPeer.set(peerPtid, {
+        peerPtid,
+        request,
+        direction,
+        attemptCount: 1,
+        latestTime: requestTime,
+        latestIndex: index,
+      });
+      return;
+    }
+
+    current.attemptCount += 1;
+    if (
+      requestTime > current.latestTime
+      || (requestTime === current.latestTime && index < current.latestIndex)
+    ) {
+      current.request = request;
+      current.direction = direction;
+      current.latestTime = requestTime;
+      current.latestIndex = index;
+    }
+  });
+
+  return [...byPeer.values()]
+    .sort((left, right) => (
+      right.latestTime - left.latestTime
+      || left.latestIndex - right.latestIndex
+      || left.peerPtid.localeCompare(right.peerPtid)
+    ))
+    .map(({ peerPtid, request, direction, attemptCount }) => ({
+      peerPtid,
+      request,
+      direction,
+      attemptCount,
+    }));
+}
+
+export function friendRequestTime(request: FriendRequestData): number {
+  return Date.parse(request.respondedAt || request.createdAt) || 0;
+}
+
+function localPartFromHandle(handle: string): string {
+  const value = handle.trim().replace(/^@/, '');
+  const separator = value.indexOf('@');
+  return separator >= 0 ? value.slice(0, separator) : value;
 }
 
 export function chatActorIdentityMetadata(
@@ -176,6 +262,7 @@ export function chatActorIdentityMetadata(
     | 'actorPtid'
     | 'homeStationDomain'
     | 'homeStationPeerId'
+    | 'homeStationName'
     | 'federationId'
     | 'federationName'
   >,
@@ -191,16 +278,17 @@ export function chatActorIdentityMetadataParts(
     | 'federatedHandle'
     | 'homeStationDomain'
     | 'homeStationPeerId'
+    | 'homeStationName'
     | 'federationId'
     | 'federationName'
   >,
 ): ChatActorIdentityMetadataParts {
   const federation = identity.federationName.trim()
     || identity.federationId.trim();
-  const station = identity.homeStationDomain.trim()
+  const station = identity.homeStationName?.trim()
+    || identity.homeStationDomain.trim()
     || homeStationDomainFromHandle(identity.federatedHandle)
-    || identity.federatedHandle.trim()
-    || identity.homeStationPeerId.trim();
+    || '';
   return { federation, station };
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -39,10 +40,16 @@ type AttachmentApplication interface {
 		ctx context.Context,
 		authenticated valueobject.Endpoint,
 		request attachment.CancelRequest,
-	) (attachment.TransferState, error)
+	) (securecontent.TransferState, error)
 	Download(
 		ctx context.Context,
 		authenticated valueobject.Endpoint,
+		request attachment.DownloadRequest,
+	) (attachment.DownloadResult, error)
+	DownloadFromVerifiedHome(
+		ctx context.Context,
+		authenticated valueobject.Endpoint,
+		sourceHome valueobject.StationID,
 		request attachment.DownloadRequest,
 	) (attachment.DownloadResult, error)
 }
@@ -179,7 +186,7 @@ func (h *AttachmentHandler) Status(
 		ReceivedChunkBitmap: append([]byte(nil), upload.ReceivedChunkBitmap...),
 		ExpiresAt:           timestamppb.New(upload.ExpiresAt.UTC()),
 	}
-	if upload.State == attachment.TransferStateComplete {
+	if upload.State == securecontent.TransferStateComplete {
 		response.Object = descriptorToProto(attachment.Object{
 			ObjectID:       upload.ObjectID,
 			StorageRef:     upload.StorageRef,
@@ -328,6 +335,35 @@ func (h *AttachmentHandler) Download(
 	start int64,
 	end int64,
 ) (AttachmentDownload, error) {
+	return h.download(ctx, authenticated, "", request, start, end)
+}
+
+func (h *AttachmentHandler) DownloadFromVerifiedHome(
+	ctx context.Context,
+	authenticated AuthenticatedActor,
+	sourceHomeStationPeerID string,
+	request *chat.GetAttachmentObjectRequest,
+	start int64,
+	end int64,
+) (AttachmentDownload, error) {
+	sourceHome, err := valueobject.NewStationID(sourceHomeStationPeerID)
+	if err != nil {
+		return AttachmentDownload{}, invalidAttachmentRequest(
+			"attachment_handler.download_from_verified_home",
+		)
+	}
+
+	return h.download(ctx, authenticated, sourceHome, request, start, end)
+}
+
+func (h *AttachmentHandler) download(
+	ctx context.Context,
+	authenticated AuthenticatedActor,
+	sourceHome valueobject.StationID,
+	request *chat.GetAttachmentObjectRequest,
+	start int64,
+	end int64,
+) (AttachmentDownload, error) {
 	if request == nil {
 		return AttachmentDownload{}, invalidAttachmentRequest("attachment_handler.download")
 	}
@@ -353,14 +389,25 @@ func (h *AttachmentHandler) Download(
 	if err != nil {
 		return AttachmentDownload{}, invalidAttachmentRequest("attachment_handler.download")
 	}
-	result, err := h.service.Download(ctx, endpoint, attachment.DownloadRequest{
+	downloadRequest := attachment.DownloadRequest{
 		ConversationID:   conversationID,
 		ObjectID:         objectID,
 		ExpectedETag:     etag,
 		AuthorityStation: authorityStation,
 		Start:            start,
 		End:              end,
-	})
+	}
+	var result attachment.DownloadResult
+	if sourceHome == "" {
+		result, err = h.service.Download(ctx, endpoint, downloadRequest)
+	} else {
+		result, err = h.service.DownloadFromVerifiedHome(
+			ctx,
+			endpoint,
+			sourceHome,
+			downloadRequest,
+		)
+	}
 	if err != nil {
 		return AttachmentDownload{}, err
 	}
@@ -444,9 +491,9 @@ func uploadSpecFromProto(
 		MediaType:      wire.GetMediaType(),
 		ChunkSize:      wire.GetChunkSize(),
 		ChunkCount:     wire.GetChunkCount(),
-		Encryption:     attachment.EncryptionSuite(wire.GetEncryptionSuite()),
+		Encryption:     securecontent.EncryptionSuite(wire.GetEncryptionSuite()),
 		TagSize:        wire.GetTagSize(),
-		NonceStrategy:  attachment.NonceStrategy(wire.GetNonceStrategy()),
+		NonceStrategy:  securecontent.NonceStrategy(wire.GetNonceStrategy()),
 		ChunkHashes:    chunkHashes,
 	}, nil
 }
@@ -473,7 +520,7 @@ func descriptorToProto(object attachment.Object) *chat.EncryptedObjectDescriptor
 }
 
 func transferStateToProto(
-	state attachment.TransferState,
+	state securecontent.TransferState,
 ) chat.AttachmentTransferState {
 	return chat.AttachmentTransferState(state)
 }

@@ -2,7 +2,14 @@ import { useRef } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
-import { CheckCircle2, Compass, Settings2, PanelRight } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Compass,
+  PanelRight,
+  RefreshCw,
+  Settings2,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../store/chat';
 import { useAgentStore } from '../store/agent';
@@ -19,6 +26,12 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const messages = useChatStore((s) => s.messages);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const revisionCommandFailure = useChatStore((s) => s.revisionCommandFailure);
+  const revisionReloadingConversationId = useChatStore(
+    (s) => s.revisionReloadingConversationId,
+  );
+  const reloadLatestRevision = useChatStore((s) => s.reloadLatestRevision);
   const agents = useAgentStore((s) => s.agents);
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
 
@@ -35,6 +48,11 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
 
   const contentWidth = isNarrow ? 'calc(100% - 28px)' : 'min(620px, calc(100% - 36px))';
   const hasMessages = messages.length > 0;
+  const currentRevisionFailure = (
+    revisionCommandFailure?.conversationId === currentSessionKey
+      ? revisionCommandFailure
+      : null
+  );
 
   const handleQuickAction = (prompt: string) => {
     const textarea = document.querySelector('textarea');
@@ -183,6 +201,73 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
           </div>
 
           <div style={{ width: contentWidth, margin: '0 auto 18px', flexShrink: 0 }}>
+            {currentRevisionFailure && (
+              <div
+                aria-live="polite"
+                data-pt-agent-revision-conflict={currentRevisionFailure.resourceId}
+                data-pt-agent-revision-error-type={currentRevisionFailure.typedError.error_type}
+                data-pt-agent-revision-expected={currentRevisionFailure.expectedRevision}
+                data-pt-agent-revision-actual={currentRevisionFailure.actualRevision}
+                style={{
+                  width: '100%',
+                  minHeight: 36,
+                  marginBottom: 8,
+                  padding: '7px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  borderLeft: `3px solid ${token.colorWarning}`,
+                  background: token.colorWarningBg,
+                  color: token.colorWarningText,
+                  boxSizing: 'border-box',
+                  fontSize: 12,
+                }}
+              >
+                <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                <span
+                  data-pt-agent-revision-error-text={currentRevisionFailure.typedError.locale_key}
+                  style={{ flex: 1, minWidth: 0, lineHeight: 1.4 }}
+                >
+                  {t(currentRevisionFailure.typedError.locale_key)}
+                </span>
+                <button
+                  data-pt-agent-revision-reload-latest={currentRevisionFailure.resourceId}
+                  type="button"
+                  disabled={revisionReloadingConversationId === currentSessionKey}
+                  onClick={() => {
+                    void reloadLatestRevision(currentSessionKey).catch(() => undefined);
+                  }}
+                  style={{
+                    minHeight: 26,
+                    border: 0,
+                    borderRadius: 6,
+                    padding: '3px 7px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: token.colorBgContainer,
+                    color: token.colorText,
+                    cursor: revisionReloadingConversationId === currentSessionKey
+                      ? 'wait'
+                      : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 650,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <RefreshCw
+                    size={13}
+                    style={{
+                      flexShrink: 0,
+                      animation: revisionReloadingConversationId === currentSessionKey
+                        ? 'spin 1s linear infinite'
+                        : undefined,
+                    }}
+                  />
+                  {t(currentRevisionFailure.resolution.label)}
+                </button>
+              </div>
+            )}
             <TurnQueueTray />
             <div style={{ marginBottom: 8 }}>
               <OpStatusTray />

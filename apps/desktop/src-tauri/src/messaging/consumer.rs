@@ -28,7 +28,7 @@ pub struct MessagingItemConsumer {
     public_event: PublicEventProcessor,
     conversation_state: ConversationStateProcessor,
     mls_sender_transition: MlsSenderTransitionProcessor<MessagingStore>,
-    command_result: CommandResultProcessor,
+    command_result: CommandResultProcessor<MessagingStore, MlsGroupManager>,
     delivery_receipt: DeliveryReceiptProcessor,
 }
 
@@ -81,13 +81,13 @@ impl MessagingItemConsumer {
             mls_sender_transition: MlsSenderTransitionProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
-                mls_endpoint,
+                mls_endpoint.clone(),
                 clock,
             )?,
             command_result: CommandResultProcessor::new(
                 store.clone(),
                 mls_manager,
-                endpoint.clone(),
+                mls_endpoint,
                 clock,
             )?,
             delivery_receipt: DeliveryReceiptProcessor::new(store, endpoint, clock)?,

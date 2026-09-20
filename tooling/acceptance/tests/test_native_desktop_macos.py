@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core import (
     CellAdapterIdentity,
@@ -16,7 +16,13 @@ from tooling.acceptance.core import (
     RuntimeCellState,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.drivers.native.base import NativeControlSnapshot
+from tooling.acceptance.drivers.native.base import (
+    MouseAction,
+    NativeControlSnapshot,
+    NativeWindowBounds,
+    NativeWindowSnapshot,
+    NativeWindowStack,
+)
 from tooling.acceptance.drivers.native.macos import (
     MacOSNativeDesktopAdapter,
     _pixel_buffer_has_visible_alpha,
@@ -167,6 +173,77 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 timeout_seconds=0,
                 interval_seconds=0,
             )
+
+    def test_point_probe_uses_unoccluded_process_owned_interior_point(
+        self,
+    ) -> None:
+        process_id = 42
+        notification = NativeWindowSnapshot(
+            index=0,
+            owner_pid=100,
+            owner_name="UserNotificationCenter",
+            window_name="",
+            layer=8,
+            alpha=1,
+            bounds=NativeWindowBounds(
+                left=400,
+                top=200,
+                width=200,
+                height=300,
+            ),
+        )
+        target = NativeWindowSnapshot(
+            index=1,
+            owner_pid=process_id,
+            owner_name="peers-touch-desktop",
+            window_name="Peers",
+            layer=0,
+            alpha=1,
+            bounds=NativeWindowBounds(
+                left=0,
+                top=0,
+                width=1000,
+                height=800,
+            ),
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.window_stack_at_point.side_effect = (
+            NativeWindowStack(windows=(notification, target)),
+            NativeWindowStack(windows=(target,)),
+        )
+        with patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_json_probe",
+            side_effect=(
+                {"x": 500, "y": 400},
+                {"x": 250, "y": 600},
+            ),
+        ):
+            point, pointer, stack, input_probe, attempted_points = (
+                NativeDesktopMacOSProvisioner._probe_owned_point(
+                    adapter,
+                    process_id,
+                    {
+                        "left": 0,
+                        "top": 0,
+                        "width": 1000,
+                        "height": 800,
+                    },
+                )
+            )
+
+        self.assertEqual(point, (250, 600))
+        self.assertEqual(pointer, {"x": 250, "y": 600})
+        self.assertTrue(input_probe)
+        self.assertTrue(stack.point_owned_by(process_id))
+        self.assertEqual(
+            adapter.post_mouse.call_args_list,
+            [
+                call((MouseAction.MOVE,), (500, 400)),
+                call((MouseAction.MOVE,), (250, 600)),
+            ],
+        )
+        self.assertEqual(attempted_points[0], (500, 400))
 
     def test_ready_persists_valid_lease_and_stop_cleans_it(self) -> None:
         digest = "a" * 64

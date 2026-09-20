@@ -20,6 +20,7 @@ import { registerMarketplacePage } from './MarketplacePage.descriptor';
 import { registerAgentGroupsPage } from './AgentGroupsPage.descriptor';
 import { registerCustomPluginsPage } from './CustomPluginsPage.descriptor';
 import { registerTasksPage } from './TasksPage.descriptor';
+import { registerEvaluationPage } from './EvaluationPage.descriptor';
 
 let registered = false;
 
@@ -39,4 +40,5 @@ export function registerKernelPages(): void {
   registerAgentGroupsPage();
   registerCustomPluginsPage();
   registerTasksPage();
+  registerEvaluationPage();
 }

@@ -114,6 +114,71 @@ func TestCanonicalFederationPortFetchesDirectBundlesThroughCanonicalRoute(t *tes
 	}
 }
 
+func TestCanonicalFederationPortFetchesAllDirectBundlesThroughCanonicalRoute(t *testing.T) {
+	sourceKeys := newKeyExchangeFederationKeyCache(t)
+	peerKeys := authfed.NewInMemoryPeerKeyStore()
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		assertKeyExchangeRelayRequest(
+			t,
+			request,
+			FederationDirectKeyBundlesFetchRoute,
+			FederationDirectKeyBundlesFetchScope,
+			peerKeys,
+			map[string]string{
+				keyExchangeClaimActorPTID:       keyExchangeRemoteActor,
+				keyExchangeClaimDeviceID:        "",
+				keyExchangeClaimRequestID:       keyExchangeRequestID,
+				keyExchangeClaimRequesterPTID:   keyExchangeRequesterActor,
+				keyExchangeClaimRequesterDevice: keyExchangeRequesterDevice,
+				keyExchangeClaimSourceStationID: keyExchangeSourceStation,
+				keyExchangeClaimTargetStationID: keyExchangeTargetStation,
+			},
+		)
+		var decoded kemodel.FetchFederatedDirectKeyBundlesRequest
+		decodeKeyExchangeRequest(t, request, &decoded)
+		if decoded.GetRequest().GetTargetDeviceId() != "" {
+			t.Errorf("unexpected targeted Direct fetch: %+v", &decoded)
+		}
+		first := canonicalRemoteDirectBundle()
+		second := proto.Clone(first).(*kemodel.DirectKeyBundle)
+		second.Device.DeviceId = "bob-device-2"
+		writeKeyExchangeResponse(
+			t,
+			writer,
+			&kemodel.FetchFederatedDirectKeyBundlesResponse{
+				Response: &kemodel.FetchDirectKeyBundlesResponse{
+					Bundles: []*kemodel.DirectKeyBundle{first, second},
+				},
+			},
+		)
+	}))
+	defer server.Close()
+
+	port := newFederationQueryPort(
+		server.Client(),
+		sourceKeys,
+		keyExchangeRelayFixture{baseURL: server.URL, token: "relay-token"},
+	)
+	bundles, err := port.FetchDirectKeyBundles(
+		context.Background(),
+		keyExchangeTargetStation,
+		federationTestIdentity(keyExchangeRequestID),
+		keyExchangeRemoteActor,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("fetch all Direct bundles: %v", err)
+	}
+	if len(bundles) != 2 ||
+		bundles[0].Device.DeviceID != keyExchangeRemoteDevice ||
+		bundles[1].Device.DeviceID != "bob-device-2" {
+		t.Fatalf("unexpected Direct bundles: %+v", bundles)
+	}
+}
+
 func TestCanonicalFederationPortFetchesMLSKeyPackageThroughCanonicalRoute(t *testing.T) {
 	sourceKeys := newKeyExchangeFederationKeyCache(t)
 	peerKeys := authfed.NewInMemoryPeerKeyStore()

@@ -12,7 +12,6 @@
     "running Station agent API",
     "agent_ecosystem_groups table",
     "agent_ecosystem_comments table",
-    "agent_ecosystem_evals table",
     "agent_ecosystem_plugins table"
   ],
   "visible_surfaces": [
@@ -24,8 +23,6 @@
     {"type": "api", "route": "/agent/ecosystem/comments"},
     {"type": "api", "route": "/agent/ecosystem/comments/create"},
     {"type": "api", "route": "/agent/ecosystem/comments/:id/delete"},
-    {"type": "api", "route": "/agent/ecosystem/evals"},
-    {"type": "api", "route": "/agent/ecosystem/evals/create"},
     {"type": "api", "route": "/agent/ecosystem/plugins"},
     {"type": "api", "route": "/agent/ecosystem/plugins/:id"},
     {"type": "api", "route": "/agent/ecosystem/plugins/create"},
@@ -37,18 +34,16 @@
     "service": [
       "group CRUD manages collections of agents for discovery and organization",
       "comment CRUD allows users to leave feedback on shared agents or plugins",
-      "eval CRUD records evaluation results for agents including scores and criteria",
       "plugin CRUD manages ecosystem plugins with metadata, version, and compatibility info"
     ],
     "visible": [
       "Marketplace page is reachable from the primary sidebar navigation without keyboard shortcuts",
-      "ecosystem browser in Desktop shows groups, plugins, and community evaluations",
+      "ecosystem browser in Desktop shows groups and plugins",
       "comments appear under shared agent profiles"
     ]
   },
   "negative": [
     "deleting a group must not delete the agents within it",
-    "evaluations must not be editable after submission to preserve integrity",
     "plugins must not be installable if marked incompatible with the current agent version"
   ]
 }

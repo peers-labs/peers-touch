@@ -92,14 +92,14 @@ func openIsolatedPostgres(t *testing.T) *gorm.DB {
 		t.Fatalf("create isolated PostgreSQL schema: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error; err != nil {
-			t.Errorf("drop isolated PostgreSQL schema: %v", err)
-		}
-	})
-	t.Cleanup(func() {
 		sqlDB, dbErr := admin.DB()
 		if dbErr == nil {
 			_ = sqlDB.Close()
+		}
+	})
+	t.Cleanup(func() {
+		if err := admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error; err != nil {
+			t.Errorf("drop isolated PostgreSQL schema: %v", err)
 		}
 	})
 

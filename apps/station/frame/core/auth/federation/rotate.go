@@ -25,9 +25,9 @@ const DefaultDualSignGrace = 24 * time.Hour
 // this station's signing keypair. Steps:
 //
 //  1. Mint a fresh LocalKey via MintLocalKey.
-//  2. Atomically Rotate the KeyStore: demote current → prev,
-//     write new key into current. Identical-kid generation is
-//     refused (caller retries; entropy collision is implausible).
+//  2. Atomically Rotate the KeyStore: archive the outgoing public
+//     key under stationPeerID, demote current → prev, then write
+//     the new key into current. Identical-kid generation is refused.
 //  3. Reset the supplied KeyCache so the next Mint observes the
 //     new key without waiting on the recheckTTL clock.
 //
@@ -36,7 +36,12 @@ const DefaultDualSignGrace = 24 * time.Hour
 // separate process and will pick the change up on its own
 // recheckTTL pass. When non-nil, the reset is best-effort;
 // failure to reset does not roll back the persisted rotation.
-func RotateLocalKey(ctx context.Context, store KeyStore, cache *KeyCache) (*RotateResult, error) {
+func RotateLocalKey(
+	ctx context.Context,
+	stationPeerID string,
+	store KeyStore,
+	cache *KeyCache,
+) (*RotateResult, error) {
 	if store == nil {
 		return nil, errors.New("federation: rotate: nil key store")
 	}
@@ -44,7 +49,7 @@ func RotateLocalKey(ctx context.Context, store KeyStore, cache *KeyCache) (*Rota
 	if err != nil {
 		return nil, err
 	}
-	res, err := store.Rotate(ctx, fresh)
+	res, err := store.Rotate(ctx, stationPeerID, fresh)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +83,15 @@ func FinalizePrevKey(ctx context.Context, store KeyStore, grace time.Duration) (
 		return false, "", err
 	}
 	cutoff := time.Now().Add(-grace)
-	if prev.GeneratedAt.After(cutoff) {
+	if prev.UpdatedAt.IsZero() || prev.UpdatedAt.After(cutoff) {
 		return false, "", nil
 	}
-	if err := store.ClearPrev(ctx); err != nil {
+	cleared, err := store.ClearPrev(ctx, prev.Kid, prev.UpdatedAt)
+	if err != nil {
 		return false, "", err
+	}
+	if !cleared {
+		return false, "", nil
 	}
 	return true, prev.Kid, nil
 }

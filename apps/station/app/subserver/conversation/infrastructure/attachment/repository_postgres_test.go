@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -112,21 +113,21 @@ func TestPostgresActorUploadQuotaUsesCanonicalIdentityLock(t *testing.T) {
 				AttachmentID: fmt.Sprintf("attachment-%02d", index),
 				Uploader:     endpoint,
 				Spec: attachmentapp.UploadSpec{
-					CiphertextSize: uint64(attachmentapp.TagSize + 1),
+					CiphertextSize: uint64(securecontent.AES256GCMTagSize + 1),
 					CiphertextHash: hash,
 					MediaType:      "application/octet-stream",
-					ChunkSize:      attachmentapp.ChunkSize,
+					ChunkSize:      securecontent.ObjectChunkSize,
 					ChunkCount:     1,
-					Encryption:     attachmentapp.EncryptionSuiteAES256GCMChunked,
-					TagSize:        attachmentapp.TagSize,
-					NonceStrategy:  attachmentapp.NonceStrategyCounter32BE,
+					Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+					TagSize:        securecontent.AES256GCMTagSize,
+					NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 					ChunkHashes:    []valueobject.Hash{hash},
 				},
 				DescriptorCommitment: valueobject.HashBytes(
 					[]byte(fmt.Sprintf("descriptor-%02d", index)),
 				),
 				IdempotencyKey:       fmt.Sprintf("idempotency-%02d", index),
-				State:                attachmentapp.TransferStateQueued,
+				State:                securecontent.TransferStateQueued,
 				ReceivedChunkBitmap:  []byte{0},
 				ExpiresAt:            createdAt.Add(time.Hour),
 				CleanupNextAttemptAt: createdAt.Add(time.Hour),
@@ -157,8 +158,8 @@ func TestPostgresActorUploadQuotaUsesCanonicalIdentityLock(t *testing.T) {
 					_, _, createErr := transaction.CreateUpload(
 						context.Background(),
 						upload,
-						attachmentapp.MaximumActiveUploadCount,
-						attachmentapp.MaximumMessageObjects,
+						securecontent.MaximumActiveUploadCount,
+						securecontent.MaximumObjectsPerResource,
 						audit,
 					)
 
@@ -193,8 +194,8 @@ func TestPostgresActorUploadQuotaUsesCanonicalIdentityLock(t *testing.T) {
 			t.Fatalf("unexpected concurrent quota result: %v", err)
 		}
 	}
-	if admitted != attachmentapp.MaximumActiveUploadCount ||
-		rejected != contenders-attachmentapp.MaximumActiveUploadCount {
+	if admitted != securecontent.MaximumActiveUploadCount ||
+		rejected != contenders-securecontent.MaximumActiveUploadCount {
 		t.Fatalf("actor quota admitted=%d rejected=%d", admitted, rejected)
 	}
 	var persisted int64
@@ -203,7 +204,7 @@ func TestPostgresActorUploadQuotaUsesCanonicalIdentityLock(t *testing.T) {
 		Count(&persisted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if persisted != attachmentapp.MaximumActiveUploadCount {
+	if persisted != securecontent.MaximumActiveUploadCount {
 		t.Fatalf("persisted active uploads = %d", persisted)
 	}
 }

@@ -335,6 +335,20 @@ func (s *subServer) Handlers() []server.Handler {
 			authenticatedActor...,
 		),
 		server.NewTypedHandler(
+			"conversation-member-update",
+			"/conversation/member/update",
+			server.POST,
+			s.handleUpdateConversationMember,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
+			"conversation-ownership-transfer",
+			"/conversation/ownership/transfer",
+			server.POST,
+			s.handleTransferConversationOwnership,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
 			"conversation-events",
 			"/conversation/events",
 			server.GET,

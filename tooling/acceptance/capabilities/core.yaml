@@ -9,6 +9,7 @@
       "required_gates": [
         "acceptance-plan-self",
         "acceptance-infra-validation",
+        "acceptance-workflow-contract",
         "acceptance-runtime-provisioning-self"
       ],
       "synthetic_paths": [
@@ -16,7 +17,8 @@
         "tooling/acceptance/gates.yaml",
         "tooling/acceptance/core/launch_context.py",
         "tooling/acceptance/tests/test_launch_context.py",
-        "tooling/scripts/acceptance-plan.py"
+        "tooling/scripts/acceptance-plan.py",
+        "tooling/scripts/execution-plan.py"
       ],
       "evidence": {
         "truth_sources": [
@@ -30,10 +32,12 @@
         "proven_by": [
           "acceptance-plan-self",
           "acceptance-infra-validation",
+          "acceptance-workflow-contract",
           "acceptance-runtime-provisioning-self"
         ],
         "proven_scope": [
           "changed paths select gates through registry rules",
+          "the immutable workspace Plan and current closure schedule Acceptance execution",
           "feature contracts and gate definitions are machine-readable",
           "context-enabled Gates inherit one bounded anonymous capability channel without durable authority transport",
           "launch-context failures preserve typed blocked semantics, process-group extinction and deterministic context-first cleanup",

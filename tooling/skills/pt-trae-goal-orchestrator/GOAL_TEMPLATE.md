@@ -17,16 +17,31 @@ include this title or explanatory text in the generated Goal.
 - Completion boundary: <what this Goal may complete without crossing a stage gate>
 - Hard cut point: <product, architecture, authorization, ownership, worktree, or external-resource boundary>
 
+## Progress Contract
+
+- Unit: `task-closure`
+- Baseline: <completed>/<total> Task closures (<percentage>%)
+- Target Task: <current Task ID and title>
+- Required transition: `in_progress -> done`
+- Expected delta: <completed/total -> completed+1/total; percentage-point delta>
+- Unlock effect: <Task IDs newly dependency-ready after completion>
+- Reporting boundary: do not emit a successful handoff after setup,
+  authorization, diagnosis, checkpoint, deploy, or an individual check; keep
+  executing until the target Task closes.
+- Zero-delta rule: only a source-backed hard boundary after complete frontier
+  exhaustion may end the Slice without progress.
+
 ## Worktree Binding
 
 - Canonical runtime worktree root: `<materialized-canonical-absolute-path>`
 - Branch: `<materialized-branch>`
 - `workspaceId`: `<materialized-workspaceId>`
-- Initial HEAD: `<materialized-full-commit>`
-- Expected HEAD: `<initially identical to Initial HEAD; refresh only after an explicitly authorized commit, rebase, or merge>`
-- Worktree-set digest: `<materialized-digest>`
+- Bound Plan ID: `<materialized-planId>`
+- Bound Plan path: `<materialized-repository-relative-planPath>`
+- Initial HEAD: `<immutable Plan audit baseline>`
+- Expected HEAD: `<active_work/current-source projection; initially identical to Initial HEAD and refreshed only after an explicitly authorized commit, rebase, or merge>`
 - Capture command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --capture`
-- Verification command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --branch '<materialized-branch>' --workspace-id '<materialized-workspaceId>' --head '<materialized-expected-head>' --worktree-set-digest '<materialized-digest>'`
+- Verification command: `python3 tooling/scripts/verify-worktree-binding.py --root '<materialized-canonical-absolute-path>' --branch '<materialized-branch>' --workspace-id '<materialized-workspaceId>' --head '<materialized-expected-head>'`
 - Shell quoting: every materialized value is one POSIX shell-safe argument;
   use equivalent `shlex.quote` escaping when a value contains a single quote.
 - Identity source: the current verified worktree; skill resolution and skill
@@ -42,9 +57,13 @@ include this title or explanatory text in the generated Goal.
   or context compaction against persisted values without recapturing a new
   baseline, and the integrator reverifies before reconcile and before Slice
   completion.
-- Refresh policy: retain Initial HEAD; refresh Expected HEAD only after an
-  explicitly authorized commit, rebase, or merge; refresh the worktree-set
-  digest only after the exact explicitly requested worktree operation.
+- Refresh policy: retain the Plan's Initial HEAD; refresh the external
+  `active_work`/declaration source identity only after an explicitly authorized
+  commit, rebase, or merge. Sibling worktree inventory is topology and does not
+  change either binding.
+- Plan ownership: verify `make plan-binding`; synchronized Plans, branch scans
+  and active status never replace the immutable workspace binding. Rebind is
+  forbidden.
 - Forbidden worktree operations: no `git switch`, `git checkout`,
   `git worktree add`, `git worktree remove`, `git worktree prune`, or new
   worktree unless the user explicitly requests that exact operation.
@@ -96,9 +115,9 @@ dependencies here.>
 
 ### Initial Ready Queue
 
-| Action | Source task | Dependencies | Owner/write set | Required evidence |
+| Action | Progress role | Dependencies | Owner/write set | Required evidence |
 |---|---|---|---|---|
-| <action> | <plan/checkpoint ID> | <complete prerequisites> | <owner> | <gate/check> |
+| <action> | <supports closure or closes Task> | <complete prerequisites> | <owner> | <gate/check> |
 
 ### Initial In Progress
 
@@ -119,30 +138,35 @@ dependencies here.>
 ### Dynamic Admission Rules
 
 - Admit root-cause fixes, diagnostics, tests, evidence repair, documentation
-  synchronization, and mechanical plan amendments when accepted sources already
+  synchronization, and other already-modeled remediation when accepted sources already
   determine the behavior and the work remains inside this Goal's stage,
   worktree, ownership, and scope.
-- For tracked work, update the formal plan before admitting a newly discovered
-  deliverable or dependency.
+- A newly discovered deliverable or dependency is not admitted by the Goal.
+  Return `PLAN_AMENDMENT_REQUIRED` to `pt-dev-workflow`; only the plan owners
+  may update the formal plan before the scheduler is invoked again.
 - Never auto-admit product semantics, architecture/ownership/topology changes,
   version or schema bumps requiring approval, destructive operations requiring
   authorization, cross-worktree work, or weaker evidence substitutes.
 
-## Queue Execution Loop
+## Development Run Contract
 
 1. Reverify the Worktree Binding before every resumed execution interval.
-2. Select ready actions in dependency order and parallelize only non-overlapping
-   write sets.
-3. When an action blocks, record evidence and classify it as
+2. Submit dependency-ready actions and the Concurrency Decision to
+   `pt-execution-plan-guardian`.
+3. `pt-dev-workflow` executes only `ACTION_ALLOWED` work and owns all durable
+   state updates.
+4. When an action blocks, classify it as
    `RECOVERABLE_IMPLEMENTATION`, `MECHANICAL_PLAN_GAP`, `SOFT_EXTERNAL`, or
    `HARD_GOVERNANCE`.
-4. Enqueue an admissible root-cause or mechanical-plan action; otherwise park
-   the blocked action with its unblocking condition.
-5. Recompute the complete in-scope ready frontier and continue. One parked
+5. Return plan gaps to the workflow; otherwise park the blocked action with
+   its unblocking condition.
+6. Recompute the complete in-scope ready frontier and continue. One parked
    action never blocks unrelated ready work.
-6. Synchronize plan evidence and `active_work` after meaningful queue
-   transitions.
-7. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
+7. The workflow persists plan, Session, `active_work`, and evidence through
+   their owners; the Goal does not write them.
+8. Do not report Slice success until the target Task is `done` and the
+   Progress Contract delta is visible in `planctl status`.
+9. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
    diagnostic or remediation remains, every remaining action is hard-blocked,
    and the repeated-blocker lifecycle threshold is satisfied.
 
@@ -199,7 +223,7 @@ dependencies here.>
 
 ## Slice Completion
 
-- Complete when:
+- Complete when: <the target Task is done and the declared progress delta is visible>
 - Remains unproven:
 - Parked at completion:
 - Exhaustion proof, when blocked:
@@ -207,10 +231,11 @@ dependencies here.>
 
 ## Tracking And Handoff
 
-- Durable source update:
-- `active_work` update, when tracked:
-- Context Anchor, when tracked: include completed delta, ready queue, execution
-  mode and lanes, conflict controls, critical path, and evidence-backed ETA or
+- Durable source update by `pt-dev-workflow`:
+- `active_work` update by its owner, when tracked:
+- Context Anchor, when tracked: include the Progress Slice baseline, completed
+  delta, expected progress effect, remaining frontier, execution mode and
+  lanes, conflict controls, critical path, and evidence-backed ETA or
   `unknown`.
-- Next action: continue the Ready Queue; use `NEXT` only after this Goal reaches
-  its completion, stage, or hard-boundary cut.
+- Next Progress Slice: use `NEXT` only after this Goal reaches its Task-closing
+  completion or a source-backed hard-boundary cut.

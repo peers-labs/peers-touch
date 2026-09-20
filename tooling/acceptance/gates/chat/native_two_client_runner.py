@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import random
@@ -40,17 +41,22 @@ from tooling.acceptance.gates.chat.native_support import (
     enter_chat_page,
     is_native_tauri_url,
     runtime_station_service,
+    wait_for_peer_key_bundle,
 )
 
 
 GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
+LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
+LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
 CURRENT_PROFILE_GATE_IDS = frozenset(
     {
         CURRENT_PROFILE_GATE_ID,
+        LIFECYCLE_ONBOARDING_GATE_ID,
+        LIFECYCLE_DIRECT_GATE_ID,
         SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     }
 )
@@ -75,6 +81,12 @@ EXPECTED_RECONCILIATION_OUTCOME_ENV = (
     "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME"
 )
 PREPARE_SUBMITTED_COMMAND_ENV = "PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND"
+CREATE_RESTORABLE_COMMAND_ENV = (
+    "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND"
+)
+RESTORABLE_COMMAND_PLAINTEXT_ENV = (
+    "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT"
+)
 RECONCILIATION_OUTCOMES = {
     "accepted",
     "terminal_failed",
@@ -114,6 +126,16 @@ SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
 
 def is_current_profile_gate(gate_id: str) -> bool:
     return gate_id in CURRENT_PROFILE_GATE_IDS
+
+
+def journey_for_gate(gate_id: str) -> str:
+    if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
+        return "onboarding-first-message"
+    if gate_id == LIFECYCLE_DIRECT_GATE_ID:
+        return "daily-direct"
+    if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+        return "submitted-command-recovery"
+    return "direct-delivered-receipt"
 
 
 def runtime_manifest(
@@ -268,7 +290,7 @@ def reconciled_command_snapshot_outcome(
         and original.get("attemptState") == "committed"
         and original.get("localState") == "committed"
         and original.get("outboxState") == "committed"
-        and original.get("draftState") == "accepted"
+        and original.get("draftState") in {"", "accepted"}
     ):
         return "accepted"
     if (
@@ -499,12 +521,13 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self._reconciliation_target: dict[str, str] | None = None
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
         self.report.runtime.update(
             {
                 "runtimeCell": self.runtime_binding.cell_id,
-                "journey": "direct-delivered-receipt",
+                "journey": journey_for_gate(self.gate_id),
                 "steps": self.steps,
                 "cleanup": {},
             }
@@ -724,6 +747,9 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         )
 
+    def prove_additional_journey_assertions(self) -> None:
+        """Variant hook for assertions that must run before evidence cleanup."""
+
     def current_profile_worktree_topology(self) -> dict[str, Any]:
         topology: dict[str, Any] = {}
         for actor, expected_name in CURRENT_PROFILE_ACTOR_WORKTREES.items():
@@ -791,6 +817,28 @@ class NativeTwoClientGate(AcceptanceGate):
         receiver = self.clients[receiver_name]
         for client in (initiator, receiver):
             enter_chat_page(client)
+        wait_for_peer_key_bundle(
+            initiator,
+            self.ptids[receiver_name],
+            str(
+                runtime_station_service(
+                    self.manifest,
+                    receiver_name,
+                ).get("runtimeIdentity")
+                or ""
+            ),
+        )
+        wait_for_peer_key_bundle(
+            receiver,
+            self.ptids[initiator_name],
+            str(
+                runtime_station_service(
+                    self.manifest,
+                    initiator_name,
+                ).get("runtimeIdentity")
+                or ""
+            ),
+        )
         initiator_context = async_harness(
             initiator,
             "federationContext",
@@ -993,6 +1041,8 @@ class NativeTwoClientGate(AcceptanceGate):
     def expected_reconciliation_target(
         self,
     ) -> dict[str, str] | None:
+        if self._reconciliation_target is not None:
+            return dict(self._reconciliation_target)
         target = {
             "actor": os.environ.get(
                 EXPECTED_RECONCILIATION_ACTOR_ENV,
@@ -1017,6 +1067,21 @@ class NativeTwoClientGate(AcceptanceGate):
         }
         if not any(target.values()):
             return None
+        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() == "1":
+            if (
+                not target["actor"]
+                or not target["conversationId"]
+                or target["messageId"]
+                or target["commandId"]
+                or target["actor"] not in self.clients
+                or target["outcome"] != "accepted"
+            ):
+                raise GateError(
+                    "fresh submitted-command setup requires an actor, "
+                    "conversation, accepted outcome, and no preselected "
+                    "message or command identity"
+                )
+            return None
         if (
             not all(target.values())
             or target["actor"] not in self.clients
@@ -1028,6 +1093,84 @@ class NativeTwoClientGate(AcceptanceGate):
                 "an accepted, terminal_failed, or terminal_superseded outcome"
             )
         return target
+
+    def create_restorable_command_target(self) -> dict[str, str] | None:
+        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() != "1":
+            return None
+        actor = os.environ.get(
+            EXPECTED_RECONCILIATION_ACTOR_ENV,
+            "",
+        ).strip()
+        conversation_id = os.environ.get(
+            EXPECTED_RECONCILIATION_CONVERSATION_ENV,
+            "",
+        ).strip()
+        outcome = os.environ.get(
+            EXPECTED_RECONCILIATION_OUTCOME_ENV,
+            "",
+        ).strip()
+        if (
+            actor not in self.clients
+            or not conversation_id
+            or outcome != "accepted"
+            or os.environ.get(
+                EXPECTED_RECONCILIATION_MESSAGE_ENV,
+                "",
+            ).strip()
+            or os.environ.get(
+                EXPECTED_RECONCILIATION_COMMAND_ENV,
+                "",
+            ).strip()
+        ):
+            raise GateError(
+                "fresh submitted-command setup requires an actor, "
+                "conversation, accepted outcome, and no preselected "
+                "message or command identity"
+            )
+        plaintext = os.environ.get(
+            RESTORABLE_COMMAND_PLAINTEXT_ENV,
+            "W8A exact submitted-command recovery",
+        )
+        if not plaintext:
+            raise GateError("fresh submitted-command plaintext is required")
+        created = self.step(
+            "command.reconciliation.seed",
+            lambda: async_harness(
+                self.clients[actor],
+                "createRestorableCommand",
+                {
+                    "actorPtid": self.ptids[actor],
+                    "conversationId": conversation_id,
+                    "plaintext": plaintext,
+                },
+            ),
+            actor,
+        )
+        if not isinstance(created, dict):
+            raise GateError(
+                "fresh submitted-command setup returned invalid evidence"
+            )
+        message_id = str(created.get("messageId") or "")
+        command_id = str(created.get("commandId") or "")
+        if not message_id or not command_id:
+            raise GateError(
+                "fresh submitted-command setup omitted its exact identity"
+            )
+        target = {
+            "actor": actor,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "commandId": command_id,
+            "outcome": outcome,
+        }
+        self._reconciliation_target = target
+        self.report.runtime["createdSubmittedCommand"] = {
+            **target,
+            "plaintextSha256": hashlib.sha256(
+                plaintext.encode("utf-8")
+            ).hexdigest(),
+        }
+        return dict(target)
 
     def prove_expected_command_reconciliation(
         self,
@@ -1409,6 +1552,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == 2
                 and len({client.storage_root for client in self.clients.values()}) == 2,
             )
+            self.create_restorable_command_target()
             if self.expected_reconciliation_target() is not None:
                 target = self.expected_reconciliation_target()
                 prepared = self.step(
@@ -1470,6 +1614,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 )
                 self.prove_direction(*self.direction_order)
                 self.prove_direction(*reversed(self.direction_order))
+                self.prove_additional_journey_assertions()
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:
@@ -1502,11 +1647,7 @@ class NativeTwoClientGate(AcceptanceGate):
         return {
             "runtimeCell": self.runtime_binding.cell_id,
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
-            "journey": (
-                "submitted-command-recovery"
-                if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
-                else "direct-delivered-receipt"
-            ),
+            "journey": journey_for_gate(self.gate_id),
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,

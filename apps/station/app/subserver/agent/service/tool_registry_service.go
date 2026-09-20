@@ -119,11 +119,6 @@ func (r *ToolRegistryService) registerDesktopLocalBuiltinTools() {
 			description: "Run an allow-listed Desktop workspace operation without arbitrary shell execution.",
 			schema:      `{"type":"object","properties":{"operation":{"type":"string","enum":["pwd","list_dir"]},"path":{"type":"string"}},"required":["operation"]}`,
 		},
-		{
-			name:        "oauth_connector_call",
-			description: "Read approved OAuth connector state through Desktop Rust without exposing credentials.",
-			schema:      `{"type":"object","properties":{"provider_id":{"type":"string","description":"OAuth provider id, such as github, google, or lark"},"resource":{"type":"string","enum":["connections.list","connection.status","connection.profile"],"description":"Safe OAuth connector resource to read"},"params":{"type":"object","description":"Optional resource parameters; secret-like fields are redacted"}},"required":["resource"]}`,
-		},
 	}
 
 	for _, spec := range specs {
@@ -153,7 +148,19 @@ func (r *ToolRegistryService) Has(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	_, ok := r.tools[name]
-	return ok
+	return ok || isConnectorResourceToolName(name)
+}
+
+// ManifestVersion returns the canonical capability-manifest version generated
+// from the registered Tool definition.
+func (r *ToolRegistryService) ManifestVersion(name string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	definition, ok := r.tools[name]
+	if !ok {
+		return "", false
+	}
+	return capabilityToolManifestSeed(definition).manifest.GetVersion(), true
 }
 
 // ToolNames returns the names of all registered tools, sorted.
@@ -177,9 +184,44 @@ func (r *ToolRegistryService) Definitions(names []string) []*domain.ToolDefiniti
 	for _, n := range names {
 		if d, ok := r.tools[n]; ok {
 			defs = append(defs, d)
+		} else if isConnectorResourceToolName(n) {
+			defs = append(defs, connectorResourceToolDefinition(n))
 		}
 	}
 	return defs
+}
+
+func isConnectorResourceToolName(name string) bool {
+	const prefix = "connector_resource_"
+	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+24 {
+		return false
+	}
+	for _, character := range name[len(prefix):] {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func connectorResourceToolDefinition(name string) *domain.ToolDefinition {
+	return &domain.ToolDefinition{
+		Name:        name,
+		Description: "Invoke one approved OAuth Connector resource through its pinned connection revision.",
+		JSONSchema: json.RawMessage(
+			`{"type":"object","properties":{"params":{"type":"object","description":"Resource-specific non-secret input"}},"additionalProperties":false}`,
+		),
+		Handler: func(
+			ctx context.Context,
+			meta *domain.ToolCallMeta,
+			raw json.RawMessage,
+		) (*domain.ToolResult, error) {
+			return &domain.ToolResult{
+				Content: "Connector resources execute through the client capability bridge",
+			}, nil
+		},
+	}
 }
 
 // Dispatch looks up the tool by name and invokes its handler.

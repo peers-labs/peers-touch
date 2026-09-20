@@ -1,4 +1,4 @@
-use crate::application::{mcp, oauth2, plugins};
+use crate::application::{mcp, plugins};
 use crate::contracts::{SearchPrimaryInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use serde_json::{json, Value};
@@ -17,9 +17,9 @@ fn invalid_argument(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InvalidArgument, message, None)
 }
 
-pub fn tools_list_entries() -> Result<Vec<Value>, String> {
+pub fn tools_list_entries(actor_ptid: &str) -> Result<Vec<Value>, String> {
     let mut tools = builtin_tool_registry_entries();
-    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries() {
+    if let Ok(mut mcp_tools) = mcp::mcp_tool_registry_entries(actor_ptid) {
         tools.append(&mut mcp_tools);
     }
     if let Ok(mut plugin_tools) = plugins::plugin_tool_registry_entries() {
@@ -28,9 +28,9 @@ pub fn tools_list_entries() -> Result<Vec<Value>, String> {
     Ok(tools)
 }
 
-pub fn tools_list() -> AppResult<StubPayload> {
+pub fn tools_list(actor_ptid: &str) -> AppResult<StubPayload> {
     let mut tools = builtin_tool_registry_entries();
-    match mcp::mcp_tool_registry_entries() {
+    match mcp::mcp_tool_registry_entries(actor_ptid) {
         Ok(mut mcp_tools) => tools.append(&mut mcp_tools),
         Err(error) => {
             tracing::error!(error = %error, "Failed to project MCP tools into tool registry");
@@ -130,27 +130,6 @@ pub fn builtin_tool_registry_entries() -> Vec<Value> {
             }),
         ),
         builtin_tool(
-            "oauth_connector_call",
-            "oauth",
-            "Read approved OAuth connector state through Desktop Rust without exposing credentials.",
-            "high",
-            true,
-            "desktop-rust",
-            json!({
-                "type": "object",
-                "properties": {
-                    "provider_id": {"type": "string", "description": "OAuth provider id, such as github, google, or lark"},
-                    "resource": {
-                        "type": "string",
-                        "enum": ["connections.list", "connection.status", "connection.profile"],
-                        "description": "Safe OAuth connector resource to read"
-                    },
-                    "params": {"type": "object", "description": "Optional resource parameters; secret-like fields are redacted"}
-                },
-                "required": ["resource"]
-            }),
-        ),
-        builtin_tool(
             "memory_search",
             "memory",
             "Search Station-backed Agent memory.",
@@ -224,7 +203,6 @@ pub fn execute_builtin_local_tool(
         "local_clipboard_read" => execute_clipboard_read(),
         "local_clipboard_write" => execute_clipboard_write(&arguments),
         "local_shell_safe" => execute_shell_safe(&arguments, workspace_root, allowed_roots),
-        "oauth_connector_call" => return oauth2::execute_oauth_connector_tool(&arguments, call_id),
         other => Err(format!("unsupported builtin local tool: {other}")),
     }?;
     Ok(json!({
@@ -471,19 +449,6 @@ mod tests {
             Some(true)
         );
         assert!(file_tool.get("schema").is_some());
-
-        let oauth_tool = tools
-            .iter()
-            .find(|tool| tool.get("name").and_then(Value::as_str) == Some("oauth_connector_call"))
-            .expect("oauth_connector_call should be registered");
-        assert_eq!(
-            oauth_tool.get("executionOwner").and_then(Value::as_str),
-            Some("desktop-rust")
-        );
-        assert_eq!(
-            oauth_tool.get("needs_approval").and_then(Value::as_bool),
-            Some(true)
-        );
 
         let memory_tool = tools
             .iter()

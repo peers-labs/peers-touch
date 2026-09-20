@@ -18,8 +18,9 @@
 //   - KeyStore   — persistence + lifecycle for LocalKey. Two
 //     slots: `current` (used to mint) and `prev`
 //     (preserved across rotation for receivers that
-//     cached the old kid). Atomic rotation lives
-//     here.
+//     cached the old kid). Rotation atomically
+//     archives the outgoing public key before
+//     private-key retirement.
 //   - KeyCache   — process-local in-memory cache wrapping
 //     KeyStore. Periodically peeks the persisted
 //     current-kid so dashboard-driven rotation is
@@ -30,6 +31,9 @@
 //     a kid mismatch always rejects, pinned or
 //     not. Operators rotate trust by explicitly
 //     forgetting + re-TOFUing.
+//   - ContentProofKeyAuthority — resolves current or retained
+//     local public verification keys and emits five-minute
+//     attestations signed by the current Station key.
 //   - Mint       — `Mint(ctx, MintRequest{scope, iss, aud, sub,
 //     claims, ttl})`. Routes through the scope
 //     registry (TTL clamp + audience check + claim

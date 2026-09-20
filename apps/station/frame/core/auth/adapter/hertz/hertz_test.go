@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	hertzserver "github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/ut"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
@@ -52,6 +55,8 @@ type authTestProvider struct {
 	err     error
 }
 
+type optionalAuthTestProvider struct{}
+
 func (p authTestProvider) Method() coreauth.Method { return coreauth.MethodJWT }
 func (p authTestProvider) Authenticate(context.Context, coreauth.Credentials) (*coreauth.Subject, *coreauth.Token, error) {
 	return nil, nil, errors.New("not implemented")
@@ -61,12 +66,119 @@ func (p authTestProvider) Validate(context.Context, string) (*coreauth.Subject, 
 }
 func (p authTestProvider) Revoke(context.Context, string) error { return errors.New("not implemented") }
 
+func (optionalAuthTestProvider) Method() coreauth.Method { return coreauth.MethodJWT }
+func (optionalAuthTestProvider) Authenticate(context.Context, coreauth.Credentials) (*coreauth.Subject, *coreauth.Token, error) {
+	return nil, nil, errors.New("not implemented")
+}
+func (optionalAuthTestProvider) Validate(_ context.Context, token string) (*coreauth.Subject, error) {
+	switch token {
+	case "valid-token":
+		return &coreauth.Subject{ID: "ptid:actor:canonical"}, nil
+	case "revoked-token":
+		return &coreauth.Subject{ID: "ptid:actor:revoked", SessionID: "revoked-session"}, nil
+	default:
+		return nil, errors.New("invalid or expired token")
+	}
+}
+func (optionalAuthTestProvider) Revoke(context.Context, string) error {
+	return errors.New("not implemented")
+}
+
 type rejectingSessionValidator struct {
 	reason string
 }
 
 func (v rejectingSessionValidator) CheckSessionValid(context.Context, string) (bool, string) {
 	return false, v.reason
+}
+
+func TestOptionalJWTTraversesRealHertzRequest(t *testing.T) {
+	handlerCalls := 0
+	engine := hertzserver.New()
+	engine.GET(
+		"/public",
+		OptionalJWT(
+			optionalAuthTestProvider{},
+			rejectingSessionValidator{reason: "revoked"},
+		),
+		func(_ context.Context, ctx *app.RequestContext) {
+			handlerCalls++
+			subject := GetSubject(ctx)
+			if subject == nil {
+				ctx.Header("X-Auth-Subject", "anonymous")
+			} else {
+				ctx.Header("X-Auth-Subject", subject.ID)
+			}
+			ctx.SetStatusCode(http.StatusNoContent)
+		},
+	)
+
+	tests := []struct {
+		name            string
+		authorization   string
+		wantStatus      int
+		wantSubject     string
+		wantHandlerCall bool
+	}{
+		{name: "absent is anonymous", wantStatus: http.StatusNoContent, wantSubject: "anonymous", wantHandlerCall: true},
+		{name: "valid bearer injects subject", authorization: "Bearer valid-token", wantStatus: http.StatusNoContent, wantSubject: "ptid:actor:canonical", wantHandlerCall: true},
+		{name: "wrong scheme is rejected", authorization: "Basic credential", wantStatus: http.StatusUnauthorized},
+		{name: "empty bearer is rejected", authorization: "Bearer ", wantStatus: http.StatusUnauthorized},
+		{name: "invalid bearer is rejected", authorization: "Bearer invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "expired bearer is rejected", authorization: "Bearer expired-token", wantStatus: http.StatusUnauthorized},
+		{name: "revoked bearer is rejected", authorization: "Bearer revoked-token", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := handlerCalls
+			headers := []ut.Header{}
+			if test.authorization != "" {
+				headers = append(headers, ut.Header{Key: "Authorization", Value: test.authorization})
+			}
+
+			response := ut.PerformRequest(engine.Engine, http.MethodGet, "/public", nil, headers...).Result()
+
+			if response.StatusCode() != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.StatusCode(), test.wantStatus)
+			}
+			if got := string(response.Header.Peek("X-Auth-Subject")); got != test.wantSubject {
+				t.Fatalf("subject = %q, want %q", got, test.wantSubject)
+			}
+			called := handlerCalls == before+1
+			if called != test.wantHandlerCall {
+				t.Fatalf("downstream called = %t, want %t", called, test.wantHandlerCall)
+			}
+		})
+	}
+}
+
+func TestRequireJWTTraversesRealHertzRequest(t *testing.T) {
+	engine := hertzserver.New()
+	calls := 0
+	engine.GET(
+		"/protected",
+		RequireJWT(authTestProvider{subject: &coreauth.Subject{ID: "ptid:actor:canonical"}}),
+		func(_ context.Context, ctx *app.RequestContext) {
+			calls++
+			ctx.SetStatusCode(http.StatusNoContent)
+		},
+	)
+
+	response := ut.PerformRequest(
+		engine.Engine,
+		http.MethodGet,
+		"/protected",
+		nil,
+		ut.Header{Key: "Authorization", Value: "Bearer valid-token"},
+	).Result()
+
+	if response.StatusCode() != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", response.StatusCode(), http.StatusNoContent)
+	}
+	if calls != 1 {
+		t.Fatalf("downstream calls = %d, want 1", calls)
+	}
 }
 
 func TestRequireJWTLogsOutcomeAndCorrelationWithoutCredentialsOrIdentity(t *testing.T) {

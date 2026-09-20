@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
@@ -62,7 +62,7 @@ interface PendingImage {
   /** Tauri-converted file:// src for instant preview. */
   previewSrc: string;
   /** OSS upload state. */
-  status: 'uploading' | 'done' | 'error';
+  status: 'pending' | 'uploading' | 'done' | 'error';
   /** Populated when status === 'done'. */
   cid?: string;
   /** Typed descriptor persisted into CreateImagePostRequest.images. */
@@ -112,7 +112,16 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const [audience, setAudience] = useState<Audience>(
     () => draft?.audience ?? initialAudience ?? defaultAudience(),
   );
-  const [pending, setPending] = useState<PendingImage[]>([]);
+  const [pending, setPending] = useState<PendingImage[]>(() =>
+    (draft?.files ?? []).map((file) => ({
+      localId: file.intentId,
+      filePath: file.filePath,
+      previewSrc: file.previewSrc,
+      status: 'pending',
+    })),
+  );
+  const [draftId] = useState(() => draft?.draftId ?? makeLocalId());
+  const draftRevision = useRef(draft?.revision ?? 0);
   const [submitting, setSubmitting] = useState(false);
 
   const uploadingCount = useMemo(
@@ -127,9 +136,46 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const canPublish =
     !!text.trim() && uploadingCount === 0 && errorCount === 0 && !submitting;
 
+  const writeDraft = (
+    revision: number,
+    nextText: string,
+    nextAudience: Audience,
+    nextPending: PendingImage[],
+  ) => {
+    setDraft({
+      draftId,
+      revision,
+      text: nextText,
+      audience: nextAudience,
+      mentions: [],
+      files: nextPending.map((item) => ({
+        intentId: item.localId,
+        filePath: item.filePath,
+        previewSrc: item.previewSrc,
+      })),
+    });
+  };
+
+  const persistDraft = (
+    nextText: string,
+    nextAudience: Audience,
+    nextPending: PendingImage[],
+  ) => {
+    draftRevision.current += 1;
+    writeDraft(draftRevision.current, nextText, nextAudience, nextPending);
+  };
+
+  const checkpointDraft = (): number => {
+    if (draftRevision.current === 0) {
+      draftRevision.current = 1;
+    }
+    writeDraft(draftRevision.current, text, audience, pending);
+    return draftRevision.current;
+  };
+
   const handleClear = () => {
     if (text.trim()) {
-      setDraft({ text, audience, mentions: [] });
+      persistDraft(text, audience, pending);
     } else {
       clearDraft();
     }
@@ -141,6 +187,11 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   // the body in memory pre-save). 9 images at e.g. 8MB each would
   // otherwise spike to ~70MB if uploaded in parallel.
   const uploadOne = async (filePath: string, localId: string) => {
+    setPending((prev) =>
+      prev.map((item) => (
+        item.localId === localId ? { ...item, status: 'uploading' } : item
+      )),
+    );
     try {
       const uploaded = await api.ossUploadEncryptedAttachmentSocial(filePath);
       if (!uploaded?.cid) {
@@ -152,22 +203,39 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         sizeBytes: BigInt(uploaded.media_encryption.plaintext_size || uploaded.size || 0),
         mediaEncryption: toEncryptedMediaDescriptor(uploaded.media_encryption),
       });
+      const completed: PendingImage = {
+        localId,
+        filePath,
+        previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
+        status: 'done',
+        cid: uploaded.cid,
+        image,
+      };
       setPending((prev) =>
         prev.map((p) =>
           p.localId === localId
-            ? { ...p, status: 'done', cid: uploaded.cid, image }
+            ? { ...completed, previewSrc: p.previewSrc }
             : p,
         ),
       );
+      return completed;
     } catch (err) {
+      const failed: PendingImage = {
+        localId,
+        filePath,
+        previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
+        status: 'error',
+        error: String(err),
+      };
       log.warn(TAG, 'image upload failed', { filePath, err: String(err) });
       setPending((prev) =>
         prev.map((p) =>
           p.localId === localId
-            ? { ...p, status: 'error', error: String(err) }
+            ? { ...failed, previewSrc: p.previewSrc }
             : p,
         ),
       );
+      return failed;
     }
   };
 
@@ -189,17 +257,17 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       localId: makeLocalId(),
       filePath: p,
       previewSrc: convertFileSrc(p),
-      status: 'uploading',
+      status: 'pending',
     }));
-    setPending((prev) => [...prev, ...fresh]);
-
-    for (const item of fresh) {
-      await uploadOne(item.filePath, item.localId);
-    }
+    const next = [...pending, ...fresh];
+    setPending(next);
+    persistDraft(text, audience, next);
   };
 
   const handleRemoveImage = (localId: string) => {
-    setPending((prev) => prev.filter((p) => p.localId !== localId));
+    const next = pending.filter((item) => item.localId !== localId);
+    setPending(next);
+    persistDraft(text, audience, next);
   };
 
   const handleRetryImage = (localId: string) => {
@@ -230,15 +298,58 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       return;
     }
 
-    const cids = pending
-      .filter((p) => p.status === 'done' && p.cid)
-      .map((p) => p.cid as string);
-    const images = pending
-      .filter((p) => p.status === 'done' && p.image)
-      .map((p) => p.image as ImageAttachment);
-
     setSubmitting(true);
     try {
+      if (audience.kind === Audience_Kind.FRIENDS) {
+        const publishRevision = checkpointDraft();
+        const privateDraft = pending.length > 0
+          ? {
+              kind: 'image' as const,
+              text: trimmed,
+              imageIds: [],
+              localFiles: pending.map((item) => ({
+                intentId: item.localId,
+                filePath: item.filePath,
+                previewSrc: item.previewSrc,
+              })),
+              audience,
+              draftId,
+              draftRevision: publishRevision,
+            }
+          : {
+              kind: 'text' as const,
+              text: trimmed,
+              audience,
+              draftId,
+              draftRevision: publishRevision,
+            };
+        const id = await createPost(privateDraft);
+        message.success(t('moments.compose.published'));
+        setText('');
+        setPending([]);
+        clearDraft();
+        onPublished?.(id);
+        return;
+      }
+
+      const uploaded: PendingImage[] = [];
+      for (const item of pending) {
+        if (item.status === 'done') {
+          uploaded.push(item);
+          continue;
+        }
+        const result = await uploadOne(item.filePath, item.localId);
+        if (!result || result.status !== 'done') {
+          throw new Error(result?.error ?? t('moments.compose.imageUploadFailed'));
+        }
+        uploaded.push(result);
+      }
+      const cids = uploaded
+        .filter((item) => item.cid)
+        .map((item) => item.cid as string);
+      const images = uploaded
+        .filter((item) => item.image)
+        .map((item) => item.image as ImageAttachment);
       const id =
         cids.length > 0
           ? await createPost({
@@ -291,7 +402,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
-                setDraft({ text: e.target.value, audience, mentions: [] });
+                persistDraft(e.target.value, audience, pending);
               }}
               placeholder={t('moments.compose.placeholder')}
               autoSize={{ minRows: 2, maxRows: 10 }}
@@ -375,7 +486,14 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               <LockKeyhole size={13} />
               <span>{t('moments.compose.audienceLabel')}</span>
             </Space>
-            <AudiencePicker value={audience} onChange={setAudience} disabled={submitting} />
+            <AudiencePicker
+              value={audience}
+              onChange={(nextAudience) => {
+                setAudience(nextAudience);
+                persistDraft(text, nextAudience, pending);
+              }}
+              disabled={submitting}
+            />
             {(text || pending.length > 0) && (
               <Button onClick={handleClear} disabled={submitting} type="text">
                 {t('moments.compose.cancel')}

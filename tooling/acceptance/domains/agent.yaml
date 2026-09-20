@@ -25,6 +25,7 @@
     "agent-orchestration-collaboration",
     "agent-thread-branching",
     "agent-ecosystem",
+    "agent-trusted-package-catalog",
     "agent-task-management",
     "agent-scheduler",
     "agent-turn-trace",

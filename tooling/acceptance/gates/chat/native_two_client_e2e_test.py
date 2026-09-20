@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import base64
 import importlib.util
 import json
@@ -99,6 +100,73 @@ class SyntheticRuntimeBinding:
 
 
 class NativeTwoClientEvidenceTest(unittest.TestCase):
+    def test_key_exchange_uses_enrolled_messaging_endpoint(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        source = (
+            root
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("active_key_exchange_context", source)
+        self.assertIn(".messaging_engines", source)
+        self.assertNotIn("device_install::get_or_create_device_id", source)
+        self.assertEqual(
+            source.count("station_client::request_proto_for_device::<"),
+            5,
+        )
+        for request in (
+            "UploadMlsKeyPackageRequest",
+            "FetchMlsKeyPackageRequest",
+            "CountMlsKeyPackagesRequest",
+        ):
+            self.assertIn(f"kemodel::{request}", source)
+
+    def test_native_runners_bind_conversation_creation_to_federation(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        runners = (
+            "native_two_client_runner.py",
+            "native_interactions_runner.py",
+            "native_typing_runner.py",
+            "native_multi_device_runner.py",
+            "native_recovery_runner.py",
+        )
+        for filename in runners:
+            path = root / "tooling/acceptance/gates/chat" / filename
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename)
+            creation_calls = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "async_harness"
+                and len(node.args) >= 3
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value
+                in {"createDirectConversation", "createGroup"}
+            ]
+            self.assertTrue(creation_calls, filename)
+            for call in creation_calls:
+                self.assertIsInstance(call.args[2], ast.Dict, filename)
+                keys = {
+                    key.value
+                    for key in call.args[2].keys
+                    if isinstance(key, ast.Constant)
+                }
+                self.assertIn("federationId", keys, filename)
+            if any(
+                call.args[1].value == "createDirectConversation"
+                for call in creation_calls
+            ):
+                self.assertIn("wait_for_peer_key_bundle(", source, filename)
+
+        group_source = (
+            root
+            / "tooling/acceptance/gates/chat/native_group_mls_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('open_create_group_modal("alice")', group_source)
+        self.assertIn('SELECTORS["create_group_submit"]', group_source)
+        self.assertNotIn('"createGroup"', group_source)
+
     def setUp(self) -> None:
         self.module = load_module()
         self.temp = tempfile.TemporaryDirectory()
@@ -217,6 +285,16 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ],
         }
 
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "accepted",
+        )
+        snapshot["commandLedger"][0]["draftState"] = ""
         self.assertEqual(
             reconciled_command_snapshot_outcome(
                 snapshot,
@@ -785,6 +863,22 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
         self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
         self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
+        self.assertEqual(
+            self.module.expected_journey_for_gate(
+                SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            ),
+            "submitted-command-recovery",
+        )
+        self.assertFalse(
+            self.module.requires_distinct_client_profiles(
+                SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            )
+        )
+        self.assertTrue(
+            self.module.requires_distinct_client_profiles(
+                self.module.GATE_ID
+            )
+        )
         self.assertEqual(gate.direction_order, ["bob", "alice"])
         self.assertIn(
             "submitted_command_fixture_exact",
@@ -802,6 +896,68 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertLess(fixture, activation)
         self.assertLess(activation, convergence)
+
+    def test_submitted_recovery_can_bind_a_fresh_restorable_command(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+            allow_existing_fixture=True,
+        )
+        gate.clients = {"alice": object(), "bob": object()}  # type: ignore[assignment]
+        gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
+        environment = {
+            "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND": "1",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_ACTOR": "alice",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_CONVERSATION_ID": "conversation-1",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_MESSAGE_ID": "",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID": "",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME": "accepted",
+            "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT": "recover me",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch(
+                "tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
+                return_value={
+                    "messageId": "message-1",
+                    "commandId": "command-1",
+                    "snapshot": {},
+                },
+            ) as harness,
+        ):
+            target = gate.create_restorable_command_target()
+
+        self.assertEqual(
+            target,
+            {
+                "actor": "alice",
+                "conversationId": "conversation-1",
+                "messageId": "message-1",
+                "commandId": "command-1",
+                "outcome": "accepted",
+            },
+        )
+        self.assertEqual(gate.expected_reconciliation_target(), target)
+        self.assertEqual(
+            gate.report.runtime["createdSubmittedCommand"]["plaintextSha256"],
+            "bc54d1d8c0a99336ea2c89cccee81d1545b9e5c10791b3e5a7140803035213fb",
+        )
+        harness.assert_called_once()
 
     def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
         report = self.valid_report()

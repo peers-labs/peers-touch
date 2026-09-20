@@ -21,6 +21,198 @@ type AuthenticatedActor struct {
 	DeviceID string
 }
 
+func MapMemberAuthorityCommand(
+	authenticated AuthenticatedActor,
+	wire *chat.ConversationMemberAuthorityCommand,
+	preparation aggregate.CommandPreparation,
+	now time.Time,
+) (command.SubmitRequest, error) {
+	if wire == nil || wire.GetOperator() == nil {
+		return command.SubmitRequest{}, invalid(
+			"interface.map_member_authority",
+			"command",
+			"is required",
+		)
+	}
+	if wire.GetVersion() != 1 {
+		return command.SubmitRequest{}, invalid(
+			"interface.map_member_authority",
+			"version",
+			"must be one",
+		)
+	}
+	if wire.GetOperator().GetPtid() != authenticated.PTID ||
+		wire.GetOperator().GetDeviceId() != authenticated.DeviceID {
+		return command.SubmitRequest{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"interface.map_member_authority",
+			"operator",
+			"does not match the authenticated endpoint",
+		)
+	}
+	conversationID, err := valueobject.NewConversationID(wire.GetConversationId())
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
+	commandID, err := valueobject.NewCommandID(wire.GetCommandId())
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
+	operator, err := valueobject.NewEndpoint(
+		wire.GetOperator().GetPtid(),
+		wire.GetOperator().GetDeviceId(),
+	)
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
+	target, err := valueobject.NewPTID(wire.GetTargetPtid())
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
+	authorityHash, err := valueobject.NewHash(wire.GetAuthorityHash())
+	if err != nil {
+		return command.SubmitRequest{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeStaleAuthorityHead,
+			"interface.map_member_authority",
+			"authority_hash",
+			"must be a complete authority event hash",
+		)
+	}
+	if preparation.Kind != valueobject.ConversationKindGroup ||
+		wire.GetAuthorityStationPeerId() != string(preparation.AuthorityStation) ||
+		wire.GetAuthoritySequence() != int64(preparation.Head.Sequence) ||
+		authorityHash != preparation.Head.EventHash ||
+		wire.GetObservedMembershipEpoch() != int64(preparation.Head.MembershipEpoch) ||
+		wire.GetObservedMlsEpoch() != int64(preparation.Head.MLSEpoch) {
+		return command.SubmitRequest{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeStaleAuthorityHead,
+			"interface.map_member_authority",
+			"authority_head",
+			"does not match the prepared Conversation authority",
+		)
+	}
+	if wire.GetAuthorityEpoch() <= 0 || wire.GetFederationId() == "" {
+		return command.SubmitRequest{}, invalid(
+			"interface.map_member_authority",
+			"authority_scope",
+			"federation and authority epoch are required",
+		)
+	}
+	if wire.GetClientTimestamp() == nil || !wire.GetClientTimestamp().IsValid() ||
+		wire.GetDeadline() == nil || !wire.GetDeadline().IsValid() {
+		return command.SubmitRequest{}, invalid(
+			"interface.map_member_authority",
+			"time",
+			"client timestamp and deadline are required",
+		)
+	}
+	deadline := wire.GetDeadline().AsTime().UTC()
+	clientTimestamp := wire.GetClientTimestamp().AsTime().UTC()
+	if !deadline.After(now.UTC()) {
+		return command.SubmitRequest{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandExpired,
+			"interface.map_member_authority",
+			"deadline",
+			"has expired",
+		)
+	}
+	if !deadline.After(clientTimestamp) {
+		return command.SubmitRequest{}, invalid(
+			"interface.map_member_authority",
+			"deadline",
+			"must follow the client timestamp",
+		)
+	}
+	exactBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(wire)
+	if err != nil {
+		return command.SubmitRequest{}, fmt.Errorf(
+			"conversation interface: marshal member authority command: %w",
+			err,
+		)
+	}
+	base := aggregate.Command{
+		ID:                      commandID,
+		ConversationID:          conversationID,
+		AuthorityStation:        preparation.AuthorityStation,
+		Sender:                  operator,
+		ObservedMembershipEpoch: valueobject.Epoch(wire.GetObservedMembershipEpoch()),
+		ObservedMLSEpoch:        valueobject.Epoch(wire.GetObservedMlsEpoch()),
+		DeliveryPlanHash:        preparation.DeliveryPlanHash,
+		Kind:                    domainevent.KindMemberAuthority,
+		RequiredEndpoints:       preparation.RequiredEndpoints,
+		Payload:                 exactBytes,
+		CommittedAt:             now.UTC(),
+	}
+	base.Deliveries, err = mapAuthorityPublicDeliveries(
+		string(conversationID),
+		string(commandID),
+		wire.GetOperator(),
+		preparation.RequiredEndpoints,
+	)
+	if err != nil {
+		return command.SubmitRequest{}, err
+	}
+	memberCommand := &aggregate.MemberAuthorityCommand{
+		Command:                base,
+		Target:                 target,
+		ObservedAuthorityHead:  preparation.Head,
+		ObservedFederationID:   valueobject.FederationID(wire.GetFederationId()),
+		ObservedAuthorityEpoch: valueobject.AuthorityEpoch(wire.GetAuthorityEpoch()),
+		Deadline:               deadline,
+	}
+	switch wire.GetAction() {
+	case chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER:
+		memberCommand.Action = domainevent.MemberAuthorityActionUpdateMember
+		if wire.Role != nil {
+			role := memberRoleFromProto(wire.GetRole())
+			if role == "" {
+				return command.SubmitRequest{}, invalid(
+					"interface.map_member_authority",
+					"role",
+					"must be member or admin",
+				)
+			}
+			memberCommand.Role = &role
+		}
+		if wire.Muted != nil {
+			muted := wire.GetMuted()
+			memberCommand.Muted = &muted
+		}
+		if wire.GetMutedUntil() != nil {
+			if !wire.GetMutedUntil().IsValid() {
+				return command.SubmitRequest{}, invalid(
+					"interface.map_member_authority",
+					"muted_until",
+					"is invalid",
+				)
+			}
+			mutedUntil := wire.GetMutedUntil().AsTime().UTC()
+			memberCommand.MutedUntil = &mutedUntil
+		}
+		if wire.Muted == nil && wire.GetMutedUntil() != nil {
+			return command.SubmitRequest{}, invalid(
+				"interface.map_member_authority",
+				"muted_until",
+				"requires an explicit muted value",
+			)
+		}
+	case chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP:
+		memberCommand.Action = domainevent.MemberAuthorityActionTransferOwnership
+	default:
+		return command.SubmitRequest{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnsupportedTransition,
+			"interface.map_member_authority",
+			"action",
+			"is not supported",
+		)
+	}
+	return command.SubmitRequest{
+		Command:           base,
+		MemberAuthority:   memberCommand,
+		ExactCommandBytes: exactBytes,
+	}, nil
+}
+
 func MapSubmitCommand(
 	authenticated AuthenticatedActor,
 	request *chat.SubmitConversationAuthorityCommandRequest,
@@ -237,7 +429,8 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 		wire.DeliveryCommitments = append(wire.DeliveryCommitments, commitment.Bytes())
 	}
 	var source chat.ChatCommand
-	if record.Fact.Kind != domainevent.KindConversationCreated {
+	if record.Fact.Kind != domainevent.KindConversationCreated &&
+		record.Fact.Kind != domainevent.KindMemberAuthority {
 		if err := proto.Unmarshal(record.Fact.Payload, &source); err != nil {
 			return nil, fmt.Errorf("conversation interface: decode event source command: %w", err)
 		}
@@ -355,6 +548,29 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 				PostState:           mapConversationState(record.Fact.PostState),
 			},
 		}
+	case domainevent.KindMemberAuthority:
+		mutation := record.Fact.MemberAuthority
+		if mutation == nil {
+			return nil, invalid(
+				"interface.map_event",
+				"member_authority",
+				"fact is missing",
+			)
+		}
+		wire.Payload = &chat.ConversationEvent_MemberAuthorityCommitted{
+			MemberAuthorityCommitted: &chat.ConversationMemberAuthorityCommittedFact{
+				Action:              memberAuthorityActionToProto(mutation.Action),
+				TargetPtid:          string(mutation.Target),
+				Role:                optionalMemberRoleToProto(mutation.Role),
+				Muted:               cloneBool(mutation.Muted),
+				MutedUntil:          optionalTimestamp(mutation.MutedUntil),
+				PreviousOwnerPtid:   string(mutation.PreviousOwner),
+				OwnerPtid:           string(mutation.Owner),
+				FromMembershipEpoch: int64(mutation.FromMembershipEpoch),
+				ToMembershipEpoch:   int64(mutation.ToMembershipEpoch),
+				PostState:           mapConversationState(record.Fact.PostState),
+			},
+		}
 	case domainevent.KindConversationDissolved:
 		wire.Payload = &chat.ConversationEvent_ConversationDissolved{
 			ConversationDissolved: &chat.ConversationDissolvedFact{
@@ -377,7 +593,7 @@ func MapRejectCode(err error) chat.ConversationCommandRejectCode {
 	case conversationdomain.ErrorCodeCommandConflict:
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_CONFLICT
 	case conversationdomain.ErrorCodeStaleAuthorityHead:
-		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN
+		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_HEAD_STALE
 	case conversationdomain.ErrorCodeStaleMembershipEpoch:
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_MEMBERSHIP_EPOCH_STALE
 	case conversationdomain.ErrorCodeStaleMLSEpoch:
@@ -413,12 +629,18 @@ func MapRejectCode(err error) chat.ConversationCommandRejectCode {
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND
 	case conversationdomain.ErrorCodeInvalidArgument:
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_INVALID_PROPOSAL
+	case conversationdomain.ErrorCodeTargetNotMember:
+		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_TARGET_NOT_MEMBER
 	case conversationdomain.ErrorCodeNotFound,
 		conversationdomain.ErrorCodeMembershipConflict,
 		conversationdomain.ErrorCodeDeviceConflict:
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_CONVERSATION_STATE
 	case conversationdomain.ErrorCodeOwnerProtected:
-		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_PERMISSION_DENIED
+		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_OWNER_PROTECTED
+	case conversationdomain.ErrorCodeCommandExpired:
+		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_MEMBER_COMMAND_EXPIRED
+	case conversationdomain.ErrorCodeMemberMuted:
+		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_MEMBER_MUTED
 	case conversationdomain.ErrorCodeHashChainInvalid:
 		return chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_GROUP_READ_ONLY
 	default:
@@ -579,6 +801,45 @@ func mapPublicDeliveries(
 			return nil, err
 		}
 		deliveries = append(deliveries, delivery)
+	}
+	return deliveries, nil
+}
+
+func mapAuthorityPublicDeliveries(
+	conversationID string,
+	commandID string,
+	operator *chat.CryptoEndpoint,
+	required []valueobject.Endpoint,
+) ([]valueobject.PreparedDelivery, error) {
+	if operator == nil {
+		return nil, invalid(
+			"interface.map_member_authority_deliveries",
+			"operator",
+			"is required",
+		)
+	}
+	eventID := valueobject.DeterministicEventID(
+		valueobject.ConversationID(conversationID),
+		valueobject.CommandID(commandID),
+	)
+	payload, err := deterministicProto(&chat.PublicEventMarker{
+		ConversationId: conversationID,
+		EventId:        string(eventID),
+		CommandId:      commandID,
+		SendingEndpoint: &chat.CryptoEndpoint{
+			Ptid:     operator.GetPtid(),
+			DeviceId: operator.GetDeviceId(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	deliveries := make([]valueobject.PreparedDelivery, 0, len(required))
+	for _, endpoint := range required {
+		deliveries = append(
+			deliveries,
+			preparedDelivery(endpoint, valueobject.DeliveryKindPublicEvent, payload),
+		)
 	}
 	return deliveries, nil
 }
@@ -980,6 +1241,8 @@ func mapConversationState(
 			Ptid:              string(member.Actor),
 			Role:              string(member.Role),
 			HomeStationPeerId: string(member.HomeStation),
+			Muted:             member.Muted,
+			MutedUntil:        optionalTimestamp(member.MutedUntil),
 		})
 	}
 	endpoints := make([]*chat.CryptoEndpoint, 0, len(state.ActiveEndpoints))
@@ -1013,6 +1276,70 @@ func mapConversationState(
 		Visibility:            conversationVisibilityToProto(state.Settings.Visibility),
 		DisappearTimerSeconds: state.Settings.DisappearTimerSeconds,
 	}
+}
+
+func memberAuthorityActionToProto(
+	action domainevent.MemberAuthorityAction,
+) chat.ConversationMemberAuthorityAction {
+	switch action {
+	case domainevent.MemberAuthorityActionUpdateMember:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER
+	case domainevent.MemberAuthorityActionTransferOwnership:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP
+	default:
+		return chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UNSPECIFIED
+	}
+}
+
+func optionalMemberRoleToProto(
+	role *valueobject.MemberRole,
+) *chat.MemberRole {
+	if role == nil {
+		return nil
+	}
+	mapped := memberRoleToProto(*role)
+	return &mapped
+}
+
+func memberRoleFromProto(role chat.MemberRole) valueobject.MemberRole {
+	switch role {
+	case chat.MemberRole_MEMBER_ROLE_MEMBER:
+		return valueobject.MemberRoleMember
+	case chat.MemberRole_MEMBER_ROLE_ADMIN:
+		return valueobject.MemberRoleAdmin
+	case chat.MemberRole_MEMBER_ROLE_OWNER:
+		return valueobject.MemberRoleOwner
+	default:
+		return ""
+	}
+}
+
+func memberRoleToProto(role valueobject.MemberRole) chat.MemberRole {
+	switch role {
+	case valueobject.MemberRoleMember:
+		return chat.MemberRole_MEMBER_ROLE_MEMBER
+	case valueobject.MemberRoleAdmin:
+		return chat.MemberRole_MEMBER_ROLE_ADMIN
+	case valueobject.MemberRoleOwner:
+		return chat.MemberRole_MEMBER_ROLE_OWNER
+	default:
+		return chat.MemberRole_MEMBER_ROLE_UNSPECIFIED
+	}
+}
+
+func optionalTimestamp(value *time.Time) *timestamppb.Timestamp {
+	if value == nil {
+		return nil
+	}
+	return timestamppb.New(value.UTC())
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func conversationVisibilityFromProto(

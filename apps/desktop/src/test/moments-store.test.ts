@@ -18,26 +18,26 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
+import { toBinary, create } from '@bufbuild/protobuf';
+import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
 import {
   AudienceSchema,
   Audience_Kind,
-  CreatePostRequestSchema,
   CreatePostResponseSchema,
   GetPostResponseSchema,
   GetTimelineResponseSchema,
-  ImageAttachmentSchema,
   SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
   ReactToPostResponseSchema,
   UpsertStationModerationPolicyResponseSchema,
   DeleteStationModerationPolicyResponseSchema,
   PostType,
+  PostSchema,
+  PostVisibility,
   ReactionKind,
   RelationshipReason_Kind,
   type Audience,
 } from '../gen/proto/domain/social/post_pb';
-import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
 import {
   GetCommentsResponseSchema,
   CreateCommentResponseSchema,
@@ -47,17 +47,25 @@ import {
 } from '../gen/proto/domain/social/relationship_pb';
 import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
+import { usePrivateMomentsStore } from '../store/privateMoments';
+import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
-import { openMomentMediaKeyFromAudience } from '../services/momentAudienceKeys';
 import { EVENT, eventBus } from '../kernel/events';
-import { momentsRuntime } from '../runtimes/momentsRuntime';
+import {
+  ensureMomentDetailProjection,
+  isPrivateMomentPost,
+  momentsRuntime,
+} from '../runtimes/momentsRuntime';
 import {
   socialStationModerationDelete,
   socialStationModerationUpsert,
 } from '../services/social_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: vi.fn((path: string, protocol = 'asset') => (
+    `${protocol}://localhost/${encodeURIComponent(path)}`
+  )),
   invoke: vi.fn(),
 }));
 
@@ -79,7 +87,10 @@ const invokeMock = vi.mocked(invoke);
 //   bug. Dispatching by command name keeps the queue stable and the
 //   logger silent.
 
-function bytesOk(schema: any, value: any) {
+function bytesOk<Desc extends DescMessage>(
+  schema: Desc,
+  value: MessageInitShape<Desc>,
+) {
   const msg = create(schema, value);
   const bytes = Array.from(toBinary(schema, msg));
   return { ok: true, data: bytes };
@@ -128,6 +139,7 @@ beforeEach(() => {
   invokeMock.mockReset();
   pending = [];
   useMomentsStore.getState().reset();
+  usePrivateMomentsStore.getState().reset();
   useRelationshipsStore.getState().reset();
   useSessionStore.getState().reset();
   invokeMock.mockImplementation((cmd: string, _args?: unknown) => {
@@ -253,6 +265,33 @@ describe('moments store: syncProjection', () => {
       RelationshipReason_Kind.RELATIONSHIP_REASON_SELF,
     );
   });
+
+  it('drops a projection response that completes after actor reset', async () => {
+    let resolveResponse:
+      | ((value: ReturnType<typeof bytesOk<typeof SyncMomentsProjectionResponseSchema>>) => void)
+      | undefined;
+    const response = new Promise<
+      ReturnType<typeof bytesOk<typeof SyncMomentsProjectionResponseSchema>>
+    >((resolve) => {
+      resolveResponse = resolve;
+    });
+    enqueue('social_sync_moments_projection', response);
+
+    const pendingSync = useMomentsStore.getState().syncProjection('stale-actor');
+    useMomentsStore.getState().reset();
+    resolveResponse?.(bytesOk(SyncMomentsProjectionResponseSchema, {
+      homeTimeline: {
+        posts: [{ id: 'stale-private', authorPtid: 'old-actor', type: PostType.TEXT }],
+      },
+      publicTimeline: {
+        posts: [],
+      },
+    }));
+    await pendingSync;
+
+    expect(useMomentsStore.getState().feeds.home.postIds).toEqual([]);
+    expect(useMomentsStore.getState().postsById['stale-private']).toBeUndefined();
+  });
 });
 
 describe('moments store: createPost / deletePost', () => {
@@ -299,13 +338,10 @@ describe('moments store: createPost / deletePost', () => {
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pIMG');
   });
 
-  it('createPost(private image) seals audience keys, strips inline media keys, and reopens the key for display', async () => {
+  it('createPost(private image) delegates local file intent to Native only', async () => {
     const authorPtid = 'did:peers:author';
-    const authorIk = 'author-ik-b64';
-    const mediaCid = 'oss://station.local/private/family.png';
-    const mediaKeyB64 = 'bWVkaWEta2V5LTEyMzQ1Njc4OTA=';
-    const sealedPayloads: string[] = [];
-
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
     useSessionStore.setState({
       authenticated: true,
       currentUser: {
@@ -315,99 +351,190 @@ describe('moments store: createPost / deletePost', () => {
         loginMethod: 'password',
       },
     });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 1);
 
-    enqueue('key_exchange_fetch_bundle', statusOk({
-      bundles: [{ did: authorPtid, device_id: 'device-author', ik_pub: authorIk }],
-    }));
+    let nativeInput: Record<string, unknown> | undefined;
     enqueueMatch((cmd, args) => {
-      if (cmd !== 'signaling_envelope_seal') return false;
-      const payload = args as { plaintext?: string };
-      if (!payload.plaintext) return false;
-      sealedPayloads.push(payload.plaintext);
+      if (cmd !== 'social_private_moment_publish') return false;
+      nativeInput = (args as { input?: Record<string, unknown> }).input;
       return true;
-    }, statusOk({ payload_b64: btoa('sealed-moment-media-key') }));
-
-    let sealedAudience: Audience | undefined;
-    let sealedImageKeyB64: string | undefined;
-    let sealedImageSuite: string | undefined;
-    let createRequestContentCase: string | undefined;
-    let createRequestImageIdCount: number | undefined;
-    enqueueMatch((cmd, args) => {
-      if (cmd !== 'social_create_moment') return false;
-      const payload = (args as { input?: { payload?: number[] } }).input?.payload ?? [];
-      const request = fromBinary(CreatePostRequestSchema, new Uint8Array(payload));
-      const imageRequest = request.content.case === 'image' ? request.content.value : undefined;
-      const image = imageRequest?.images[0];
-      sealedAudience = request.audience;
-      createRequestContentCase = request.content.case;
-      createRequestImageIdCount = imageRequest?.imageIds.length;
-      sealedImageKeyB64 = image?.mediaEncryption?.keyB64;
-      sealedImageSuite = image?.mediaEncryption?.suite;
-      return true;
-    }, bytesOk(CreatePostResponseSchema, {
-      post: { id: 'pPRIVATE', authorPtid, type: PostType.IMAGE },
+    }, statusOk({
+      state: 'PUBLISHED',
+      draft_id: 'draft-private-image',
+      post_id: 'pPRIVATE',
+      projection: {
+        post_id: 'pPRIVATE',
+        content_id: 'pPRIVATE',
+        generation: '1',
+        author_ptid: authorPtid,
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: {
+          kind: 'IMAGE',
+          text: 'private family photo',
+          media: [],
+        },
+      },
     }));
 
     const id = await useMomentsStore.getState().createPost({
       kind: 'image',
       text: 'private family photo',
-      imageIds: [mediaCid],
-      audience: create(AudienceSchema, { kind: Audience_Kind.SELF }),
-      images: [create(ImageAttachmentSchema, {
-        id: 'image-1',
-        url: mediaCid,
-        sizeBytes: BigInt(4096),
-        mediaEncryption: create(EncryptedMediaDescriptorSchema, {
-          encrypted: true,
-          version: 2,
-          suite: 'AES-256-GCM-CHUNKED',
-          keyB64: mediaKeyB64,
-          nonceB64: 'bm9uY2UtYmFzZTY0',
-          plaintextSha256B64: 'plain-sha',
-          ciphertextSha256B64: 'cipher-sha',
-          plaintextSize: BigInt(2048),
-          ciphertextSize: BigInt(2096),
-          chunking: 'fixed',
-          chunkSize: 1024,
-          chunkCount: 2,
-          tagSize: 16,
-          nonceStrategy: 'counter-last-4',
-        }),
-      })],
+      imageIds: [],
+      audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+      draftId: 'draft-private-image',
+      draftRevision: 3,
+      localFiles: [{
+        intentId: 'image-1',
+        filePath: '/private/family.png',
+        previewSrc: 'asset://localhost/private/family.png',
+      }],
     });
 
     expect(id).toBe('pPRIVATE');
-    expect(createRequestContentCase).toBe('image');
-    expect(createRequestImageIdCount).toBe(0);
-    expect(sealedAudience?.kind).toBe(Audience_Kind.SELF);
-    expect(sealedAudience?.keyEnvelopes).toHaveLength(1);
-    expect(sealedImageKeyB64).toBe('');
-    expect(sealedImageSuite).toBe('AES-256-GCM-CHUNKED');
-    expect(sealedPayloads).toHaveLength(1);
-    expect(JSON.parse(sealedPayloads[0] ?? '{}')).toEqual({
-      v: 1,
-      kind: 'moment-media-key',
-      cid: mediaCid,
-      keyB64: mediaKeyB64,
+    expect(nativeInput).toMatchObject({
+      actor_ptid: authorPtid,
+      renderer_generation: 1,
+      draft_id: 'draft-private-image',
+      draft_revision: 3,
+      audience_kind: 'FRIENDS',
+      text: 'private family photo',
+      files: [{ intent_id: 'image-1', file_path: '/private/family.png' }],
     });
-    expect(sealedAudience?.keyEnvelopes[0]?.encryptedKey).toEqual(new TextEncoder().encode('sealed-moment-media-key'));
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_create_moment',
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'signaling_envelope_seal',
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'oss_upload_encrypted_attachment_social',
+      expect.anything(),
+    );
+  });
 
-    enqueue('account_get_device_id', statusOk({ device_id: 'device-author' }));
-    enqueue('key_exchange_fetch_bundle', statusOk({
-      bundles: [
-        { did: authorPtid, device_id: 'stale-device', ik_pub: 'stale-author-ik' },
-        { did: authorPtid, device_id: 'device-author', ik_pub: authorIk },
-      ],
-    }));
-    enqueue('signaling_envelope_open', statusOk({ plaintext: sealedPayloads[0] }));
+  it('rejects private Browser publish before invoking any backend command', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __PT_GATEWAY_BASE__: '/api' });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:browser-author', 2);
 
-    const openedKey = await openMomentMediaKeyFromAudience({
-      cid: mediaCid,
-      authorPtid,
-      audience: sealedAudience,
+    await expect(
+      useMomentsStore.getState().createPost({
+        kind: 'text',
+        text: 'browser-private-draft',
+        audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+        draftId: 'browser-private-draft',
+        draftRevision: 1,
+      }),
+    ).rejects.toThrow('PRIVATE_UNSUPPORTED');
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_create_moment',
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_private_moment_publish',
+      expect.anything(),
+    );
+  });
+
+  it('routes only FRIENDS Moments through the Secure Content runtime', () => {
+    expect(isPrivateMomentPost(create(PostSchema, {
+      id: 'friends',
+      audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+    }))).toBe(true);
+    for (const kind of [
+      Audience_Kind.PUBLIC,
+      Audience_Kind.FOLLOWERS,
+      Audience_Kind.CIRCLE,
+      Audience_Kind.GROUP,
+      Audience_Kind.SELF,
+      Audience_Kind.CUSTOM_ALLOW,
+      Audience_Kind.CUSTOM_DENY,
+    ]) {
+      expect(isPrivateMomentPost(create(PostSchema, {
+        id: `post-${kind}`,
+        audience: create(AudienceSchema, { kind }),
+      }))).toBe(false);
+    }
+    expect(isPrivateMomentPost(create(PostSchema, {
+      id: 'legacy-private',
+      visibility: PostVisibility.PRIVATE,
+      audience: create(AudienceSchema, {
+        kind: Audience_Kind.KIND_UNSPECIFIED,
+      }),
+    }))).toBe(true);
+  });
+
+  it('purges Native private material before removing the renderer projection', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:alice', 9);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-post': {
+          postId: 'private-post',
+          contentId: 'private-post',
+          generation: '1',
+          authorPtid: 'ptid:bob',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    enqueue('social_private_moment_purge', statusOk({ ok: true }));
+
+    await usePrivateMomentsStore.getState().purgeMoment('private-post');
+
+    expect(invokeMock).toHaveBeenCalledWith('social_private_moment_purge', {
+      input: {
+        actor_ptid: 'ptid:alice',
+        renderer_generation: 9,
+        post_id: 'private-post',
+      },
+    });
+    expect(usePrivateMomentsStore.getState().postsById['private-post']).toBeUndefined();
+  });
+
+  it('retains a cleanup tombstone when Native purge fails', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:alice', 9);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-post': {
+          postId: 'private-post',
+          contentId: 'private-post',
+          generation: '1',
+          authorPtid: 'ptid:bob',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    enqueue('social_private_moment_purge', {
+      ok: false,
+      error: {
+        code: 'PRIVATE_PURGE_FAILED',
+        details: { state: 'INTEGRITY_FAILURE' },
+      },
     });
 
-    expect(openedKey).toBe(mediaKeyB64);
+    await expect(
+      usePrivateMomentsStore.getState().purgeMoment('private-post'),
+    ).rejects.toThrow();
+    expect(usePrivateMomentsStore.getState().postsById['private-post']).toMatchObject({
+      state: 'DELETED_OR_REVOKED',
+      content: undefined,
+    });
   });
 
   it('deletePost scrubs the id from every feed', async () => {
@@ -444,6 +571,202 @@ describe('moments store: createPost / deletePost', () => {
     expect(useMomentsStore.getState().userFeeds['a'].postIds).toEqual(['p3']);
     expect(useMomentsStore.getState().postsById['p2']).toBeUndefined();
     expect(useMomentsStore.getState().feedExplanations['p2']).toBeUndefined();
+  });
+});
+
+describe('private Moments Native projection', () => {
+  it('accepts only an opaque window-authorized private media URL', () => {
+    const projection = normalizePrivateMomentProjection({
+      post_id: 'post-private-media',
+      content_id: 'content-private-media',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      content: {
+        kind: 'IMAGE',
+        text: 'private image',
+        media: [{
+          object_id: 'object-1',
+          state: 'MEDIA_READY',
+          render_url: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          mime_type: 'image/jpeg',
+        }],
+      },
+    });
+
+    expect(projection.content?.kind).toBe('IMAGE');
+    if (projection.content?.kind !== 'IMAGE') return;
+    expect(projection.content.media[0]?.renderUrl).toBe(
+      'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    );
+  });
+
+  it('rejects a private media projection that exposes its local path', () => {
+    expect(() => normalizePrivateMomentProjection({
+      post_id: 'post-private-media',
+      content_id: 'content-private-media',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      content: {
+        kind: 'IMAGE',
+        text: 'private image',
+        media: [{
+          object_id: 'object-1',
+          state: 'MEDIA_READY',
+          local_path: '/private/cache/object-1.jpg',
+          mime_type: 'image/jpeg',
+        }],
+      },
+    })).toThrow('exposed a local path');
+  });
+
+  it('accepts typed non-ready projections without fabricated author metadata', () => {
+    const projection = normalizePrivateMomentProjection({
+      post_id: 'post-denied',
+      content_id: 'unavailable:post-denied',
+      generation: '0',
+      author_ptid: '',
+      audience_kind: 'FRIENDS',
+      state: 'NOT_FOUND_OR_NOT_AUTHORIZED',
+      error_code: 'ERROR_CODE_NOT_FOUND',
+    });
+
+    expect(projection.state).toBe('NOT_FOUND_OR_NOT_AUTHORIZED');
+    expect(projection.authorPtid).toBe('');
+  });
+
+  it('replaces a loading projection with the typed Native read failure', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 4);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'post-private': {
+          postId: 'post-private',
+          contentId: 'content-private',
+          generation: '8',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          content: { kind: 'TEXT', text: 'secret' },
+        },
+      },
+    });
+    enqueue('social_private_moment_read', {
+      ok: false,
+      error: {
+        code: 'NOT_FOUND_OR_NOT_AUTHORIZED',
+        message: 'not found',
+        details: { state: 'NOT_FOUND_OR_NOT_AUTHORIZED' },
+      },
+    });
+
+    await usePrivateMomentsStore.getState().readMoment('post-private');
+
+    const projection = usePrivateMomentsStore.getState().postsById['post-private'];
+    expect(projection?.state).toBe('NOT_FOUND_OR_NOT_AUTHORIZED');
+    expect(projection?.content).toBeUndefined();
+  });
+
+  it('falls through an empty legacy projection to Native private direct-link read', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 6);
+    enqueue(
+      'social_get_moment',
+      bytesOk(GetPostResponseSchema, {}),
+    );
+    enqueue('social_private_moment_read', {
+      ok: true,
+      data: {
+        post_id: 'post-private-direct',
+        content_id: 'content-private-direct',
+        generation: '1',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: {
+          kind: 'TEXT',
+          text: 'direct private content',
+        },
+      },
+    });
+
+    await ensureMomentDetailProjection('post-private-direct');
+
+    expect(
+      usePrivateMomentsStore.getState().postsById['post-private-direct'],
+    ).toMatchObject({
+      state: 'CONTENT_READY',
+      content: {
+        kind: 'TEXT',
+        text: 'direct private content',
+      },
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_get_comments',
+      expect.anything(),
+    );
+  });
+
+  it('preserves a verified local media projection across same-generation reconcile', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'post-private': {
+          postId: 'post-private',
+          contentId: 'content-private',
+          generation: '8',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          content: {
+            kind: 'IMAGE',
+            text: 'secret',
+            media: [{
+              objectId: 'object-1',
+              state: 'MEDIA_READY',
+              renderUrl: 'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            }],
+          },
+        },
+      },
+    });
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'post-private',
+        content_id: 'content-private',
+        generation: '8',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: {
+          kind: 'IMAGE',
+          text: 'secret',
+          media: [{ object_id: 'object-1', state: 'MEDIA_PLACEHOLDER' }],
+        },
+      }],
+    }));
+
+    await usePrivateMomentsStore.getState().bootstrap(5);
+
+    const projection = usePrivateMomentsStore.getState().postsById['post-private'];
+    expect(projection?.content?.kind).toBe('IMAGE');
+    if (projection?.content?.kind !== 'IMAGE') return;
+    expect(projection.content.media[0]?.state).toBe('MEDIA_READY');
+    expect(projection.content.media[0]?.renderUrl).toBe(
+      'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    );
   });
 });
 

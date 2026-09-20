@@ -108,6 +108,33 @@ describe('Agent turn recovery projection', () => {
     expect(reconnecting.record?.phase).toBe('RECONNECTING');
   });
 
+  it('rejects a stale same-cursor recovery control without regressing the phase', () => {
+    const current = activeTurn({
+      cursor: 31,
+      phase: 'RECONNECTING',
+    });
+    const reduction = reduceAgentTurnRecovery(
+      current.actorId,
+      current,
+      {
+        streamId: current.streamId,
+        ptid: current.actorId,
+        streamGeneration: current.streamGeneration,
+        conversationId: current.conversationId,
+        agentId: current.agentId,
+        event: 'connection_lost',
+        data: { turnId: current.turnId, seq: 31 },
+        timestampMs: 301,
+      },
+    );
+
+    expect(reduction).toEqual({
+      accepted: false,
+      terminal: false,
+      record: current,
+    });
+  });
+
   it('rejects an older recovery result for a newer active turn', () => {
     const current = activeTurn({
       turnId: 'turn-new',

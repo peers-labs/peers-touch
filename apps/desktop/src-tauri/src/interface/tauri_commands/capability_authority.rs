@@ -86,6 +86,18 @@ pub fn agent_capability_readiness(
 }
 
 #[tauri::command]
+pub fn agent_connector_manifest_list(
+    input: EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    match authenticated_token(&state, &window) {
+        Ok(token) => capability_authority::list_connector_manifests(input, &token),
+        Err(error) => error,
+    }
+}
+
+#[tauri::command]
 pub fn agent_knowledge_descriptor_create(
     input: EncodedRequestInput,
     state: State<'_, Arc<AppState>>,

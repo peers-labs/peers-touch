@@ -27,6 +27,7 @@ import (
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -149,7 +150,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	actorQueryRepo := infrastructure.NewActorQueryRepository(rds)
 	storageRepo := infrastructure.NewStorageRepository(rds)
 	nodesRepo := infrastructure.NewNodesRepository(rds)
-	ossRepo := infrastructure.NewOSSRepository(rds)
+	localStationPeerID := nativefed.LocalIdentitySnapshot().StationPeerID.String()
+	ossRepo := infrastructure.NewOSSRepository(rds, localStationPeerID)
 
 	s.auditRepo = auditRepo
 

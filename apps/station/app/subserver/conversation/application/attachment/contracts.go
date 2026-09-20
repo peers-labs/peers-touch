@@ -5,64 +5,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
-)
-
-const (
-	ChunkSize                       uint32 = 1024 * 1024
-	TagSize                         uint32 = 16
-	MaximumChunkCount               uint32 = 2048
-	MaximumPlaintextSize            uint64 = 2 * 1024 * 1024 * 1024
-	MaximumMessageObjects                  = 10
-	MaximumActiveUploadCount               = 4
-	MaximumConcurrentPartCount             = 4
-	MaximumUploadTTL                       = 24 * time.Hour
-	MaximumUnattachedObjectTTL             = 24 * time.Hour
-	MaximumVerificationLeaseTTL            = time.Hour
-	MaximumVerificationAttemptCount        = 3
-	MaximumCleanupLeaseTTL                 = 5 * time.Minute
-	MaximumCleanupBatchSize                = 100
-	MaximumCleanupAttemptCount             = 10
-	MinimumCleanupRetryDelay               = time.Second
-	MaximumCleanupRetryDelay               = 5 * time.Minute
-)
-
-type EncryptionSuite int32
-
-const (
-	EncryptionSuiteAES256GCMChunked EncryptionSuite = 1
-)
-
-type NonceStrategy int32
-
-const (
-	NonceStrategyCounter32BE NonceStrategy = 1
-)
-
-type TransferState int32
-
-const (
-	TransferStateQueued         TransferState = 1
-	TransferStateTransferring   TransferState = 2
-	TransferStateVerifying      TransferState = 3
-	TransferStateComplete       TransferState = 4
-	TransferStateRetryWait      TransferState = 5
-	TransferStateCancelled      TransferState = 6
-	TransferStateTerminal       TransferState = 7
-	TransferStateCleanupClaimed TransferState = 8
-	TransferStateCleanupFailed  TransferState = 9
-)
-
-type ObjectState string
-
-const (
-	ObjectStateCompleteUnattached ObjectState = "complete_unattached"
-	ObjectStateAttached           ObjectState = "attached"
-	ObjectStateCleanupClaimed     ObjectState = "cleanup_claimed"
-	ObjectStateGarbageCollected   ObjectState = "garbage_collected"
-	ObjectStateCleanupFailed      ObjectState = "cleanup_failed"
 )
 
 type UploadSpec struct {
@@ -71,9 +17,9 @@ type UploadSpec struct {
 	MediaType      string
 	ChunkSize      uint32
 	ChunkCount     uint32
-	Encryption     EncryptionSuite
+	Encryption     securecontent.EncryptionSuite
 	TagSize        uint32
-	NonceStrategy  NonceStrategy
+	NonceStrategy  securecontent.NonceStrategy
 	ChunkHashes    []valueobject.Hash
 }
 
@@ -87,7 +33,7 @@ type Upload struct {
 	Spec                       UploadSpec
 	DescriptorCommitment       valueobject.Hash
 	IdempotencyKey             string
-	State                      TransferState
+	State                      securecontent.TransferState
 	ReceivedChunkBitmap        []byte
 	ObjectID                   valueobject.ObjectID
 	StorageRef                 string
@@ -128,7 +74,7 @@ type Object struct {
 	Spec                  UploadSpec
 	DescriptorCommitment  valueobject.Hash
 	EventID               valueobject.EventID
-	State                 ObjectState
+	State                 securecontent.ObjectState
 	ExpiresAt             time.Time
 	CleanupLeaseOwner     string
 	CleanupLeaseExpiresAt time.Time

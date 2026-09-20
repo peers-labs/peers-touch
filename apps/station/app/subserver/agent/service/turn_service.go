@@ -107,6 +107,9 @@ type TurnConfig struct {
 	RequestedBudgetJSON       json.RawMessage
 	RuntimeBudget             *model.RuntimeBudget
 	RuntimeCapabilities       *model.RuntimeCapabilitySnapshot
+	PinnedRuntimeSnapshot     *model.RuntimeSnapshot
+	PinnedReadinessSnapshot   *model.CapabilityReadinessSnapshot
+	ExpectedAgentVersion      uint64
 	Attachments               []*model.AgentAttachmentRef
 	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
@@ -128,29 +131,34 @@ type TurnConfig struct {
 type TurnEventSink func(ctx context.Context, event TurnEvent)
 
 type TurnEvent struct {
-	Type             string          `json:"type"`
-	Seq              int64           `json:"seq,omitempty"`
-	TurnID           string          `json:"turnId,omitempty"`
-	AttemptID        string          `json:"attemptId,omitempty"`
-	ConversationID   string          `json:"conversationId,omitempty"`
-	AgentID          string          `json:"agentId,omitempty"`
-	Stage            string          `json:"stage,omitempty"`
-	Text             string          `json:"text,omitempty"`
-	ToolCallID       string          `json:"toolCallId,omitempty"`
-	ToolName         string          `json:"toolName,omitempty"`
-	Arguments        string          `json:"arguments,omitempty"`
-	ApprovalID       string          `json:"approvalId,omitempty"`
-	DecisionID       string          `json:"decisionId,omitempty"`
-	DecisionRevision uint64          `json:"decisionRevision,omitempty"`
-	ExpiresAt        string          `json:"expiresAt,omitempty"`
-	Approved         bool            `json:"approved,omitempty"`
-	PayloadHash      string          `json:"payloadHash,omitempty"`
-	Source           string          `json:"source,omitempty"`
-	ServerName       string          `json:"serverName,omitempty"`
-	Result           string          `json:"result,omitempty"`
-	Error            string          `json:"error,omitempty"`
-	OutcomeError     json.RawMessage `json:"outcome_error,omitempty"`
-	Iteration        int             `json:"iteration,omitempty"`
+	Type             string            `json:"type"`
+	Seq              int64             `json:"seq,omitempty"`
+	TurnID           string            `json:"turnId,omitempty"`
+	AttemptID        string            `json:"attemptId,omitempty"`
+	ConversationID   string            `json:"conversationId,omitempty"`
+	AgentID          string            `json:"agentId,omitempty"`
+	Stage            string            `json:"stage,omitempty"`
+	Text             string            `json:"text,omitempty"`
+	ToolCallID       string            `json:"toolCallId,omitempty"`
+	ToolName         string            `json:"toolName,omitempty"`
+	Arguments        string            `json:"arguments,omitempty"`
+	ApprovalID       string            `json:"approvalId,omitempty"`
+	DecisionID       string            `json:"decisionId,omitempty"`
+	DecisionRevision uint64            `json:"decisionRevision,omitempty"`
+	ExpiresAt        string            `json:"expiresAt,omitempty"`
+	Approved         bool              `json:"approved,omitempty"`
+	PayloadHash      string            `json:"payloadHash,omitempty"`
+	Source           string            `json:"source,omitempty"`
+	ServerName       string            `json:"serverName,omitempty"`
+	Result           string            `json:"result,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	ErrorType        string            `json:"error_type,omitempty"`
+	LocaleKey        string            `json:"locale_key,omitempty"`
+	Retryable        *bool             `json:"retryable,omitempty"`
+	Terminal         *bool             `json:"terminal,omitempty"`
+	Details          map[string]string `json:"details,omitempty"`
+	OutcomeError     json.RawMessage   `json:"outcome_error,omitempty"`
+	Iteration        int               `json:"iteration,omitempty"`
 }
 
 var errTurnEventPersistence = errors.New("turn event persistence failed")
@@ -251,9 +259,9 @@ func (l *executionLifecycle) stop(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 // TurnService orchestrates the full lifecycle of a single agent turn:
-// context reference preprocessing → prompt assembly → compression check →
-// credential lease → provider call → error recovery → tool dispatch →
-// nudge evaluation → persistence.
+// input validation → prompt assembly → compression check → credential lease →
+// provider call → error recovery → tool dispatch → nudge evaluation →
+// persistence.
 type TurnService struct {
 	errorClassifier      *ErrorClassifierService
 	memoryService        *MemoryService
@@ -310,6 +318,9 @@ func (s *TurnService) PreflightTurn(
 ) error {
 	if request == nil {
 		return nil
+	}
+	if err := validateNoRetiredInlineContextReference(request.GetUserInput()); err != nil {
+		return err
 	}
 	config, err := s.queuedTurnConfig(actorID, request, "")
 	if err != nil {
@@ -439,6 +450,109 @@ func (s *TurnService) RunExecutionWorker(worker func(context.Context)) bool {
 		worker(ctx)
 	}()
 	return true
+}
+
+// StartAdmittedTurn executes a Turn whose durable admission was committed by
+// another canonical command, such as the atomic Home first-turn command.
+func (s *TurnService) StartAdmittedTurn(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	admission *model.TurnAdmission,
+) bool {
+	if request == nil || admission == nil ||
+		admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+		return false
+	}
+	return s.RunExecutionWorker(func(ctx context.Context) {
+		s.executeAdmittedQueuedTurn(ctx, actorID, &AdmittedTurn{
+			Admission: admission,
+			Request:   request,
+		})
+	})
+}
+
+// StartEvaluationTurn executes an admitted Evaluation case through the same
+// Turn kernel while preserving the server-authored runtime and readiness
+// authority frozen by the Evaluation aggregate.
+func (s *TurnService) StartEvaluationTurn(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	admission *model.TurnAdmission,
+	runtimeSnapshot *model.RuntimeSnapshot,
+	readinessSnapshot *model.CapabilityReadinessSnapshot,
+	expectedAgentVersion uint64,
+) bool {
+	if request == nil || admission == nil || runtimeSnapshot == nil ||
+		readinessSnapshot == nil || expectedAgentVersion == 0 {
+		return false
+	}
+	if admission.GetStatus() !=
+		model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED &&
+		admission.GetStatus() !=
+			model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED {
+		return false
+	}
+	return s.RunExecutionWorker(func(ctx context.Context) {
+		config, err := s.queuedTurnConfig(
+			actorID,
+			request,
+			admission.GetTurnId(),
+		)
+		if err != nil {
+			if settleErr := s.FailAdmittedTurnStart(
+				context.WithoutCancel(ctx),
+				request.GetAgentId(),
+				admission.GetTurnId(),
+				"failed to decode evaluation runtime authority",
+				err,
+			); settleErr != nil {
+				logger.Errorf(
+					ctx,
+					"failed to settle evaluation Turn configuration error: turn_id=%s err=%v",
+					admission.GetTurnId(),
+					settleErr,
+				)
+			}
+			return
+		}
+		config.PinnedRuntimeSnapshot = proto.Clone(
+			runtimeSnapshot,
+		).(*model.RuntimeSnapshot)
+		config.PinnedReadinessSnapshot = proto.Clone(
+			readinessSnapshot,
+		).(*model.CapabilityReadinessSnapshot)
+		config.ExpectedAgentVersion = expectedAgentVersion
+		if _, err := s.ExecuteTurn(ctx, config, request.GetUserInput()); err != nil {
+			logger.Warnf(
+				ctx,
+				"evaluation Turn execution settled with error: turn_id=%s err=%v",
+				admission.GetTurnId(),
+				err,
+			)
+		}
+	})
+}
+
+// FailAdmittedTurnStart settles a committed admission when the Station
+// lifecycle cannot accept its worker. This prevents a rejected Home command
+// from leaving a durable Turn falsely marked as running.
+func (s *TurnService) FailAdmittedTurnStart(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	_, err := s.failTurnWithEvent(
+		ctx,
+		strings.TrimSpace(agentID),
+		strings.TrimSpace(turnID),
+		"",
+		"",
+		strings.TrimSpace(reason),
+		cause,
+	)
+	return err
 }
 
 // StopExecutionLifecycle closes lifecycle admission, cancels every registered
@@ -762,6 +876,92 @@ func (s *TurnService) cancelActiveTurn(turnID string) bool {
 	return true
 }
 
+// InterruptTurn terminally fences an actor-owned Turn without replaying its
+// provider or tool execution. It invalidates the in-process execution
+// generation before committing the durable interrupted state, so a late worker
+// cannot publish a business result after the fence.
+func (s *TurnService) InterruptTurn(
+	ctx context.Context,
+	ptid string,
+	turnID string,
+	reasonCode string,
+) error {
+	ptid = strings.TrimSpace(ptid)
+	turnID = strings.TrimSpace(turnID)
+	reasonCode = strings.TrimSpace(reasonCode)
+	if ptid == "" || turnID == "" || reasonCode == "" {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"ptid, turn_id and reason_code are required",
+			nil,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var owned struct {
+		Status string
+	}
+	if err := db.WithContext(ctx).
+		Table("agent_turns AS turn_record").
+		Select("turn_record.status").
+		Joins(
+			"JOIN agent_conversations AS conversation ON conversation.id = turn_record.conversation_id",
+		).
+		Where(
+			"turn_record.id = ? AND conversation.actor_ptid = ?",
+			turnID,
+			ptid,
+		).
+		Take(&owned).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(
+				errcode.AgentNotFound,
+				http.StatusNotFound,
+				"turn not found",
+				err,
+			)
+		}
+		return turnTerminalPersistenceError(
+			"verify interruption ownership",
+			err,
+		)
+	}
+	if isTerminalTurnDomainStatus(domain.TurnStatus(owned.Status)) {
+		return nil
+	}
+
+	s.fenceActiveTurnExecution(turnID)
+	_, err = s.interruptTurnWithOutcomeErrorForActor(
+		ctx,
+		"",
+		turnID,
+		"",
+		"",
+		"",
+		reasonCode,
+		errcode.NewLifecycleInterruptedPayload(turnID, reasonCode),
+		ptid,
+	)
+	return err
+}
+
+func (s *TurnService) fenceActiveTurnExecution(turnID string) bool {
+	s.activeTurns.Lock()
+	registration, exists := s.activeTurnCancel[turnID]
+	if exists {
+		delete(s.activeTurnCancel, turnID)
+	}
+	s.activeTurns.Unlock()
+	if !exists || registration.cancel == nil {
+		return false
+	}
+	registration.cancel(errTurnExecutionSuperseded)
+	return true
+}
+
 func (s *TurnService) RequestCancelTurn(ctx context.Context, ptid, turnID string) (string, error) {
 	result, err := s.cancelTurnWithResult(
 		ctx,
@@ -979,6 +1179,7 @@ func (s *TurnService) failTurnAfterError(
 		config.TaskID,
 		config.StepID,
 		reason,
+		cause,
 	)
 	if err != nil {
 		return errors.Join(cause, err)
@@ -1095,17 +1296,17 @@ func (s *TurnService) SettleAdmittedTurnAfterError(
 // ExecuteTurn runs the complete turn loop and returns the finished Turn domain
 // object. The loop follows these stages:
 //
+//	Admission — reject retired inline context references
 //	Step 1  — create turn record (status=running)
 //	Step 2  — persist user message
-//	Step 3  — preprocess context references (@file, @url, …)
+//	Step 3  — load conversation messages
 //	Step 4  — assemble system prompt
-//	Step 5  — load conversation messages
-//	Step 6  — check / run compression
-//	Step 7  — credential lease + provider call with error recovery loop
-//	Step 8  — tool call iteration loop (includes delegation)
-//	Step 9  — nudge state counters
-//	Step 10 — persist assistant message + complete turn
-//	Step 11 — save TurnTrace
+//	Step 5  — check / run compression
+//	Step 6  — credential lease + provider call with error recovery loop
+//	Step 7  — tool call iteration loop (includes delegation)
+//	Step 8  — nudge state counters
+//	Step 9  — persist assistant message + complete turn
+//	Step 10 — save TurnTrace
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
 	if config == nil {
 		return nil, errcode.New(
@@ -1114,6 +1315,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			"turn config is required",
 			nil,
 		)
+	}
+	if err := validateNoRetiredInlineContextReference(userInput); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(config.TurnID) == "" {
 		switch {
@@ -1170,21 +1374,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.ThinkingMode = thinkingMode
 
-	if s.admissionResolver == nil {
-		cause := errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"runtime admission authority is required",
-			nil,
-		)
-		return nil, settleAdmissionFailure("runtime admission authority is unavailable", cause)
-	}
-	runtimeSnapshot, admitErr := s.admissionResolver.Resolve(
-		ctx,
-		config.ActorID,
-		config.Provider,
-		config.Model,
-	)
+	runtimeSnapshot, admitErr := s.resolveTurnRuntimeSnapshot(ctx, config)
 	if admitErr != nil {
 		return nil, settleAdmissionFailure("runtime admission rejected", admitErr)
 	}
@@ -1215,6 +1405,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			maxDepth,
 			uint32(config.Depth),
 		)
+		if admittedTurnID != "" {
+			budgetErr = turnRuntimeBudgetExhausted(
+				admittedTurnID,
+				maxDelegationDepthExhaustedReason,
+				maxDepth,
+			)
+		}
 		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
 	}
 	if admittedTurnID == "" {
@@ -1227,6 +1424,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	} else if err := validateAdmittedInputBudget(
 		s.compression,
+		admittedTurnID,
 		config.RuntimeBudget,
 		userInput,
 	); err != nil {
@@ -1270,6 +1468,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
+		turnID,
 		config.RuntimeBudget,
 		turnRecord.StartedAt,
 	)
@@ -1293,20 +1492,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		TurnID:  turnID,
 	}
 
-	if s.capabilityReadiness == nil {
-		cause := errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"capability readiness authority is required",
-			nil,
-		)
-		return nil, settleRunningFailure("capability readiness authority is unavailable", cause)
-	}
-	readiness, agentVersion, readinessErr := s.capabilityReadiness.ResolveForTurn(
+	readiness, agentVersion, readinessErr := s.resolveTurnReadiness(
 		ctx,
-		config.ActorID,
-		config.AgentID,
-		config.ClientCapabilitySessionID,
+		config,
 		runtimeSnapshot,
 	)
 	if readinessErr != nil {
@@ -1320,6 +1508,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		agentVersion,
 	); persistErr != nil {
 		return nil, settleRunningFailure("failed to persist runtime authority", persistErr)
+	}
+	if incompatibilityErr := capabilityReadinessAdmissionError(readiness); incompatibilityErr != nil {
+		return nil, settleRunningFailure(
+			"runtime capability rejected before execution",
+			incompatibilityErr,
+		)
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -1515,10 +1709,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		int(toolDefinitionTokens)
 	if maxInputTokens := config.RuntimeBudget.GetMaxInputTokens(); maxInputTokens > 0 &&
 		uint64(estimatedTokens) > maxInputTokens {
-		budgetErr := runtimeBudgetExhaustedWithDetails(
+		budgetErr := turnRuntimeBudgetExhaustedWithLimit(
+			turnID,
 			maxInputTokensExhaustedReason,
 			fmt.Sprintf("%d", maxInputTokens),
-			fmt.Sprintf("%d", estimatedTokens),
 		)
 		return nil, settleRunningFailure(maxInputTokensExhaustedReason, budgetErr)
 	}
@@ -1654,6 +1848,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, settleRunningFailure("failed to persist turn usage", usageErr)
 	}
 	if err != nil {
+		err = s.persistToolProcessingFailureTrace(ctx, trace, err)
 		terminalReason := fmt.Sprintf("tool call processing failed: %v", err)
 		if reason, exhausted := runtimeBudgetExhaustionReason(err); exhausted {
 			terminalReason = reason
@@ -2386,6 +2581,7 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	}
 	if err := validateProviderRequestInputBudget(
 		s.compression,
+		config.TurnID,
 		config.RuntimeBudget,
 		request,
 	); err != nil {
@@ -2405,6 +2601,20 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	request.BeforeDispatch = func(dispatchCtx context.Context) error {
 		return s.reserveProviderAttempt(dispatchCtx, config)
 	}
+	if len(request.Tools) > 0 && config.Provider == "ark" {
+		agentic := config.RuntimeCapabilities.GetAgentic()
+		// #region debug-point C-D:foundation-f04-runtime-authority
+		reportFoundationF04DuplicateToolCallsDebug(
+			"C-D",
+			"runtime-tool-authority",
+			map[string]any{
+				"nativeTools":   agentic.GetNativeTools(),
+				"parallelTools": agentic.GetParallelTools(),
+				"toolCount":     len(request.Tools),
+			},
+		)
+		// #endregion
+	}
 	var response *ProviderCallResponse
 	var err error
 	if s.providerCall != nil {
@@ -2417,10 +2627,10 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	}
 	if response != nil &&
 		response.OutputTokens > int(config.RuntimeBudget.GetMaxOutputTokens()) {
-		return response, runtimeBudgetExhaustedWithDetails(
+		return response, turnRuntimeBudgetExhaustedWithLimit(
+			config.TurnID,
 			maxOutputTokensExhaustedReason,
 			fmt.Sprintf("%d", config.RuntimeBudget.GetMaxOutputTokens()),
-			fmt.Sprintf("%d", response.OutputTokens),
 		)
 	}
 	return response, nil
@@ -2486,10 +2696,10 @@ func (s *TurnService) reserveProviderAttempt(
 			err,
 		)
 	}
-	return runtimeBudgetExhausted(
+	return turnRuntimeBudgetExhausted(
+		config.TurnID,
 		maxAttemptsExhaustedReason,
 		maxAttempts,
-		turn.ProviderAttemptCount,
 	)
 }
 
@@ -2653,6 +2863,34 @@ func (s *TurnService) providerCallWithRetry(
 		logger.Warnf(ctx, "provider call failed: turn_id=%s attempt=%d reason=%s retryable=%v",
 			turnID, attempt, classified.Reason.String(), classified.Retryable)
 
+		switch classified.Reason {
+		case domain.FailoverReasonRateLimit:
+			return "", nil, providerCalls, false, errcode.NewProviderRateLimit(
+				config.Provider,
+				providerRetryAfterMilliseconds(callErr, time.Now().UTC()),
+			)
+		case domain.FailoverReasonModelNotFound:
+			return "", nil, providerCalls, false, errcode.NewProviderModelUnavailable(
+				config.Provider,
+				config.Model,
+			)
+		case domain.FailoverReasonTimeout:
+			deadline, ok := providerTimeoutDeadline(callErr)
+			if !ok {
+				return "", nil, providerCalls, false, errcode.New(
+					errcode.AgentProviderFailed,
+					http.StatusGatewayTimeout,
+					"provider timeout is missing its canonical deadline",
+					callErr,
+				)
+			}
+			return "", nil, providerCalls, false, errcode.NewProviderTimeout(
+				config.Provider,
+				config.Model,
+				deadline,
+			)
+		}
+
 		if attempt > 0 && s.growthMetrics != nil {
 			s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnRetried, CategoryTurn, turnID, fmt.Sprintf("attempt=%d reason=%s", attempt, classified.Reason.String()), "retry")
 		}
@@ -2742,6 +2980,32 @@ func (s *TurnService) providerCallWithRetry(
 		fmt.Sprintf("provider call exhausted %d retries", maxRetries), nil)
 }
 
+func providerRetryAfterMilliseconds(err error, now time.Time) int64 {
+	var providerErr *ProviderHTTPError
+	if !errors.As(err, &providerErr) {
+		return 0
+	}
+	raw := strings.TrimSpace(providerErr.RetryAfter)
+	if raw == "" {
+		return 0
+	}
+	if seconds, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return (time.Duration(seconds) * time.Second).Milliseconds()
+	}
+	retryAt, parseErr := http.ParseTime(raw)
+	if parseErr != nil {
+		return 0
+	}
+	delay := retryAt.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	return delay.Milliseconds()
+}
+
 func estimateToolDefinitionTokens(definitions []*domain.ToolDefinition) uint64 {
 	var bytes int
 	for _, definition := range definitions {
@@ -2822,6 +3086,7 @@ const (
 	toolContinuationPollInterval      = 250 * time.Millisecond
 	toolContinuationLeaseTTL          = 2 * time.Minute
 	preparedTakeoverReconcileInterval = 5 * time.Second
+	unregisteredProviderToolVersion   = "unregistered"
 )
 
 func validateTurnRuntimeCapabilities(
@@ -2896,6 +3161,7 @@ func validateInputBudgetBeforePersistence(
 
 func validateAdmittedInputBudget(
 	compression *CompressionService,
+	turnID string,
 	budget *model.RuntimeBudget,
 	userInput string,
 ) error {
@@ -2910,10 +3176,10 @@ func validateAdmittedInputBudget(
 	if actualTokens <= limitTokens {
 		return nil
 	}
-	return runtimeBudgetExhaustedWithDetails(
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		maxInputTokensExhaustedReason,
 		fmt.Sprintf("%d", limitTokens),
-		fmt.Sprintf("%d", actualTokens),
 	)
 }
 
@@ -2943,6 +3209,7 @@ func inputBudgetUsage(
 
 func validateProviderRequestInputBudget(
 	compression *CompressionService,
+	turnID string,
 	budget *model.RuntimeBudget,
 	request *ProviderCallRequest,
 ) error {
@@ -2982,14 +3249,14 @@ func validateProviderRequestInputBudget(
 	if uint64(actualTokens) <= budget.GetMaxInputTokens() {
 		return nil
 	}
-	return runtimeBudgetExhaustedWithDetails(
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		maxInputTokensExhaustedReason,
 		fmt.Sprintf("%d", budget.GetMaxInputTokens()),
-		fmt.Sprintf("%d", actualTokens),
 	)
 }
 
-func validateProviderToolCallsBeforePersistence(
+func (s *TurnService) validateProviderToolCallsBeforePersistence(
 	config *TurnConfig,
 	toolCalls []toolCallEntry,
 ) error {
@@ -3029,9 +3296,96 @@ func validateProviderToolCallsBeforePersistence(
 			)
 		}
 		if _, ok := config.AuthorizedCapabilities.Tool(toolCall.ToolName); !ok {
-			return capabilityStateError(
-				"tool is not authorized by the admitted capability set",
-				nil,
+			toolVersion := unregisteredProviderToolVersion
+			if s != nil && s.toolRegistry != nil {
+				if version, registered := s.toolRegistry.ManifestVersion(
+					toolCall.ToolName,
+				); registered {
+					toolVersion = version
+				}
+			}
+			return errcode.NewToolUnknown(
+				strings.TrimSpace(toolCall.ToolName),
+				toolVersion,
+			)
+		}
+	}
+	return nil
+}
+
+func (s *TurnService) persistToolProcessingFailureTrace(
+	ctx context.Context,
+	trace *domain.TurnTrace,
+	processingErr error,
+) error {
+	if traceErr := s.saveTurnTrace(context.WithoutCancel(ctx), trace); traceErr != nil {
+		return errors.Join(
+			processingErr,
+			fmt.Errorf("persist failed tool-processing trace: %w", traceErr),
+		)
+	}
+	return processingErr
+}
+
+func (s *TurnService) persistToolCallProjectionTx(
+	tx *gorm.DB,
+	config *TurnConfig,
+	turnID string,
+	response string,
+	toolCallsJSON json.RawMessage,
+	events []TurnEvent,
+) error {
+	if err := s.persistMessageRecordTx(
+		tx,
+		config.ConversationID,
+		turnID,
+		string(domain.MessageRoleAssistant),
+		response,
+		config.Model,
+		toolCallsJSON,
+		nil,
+		nil,
+		"",
+		"",
+		"",
+	); err != nil {
+		return fmt.Errorf("persist assistant tool-call message: %w", err)
+	}
+	if s.convService == nil {
+		return nil
+	}
+	for index := range events {
+		event := &events[index]
+		event.TurnID = turnID
+		event.ConversationID = config.ConversationID
+		event.AgentID = config.AgentID
+		event.AttemptID = config.AttemptID
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: encode turn_id=%s type=%s: %w",
+				errTurnEventPersistence,
+				turnID,
+				event.Type,
+				err,
+			)
+		}
+		event.Seq, err = s.convService.persistTurnEventTx(
+			tx,
+			config.ConversationID,
+			turnID,
+			config.AttemptID,
+			event.Type,
+			payload,
+			time.Now(),
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: turn_id=%s type=%s: %w",
+				errTurnEventPersistence,
+				turnID,
+				event.Type,
+				err,
 			)
 		}
 	}
@@ -3078,23 +3432,25 @@ func (s *TurnService) processToolCalls(
 		}
 		if maxSteps := budget.GetMaxAgentSteps(); maxSteps > 0 &&
 			uint32(iterations) >= maxSteps {
-			return iterations, false, runtimeBudgetExhausted(
+			return iterations, false, turnRuntimeBudgetExhausted(
+				turnID,
 				maxAgentStepsExhaustedReason,
 				maxSteps,
-				uint32(iterations),
 			)
 		}
-		if exhaustion := budgetState.admit(budget, toolCalls); exhaustion != nil {
+		if exhaustion := budgetState.admit(turnID, budget, toolCalls); exhaustion != nil {
 			return iterations, false, exhaustion
 		}
-		if err := validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
+		if err := s.validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
 			return iterations, false, err
 		}
 
-		iterations++
-		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
-
-		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
+		nextIteration := iterations + 1
+		toolBatchID := stableToolBatchID(
+			turnID,
+			config.AttemptID,
+			nextIteration,
+		)
 		for index := range toolCalls {
 			toolCalls[index].ProviderCallID = stableToolCallID(
 				toolBatchID,
@@ -3106,46 +3462,19 @@ func (s *TurnService) processToolCalls(
 		if err != nil {
 			return iterations, false, fmt.Errorf("encode assistant ToolCalls: %w", err)
 		}
-		if err := s.persistMessageRecord(
-			ctx,
-			config.ConversationID,
-			turnID,
-			string(domain.MessageRoleAssistant),
-			*responsePtr,
-			config.Model,
-			toolCallsJSON,
-			nil,
-			nil,
-			"",
-			"",
-			"",
-		); err != nil {
-			return iterations, false, fmt.Errorf("persist assistant tool-call message: %w", err)
-		}
-		messages = append(messages, domain.Message{
-			MessageID:      generateID("msg"),
-			ConversationID: config.ConversationID,
-			TurnID:         turnID,
-			Role:           domain.MessageRoleAssistant,
-			Content:        *responsePtr,
-			ToolCallsJSON:  toolCallsJSON,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		})
 
 		proposals := make([]AuthorizedToolProposal, 0, len(toolCalls))
+		toolEvents := make([]TurnEvent, 0, len(toolCalls))
 
 		for index, tc := range toolCalls {
 			callID := stableToolCallID(toolBatchID, index, tc)
-			if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			toolEvents = append(toolEvents, TurnEvent{
 				Type:       "tool_call",
 				ToolCallID: callID,
 				ToolName:   tc.ToolName,
 				Arguments:  tc.Arguments,
-				Iteration:  iterations,
-			}); err != nil {
-				return iterations, false, err
-			}
+				Iteration:  nextIteration,
+			})
 
 			authorized, ok := config.AuthorizedCapabilities.Tool(tc.ToolName)
 			if !ok {
@@ -3169,7 +3498,7 @@ func (s *TurnService) processToolCalls(
 		if s.toolDispatch == nil {
 			return iterations, false, fmt.Errorf("tool dispatch not configured")
 		}
-		decisions, err := s.toolDispatch.ProposeAuthorizedBatch(ctx, ToolBatchProposal{
+		proposal := ToolBatchProposal{
 			ActorID:                   config.ActorID,
 			TurnID:                    turnID,
 			AttemptID:                 config.AttemptID,
@@ -3181,7 +3510,7 @@ func (s *TurnService) processToolCalls(
 			Effort:                    config.Effort,
 			ThinkingMode:              string(config.ThinkingMode),
 			SystemPrompt:              systemPrompt,
-			Iteration:                 uint32(iterations),
+			Iteration:                 uint32(nextIteration),
 			MaxRetries:                uint32(config.MaxRetries),
 			ContextWindowSize:         uint32(config.ContextWindowSize),
 			DelegationDepth:           uint32(config.Depth),
@@ -3192,9 +3521,55 @@ func (s *TurnService) processToolCalls(
 			ReadinessSnapshotID:       config.AuthorizedCapabilities.SnapshotID,
 			Deadline:                  time.Now().UTC().Add(localToolTimeout),
 			Calls:                     proposals,
-		})
+		}
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ctx, turnID)
 		if err != nil {
 			return iterations, false, err
+		}
+		decisions, projected, err :=
+			s.toolDispatch.proposeAuthorizedBatchWithProjection(
+				ctx,
+				proposal,
+				func(tx *gorm.DB) error {
+					return s.persistToolCallProjectionTx(
+						tx,
+						config,
+						turnID,
+						*responsePtr,
+						toolCallsJSON,
+						toolEvents,
+					)
+				},
+			)
+		unlockOwnership()
+		if err != nil {
+			return iterations, false, err
+		}
+		iterations = nextIteration
+		logger.Infof(
+			ctx,
+			"tool iteration %d: turn_id=%s tool_count=%d",
+			iterations,
+			turnID,
+			len(toolCalls),
+		)
+		if projected {
+			messages = append(messages, domain.Message{
+				MessageID:      generateID("msg"),
+				ConversationID: config.ConversationID,
+				TurnID:         turnID,
+				Role:           domain.MessageRoleAssistant,
+				Content:        *responsePtr,
+				ToolCallsJSON:  toolCallsJSON,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			})
+			if s.convService != nil {
+				s.convService.notifyTurnEvent(config.ConversationID, turnID)
+			}
+			for _, event := range toolEvents {
+				emitLiveTurnEvent(ctx, config, turnID, event)
+			}
 		}
 		for _, decision := range decisions {
 			if err := s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations)); err != nil {
@@ -3252,6 +3627,7 @@ func (s *TurnService) loadToolLoopBudgetState(
 }
 
 func (s *toolLoopBudgetState) admit(
+	turnID string,
 	budget *model.RuntimeBudget,
 	calls []toolCallEntry,
 ) error {
@@ -3260,10 +3636,10 @@ func (s *toolLoopBudgetState) admit(
 	}
 	callCount := uint32(len(calls))
 	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total+callCount > limit {
-		return runtimeBudgetExhausted(
+		return turnRuntimeBudgetExhausted(
+			turnID,
 			maxToolCallsExhaustedReason,
 			limit,
-			s.total,
 		)
 	}
 	nextIdentical := make(map[string]uint32, len(s.identical)+len(calls))
@@ -3274,10 +3650,10 @@ func (s *toolLoopBudgetState) admit(
 		key := toolCallBudgetKey(calls[i].ToolName, hashBytes([]byte(calls[i].Arguments)))
 		nextIdentical[key]++
 		if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 && nextIdentical[key] > limit {
-			return runtimeBudgetExhausted(
+			return turnRuntimeBudgetExhausted(
+				turnID,
 				maxIdenticalToolCallsExhaustedReason,
 				limit,
-				nextIdentical[key]-1,
 			)
 		}
 	}
@@ -3287,21 +3663,26 @@ func (s *toolLoopBudgetState) admit(
 }
 
 func (s *toolLoopBudgetState) exhaustionBeforeContinuation(
+	turnID string,
 	budget *model.RuntimeBudget,
 ) error {
 	if s == nil || budget == nil {
 		return nil
 	}
 	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total >= limit {
-		return runtimeBudgetExhausted(maxToolCallsExhaustedReason, limit, s.total)
+		return turnRuntimeBudgetExhausted(
+			turnID,
+			maxToolCallsExhaustedReason,
+			limit,
+		)
 	}
 	if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 {
 		for _, count := range s.identical {
 			if count >= limit {
-				return runtimeBudgetExhausted(
+				return turnRuntimeBudgetExhausted(
+					turnID,
 					maxIdenticalToolCallsExhaustedReason,
 					limit,
-					count,
 				)
 			}
 		}
@@ -3341,10 +3722,69 @@ func runtimeBudgetExhaustedWithDetails(reason string, limit string, consumed str
 	}
 }
 
-func wallTimeBudgetExhausted(limitMillis uint64) error {
-	return runtimeBudgetExhaustedWithDetails(
+func turnRuntimeBudgetExhausted(
+	turnID string,
+	reason string,
+	limit uint32,
+) error {
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
+		reason,
+		fmt.Sprintf("%d", limit),
+	)
+}
+
+func turnRuntimeBudgetExhaustedWithLimit(
+	turnID string,
+	reason string,
+	limit string,
+) error {
+	return &errcode.BizError{
+		Code:       errcode.AgentToolBudgetExhausted,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    reason,
+		Payload: &model.ErrorPayload{
+			Error:     errcode.AgentToolBudgetExhaustedLocaleKey,
+			ErrorType: string(errcode.AgentToolBudgetExhausted),
+			LocaleKey: errcode.AgentToolBudgetExhaustedLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"turn_id":     strings.TrimSpace(turnID),
+				"budget_kind": runtimeBudgetKind(reason),
+				"limit":       limit,
+			},
+		},
+	}
+}
+
+func runtimeBudgetKind(reason string) string {
+	switch reason {
+	case maxAttemptsExhaustedReason:
+		return "attempts"
+	case maxToolCallsExhaustedReason:
+		return "tool_calls"
+	case maxIdenticalToolCallsExhaustedReason:
+		return "identical_tool_calls"
+	case maxAgentStepsExhaustedReason:
+		return "agent_steps"
+	case maxDelegationDepthExhaustedReason:
+		return "delegation_depth"
+	case maxInputTokensExhaustedReason:
+		return "input_tokens"
+	case maxOutputTokensExhaustedReason:
+		return "output_tokens"
+	case wallTimeExhaustedReason:
+		return "wall_time"
+	default:
+		return "unknown"
+	}
+}
+
+func wallTimeBudgetExhausted(turnID string, limitMillis uint64) error {
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		wallTimeExhaustedReason,
-		fmt.Sprintf("%d", limitMillis),
 		fmt.Sprintf("%d", limitMillis),
 	)
 }
@@ -3494,6 +3934,7 @@ func lowerPositiveLimit64(policy uint64, requested uint64) uint64 {
 
 func withRuntimeBudgetDeadline(
 	ctx context.Context,
+	turnID string,
 	budget *model.RuntimeBudget,
 	startedAt time.Time,
 ) (context.Context, context.CancelFunc) {
@@ -3511,7 +3952,7 @@ func withRuntimeBudgetDeadline(
 	return context.WithDeadlineCause(
 		ctx,
 		startedAt.Add(time.Duration(wallTime)*time.Millisecond),
-		wallTimeBudgetExhausted(wallTime),
+		wallTimeBudgetExhausted(turnID, wallTime),
 	)
 }
 
@@ -3671,6 +4112,7 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		}
 		toolCtx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 			ctx,
+			config.TurnID,
 			config.RuntimeBudget,
 			attemptStartedAt,
 		)
@@ -3881,10 +4323,10 @@ func validateStationToolBudgetBeforeExecution(
 	nextDepth := uint32(config.Depth + 1)
 	maxDepth := config.RuntimeBudget.GetMaxDelegationDepth()
 	if maxDepth > 0 && nextDepth > maxDepth {
-		return runtimeBudgetExhausted(
+		return turnRuntimeBudgetExhausted(
+			config.TurnID,
 			maxDelegationDepthExhaustedReason,
 			maxDepth,
-			nextDepth,
 		)
 	}
 	return nil
@@ -3896,6 +4338,7 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		return err
 	}
 	var rows []struct {
+		BatchID        string
 		TurnID         string
 		AgentID        string
 		ConversationID string
@@ -3904,7 +4347,7 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 	}
 	if err := db.WithContext(ctx).
 		Table("agent_tool_batches AS batch").
-		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
+		Select("batch.id AS batch_id, batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
 		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
 		Joins("JOIN agent_turn_attempts AS attempt ON attempt.id = batch.attempt_id AND attempt.turn_id = batch.turn_id").
 		Where(
@@ -3917,19 +4360,81 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		return fmt.Errorf("load blocked tool batches: %w", err)
 	}
 	for _, row := range rows {
-		if err := s.interruptTurn(
+		reasonCode := "tool_batch_blocked"
+		outcomeError, err := blockedToolBatchOutcomeError(
+			db.WithContext(ctx),
+			row.BatchID,
+		)
+		if err != nil {
+			return err
+		}
+		if outcomeError != nil {
+			reasonCode = outcomeError.GetErrorType()
+		}
+		if _, err := s.interruptTurnWithOutcomeError(
 			ctx,
 			row.AgentID,
 			row.TurnID,
 			row.ConversationID,
 			row.TaskID,
 			row.StepID,
-			"tool_batch_blocked",
+			reasonCode,
+			outcomeError,
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func blockedToolBatchOutcomeError(
+	db *gorm.DB,
+	batchID string,
+) (*model.ErrorPayload, error) {
+	var result persistence.ToolResult
+	if err := db.
+		Where(
+			"tool_batch_id = ? AND status = ? AND error_code = ?",
+			batchID,
+			persistence.ToolReceiptStatusFailed,
+			string(errcode.AgentClientInvalidResourceReference),
+		).
+		Order("created_at ASC").
+		First(&result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load blocked ToolBatch outcome: %w", err)
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal(result.BoundedResult, &details); err != nil ||
+		len(details) != 2 {
+		return nil, nil
+	}
+	resourceKind := strings.TrimSpace(details["resource_kind"])
+	resourceRefHash := details["resource_ref_hash"]
+	decodedHash, err := hex.DecodeString(resourceRefHash)
+	if !validClientResourceKind(resourceKind) ||
+		len(resourceRefHash) != sha256.Size*2 ||
+		resourceRefHash != strings.ToLower(resourceRefHash) ||
+		err != nil ||
+		len(decodedHash) != sha256.Size {
+		return nil, nil
+	}
+	return errcode.NewClientInvalidResourceReferencePayload(
+		resourceKind,
+		resourceRefHash,
+	), nil
+}
+
+func validClientResourceKind(resourceKind string) bool {
+	switch resourceKind {
+	case "file", "folder", "image", "workspace":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) error {
@@ -3997,6 +4502,55 @@ func (s *TurnService) interruptTurnWithEvent(
 	stepID string,
 	reasonCode string,
 ) (TurnEvent, error) {
+	return s.interruptTurnWithOutcomeError(
+		ctx,
+		agentID,
+		turnID,
+		conversationID,
+		taskID,
+		stepID,
+		reasonCode,
+		errcode.NewLifecycleInterruptedPayload(turnID, reasonCode),
+	)
+}
+
+func (s *TurnService) interruptTurnWithOutcomeError(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+	outcomeError *model.ErrorPayload,
+) (TurnEvent, error) {
+	return s.interruptTurnWithOutcomeErrorForActor(
+		ctx,
+		agentID,
+		turnID,
+		conversationID,
+		taskID,
+		stepID,
+		reasonCode,
+		outcomeError,
+		"",
+	)
+}
+
+func (s *TurnService) interruptTurnWithOutcomeErrorForActor(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+	outcomeError *model.ErrorPayload,
+	expectedPTID string,
+) (TurnEvent, error) {
+	if outcomeError == nil {
+		outcomeError = errcode.NewLifecycleInterruptedPayload(turnID, reasonCode)
+	}
 	ownershipCtx := ctx
 	ctx = context.WithoutCancel(ctx)
 	db, err := s.getDB(ctx)
@@ -4019,6 +4573,20 @@ func (s *TurnService) interruptTurnWithEvent(
 				First(&turn).Error; err != nil {
 				return err
 			}
+			var conversation persistence.Conversation
+			if err := tx.Select("actor_ptid").
+				Where("id = ?", turn.ConversationID).
+				First(&conversation).Error; err != nil {
+				return err
+			}
+			if expectedPTID != "" && conversation.ActorPTID != expectedPTID {
+				return errcode.New(
+					errcode.AgentNotFound,
+					http.StatusNotFound,
+					"turn not found",
+					nil,
+				)
+			}
 			if turn.Status == string(domain.TurnStatusInterrupted) {
 				return nil
 			}
@@ -4030,7 +4598,28 @@ func (s *TurnService) interruptTurnWithEvent(
 			if err != nil {
 				return err
 			}
+			outcomeErrorJSON, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(outcomeError)
+			if err != nil {
+				return err
+			}
 			conversationID = turn.ConversationID
+			if agentID == "" {
+				agentID = turn.AgentID
+			}
+			if err := fenceTurnToolExecutionTx(
+				tx,
+				conversation.ActorPTID,
+				turnID,
+				reasonCode,
+				reasonCode+"_after_prepare",
+				invalidatePreparedRecovery,
+				now,
+			); err != nil {
+				return err
+			}
 			if err := tx.Model(&turn).
 				Updates(map[string]interface{}{
 					"status":          string(domain.TurnStatusInterrupted),
@@ -4050,9 +4639,15 @@ func (s *TurnService) interruptTurnWithEvent(
 				return err
 			}
 			if err := tx.Model(&persistence.AgentMessage{}).
-				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
+				Where(
+					"turn_id = ? AND role = ? AND status IN ?",
+					turnID,
+					string(domain.MessageRoleAssistant),
+					[]string{"pending", "completed"},
+				).
 				Updates(map[string]interface{}{
 					"status":     string(domain.TurnStatusInterrupted),
+					"error_json": outcomeErrorJSON,
 					"updated_at": now,
 				}).Error; err != nil {
 				return err
@@ -4085,6 +4680,7 @@ func (s *TurnService) interruptTurnWithEvent(
 				AgentID:        agentID,
 				Stage:          reasonCode,
 				Error:          reasonCode,
+				OutcomeError:   outcomeErrorJSON,
 			}
 			payload, err := json.Marshal(event)
 			if err != nil {
@@ -4140,6 +4736,118 @@ func (s *TurnService) interruptTurnWithEvent(
 	return committedEvent, nil
 }
 
+type preparedRecoveryPolicy uint8
+
+const (
+	invalidatePreparedRecovery preparedRecoveryPolicy = iota
+	preservePreparedRecovery
+)
+
+func fenceTurnToolExecutionTx(
+	tx *gorm.DB,
+	actorPTID string,
+	turnID string,
+	cancelledErrorCode string,
+	sideEffectErrorCode string,
+	recoveryPolicy preparedRecoveryPolicy,
+	now time.Time,
+) error {
+	var calls []persistence.ToolCall
+	if err := tx.Select("id", "tool_call_id", "status").
+		Where("turn_id = ? AND actor_id = ?", turnID, actorPTID).
+		Find(&calls).Error; err != nil {
+		return err
+	}
+	callIDs := make([]string, 0, len(calls))
+	toolCallIDs := make([]string, 0, len(calls))
+	invalidateRecoveryToolCallIDs := make([]string, 0, len(calls))
+	for index := range calls {
+		callIDs = append(callIDs, calls[index].ID)
+		toolCallIDs = append(toolCallIDs, calls[index].ToolCallID)
+		if recoveryPolicy != preservePreparedRecovery ||
+			calls[index].Status != persistence.ToolCallStatusPrepared {
+			invalidateRecoveryToolCallIDs = append(
+				invalidateRecoveryToolCallIDs,
+				calls[index].ToolCallID,
+			)
+		}
+	}
+	if len(callIDs) > 0 {
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where("id IN ? AND status IN ?", callIDs, []string{
+				persistence.ToolCallStatusProposed,
+				persistence.ToolCallStatusWaitingApproval,
+				persistence.ToolCallStatusApproved,
+			}).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusCancelled,
+				"error_code": cancelledErrorCode,
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where(
+				"id IN ? AND status IN ?",
+				callIDs,
+				[]string{
+					persistence.ToolCallStatusDispatchCommitted,
+					persistence.ToolCallStatusPrepared,
+				},
+			).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusUnknownSideEffect,
+				"error_code": sideEffectErrorCode,
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ToolDispatchOutbox{}).
+			Where(
+				"actor_id = ? AND tool_call_id IN ? AND acknowledged_at IS NULL",
+				actorPTID,
+				toolCallIDs,
+			).
+			Update("acknowledged_at", now).Error; err != nil {
+			return err
+		}
+	}
+	if len(invalidateRecoveryToolCallIDs) > 0 {
+		if err := tx.Model(&persistence.ReceiptRecoveryCredential{}).
+			Where(
+				"actor_id = ? AND tool_call_id IN ? AND invalidated_at IS NULL",
+				actorPTID,
+				invalidateRecoveryToolCallIDs,
+			).
+			Update("invalidated_at", now).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&persistence.ToolContinuation{}).
+		Where("turn_id = ? AND status IN ?", turnID, []string{
+			persistence.ToolContinuationStatusReady,
+			persistence.ToolContinuationStatusClaimed,
+			persistence.ToolContinuationStatusReconciliationRequired,
+		}).
+		Updates(map[string]interface{}{
+			"status":           persistence.ToolContinuationStatusCompleted,
+			"lease_expires_at": now,
+			"completed_at":     now,
+			"updated_at":       now,
+		}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&persistence.ToolBatch{}).
+		Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
+		Updates(map[string]interface{}{
+			"status":     persistence.ToolBatchStatusBlocked,
+			"settled_at": now,
+			"updated_at": now,
+		}).Error
+}
+
 func (s *TurnService) ResumeReadyToolContinuation(
 	ctx context.Context,
 	leaseDuration time.Duration,
@@ -4184,6 +4892,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
+		config.TurnID,
 		config.RuntimeBudget,
 		attemptStartedAt,
 	)
@@ -4209,13 +4918,14 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		); completeErr != nil {
 			settlementErrors = append(settlementErrors, completeErr)
 		}
-		if settleErr := s.failTurn(
+		if _, settleErr := s.failTurnWithEvent(
 			settlementCtx,
 			batch.AgentID,
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
 			reason,
+			deadlineErr,
 		); settleErr != nil {
 			settlementErrors = append(settlementErrors, settleErr)
 		}
@@ -4263,7 +4973,10 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
-	if exhaustion := budgetState.exhaustionBeforeContinuation(config.RuntimeBudget); exhaustion != nil {
+	if exhaustion := budgetState.exhaustionBeforeContinuation(
+		config.TurnID,
+		config.RuntimeBudget,
+	); exhaustion != nil {
 		reason, _ := runtimeBudgetExhaustionReason(exhaustion)
 		_ = s.saveTurnTrace(ctx, trace)
 		_ = s.toolDispatch.CompleteContinuation(
@@ -4273,7 +4986,15 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			continuation.FencingToken,
 			nil,
 		)
-		if settleErr := s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, reason); settleErr != nil {
+		if _, settleErr := s.failTurnWithEvent(
+			ctx,
+			batch.AgentID,
+			batch.TurnID,
+			batch.TaskID,
+			batch.StepID,
+			reason,
+			exhaustion,
+		); settleErr != nil {
 			return true, errors.Join(exhaustion, settleErr)
 		}
 		return true, exhaustion
@@ -5256,6 +5977,54 @@ func (s *TurnService) persistMessageRecord(
 		return err
 	}
 
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.persistMessageRecordTx(
+			tx,
+			conversationID,
+			turnID,
+			role,
+			content,
+			modelName,
+			toolCallsJSON,
+			metadataJSON,
+			attachmentsJSON,
+			branchID,
+			parentMessageID,
+			replacesMessageID,
+		)
+	}); err != nil {
+		logger.Errorf(
+			ctx,
+			"failed to persist message: conversation_id=%s role=%s err=%v",
+			conversationID,
+			role,
+			err,
+		)
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to persist message",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *TurnService) persistMessageRecordTx(
+	tx *gorm.DB,
+	conversationID string,
+	turnID string,
+	role string,
+	content string,
+	modelName string,
+	toolCallsJSON json.RawMessage,
+	metadataJSON json.RawMessage,
+	attachmentsJSON json.RawMessage,
+	branchID string,
+	parentMessageID string,
+	replacesMessageID string,
+) error {
 	now := time.Now()
 	msg := &persistence.AgentMessage{
 		ID:             generateID("msg"),
@@ -5286,40 +6055,31 @@ func (s *TurnService) persistMessageRecord(
 		msg.ReplacesMessageID = &replacesMessageID
 	}
 
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var conversation persistence.Conversation
-		if err := tx.First(&conversation, "id = ?", conversationID).Error; err != nil {
-			return err
-		}
-		var maxSeq struct{ MaxSeq int64 }
-		if err := tx.Model(&persistence.AgentMessage{}).
-			Where("conversation_id = ?", conversationID).
-			Select("COALESCE(MAX(seq), 0) as max_seq").
-			Scan(&maxSeq).Error; err != nil {
-			return err
-		}
-		msg.Seq = maxSeq.MaxSeq + 1
-		effectiveParentID := strings.TrimSpace(parentMessageID)
-		if effectiveParentID == "" {
-			effectiveParentID = conversation.ActiveBranchMessageID
-		}
-		msg.ParentMessageID = optionalString(effectiveParentID)
-		if err := tx.Create(msg).Error; err != nil {
-			return err
-		}
-		return tx.Model(&conversation).Updates(map[string]interface{}{
-			"active_branch_message_id": msg.ID,
-			"updated_at":               now,
-			"version":                  gorm.Expr("version + 1"),
-		}).Error
-	}); err != nil {
-		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s seq=%d err=%v",
-			conversationID, role, msg.Seq, err)
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to persist message", err)
+	var conversation persistence.Conversation
+	if err := tx.First(&conversation, "id = ?", conversationID).Error; err != nil {
+		return err
 	}
-
-	return nil
+	var maxSeq struct{ MaxSeq int64 }
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("conversation_id = ?", conversationID).
+		Select("COALESCE(MAX(seq), 0) as max_seq").
+		Scan(&maxSeq).Error; err != nil {
+		return err
+	}
+	msg.Seq = maxSeq.MaxSeq + 1
+	effectiveParentID := strings.TrimSpace(parentMessageID)
+	if effectiveParentID == "" {
+		effectiveParentID = conversation.ActiveBranchMessageID
+	}
+	msg.ParentMessageID = optionalString(effectiveParentID)
+	if err := tx.Create(msg).Error; err != nil {
+		return err
+	}
+	return tx.Model(&conversation).Updates(map[string]interface{}{
+		"active_branch_message_id": msg.ID,
+		"updated_at":               now,
+		"version":                  gorm.Expr("version + 1"),
+	}).Error
 }
 
 func (s *TurnService) completeAssistantMessage(
@@ -6091,8 +6851,41 @@ func (s *TurnService) completeAssistantMessageTx(
 // ---------------------------------------------------------------------------
 
 func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, stepID, reason string) error {
-	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason)
+	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason, nil)
 	return err
+}
+
+func applyTypedTurnError(event *TurnEvent, cause error) {
+	if event == nil || cause == nil {
+		return
+	}
+	var biz *errcode.BizError
+	if !errors.As(cause, &biz) || biz.Payload == nil {
+		return
+	}
+	retryable := biz.Payload.GetRetryable()
+	terminal := biz.Payload.GetTerminal()
+	details := make(map[string]string, len(biz.Payload.GetDetails()))
+	for key, value := range biz.Payload.GetDetails() {
+		details[key] = value
+	}
+	event.Error = biz.Payload.GetError()
+	event.ErrorType = biz.Payload.GetErrorType()
+	event.LocaleKey = biz.Payload.GetLocaleKey()
+	event.Retryable = &retryable
+	event.Terminal = &terminal
+	event.Details = details
+}
+
+func typedTurnErrorJSON(cause error) (json.RawMessage, error) {
+	var biz *errcode.BizError
+	if !errors.As(cause, &biz) || biz.Payload == nil {
+		return nil, nil
+	}
+	return protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(biz.Payload)
 }
 
 func (s *TurnService) failTurnWithEvent(
@@ -6102,6 +6895,7 @@ func (s *TurnService) failTurnWithEvent(
 	taskID string,
 	stepID string,
 	reason string,
+	cause error,
 ) (TurnEvent, error) {
 	ownershipCtx := ctx
 	ctx = context.WithoutCancel(ctx)
@@ -6112,6 +6906,13 @@ func (s *TurnService) failTurnWithEvent(
 
 	now := time.Now()
 	boundedReason := truncateRunes(reason, 100)
+	errorJSON, err := typedTurnErrorJSON(cause)
+	if err != nil {
+		return TurnEvent{}, turnTerminalPersistenceError(
+			"marshal typed turn failure",
+			err,
+		)
+	}
 	conversationID := ""
 	var committedEvent TurnEvent
 	transactionErr := func() error {
@@ -6158,13 +6959,68 @@ func (s *TurnService) failTurnWithEvent(
 				}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&persistence.AgentMessage{}).
+			messageUpdates := map[string]interface{}{
+				"status":     string(domain.TurnStatusFailed),
+				"updated_at": now,
+			}
+			if len(errorJSON) > 0 {
+				messageUpdates["error_json"] = errorJSON
+			}
+			messageResult := tx.Model(&persistence.AgentMessage{}).
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
-				Updates(map[string]interface{}{
-					"status":     string(domain.TurnStatusFailed),
-					"updated_at": now,
-				}).Error; err != nil {
-				return err
+				Updates(messageUpdates)
+			if messageResult.Error != nil {
+				return messageResult.Error
+			}
+			if messageResult.RowsAffected == 0 && len(errorJSON) > 0 {
+				// Pre-message admission failures must not create an orphan
+				// assistant message, while later failures still append their
+				// terminal outcome to an existing message lineage.
+				var admittedUserMessageCount int64
+				if err := tx.Model(&persistence.AgentMessage{}).
+					Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
+					Count(&admittedUserMessageCount).Error; err != nil {
+					return err
+				}
+				if admittedUserMessageCount > 0 {
+					var conversation persistence.Conversation
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("id = ?", turn.ConversationID).
+						First(&conversation).Error; err != nil {
+						return err
+					}
+					var maxSeq struct{ MaxSeq int64 }
+					if err := tx.Model(&persistence.AgentMessage{}).
+						Where("conversation_id = ?", turn.ConversationID).
+						Select("COALESCE(MAX(seq), 0) AS max_seq").
+						Scan(&maxSeq).Error; err != nil {
+						return err
+					}
+					content := ""
+					messageID := generateID("msg")
+					if err := tx.Create(&persistence.AgentMessage{
+						ID:              messageID,
+						ConversationID:  turn.ConversationID,
+						TurnID:          &turnID,
+						Role:            string(domain.MessageRoleAssistant),
+						Status:          string(domain.TurnStatusFailed),
+						Content:         &content,
+						ErrorJSON:       errorJSON,
+						Seq:             maxSeq.MaxSeq + 1,
+						ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+						CreatedAt:       now,
+						UpdatedAt:       now,
+					}).Error; err != nil {
+						return err
+					}
+					if err := tx.Model(&conversation).Updates(map[string]interface{}{
+						"active_branch_message_id": messageID,
+						"updated_at":               now,
+						"version":                  gorm.Expr("version + 1"),
+					}).Error; err != nil {
+						return err
+					}
+				}
 			}
 			var boundStep persistence.ExecutionStep
 			if strings.TrimSpace(stepID) == "" {
@@ -6205,6 +7061,7 @@ func (s *TurnService) failTurnWithEvent(
 				Stage:          boundedReason,
 				Error:          reason,
 			}
+			applyTypedTurnError(&event, cause)
 			payload, err := json.Marshal(event)
 			if err != nil {
 				return err
@@ -6343,18 +7200,19 @@ func (s *TurnService) cancelTurnWithResult(
 				}
 				return err
 			}
-			if expectedPtid != "" {
-				var ownerCount int64
-				if err := tx.Model(&persistence.Conversation{}).
-					Where("id = ? AND actor_ptid = ?", turn.ConversationID, expectedPtid).
-					Count(&ownerCount).Error; err != nil {
-					return err
-				}
-				if ownerCount != 1 {
-					return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", nil)
-				}
+			var conversation persistence.Conversation
+			if err := tx.Select("actor_ptid").
+				Where("id = ?", turn.ConversationID).
+				First(&conversation).Error; err != nil {
+				return err
+			}
+			if expectedPtid != "" && conversation.ActorPTID != expectedPtid {
+				return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", nil)
 			}
 			result.Status = turn.Status
+			if isTerminalTurnDomainStatus(domain.TurnStatus(turn.Status)) {
+				return errcode.NewLifecycleTerminalMutation(turn.ID, turn.Status)
+			}
 			if turn.Status != string(domain.TurnStatusRunning) &&
 				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
 				return nil
@@ -6435,47 +7293,16 @@ func (s *TurnService) cancelTurnWithResult(
 					return err
 				}
 			}
-			var batchIDs []string
-			if err := tx.Model(&persistence.ToolBatch{}).
-				Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
-				Pluck("id", &batchIDs).Error; err != nil {
+			if err := fenceTurnToolExecutionTx(
+				tx,
+				conversation.ActorPTID,
+				turnID,
+				"turn_cancelled",
+				"turn_cancelled_after_dispatch",
+				preservePreparedRecovery,
+				now,
+			); err != nil {
 				return err
-			}
-			if len(batchIDs) > 0 {
-				if err := tx.Model(&persistence.ToolCall{}).
-					Where("tool_batch_id IN ? AND status IN ?", batchIDs, []string{
-						persistence.ToolCallStatusProposed,
-						persistence.ToolCallStatusWaitingApproval,
-						persistence.ToolCallStatusApproved,
-						persistence.ToolCallStatusDispatchCommitted,
-					}).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolCallStatusCancelled,
-						"error_code": "turn_cancelled",
-						"ended_at":   now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ToolCall{}).
-					Where("tool_batch_id IN ? AND status = ?", batchIDs, persistence.ToolCallStatusPrepared).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolCallStatusUnknownSideEffect,
-						"error_code": "turn_cancelled_after_prepare",
-						"ended_at":   now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ToolBatch{}).
-					Where("id IN ? AND status = ?", batchIDs, persistence.ToolBatchStatusOpen).
-					Updates(map[string]interface{}{
-						"status":     persistence.ToolBatchStatusBlocked,
-						"settled_at": now,
-						"updated_at": now,
-					}).Error; err != nil {
-					return err
-				}
 			}
 
 			event := TurnEvent{

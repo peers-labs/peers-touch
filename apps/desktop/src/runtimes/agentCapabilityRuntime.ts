@@ -242,6 +242,8 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     clearProjectionInvalidation();
     clearAuthorityStreams();
     useAgentCapabilityStore.getState().reset();
+    useAgentConnectorStore.getState().reset();
+    useMCPStore.getState().reset();
     void closeBrowserCapabilitySession().catch((error) => {
       log.warn('agentCapabilityRuntime', 'browser capability session close failed', {
         error: String(error),

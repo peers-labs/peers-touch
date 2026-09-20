@@ -8,8 +8,10 @@
  */
 
 import type { ReactNode } from 'react';
+import { Button, toast } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
+import { Tooltip, theme, Typography } from 'antd';
+import { Copy } from 'lucide-react';
 
 const { Text } = Typography;
 
@@ -25,6 +27,15 @@ export interface PublicProfileModel {
   createdAt?: string;
   region?: string;
   identityMetadata?: string[];
+  technicalDetails?: {
+    id: string;
+    label: string;
+    value: string;
+    copyLabel: string;
+    copiedLabel: string;
+    copyFailedLabel: string;
+  }[];
+  technicalDetailsLabel?: string;
   tags?: string[];
   links?: { label?: string; url?: string }[];
   relationLabel?: string;
@@ -64,6 +75,38 @@ function toneToBg(tone: string | undefined, token: ReturnType<typeof theme.useTo
     case 'warning': return token.colorWarningBg;
     case 'processing': return token.colorInfoBg;
     default: return token.colorFillTertiary;
+  }
+}
+
+async function copyText(
+  value: string,
+  copiedLabel: string,
+  copyFailedLabel: string,
+): Promise<void> {
+  const copy = async () => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      if (!document.execCommand('copy')) {
+        throw new Error('clipboard copy command failed');
+      }
+    } finally {
+      textarea.remove();
+    }
+  };
+  try {
+    await copy();
+    toast.success(copiedLabel);
+  } catch {
+    toast.error(copyFailedLabel);
   }
 }
 
@@ -153,9 +196,86 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
         </Flexbox>
       ) : null}
 
+      {profile.technicalDetails && profile.technicalDetails.length > 0 ? (
+        <details
+          data-chat-profile-technical-details
+          style={{
+            width: 320,
+            maxWidth: '100%',
+            color: token.colorTextSecondary,
+          }}
+        >
+          <summary
+            style={{
+              cursor: 'pointer',
+              fontSize: 12,
+              textAlign: 'center',
+              userSelect: 'none',
+            }}
+          >
+            {profile.technicalDetailsLabel}
+          </summary>
+          <Flexbox gap={6} style={{ paddingTop: 8 }}>
+            {profile.technicalDetails.map((detail) => (
+              <Flexbox
+                key={detail.id}
+                data-chat-profile-technical-detail={detail.id}
+                horizontal
+                align="center"
+                gap={8}
+                style={{
+                  minWidth: 0,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  background: token.colorFillQuaternary,
+                }}
+              >
+                <Text
+                  type="secondary"
+                  style={{
+                    flexShrink: 0,
+                    fontSize: 11,
+                  }}
+                >
+                  {detail.label}
+                </Text>
+                <Text
+                  ellipsis={{ tooltip: detail.value }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  }}
+                >
+                  {detail.value}
+                </Text>
+                <Tooltip title={detail.copyLabel}>
+                  <Button
+                    data-chat-profile-copy={detail.id}
+                    type="text"
+                    size="small"
+                    icon={<Copy size={13} />}
+                    aria-label={detail.copyLabel}
+                    onClick={() => {
+                      void copyText(
+                        detail.value,
+                        detail.copiedLabel,
+                        detail.copyFailedLabel,
+                      );
+                    }}
+                  />
+                </Tooltip>
+              </Flexbox>
+            ))}
+          </Flexbox>
+        </details>
+      ) : null}
+
       {/* Relation label / online indicator */}
       {profile.relationLabel && (
         <Text
+          data-chat-profile-relation={profile.relationLabel}
           style={{
             fontSize: 12,
             color: toneToColor(profile.relationTone, token),

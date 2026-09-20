@@ -74,6 +74,19 @@ export function useChatState() {
     );
   }, []);
 
+  const setConversationBackgroundImage = useCallback((id: string, file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setConversations((prev) =>
+      prev.map((conversation) => {
+        if (conversation.id !== id) return conversation;
+        if (conversation.backgroundImage?.startsWith('blob:')) {
+          URL.revokeObjectURL(conversation.backgroundImage);
+        }
+        return { ...conversation, backgroundImage: previewUrl };
+      }),
+    );
+  }, []);
+
   const sendMessage = useCallback((id: string, content: string) => {
     const text = content.trim();
     if (!text) return;
@@ -243,6 +256,7 @@ export function useChatState() {
     deleteConversation,
     clearConversationHistory,
     restoreConversationHistory,
+    setConversationBackgroundImage,
     sendMessage,
     renameGroup,
     removeGroupMember,

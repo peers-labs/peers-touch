@@ -1,237 +1,210 @@
-// Evaluation system store — manages datasets and benchmark runs for agent quality testing.
-// Part of P3-M4 "Evaluation System".
-
 import { createDesktopStore } from './createDesktopStore';
-import { log } from '../utils/logger';
 import { api } from '../services/desktop_api';
+import { log } from '../utils/logger';
+import { toStoreError } from './revalidation';
+import { createEvaluationCommands } from './evaluation/commands';
+import {
+  isActiveEvaluationRun,
+  loadEvaluationProjection,
+  upsertById,
+} from './evaluation/projection';
+import {
+  initialEvaluationState,
+  type EvaluationState,
+} from './evaluation/types';
 
-// ── Domain types ──
+let projectionEpoch = 0;
+let projectionLoadSequence = 0;
+let eventLoadSequence = 0;
 
-export interface EvalDatasetItem {
-  id: string;
-  input: string;
-  expectedOutput: string;
-  tags: string[];
+function currentScope(
+  actorPtid: string,
+  epoch: number,
+  sequence: number,
+): boolean {
+  const state = useEvaluationStore.getState();
+  return (
+    state.actorPtid === actorPtid
+    && projectionEpoch === epoch
+    && projectionLoadSequence === sequence
+  );
 }
 
-export interface EvalDataset {
-  id: string;
-  name: string;
-  description: string;
-  items: EvalDatasetItem[];
-  createdAt: number;
+function currentMutation(actorPtid: string, epoch: number): boolean {
+  return (
+    useEvaluationStore.getState().actorPtid === actorPtid
+    && projectionEpoch === epoch
+  );
 }
 
-export interface EvalRunResult {
-  itemId: string;
-  actualOutput: string;
-  passed: boolean;
-  latencyMs: number;
-}
+export const useEvaluationStore = createDesktopStore<EvaluationState>(
+  'evaluation',
+  (set, get) => ({
+    ...initialEvaluationState(),
 
-export interface EvalRun {
-  id: string;
-  datasetId: string;
-  agentId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  results: EvalRunResult[];
-  startedAt: number;
-  completedAt?: number;
-  metrics: { accuracy: number; avgLatency: number };
-}
+    setActorScope: (actorPtid) => {
+      if (get().actorPtid === actorPtid) return;
+      projectionEpoch += 1;
+      projectionLoadSequence += 1;
+      eventLoadSequence += 1;
+      set({ ...initialEvaluationState(), actorPtid });
+    },
 
-// ── Persistence helpers ──
-
-const STORAGE_KEY = 'peers-eval-datasets';
-
-function loadDatasetsFromStorage(): EvalDataset[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as EvalDataset[];
-  } catch {
-    log.warn('evaluation', 'failed to parse stored datasets');
-    return [];
-  }
-}
-
-function saveDatasetsToStorage(datasets: EvalDataset[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(datasets));
-  } catch {
-    log.warn('evaluation', 'failed to persist datasets');
-  }
-}
-
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ── Store interface ──
-
-interface EvaluationState {
-  datasets: EvalDataset[];
-  runs: EvalRun[];
-  activeRunId: string | null;
-
-  // Dataset CRUD
-  loadDatasets: () => void;
-  createDataset: (name: string, description: string) => EvalDataset;
-  updateDataset: (id: string, updates: Partial<Pick<EvalDataset, 'name' | 'description'>>) => void;
-  deleteDataset: (id: string) => void;
-  addItem: (datasetId: string, item: Omit<EvalDatasetItem, 'id'>) => void;
-  removeItem: (datasetId: string, itemId: string) => void;
-  updateItem: (datasetId: string, itemId: string, updates: Partial<Omit<EvalDatasetItem, 'id'>>) => void;
-
-  // Run management
-  startRun: (datasetId: string, agentId: string) => Promise<void>;
-  cancelRun: (runId: string) => void;
-}
-
-export const useEvaluationStore = createDesktopStore<EvaluationState>('evaluation', (set, get) => ({
-  datasets: [],
-  runs: [],
-  activeRunId: null,
-
-  loadDatasets: () => {
-    const datasets = loadDatasetsFromStorage();
-    set({ datasets });
-  },
-
-  createDataset: (name, description) => {
-    const dataset: EvalDataset = {
-      id: generateId(),
-      name,
-      description,
-      items: [],
-      createdAt: Date.now(),
-    };
-    const datasets = [...get().datasets, dataset];
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-    return dataset;
-  },
-
-  updateDataset: (id, updates) => {
-    const datasets = get().datasets.map((d) => (d.id === id ? { ...d, ...updates } : d));
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-  },
-
-  deleteDataset: (id) => {
-    const datasets = get().datasets.filter((d) => d.id !== id);
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-  },
-
-  addItem: (datasetId, item) => {
-    const newItem: EvalDatasetItem = { ...item, id: generateId() };
-    const datasets = get().datasets.map((d) =>
-      d.id === datasetId ? { ...d, items: [...d.items, newItem] } : d,
-    );
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-  },
-
-  removeItem: (datasetId, itemId) => {
-    const datasets = get().datasets.map((d) =>
-      d.id === datasetId ? { ...d, items: d.items.filter((i) => i.id !== itemId) } : d,
-    );
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-  },
-
-  updateItem: (datasetId, itemId, updates) => {
-    const datasets = get().datasets.map((d) =>
-      d.id === datasetId
-        ? { ...d, items: d.items.map((i) => (i.id === itemId ? { ...i, ...updates } : i)) }
-        : d,
-    );
-    set({ datasets });
-    saveDatasetsToStorage(datasets);
-  },
-
-  startRun: async (datasetId, agentId) => {
-    const dataset = get().datasets.find((d) => d.id === datasetId);
-    if (!dataset || dataset.items.length === 0) {
-      log.warn('evaluation', 'cannot start run: dataset empty or not found', { datasetId });
-      return;
-    }
-
-    const run: EvalRun = {
-      id: generateId(),
-      datasetId,
-      agentId,
-      status: 'running',
-      results: [],
-      startedAt: Date.now(),
-      metrics: { accuracy: 0, avgLatency: 0 },
-    };
-
-    set({ runs: [...get().runs, run], activeRunId: run.id });
-
-    const results: EvalRunResult[] = [];
-
-    for (const item of dataset.items) {
-      // Check if run was cancelled
-      const currentRun = get().runs.find((r) => r.id === run.id);
-      if (!currentRun || currentRun.status === 'failed') break;
-
-      const start = performance.now();
+    loadProjection: async (actorPtid, reason) => {
+      if (get().actorPtid !== actorPtid) get().setActorScope(actorPtid);
+      const epoch = projectionEpoch;
+      const sequence = ++projectionLoadSequence;
+      const hasProjection = (
+        get().benchmarks.length > 0
+        || get().datasets.length > 0
+        || get().runs.length > 0
+      );
+      set({
+        projectionPhase:
+          reason === 'bootstrap' || reason === 'restart'
+            ? 'restoring'
+            : hasProjection
+              ? 'ready'
+              : 'loading',
+        error: null,
+      });
       try {
-        const actualOutput = await api.quickCompletion(agentId, item.input);
-        const latencyMs = Math.round(performance.now() - start);
-        const passed = actualOutput.trim().toLowerCase().includes(item.expectedOutput.trim().toLowerCase());
+        const projection = await loadEvaluationProjection();
+        if (!currentScope(actorPtid, epoch, sequence)) return;
+        set({
+          ...projection,
+          projectionPhase: 'ready',
+          error: null,
+        });
+      } catch (error) {
+        if (!currentScope(actorPtid, epoch, sequence)) return;
+        const message = toStoreError(error);
+        set({ projectionPhase: 'error', error: message });
+        log.warn('evaluation', 'Station projection load failed', {
+          actorPtid,
+          reason,
+          error: message,
+        });
+        throw error;
+      }
+    },
 
-        results.push({ itemId: item.id, actualOutput, passed, latencyMs });
-      } catch (err) {
-        const latencyMs = Math.round(performance.now() - start);
-        results.push({
-          itemId: item.id,
-          actualOutput: err instanceof Error ? err.message : 'unknown error',
-          passed: false,
-          latencyMs,
+    consumeRunEvents: async () => {
+      const actorPtid = get().actorPtid;
+      if (!actorPtid) return;
+      const epoch = projectionEpoch;
+      const sequence = ++eventLoadSequence;
+      const runs = get().runs.filter(isActiveEvaluationRun);
+      if (runs.length === 0) return;
+      try {
+        const eventResponses = await Promise.all(
+          runs.map(async (run) => ({
+            run,
+            response: await api.listEvaluationRunEvents(
+              run.runId,
+              get().eventSequenceByRunId[run.runId] ?? 0n,
+            ),
+          })),
+        );
+        if (
+          projectionEpoch !== epoch
+          || eventLoadSequence !== sequence
+          || get().actorPtid !== actorPtid
+        ) return;
+        const changedRunIds = eventResponses
+          .filter(({ run, response }) =>
+            response.latestSequence > (get().eventSequenceByRunId[run.runId] ?? 0n),
+          )
+          .map(({ run }) => run.runId);
+        const details = await Promise.all(
+          changedRunIds.map((runId) => api.getEvaluationRun(runId)),
+        );
+        if (
+          projectionEpoch !== epoch
+          || eventLoadSequence !== sequence
+          || get().actorPtid !== actorPtid
+        ) return;
+        set((state) => {
+          const eventSequenceByRunId = { ...state.eventSequenceByRunId };
+          for (const { run, response } of eventResponses) {
+            eventSequenceByRunId[run.runId] = response.latestSequence;
+          }
+          let nextRuns = state.runs;
+          const runDetailsById = { ...state.runDetailsById };
+          for (const detail of details) {
+            if (!detail.run) continue;
+            nextRuns = upsertById(nextRuns, detail.run, (run) => run.runId);
+            runDetailsById[detail.run.runId] = {
+              run: detail.run,
+              attempts: detail.attempts,
+              results: detail.results,
+              cases: detail.cases,
+            };
+          }
+          return { eventSequenceByRunId, runDetailsById, runs: nextRuns };
+        });
+      } catch (error) {
+        if (projectionEpoch !== epoch || get().actorPtid !== actorPtid) return;
+        log.warn('evaluation', 'Station event reconciliation failed', {
+          error: toStoreError(error),
         });
       }
+    },
 
-      // Update run results incrementally
-      const passedCount = results.filter((r) => r.passed).length;
-      const totalLatency = results.reduce((sum, r) => sum + r.latencyMs, 0);
-      const updatedRun: EvalRun = {
-        ...run,
-        results: [...results],
-        metrics: {
-          accuracy: results.length > 0 ? passedCount / results.length : 0,
-          avgLatency: results.length > 0 ? Math.round(totalLatency / results.length) : 0,
-        },
-      };
-      set({ runs: get().runs.map((r) => (r.id === run.id ? updatedRun : r)) });
-    }
+    refreshRun: async (runId) => {
+      const actorPtid = get().actorPtid;
+      if (!actorPtid) return;
+      const epoch = projectionEpoch;
+      const detail = await api.getEvaluationRun(runId);
+      if (!detail.run || !currentMutation(actorPtid, epoch)) return;
+      set((state) => {
+        const currentRevision = (
+          state.runs.find((run) => run.runId === runId)?.revision ?? 0n
+        );
+        if (currentRevision > detail.run!.revision) return state;
+        return {
+          runs: upsertById(state.runs, detail.run!, (run) => run.runId),
+          runDetailsById: {
+            ...state.runDetailsById,
+            [runId]: {
+              run: detail.run!,
+              attempts: detail.attempts,
+              results: detail.results,
+              cases: detail.cases,
+            },
+          },
+        };
+      });
+    },
 
-    // Mark completed
-    const passedCount = results.filter((r) => r.passed).length;
-    const totalLatency = results.reduce((sum, r) => sum + r.latencyMs, 0);
-    const completedRun: EvalRun = {
-      ...run,
-      status: 'completed',
-      results,
-      completedAt: Date.now(),
-      metrics: {
-        accuracy: results.length > 0 ? passedCount / results.length : 0,
-        avgLatency: results.length > 0 ? Math.round(totalLatency / results.length) : 0,
+    clearError: () => set({ error: null }),
+
+    reset: () => {
+      projectionEpoch += 1;
+      projectionLoadSequence += 1;
+      eventLoadSequence += 1;
+      set(initialEvaluationState());
+    },
+
+    ...createEvaluationCommands({
+      set,
+      get,
+      epoch: () => projectionEpoch,
+      isCurrent: currentMutation,
+      fenceProjectionLoads: () => {
+        projectionLoadSequence += 1;
+        eventLoadSequence += 1;
       },
-    };
-    set({
-      runs: get().runs.map((r) => (r.id === run.id ? completedRun : r)),
-      activeRunId: null,
-    });
-    log.info('evaluation', 'run completed', { runId: run.id, accuracy: completedRun.metrics.accuracy });
-  },
+    }),
+  }),
+);
 
-  cancelRun: (runId) => {
-    const runs = get().runs.map((r) =>
-      r.id === runId && r.status === 'running' ? { ...r, status: 'failed' as const, completedAt: Date.now() } : r,
-    );
-    set({ runs, activeRunId: get().activeRunId === runId ? null : get().activeRunId });
-  },
-}));
+export { evaluationRevisionMutationKey } from './evaluation/commands';
+export { evaluationRunStatusName } from './evaluation/projection';
+export type {
+  CreateEvaluationRunIntent,
+  EvaluationProjectionPhase,
+  EvaluationRunDetail,
+  EvaluationState,
+  EvaluationTestCaseValues,
+} from './evaluation/types';

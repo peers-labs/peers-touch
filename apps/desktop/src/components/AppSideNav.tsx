@@ -8,6 +8,7 @@ import {
   Settings,
   Search,
   FileText,
+  FlaskConical,
   Blocks,
   Keyboard,
   NotebookTabs,
@@ -324,6 +325,15 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 active={page === 'agent' || page === 'agent-profile' || page === 'agent-orchestration'}
                 onClick={navigateAgentChat}
                 title={t('layout.nav.agent')}
+              />
+            </PrimaryNavAnchor>
+            <PrimaryNavAnchor pageId="evaluation">
+              <ActionIcon
+                icon={FlaskConical}
+                size="large"
+                active={page === 'evaluation'}
+                onClick={() => navigatePrimary('evaluation')}
+                title={t('agent.eval.title', { ns: 'agent' })}
               />
             </PrimaryNavAnchor>
             <PrimaryNavAnchor pageId="notes">

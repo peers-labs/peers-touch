@@ -47,6 +47,19 @@ pub(crate) fn actor_search_item_to_json(actor: &model::actor::Actor) -> serde_js
     })
 }
 
+pub(crate) fn actor_profile_to_json(profile: &model::actor::ActorProfile) -> serde_json::Value {
+    json!({
+        "actorPtid": profile
+            .r#ref
+            .as_ref()
+            .map(|actor_ref| actor_ref.ptid.as_str())
+            .unwrap_or_default(),
+        "displayName": profile.display_name,
+        "username": profile.username,
+        "avatar": profile.avatar,
+    })
+}
+
 #[tauri::command]
 pub fn actor_search_users(
     input: ActorSearchUsersInput,
@@ -101,15 +114,7 @@ pub fn actor_get_me(state: State<'_, Arc<AppState>>, window: Window) -> AppResul
         }
     };
 
-    to_stub(
-        "actor_get_me",
-        json!({
-            "actorPtid": resp.r#ref.as_ref().map(|actor_ref| actor_ref.ptid.as_str()).unwrap_or_default(),
-            "displayName": resp.display_name,
-            "username": resp.username,
-            "avatar": resp.avatar,
-        }),
-    )
+    to_stub("actor_get_me", actor_profile_to_json(&resp))
 }
 
 /// Alias for `actor_search_users` - registered as `actor_search_actors` in the invoke handler.
@@ -146,6 +151,28 @@ mod tests {
         };
 
         let value = actor_search_item_to_json(&actor);
+
+        assert_eq!(
+            value.get("actorPtid").and_then(serde_json::Value::as_str),
+            Some("ptid:v1:actor:peers:p:alice:fingerprint")
+        );
+        assert!(value.get("id").is_none());
+    }
+
+    #[test]
+    fn actor_profile_json_uses_embedded_actor_ref_ptid() {
+        let profile = model::actor::ActorProfile {
+            r#ref: Some(model::actor::ActorRef {
+                ptid: "ptid:v1:actor:peers:p:alice:fingerprint".to_string(),
+                ..Default::default()
+            }),
+            display_name: "Alice".to_string(),
+            username: "alice".to_string(),
+            avatar: "avatar".to_string(),
+            ..Default::default()
+        };
+
+        let value = actor_profile_to_json(&profile);
 
         assert_eq!(
             value.get("actorPtid").and_then(serde_json::Value::as_str),

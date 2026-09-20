@@ -169,6 +169,7 @@ func (d *Directory) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -191,7 +192,8 @@ func (d *Directory) ResolveVerifiedActorDeviceSigningKey(
 	if err != nil {
 		return nil, err
 	}
-	if len(device.PublicKey) != ed25519.PublicKeySize {
+	if device.HomeStationPeerID != expectedHomeStationPeerID ||
+		len(device.PublicKey) != ed25519.PublicKeySize {
 		return nil, nil
 	}
 	result := &actormodel.VerifiedActorDeviceSigningKey{

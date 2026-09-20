@@ -20,6 +20,7 @@
 package federation
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -41,13 +42,18 @@ type LocalIdentity struct {
 	StationDomain string
 }
 
-var localIdentity atomic.Value // stores LocalIdentity
+var (
+	localIdentity       atomic.Value // stores LocalIdentity
+	localIdentityUpdate sync.Mutex
+)
 
 // SetLocalStationPeerID is called exactly once by the bootstrap subserver
 // after libp2p.New() returns its host. Repeated calls overwrite, but in
 // production the second call should never happen — the bootstrap host is
 // long-lived and there is one per process.
 func SetLocalStationPeerID(id peer.ID) {
+	localIdentityUpdate.Lock()
+	defer localIdentityUpdate.Unlock()
 	cur := loadIdentity()
 	cur.StationPeerID = id
 	localIdentity.Store(cur)
@@ -57,6 +63,8 @@ func SetLocalStationPeerID(id peer.ID) {
 // peers.yml is materialised. The value is the parsed Host of
 // peers.node.server.baseurl.
 func SetLocalStationDomain(domain string) {
+	localIdentityUpdate.Lock()
+	defer localIdentityUpdate.Unlock()
 	cur := loadIdentity()
 	cur.StationDomain = domain
 	localIdentity.Store(cur)

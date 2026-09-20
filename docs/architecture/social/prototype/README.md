@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-07-02 | **Updated**: 2026-07-08
+> **Created**: 2026-07-02 | **Updated**: 2026-09-17
 > **Owner**: Chat / Social
 > **Module**: `packages/prototypes/desktop/features/social-chat/`
 
@@ -63,6 +63,7 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 - 群聊样本：当前用户为群主、管理员、普通成员三种权限态。
 - 消息样本：文本、系统消息、图片、文件、失败发送状态。
 - 操作样本：发送 mock 消息、打开详情、成员管理、角色调整、禁言、转让群主、清空历史、退出/解散确认。
+- Direct 设置样本：本地背景选择立即预览、消息搜索与输入框内清除、24 小时内清空/恢复历史。
 - 通话样本：语音/视频呼出、来电、接通、弱网重连、结束、失败提示。
 
 ## 已知差异 / 待补
@@ -77,6 +78,10 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 - Create Group 原型现在使用可见联系人选择，并覆盖“失败后保留选择 + inline error
   + Retry”的恢复态；第二次提交进入 mock 成功态。该 mock 只证明交互形态，
   不构成真实 MLS 或 Native Acceptance 证据。
-- 文件/图片只展示交互卡片，不做真实上传、预览或下载。
-- 搜索入口、背景选择入口只表达 action surface 的位置和层级，未实现完整搜索结果页。
+- 文件/图片只展示交互卡片，不做真实上传或下载；背景选择使用本地对象 URL
+  表达即时预览，生产实现仍必须完成异步上传、持久化和失败回滚。
+- 消息搜索覆盖当前会话的结果和输入框内清除交互；真实结果必须来自 Desktop
+  本地持久化投影。
+- 在线、离线与状态不可用是三个独立状态；生产实现必须由 Presence owner 的
+  snapshot/event 驱动，原型不模拟网络权威。
 - Owner 确认前不得把本原型当作真实 Desktop 落地依据。

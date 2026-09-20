@@ -21,6 +21,7 @@ const (
 	KindReactionCommitted     Kind = "reaction_committed"
 	KindMessagePinCommitted   Kind = "message_pin_committed"
 	KindMembershipCommitted   Kind = "membership_transition_committed"
+	KindMemberAuthority       Kind = "member_authority_committed"
 	KindConversationSettings  Kind = "conversation_settings_changed"
 	KindConversationDissolved Kind = "conversation_dissolved"
 )
@@ -32,7 +33,27 @@ type Fact struct {
 	MembershipChanges []entity.MembershipChange
 	Created           *ConversationCreated
 	PostState         *ConversationState
+	MemberAuthority   *MemberAuthorityMutation
 	SettingsPatch     valueobject.SettingsPatch
+}
+
+type MemberAuthorityAction string
+
+const (
+	MemberAuthorityActionUpdateMember      MemberAuthorityAction = "update_member"
+	MemberAuthorityActionTransferOwnership MemberAuthorityAction = "transfer_ownership"
+)
+
+type MemberAuthorityMutation struct {
+	Action              MemberAuthorityAction
+	Target              valueobject.PTID
+	Role                *valueobject.MemberRole
+	Muted               *bool
+	MutedUntil          *time.Time
+	PreviousOwner       valueobject.PTID
+	Owner               valueobject.PTID
+	FromMembershipEpoch valueobject.Epoch
+	ToMembershipEpoch   valueobject.Epoch
 }
 
 type ConversationCreated struct {
@@ -71,6 +92,17 @@ func NewMembershipTransitionFact(
 		Kind:              KindMembershipCommitted,
 		Payload:           cloneBytes(payload),
 		MembershipChanges: append([]entity.MembershipChange(nil), changes...),
+	}
+}
+
+func NewMemberAuthorityFact(
+	mutation MemberAuthorityMutation,
+	payload []byte,
+) Fact {
+	return Fact{
+		Kind:            KindMemberAuthority,
+		Payload:         cloneBytes(payload),
+		MemberAuthority: cloneMemberAuthorityMutation(&mutation),
 	}
 }
 
@@ -330,6 +362,7 @@ func (r Record) CanonicalBytes() []byte {
 		r.Fact.Payload,
 		conversationCreatedBytes(r.Fact.Created),
 		conversationStateBytes(r.Fact.PostState),
+		memberAuthorityBytes(r.Fact.MemberAuthority),
 		settingsBytes(r.Fact.SettingsPatch),
 	}
 	for _, change := range r.Fact.MembershipChanges {
@@ -345,6 +378,48 @@ func (r Record) CanonicalBytes() []byte {
 		fields = append(fields, commitment[:])
 	}
 	return valueobject.CanonicalTuple(fields...)
+}
+
+func memberAuthorityBytes(mutation *MemberAuthorityMutation) []byte {
+	if mutation == nil {
+		return nil
+	}
+	fields := [][]byte{
+		[]byte(mutation.Action),
+		[]byte(mutation.Target),
+		optionalMemberRoleBytes(mutation.Role),
+		optionalBoolBytes(mutation.Muted),
+		optionalTimeBytes(mutation.MutedUntil),
+		[]byte(mutation.PreviousOwner),
+		[]byte(mutation.Owner),
+		uint64Bytes(uint64(mutation.FromMembershipEpoch)),
+		uint64Bytes(uint64(mutation.ToMembershipEpoch)),
+	}
+	return valueobject.CanonicalTuple(fields...)
+}
+
+func optionalMemberRoleBytes(value *valueobject.MemberRole) []byte {
+	if value == nil {
+		return []byte{0}
+	}
+	return append([]byte{1}, []byte(*value)...)
+}
+
+func optionalBoolBytes(value *bool) []byte {
+	if value == nil {
+		return []byte{0}
+	}
+	if *value {
+		return []byte{1, 1}
+	}
+	return []byte{1, 0}
+}
+
+func optionalTimeBytes(value *time.Time) []byte {
+	if value == nil {
+		return []byte{0}
+	}
+	return append([]byte{1}, int64Bytes(value.UTC().UnixNano())...)
 }
 
 func (r Record) Clone() Record {
@@ -388,8 +463,31 @@ func cloneFact(fact Fact) Fact {
 	fact.MembershipChanges = append([]entity.MembershipChange(nil), fact.MembershipChanges...)
 	fact.Created = cloneCreated(fact.Created)
 	fact.PostState = cloneConversationState(fact.PostState)
+	fact.MemberAuthority = cloneMemberAuthorityMutation(fact.MemberAuthority)
 	fact.SettingsPatch = cloneSettingsPatch(fact.SettingsPatch)
 	return fact
+}
+
+func cloneMemberAuthorityMutation(
+	mutation *MemberAuthorityMutation,
+) *MemberAuthorityMutation {
+	if mutation == nil {
+		return nil
+	}
+	copy := *mutation
+	if mutation.Role != nil {
+		role := *mutation.Role
+		copy.Role = &role
+	}
+	if mutation.Muted != nil {
+		muted := *mutation.Muted
+		copy.Muted = &muted
+	}
+	if mutation.MutedUntil != nil {
+		mutedUntil := mutation.MutedUntil.UTC()
+		copy.MutedUntil = &mutedUntil
+	}
+	return &copy
 }
 
 func cloneCreated(created *ConversationCreated) *ConversationCreated {
@@ -543,6 +641,8 @@ func conversationStateBytes(state *ConversationState) []byte {
 			[]byte(member.Status),
 			[]byte(member.HomeStation),
 			uint64Bytes(uint64(member.JoinedAt)),
+			optionalBoolBytes(&member.Muted),
+			optionalTimeBytes(member.MutedUntil),
 		)
 	}
 	for _, endpoint := range valueobject.SortEndpoints(state.ActiveEndpoints) {

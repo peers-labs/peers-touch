@@ -457,6 +457,7 @@ func TestActorCapabilitiesReturnRevokedLocalKeyForHistoricalVerification(t *test
 		context.Background(),
 		capabilityTestTransaction{db: database},
 		testActorPTID,
+		capabilityTestLocalStation,
 		testDeviceID,
 		signingKeyID(devicePublicKey),
 	)
@@ -472,26 +473,51 @@ func TestActorCapabilitiesReturnRevokedLocalKeyForHistoricalVerification(t *test
 	}
 }
 
+func TestActorCapabilitiesReturnRetainedRemoteKeyWithoutHydration(t *testing.T) {
+	database := openCapabilityTestDatabase(t)
+	revokedAt := capabilityTestTime.Add(-time.Minute)
+	devicePublicKey := deterministicPublicKey(0x62)
+	if err := database.Create(&persistence.ActorDeviceModel{
+		PTID:               capabilityTestRemoteActor,
+		ActorAccount:       "remote@example.test",
+		ActorKind:          int32(actormodel.ActorKind_ACTOR_KIND_PERSON),
+		DeviceID:           testDeviceID,
+		Label:              "Remote Desktop",
+		HomeStationPeerID:  capabilityTestRemoteStation,
+		SigningKeyID:       signingKeyID(devicePublicKey),
+		PublicKey:          append([]byte(nil), devicePublicKey...),
+		ProfileVersion:     2,
+		VerificationSource: int32(actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE),
+		Revoked:            true,
+		CreatedAt:          capabilityTestTime.Add(-time.Hour),
+		RevokedAt:          &revokedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	provider := newKeyOnlyCapabilityProvider(t, capabilityTestLocalStation, nil)
+	subserver := &subServer{capabilities: provider}
+	key, err := subserver.ResolveRetainedActorDeviceSigningKey(
+		context.Background(),
+		capabilityTestTransaction{db: database},
+		capabilityTestRemoteActor,
+		testDeviceID,
+		signingKeyID(devicePublicKey),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key == nil ||
+		key.GetVerificationSource() !=
+			actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE ||
+		key.GetRevokedAtUnixMs() != revokedAt.UnixMilli() ||
+		!bytes.Equal(key.GetEd25519PublicKey(), devicePublicKey) {
+		t.Fatalf("unexpected retained remote key projection: %+v", key)
+	}
+}
+
 func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) {
 	database := openCapabilityTestDatabase(t)
-	if err := database.Exec(`
-		CREATE TABLE touch_actor (
-			ptid TEXT PRIMARY KEY,
-			home_station_peer_id TEXT NOT NULL,
-			origin TEXT NOT NULL
-		)
-	`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Exec(
-		`INSERT INTO touch_actor (ptid, home_station_peer_id, origin)
-		 VALUES (?, ?, ?)`,
-		capabilityTestRemoteActor,
-		capabilityTestRemoteStation,
-		"remote_cached",
-	).Error; err != nil {
-		t.Fatal(err)
-	}
 
 	devicePublicKey := deterministicPublicKey(0x71)
 	key := &actormodel.VerifiedActorDeviceSigningKey{
@@ -524,6 +550,7 @@ func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) 
 			context.Background(),
 			capabilityTestTransaction{db: transactionDB},
 			capabilityTestRemoteActor,
+			capabilityTestRemoteStation,
 			key.GetActorDeviceId(),
 			key.GetSigningKeyId(),
 		)
@@ -558,6 +585,7 @@ func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) 
 			context.Background(),
 			capabilityTestTransaction{db: transactionDB},
 			capabilityTestRemoteActor,
+			capabilityTestRemoteStation,
 			key.GetActorDeviceId(),
 			key.GetSigningKeyId(),
 		)
@@ -578,6 +606,24 @@ func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) 
 	}
 	if hydrator.calls != 2 {
 		t.Fatalf("hydrator calls = %d, want 2", hydrator.calls)
+	}
+
+	_, err = provider.ResolveVerifiedActorDeviceSigningKey(
+		context.Background(),
+		capabilityTestTransaction{db: database},
+		capabilityTestRemoteActor,
+		"station-other",
+		key.GetActorDeviceId(),
+		key.GetSigningKeyId(),
+	)
+	if !domain.IsCode(err, domain.ErrorCodeIdentityConflict) {
+		t.Fatalf("mismatched expected Home Station error = %v", err)
+	}
+	if hydrator.calls != 2 {
+		t.Fatalf(
+			"mismatched expected Home Station called hydrator %d times, want 2",
+			hydrator.calls,
+		)
 	}
 }
 
@@ -663,6 +709,7 @@ func TestActorCapabilitiesRevalidateRemoteProfileAndRejectMissingKey(t *testing.
 		context.Background(),
 		capabilityTestTransaction{db: database},
 		capabilityTestRemoteActor,
+		capabilityTestRemoteStation,
 		"missing-device",
 		"missing-key",
 	)

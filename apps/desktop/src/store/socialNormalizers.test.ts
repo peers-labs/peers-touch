@@ -62,4 +62,23 @@ describe('normalizeFriendRequestData', () => {
       status: 2,
     });
   });
+
+  it('normalizes protobuf timestamps into sortable ISO strings', () => {
+    expect(normalizeFriendRequestData({
+      requestId: 'request-2',
+      sender: { ptid: 'ptid:alice' },
+      receiver: { ptid: 'ptid:bob' },
+      createdAt: {
+        seconds: 1_789_624_365n,
+        nanos: 123_000_000,
+      },
+      respondedAt: {
+        seconds: '1789624393',
+        nanos: 392_000_000,
+      },
+    })).toMatchObject({
+      createdAt: '2026-09-17T05:52:45.123Z',
+      respondedAt: '2026-09-17T05:53:13.392Z',
+    });
+  });
 });

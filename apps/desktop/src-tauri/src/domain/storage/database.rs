@@ -34,6 +34,24 @@ impl DatabaseOpenSpec {
             schema_version: 1,
         }
     }
+
+    pub fn new_secure_content_main(user_scope: String) -> Self {
+        let app_name = desktop_app_name();
+        let key_ref = if app_name == "desktop" {
+            format!("secure-content/main/{user_scope}")
+        } else {
+            format!("secure-content/{app_name}/main/{user_scope}")
+        };
+        Self {
+            app_name,
+            domain: "secure-content".to_string(),
+            profile: "main".to_string(),
+            user_scope,
+            encryption_level: EncryptionLevel::L2,
+            key_ref,
+            schema_version: 1,
+        }
+    }
 }
 
 fn desktop_app_name() -> String {
@@ -76,5 +94,22 @@ mod tests {
         assert_eq!(spec.key_ref, "chat/home-b-im-e2e-fresh/main/actor-2");
 
         std::env::remove_var("PT_PROFILE");
+    }
+
+    #[test]
+    fn secure_content_uses_an_independent_encrypted_database_and_key() {
+        let _guard = env_lock().lock().expect("env lock");
+        std::env::remove_var("PT_PROFILE");
+
+        let spec = DatabaseOpenSpec::new_secure_content_main("actor-1".to_string());
+
+        assert_eq!(spec.domain, "secure-content");
+        assert_eq!(spec.profile, "main");
+        assert_eq!(spec.encryption_level, EncryptionLevel::L2);
+        assert_eq!(spec.key_ref, "secure-content/main/actor-1");
+        assert_ne!(
+            spec.key_ref,
+            DatabaseOpenSpec::new_chat_main("actor-1".to_string()).key_ref
+        );
     }
 }

@@ -1,8 +1,8 @@
 # Modern Chat Agent — Module Layout
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-21
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -20,6 +20,7 @@ model/domain/agent/
 ├── capability.proto            # Manifest, binding, readiness, operation
 ├── evaluation.proto            # Benchmark, dataset, case, run, result
 ├── home.proto                  # Revisioned Home work projection
+├── package_catalog.proto       # Official Station distribution response
 ├── memory.proto                # Existing memory contracts
 ├── skill.proto                 # Existing skill contracts
 └── orchestration.proto         # Multi-Agent, downstream of turn kernel
@@ -67,6 +68,11 @@ apps/station/app/subserver/agent/
 │   └── external/
 ├── infrastructure/persistence/
 └── catalog/
+    ├── official_catalog_gen.go # Generated immutable envelope bytes
+    └── generate/               # Deterministic asset projection generator
+
+packages/agent-catalog/
+└── official-catalog.v1.envelope.json # Sole maintained official signed asset
 
 apps/desktop/src-tauri/src/application/
 ├── agent_turn/                 # Station command/SSE bridge only
@@ -76,6 +82,7 @@ apps/desktop/src-tauri/src/application/
 │   └── recovery_signer/        # Actor-device signed terminal recovery only
 ├── capability_operation/      # Leased operation execution/reporting
 ├── mcp/                        # Local MCP transport/execution
+├── skills_market/              # Signed catalog verify/cache/install bridge
 ├── tools/                      # Local builtin execution
 ├── workspace/                  # Device-local workspace/file policy
 └── audit/                      # Local execution audit projection
@@ -133,6 +140,9 @@ mechanical file creation.
 | Connector resource manifests | Station Connector Manifest service; OAuth owner supplies scoped resources |
 | Home work projection | Station Home Projection service |
 | Evaluation run/result | Station Evaluation service |
+| Official catalog asset | `packages/agent-catalog/official-catalog.v1.envelope.json` |
+| Official catalog transport | Station Agent catalog endpoint; publisher trust remains Desktop-pinned |
+| User-pinned catalog transport | Explicit public GitHub repository/branch/manifest |
 | Direct model adapters | Station runtime registry |
 | External Agent adapters | Station external runtime registry |
 | Client-local capabilities | Shared capability contract; platform registry projected to Station |
@@ -183,6 +193,8 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | `connector_manifest_service` | Scope-bound Connector resource→tool manifests | Own OAuth tokens |
 | `home_projection_service` | Revisioned Agent/topic/task/capability projection | Become a write model |
 | `evaluation_service` | Benchmark/case/run/result/metrics aggregate | Use a parallel model execution path |
+| Station `catalog` | Serve the generated exact official envelope bytes | Sign, rewrite, classify, or own installed state |
+| Desktop `skills_market` | Verify/cache catalogs and dispatch authority-specific installs | Treat Station/GitHub transport as trust |
 | Client `agent_turn` | Bridge commands/events/cancel | Execute AI providers |
 | Client `agent_local_capability/receipt_ledger` | Persist PREPARED and terminal attempts before reporting | Own Station result/continuation truth |
 | Client `agent_local_capability/resource_registry` | Resolve encrypted actor/device-scoped opaque refs | Expose raw path/native handle to Station or Web |
@@ -209,6 +221,9 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 - Home pages/stores must not aggregate durable truth outside `homeRuntime`.
 - Source-specific Tool/MCP/Connector stores must not claim global readiness.
 - Evaluation client code must not execute `quickCompletion` or infer terminal run state.
+- Station catalog transport must not sign or mutate publisher envelopes.
+- Desktop catalog code must not embed GitHub credentials or maintain a second
+  manually edited official envelope.
 - Generated contract files must not be edited manually.
 
 ## 6. Lifecycle Ownership
@@ -230,6 +245,8 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | Connector resource manifest | Station Connector Manifest service |
 | Home work projection | Station projection service; client runtime owns cached projection only |
 | Evaluation run/case result | Station Evaluation service |
+| Official signed catalog asset | Peers release process via `packages/agent-catalog` |
+| Verified catalog cache | Desktop Rust actor/device storage |
 | Web subscriptions/timers | Owning client runtime descriptor |
 | Trace and feedback | Station trace/evaluation services |
 

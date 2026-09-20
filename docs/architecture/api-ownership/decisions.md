@@ -303,3 +303,33 @@ CA-W5 may resume proto-first mutation, production route registration, consumer
 migration, and legacy deletion. Architecture acceptance is not runtime proof;
 CA-W5 remains incomplete until its source Gates pass, and Windows NDR-W9-D /
 NDR-W10-D remain `UNPROVEN` until CA-W6.
+
+---
+
+## AO-D10: Target-Member Authority And Ownership Transfer Are Conversation Transactions
+
+**Status**: accepted
+**Date**: 2026-09-18
+
+### Decision
+
+Conversation owns typed target-member role/mute mutation and ownership transfer
+under `/conversation/*`. Every operation binds the authenticated operator,
+target member, authority Station/epoch/head, membership/MLS epochs, command
+deadline, and exact idempotency identity.
+
+Role or mute updates commit one hash-chained member-authority event. Ownership
+transfer commits the old-owner demotion, new-owner promotion, `owner_ptid`,
+membership epoch, authority hash, device delivery, and follower projection as
+one aggregate transition and one database transaction. Member-authority changes
+advance membership epoch but not MLS epoch because the MLS leaf set is unchanged.
+
+The full contract and failure matrix are documented in
+[`proposals/20260918-conversation-member-authority.md`](./proposals/20260918-conversation-member-authority.md).
+
+### Consequences
+
+- `/conversation/member/settings` remains actor-local preference state.
+- No Group Chat authority, compatibility route, dual write, or two-step owner
+  transfer is introduced.
+- Mobile caller migration and old route deletion remain a later W5-OWNER cutover.

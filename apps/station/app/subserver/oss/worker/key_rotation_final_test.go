@@ -57,11 +57,16 @@ func (k *rotationFakeKeys) PutCurrent(_ context.Context, key *federation.LocalKe
 	return nil
 }
 
-func (k *rotationFakeKeys) Rotate(_ context.Context, key *federation.LocalKey) (*federation.RotateResult, error) {
+func (k *rotationFakeKeys) Rotate(
+	_ context.Context,
+	_ string,
+	key *federation.LocalKey,
+) (*federation.RotateResult, error) {
 	res := &federation.RotateResult{NewKid: key.Kid, RotatedAt: time.Now()}
 	if k.current != nil {
 		demoted := *k.current
 		k.prev = &demoted
+		k.prev.UpdatedAt = res.RotatedAt
 		res.PreviousKid = k.current.Kid
 	}
 	cp := *key
@@ -69,13 +74,22 @@ func (k *rotationFakeKeys) Rotate(_ context.Context, key *federation.LocalKey) (
 	return res, nil
 }
 
-func (k *rotationFakeKeys) ClearPrev(context.Context) error {
+func (k *rotationFakeKeys) ClearPrev(
+	_ context.Context,
+	expectedKeyID string,
+	expectedUpdatedAt time.Time,
+) (bool, error) {
 	if k.clearErr != nil {
-		return k.clearErr
+		return false, k.clearErr
+	}
+	if k.prev == nil ||
+		k.prev.Kid != expectedKeyID ||
+		!k.prev.UpdatedAt.Equal(expectedUpdatedAt) {
+		return false, nil
 	}
 	k.cleared = true
 	k.prev = nil
-	return nil
+	return true, nil
 }
 
 // stubLocalKey returns a non-empty *federation.LocalKey with
@@ -87,6 +101,7 @@ func stubLocalKey(kid string, generatedAt time.Time) *federation.LocalKey {
 		PrivPEM:     "PRIV",
 		PubPEM:      "PUB",
 		GeneratedAt: generatedAt,
+		UpdatedAt:   generatedAt,
 	}
 }
 
@@ -137,6 +152,29 @@ func TestKeyRotationFinalizer_InsideGraceLeavesAlone(t *testing.T) {
 	}
 	if len(audit.snapshot()) != 0 {
 		t.Errorf("no audit rows expected when grace has not elapsed")
+	}
+}
+
+func TestKeyRotationFinalizerUsesRotationTimeNotGenerationTime(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	previous := stubLocalKey("prev-kid", now.Add(-30*24*time.Hour))
+	previous.UpdatedAt = now.Add(-time.Hour)
+	keys := &rotationFakeKeys{prev: previous}
+
+	finalizer, err := NewKeyRotationFinalizer(KeyRotationFinalizerConfig{
+		Keys:  keys,
+		Audit: &recordingAudit{},
+		Grace: 24 * time.Hour,
+		Now:   func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizer.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if keys.cleared || keys.prev == nil {
+		t.Fatal("recently rotated previous key was cleared by its generation age")
 	}
 }
 

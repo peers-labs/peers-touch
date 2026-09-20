@@ -11,6 +11,11 @@ const BINDING_LIST_PATH: &str = "/sub-agent/agent/capability/binding/list";
 const BINDING_UPSERT_PATH: &str = "/sub-agent/agent/capability/binding/upsert";
 const BINDING_DELETE_PATH: &str = "/sub-agent/agent/capability/binding/delete";
 const READINESS_PATH: &str = "/sub-agent/agent/capability/readiness";
+const CONNECTOR_MANIFEST_SYNC_PATH: &str = "/sub-agent/agent/connector/manifest/sync";
+const CONNECTOR_MANIFEST_LIST_PATH: &str = "/sub-agent/agent/connector/manifest/list";
+const OPERATION_CANCEL_PATH: &str = "/sub-agent/agent/capability/operation/cancel";
+const OPERATION_GET_PATH: &str = "/sub-agent/agent/capability/operation/get";
+const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/reconcile";
 const KNOWLEDGE_DESCRIPTOR_CREATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/create";
 const KNOWLEDGE_DESCRIPTOR_UPDATE_PATH: &str = "/sub-agent/agent/knowledge/descriptor/update";
 const KNOWLEDGE_DESCRIPTOR_LIST_PATH: &str = "/sub-agent/agent/knowledge/descriptor/list";
@@ -156,6 +161,87 @@ pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<
         },
         token,
         "agent.capabilityReadinessFailed",
+    )
+}
+
+pub fn list_connector_manifests(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ListConnectorResourceManifestsRequest,
+        agent::ListConnectorResourceManifestsResponse,
+    >(
+        CONNECTOR_MANIFEST_LIST_PATH,
+        input,
+        token,
+        "agent.connectorManifestListFailed",
+        "agent.connectorManifestRequestInvalid",
+    )
+}
+
+pub(crate) fn sync_connector_manifest_records(
+    request: &agent::SyncConnectorResourceManifestsRequest,
+    token: &str,
+) -> Result<agent::SyncConnectorResourceManifestsResponse, station_client::StationClientError> {
+    station_client::request_proto(
+        Method::POST,
+        CONNECTOR_MANIFEST_SYNC_PATH,
+        token,
+        None,
+        Some(request),
+    )
+}
+
+pub(crate) fn list_connector_manifest_records(
+    connector_id: &str,
+    token: &str,
+) -> Result<Vec<agent::ConnectorResourceManifest>, station_client::StationClientError> {
+    station_client::request_proto::<
+        agent::ListConnectorResourceManifestsRequest,
+        agent::ListConnectorResourceManifestsResponse,
+    >(
+        Method::POST,
+        CONNECTOR_MANIFEST_LIST_PATH,
+        token,
+        None,
+        Some(&agent::ListConnectorResourceManifestsRequest {
+            connector_id: connector_id.trim().to_string(),
+        }),
+    )
+    .map(|response| response.manifests)
+}
+
+pub fn cancel_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::CancelCapabilityOperationRequest,
+        agent::CancelCapabilityOperationResponse,
+    >(
+        OPERATION_CANCEL_PATH,
+        input,
+        token,
+        "agent.capabilityOperationCancelFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn get_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<agent::GetCapabilityOperationRequest, agent::GetCapabilityOperationResponse>(
+        OPERATION_GET_PATH,
+        input,
+        token,
+        "agent.capabilityOperationGetFailed",
+        "agent.capabilityOperationRequestInvalid",
+    )
+}
+
+pub fn reconcile_operation(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ReconcileCapabilityOperationRequest,
+        agent::ReconcileCapabilityOperationResponse,
+    >(
+        OPERATION_RECONCILE_PATH,
+        input,
+        token,
+        "agent.capabilityOperationReconcileFailed",
+        "agent.capabilityOperationRequestInvalid",
     )
 }
 

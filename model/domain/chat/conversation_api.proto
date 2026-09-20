@@ -77,6 +77,26 @@ message GetConversationMembersResponse {
   repeated ConversationMember members = 1;
 }
 
+message UpdateConversationMemberRequest {
+  ConversationMemberAuthorityCommand command = 1;
+}
+
+message UpdateConversationMemberResponse {
+  ConversationMember member = 1;
+  ConversationEvent event = 2;
+}
+
+message TransferConversationOwnershipRequest {
+  ConversationMemberAuthorityCommand command = 1;
+}
+
+message TransferConversationOwnershipResponse {
+  Conversation conversation = 1;
+  ConversationMember previous_owner = 2;
+  ConversationMember new_owner = 3;
+  ConversationEvent event = 4;
+}
+
 // --- Commands & Events ---
 
 message SubmitConversationAuthorityCommandRequest {

@@ -11,6 +11,9 @@ from tooling.acceptance.drivers.native.base import NativeDesktopAdapter
 
 
 WINDOWS_ADAPTER_PATH = Path(__file__).with_name("windows.py")
+WINDOWS_PROVISIONER_PATH = (
+    Path(__file__).parents[2] / "provisioners" / "native_desktop_windows.py"
+)
 
 
 class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
@@ -39,6 +42,18 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertIn("ctypes.windll.gdi32", source)
         self.assertNotIn("win32api", source)
         self.assertNotIn("pywinauto", source)
+
+    def test_clipboard_pointer_apis_declare_64_bit_signatures(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        for function in (
+            "GlobalAlloc",
+            "GlobalLock",
+            "GlobalFree",
+            "GetClipboardData",
+            "SetClipboardData",
+        ):
+            self.assertIn(f"{function}.argtypes =", source)
+            self.assertIn(f"{function}.restype = ctypes.c_void_p", source)
 
     def test_activation_preserves_focus_when_process_is_already_foreground(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
@@ -102,6 +117,29 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertIn('self._window_class_name(hwnd) == "#32770"', helper)
         self.assertIn('self._window_class_name(hwnd) == "#32770"', dialog_count)
         self.assertNotIn("_GW_OWNER", dialog_count)
+
+    def test_file_chooser_path_targets_the_filename_edit_control(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        start = source.index("    def select_file_chooser_path_to_process(")
+        method = source[start:source.index("    def focused_control(", start)]
+
+        self.assertIn("EnumChildWindows", method)
+        self.assertIn('self._window_class_name(child_hwnd).lower() == "edit"', method)
+        self.assertIn("key=lambda hwnd: self._window_rect(hwnd).top", method)
+        self.assertIn("_WM_SETTEXT", method)
+        self.assertIn("GetDlgItem(dialog_hwnd, _IDOK)", method)
+        self.assertIn("_BM_CLICK", method)
+        self.assertIn("while self._file_chooser_window(process_id):", method)
+        self.assertIn("self._activate_window(dialog_hwnd, process_id)", method)
+
+    def test_staged_fixture_path_is_stable_across_content_changes(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        start = source.index("    def stage_actor_file(")
+        method = source[start:source.index("    def actor_file_sha256(", start)]
+
+        self.assertIn("os.fsencode(local_source)", method)
+        self.assertIn('"fixtures",\n            source_identity,', method)
+        self.assertIn("!= content_digest", method)
 
     def test_focus_probe_reads_the_foreground_gui_thread(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")

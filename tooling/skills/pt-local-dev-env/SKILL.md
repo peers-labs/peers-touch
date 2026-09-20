@@ -25,9 +25,10 @@ make restart       # Restart everything
 ```
 
 The agent's job is to resolve and activate an existing approved **profile** for
-the user's scenario. Creating or registering a profile or deploy environment is
-permitted only after a human developer explicitly authorizes the exact
-environment name and target in the current conversation.
+the user's scenario. The reviewed profile's `PT_AGENT_CONTROL_MODE` determines
+whether registration and runtime operation are human-gated, managed, or
+disposable. Creating a profile or deploy environment still requires explicit
+human approval for the exact environment name and target.
 
 ## Environment Creation Authorization
 
@@ -90,9 +91,27 @@ Remote deploy environments resolve directly from exactly one Git-tracked, clean
 `env/peers-touch/<profile>/deploy/<name>.env.example`. A
 `.local/deploy/envs/` copy is not deployment authority.
 
-One profile is **active** per worktree. The symlink at
-`.local/dev/active/<worktree-name>.env` selects its name; all `make` commands
-resolve that name back to the canonical environment repository before use.
+Every canonical profile declares:
+
+```env
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
+```
+
+- `human-gated`: ask before registration/binding changes or Station mutation.
+- `managed`: the Agent may register, bind, deploy, restart, and clean up without
+  repeated approval, within declaration, capability, lease, and source guards.
+- `disposable`: the Agent may additionally run exact-scope reset when
+  `station.reset` is declared, bound, and leased.
+
+The field is a maximum policy, not a lease or source of credentials. Missing or
+invalid mode fails closed. Profile creation and policy changes remain
+human-reviewed.
+
+One profile is bound per registered worktree in
+`~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
+`make profile PROFILE=<name>` updates only that authoritative binding. Legacy
+`.local/dev/active/` symlinks are observations only and are never runtime
+selection authority.
 
 ### Slot
 
@@ -108,7 +127,9 @@ port conflicts:
 | Desktop Web vite | `3211 + slot * 100` |
 | Mobile web | `5173 + slot * 100` |
 
-Default slot = 0.
+There is no default slot. An unregistered workspace or missing slot binding
+fails closed. Profile `PT_DEV_SLOT` and local client port fields are legacy
+metadata; the machine binding supplies the runtime values.
 
 ### Station Mode
 
@@ -132,12 +153,16 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 ## Commands Reference
 
 ```bash
-# Profile management
-make profiles                               # List/import approved canonical profiles
-make profile <name>                         # Activate profile
+# Machine binding and profile management
+make env-register PROFILE=<name> SLOT=<n> CAPABILITIES='<csv>' PURPOSE='<text>'
+make env-update [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>']
+make env-check [WORKSPACE_ID=<id>] [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>'] [BUDGET_SECONDS=<n>]
+make env-status-all                         # Bindings plus observed OS-held leases
+make profiles                               # List approved canonical profiles
+make profile <name>                         # Update this registered workspace binding
 make profile-authorize <name> SLOT=<n>      # Human-only interactive grant
 make profile-init <name> SLOT=<n>           # Consume a pre-existing exact grant
-make config                                 # Show active config
+make config                                 # Show authoritative binding and config
 
 # Services
 make station                                # Start/verify Station
@@ -167,6 +192,7 @@ make mobile-stop / mobile-restart
 ```env
 PT_DEV_PROFILE=<name>
 PT_DEV_SLOT=<0-9>
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
 
 # Station
 PT_STATION_MODE=local|remote
@@ -207,7 +233,11 @@ This recipe is documentation for human developers. Agents MUST NOT execute it.
 ```bash
 make profile-authorize PROFILE=local-dev SLOT=0
 make profile-init PROFILE=local-dev SLOT=0
-make profile PROFILE=local-dev
+make env-register \
+  PROFILE=local-dev \
+  SLOT=0 \
+  CAPABILITIES=station.connect \
+  PURPOSE='Human local development'
 # Profile defaults are correct for local development
 make station   # Compiles and starts Station
 make desktop   # Starts Desktop
@@ -228,7 +258,11 @@ PT_MOBILE_DEFAULT_STATION_URL=http://10.37.246.80:18080
 ```
 
 ```bash
-make profile PROFILE=remote-s1
+make env-register \
+  PROFILE=remote-s1 \
+  SLOT=0 \
+  CAPABILITIES='station.connect,station.deploy' \
+  PURPOSE='Remote Station development'
 make station   # Deploy/restart/check remote Station
 make desktop   # Connects to 10.37.246.80
 make mobile    # Connects to 10.37.246.80
@@ -243,7 +277,11 @@ instead configure and preflight an approved remote Station profile.
 # In worktree-2, use slot=1 to avoid port conflicts
 make profile-authorize PROFILE=worktree-2 SLOT=1
 make profile-init PROFILE=worktree-2 SLOT=1
-make profile PROFILE=worktree-2
+make env-register \
+  PROFILE=worktree-2 \
+  SLOT=1 \
+  CAPABILITIES=station.connect \
+  PURPOSE='Human local development in worktree-2'
 make station   # Runs on :18180
 make desktop   # Gateway on :3130, web on :3310
 ```
@@ -270,20 +308,24 @@ only when the human developer has already created grants for both exact profile
 names and targets:
 
 ```bash
-# 1. Create/activate profile for station-four
+# 1. Create/register profile for station-four
 make profile-authorize PROFILE=multi-four SLOT=0
 make profile-init PROFILE=multi-four SLOT=0
-make profile PROFILE=multi-four
+make env-register \
+  PROFILE=multi-four \
+  SLOT=0 \
+  CAPABILITIES='station.connect,station.deploy' \
+  PURPOSE='Multi-Station development'
 # Set in env/peers-touch/four/profile.env:
 #   PT_STATION_MODE=remote
 #   PT_STATION_URL=http://10.37.94.156:18132
 #   PT_STATION_DEPLOY_ENV=four
 make station          # Deploy/restart/check station-four
 
-# 2. Switch to profile for station-five-arm
+# 2. Switch the existing workspace binding to station-five-arm
 make profile-authorize PROFILE=multi-five-arm SLOT=1
 make profile-init PROFILE=multi-five-arm SLOT=1
-make profile PROFILE=multi-five-arm
+make env-update PROFILE=multi-five-arm SLOT=1
 # Set in env/peers-touch/fiveArm/profile.env:
 #   PT_STATION_MODE=remote
 #   PT_STATION_URL=http://<fiveArm-host>:<port>
@@ -316,22 +358,32 @@ switch profile, `make station`), then run acceptance from either profile.
 
 When the user says "set up environment for X" or "I want to debug against Y":
 
-1. **Bootstrap/check existing profiles**: `make profiles`
-2. **Select remote only**: reuse a canonical environment-repository profile that sets
+1. **Inspect authority**: run `make env-status-all` and `make profiles`.
+2. **Resolve Agent control**: read the canonical profile's
+   `PT_AGENT_CONTROL_MODE`; never infer authority from its name.
+3. **Select remote only**: reuse a canonical environment-repository profile that sets
    `PT_STATION_MODE=remote`.
-3. **Missing profile means stop**: report the missing topology and request
+4. **Missing profile means stop**: report the missing topology and request
    explicit human developer authorization. Do not run `make profile-authorize`,
    create authorization files, create `env/peers-touch/<name>/`, or add a
    local-only fallback.
-4. **Configure**: set the approved remote Station URL and deploy environment in
+5. **Configure**: set the approved remote Station URL and deploy environment in
    that canonical environment source only when the developer explicitly
    authorized creating or changing it.
-5. **Activate**: `make profile <name>`.
-6. **Fail-closed preflight**: run `make config` and verify remote mode,
-   non-loopback URL, and approved non-empty deploy environment.
-7. **Execute**: only after preflight may the agent run `make station`,
+6. **Register or update by policy**: for `managed` and `disposable`, the Agent
+   may run `make env-register`, `make profile`, or `make env-update` without a
+   repeated approval prompt. For `human-gated`, require explicit approval.
+   None of these commands creates an environment.
+7. **Fail-closed preflight**: run `make env-check` and `make config`; verify
+   canonical workspace identity, tracked-clean definition, allocated slot,
+   allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
+   match.
+8. **Declare runtime intent**: the active Development declaration must contain
+   the exact profile and exclusive runtime resource before lease acquisition.
+9. **Execute**: only after preflight may the agent run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
-8. **Report**: include the resolved mode, Station URL, and deploy environment.
+10. **Report**: include workspace ID, slot, capabilities, Agent control mode, Station
+   URL, deploy environment, and lease result.
 
 ## Remote Deployment
 
@@ -407,60 +459,72 @@ Source modes:
 
 ## Important Rules
 
-- `.local/` is its own git repo (gitignored by main repo, versioned separately)
+- `~/.peers-touch/dev/registry.json` is the only worktree binding and slot
+  authority; an observed snapshot is not authority.
 - Deployable profiles and deploy envs are authoritative in the sibling `env`
-  repository; remote deploy resolves them directly, while `.local/` stores
-  non-authoritative caches and runtime state
+  repository; remote deploy resolves them directly.
 - Agents must not create or register profiles or deploy environments without
   explicit human developer approval for the exact name and target.
+- `managed` and `disposable` authorize repeated operation of an existing
+  reviewed profile; they do not authorize profile creation or policy changes.
+- `managed` never authorizes Station reset. `disposable` reset still requires
+  exact declaration, capability, reset scope, and live lease.
 - `make profile-authorize` is human-only. Agents may consume only an existing,
   unexpired exact-tuple grant through `make profile-init`.
-- Agents may import only approved canonical env-repository definitions; a
+- Agents may select only approved canonical env-repository definitions; a
   local-only fallback discovered by `make profiles` or `make profile <name>`
   must fail closed.
-- Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
-- Each worktree has its own active profile pointer (keyed by worktree basename)
-- Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped
+- `make env-register` is an explicit workspace registration, not permission to
+  create or edit a profile.
+- Legacy `.local/dev/active/` pointers never select a runtime profile.
+- Runtime PIDs/logs/data live under
+  `~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/`.
+- `local.slot`, `station.deploy`, and `station.reset` possession requires the
+  canonical OS-held lease plus matching PID/process-start metadata.
+- A live Development declaration is required before lease acquisition but
+  never substitutes for the lease.
 - `make station` is idempotent — if Station is already running, it just confirms
+- `make station` holds `station.deploy` through source sync, build, restart,
+  deploy health, and final profile health readback.
 - Agent use of `make station` is remote-only and requires the safety preflight
   above. Local/compose Station execution is reserved for human developers.
 - `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
   ready Station indirectly, so the same agent preflight applies to them.
 - `make desktop` / `make mobile` always ensure Station is ready first
 - Never hardcode station URLs in code — they come from the profile
-- PIDs/logs/data live in `.local/dev/{pids,logs,data}/<profile-name>/`
 
-## `.local/` Runtime Cache
+## Machine State And Local Definitions
 
-`.local/` is a standalone git repo used for imported configuration caches and
-runtime state. The sibling `env` repository remains authoritative for every
-same-named deployable profile and deploy environment.
+Machine allocation and runtime state:
 
-**Cached configuration**:
-- `dev/profiles/*.env` — imported profile cache or human-only local profile
-- `deploy/envs/*.env` — imported deploy-env cache
-- `topology.env` — network topology reference
-
-**Ignored** (runtime, never committed):
-- `dev/pids/` — PID files per profile
-- `dev/logs/` — log files per profile
-- `dev/data/` — data files per profile
-- `dev/active/` — per-worktree active profile symlinks
-
-### Cross-worktree sharing
-
-All worktrees symlink `.local/` to the same directory:
-
-```bash
-# In another worktree:
-ln -sfn /path/to/primary-worktree/.local .local
+```text
+~/.peers-touch/dev/registry.json
+~/.peers-touch/dev/leases/
+~/.peers-touch/dev/workspaces/<workspaceId>/
 ```
 
-Each worktree has its own active profile pointer at
-`.local/dev/active/<worktree-basename>.env`. The pointer selects a profile
-name; runtime commands load the canonical sibling-environment profile for that
-name when it exists. Switching profiles in one worktree therefore does not
-affect another worktree.
+`.local/dev/profiles/*.env` remains only for human-authorized local compose
+definitions whose bytes match a consumed receipt. `.local/deploy/envs/` and
+`.local/dev/active/` are legacy observations and never deployment or selection
+authority.
+
+### Lease API
+
+The later destructive reset wrapper must call the generic canonical API and
+provide the exact separately authorized reset scope:
+
+```bash
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id <station-fixture-scope> \
+  --reset-authorized-scope <station-fixture-scope> \
+  --budget-seconds <seconds> \
+  -- <reset-command>
+```
+
+The wrapper must hold this one lease across pre-audit, deletion, nested
+canonical `make station`, and post-audit. The lease API does not grant reset
+authorization and cannot be called with a different scope.
 
 ## Test Accounts
 

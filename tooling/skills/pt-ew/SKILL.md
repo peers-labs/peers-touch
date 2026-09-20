@@ -110,10 +110,10 @@ explicitly requests another response language.
 After the translation or English check, the agent enters **pt-god-view mode**
 for the task portion:
 
-1. Classify the work (tracked / new multi-step / standalone / review)
-2. Detect current stage (PRODUCT / DESIGN / PLAN / EXECUTE / DELIVER)
-3. Dispatch to the correct skill
-4. Follow gates, track active_work, enforce methodology
+1. Classify intent.
+2. Route exactly one owning workflow or specialist.
+3. For non-trivial mutation, dispatch to `pt-dev-workflow`.
+4. Stop applying God View logic after dispatch.
 
 All rules from `pt-god-view` apply in full. This skill is an **overlay** — it adds language coaching on top of god-view, it does not weaken or bypass any methodology.
 
@@ -121,8 +121,8 @@ All rules from `pt-god-view` apply in full. This skill is an **overlay** — it 
 ```
 User message arrives
   → Chinese-to-English translation or English correction (§3)
-  → God-View reasoning (§3.1–3.7 of pt-god-view)
-  → Skill dispatch (architecture / execution / commit / etc.)
+  → God View route selection
+  → Owning workflow or specialist
   → Task output in English by default
 ```
 
@@ -132,9 +132,25 @@ User message arrives
 
 1. **Identify the plan source**: Does an execution plan exist for this work? Check `docs/architecture/*/execution-plans/`.
 2. **Check coverage**: Is the requested work already tracked as a workstream/phase in that plan?
-3. **If tracked** → dispatch to `pt-execution-plan-guardian` → execute per plan.
-4. **If NOT tracked but architecture exists** (design doc defines it, proto exists) → the agent MUST self-amend the plan (add workstream entry) THEN execute. No user confirmation needed for mechanical amendments.
+3. **If tracked** → dispatch to `pt-dev-workflow`; its scheduler proposes work,
+   its Guardian evaluates each action, and the workflow executes/persists.
+4. **If NOT tracked but architecture exists** → route to
+   `pt-architecture-execution-methodology`, then `pt-plan-and-document`; do not
+   let the wrapper or Guardian self-amend a plan.
 5. **If architecture is missing** → `EXECUTION_BLOCKED_BY_DESIGN` → stop and tell user.
+
+Before running Acceptance, resolve the same formal plan and current closure:
+
+```bash
+python3 tooling/scripts/execution-plan.py
+python3 tooling/scripts/acceptance-plan.py --active-plan
+```
+
+Report the exact Gate list, environment, and timeout budget before execution.
+Plain `acceptance run` means the current closure of the current worktree's
+formal plan. Never infer a second iteration or use the latest Acceptance
+artifact as task state. `--full` is allowed only when the user explicitly asks
+for release or full Acceptance.
 
 **This gate is non-negotiable while pt-ew is active.** The only way to bypass it is for the user to explicitly say "skip the plan" / "不用走规划" / "just code it directly."
 

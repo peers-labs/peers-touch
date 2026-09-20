@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -158,6 +159,12 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 	if message.Status != string(domain.TurnStatusInterrupted) {
 		t.Fatalf("assistant message status = %q, want interrupted", message.Status)
 	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode interrupted assistant error: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, message.ErrorJSON)
+	assertLifecycleInterruptedPayload(t, &messageError, turnID, "station_restart_interrupted")
 	var lease persistence.ExecutorLease
 	if err := db.First(&lease, "lease_id = ?", "lease-restart").Error; err != nil {
 		t.Fatalf("reload lease: %v", err)
@@ -172,6 +179,20 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 	if terminalEvent.EventSeq != 1 {
 		t.Fatalf("terminal event sequence = %d, want 1", terminalEvent.EventSeq)
 	}
+	var eventPayload TurnEvent
+	if err := json.Unmarshal([]byte(terminalEvent.Payload), &eventPayload); err != nil {
+		t.Fatalf("decode interrupted terminal event: %v", err)
+	}
+	if eventPayload.Stage != "station_restart_interrupted" ||
+		eventPayload.Error != "station_restart_interrupted" {
+		t.Fatalf("terminal event reason changed: %+v", eventPayload)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(eventPayload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode interrupted terminal outcome: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, eventPayload.OutcomeError)
+	assertLifecycleInterruptedPayload(t, &eventError, turnID, "station_restart_interrupted")
 	var taskEvent persistence.TaskEvent
 	if err := db.First(&taskEvent, "task_id = ? AND turn_id = ?", "task-restart", turnID).Error; err != nil {
 		t.Fatalf("load terminal task event: %v", err)

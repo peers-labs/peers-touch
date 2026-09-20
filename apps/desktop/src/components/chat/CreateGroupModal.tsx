@@ -19,7 +19,6 @@ import { presentError, type PresentedError } from '../../services/errorPresenter
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import {
   useActiveChatFederationSlice,
-  useActiveChatRelationshipsSlice,
   useActiveChatSessionSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
@@ -41,6 +40,9 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const { t } = useTranslation('chat');
   const {
     friendRequests,
+    friendRequestsLoading,
+    friendRequestsLoadedAt,
+    friendRequestsError,
     currentUserPtid,
     conversationRecords,
     conversationMembers,
@@ -53,6 +55,9 @@ export function CreateGroupModal({ open, onClose }: Props) {
     trackPendingGroupCreation,
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
+    friendRequestsLoading: s.friendRequestsLoading,
+    friendRequestsLoadedAt: s.friendRequestsLoadedAt,
+    friendRequestsError: s.friendRequestsError,
     currentUserPtid: s.currentUserPtid,
     conversationRecords: s.conversations,
     conversationMembers: s.conversationMembers,
@@ -64,26 +69,12 @@ export function CreateGroupModal({ open, onClose }: Props) {
     getIMConversations: s.getIMConversations,
     trackPendingGroupCreation: s.trackPendingGroupCreation,
   }));
-  const {
-    mutualFriends,
-    mutualFriendsActorPtid,
-    mutualFriendsLoading,
-    mutualFriendsLoadedAt,
-    mutualFriendsError,
-  } = useActiveChatRelationshipsSlice((s) => ({
-    mutualFriends: s.mutualFriends,
-    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
-    mutualFriendsLoading: s.mutualFriendsLoading,
-    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
-    mutualFriendsError: s.mutualFriendsError,
-  }));
   const federations = useActiveChatFederationSlice((s) => s.federations);
   const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
   const ownDid = currentUserPtid || sessionActorPtid;
   const friendshipReady = Boolean(
     ownDid
-    && mutualFriendsActorPtid === ownDid
-    && mutualFriendsLoadedAt,
+    && friendRequestsLoadedAt,
   );
 
   const [searchText, setSearchText] = useState('');
@@ -98,7 +89,6 @@ export function CreateGroupModal({ open, onClose }: Props) {
     void conversationMembers;
     void groupMembers;
     return projectChatFriendContacts({
-      mutualFriends,
       conversations: getIMConversations(),
       friendRequests,
       peerProfiles,
@@ -112,7 +102,6 @@ export function CreateGroupModal({ open, onClose }: Props) {
     friendRequests,
     getIMConversations,
     groupMembers,
-    mutualFriends,
     ownDid,
     peerProfiles,
     t,
@@ -296,7 +285,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     <div
       data-chat-create-group
       data-chat-friendship-state={
-        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+        friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
       }
       data-chat-create-group-state={
         creating ? 'creating' : creationError ? 'failed' : 'editing'
@@ -353,14 +342,14 @@ export function CreateGroupModal({ open, onClose }: Props) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {mutualFriendsError ? (
+            {friendRequestsError ? (
               <Alert
                 type="error"
                 showIcon
                 message={t('chat.social.findPeople.friendshipUnavailable')}
                 style={{ margin: '8px 16px' }}
               />
-            ) : !friendshipReady || mutualFriendsLoading ? (
+            ) : !friendshipReady || friendRequestsLoading ? (
               <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
                 <Spin size="small" />
               </Flexbox>

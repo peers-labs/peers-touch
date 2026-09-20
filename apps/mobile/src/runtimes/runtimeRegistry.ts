@@ -185,7 +185,9 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
   const enqueueSession = (session: MobileAuthSession | null) => {
     transition = transition
       .then(async () => synchronize(session))
-      .catch((error) => reportRuntimeDescriptorError('social', error));
+      .catch((error) => {
+        reportRuntimeDescriptorError('social', error);
+      });
   };
 
   return {

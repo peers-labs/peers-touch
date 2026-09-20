@@ -167,10 +167,72 @@ func (c *actorCapabilities) AcceptVerifiedEndpointManifest(
 	return c.endpointManifests.AcceptVerifiedEndpointManifest(ctx, manifest)
 }
 
+// ResolveRetainedActorDeviceSigningKey returns the retained Actor Identity
+// projection without refreshing it. It is only for validating material that
+// was irreversibly exposed before a device was revoked.
+func (c *actorCapabilities) ResolveRetainedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	const operation = "actor_identity.resolve_retained_actor_device_signing_key"
+
+	if c == nil || transaction == nil || transaction.DB() == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"transaction",
+			"is required",
+		)
+	}
+	if err := domain.ValidatePTID(operation, actorPTID); err != nil {
+		return nil, err
+	}
+	if err := domain.ValidateDeviceID(operation, deviceID); err != nil {
+		return nil, err
+	}
+	if signingKeyID == "" || signingKeyID != strings.TrimSpace(signingKeyID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"signing_key_id",
+			"is required and must be canonical",
+		)
+	}
+
+	repository, err := persistence.NewRepository(transaction.DB())
+	if err != nil {
+		return nil, err
+	}
+	retained, found, err := repository.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		actorPTID,
+		deviceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	if retained.GetSigningKeyId() != signingKeyID {
+		return nil, domain.NewError(
+			domain.ErrorCodeDeviceConflict,
+			operation,
+			"signing_key_id",
+			"does not match the retained Actor device projection",
+		)
+	}
+	return proto.Clone(retained).(*actormodel.VerifiedActorDeviceSigningKey), nil
+}
+
 func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -189,6 +251,15 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	}
 	if err := domain.ValidateDeviceID(operation, deviceID); err != nil {
 		return nil, err
+	}
+	if expectedHomeStationPeerID == "" ||
+		expectedHomeStationPeerID != strings.TrimSpace(expectedHomeStationPeerID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"home_station_peer_id",
+			"is required and must be canonical",
+		)
 	}
 	if signingKeyID == "" || signingKeyID != strings.TrimSpace(signingKeyID) {
 		return nil, domain.NewError(
@@ -220,19 +291,17 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 		)
 	}
 
-	homeStationPeerID := ""
 	if found {
-		homeStationPeerID = current.GetHomeStationPeerId()
-	} else {
-		homeStationPeerID, err = repository.ResolveActorHomeStationPeerID(
-			ctx,
-			actorPTID,
-		)
-		if err != nil {
-			return nil, err
+		if current.GetHomeStationPeerId() != expectedHomeStationPeerID {
+			return nil, domain.NewError(
+				domain.ErrorCodeIdentityConflict,
+				operation,
+				"home_station_peer_id",
+				"does not match the established Actor device",
+			)
 		}
 	}
-	if homeStationPeerID == c.localStationID {
+	if expectedHomeStationPeerID == c.localStationID {
 		if !found {
 			return nil, nil
 		}
@@ -281,14 +350,18 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 			"is not configured",
 		)
 	}
-	hydrated, err := hydrator.Hydrate(ctx, actorPTID, homeStationPeerID)
+	hydrated, err := hydrator.Hydrate(
+		ctx,
+		actorPTID,
+		expectedHomeStationPeerID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if err := repository.UpsertVerifiedRemoteDeviceSigningKeys(
 		ctx,
 		actorPTID,
-		homeStationPeerID,
+		expectedHomeStationPeerID,
 		hydrated,
 	); err != nil {
 		return nil, err

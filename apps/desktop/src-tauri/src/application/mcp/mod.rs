@@ -1,15 +1,26 @@
 use crate::contracts::{
-    McpCreateInput, McpExecuteToolInput, McpNameInput, McpToggleInput, McpUpdateInput, StubPayload,
+    McpCreateInput, McpExecuteToolInput, McpLifecycleOperationInput, McpNameInput, McpToggleInput,
+    McpUpdateInput, StubPayload,
 };
+use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::storage::{self, StorageKind};
+use crate::infrastructure::storage;
+use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
+use crate::model::agent::{
+    CapabilityOperation, CapabilityOperationError, CapabilityOperationErrorCode,
+    CapabilityOperationStatus, StartCapabilityOperationRequest, StartCapabilityOperationResponse,
+};
+use prost::Message;
+use reqwest::Method;
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
@@ -17,6 +28,9 @@ const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MCP_RESERVED_ENV_PREFIX: &str = "PEERS_TOUCH_";
 const MCP_MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MCP_MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
+const MCP_STORE_SCHEMA_VERSION: i32 = 1;
+const MCP_CONFIG_REVISION_KEY: &str = "configRevision";
+const MCP_CONFIG_DIGEST_DOMAIN: &[u8] = b"peers-touch/mcp-config/v1\0";
 
 #[derive(Clone, Default)]
 struct McpToolExecutionPolicy {
@@ -31,85 +45,208 @@ struct McpServerRecord {
     enabled: bool,
 }
 
-#[derive(Default)]
 struct McpStore {
+    actor_ptid: String,
     servers: Vec<McpServerRecord>,
 }
 
+#[derive(Clone)]
+struct McpServerSnapshot {
+    index: Option<usize>,
+    record: Option<McpServerRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct McpServerConfigIdentity {
+    revision: u64,
+    digest: String,
+}
+
 impl McpStore {
-    fn load() -> Self {
-        let path = match mcp_store_path() {
-            Ok(path) => path,
-            Err(error) => {
-                tracing::warn!(error = %error, "Failed to resolve MCP store path; using seeded store");
-                return Self::seeded();
-            }
+    fn load(actor_ptid: &str) -> Result<Self, String> {
+        let actor_ptid = require_actor_ptid(actor_ptid)?;
+        let connection = mcp_store_connection(&actor_ptid)?;
+        let content = connection
+            .query_row(
+                "SELECT payload FROM mcp_store_state WHERE singleton = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| format!("read encrypted MCP store: {error}"))?;
+        let raw_servers = match content {
+            Some(content) => serde_json::from_str::<Vec<Value>>(&content)
+                .map_err(|error| format!("parse encrypted MCP store: {error}"))?,
+            None => migrate_legacy_store(&connection)?,
         };
-        let content = match fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::seeded(),
-            Err(error) => {
-                tracing::warn!(error = %error, path = %path.display(), "Failed to read MCP store; using seeded store");
-                return Self::seeded();
-            }
-        };
-        let raw_servers = match serde_json::from_str::<Vec<Value>>(&content) {
-            Ok(raw_servers) => raw_servers,
-            Err(error) => {
-                tracing::warn!(error = %error, path = %path.display(), "Failed to parse MCP store; using seeded store");
-                return Self::seeded();
-            }
-        };
-        let servers = raw_servers
+        let mut servers = raw_servers
             .into_iter()
-            .filter_map(|data| record_from_value(data).ok())
-            .collect::<Vec<_>>();
-        Self { servers }
+            .map(record_from_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        let runtime_epoch = mcp_runtime_epoch();
+        let mut changed = false;
+        for server in &mut servers {
+            let Some(data) = server.data.as_object_mut() else {
+                continue;
+            };
+            if data.get("status").and_then(Value::as_str) == Some("connected")
+                && data.get("runtimeEpoch").and_then(Value::as_str) != Some(runtime_epoch)
+            {
+                data.insert("status".to_string(), json!("disconnected"));
+                data.insert("lastError".to_string(), json!("MCP_RUNTIME_RESTARTED"));
+                changed = true;
+            }
+        }
+        let store = Self {
+            actor_ptid,
+            servers,
+        };
+        if changed {
+            persist_store(&store)?;
+        }
+        Ok(store)
+    }
+}
+
+static MCP_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static MCP_RUNTIME_EPOCH: OnceLock<String> = OnceLock::new();
+static MCP_ACTIVE_STDIO_PROCESSES: OnceLock<Mutex<HashMap<String, Arc<Mutex<Child>>>>> =
+    OnceLock::new();
+
+struct ManagedMcpChild {
+    operation_id: Option<String>,
+    child: Arc<Mutex<Child>>,
+}
+
+impl ManagedMcpChild {
+    fn new(child: Child, operation_id: Option<&str>) -> Result<Self, String> {
+        let child = Arc::new(Mutex::new(child));
+        let operation_id = operation_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let mut managed = Self {
+            operation_id: None,
+            child,
+        };
+        if let Some(operation_id) = &operation_id {
+            let mut processes = mcp_active_stdio_processes()
+                .lock()
+                .map_err(|error| format!("lock active MCP process registry: {error}"))?;
+            if processes.contains_key(operation_id) {
+                return Err("MCP_OPERATION_PROCESS_ALREADY_ACTIVE".to_string());
+            }
+            processes.insert(operation_id.clone(), Arc::clone(&managed.child));
+            managed.operation_id = Some(operation_id.clone());
+        }
+        Ok(managed)
     }
 
-    fn seeded() -> Self {
-        Self {
-            servers: vec![McpServerRecord {
-                name: "default-mcp".to_string(),
-                enabled: true,
-                data: json!({
-                    "name": "default-mcp",
-                    "title": "i18n:mcp.default.title",
-                    "description": "i18n:mcp.default.description",
-                    "version": "1.0.0",
-                    "type": "stdio",
-                    "command": "mcp-server",
-                    "args": [],
-                    "env": {},
-                    "url": "",
-                    "headers": {},
-                    "authType": "",
-                    "authToken": "",
-                    "authAccessToken": "",
-                    "configSchema": {},
-                    "settings": {},
-                    "metaAvatar": "",
-                    "metaTags": [],
-                    "source": "user",
-                    "homepage": "",
-                    "repository": "",
-                    "enabled": true,
-                    "status": "unknown",
-                    "lastTestedAt": "",
-                    "lastError": "",
-                    "tools": [],
-                    "createdAt": "2026-03-24T00:00:00.000Z",
-                    "updatedAt": "2026-03-24T00:00:00.000Z"
-                }),
-            }],
+    fn take_stdio(&self) -> Result<(ChildStdin, ChildStdout), String> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|error| format!("lock active MCP child: {error}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "failed to open MCP server stdin".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "failed to open MCP server stdout".to_string())?;
+        Ok((stdin, stdout))
+    }
+
+    fn terminate(&self) -> Result<(), String> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|error| format!("lock active MCP child: {error}"))?;
+        let result = terminate_child(&mut child);
+        drop(child);
+        self.unregister();
+        result
+    }
+
+    fn unregister(&self) {
+        let Some(operation_id) = &self.operation_id else {
+            return;
+        };
+        let Ok(mut processes) = mcp_active_stdio_processes().lock() else {
+            return;
+        };
+        if processes
+            .get(operation_id)
+            .is_some_and(|child| Arc::ptr_eq(child, &self.child))
+        {
+            processes.remove(operation_id);
         }
     }
 }
 
-static MCP_STORE: OnceLock<Mutex<McpStore>> = OnceLock::new();
+impl Drop for ManagedMcpChild {
+    fn drop(&mut self) {
+        let _ = self.terminate();
+    }
+}
 
-fn mcp_store() -> &'static Mutex<McpStore> {
-    MCP_STORE.get_or_init(|| Mutex::new(McpStore::load()))
+fn mcp_active_stdio_processes() -> &'static Mutex<HashMap<String, Arc<Mutex<Child>>>> {
+    MCP_ACTIVE_STDIO_PROCESSES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn terminate_child(child: &mut Child) -> Result<(), String> {
+    match child
+        .try_wait()
+        .map_err(|error| format!("inspect MCP child process: {error}"))?
+    {
+        Some(_) => Ok(()),
+        None => {
+            child
+                .kill()
+                .map_err(|error| format!("terminate MCP child process: {error}"))?;
+            child
+                .wait()
+                .map_err(|error| format!("reap MCP child process: {error}"))?;
+            Ok(())
+        }
+    }
+}
+
+pub fn cancel_lifecycle_operation(operation_id: &str) -> Result<bool, String> {
+    let child = mcp_active_stdio_processes()
+        .lock()
+        .map_err(|error| format!("lock active MCP process registry: {error}"))?
+        .get(operation_id.trim())
+        .cloned();
+    let Some(child) = child else {
+        return Ok(false);
+    };
+    let mut child = child
+        .lock()
+        .map_err(|error| format!("lock active MCP child: {error}"))?;
+    match child.try_wait() {
+        Ok(Some(_)) => Ok(false),
+        Ok(None) => {
+            child
+                .kill()
+                .map_err(|error| format!("cancel MCP child process: {error}"))?;
+            Ok(true)
+        }
+        Err(error) => Err(format!(
+            "inspect MCP child process for cancellation: {error}"
+        )),
+    }
+}
+
+fn mcp_store_lock() -> &'static Mutex<()> {
+    MCP_STORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn mcp_runtime_epoch() -> &'static str {
+    MCP_RUNTIME_EPOCH
+        .get_or_init(|| format!("mcp-runtime-{}", ulid::Ulid::new()))
+        .as_str()
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -132,16 +269,92 @@ fn store_lock_error(e: impl std::fmt::Display) -> AppResult<StubPayload> {
     )
 }
 
-fn mcp_store_path() -> Result<PathBuf, String> {
-    let dir = storage::app_file_path("desktop", StorageKind::Data, &["mcp"])
-        .map_err(|error| format!("failed to resolve MCP store directory: {error:?}"))?;
-    fs::create_dir_all(&dir)
-        .map_err(|error| format!("failed to create MCP store directory: {error}"))?;
+fn require_actor_ptid(actor_ptid: &str) -> Result<String, String> {
+    let actor_ptid = actor_ptid.trim();
+    if !actor_ptid.starts_with("ptid:") {
+        return Err("MCP store requires an authenticated actor PTID".to_string());
+    }
+    Ok(actor_ptid.to_string())
+}
+
+fn mcp_store_spec(actor_ptid: &str) -> Result<DatabaseOpenSpec, String> {
+    let actor_ptid = require_actor_ptid(actor_ptid)?;
+    let app_name = std::env::var("PT_PROFILE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "desktop".to_string());
+    Ok(DatabaseOpenSpec {
+        app_name: app_name.clone(),
+        domain: "agent-mcp".to_string(),
+        profile: "main".to_string(),
+        user_scope: actor_ptid.clone(),
+        encryption_level: EncryptionLevel::L2,
+        key_ref: format!("agent-mcp/{app_name}/{}", scope_hash(&actor_ptid)),
+        schema_version: MCP_STORE_SCHEMA_VERSION,
+    })
+}
+
+fn mcp_store_connection(actor_ptid: &str) -> Result<rusqlite::Connection, String> {
+    let spec = mcp_store_spec(actor_ptid)?;
+    let connection = storage::open_database(&spec, PlatformKeyProvider::shared())
+        .map_err(|error| format!("open encrypted MCP store: {error}"))?;
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS mcp_store_state (
+                singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                payload TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+             );",
+        )
+        .map_err(|error| format!("initialize encrypted MCP store: {error}"))?;
+    Ok(connection)
+}
+
+fn legacy_mcp_store_path() -> Result<PathBuf, String> {
+    let dir = storage::app_file_path(
+        "desktop",
+        crate::infrastructure::storage::StorageKind::Data,
+        &["mcp"],
+    )
+    .map_err(|error| format!("resolve legacy MCP store directory: {error:?}"))?;
     Ok(dir.join("servers.json"))
 }
 
+fn migrate_legacy_store(connection: &rusqlite::Connection) -> Result<Vec<Value>, String> {
+    let path = legacy_mcp_store_path()?;
+    let values = match fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str::<Vec<Value>>(&content)
+            .map_err(|error| format!("parse legacy MCP store: {error}"))?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(format!("read legacy MCP store: {error}")),
+    };
+    if values.is_empty() {
+        return Ok(values);
+    }
+    let values = values
+        .into_iter()
+        .map(record_from_value)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|record| record.data)
+        .collect::<Vec<_>>();
+    let payload = serde_json::to_string(&values)
+        .map_err(|error| format!("serialize legacy MCP store migration: {error}"))?;
+    connection
+        .execute(
+            "INSERT INTO mcp_store_state(singleton, payload, updated_at_ms)
+             VALUES(1, ?1, ?2)
+             ON CONFLICT(singleton) DO UPDATE
+             SET payload = excluded.payload, updated_at_ms = excluded.updated_at_ms",
+            params![payload, now_unix_ms()],
+        )
+        .map_err(|error| format!("commit legacy MCP store migration: {error}"))?;
+    fs::remove_file(&path).map_err(|error| format!("remove legacy MCP store: {error}"))?;
+    Ok(values)
+}
+
 fn persist_store(store: &McpStore) -> Result<(), String> {
-    let path = mcp_store_path()?;
     let values = store
         .servers
         .iter()
@@ -154,9 +367,24 @@ fn persist_store(store: &McpStore) -> Result<(), String> {
             data
         })
         .collect::<Vec<_>>();
-    let content = serde_json::to_string_pretty(&values)
+    let content = serde_json::to_string(&values)
         .map_err(|error| format!("failed to serialize MCP store: {error}"))?;
-    fs::write(path, content).map_err(|error| format!("failed to write MCP store: {error}"))
+    let mut connection = mcp_store_connection(&store.actor_ptid)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| format!("begin encrypted MCP store transaction: {error}"))?;
+    transaction
+        .execute(
+            "INSERT INTO mcp_store_state(singleton, payload, updated_at_ms)
+             VALUES(1, ?1, ?2)
+             ON CONFLICT(singleton) DO UPDATE
+             SET payload = excluded.payload, updated_at_ms = excluded.updated_at_ms",
+            params![content, now_unix_ms()],
+        )
+        .map_err(|error| format!("write encrypted MCP store: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("commit encrypted MCP store: {error}"))
 }
 
 fn persist_error(error: impl std::fmt::Display) -> AppResult<StubPayload> {
@@ -165,6 +393,201 @@ fn persist_error(error: impl std::fmt::Display) -> AppResult<StubPayload> {
         ErrorCode::InternalError,
         format!("Failed to persist MCP store: {error}"),
         None,
+    )
+}
+
+fn stub_failure_bytes(result: AppResult<StubPayload>) -> AppResult<Vec<u8>> {
+    AppResult {
+        ok: false,
+        data: None,
+        error: result.error,
+    }
+}
+
+fn snapshot_server(actor_ptid: &str, server_name: &str) -> Result<McpServerSnapshot, String> {
+    let _lock = mcp_store_lock()
+        .lock()
+        .map_err(|error| format!("lock encrypted MCP store: {error}"))?;
+    let store = McpStore::load(actor_ptid)?;
+    let index = store
+        .servers
+        .iter()
+        .position(|server| server.name == server_name);
+    Ok(McpServerSnapshot {
+        index,
+        record: index.map(|index| store.servers[index].clone()),
+    })
+}
+
+fn server_config_identity(
+    actor_ptid: &str,
+    server_name: &str,
+) -> Result<McpServerConfigIdentity, String> {
+    let _lock = mcp_store_lock()
+        .lock()
+        .map_err(|error| format!("lock encrypted MCP store: {error}"))?;
+    let store = McpStore::load(actor_ptid)?;
+    let server = store
+        .servers
+        .iter()
+        .find(|server| server.name == server_name)
+        .ok_or_else(|| "MCP_SERVER_NOT_FOUND".to_string())?;
+    Ok(server_config_identity_for_record(server))
+}
+
+fn restore_server_snapshot_if_unchanged(
+    actor_ptid: &str,
+    server_name: &str,
+    staged: &McpServerConfigIdentity,
+    snapshot: McpServerSnapshot,
+) -> Result<bool, String> {
+    let _lock = mcp_store_lock()
+        .lock()
+        .map_err(|error| format!("lock encrypted MCP store: {error}"))?;
+    let mut store = McpStore::load(actor_ptid)?;
+    let current_index = store
+        .servers
+        .iter()
+        .position(|server| server.name == server_name);
+    let Some(current_index) = current_index else {
+        return Ok(false);
+    };
+    if server_config_identity_for_record(&store.servers[current_index]) != *staged {
+        return Ok(false);
+    }
+    store.servers.remove(current_index);
+    if let Some(record) = snapshot.record {
+        store.servers.insert(
+            snapshot
+                .index
+                .unwrap_or(current_index)
+                .min(store.servers.len()),
+            record,
+        );
+    }
+    persist_store(&store)?;
+    Ok(true)
+}
+
+fn start_staged_lifecycle_operation(
+    actor_ptid: &str,
+    token: &str,
+    target_device_id: &str,
+    capability_session_id: &str,
+    server_name: &str,
+    operation_kind: &str,
+    stage: impl FnOnce() -> AppResult<StubPayload>,
+) -> AppResult<Vec<u8>> {
+    let snapshot = match snapshot_server(actor_ptid, server_name) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return store_error_bytes(error),
+    };
+    let staged_result = stage();
+    if !staged_result.ok {
+        return stub_failure_bytes(staged_result);
+    }
+    let staged_identity = match server_config_identity(actor_ptid, server_name) {
+        Ok(identity) => identity,
+        Err(error) => return store_error_bytes(error),
+    };
+    let result = mcp_start_lifecycle_operation(
+        actor_ptid,
+        token,
+        target_device_id,
+        capability_session_id,
+        McpLifecycleOperationInput {
+            name: server_name.to_string(),
+            operation_kind: operation_kind.to_string(),
+            idempotency_key: None,
+        },
+    );
+    if !result.ok {
+        match restore_server_snapshot_if_unchanged(
+            actor_ptid,
+            server_name,
+            &staged_identity,
+            snapshot,
+        ) {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                server_name,
+                "Skipped MCP mutation rollback because a newer configuration exists"
+            ),
+            Err(error) => tracing::error!(
+                server_name,
+                error = %error,
+                "Failed to roll back MCP mutation after Station admission failure"
+            ),
+        }
+    }
+    result
+}
+
+pub fn mcp_create_server_with_lifecycle(
+    actor_ptid: &str,
+    token: &str,
+    target_device_id: &str,
+    capability_session_id: &str,
+    input: McpCreateInput,
+) -> AppResult<Vec<u8>> {
+    let name = input
+        .data
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    start_staged_lifecycle_operation(
+        actor_ptid,
+        token,
+        target_device_id,
+        capability_session_id,
+        &name,
+        "install",
+        || mcp_create_server(actor_ptid, input),
+    )
+}
+
+pub fn mcp_update_server_with_lifecycle(
+    actor_ptid: &str,
+    token: &str,
+    target_device_id: &str,
+    capability_session_id: &str,
+    input: McpUpdateInput,
+) -> AppResult<Vec<u8>> {
+    let name = input.name.trim().to_string();
+    start_staged_lifecycle_operation(
+        actor_ptid,
+        token,
+        target_device_id,
+        capability_session_id,
+        &name,
+        "configure",
+        || mcp_update_server(actor_ptid, input),
+    )
+}
+
+pub fn mcp_toggle_server_with_lifecycle(
+    actor_ptid: &str,
+    token: &str,
+    target_device_id: &str,
+    capability_session_id: &str,
+    input: McpToggleInput,
+) -> AppResult<Vec<u8>> {
+    let name = input.name.trim().to_string();
+    let operation_kind = if input.enabled {
+        "connect"
+    } else {
+        "configure"
+    };
+    start_staged_lifecycle_operation(
+        actor_ptid,
+        token,
+        target_device_id,
+        capability_session_id,
+        &name,
+        operation_kind,
+        || mcp_toggle_server(actor_ptid, input),
     )
 }
 
@@ -185,6 +608,217 @@ fn record_from_value(mut data: Value) -> Result<McpServerRecord, String> {
         data,
         enabled,
     })
+}
+
+fn config_revision(data: &Value) -> u64 {
+    data.get(MCP_CONFIG_REVISION_KEY)
+        .and_then(Value::as_u64)
+        .filter(|revision| *revision > 0)
+        .unwrap_or(1)
+}
+
+fn set_config_revision(data: &mut Value, revision: u64) {
+    if let Some(object) = data.as_object_mut() {
+        object.insert(MCP_CONFIG_REVISION_KEY.to_string(), json!(revision.max(1)));
+    }
+}
+
+fn server_config_projection(record: &McpServerRecord) -> Value {
+    let mut projection = record.data.clone();
+    if let Some(object) = projection.as_object_mut() {
+        object
+            .retain(|key, _| key != MCP_CONFIG_REVISION_KEY && !is_operation_projection_field(key));
+        object.insert("name".to_string(), json!(record.name));
+        object.insert("enabled".to_string(), json!(record.enabled));
+    }
+    canonical_json(projection)
+}
+
+fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
+        Value::Object(values) => {
+            let mut entries = values.into_iter().collect::<Vec<_>>();
+            entries.sort_by(|left, right| left.0.cmp(&right.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, canonical_json(value)))
+                    .collect(),
+            )
+        }
+        value => value,
+    }
+}
+
+fn server_config_identity_for_record(record: &McpServerRecord) -> McpServerConfigIdentity {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(MCP_CONFIG_DIGEST_DOMAIN);
+    hasher.update(
+        serde_json::to_vec(&server_config_projection(record))
+            .expect("MCP configuration projection must serialize"),
+    );
+    McpServerConfigIdentity {
+        revision: config_revision(&record.data),
+        digest: hex::encode(hasher.finalize()),
+    }
+}
+
+fn pinned_server_from_arguments<'a>(
+    store: &'a McpStore,
+    arguments: &Value,
+) -> Result<&'a McpServerRecord, CapabilityOperationError> {
+    let server_name = arguments
+        .get("server_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            operation_error(CapabilityOperationErrorCode::PayloadMismatch, false, "edit")
+        })?;
+    let expected_revision = arguments
+        .get("config_revision")
+        .and_then(Value::as_u64)
+        .filter(|revision| *revision > 0)
+        .ok_or_else(|| {
+            operation_error(CapabilityOperationErrorCode::PayloadMismatch, false, "edit")
+        })?;
+    let expected_digest = arguments
+        .get("config_digest")
+        .and_then(Value::as_str)
+        .filter(|digest| digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| {
+            operation_error(CapabilityOperationErrorCode::PayloadMismatch, false, "edit")
+        })?;
+    let server = store
+        .servers
+        .iter()
+        .find(|server| server.name == server_name)
+        .ok_or_else(|| {
+            operation_error(CapabilityOperationErrorCode::PayloadMismatch, false, "edit")
+        })?;
+    let actual = server_config_identity_for_record(server);
+    if actual.revision != expected_revision || actual.digest != expected_digest {
+        return Err(operation_error(
+            CapabilityOperationErrorCode::PayloadMismatch,
+            false,
+            "edit",
+        ));
+    }
+    Ok(server)
+}
+
+fn load_store(actor_ptid: &str) -> Result<McpStore, AppResult<StubPayload>> {
+    McpStore::load(actor_ptid).map_err(store_lock_error)
+}
+
+fn redacted_server_value(data: &Value, enabled: bool) -> Value {
+    let mut redacted = data.clone();
+    if let Some(obj) = redacted.as_object_mut() {
+        obj.insert("enabled".to_string(), json!(enabled));
+        if let Some(last_error) = data.get("lastError").and_then(Value::as_str) {
+            obj.insert(
+                "lastError".to_string(),
+                json!(redact_mcp_error(last_error, data)),
+            );
+        }
+        for key in ["env", "headers"] {
+            let names = obj
+                .get(key)
+                .and_then(Value::as_object)
+                .map(|values| values.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            obj.insert(key.to_string(), json!({}));
+            obj.insert(format!("{key}Keys"), json!(names));
+        }
+        for key in ["authToken", "authAccessToken"] {
+            let present = obj
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty());
+            obj.insert(key.to_string(), json!(""));
+            obj.insert(format!("has{}", uppercase_first(key)), json!(present));
+        }
+        if let Some(settings) = obj.get_mut("settings") {
+            let mut redactions = Vec::new();
+            crate::application::security::redact_secret_like_values(
+                settings,
+                "settings",
+                &mut redactions,
+            );
+        }
+    }
+    redacted
+}
+
+fn uppercase_first(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn merge_secret_fields(current: &Value, next: &mut Value) {
+    let Some(current) = current.as_object() else {
+        return;
+    };
+    let Some(next) = next.as_object_mut() else {
+        return;
+    };
+    for key in ["env", "headers"] {
+        let next_is_empty = next
+            .get(key)
+            .and_then(Value::as_object)
+            .map_or(true, |values| values.is_empty());
+        if next_is_empty {
+            if let Some(value) = current.get(key) {
+                next.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    for key in ["authToken", "authAccessToken"] {
+        let next_is_empty = next
+            .get(key)
+            .and_then(Value::as_str)
+            .map_or(true, str::is_empty);
+        if next_is_empty {
+            if let Some(value) = current.get(key) {
+                next.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+}
+
+fn is_operation_projection_field(key: &str) -> bool {
+    matches!(
+        key,
+        "status"
+            | "lastTestedAt"
+            | "lastError"
+            | "tools"
+            | "operationId"
+            | "operationKind"
+            | "runtimeEpoch"
+            | "createdAt"
+            | "updatedAt"
+    )
+}
+
+fn reset_operation_projection(data: &mut Value, status: &str) {
+    let Some(object) = data.as_object_mut() else {
+        return;
+    };
+    object.insert("status".to_string(), json!(status));
+    object.insert("lastTestedAt".to_string(), json!(""));
+    object.insert("lastError".to_string(), json!(""));
+    object.insert("tools".to_string(), json!([]));
+    object.insert("operationId".to_string(), json!(""));
+    object.insert("operationKind".to_string(), json!(""));
+    object.insert("runtimeEpoch".to_string(), json!(""));
+    object.insert("updatedAt".to_string(), json!(now_rfc3339()));
 }
 
 fn normalize_mcp_value(data: &mut Value) -> Result<(), String> {
@@ -244,6 +878,14 @@ fn normalize_mcp_value(data: &mut Value) -> Result<(), String> {
     obj.entry("lastError".to_string())
         .or_insert_with(|| json!(""));
     obj.entry("tools".to_string()).or_insert_with(|| json!([]));
+    obj.entry("operationId".to_string())
+        .or_insert_with(|| json!(""));
+    obj.entry("operationKind".to_string())
+        .or_insert_with(|| json!(""));
+    obj.entry("runtimeEpoch".to_string())
+        .or_insert_with(|| json!(""));
+    obj.entry(MCP_CONFIG_REVISION_KEY.to_string())
+        .or_insert_with(|| json!(1));
     obj.entry("createdAt".to_string())
         .or_insert_with(|| json!(now.clone()));
     obj.insert("updatedAt".to_string(), json!(now));
@@ -251,14 +893,24 @@ fn normalize_mcp_value(data: &mut Value) -> Result<(), String> {
 }
 
 fn now_rfc3339() -> String {
-    let unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0))
-        .as_secs() as i64;
+    let unix = now_unix_ms() / 1_000;
     let dt =
         time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
     dt.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn now_unix_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_millis()
+        .min(i64::MAX as u128) as i64
+}
+
+fn scope_hash(value: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 fn value_string(data: &Value, key: &str) -> String {
@@ -418,12 +1070,16 @@ fn is_blocked_literal_ip(host: &str) -> bool {
     }
 }
 
-pub fn mcp_list_servers() -> AppResult<StubPayload> {
-    let guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+pub fn mcp_list_servers(actor_ptid: &str) -> AppResult<StubPayload> {
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    let servers = guard
+    let store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    let servers = store
         .servers
         .iter()
         .map(|item| {
@@ -440,19 +1096,22 @@ pub fn mcp_list_servers() -> AppResult<StubPayload> {
                 "status": data.get("status").and_then(Value::as_str).unwrap_or("unknown"),
                 "lastTestedAt": data.get("lastTestedAt").and_then(Value::as_str).unwrap_or(""),
                 "lastError": data.get("lastError").and_then(Value::as_str).unwrap_or(""),
-                "toolCount": data.get("tools").and_then(Value::as_array).map(|tools| tools.len()).unwrap_or(0)
+                "toolCount": data.get("tools").and_then(Value::as_array).map(|tools| tools.len()).unwrap_or(0),
+                "operationId": data.get("operationId").and_then(Value::as_str).unwrap_or(""),
+                "operationKind": data.get("operationKind").and_then(Value::as_str).unwrap_or("")
             })
         })
         .collect::<Vec<_>>();
     success_payload("mcp_list_servers", json!({ "servers": servers }))
 }
 
-pub fn mcp_tool_registry_entries() -> Result<Vec<Value>, String> {
-    let guard = mcp_store()
+pub fn mcp_tool_registry_entries(actor_ptid: &str) -> Result<Vec<Value>, String> {
+    let _lock = mcp_store_lock()
         .lock()
         .map_err(|error| format!("failed to access MCP store: {error}"))?;
+    let store = McpStore::load(actor_ptid)?;
     let mut entries = Vec::new();
-    for server in guard.servers.iter().filter(|server| server.enabled) {
+    for server in store.servers.iter().filter(|server| server.enabled) {
         let transport = value_string(&server.data, "type");
         let tools = server
             .data
@@ -485,27 +1144,30 @@ pub fn mcp_tool_registry_entries() -> Result<Vec<Value>, String> {
     Ok(entries)
 }
 
-pub fn mcp_get_server(input: McpNameInput) -> AppResult<StubPayload> {
+pub fn mcp_get_server(actor_ptid: &str, input: McpNameInput) -> AppResult<StubPayload> {
     let name = input.name.trim();
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    let guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    if let Some(item) = guard.servers.iter().find(|item| item.name == name) {
-        let mut data = item.data.clone();
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("enabled".to_string(), json!(item.enabled));
-        }
-        return success_payload("mcp_get_server", data);
+    let store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    if let Some(item) = store.servers.iter().find(|item| item.name == name) {
+        return success_payload(
+            "mcp_get_server",
+            redacted_server_value(&item.data, item.enabled),
+        );
     }
     AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
-pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
-    let record = match record_from_value(input.data) {
+pub fn mcp_create_server(actor_ptid: &str, input: McpCreateInput) -> AppResult<StubPayload> {
+    let mut record = match record_from_value(input.data) {
         Ok(record) => record,
         Err(error) => return invalid_argument(&error),
     };
@@ -513,41 +1175,67 @@ pub fn mcp_create_server(input: McpCreateInput) -> AppResult<StubPayload> {
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    let mut guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    if guard.servers.iter().any(|item| item.name == name) {
+    let mut store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    if store.servers.iter().any(|item| item.name == name) {
         return AppResult::fail(ErrorCode::Conflict, "MCP server already exists", None);
     }
-    guard.servers.push(record);
-    if let Err(error) = persist_store(&guard) {
+    reset_operation_projection(&mut record.data, "unknown");
+    set_config_revision(&mut record.data, 1);
+    store.servers.push(record);
+    if let Err(error) = persist_store(&store) {
         return persist_error(error);
     }
     success_payload("mcp_create_server", json!({ "ok": true, "name": name }))
 }
 
-pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
+pub fn mcp_update_server(actor_ptid: &str, input: McpUpdateInput) -> AppResult<StubPayload> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    let mut guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    let mut next_data = input.data;
-    if let Some(obj) = next_data.as_object_mut() {
-        obj.insert("name".to_string(), json!(name.clone()));
+    let mut store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    let Some(current) = store.servers.iter().find(|item| item.name == name) else {
+        return AppResult::fail(ErrorCode::NotFound, "MCP server not found", None);
+    };
+    let next_revision = config_revision(&current.data).saturating_add(1);
+    let mut next_data = current.data.clone();
+    let Some(next_object) = next_data.as_object_mut() else {
+        return invalid_argument("stored MCP server data must be an object");
+    };
+    let Some(update_object) = input.data.as_object() else {
+        return invalid_argument("MCP server data must be an object");
+    };
+    for (key, value) in update_object {
+        if !is_operation_projection_field(key) && key != MCP_CONFIG_REVISION_KEY {
+            next_object.insert(key.clone(), value.clone());
+        }
     }
-    let record = match record_from_value(next_data) {
+    next_object.insert("name".to_string(), json!(name.clone()));
+    merge_secret_fields(&current.data, &mut next_data);
+    let mut record = match record_from_value(next_data) {
         Ok(record) => record,
         Err(error) => return invalid_argument(&error),
     };
-    if let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) {
+    reset_operation_projection(&mut record.data, "unknown");
+    set_config_revision(&mut record.data, next_revision);
+    if let Some(item) = store.servers.iter_mut().find(|item| item.name == name) {
         item.enabled = record.enabled;
         item.data = record.data;
-        if let Err(error) = persist_store(&guard) {
+        if let Err(error) = persist_store(&store) {
             return persist_error(error);
         }
         return success_payload("mcp_update_server", json!({ "ok": true }));
@@ -555,42 +1243,60 @@ pub fn mcp_update_server(input: McpUpdateInput) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
-pub fn mcp_delete_server(input: McpNameInput) -> AppResult<StubPayload> {
+pub fn mcp_delete_server(actor_ptid: &str, input: McpNameInput) -> AppResult<StubPayload> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    let mut guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    let before = guard.servers.len();
-    guard.servers.retain(|item| item.name != name);
-    if let Err(error) = persist_store(&guard) {
+    let mut store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    let before = store.servers.len();
+    store.servers.retain(|item| item.name != name);
+    if let Err(error) = persist_store(&store) {
         return persist_error(error);
     }
     success_payload(
         "mcp_delete_server",
-        json!({ "ok": before != guard.servers.len() }),
+        json!({ "ok": before != store.servers.len() }),
     )
 }
 
-pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {
+pub fn mcp_toggle_server(actor_ptid: &str, input: McpToggleInput) -> AppResult<StubPayload> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return invalid_argument("name is required");
     }
-    let mut guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
+    let _lock = match mcp_store_lock().lock() {
+        Ok(lock) => lock,
+        Err(error) => return store_lock_error(error),
     };
-    if let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) {
+    let mut store = match load_store(actor_ptid) {
+        Ok(store) => store,
+        Err(error) => return error,
+    };
+    if let Some(item) = store.servers.iter_mut().find(|item| item.name == name) {
+        if item.enabled != input.enabled {
+            let next_revision = config_revision(&item.data).saturating_add(1);
+            set_config_revision(&mut item.data, next_revision);
+        }
         item.enabled = input.enabled;
         if let Some(obj) = item.data.as_object_mut() {
             obj.insert("enabled".to_string(), json!(input.enabled));
+            obj.insert("status".to_string(), json!("unknown"));
+            obj.insert("lastError".to_string(), json!(""));
+            obj.insert("tools".to_string(), json!([]));
+            obj.insert("runtimeEpoch".to_string(), json!(""));
+            obj.insert("operationId".to_string(), json!(""));
+            obj.insert("operationKind".to_string(), json!(""));
             obj.insert("updatedAt".to_string(), json!(now_rfc3339()));
         }
-        if let Err(error) = persist_store(&guard) {
+        if let Err(error) = persist_store(&store) {
             return persist_error(error);
         }
         return success_payload("mcp_toggle_server", json!({ "ok": true }));
@@ -598,48 +1304,7 @@ pub fn mcp_toggle_server(input: McpToggleInput) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::NotFound, "MCP server not found", None)
 }
 
-pub fn mcp_test_server(input: McpNameInput) -> AppResult<StubPayload> {
-    let name = input.name.trim();
-    if name.is_empty() {
-        return invalid_argument("name is required");
-    }
-    let mut guard = match mcp_store().lock() {
-        Ok(guard) => guard,
-        Err(e) => return store_lock_error(e),
-    };
-    let Some(item) = guard.servers.iter_mut().find(|item| item.name == name) else {
-        return AppResult::fail(ErrorCode::NotFound, "MCP server not found", None);
-    };
-    let test_result = probe_server(&item.data);
-    let now = now_rfc3339();
-    if let Some(obj) = item.data.as_object_mut() {
-        obj.insert("lastTestedAt".to_string(), json!(now));
-        match &test_result {
-            Ok(tools) => {
-                obj.insert("status".to_string(), json!("connected"));
-                obj.insert("lastError".to_string(), json!(""));
-                obj.insert("tools".to_string(), json!(tools));
-            }
-            Err(error) => {
-                obj.insert("status".to_string(), json!("failed"));
-                obj.insert("lastError".to_string(), json!(error));
-                obj.insert("tools".to_string(), json!([]));
-            }
-        }
-    }
-    if let Err(error) = persist_store(&guard) {
-        return persist_error(error);
-    }
-    match test_result {
-        Ok(tools) => success_payload("mcp_test_server", json!({ "ok": true, "tools": tools })),
-        Err(error) => success_payload(
-            "mcp_test_server",
-            json!({ "ok": false, "error": error, "tools": [] }),
-        ),
-    }
-}
-
-pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
+pub fn mcp_execute_tool(actor_ptid: &str, input: McpExecuteToolInput) -> AppResult<StubPayload> {
     let server_name = input.server_name.trim();
     let tool_name = input.tool_name.trim();
     if server_name.is_empty() {
@@ -649,11 +1314,15 @@ pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
         return invalid_argument("tool_name is required");
     }
     let record = {
-        let guard = match mcp_store().lock() {
-            Ok(guard) => guard,
-            Err(e) => return store_lock_error(e),
+        let _lock = match mcp_store_lock().lock() {
+            Ok(lock) => lock,
+            Err(error) => return store_lock_error(error),
         };
-        let Some(item) = guard.servers.iter().find(|item| item.name == server_name) else {
+        let store = match load_store(actor_ptid) {
+            Ok(store) => store,
+            Err(error) => return error,
+        };
+        let Some(item) = store.servers.iter().find(|item| item.name == server_name) else {
             return AppResult::fail(ErrorCode::NotFound, "MCP server not found", None);
         };
         if !item.enabled {
@@ -724,9 +1393,363 @@ pub fn mcp_execute_tool(input: McpExecuteToolInput) -> AppResult<StubPayload> {
     }
 }
 
-fn probe_server(data: &Value) -> Result<Vec<String>, String> {
+pub fn mcp_start_lifecycle_operation(
+    actor_ptid: &str,
+    token: &str,
+    target_device_id: &str,
+    capability_session_id: &str,
+    input: McpLifecycleOperationInput,
+) -> AppResult<Vec<u8>> {
+    let server_name = input.name.trim();
+    let operation_kind = input.operation_kind.trim().to_ascii_lowercase();
+    if server_name.is_empty()
+        || !matches!(
+            operation_kind.as_str(),
+            "install" | "configure" | "test" | "connect" | "reconnect" | "uninstall"
+        )
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "name and a supported MCP lifecycle operation are required",
+            None,
+        );
+    }
+    let config_identity = {
+        let _lock = match mcp_store_lock().lock() {
+            Ok(lock) => lock,
+            Err(error) => return store_error_bytes(error),
+        };
+        let store = match McpStore::load(actor_ptid) {
+            Ok(store) => store,
+            Err(error) => return store_error_bytes(error),
+        };
+        let Some(server) = store
+            .servers
+            .iter()
+            .find(|server| server.name == server_name)
+        else {
+            return AppResult::fail(ErrorCode::NotFound, "MCP server not found", None);
+        };
+        server_config_identity_for_record(server)
+    };
+    let request = StartCapabilityOperationRequest {
+        capability_id: "mcp.invoke".to_string(),
+        capability_version: "2".to_string(),
+        operation_kind: operation_kind.clone(),
+        target_device_id: target_device_id.trim().to_string(),
+        capability_session_id: capability_session_id.trim().to_string(),
+        bounded_arguments: serde_json::to_vec(&json!({
+            "server_name": server_name,
+            "config_revision": config_identity.revision,
+            "config_digest": config_identity.digest,
+        }))
+        .unwrap_or_default(),
+        idempotency_key: input
+            .idempotency_key
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| format!("mcp-operation-{}", ulid::Ulid::new())),
+        deadline: Some(prost_types::Timestamp {
+            seconds: now_unix_ms().saturating_add(30_000).div_euclid(1_000),
+            nanos: 0,
+        }),
+    };
+    let response = crate::infrastructure::station_client::request_proto::<
+        _,
+        StartCapabilityOperationResponse,
+    >(
+        Method::POST,
+        "/sub-agent/agent/capability/operation/start",
+        token,
+        None,
+        Some(&request),
+    );
+    match response {
+        Ok(response) => {
+            let Some(operation) = response.operation.as_ref() else {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    "Station capability operation response is missing operation",
+                    None,
+                );
+            };
+            if let Err(error) = link_lifecycle_operation(actor_ptid, server_name, operation) {
+                return store_error_bytes(error);
+            }
+            AppResult::success(response.encode_to_vec())
+        }
+        Err(error) => error.into_app_result("agent.mcpOperationStartFailed"),
+    }
+}
+
+fn store_error_bytes(error: impl std::fmt::Display) -> AppResult<Vec<u8>> {
+    tracing::error!(error = %error, "Failed to access encrypted MCP store");
+    AppResult::fail(
+        ErrorCode::InternalError,
+        "Failed to access encrypted MCP store",
+        None,
+    )
+}
+
+pub fn link_lifecycle_operation(
+    actor_ptid: &str,
+    server_name: &str,
+    operation: &CapabilityOperation,
+) -> Result<(), String> {
+    let _lock = mcp_store_lock()
+        .lock()
+        .map_err(|error| format!("lock encrypted MCP store: {error}"))?;
+    let mut store = McpStore::load(actor_ptid)?;
+    let server = store
+        .servers
+        .iter_mut()
+        .find(|server| server.name == server_name.trim())
+        .ok_or_else(|| "MCP_SERVER_NOT_FOUND".to_string())?;
+    if let Some(data) = server.data.as_object_mut() {
+        data.insert(
+            "operationId".to_string(),
+            json!(operation.operation_id.clone()),
+        );
+        data.insert(
+            "operationKind".to_string(),
+            json!(operation.operation_kind.clone()),
+        );
+        data.insert("status".to_string(), json!("pending"));
+        data.insert("lastError".to_string(), json!(""));
+        data.insert("updatedAt".to_string(), json!(now_rfc3339()));
+    }
+    persist_store(&store)
+}
+
+pub fn execute_lifecycle_operation(
+    actor_ptid: &str,
+    operation: &CapabilityOperation,
+) -> Result<String, CapabilityOperationError> {
+    let arguments =
+        serde_json::from_slice::<Value>(&operation.bounded_arguments).map_err(|_| {
+            operation_error(CapabilityOperationErrorCode::PayloadMismatch, false, "edit")
+        })?;
+    let operation_kind = operation.operation_kind.trim();
+
+    if operation_kind == "uninstall" {
+        let _lock = mcp_store_lock().lock().map_err(|_| {
+            operation_error(
+                CapabilityOperationErrorCode::ExecutorUnavailable,
+                true,
+                "retry",
+            )
+        })?;
+        let mut store = McpStore::load(actor_ptid).map_err(|_| {
+            operation_error(
+                CapabilityOperationErrorCode::ExecutorUnavailable,
+                true,
+                "retry",
+            )
+        })?;
+        let server_name = pinned_server_from_arguments(&store, &arguments)?
+            .name
+            .clone();
+        store.servers.retain(|server| server.name != server_name);
+        persist_store(&store).map_err(|_| {
+            operation_error(
+                CapabilityOperationErrorCode::ExecutorUnavailable,
+                true,
+                "retry",
+            )
+        })?;
+        return Ok(format!("mcp:{server_name}:uninstalled"));
+    }
+
+    let record = {
+        let _lock = mcp_store_lock().lock().map_err(|_| {
+            operation_error(
+                CapabilityOperationErrorCode::ExecutorUnavailable,
+                true,
+                "retry",
+            )
+        })?;
+        let store = McpStore::load(actor_ptid).map_err(|_| {
+            operation_error(
+                CapabilityOperationErrorCode::ExecutorUnavailable,
+                true,
+                "retry",
+            )
+        })?;
+        pinned_server_from_arguments(&store, &arguments)?.clone()
+    };
+    let server_name = record.name.as_str();
+
+    let outcome = match operation_kind {
+        "install" | "configure" => validate_server_configuration(&record.data)
+            .map(|_| ("disconnected", Vec::<String>::new())),
+        "test" | "connect" | "reconnect" => {
+            probe_server_for_operation(&record.data, Some(operation.operation_id.as_str()))
+                .map(|tools| ("connected", tools))
+        }
+        _ => Err(format!(
+            "unsupported MCP lifecycle operation: {operation_kind}"
+        )),
+    };
+
+    let _lock = mcp_store_lock().lock().map_err(|_| {
+        operation_error(
+            CapabilityOperationErrorCode::ExecutorUnavailable,
+            true,
+            "retry",
+        )
+    })?;
+    let mut store = McpStore::load(actor_ptid).map_err(|_| {
+        operation_error(
+            CapabilityOperationErrorCode::ExecutorUnavailable,
+            true,
+            "retry",
+        )
+    })?;
+    pinned_server_from_arguments(&store, &arguments)?;
+    let server = store
+        .servers
+        .iter_mut()
+        .find(|server| server.name == server_name)
+        .expect("pinned MCP server must still exist");
+    match outcome {
+        Ok((status, tools)) => {
+            if let Some(data) = server.data.as_object_mut() {
+                data.insert("status".to_string(), json!(status));
+                data.insert("lastTestedAt".to_string(), json!(now_rfc3339()));
+                data.insert("lastError".to_string(), json!(""));
+                if matches!(operation_kind, "test" | "connect" | "reconnect") {
+                    data.insert("tools".to_string(), json!(tools));
+                    data.insert("runtimeEpoch".to_string(), json!(mcp_runtime_epoch()));
+                }
+                data.insert("updatedAt".to_string(), json!(now_rfc3339()));
+            }
+            persist_store(&store).map_err(|_| {
+                operation_error(
+                    CapabilityOperationErrorCode::ExecutorUnavailable,
+                    true,
+                    "retry",
+                )
+            })?;
+            Ok(format!("mcp:{server_name}:{operation_kind}"))
+        }
+        Err(error) => {
+            if let Some(data) = server.data.as_object_mut() {
+                data.insert("status".to_string(), json!("failed"));
+                data.insert(
+                    "lastError".to_string(),
+                    json!(redact_mcp_error(&error, &record.data)),
+                );
+                data.insert("updatedAt".to_string(), json!(now_rfc3339()));
+            }
+            let _ = persist_store(&store);
+            Err(operation_error(
+                if error.contains("timed out") {
+                    CapabilityOperationErrorCode::Timeout
+                } else {
+                    CapabilityOperationErrorCode::ExecutorUnavailable
+                },
+                true,
+                "retry",
+            ))
+        }
+    }
+}
+
+pub fn cleanup_lifecycle_operation(
+    actor_ptid: &str,
+    operation: &CapabilityOperation,
+) -> Result<(), String> {
+    let arguments = serde_json::from_slice::<Value>(&operation.bounded_arguments)
+        .map_err(|_| "CAPABILITY_OPERATION_ARGUMENTS_INVALID".to_string())?;
+    let _lock = mcp_store_lock()
+        .lock()
+        .map_err(|error| format!("lock encrypted MCP store: {error}"))?;
+    let mut store = McpStore::load(actor_ptid)?;
+    let server_name = match pinned_server_from_arguments(&store, &arguments) {
+        Ok(server) => server.name.clone(),
+        Err(_) => return Ok(()),
+    };
+    let Some(server) = store
+        .servers
+        .iter_mut()
+        .find(|server| server.name == server_name)
+    else {
+        return Ok(());
+    };
+    if let Some(data) = server.data.as_object_mut() {
+        let outcome = CapabilityOperationStatus::try_from(operation.desired_terminal_outcome)
+            .unwrap_or(CapabilityOperationStatus::Failed);
+        let status = match outcome {
+            CapabilityOperationStatus::Succeeded => data
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("disconnected"),
+            CapabilityOperationStatus::Cancelled => "cancelled",
+            CapabilityOperationStatus::TimedOut => "timed_out",
+            CapabilityOperationStatus::UnknownSideEffect => "unknown_side_effect",
+            _ => "failed",
+        };
+        data.insert("status".to_string(), json!(status));
+        data.insert("updatedAt".to_string(), json!(now_rfc3339()));
+    }
+    persist_store(&store)
+}
+
+fn validate_server_configuration(data: &Value) -> Result<(), String> {
     match value_string(data, "type").as_str() {
-        "stdio" => probe_stdio_server(data),
+        "stdio" => validate_stdio_execution_policy(
+            &value_string(data, "command"),
+            &value_string_array(data, "args"),
+            &value_string_map(data, "env"),
+        ),
+        "http" | "sse" => validate_http_execution_policy(
+            &value_string(data, "url"),
+            &value_string_map(data, "headers"),
+        )
+        .map(|_| ()),
+        other => Err(format!("unsupported MCP transport: {other}")),
+    }
+}
+
+fn operation_error(
+    code: CapabilityOperationErrorCode,
+    retryable: bool,
+    recovery_action: &str,
+) -> CapabilityOperationError {
+    CapabilityOperationError {
+        code: code as i32,
+        retryable,
+        recovery_action: recovery_action.to_string(),
+    }
+}
+
+fn redact_mcp_error(error: &str, data: &Value) -> String {
+    let mut redacted = error.to_string();
+    for key in ["env", "headers"] {
+        for (_, value) in value_string_map(data, key) {
+            if !value.is_empty() {
+                redacted = redacted.replace(&value, "[REDACTED]");
+            }
+        }
+    }
+    for key in ["authToken", "authAccessToken"] {
+        let value = value_string(data, key);
+        if !value.is_empty() {
+            redacted = redacted.replace(&value, "[REDACTED]");
+        }
+    }
+    redacted
+}
+
+fn probe_server(data: &Value) -> Result<Vec<String>, String> {
+    probe_server_for_operation(data, None)
+}
+
+fn probe_server_for_operation(
+    data: &Value,
+    operation_id: Option<&str>,
+) -> Result<Vec<String>, String> {
+    match value_string(data, "type").as_str() {
+        "stdio" => probe_stdio_server(data, operation_id),
         "http" => probe_http_like_server(data, false),
         "sse" => probe_http_like_server(data, true),
         other => Err(format!("unsupported MCP transport: {other}")),
@@ -926,28 +1949,23 @@ fn execute_tool_on_server(
     }
 }
 
-fn probe_stdio_server(data: &Value) -> Result<Vec<String>, String> {
+fn probe_stdio_server(data: &Value, operation_id: Option<&str>) -> Result<Vec<String>, String> {
     let command = value_string(data, "command");
     let args = value_string_array(data, "args");
     let env = value_string_map(data, "env");
     validate_stdio_execution_policy(&command, &args, &env)?;
-    let mut child = Command::new(command)
+    let child = Command::new(command)
         .args(&args)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
         .envs(env.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("failed to spawn stdio MCP server: {error}"))?;
-
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "failed to open MCP server stdin".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "failed to open MCP server stdout".to_string())?;
+    let child = ManagedMcpChild::new(child, operation_id)?;
+    let (mut stdin, stdout) = child.take_stdio()?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -964,8 +1982,7 @@ fn probe_stdio_server(data: &Value) -> Result<Vec<String>, String> {
         .map_err(|_| "stdio MCP server test timed out".to_string())
         .and_then(|response| response)
         .and_then(|response| extract_tools(&response));
-    let _ = child.kill();
-    let _ = child.wait();
+    child.terminate()?;
     result
 }
 
@@ -1203,9 +2220,7 @@ fn post_json_rpc(
         ));
     }
     if !status.is_success() {
-        return Err(format!(
-            "MCP HTTP request failed with status {status}: {text}"
-        ));
+        return Err(format!("MCP HTTP request failed with status {status}"));
     }
     if content_type.contains("text/event-stream")
         || text.lines().any(|line| line.starts_with("data:"))
@@ -1268,6 +2283,119 @@ mod tests {
         });
         let err = normalize_mcp_value(&mut data).expect_err("unknown transport should fail");
         assert!(err.contains("stdio, http, or sse"));
+    }
+
+    #[test]
+    fn lifecycle_configuration_identity_ignores_runtime_projection() {
+        let mut record = record_from_value(json!({
+            "name": "fixture",
+            "type": "stdio",
+            "command": "python3",
+            "args": ["fixture.py"],
+            "env": {"FIXTURE_SECRET": "secret-canary"},
+        }))
+        .expect("fixture record");
+        let original = server_config_identity_for_record(&record);
+
+        let object = record.data.as_object_mut().expect("record object");
+        object.insert("status".to_string(), json!("connected"));
+        object.insert("operationId".to_string(), json!("operation-1"));
+        object.insert("lastTestedAt".to_string(), json!("later"));
+        object.insert("runtimeEpoch".to_string(), json!("runtime-2"));
+        assert_eq!(server_config_identity_for_record(&record), original);
+
+        record
+            .data
+            .as_object_mut()
+            .expect("record object")
+            .insert("command".to_string(), json!("node"));
+        assert_ne!(server_config_identity_for_record(&record), original);
+    }
+
+    #[test]
+    fn lifecycle_operation_rejects_changed_configuration_pin() {
+        let mut record = record_from_value(json!({
+            "name": "fixture",
+            "type": "stdio",
+            "command": "python3",
+            "args": ["fixture.py"],
+        }))
+        .expect("fixture record");
+        set_config_revision(&mut record.data, 7);
+        let identity = server_config_identity_for_record(&record);
+        let arguments = json!({
+            "server_name": "fixture",
+            "config_revision": identity.revision,
+            "config_digest": identity.digest,
+        });
+        let mut store = McpStore {
+            actor_ptid: "ptid:person:test".to_string(),
+            servers: vec![record],
+        };
+        pinned_server_from_arguments(&store, &arguments).expect("matching pin");
+
+        set_config_revision(&mut store.servers[0].data, 8);
+        let Err(error) = pinned_server_from_arguments(&store, &arguments) else {
+            panic!("stale pin must fail");
+        };
+        assert_eq!(
+            error.code,
+            CapabilityOperationErrorCode::PayloadMismatch as i32
+        );
+        assert!(!error.retryable);
+    }
+
+    #[test]
+    fn public_mcp_record_redacts_all_secret_material() {
+        let secret = "mcp-secret-canary";
+        let value = json!({
+            "name": "redaction",
+            "env": {"API_KEY": secret},
+            "headers": {"Authorization": secret},
+            "authToken": secret,
+            "authAccessToken": secret,
+            "settings": {"nested": {"client_secret": secret}},
+            "lastError": format!("fixture failed with {secret}"),
+        });
+
+        let redacted = redacted_server_value(&value, true);
+        let encoded = serde_json::to_string(&redacted).expect("serialize redacted record");
+        assert!(!encoded.contains(secret));
+        assert_eq!(redacted["envKeys"], json!(["API_KEY"]));
+        assert_eq!(redacted["headersKeys"], json!(["Authorization"]));
+        assert_eq!(redacted["hasAuthToken"], json!(true));
+        assert_eq!(redacted["hasAuthAccessToken"], json!(true));
+    }
+
+    #[test]
+    fn managed_mcp_child_can_be_cancelled_and_reaped() {
+        let operation_id = format!("operation-{}", ulid::Ulid::new());
+        let child = Command::new("python3")
+            .args(["-c", "import time; time.sleep(60)"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cancellable MCP child");
+        let managed = ManagedMcpChild::new(child, Some(&operation_id)).expect("register MCP child");
+
+        assert!(cancel_lifecycle_operation(&operation_id).expect("cancel MCP child"));
+        managed.terminate().expect("reap MCP child");
+        assert!(!mcp_active_stdio_processes()
+            .lock()
+            .expect("lock process registry")
+            .contains_key(&operation_id));
+    }
+
+    #[test]
+    fn mcp_store_spec_is_actor_scoped_and_encrypted() {
+        let alice = mcp_store_spec("ptid:person:alice").expect("alice MCP store spec");
+        let bob = mcp_store_spec("ptid:person:bob").expect("bob MCP store spec");
+
+        assert_eq!(alice.encryption_level, EncryptionLevel::L2);
+        assert_eq!(alice.domain, "agent-mcp");
+        assert_ne!(alice.user_scope, bob.user_scope);
+        assert_ne!(alice.key_ref, bob.key_ref);
     }
 
     #[test]

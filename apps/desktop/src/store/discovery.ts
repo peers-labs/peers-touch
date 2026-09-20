@@ -84,6 +84,7 @@ const initialState: Pick<
 
 let inFlightSearchToken = 0;
 let profileLoadGeneration = 0;
+let meLoadGeneration = 0;
 
 export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery', (set, get) => ({
   ...initialState,
@@ -164,11 +165,13 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
   },
 
   loadMe: async (force = false) => {
+    const generation = meLoadGeneration;
     if (!force && get().me) return get().me;
     if (get().meLoading) return get().me;
     set({ meLoading: true, meError: undefined });
     try {
       const data = await desktopApi.actorGetMyProfile();
+      if (generation !== meLoadGeneration) return undefined;
       if (!data) {
         set({ meLoading: false });
         return undefined;
@@ -182,6 +185,7 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
       set({ me, meLoading: false });
       return me;
     } catch (err) {
+      if (generation !== meLoadGeneration) return undefined;
       log.warn(TAG, 'loadMe failed', { err: String(err) });
       set({ meLoading: false, meError: String(err) });
       throw err;
@@ -191,6 +195,7 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
   reset: () => {
     inFlightSearchToken += 1;
     profileLoadGeneration += 1;
+    meLoadGeneration += 1;
     set({ ...initialState });
   },
 }));

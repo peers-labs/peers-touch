@@ -1882,10 +1882,10 @@ fresh double review:
 
 The thirty-sixth schema/ownership review returned `0 P0 / 2 P1` plus the same
 principal-loss availability P2. The paired lifecycle review is invalid because
-it rejected the verifier-produced worktree-set digest despite matching the
-bound branch, workspace, HEAD and all file hashes; it contributes no gate
-evidence. The current revision remediates both P1 findings and requires another
-fresh double review:
+it treated the now-obsolete machine-wide sibling worktree inventory as
+execution identity despite matching the bound branch, workspace, HEAD and all
+file hashes; it contributes no gate evidence. The current revision remediates
+both P1 findings and requires another fresh double review:
 
 | Finding | Severity | Required closure |
 |---|---|---|

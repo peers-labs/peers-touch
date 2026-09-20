@@ -1,23 +1,24 @@
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
 use super::store::{CompletedSenderAttachmentSource, DirectAuthorityCheckpoint};
 use super::{
-    verify_device_event_delivery, AttachmentCryptoMaterial, AttachmentDownloadProjection,
-    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferProgress,
-    AttachmentTransferRecord, AttachmentTransferWorker, CommandDispatchProgress,
-    CommandOutboxWorker, CommandReconciliationProgress, CommandReconciliationWorker,
-    CommandRetryPolicy, ConversationMemberProjection, ConversationMessageProjection,
-    ConversationProjection, DirectSessionBootstrapper, DrainProgress, EditTextIntent,
-    MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload,
-    PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
-    SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
-    StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
-    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    verify_device_event_delivery, AttachmentDownloadProjection, AttachmentRetryPolicy,
+    AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
+    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker,
+    CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
+    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
+    DirectSessionBootstrapper, DrainProgress, EditTextIntent, MessagingItemConsumer,
+    MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
+    StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
+    StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
+    StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
     ThreadCountProjection,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
+use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
     ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationEvent, ConversationKind,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
@@ -30,9 +31,9 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
+use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
 use messaging_core::identity::{
-    is_stale_endpoint_error, load_or_create_device_identity, DeviceEnrollmentManager,
-    FreshDeviceEnrollment,
+    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -51,6 +52,10 @@ use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
 use prost::Message;
 use reqwest::Method;
+use secure_content_core::object::{
+    ObjectCryptoMaterial as AttachmentCryptoMaterial, OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE,
+    OBJECT_MAX_PLAINTEXT_SIZE as ATTACHMENT_MAX_PLAINTEXT_SIZE,
+};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -60,6 +65,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
+use zeroize::Zeroizing;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
 const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -401,7 +407,7 @@ impl MessagingEngine {
     pub fn open_profile(
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<Self, String> {
         if profile_id.trim().is_empty() || ptid.trim().is_empty() || actor_profile_version == 0 {
@@ -422,11 +428,11 @@ impl MessagingEngine {
     fn from_profile_store(
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let enrollment = load_or_create_device_identity(
+        let enrollment = load_or_create_device_identity_from_seed(
             store.as_ref(),
             &ptid,
             actor_identity_seed,
@@ -445,7 +451,7 @@ impl MessagingEngine {
             profile_id,
             endpoint,
             store,
-            Some(Arc::new(IdentityKeyPair::from_seed(&actor_identity_seed))),
+            Some(Arc::new(IdentityKeyPair::from_seed(actor_identity_seed))),
         )
     }
 
@@ -595,7 +601,7 @@ impl MessagingEngine {
         if filename.trim().is_empty()
             || filename.len() > 1024
             || plaintext_size == 0
-            || plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+            || plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE
         {
             return Err("messaging attachment source is invalid".to_string());
         }
@@ -870,14 +876,15 @@ impl MessagingEngine {
         &self,
         actor_profile_version: u64,
     ) -> Result<MessagingRecoveryArchive, String> {
-        let actor_identity_seed = self
-            .actor_identity
-            .as_ref()
-            .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
-            .seed_bytes();
+        let actor_identity_seed = Zeroizing::new(
+            self.actor_identity
+                .as_ref()
+                .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+                .seed_bytes(),
+        );
         self.store.build_recovery_archive(
             &self.endpoint.ptid,
-            actor_identity_seed,
+            &actor_identity_seed,
             actor_profile_version,
         )
     }
@@ -1146,7 +1153,7 @@ impl MessagingEngine {
                 .checked_add(upload.transfer.plaintext_size)
                 .ok_or_else(|| "messaging attachment aggregate size exceeds policy".to_string())
         })?;
-        if aggregate_plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE {
+        if aggregate_plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE {
             return Err("messaging attachment aggregate size exceeds policy".to_string());
         }
         uploads.sort_by(|left, right| {
@@ -1218,7 +1225,13 @@ impl MessagingEngine {
                 attachment_ids,
                 state: "pending",
             }),
-            Err(_) => {
+            Err(error) => {
+                tracing::warn!(
+                    conversation_id = %ready_draft.conversation_id,
+                    message_id = %ready_draft.message_id,
+                    error = %error,
+                    "messaging message draft preparation deferred"
+                );
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,
@@ -1255,7 +1268,13 @@ impl MessagingEngine {
         let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
             return Ok(false);
         };
-        if self.prepare_message_draft(token, &draft).is_err() {
+        if let Err(error) = self.prepare_message_draft(token, &draft) {
+            tracing::warn!(
+                conversation_id = %draft.conversation_id,
+                message_id = %draft.message_id,
+                error = %error,
+                "messaging message draft resume deferred"
+            );
             self.schedule_message_draft_retry(&draft, now_unix_ms)?;
         }
         Ok(true)
@@ -1690,6 +1709,20 @@ impl MessagingEngine {
     }
 
     #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_stage_restorable_command_fixture(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        command_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        self.store.acceptance_stage_restorable_command_fixture(
+            conversation_id,
+            message_id,
+            command_id,
+        )
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
     pub fn acceptance_prepare_submitted_command_fixture(
         &self,
         conversation_id: &str,
@@ -2030,7 +2063,7 @@ impl EngineRegistry {
         &self,
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<Arc<MessagingEngine>, String> {
         let notifier = self
@@ -2230,11 +2263,13 @@ impl EngineRegistry {
                         .to_string(),
                 );
             }
-            let previous_seed = engine
-                .actor_identity
-                .as_ref()
-                .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
-                .seed_bytes();
+            let previous_seed = Zeroizing::new(
+                engine
+                    .actor_identity
+                    .as_ref()
+                    .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+                    .seed_bytes(),
+            );
             let previous_profile_version = engine
                 .store
                 .device_enrollment()?
@@ -2299,7 +2334,7 @@ impl EngineRegistry {
                 let engine = Arc::new(MessagingEngine::open_profile(
                     profile_id.to_string(),
                     archive.ptid.clone(),
-                    archive.actor_identity_seed,
+                    &archive.actor_identity_seed,
                     archive.actor_profile_version,
                 )?);
                 self.install_profile_runtime(profile_id, engine, worker_token)?;
@@ -2309,7 +2344,7 @@ impl EngineRegistry {
                 let rollback = MessagingEngine::open_profile(
                     profile_id.to_string(),
                     previous_ptid,
-                    previous_seed,
+                    &previous_seed,
                     previous_profile_version,
                 )
                 .and_then(|engine| {
@@ -2437,7 +2472,7 @@ fn prepare_local_attachment_upload(
     let mut plaintext = File::open(&source)
         .map_err(|error| format!("open messaging attachment source: {error}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    let mut buffer = vec![0_u8; ATTACHMENT_CHUNK_SIZE as usize];
     loop {
         let read = plaintext
             .read(&mut buffer)
@@ -2520,17 +2555,24 @@ fn attachment_source_root(profile_id: &str) -> Result<PathBuf, String> {
         return Err("messaging attachment source profile is required".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    Ok(std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-sources")
-        .join(profile_hash))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Temp,
+        &["messaging-sources", &profile_hash],
+    )
+    .map_err(|error| format!("resolve messaging attachment source root: {error}"))
 }
 
 fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, String> {
     let root = attachment_source_root(profile_id)?;
-    Ok(path.parent() == Some(root.as_path())
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    let canonical_root = std::fs::canonicalize(&root)
+        .map_err(|error| format!("resolve messaging attachment source root: {error}"))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|error| format!("resolve messaging attachment source parent: {error}"))?;
+    Ok(canonical_parent == canonical_root
         && path
             .file_name()
             .and_then(|value| value.to_str())
@@ -2544,13 +2586,12 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
         return Err("messaging attachment cache identity is incomplete".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    let root = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-cache")
-        .join(profile_hash);
-    Ok(root.join(attachment_id))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Cache,
+        &["messaging-cache", &profile_hash, attachment_id],
+    )
+    .map_err(|error| format!("resolve messaging attachment cache path: {error}"))
 }
 
 fn materialize_attachment_cache(
@@ -2579,7 +2620,10 @@ fn materialize_attachment_cache(
         .ok_or_else(|| "messaging attachment cache parent is unavailable".to_string())?;
     std::fs::create_dir_all(parent)
         .map_err(|error| format!("create messaging attachment cache directory: {error}"))?;
-    File::open(source_path)
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(source_path)
         .and_then(|source| source.sync_all())
         .map_err(|error| format!("sync messaging attachment source: {error}"))?;
     std::fs::rename(source_path, cache_path)
@@ -2599,7 +2643,7 @@ fn sha256_path(path: &Path) -> Result<[u8; 32], String> {
     let mut file =
         File::open(path).map_err(|error| format!("open messaging attachment cache: {error}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    let mut buffer = vec![0_u8; ATTACHMENT_CHUNK_SIZE as usize];
     loop {
         let read = file
             .read(&mut buffer)
@@ -3001,6 +3045,31 @@ mod tests {
     }
 
     #[test]
+    fn attachment_paths_use_canonical_desktop_storage_layout() {
+        let profile_id = "profile-1";
+        let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
+
+        assert_eq!(
+            attachment_source_root(profile_id).unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Temp,
+                &["messaging-sources", &profile_hash],
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            attachment_cache_path(profile_id, "attachment-1").unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Cache,
+                &["messaging-cache", &profile_hash, "attachment-1"],
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
     fn sender_attachment_source_is_atomically_promoted_to_durable_cache() {
         let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
         let source_path = root.join("sources").join("attachment");
@@ -3053,6 +3122,8 @@ mod tests {
 
         assert!(source_path.is_file());
         assert!(managed_attachment_source(&profile_id, &staged_path).unwrap());
+        let canonical_staged_path = std::fs::canonicalize(&staged_path).unwrap();
+        assert!(managed_attachment_source(&profile_id, &canonical_staged_path).unwrap());
         assert_eq!(std::fs::read(&staged_path).unwrap(), bytes);
 
         engine
@@ -3256,7 +3327,7 @@ mod tests {
         let first = MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             3,
             store.clone(),
         )
@@ -3273,7 +3344,7 @@ mod tests {
         let reopened = MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             3,
             store.clone(),
         )
@@ -3284,7 +3355,7 @@ mod tests {
         assert!(MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [18; 32],
+            &[18; 32],
             3,
             store.clone(),
         )
@@ -3292,7 +3363,7 @@ mod tests {
         assert!(MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             4,
             store,
         )
@@ -3306,7 +3377,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
@@ -3344,7 +3415,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
@@ -3392,7 +3463,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )

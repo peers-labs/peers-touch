@@ -26,14 +26,14 @@ All routes under `/agent/` prefix, JSON request/response (proto-backed).
 | DELETE | `/agent/topic-comments/:topicKey/:commentId` | — | `DeleteTopicCommentResponse` |
 | GET | `/agent/topic-comments/:topicKey` | — | `ListTopicCommentsResponse` |
 
-### Evaluation Datasets
+### Evaluation Datasets (Superseded)
 
-| Method | Route | Request | Response |
-|--------|-------|---------|----------|
-| POST | `/agent/eval/datasets` | `CreateEvalDatasetRequest` | `CreateEvalDatasetResponse` |
-| PUT | `/agent/eval/datasets/:id` | `UpdateEvalDatasetRequest` | `UpdateEvalDatasetResponse` |
-| DELETE | `/agent/eval/datasets/:id` | — | `DeleteEvalDatasetResponse` |
-| GET | `/agent/eval/datasets` | — | `ListEvalDatasetsResponse` |
+The M11 dataset-only API is retired. Evaluation is now the Station-owned
+MCA-D18 aggregate defined by
+`docs/architecture/agent/modern-chat-agent/{design,data-model,decisions}.md`
+and `model/domain/agent/evaluation.proto`. The canonical route family is
+`/agent/evaluation/*`; benchmark, dataset, case, run, attempt, result, metrics,
+cancellation, retry, and retention share that one authority.
 
 ### Custom Plugins
 
@@ -78,18 +78,8 @@ async fn agent_topic_comment_delete(input: DeleteTopicCommentInput, ...) -> AppR
 #[tauri::command]
 async fn agent_topic_comment_list(input: ListTopicCommentsInput, ...) -> AppResult<Value>
 
-// ─── Evaluation ─────────────────────────────────────────
-#[tauri::command]
-async fn agent_eval_dataset_create(input: CreateEvalDatasetInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_eval_dataset_update(input: UpdateEvalDatasetInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_eval_dataset_delete(input: DeleteEvalDatasetInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_eval_dataset_list(...) -> AppResult<Value>
+// Evaluation commands moved to the typed MCA-D18 bridge in
+// apps/desktop/src-tauri/src/application/evaluation.rs.
 
 // ─── Custom Plugins ─────────────────────────────────────
 #[tauri::command]

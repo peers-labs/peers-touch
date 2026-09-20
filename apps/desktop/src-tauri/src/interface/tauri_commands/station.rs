@@ -49,12 +49,34 @@ pub(crate) fn station_set_active_with_state(
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let registry = station_client::station_registry();
     let previous = station_binding::service().state();
     let requested_url = input.url.trim().trim_end_matches('/');
     let already_bound = previous.phase
         == crate::application::station_binding::StationBindingPhase::Bound
         && previous.bound_url.as_deref() == Some(requested_url);
+    if !already_bound {
+        if let Err(error) = state.secure_content.shutdown() {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Could not fence Secure Content before switching Station",
+                Some(serde_json::json!({
+                    "code": "station_secure_content_fence_failed",
+                    "reason": error,
+                })),
+            );
+        }
+    }
     let binding = match station_binding::service().switch(registry, &input.url) {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
@@ -155,7 +177,32 @@ pub(crate) fn station_remove_with_state(
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let registry = station_client::station_registry();
+    let removing_active = registry.active_url().is_some_and(|active| {
+        active.trim_end_matches('/') == input.url.trim().trim_end_matches('/')
+    });
+    if removing_active {
+        if let Err(error) = state.secure_content.shutdown() {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Could not fence Secure Content before removing Station",
+                Some(serde_json::json!({
+                    "code": "station_secure_content_fence_failed",
+                    "reason": error,
+                })),
+            );
+        }
+    }
     let (binding, was_selected) =
         match station_binding::service().remove_station(registry, &input.url) {
             Ok(result) => result,

@@ -8,6 +8,11 @@ source "$SCRIPT_DIR/env.sh"
 STATION_URL="${PT_STATION_URL:-http://127.0.0.1:18080}"
 STATION_CHECK_URL="${PT_STATION_HEALTH_URL:-$STATION_URL/api/oauth/providers}"
 
+node "$SCRIPT_DIR/machine-dev.mjs" check \
+  --workspace-root "$PROJECT_ROOT" \
+  --env-repo "$PT_ENV_REPO" \
+  --capabilities station.connect >/dev/null
+
 echo "[INFO] Station health check"
 echo "       URL   : $STATION_URL"
 echo "       Probe : $STATION_CHECK_URL"

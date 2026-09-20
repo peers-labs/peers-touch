@@ -1148,6 +1148,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
 name = "dbus"
 version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3476,6 +3482,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "secure-content-core",
  "serde",
  "serde_json",
  "sha2",
@@ -4338,6 +4345,7 @@ dependencies = [
  "base64 0.22.1",
  "bip39",
  "curve25519-dalek",
+ "data-encoding",
  "dispatch2",
  "ed25519-dalek",
  "futures-lite",
@@ -4354,6 +4362,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rfd",
  "rusqlite",
+ "secure-content-core",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5633,6 +5642,20 @@ dependencies = [
  "serde",
  "sha2",
  "zbus 4.4.0",
+]
+
+[[package]]
+name = "secure-content-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "hkdf",
+ "hpke-rs",
+ "rand 0.8.5",
+ "sha2",
+ "thiserror 1.0.69",
+ "x25519-dalek",
+ "zeroize",
 ]
 
 [[package]]

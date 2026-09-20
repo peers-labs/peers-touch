@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -330,7 +331,14 @@ func federatedHandleOf(a *db.Actor) string {
 	if a == nil {
 		return ""
 	}
-	return a.FederatedHandle
+	handle := strings.TrimSpace(a.FederatedHandle)
+	if handle == "" || strings.HasPrefix(handle, "@") {
+		return handle
+	}
+	if !strings.Contains(handle, "@") {
+		return ""
+	}
+	return "@" + handle
 }
 
 // homeStationDomainOf returns the DNS-style HTTP origin (no scheme)

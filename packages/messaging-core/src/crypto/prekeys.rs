@@ -594,6 +594,70 @@ mod tests {
     }
 
     #[test]
+    fn missing_bundle_retry_after_lost_upload_ack_reuses_the_fresh_opk_batch() {
+        let store = Arc::new(TestRepository::active());
+        let publisher = PreKeyPublisher::new(store.clone(), endpoint()).unwrap();
+        let identity = IdentityKeyPair::from_seed(&[14; 32]);
+        publisher
+            .publish(&identity, 10_000, &RecordingTransport::default())
+            .unwrap();
+        let transport = RecordingTransport {
+            fail_first: Mutex::new(true),
+            inventory: Mutex::new(RemotePreKeyInventory::MissingBundle),
+            ..RecordingTransport::default()
+        };
+
+        assert!(publisher.reconcile(&identity, &transport).is_err());
+        publisher.reconcile(&identity, &transport).unwrap();
+
+        let uploads = transport.requests.lock().unwrap();
+        let replenishments = transport.replenishments.lock().unwrap();
+        assert_eq!(uploads.len(), 1);
+        assert_eq!(replenishments.len(), 1);
+        assert_eq!(
+            uploads[0].one_time_pre_keys,
+            replenishments[0].one_time_pre_keys
+        );
+        assert_eq!(
+            uploads[0]
+                .one_time_pre_keys
+                .iter()
+                .map(|key| key.key_id)
+                .collect::<Vec<_>>(),
+            (21..=40).collect::<Vec<_>>()
+        );
+        assert!(store.state.lock().unwrap().replenishment.is_none());
+    }
+
+    #[test]
+    fn missing_bundle_retry_reuploads_identical_bytes_when_upload_did_not_commit() {
+        let store = Arc::new(TestRepository::active());
+        let publisher = PreKeyPublisher::new(store.clone(), endpoint()).unwrap();
+        let identity = IdentityKeyPair::from_seed(&[15; 32]);
+        publisher
+            .publish(&identity, 10_000, &RecordingTransport::default())
+            .unwrap();
+        let transport = RecordingTransport {
+            fail_first: Mutex::new(true),
+            inventory: Mutex::new(RemotePreKeyInventory::MissingBundle),
+            replenish_outcome: Mutex::new(PreKeyReplenishOutcome::MissingBundle),
+            ..RecordingTransport::default()
+        };
+
+        assert!(publisher.reconcile(&identity, &transport).is_err());
+        publisher.reconcile(&identity, &transport).unwrap();
+
+        let uploads = transport.requests.lock().unwrap();
+        assert_eq!(uploads.len(), 2);
+        assert_eq!(uploads[0], uploads[1]);
+        assert_eq!(
+            transport.replenishments.lock().unwrap()[0].one_time_pre_keys,
+            uploads[0].one_time_pre_keys
+        );
+        assert!(store.state.lock().unwrap().replenishment.is_none());
+    }
+
+    #[test]
     fn reconciliation_falls_back_when_replenish_discovers_a_missing_bundle() {
         let store = Arc::new(TestRepository::active());
         let publisher = PreKeyPublisher::new(store, endpoint()).unwrap();

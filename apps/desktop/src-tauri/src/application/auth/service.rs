@@ -12,6 +12,7 @@ use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
 use crate::state::AppState;
 use serde_json::{json, Value};
+use zeroize::Zeroizing;
 
 pub(crate) fn takeover_station_session_token(
     token: &str,
@@ -133,11 +134,11 @@ pub(crate) fn prepare_messaging_profile(
             .identity_key_ref();
     let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
         .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
-    let actor_identity_seed = actor_identity.seed_bytes();
+    let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
     state.messaging_engines.activate_profile(
         account_id.to_string(),
         actor_ptid.to_string(),
-        actor_identity_seed,
+        &actor_identity_seed,
         crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
     )?;
     Ok(())
@@ -665,6 +666,9 @@ fn run_required_logout_cleanup(
 pub(crate) fn detach_for_station_switch(
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
+    if let Err(error) = state.secure_content.shutdown() {
+        tracing::warn!(error = %error, "failed to stop Secure Content for Station switch");
+    }
     if let Err(error) = state.messaging_engines.deactivate_all() {
         tracing::warn!(error = %error, "failed to deactivate messaging engines for Station switch");
     }

@@ -1,0 +1,540 @@
+schemaVersion: 1
+journeys:
+  - schemaVersion: 1
+    id: sc-dj-runtime-lease-control
+    domain: local-dev-control-plane
+    title: Registered workspace and atomic Station capability lease control
+    productAcceptanceRefs: []
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [current_workspace, competing_workspace]
+    clientRoles: [local_dev_cli]
+    requiredServiceRoles: [machine_dev_control_plane]
+    steps:
+      - id: register-current-workspace
+        action: explicitly register the verified federation workspace to tracked profile four and machine slot 5 without creating or changing an environment definition
+        expected: [registry authority becomes machine-control-plane, binding contains the verified workspace ID canonical root branch profile and slot]
+        negative: [unregistered workspaces fail WORKSPACE_UNREGISTERED, dirty or untracked profile definitions cannot authorize deploy]
+      - id: local-slot-acquire-hold-release
+        action: in an isolated machine root run two child processes against the same local.slot 5 critical section
+        expected: [the first process holds the slot, the competitor fails LOCAL_SLOT_CONFLICT, the lease releases on success failure signal or timeout]
+        negative: [a declaration alone never establishes possession, stale PID or JSON cannot establish a lease]
+      - id: station-deploy-acquire-hold-release
+        action: in an isolated machine root run two child processes against one fake station.deploy critical section that exercises the same make station lease wrapper without contacting a Station
+        expected: [the first process atomically holds station.deploy through fake deploy restart and health readback, the competitor fails STATION_CAPABILITY_CONFLICT, the lease releases on success failure signal or timeout]
+        negative: [no real Station mutation, no declaration-only possession, no stale-owner lock]
+      - id: station-reset-acquire-hold-release
+        action: in an isolated machine root run two child processes against one fake station.reset pre-audit deletion post-audit critical section without contacting a Station
+        expected: [the first process holds one lease across the complete fake reset transaction, the competitor fails STATION_CAPABILITY_CONFLICT, the lease releases on success failure signal or timeout]
+        negative: [no real reset, no lease gap between audit and deletion, no stale-owner lock]
+      - id: profile-bound-resolution
+        action: in an isolated machine root switch fixture-backed tracked four and fiveArm definitions then run config and dry-run preflight, while the real workspace registration remains bound only to four
+        expected: [each fixture command resolves the isolated workspace binding, non-loopback URL and exact deploy environment before mutation while slot 5 remains workspace-owned]
+        negative: [no basename sibling-worktree active-pointer or legacy profile slot fallback]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: []
+
+  - schemaVersion: 1
+    id: sc-dj-contract-consumers
+    domain: secure-content
+    title: Generated Secure Content contract consumers
+    productAcceptanceRefs: [SOC-SEC-AS03, SOC-SEC-AS08, SOC-SEC-AS13, SOC-SEC-AS16]
+    workClasses: [infrastructure]
+    runtimeClass: source-only
+    actorRoles: [contract-author]
+    clientRoles: [station-go, desktop-rust, desktop-typescript, mobile-rust, mobile-typescript]
+    requiredServiceRoles: []
+    steps:
+      - id: generate
+        action: generate every declared binding from canonical proto
+        expected: [all declared Go Rust and TypeScript consumers compile, generated digests are deterministic]
+        negative: [unknown suite and malformed binding fail typed validation]
+      - id: vectors
+        action: decode canonical payload envelope and object vectors in each consumer
+        expected: [all consumers project identical fields and enum values]
+        negative: [no handwritten mirror or string suite survives]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 600, cleanupSeconds: 120 }
+    promotionGateIds: [secure-content-contract-static]
+
+  - schemaVersion: 1
+    id: sc-dj-chat-attachment-atomic
+    domain: conversation
+    title: Atomic shared-kernel extraction preserves Chat attachments
+    productAcceptanceRefs: [MP-G13]
+    workClasses: [refactor]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, removed_member]
+    clientRoles: [four_alice, four_bob, fiveArm_alice, fiveArm_bob]
+    requiredServiceRoles: [station_four, station_fiveArm, conversation_authority, object_backend]
+    steps:
+      - id: direct-group-exact-bytes
+        action: send and open Direct and Group attachments after atomic kernel extraction
+        expected: [receiver bytes match, existing routes tables UOW and grants remain unchanged]
+        receiverRole: bob
+      - id: chunk-resume
+        action: interrupt at every chunk boundary and restart client and Station
+        expected: [only missing chunks transfer, checkpoint survives restart]
+        receiverRole: bob
+      - id: failure-corpus
+        action: exercise duplicate conflict range ETag ciphertext hash plaintext hash and AEAD failures
+        expected: [each failure is typed and releases no partial plaintext]
+        receiverRole: bob
+      - id: recovery-revoke
+        action: recover on a fresh client and retry as a removed actor
+        expected: [authorized historical grant opens, removed actor gets no new grant]
+        receiverRole: bob
+      - id: secrecy
+        action: inspect Station rows and logs
+        expected: [no filename key nonce or plaintext hash]
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 1800, cleanupSeconds: 600 }
+    promotionGateIds: [messaging-platform-contract]
+
+  - schemaVersion: 1
+    id: sc-dj-chat-attachment-mobile
+    domain: conversation
+    title: Atomic shared-kernel extraction preserves Mobile Chat attachments
+    productAcceptanceRefs: [MP-G13]
+    workClasses: [refactor, product-behavior, infrastructure]
+    runtimeClass: native-mobile
+    actorRoles: [alice, bob, removed_member]
+    clientRoles: [ios_alice, ios_bob, android_alice, android_bob]
+    requiredServiceRoles: [station_four, station_fiveArm, conversation_authority, object_backend]
+    steps:
+      - id: ios-mp-g13
+        action: on iOS Simulator Native send and open Direct and Group attachments, interrupt every chunk boundary, restart client and Station, recover on a fresh client, and retry as a removed actor
+        expected: [receiver bytes match, only missing chunks transfer, checkpoints survive restart, authorized historical grants open, removed actor gets no new grant]
+        negative: [duplicate conflict, invalid range, ETag mismatch, ciphertext hash mismatch, plaintext hash mismatch and AEAD failure are typed and release zero partial plaintext]
+        receiverRole: bob
+      - id: android-mp-g13
+        action: on Android Emulator Native repeat the complete iOS MP-G13 corpus against the same exact-source Conversation contracts
+        expected: [receiver bytes and all restart recovery revoke and secrecy outcomes match Desktop]
+        negative: [no Browser or API-only substitute, no Mobile-local crypto copy, no Chat wire route table UOW or grant change]
+        receiverRole: bob
+      - id: mobile-secrecy
+        action: inspect both Native client stores plus Station rows and logs
+        expected: [no filename key nonce or plaintext hash leaks and no cross-account plaintext survives cleanup]
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 3600, cleanupSeconds: 1200 }
+    promotionGateIds: [messaging-platform-contract]
+
+  - schemaVersion: 1
+    id: sc-dj-content-prekey
+    domain: key-exchange
+    title: Content PreKey publish claim replay and depletion
+    productAcceptanceRefs: [SOC-SEC-AS08, SOC-SEC-AS16]
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [publisher, recipient]
+    clientRoles: [key_exchange_operational_driver]
+    requiredServiceRoles: [key_exchange]
+    steps:
+      - id: publish-inventory
+        action: publish endpoint and recovery Content PreKeys
+        expected: [inventory is separate from Direct and MLS, quotas are bounded]
+      - id: claim-replay
+        action: claim with a plan hash then replay the same claim
+        expected: [same slots and receipt return exactly]
+        negative: [different hash conflicts, exposed key never reactivates]
+      - id: deplete-replenish
+        action: consume to threshold and replenish
+        expected: [depletion blocks prepare, replenishment restores bounded readiness]
+    budgets: { focusedCheckSeconds: 600, functionalRunSeconds: 600, cleanupSeconds: 120 }
+    promotionGateIds: [secure-content-contract-static, social-private-content-station]
+
+  - schemaVersion: 1
+    id: sc-dj-content-prekey-client-boundary
+    domain: key-exchange
+    title: Canonical client Content PreKey publication and inventory
+    productAcceptanceRefs: []
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [publisher, revoked_publisher]
+    clientRoles: [http_client]
+    requiredServiceRoles: [station_http, key_exchange, actor_identity, postgresql]
+    steps:
+      - id: canonical-publish-inventory
+        action: publish endpoint and recovery pools through the canonical protobuf routes and read current inventory
+        expected: [JWT actor header device and fresh device-possession proof are exact, returned inventory matches committed pool state, Direct and MLS state is unchanged]
+        negative: [JSON query alternate duplicate unknown non-minimal and out-of-order protobuf encodings are rejected before mutation]
+      - id: publication-receipt
+        action: lose the first publish response then concurrently replay the exact command across a publisher profile rotation
+        expected: [one command reservation and one atomic mutation exist, exact replay proves the commit, fresh inventory determines current readiness, completed receipt count never exceeds newly inserted immutable key count]
+        negative: [changed or arbitrary command IDs conflict, first-time all-existing batches leave no receipt, concurrent retries leave no dangling PENDING, absent receipt never hides committed key rows]
+      - id: publisher-races
+        action: race publication and first claim against signing-key rotation and endpoint revocation
+        expected: [Actor Identity row fencing yields one valid before-state or one typed rejection, unclaimed revoked or stale material is never exposed]
+        negative: [no partial pool mutation, no claim after revocation fence, no Direct or MLS state change]
+      - id: postgresql-contention
+        action: execute receipt reservation, pool and Actor Identity lock ordering, concurrent replay, rotation and revocation races on PostgreSQL
+        expected: [all required PostgreSQL tests execute without skip and produce one serializable receipt and pool outcome]
+        negative: [missing DSN or skipped PostgreSQL evidence blocks EC5A, SQLite cannot substitute]
+      - id: auth-error-lifecycle
+        action: exercise missing invalid revoked wrong-actor wrong-device invalid-material oversized quota and dependency failures
+        expected: [every route-matched response is the declared protobuf error with a stable code, only retryable quota or dependency failures carry Retry-After in 1..300, terminal failures omit it]
+        negative: [wrong Station, wrong session, capability substitution, missing or invalid possession signature, short nonce, expired or future proof, and invalid per-PreKey issuer signature all fail before read or mutation with their distinct typed codes, no JSON error body, anonymous retry, secret log, handler-local queue, public claim route, or Direct/MLS alias]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: [station-api-ownership, secure-content-prekey-client-boundary]
+
+  - schemaVersion: 1
+    id: sc-dj-optional-auth
+    domain: station-auth
+    title: Strict Optional JWT credential matrix
+    productAcceptanceRefs: [SOC-SEC-AS04]
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [anonymous, valid_actor, revoked_actor]
+    clientRoles: [http_client]
+    requiredServiceRoles: [station_http, social]
+    steps:
+      - id: credential-matrix
+        action: request a public-capable Social route with absent valid malformed expired and revoked credentials
+        expected: [absent credential projects anonymous, valid projects actor, invalid supplied credentials return 401]
+        negative: [no invalid credential retries as anonymous, logs contain no token]
+    budgets: { focusedCheckSeconds: 600, functionalRunSeconds: 600, cleanupSeconds: 120 }
+    promotionGateIds: [social-private-content-security-negative]
+
+  - schemaVersion: 1
+    id: sc-dj-recovery-consumer
+    domain: social
+    title: Never-opened Social recovery consumer
+    productAcceptanceRefs: [SOC-SEC-AS08]
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [bob, revoked_bob]
+    clientRoles: [recovery_consumer]
+    requiredServiceRoles: [social, recovery, key_exchange]
+    steps:
+      - id: page-restart
+        action: page recovery envelopes restart the consumer and resume from cursor
+        expected: [each envelope appears once and cursor is restartable]
+      - id: never-opened
+        action: derive the recovery key and open content absent from the old-device catalog
+        expected: [exact plaintext is recovered]
+        receiverRole: bob
+      - id: negative
+        action: use wrong phrase wrong epoch deleted resource and revoked device
+        expected: [RECOVERY_KEY_UNAVAILABLE or typed denial, zero plaintext, no silent history skip]
+        receiverRole: revoked_bob
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: [social-private-content-recovery-e2e]
+
+  - schemaVersion: 1
+    id: sc-dj-social-uow-atomicity
+    domain: social
+    title: Social private outer UOW failure and replay matrix
+    productAcceptanceRefs: [SOC-SEC-AS01, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS12, SOC-SEC-AS15, SOC-SEC-AS16]
+    workClasses: [product-behavior, infrastructure]
+    runtimeClass: service
+    actorRoles: [alice, bob]
+    clientRoles: [social_uow_fault_driver]
+    requiredServiceRoles: [social, key_exchange, object_backend]
+    steps:
+      - id: post-boundary-failpoints
+        action: inject one failure after each Post write boundary for plan consumption, fact, audience snapshot, slot mapping, endpoint envelopes, recovery envelopes, delivery intents, object attachment, object grants and command receipt
+        expected: [the owning Social transaction commits all boundaries or none, uploaded objects remain COMPLETE_UNATTACHED and GC eligible after rollback]
+        negative: [no partial Post snapshot envelope delivery attachment grant or receipt row, no second transaction owner]
+      - id: comment-boundary-failpoints
+        action: repeat every applicable outer UOW write boundary for a private Comment while revalidating the parent Post authorization
+        expected: [the Comment fact and every dependent mutation commit together or all roll back]
+        negative: [no orphan Comment, no envelope without Comment, no stable principal correlation]
+      - id: irreversible-prekey-replay
+        action: retry the identical command and plan after each rollback then submit one conflicting command hash
+        expected: [irreversibly claimed PreKeys replay the exact original slots, one command receipt commits once]
+        negative: [conflicting hash is terminal, consumed PreKeys never reactivate]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: [social-private-content-station, social-private-content-security-negative]
+
+  - schemaVersion: 1
+    id: sc-dj-desktop-pilot
+    domain: social
+    title: Desktop FRIENDS text and image private pilot
+    productAcceptanceRefs: [SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS13]
+    workClasses: [product-behavior]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, eve]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
+    requiredServiceRoles: [station_four, social, key_exchange, object_backend]
+    steps:
+      - id: native-prekey-lifecycle
+        action: bootstrap the process-owned Content PreKey supervisor and inject crashes before send after send and after response before local commit
+        expected: [orphaned pending and in-flight commands reconcile by exact command payload, batch completion never marks unopened keys committed, fresh inventory controls readiness]
+        negative: [no duplicate worker per window, no stale-session callback, no private material in Web state or logs]
+      - id: publish
+        action: Alice selects FRIENDS and publishes text plus image
+        expected: [readiness states reach PUBLISHED only after durable readback]
+        negative: [recipient key failure retains draft, no plaintext fallback]
+      - id: receiver
+        action: Bob opens from HOME and direct link, restarts and opens again
+        expected: [exact text and bytes, only Bob endpoint envelope]
+        receiverRole: bob
+      - id: unauthorized
+        action: Eve requests Post and object while invalid credentials are also supplied
+        expected: [Eve gets not-found, invalid credential gets 401]
+        receiverRole: eve
+      - id: teardown-and-retention
+        action: switch account and Station then revoke the publishing device and reopen an older recovery epoch
+        expected: [old callbacks are fenced, memory secrets are zeroized, endpoint keys delete only after root commit or explicit local destruction following acknowledged endpoint revocation, SC-D15 prevents every unclaimed revoked-publisher key from later exposure, exact recovery epoch or phrase-required state is used]
+        negative: [no age/count key eviction, current recovery epoch never substitutes for the envelope epoch, offline local wipe makes no recovery claim]
+      - id: supervisor-teardown
+        action: logout, lock the account vault and shut down while inventory and publication work are queued or in flight
+        expected: [new admission stops, calls bounded-drain or cancel, unknown outcomes persist for next-session reconciliation, all in-memory key and proof material is zeroized]
+        negative: [no stale callback mutates the next session, no durable key rows are deleted by teardown]
+    budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 600 }
+    promotionGateIds: [social-private-content-desktop-native-e2e, social-private-content-security-negative]
+
+  - schemaVersion: 1
+    id: sc-dj-browser-private-boundary
+    domain: social
+    title: Authenticated Browser private rejection and public continuity
+    productAcceptanceRefs: [SOC-SEC-AS10, SOC-SEC-AS11]
+    workClasses: [product-behavior, refactor, infrastructure]
+    runtimeClass: browser
+    actorRoles: [anonymous, browser_actor]
+    clientRoles: [browser_anonymous, browser_authenticated]
+    requiredServiceRoles: [station_four, social, object_backend]
+    steps:
+      - id: public-read
+        action: an anonymous Browser opens an explicit PUBLIC Moment
+        expected: [the exact public text and media remain readable without a private envelope]
+        receiverRole: anonymous
+      - id: authenticated-private-publish-rejection
+        action: an authenticated Browser actor selects a private audience and attempts to publish
+        expected: [PRIVATE_UNSUPPORTED appears before submission and the draft remains local]
+        negative: [no private plaintext request body, no automatic PUBLIC downgrade]
+        receiverRole: browser_actor
+      - id: authenticated-private-read-rejection
+        action: the same authenticated Browser actor opens a known authorized private Moment URL
+        expected: [PRIVATE_UNSUPPORTED_ON_DEVICE appears without fetching plaintext key material or a public media URL]
+        negative: [no anonymous fallback, no private response body, no existence leak to an unauthorized Browser actor]
+        receiverRole: browser_actor
+    budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 600 }
+    promotionGateIds: [social-private-content-security-negative]
+
+  - schemaVersion: 1
+    id: sc-dj-social-expansion
+    domain: social
+    title: Desktop complete Social audience subtype and lifecycle matrix
+    productAcceptanceRefs: [SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS15, SOC-SEC-AS16]
+    workClasses: [product-behavior]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, eve, group_member, remote_recipient]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
+    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    steps:
+      - id: audience
+        action: exercise FOLLOWERS FRIENDS CIRCLE GROUP SELF CUSTOM and remote-recipient rejection
+        expected: [authorized readers succeed, stale snapshots and remote recipient reject before publish]
+      - id: comments
+        action: edit encrypt submit retry rate-limit and invalidate parent
+        expected: [COMMENT_EDITING and COMMENT_ENCRYPTING retain draft, COMMENT_SUBMITTING is local, COMMENT_POSTED is exact at receiver, COMMENT_FAILED is retryable, COMMENT_RATE_LIMITED exposes retry-after, COMMENT_PARENT_UNAVAILABLE disables submit]
+        receiverRole: bob
+      - id: subtype
+        action: publish TEXT IMAGE VIDEO Poll Repost Mention Reaction Link and Location cases
+        expected: [exact typed projection and audience rules, image and video receiver bytes match]
+        receiverRole: bob
+      - id: attachment
+        action: traverse placeholder grant pending download decrypt ready denied integrity and offline states
+        expected: [MEDIA_PLACEHOLDER, MEDIA_GRANT_PENDING, MEDIA_DOWNLOADING, MEDIA_DECRYPTING, MEDIA_READY, MEDIA_ACCESS_DENIED, MEDIA_INTEGRITY_FAILURE and MEDIA_OFFLINE_RETRYABLE preserve their required actions for image and video, no public or plaintext fallback]
+        receiverRole: bob
+      - id: object-attach-replay
+        action: attach a COMPLETE_UNATTACHED object in the Social UOW, replay the exact attach, then retry with a conflicting domain commit or descriptor
+        expected: [exact replay returns the original result, conflicting attach is typed and attached objects remain bound to one domain commit]
+        negative: [no partial grant, no cross-resource or cross-uploader attachment]
+      - id: object-gc-recovery
+        action: expire an unattached object, fail one physical delete, restart the worker, then retry cleanup
+        expected: [COMPLETE_UNATTACHED moves through GC_CLAIMED and RETRY_WAIT or CLEANUP_FAILED before GARBAGE_COLLECTED, attached objects are never collected]
+        negative: [no silent metadata deletion while ciphertext survives, no deletion of attached media]
+      - id: lifecycle
+        action: cancel before/after admission, time out, switch account, delete and block
+        expected: [receipt resolves outcome, prior projection clears, future access denies]
+      - id: bounds-storage-overload
+        action: test exact and over-limit audience comments payload objects chunks plans uploads and recovery pages, then inject storage-full and worker queue saturation
+        expected: [at-limit work completes, over-limit and overload return typed retry-after before encryption or unbounded admission, abandoned objects remain auditable and GC eligible]
+        negative: [no recipient truncation, partial commit, silent drop or unbounded queue]
+    budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 600 }
+    promotionGateIds: [social-private-content-desktop-native-e2e, social-private-content-security-negative, secure-content-performance-native]
+
+  - schemaVersion: 1
+    id: sc-dj-mobile-matrix
+    domain: social
+    title: Mobile Native complete private Social matrix
+    productAcceptanceRefs: [SOC-SEC-AS14]
+    workClasses: [product-behavior]
+    runtimeClass: native-mobile
+    actorRoles: [alice, bob, eve, anonymous]
+    clientRoles: [ios_alice, ios_bob, ios_eve, android_alice, android_bob, android_eve]
+    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    steps:
+      - id: ios-publish-states
+        action: on iOS Simulator Native traverse public, successful private, unsupported recipient, missing key, over-limit, pre-admission failure and post-admission readback paths
+        expected: [AUDIENCE_REQUIRED, CHECKING_PRIVATE_READINESS, READY_PUBLIC, READY_PRIVATE, PRIVATE_UNSUPPORTED, RECIPIENT_KEY_UNAVAILABLE, AUDIENCE_TOO_LARGE, PUBLISHING, PUBLISHED and PUBLISH_FAILED are each observed with their allowed actions]
+        negative: [no silent PUBLIC fallback, no partial recipient publish, failed publish retains draft]
+      - id: ios-read-states
+        action: on iOS Simulator Native read as authorized, unauthenticated, unauthorized, tampered, revoked and never-opened recovery actors
+        expected: [LOADING_AUTHORIZED_RESOURCE, WAITING_FOR_PRIVATE_KEY, RECOVERY_REQUIRED, RECOVERY_KEY_UNAVAILABLE, DECRYPTING, CONTENT_READY, AUTHENTICATION_REQUIRED, NOT_FOUND_OR_NOT_AUTHORIZED, INTEGRITY_FAILURE, PRIVATE_UNSUPPORTED_ON_DEVICE and DELETED_OR_REVOKED are each observed]
+        negative: [no partial plaintext, infinite spinner, recipient enumeration or anonymous downgrade]
+        receiverRole: bob
+      - id: ios-comment-states
+        action: on iOS Simulator Native execute private Comment edit encrypt submit success retry rate-limit and parent-revoked paths
+        expected: [COMMENT_EDITING, COMMENT_ENCRYPTING, COMMENT_SUBMITTING, COMMENT_POSTED, COMMENT_FAILED, COMMENT_RATE_LIMITED and COMMENT_PARENT_UNAVAILABLE are each observed and preserve the draft contract]
+        receiverRole: bob
+      - id: ios-subtypes
+        action: on iOS Simulator Native separately publish and read TEXT IMAGE VIDEO Poll Repost Mention Reaction Link and Location private cases
+        expected: [each named subtype has an exact typed receiver projection and IMAGE and VIDEO bytes match]
+        negative: [invalid poll option, widened repost and out-of-audience mention fail without partial rows]
+        receiverRole: bob
+      - id: ios-media-states
+        action: on iOS Simulator Native open private image and video through authorized, denied, tampered and offline object paths
+        expected: [MEDIA_PLACEHOLDER, MEDIA_GRANT_PENDING, MEDIA_DOWNLOADING, MEDIA_DECRYPTING, MEDIA_READY, MEDIA_ACCESS_DENIED, MEDIA_INTEGRITY_FAILURE and MEDIA_OFFLINE_RETRYABLE are each observed with exact receiver bytes at MEDIA_READY]
+        receiverRole: bob
+      - id: ios-lifecycle-bounds
+        action: on iOS Simulator Native run restart recovery cancel timeout account switch delete block storage-full overload object attach replay and GC cleanup-retry cases
+        expected: [Desktop-equivalent receipt cleanup bounded-retry and no-partial-commit outcomes hold]
+        receiverRole: bob
+      - id: android-publish-states
+        action: on Android Emulator Native repeat the complete iOS publish-state matrix
+        expected: [all ten publish states and their actions match iOS and Desktop]
+        negative: [no Browser or API-only substitute]
+      - id: android-read-states
+        action: on Android Emulator Native repeat the complete iOS read-state matrix
+        expected: [all eleven read states and their recovery or terminal actions match iOS and Desktop]
+        receiverRole: bob
+      - id: android-comment-states
+        action: on Android Emulator Native repeat the complete iOS Comment-state matrix
+        expected: [all seven Comment states and draft preservation match iOS and Desktop]
+        receiverRole: bob
+      - id: android-subtypes
+        action: on Android Emulator Native separately publish and read TEXT IMAGE VIDEO Poll Repost Mention Reaction Link and Location private cases
+        expected: [each named subtype, media byte result and negative policy outcome matches iOS and Desktop]
+        receiverRole: bob
+      - id: android-media-states
+        action: on Android Emulator Native repeat the complete iOS image and video media-state matrix
+        expected: [all eight media states, denial, integrity and offline behavior match iOS and Desktop]
+        receiverRole: bob
+      - id: android-lifecycle-bounds
+        action: on Android Emulator Native repeat restart recovery cancel timeout account switch delete block storage-full overload object attach replay and GC cleanup-retry cases
+        expected: [Desktop-equivalent receipt cleanup bounded-retry and no-partial-commit outcomes hold]
+        receiverRole: bob
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-mobile-native-e2e]
+
+  - schemaVersion: 1
+    id: sc-dj-chat-revalidation
+    domain: conversation
+    title: Reconciled Chat attachment regression
+    productAcceptanceRefs: [MP-G13]
+    workClasses: [refactor, product-behavior, infrastructure]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, removed_member]
+    clientRoles: [four_alice, four_bob, fiveArm_alice, fiveArm_bob]
+    requiredServiceRoles: [station_four, station_fiveArm, conversation_authority, object_backend]
+    steps:
+      - id: repeat-mp-j11
+        action: repeat the full sc-dj-chat-attachment-atomic step set on reconciled source
+        expected: [all MP-G13 receiver and secrecy assertions remain exact]
+        receiverRole: bob
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 1800, cleanupSeconds: 600 }
+    promotionGateIds: [messaging-platform-contract]
+
+  - schemaVersion: 1
+    id: sc-dj-hardcut-regression
+    domain: secure-content
+    title: Post-source-deletion Social regression
+    productAcceptanceRefs: [SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS15, SOC-SEC-AS16]
+    workClasses: [refactor]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, eve, anonymous]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
+    requiredServiceRoles: [station_four, social, key_exchange, object_backend]
+    steps:
+      - id: zero-reference
+        action: run the exhaustive hard-cut checker and regenerated build
+        expected: [no retired source route generated fixture doc or runtime consumer remains, legacy physical schema is reachable only by the W12 reset inventory]
+      - id: full-social
+        action: rerun the Desktop Native portions of SC-AS01 through SC-AS14 on the hard-cut checkpoint while the separate Browser Journey owns SC-AS10
+        expected: [all current Desktop Native receiver assertions pass]
+        receiverRole: bob
+      - id: outer-uow
+        action: rerun the complete sc-dj-social-uow-atomicity failpoint and replay matrix
+        expected: [all Post and Comment write boundaries remain all-or-none after deletion]
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-hard-cut]
+
+  - schemaVersion: 1
+    id: sc-dj-hardcut-mobile-regression
+    domain: secure-content
+    title: Post-deletion Mobile Social regression
+    productAcceptanceRefs: [SOC-SEC-AS14]
+    workClasses: [refactor]
+    runtimeClass: native-mobile
+    actorRoles: [alice, bob, eve, anonymous]
+    clientRoles: [ios_alice, ios_bob, ios_eve, android_alice, android_bob, android_eve]
+    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    steps:
+      - id: post-deletion-mobile-matrix
+        action: repeat every named iOS and Android step and state transition from sc-dj-mobile-matrix on the W11 checkpoint without resetting legacy data
+        expected: [all Mobile receiver states use only canonical source routes generated bindings schema owners and crypto]
+        negative: [no legacy read or write, no Browser or API-only substitute, no physical legacy deletion]
+        receiverRole: bob
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-hard-cut, social-private-content-mobile-native-e2e]
+
+  - schemaVersion: 1
+    id: sc-dj-final-desktop
+    domain: social
+    title: Final Desktop private Social matrix after authorized reset
+    productAcceptanceRefs: [SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS15, SOC-SEC-AS16]
+    workClasses: [product-behavior, infrastructure]
+    runtimeClass: native-desktop
+    actorRoles: [alice, bob, eve, anonymous]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
+    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    steps:
+      - id: final-desktop
+        action: run the Desktop Native portions of SC-AS01 through SC-AS14 after scoped reset and public-state preservation check while the separate Browser Journey owns SC-AS10
+        expected: [all required Desktop receiver states pass on final source]
+        receiverRole: bob
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-desktop-native-e2e, social-private-content-recovery-e2e, secure-content-performance-native]
+
+  - schemaVersion: 1
+    id: sc-dj-authorized-reset
+    domain: local-dev-control-plane
+    title: Authorized Social private physical reset transaction
+    productAcceptanceRefs: []
+    workClasses: [product-behavior]
+    runtimeClass: service
+    actorRoles: [workspace_owner]
+    clientRoles: [reset_controller]
+    requiredServiceRoles: [machine_dev_control_plane, station_four, station_fiveArm]
+    steps:
+      - id: reset-four
+        action: under one station.reset lease capture the four pre-audit, delete only the authorized private schema rows and objects, deploy through make station, and capture the post-audit
+        expected: [public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
+        negative: [no reset without exact work-item scope and registration capability, no lease gap]
+      - id: reset-five-arm
+        action: repeat the complete reset transaction for fiveArm under its distinct station.reset lease
+        expected: [public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
+        negative: [no cross-profile reset, no partial cleanup]
+      - id: remove-reset-capability
+        action: release both reset leases and remove station.reset from the workspace registration
+        expected: [station.connect and station.deploy remain, subsequent reset acquisition fails closed]
+    budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 2400, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-hard-cut]
+
+  - schemaVersion: 1
+    id: sc-dj-final-mobile
+    domain: social
+    title: Final Mobile private Social matrix after authorized reset
+    productAcceptanceRefs: [SOC-SEC-AS14]
+    workClasses: [product-behavior, infrastructure]
+    runtimeClass: native-mobile
+    actorRoles: [alice, bob, eve, anonymous]
+    clientRoles: [ios_alice, ios_bob, ios_eve, android_alice, android_bob, android_eve]
+    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    steps:
+      - id: final-mobile
+        action: repeat every named step and state transition from sc-dj-mobile-matrix after scoped reset
+        expected: [all required iOS and Android publish read Comment media lifecycle recovery bound attach and GC outcomes pass on final source]
+        receiverRole: bob
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: [social-private-content-mobile-native-e2e, social-private-content-recovery-e2e, secure-content-performance-native]

@@ -189,6 +189,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'social.people.search',
+    mobileAcceptanceActions['social.people.search'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'social.request.send',
     mobileAcceptanceActions['social.request.send'],
     registry,

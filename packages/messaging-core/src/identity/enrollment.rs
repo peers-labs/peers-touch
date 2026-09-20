@@ -8,6 +8,7 @@ use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use ulid::Ulid;
+use zeroize::Zeroizing;
 
 pub const MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION: u32 = 1;
 pub const INITIAL_ACTOR_IDENTITY_PROFILE_VERSION: u64 = 1;
@@ -20,7 +21,7 @@ pub struct FreshDeviceEnrollment {
 
 pub struct FreshDeviceIdentityState {
     pub enrollment: FreshDeviceEnrollment,
-    pub device_signing_seed: [u8; 32],
+    pub device_signing_seed: Zeroizing<[u8; 32]>,
 }
 
 pub trait DeviceEnrollmentRepository: Send + Sync {
@@ -49,9 +50,24 @@ pub fn load_or_create_device_identity<R: DeviceEnrollmentRepository>(
     actor_identity_seed: [u8; 32],
     actor_profile_version: u64,
 ) -> Result<FreshDeviceEnrollment, String> {
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    load_or_create_device_identity_from_seed(
+        repository,
+        ptid,
+        &actor_identity_seed,
+        actor_profile_version,
+    )
+}
+
+pub fn load_or_create_device_identity_from_seed<R: DeviceEnrollmentRepository>(
+    repository: &R,
+    ptid: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceEnrollment, String> {
     match repository.device_enrollment()? {
         Some(enrollment) => {
-            validate_enrollment_actor(
+            validate_enrollment_actor_from_seed(
                 &enrollment,
                 ptid,
                 actor_identity_seed,
@@ -60,8 +76,11 @@ pub fn load_or_create_device_identity<R: DeviceEnrollmentRepository>(
             Ok(enrollment)
         }
         None => {
-            let identity =
-                generate_fresh_device_identity(ptid, actor_identity_seed, actor_profile_version)?;
+            let identity = generate_fresh_device_identity_from_seed(
+                ptid,
+                actor_identity_seed,
+                actor_profile_version,
+            )?;
             repository.install_fresh_device_identity(&identity)?;
             Ok(identity.enrollment)
         }
@@ -136,10 +155,19 @@ pub fn generate_fresh_device_identity(
     actor_identity_seed: [u8; 32],
     actor_profile_version: u64,
 ) -> Result<FreshDeviceIdentityState, String> {
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    generate_fresh_device_identity_from_seed(ptid, &actor_identity_seed, actor_profile_version)
+}
+
+pub fn generate_fresh_device_identity_from_seed(
+    ptid: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceIdentityState, String> {
     if ptid.trim().is_empty() || actor_profile_version == 0 {
         return Err("fresh messaging identity requires PTID and profile version".to_string());
     }
-    let actor_identity = IdentityKeyPair::from_seed(&actor_identity_seed);
+    let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
     let device_id = Ulid::new().to_string();
     let device_signing_key =
         DeviceSigningKey::generate_cross_signed(&actor_identity, &device_id, |device_key| {
@@ -164,7 +192,7 @@ pub fn generate_fresh_device_identity(
             certificate,
             actor_cross_signature: device_signing_key.cross_signature().to_bytes(),
         },
-        device_signing_seed: device_signing_key.seed_bytes(),
+        device_signing_seed: Zeroizing::new(device_signing_key.seed_bytes()),
     })
 }
 
@@ -174,7 +202,22 @@ pub fn validate_enrollment_actor(
     actor_identity_seed: [u8; 32],
     expected_profile_version: u64,
 ) -> Result<(), String> {
-    let actor_identity = IdentityKeyPair::from_seed(&actor_identity_seed);
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    validate_enrollment_actor_from_seed(
+        enrollment,
+        expected_ptid,
+        &actor_identity_seed,
+        expected_profile_version,
+    )
+}
+
+fn validate_enrollment_actor_from_seed(
+    enrollment: &FreshDeviceEnrollment,
+    expected_ptid: &str,
+    actor_identity_seed: &[u8; 32],
+    expected_profile_version: u64,
+) -> Result<(), String> {
+    let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
     let actor_public_key = actor_identity.verifying_key().to_bytes();
     let actor_fingerprint = Sha256::digest(actor_public_key);
     let certificate = &enrollment.certificate;
@@ -268,6 +311,7 @@ mod tests {
     fn fresh_enrollment_round_trips() {
         let seed = [42u8; 32];
         let state = generate_fresh_device_identity("alice@p.t", seed, 1).unwrap();
+        assert!(std::mem::needs_drop::<FreshDeviceIdentityState>());
         validate_enrollment_actor(&state.enrollment, "alice@p.t", seed, 1).unwrap();
     }
 

@@ -1,3 +1,4 @@
+pub mod command_result;
 pub mod consumer;
 pub mod conversation_state;
 pub mod direct;
@@ -5,6 +6,7 @@ pub mod drain;
 pub mod public_event;
 pub mod receipt;
 
+pub use command_result::{CommandResultLifecycle, CommandResultProcessor, CommandResultRepository};
 pub use consumer::{is_mls_sender_public_event, MessagingItemConsumer, MlsItemConsumer};
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;

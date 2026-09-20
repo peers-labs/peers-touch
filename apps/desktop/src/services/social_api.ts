@@ -41,6 +41,7 @@ import {
   ReactionKind,
   TimelineType,
   PostType,
+  Audience_Kind,
   Audience,
   Mention,
   StationModerationPolicy_Kind,
@@ -99,6 +100,7 @@ import {
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { invokeRustProto } from './desktop_api';
+import type { PrivateMomentLocalFileIntent } from './privateMomentsNative';
 
 // ---------------------------------------------------------------------------
 // Composer helpers — build typed `CreatePostRequest` payloads
@@ -106,6 +108,10 @@ import { invokeRustProto } from './desktop_api';
 
 export interface MomentDraftBase {
   audience: Audience;
+  /** Stable renderer draft identity used by the Native private command journal. */
+  draftId?: string;
+  /** Increments whenever plaintext, audience, or local file intent changes. */
+  draftRevision?: number;
   /** Optional pre-resolved typed mentions; deferred to P3 wiring. */
   mentions?: Mention[];
   /** Optional reply target. Currently only used by REPOST + comment-on-post. */
@@ -124,6 +130,8 @@ export interface ImageDraft extends MomentDraftBase {
   imageIds: string[];
   /** Typed attachments carrying E2EE media descriptors for new clients. */
   images?: ImageAttachment[];
+  /** Local files handed to Native only after private prepare succeeds. */
+  localFiles?: PrivateMomentLocalFileIntent[];
 }
 
 export interface RepostDraft extends MomentDraftBase {
@@ -144,6 +152,9 @@ export type MomentDraft = TextDraft | ImageDraft | RepostDraft;
  * lands; tests construct ImageDraft directly to exercise the path.
  */
 export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
+  if (draft.audience.kind !== Audience_Kind.PUBLIC) {
+    throw new Error('PRIVATE_NATIVE_ADAPTER_REQUIRED');
+  }
   const base = {
     audience: draft.audience,
     ...(draft.replyToPostId ? { replyToPostId: draft.replyToPostId } : {}),

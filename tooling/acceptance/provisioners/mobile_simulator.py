@@ -46,6 +46,7 @@ from tooling.acceptance.core.attestation import (
     produce_service_attestation,
     produce_station_attestation,
 )
+from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_text,
@@ -58,6 +59,11 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     resolve_actor_identity,
     verify_reset_target,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    fixture_federation_id_from_station_ids,
+)
+
+from .remote_source_identity import resolve_remote_source_identity
 
 
 IOS_RUNTIME = "iOS 17.4"
@@ -73,6 +79,23 @@ STATION_LIFECYCLE_SERVICES = (
     "station-primary",
     "station-secondary",
 )
+MOBILE_SOCIAL_STATION_PROFILE_KEYS = {
+    "station-primary": (
+        "PT_MOBILE_STATION_PRIMARY_URL",
+        "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+    ),
+    "station-secondary": (
+        "PT_MOBILE_STATION_SECONDARY_URL",
+        "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
+    ),
+}
+MOBILE_SOCIAL_SERVICE_PROFILE_KEYS = {
+    "relay": (
+        "PT_RELAY_URL",
+        "PT_RELAY_DEPLOY_ENV",
+    ),
+}
+PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IOS_LAYOUT_CLIENTS = {
     "sim-ios-compact": (
         "iPhone SE (3rd generation)",
@@ -1820,6 +1843,8 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                         timeout=1800,
                         resource=f"mobile-simulator:build:{name}",
                     )
+                    if name == "web":
+                        self._stage_ios_static_assets()
                 finally:
                     if name == "android":
                         android_manifest_guard.restore()
@@ -2667,6 +2692,39 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             "id": spec.application_ids[platform],
             "callbackScheme": spec.callback_schemes[platform],
         }
+
+    def _stage_ios_static_assets(self) -> None:
+        source = (self.repo_root / "apps" / "mobile" / "dist").resolve()
+        target = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        ).resolve()
+        if not source.is_dir() or not (source / "index.html").is_file():
+            raise BlockedError(
+                reason="Mobile web build did not produce a complete static bundle",
+                resource="mobile-simulator:ios-static-assets",
+            )
+        repository_root = self.repo_root.resolve()
+        if repository_root not in target.parents:
+            raise BlockedError(
+                reason="Mobile iOS static asset target escaped the source tree",
+                resource="mobile-simulator:ios-static-assets",
+            )
+
+        def cleanup() -> None:
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
+
+        self.register_cleanup("build-artifact:ios-static-assets", cleanup)
+        cleanup()
+        shutil.copytree(source, target)
 
     def _artifact_matches(
         self,
@@ -4563,8 +4621,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             actor = resolve_actor_identity(
                 station_url,
+                deployment_environment,
                 "alice",
-                ACTOR_PASSWORD,
             )
             stations[service_id] = {
                 "targetVerified": True,
@@ -4910,12 +4968,16 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
         *,
         base_factory: Any = MobileSimulatorProvisioner,
         overlay_path: Path | None = None,
+        station_profiles: Mapping[str, str] | None = None,
+        service_profiles: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(contract)
         self.base_factory = base_factory
         self.overlay_path = overlay_path or (
             ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         )
+        self._station_profiles = dict(station_profiles or {})
+        self._service_profiles = dict(service_profiles or {})
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -4940,6 +5002,8 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                     ),
                     resource="profile:station-mode",
                 )
+            profile_env = self._inject_station_profile_bindings(profile_env)
+            profile_env = self._inject_service_profile_bindings(profile_env)
             service_specs = self._service_specs(profile_env)
             for service_id in ("station-primary", "station-secondary"):
                 _, station_url, deployment_environment, _ = service_specs[
@@ -4947,7 +5011,11 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                 ]
                 verify_reset_target(station_url, deployment_environment)
             owner = f"acceptance:{gate_id}:{self._manifest.run_id}"
-            self.acquire_profile_lease(profile_name, owner)
+            profile_leases = {profile_name}
+            profile_leases.update(self._required_station_profiles().values())
+            profile_leases.update(self._required_service_profiles().values())
+            for leased_profile in sorted(profile_leases):
+                self.acquire_profile_lease(leased_profile, owner)
             for deployment_environment in {
                 values[2] for values in service_specs.values()
             }:
@@ -5105,6 +5173,202 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             )
         return payload
 
+    def _required_station_profiles(self) -> dict[str, str]:
+        if not self._station_profiles:
+            return {}
+        expected = set(MOBILE_SOCIAL_STATION_PROFILE_KEYS)
+        provided = set(self._station_profiles)
+        missing = sorted(expected - provided)
+        unexpected = sorted(provided - expected)
+        if missing or unexpected:
+            detail = []
+            if missing:
+                detail.append(f"missing={','.join(missing)}")
+            if unexpected:
+                detail.append(f"unexpected={','.join(unexpected)}")
+            raise BlockedError(
+                reason=(
+                    "Mobile social simulator Station profiles must be "
+                    "specified at run time with --station-profile "
+                    f"SERVICE_ID=PROFILE ({'; '.join(detail)})"
+                ),
+                resource="station-profile-bindings",
+            )
+        invalid = sorted(
+            profile_name
+            for profile_name in self._station_profiles.values()
+            if not PROFILE_NAME_PATTERN.fullmatch(profile_name)
+        )
+        if invalid:
+            raise BlockedError(
+                reason=f"Invalid Station profile name: {invalid[0]!r}",
+                resource="station-profile-bindings",
+            )
+        duplicates = sorted(
+            profile_name
+            for profile_name in set(self._station_profiles.values())
+            if list(self._station_profiles.values()).count(profile_name) > 1
+        )
+        if duplicates:
+            raise BlockedError(
+                reason=(
+                    "Distinct Mobile Station services require distinct runtime "
+                    f"profiles; duplicate={duplicates[0]!r}"
+                ),
+                resource="station-profile-bindings",
+            )
+        return dict(self._station_profiles)
+
+    def _required_service_profiles(self) -> dict[str, str]:
+        if not self._service_profiles:
+            return {}
+        expected = set(MOBILE_SOCIAL_SERVICE_PROFILE_KEYS)
+        provided = set(self._service_profiles)
+        missing = sorted(expected - provided)
+        unexpected = sorted(provided - expected)
+        if missing or unexpected:
+            detail = []
+            if missing:
+                detail.append(f"missing={','.join(missing)}")
+            if unexpected:
+                detail.append(f"unexpected={','.join(unexpected)}")
+            raise BlockedError(
+                reason=(
+                    "Mobile social service profiles must be specified at run "
+                    "time with --service-profile SERVICE_ID=PROFILE "
+                    f"({'; '.join(detail)})"
+                ),
+                resource="service-profile-bindings",
+            )
+        profile_name = self._service_profiles["relay"]
+        if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
+            raise BlockedError(
+                reason=f"Invalid service profile name: {profile_name!r}",
+                resource="service-profile-bindings",
+            )
+        return dict(self._service_profiles)
+
+    def _inject_station_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        merged = dict(profile_env)
+        for service_id, profile_name in self._required_station_profiles().items():
+            profile_path = (
+                REPO_ROOT
+                / ".local"
+                / "dev"
+                / "profiles"
+                / f"{profile_name}.env"
+            )
+            if not profile_path.is_file():
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires runtime "
+                        f"profile {profile_name!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            station_env = load_env_file(profile_path)
+            declared_profile = station_env.get("PT_DEV_PROFILE", "").strip()
+            if declared_profile != profile_name:
+                raise BlockedError(
+                    reason=(
+                        f"Station profile {profile_name!r} declares "
+                        f"PT_DEV_PROFILE={declared_profile!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            if station_env.get("PT_STATION_MODE", "").strip() != "remote":
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires a "
+                        "remote Station profile"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            station_url = station_env.get("PT_STATION_URL", "").rstrip("/")
+            deployment_environment = station_env.get(
+                "PT_STATION_DEPLOY_ENV",
+                "",
+            ).strip()
+            if not station_url or not deployment_environment:
+                raise BlockedError(
+                    reason=(
+                        f"Station profile {profile_name!r} has no complete "
+                        "endpoint/deployment binding"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            url_key, deployment_key = MOBILE_SOCIAL_STATION_PROFILE_KEYS[
+                service_id
+            ]
+            merged[url_key] = station_url
+            merged[deployment_key] = deployment_environment
+        return merged
+
+    def _inject_service_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        merged = dict(profile_env)
+        for service_id, profile_name in self._required_service_profiles().items():
+            profile_path = (
+                REPO_ROOT
+                / ".local"
+                / "dev"
+                / "profiles"
+                / f"{profile_name}.env"
+            )
+            if not profile_path.is_file():
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires runtime "
+                        f"profile {profile_name!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            service_env = load_env_file(profile_path)
+            declared_profile = service_env.get("PT_DEV_PROFILE", "").strip()
+            if declared_profile != profile_name:
+                raise BlockedError(
+                    reason=(
+                        f"Service profile {profile_name!r} declares "
+                        f"PT_DEV_PROFILE={declared_profile!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            if service_env.get("PT_RELAY_MODE", "").strip() != "remote":
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires a "
+                        "remote Relay profile"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            service_url = service_env.get("PT_RELAY_URL", "").rstrip("/")
+            deployment_environment = service_env.get(
+                "PT_RELAY_DEPLOY_ENV",
+                "",
+            ).strip()
+            if not service_url or not deployment_environment:
+                raise BlockedError(
+                    reason=(
+                        f"Service profile {profile_name!r} has no complete "
+                        "Relay endpoint/deployment binding"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            url_key, deployment_key = MOBILE_SOCIAL_SERVICE_PROFILE_KEYS[
+                service_id
+            ]
+            merged[url_key] = service_url
+            merged[deployment_key] = deployment_environment
+            health_url = service_env.get("PT_RELAY_HEALTH_URL", "").strip()
+            if health_url:
+                merged["PT_RELAY_HEALTH_URL"] = health_url
+        return merged
+
     def _service_specs(
         self,
         profile_env: Mapping[str, str],
@@ -5148,6 +5412,20 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                 ),
                 resource="profile:mobile-social-simulator-services",
             )
+        station_specs = [
+            specs[service_id]
+            for service_id in MOBILE_SOCIAL_STATION_PROFILE_KEYS
+        ]
+        if (
+            len({values[1] for values in station_specs}) != len(station_specs)
+            or len({values[2] for values in station_specs}) != len(station_specs)
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile social simulator requires distinct Station targets"
+                ),
+                resource="profile:mobile-social-simulator-services",
+            )
         return specs
 
     def _attest_services(
@@ -5184,6 +5462,7 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                         "PT_STATION_DEPLOY_ENV": deployment_environment,
                     },
                     require_runtime_identity=True,
+                    remote_source_identity_provider=resolve_remote_source_identity,
                 )
             else:
                 attestation = produce_service_attestation(
@@ -5196,6 +5475,7 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                     deployment_environment=deployment_environment,
                     producer=producer,
                     require_runtime_identity=True,
+                    remote_source_identity_provider=resolve_remote_source_identity,
                 )
             services[service_id] = attestation
         return services
@@ -5240,8 +5520,8 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             actors = [
                 resolve_actor_identity(
                     station_url,
+                    deployment_environment,
                     role,
-                    ACTOR_PASSWORD,
                 )
                 for role in ("alice", "bob")
             ]
@@ -5253,10 +5533,30 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                         "accountRef": actor.account_ref,
                         "ptid": actor.ptid,
                         "devicePolicy": actor.device_policy,
+                        "federatedHandle": actor.federated_handle,
+                        "homeStationPeerId": actor.home_station_peer_id,
                     }
                     for actor in actors
                 ],
             }
+        selected_actor_routes = (
+            next(
+                actor
+                for actor in stations["station-primary"]["actors"]
+                if actor["role"] == "alice"
+            ),
+            next(
+                actor
+                for actor in stations["station-secondary"]["actors"]
+                if actor["role"] == "bob"
+            ),
+        )
+        federation_id = fixture_federation_id_from_station_ids(
+            actor["homeStationPeerId"] for actor in selected_actor_routes
+        )
+        for station in stations.values():
+            for actor in station["actors"]:
+                actor["federationId"] = federation_id
         payload = {
             "artifactKind": "mobile-social-simulator-actor-manifest",
             "environmentId": self.environment_id,

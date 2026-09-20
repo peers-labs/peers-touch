@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -173,6 +174,17 @@ func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
 			t.Fatalf("persist %s event: %v", event.attemptID, err)
 		}
 	}
+	if err := db.Create(&persistence.TurnEvent{
+		ID:             "event-unbound-between-attempts",
+		ConversationID: conversation.ID,
+		TurnID:         turn.ID,
+		EventSeq:       5,
+		EventType:      "progress",
+		Payload:        `{"stage":"legacy_unbound"}`,
+		CreatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("persist unbound event: %v", err)
+	}
 
 	replayed, err := service.ReplayTurnEvents(ctx, owner, conversation.ID, turn.ID, 0)
 	if err != nil {
@@ -193,13 +205,70 @@ func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
 		snapshot.LastSequence != replayed[1].EventSeq {
 		t.Fatalf("snapshot crossed attempt fence: %+v", snapshot)
 	}
+	_, sourceBoundary, sourceFence, unsubscribe, err := service.SubscribeTurnAttemptEvents(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		"attempt-1",
+	)
+	if err != nil {
+		t.Fatalf("subscribe retained source attempt: %v", err)
+	}
+	defer unsubscribe()
+	sourceReplay, err := service.ReplayTurnEventsThroughFence(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		0,
+		sourceBoundary,
+		sourceFence,
+	)
+	if err != nil {
+		t.Fatalf("replay retained source attempt: %v", err)
+	}
+	if len(sourceReplay) != 2 ||
+		sourceReplay[0].AttemptID != "attempt-1" ||
+		sourceReplay[1].AttemptID != "attempt-1" ||
+		sourceReplay[1].EventType != "error" {
+		t.Fatalf("source replay crossed attempt fence: %+v", sourceReplay)
+	}
+	sourceSnapshot, err := service.GetTurnEventSnapshotAtFence(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		sourceBoundary,
+		sourceFence,
+	)
+	if err != nil {
+		t.Fatalf("snapshot retained source attempt: %v", err)
+	}
+	if sourceSnapshot.Status != string(domain.TurnStatusFailed) ||
+		sourceSnapshot.Text != "old" ||
+		sourceSnapshot.TerminalReason != "old failure" ||
+		sourceSnapshot.LastSequence != sourceReplay[1].EventSeq {
+		t.Fatalf("source snapshot crossed attempt fence: %+v", sourceSnapshot)
+	}
+	if _, _, _, _, err := service.SubscribeTurnAttemptEvents(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		"attempt-missing",
+	); err == nil {
+		t.Fatal("missing retained attempt was accepted")
+	} else {
+		requireBizCode(t, err, errcode.AgentNotFound)
+	}
 	var auditCount int64
 	if err := db.Model(&persistence.TurnEvent{}).
 		Where("turn_id = ?", turn.ID).
 		Count(&auditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditCount != 4 {
+	if auditCount != 5 {
 		t.Fatalf("attempt fencing removed audit history: count=%d", auditCount)
 	}
 }
@@ -772,6 +841,110 @@ func requireBizCode(t *testing.T, err error, code errcode.Code) {
 	}
 }
 
+func TestGetConversationPreflightsOwnershipWithoutForeignContentRead(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_get_ownership_preflight")
+	ctx := context.Background()
+	service := NewConversationService()
+	owner := "ptid:person:owner"
+	foreignActor := "ptid:person:foreign"
+	secretDescription := "owner-only conversation content"
+	conversation := persistence.Conversation{
+		ID:          "conversation-private",
+		AgentID:     "agent-private",
+		ActorPTID:   owner,
+		Title:       "owner-only title",
+		Description: &secretDescription,
+		Status:      string(domain.ConversationStatusActive),
+		Version:     7,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("seed private conversation: %v", err)
+	}
+
+	var querySelections [][]string
+	const callbackName = "test:capture_conversation_get_ownership_preflight"
+	if err := db.Callback().Query().Before("gorm:query").Register(
+		callbackName,
+		func(tx *gorm.DB) {
+			querySelections = append(
+				querySelections,
+				append([]string(nil), tx.Statement.Selects...),
+			)
+		},
+	); err != nil {
+		t.Fatalf("register query capture: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Query().Remove(callbackName)
+	})
+
+	got, err := service.GetConversation(ctx, foreignActor, conversation.ID)
+	if got != nil {
+		t.Fatalf("foreign actor received conversation content: %+v", got)
+	}
+	var forbidden *errcode.BizError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("foreign actor error = %T: %v", err, err)
+	}
+	if forbidden.Code != errcode.AgentOwnershipForbiddenActor ||
+		forbidden.HTTPStatus != http.StatusForbidden ||
+		forbidden.Payload == nil ||
+		forbidden.Payload.GetError() != errcode.AgentOwnershipForbiddenActorLocaleKey ||
+		forbidden.Payload.GetErrorType() != string(errcode.AgentOwnershipForbiddenActor) ||
+		forbidden.Payload.GetLocaleKey() != errcode.AgentOwnershipForbiddenActorLocaleKey ||
+		forbidden.Payload.GetRetryable() ||
+		!forbidden.Payload.GetTerminal() ||
+		len(forbidden.Payload.GetDetails()) != 2 ||
+		forbidden.Payload.GetDetails()["resource_kind"] != "conversation" ||
+		forbidden.Payload.GetDetails()["resource_id"] != conversation.ID {
+		t.Fatalf("foreign actor payload = %+v", forbidden)
+	}
+	if len(querySelections) != 1 ||
+		len(querySelections[0]) != 1 ||
+		querySelections[0][0] != "actor_ptid" {
+		t.Fatalf("foreign preflight loaded non-ownership columns: %+v", querySelections)
+	}
+	if strings.Contains(err.Error(), conversation.Title) ||
+		strings.Contains(err.Error(), secretDescription) {
+		t.Fatalf("foreign error exposed conversation content: %v", err)
+	}
+
+	querySelections = nil
+	if missing, missingErr := service.GetConversation(
+		ctx,
+		foreignActor,
+		"conversation-missing",
+	); missing != nil {
+		t.Fatalf("missing conversation returned content: %+v", missing)
+	} else {
+		requireBizCode(t, missingErr, errcode.AgentNotFound)
+	}
+	if len(querySelections) != 1 ||
+		len(querySelections[0]) != 1 ||
+		querySelections[0][0] != "actor_ptid" {
+		t.Fatalf("missing preflight loaded non-ownership columns: %+v", querySelections)
+	}
+
+	querySelections = nil
+	ownerReadback, err := service.GetConversation(ctx, owner, conversation.ID)
+	if err != nil {
+		t.Fatalf("owner read conversation: %v", err)
+	}
+	if ownerReadback.Title != conversation.Title ||
+		ownerReadback.Description != secretDescription ||
+		len(querySelections) != 2 ||
+		len(querySelections[0]) != 1 ||
+		querySelections[0][0] != "actor_ptid" {
+		t.Fatalf(
+			"owner readback did not follow metadata preflight then content load: conversation=%+v queries=%+v",
+			ownerReadback,
+			querySelections,
+		)
+	}
+}
+
 func TestConversationArchiveRestoreAndDeleteDependencyGuard(t *testing.T) {
 	db := openConversationAuthorityDB(t, "conversation_lifecycle")
 	ctx := context.Background()
@@ -920,7 +1093,7 @@ func TestConversationAuthorityIsActorScopedAndVersioned(t *testing.T) {
 	if _, err := service.GetConversation(ctx, other, conversation.ConversationID); err == nil {
 		t.Fatal("other actor read owner conversation")
 	} else {
-		requireBizCode(t, err, errcode.AgentNotFound)
+		requireBizCode(t, err, errcode.AgentOwnershipForbiddenActor)
 	}
 	if messages, _, _, err := service.ListMessages(
 		ctx,

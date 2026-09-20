@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -16,6 +17,24 @@ sys.path.insert(0, str(REPO_ROOT))
 
 def load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def gate_invocation(gate: dict) -> str:
+    command = gate.get("command")
+    argv = gate.get("argv")
+    if isinstance(command, str) and command.strip() and argv is None:
+        return command
+    if (
+        command is None
+        and isinstance(argv, list)
+        and argv
+        and all(isinstance(argument, str) and argument for argument in argv)
+    ):
+        return shlex.join(argv)
+    gate_id = gate.get("id", "<unknown>")
+    raise ValueError(
+        f"selected Gate {gate_id!r} must contain exactly one valid command or argv"
+    )
 
 
 def main() -> int:
@@ -65,7 +84,10 @@ def main() -> int:
     for gate in plan.get("selected_gates", []):
         tier = gate.get("tier", "local-evidence")
         environment = gate.get("environment", "local")
-        lines.append(f"- `{gate['id']}` [{tier}/{environment}]: `{gate['command']}`")
+        lines.append(
+            f"- `{gate['id']}` [{tier}/{environment}]: "
+            f"`{gate_invocation(gate)}`"
+        )
     if not plan.get("selected_gates"):
         lines.append("- none")
 

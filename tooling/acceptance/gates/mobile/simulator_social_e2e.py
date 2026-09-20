@@ -339,6 +339,21 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     f"Mobile social actor manifest has no {role}",
                     "mobile-social-simulator:actor-manifest",
                 )
+            home_station_peer_id = self._required_text(
+                actor,
+                "homeStationPeerId",
+                f"Mobile social actor {role}",
+            )
+            service_station_peer_id = self._required_text(
+                service,
+                "runtimeIdentity",
+                f"Mobile social service {service_id}",
+            )
+            if home_station_peer_id != service_station_peer_id:
+                raise SimulatorGateBlocked(
+                    f"Mobile social actor {role} Home Station identity mismatch",
+                    "mobile-social-simulator:actor-manifest",
+                )
             actors[client_id] = MessagingActor(
                 client_id=client_id,
                 role=role,
@@ -348,9 +363,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     f"Mobile social service {service_id}",
                 ),
                 station_peer_id=self._required_text(
-                    service,
-                    "runtimeIdentity",
-                    f"Mobile social service {service_id}",
+                    actor,
+                    "homeStationPeerId",
+                    f"Mobile social actor {role}",
                 ),
                 ptid=self._required_text(
                     actor,
@@ -360,6 +375,16 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 account_ref=self._required_text(
                     actor,
                     "accountRef",
+                    f"Mobile social actor {role}",
+                ),
+                federated_handle=self._required_text(
+                    actor,
+                    "federatedHandle",
+                    f"Mobile social actor {role}",
+                ),
+                federation_id=self._required_text(
+                    actor,
+                    "federationId",
                     f"Mobile social actor {role}",
                 ),
             )

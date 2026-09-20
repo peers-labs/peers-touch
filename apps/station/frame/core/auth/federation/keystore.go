@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SlotCurrent and SlotPrev are the only valid `slot` values.
@@ -22,7 +24,15 @@ const (
 // ErrNoLocalKey is returned by KeyStore.Load when the requested
 // slot is empty. KeyCache treats this as "I should generate one";
 // every other caller treats it as a fatal init-time error.
-var ErrNoLocalKey = errors.New("federation: keystore: slot empty")
+var (
+	ErrNoLocalKey = errors.New("federation: keystore: slot empty")
+
+	// ErrLocalKeyReplacementRequiresRotation prevents callers from bypassing
+	// archive-before-retire by overwriting an existing current key.
+	ErrLocalKeyReplacementRequiresRotation = errors.New(
+		"federation: keystore: replacing current key requires rotation",
+	)
+)
 
 // AuthLocalKeyTable is the table name owned by the framework's
 // federation package. Exported so the framework's bootstrap can
@@ -73,24 +83,25 @@ type KeyStore interface {
 	// error when no current row is present.
 	LoadCurrentKid(ctx context.Context) (string, error)
 
-	// PutCurrent upserts `current` to the supplied key. Used
-	// by the cache's auto-generate path on first boot, AND by
-	// operators that import a pre-generated key. Does NOT
-	// touch `prev` — that promotion is what Rotate is for.
+	// PutCurrent installs the initial key or accepts an exact
+	// idempotent replay. Replacing an existing current key must
+	// use Rotate so the outgoing public key is archived first.
 	PutCurrent(ctx context.Context, k *LocalKey) error
 
-	// Rotate atomically demotes the existing `current` (if any)
-	// into `prev`, then writes `newKey` into `current`. Returns
-	// a RotateResult so callers can audit the transition. If
-	// there is no existing `current`, behaves like PutCurrent
-	// and returns RotateResult.PreviousKid == "".
-	Rotate(ctx context.Context, newKey *LocalKey) (*RotateResult, error)
+	// Rotate atomically archives the outgoing public key, demotes
+	// the existing `current` (if any) into `prev`, then writes
+	// `newKey` into `current`. stationPeerID is mandatory because
+	// retained proof keys never use a blank/local sentinel.
+	Rotate(ctx context.Context, stationPeerID string, newKey *LocalKey) (*RotateResult, error)
 
-	// ClearPrev removes the `prev` row. Called by the
-	// FinalizePrev worker after the dual-sign grace window has
-	// elapsed. Idempotent — no error when the row is already
-	// absent.
-	ClearPrev(ctx context.Context) error
+	// ClearPrev removes exactly the expected `prev` row after the
+	// dual-sign grace window. A concurrent rotation leaves its newly
+	// demoted key intact and returns cleared=false.
+	ClearPrev(
+		ctx context.Context,
+		expectedKeyID string,
+		expectedUpdatedAt time.Time,
+	) (cleared bool, err error)
 }
 
 // RotateResult records the outcome of a successful Rotate. The
@@ -156,7 +167,17 @@ func (s *gormKeyStore) Load(ctx context.Context, slot string) (*LocalKey, error)
 		}
 		return nil, err
 	}
-	return ParseLocalKey(row.PrivPEM, row.PubPEM, row.Kid, row.GeneratedAt)
+	key, err := ParseLocalKey(
+		row.PrivPEM,
+		row.PubPEM,
+		row.Kid,
+		row.GeneratedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	key.UpdatedAt = row.UpdatedAt
+	return key, nil
 }
 
 func (s *gormKeyStore) LoadCurrentKid(ctx context.Context) (string, error) {
@@ -179,18 +200,49 @@ func (s *gormKeyStore) PutCurrent(ctx context.Context, k *LocalKey) error {
 	if k == nil || k.IsZero() {
 		return errors.New("federation: keystore: PutCurrent: key is empty")
 	}
+	localKeyLifecycleMu.Lock()
+	defer localKeyLifecycleMu.Unlock()
+
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
 	now := s.clock()
-	return upsertSlot(db, SlotCurrent, k, now)
+	return db.Transaction(func(tx *gorm.DB) error {
+		var existing AuthLocalKeyRow
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("slot = ?", SlotCurrent).
+			First(&existing).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return tx.Create(rowFromLocalKey(SlotCurrent, k, now)).Error
+		case err != nil:
+			return err
+		case existing.Kid == k.Kid &&
+			existing.PrivPEM == k.PrivPEM &&
+			existing.PubPEM == k.PubPEM:
+			return nil
+		default:
+			return ErrLocalKeyReplacementRequiresRotation
+		}
+	})
 }
 
-func (s *gormKeyStore) Rotate(ctx context.Context, newKey *LocalKey) (*RotateResult, error) {
+func (s *gormKeyStore) Rotate(
+	ctx context.Context,
+	stationPeerID string,
+	newKey *LocalKey,
+) (*RotateResult, error) {
+	stationPeerID = strings.TrimSpace(stationPeerID)
+	if stationPeerID == "" {
+		return nil, errors.New("federation: keystore: Rotate: station peer id is required")
+	}
 	if newKey == nil || newKey.IsZero() {
 		return nil, errors.New("federation: keystore: Rotate: key is empty")
 	}
+	localKeyLifecycleMu.Lock()
+	defer localKeyLifecycleMu.Unlock()
+
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -199,26 +251,35 @@ func (s *gormKeyStore) Rotate(ctx context.Context, newKey *LocalKey) (*RotateRes
 
 	var existing AuthLocalKeyRow
 	hasExisting := false
-	err = db.Where("slot = ?", SlotCurrent).First(&existing).Error
-	switch {
-	case err == nil:
-		hasExisting = true
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		// fall through, hasExisting stays false
-	default:
-		return nil, err
-	}
-
-	if hasExisting && existing.Kid == newKey.Kid {
-		// Astronomically improbable (256-bit collision) but
-		// we refuse rather than overwrite because doing so
-		// would silently destroy the previous key without
-		// rotation — call sites should retry the generation.
-		return nil, errors.New("federation: keystore: Rotate: new kid identical to current")
-	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("slot = ?", SlotCurrent).
+			First(&existing).Error
+		switch {
+		case err == nil:
+			hasExisting = true
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			hasExisting = false
+		default:
+			return err
+		}
+
+		if hasExisting && existing.Kid == newKey.Kid {
+			// Refuse rather than overwrite because doing so would
+			// destroy the previous key without a real rotation.
+			return errors.New("federation: keystore: Rotate: new kid identical to current")
+		}
+
 		if hasExisting {
+			if err := archiveContentProofVerificationKey(
+				tx,
+				stationPeerID,
+				existing,
+				now,
+			); err != nil {
+				return err
+			}
 			demoted := existing
 			demoted.Slot = SlotPrev
 			demoted.UpdatedAt = now
@@ -239,16 +300,52 @@ func (s *gormKeyStore) Rotate(ctx context.Context, newKey *LocalKey) (*RotateRes
 	return res, nil
 }
 
-func (s *gormKeyStore) ClearPrev(ctx context.Context) error {
+func (s *gormKeyStore) ClearPrev(
+	ctx context.Context,
+	expectedKeyID string,
+	expectedUpdatedAt time.Time,
+) (bool, error) {
+	expectedKeyID = strings.TrimSpace(expectedKeyID)
+	if expectedKeyID == "" || expectedUpdatedAt.IsZero() {
+		return false, errors.New(
+			"federation: keystore: ClearPrev: expected identity is required",
+		)
+	}
+	localKeyLifecycleMu.Lock()
+	defer localKeyLifecycleMu.Unlock()
+
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
-	res := db.Where("slot = ?", SlotPrev).Delete(&AuthLocalKeyRow{})
-	if res.Error != nil {
-		return res.Error
-	}
-	return nil
+	cleared := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var previous AuthLocalKeyRow
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("slot = ?", SlotPrev).
+			First(&previous).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if previous.Kid != expectedKeyID ||
+			!previous.UpdatedAt.Equal(expectedUpdatedAt) {
+			return nil
+		}
+		result := tx.Where(
+			"slot = ? AND kid = ?",
+			SlotPrev,
+			expectedKeyID,
+		).Delete(&AuthLocalKeyRow{})
+		if result.Error != nil {
+			return result.Error
+		}
+		cleared = result.RowsAffected == 1
+		return nil
+	})
+	return cleared, err
 }
 
 func upsertSlot(db *gorm.DB, slot string, k *LocalKey, now time.Time) error {

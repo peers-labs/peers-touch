@@ -138,6 +138,12 @@ The mandatory execution order is:
 9. Report, release resources, and update coverage
 ```
 
+For tracked work, Step 6 produces an impact projection and validates the
+Acceptance Execution contract already owned by the formal execution plan. It
+does not create another plan, choose the current closure, or promote candidate
+environment Gates into immediate execution. Scheduling belongs to the formal
+plan and `pt-execution-plan-guardian`.
+
 Steps 1 through 3 are always required. `AUDIT` may stop after Step 3 or continue
 read-only through Steps 6, 8, and 9. `ADD`, `COMPLETE`, and `UPGRADE` continue
 only through the stage skill selected by Step 3.

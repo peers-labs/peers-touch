@@ -159,6 +159,7 @@ pub fn agent_replay_turn_stream(
             ptid,
             input.conversation_id,
             input.turn_id,
+            input.attempt_id.unwrap_or_default(),
             input.after_seq,
             cancellation,
         )

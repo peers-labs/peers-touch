@@ -1,10 +1,10 @@
-use std::net::IpAddr;
 use std::time::Duration;
 
 use prost::Message;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 
 use crate::error::{MobileError, MobileResult};
+use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
 pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/x-protobuf";
 const STATION_RESPONSE_CONTENT_TYPES: [&str; 2] =
@@ -34,7 +34,6 @@ impl StationOAuthTransport {
     pub(crate) async fn post<Req, Resp>(
         &self,
         origin: &str,
-        allow_insecure_loopback: bool,
         endpoint_path: &'static str,
         request: &Req,
     ) -> MobileResult<Resp>
@@ -42,7 +41,7 @@ impl StationOAuthTransport {
         Req: Message,
         Resp: Message + Default,
     {
-        let url = endpoint_url(origin, allow_insecure_loopback, endpoint_path)?;
+        let url = endpoint_url(origin, endpoint_path)?;
         let response = self
             .client
             .post(url)
@@ -92,61 +91,28 @@ impl StationOAuthTransport {
     }
 }
 
-pub(crate) fn validate_station_origin(
-    value: &str,
-    allow_insecure_loopback: bool,
-) -> MobileResult<String> {
-    let url = reqwest::Url::parse(value.trim())
-        .map_err(|_| MobileError::invalid_input("stationOrigin is invalid"))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| MobileError::invalid_input("stationOrigin must include a host"))?;
-    let secure = url.scheme() == "https";
-    let allowed_loopback =
-        allow_insecure_loopback && url.scheme() == "http" && is_loopback_host(host);
-    if (!secure && !allowed_loopback)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.path() != "/"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(MobileError::invalid_input(
-            "stationOrigin must be an HTTPS origin without credentials, path, query, or fragment",
-        ));
-    }
-
-    let port = url
-        .port_or_known_default()
-        .ok_or_else(|| MobileError::invalid_input("stationOrigin port is invalid"))?;
-    let authority = if host.contains(':') {
-        format!("[{}]:{port}", host.to_ascii_lowercase())
-    } else {
-        format!("{}:{port}", host.to_ascii_lowercase())
-    };
-    Ok(format!("{}://{authority}", url.scheme()))
+pub(crate) fn validate_station_origin(value: &str) -> MobileResult<String> {
+    normalize_station_origin(value, StationOriginPolicy::current_build()).map_err(|error| {
+        MobileError::invalid_input(match error {
+            StationOriginError::Invalid => "stationOrigin is invalid",
+            StationOriginError::MissingHost => "stationOrigin must include a host",
+            StationOriginError::Insecure | StationOriginError::NonCanonical => {
+                "stationOrigin must be an HTTPS origin outside development builds and contain no credentials, path, query, or fragment"
+            }
+            StationOriginError::InvalidPort => "stationOrigin port is invalid",
+        })
+    })
 }
 
-fn endpoint_url(
-    origin: &str,
-    allow_insecure_loopback: bool,
-    endpoint_path: &'static str,
-) -> MobileResult<reqwest::Url> {
+fn endpoint_url(origin: &str, endpoint_path: &'static str) -> MobileResult<reqwest::Url> {
     if !endpoint_path.starts_with('/') || endpoint_path.contains(['?', '#']) {
         return Err(MobileError::oauth("mobile.auth.oauthInvalidEndpointPath"));
     }
-    let origin = validate_station_origin(origin, allow_insecure_loopback)?;
+    let origin = validate_station_origin(origin)?;
     let mut url = reqwest::Url::parse(&origin)
         .map_err(|_| MobileError::oauth("mobile.auth.oauthInvalidStationOrigin"))?;
     url.set_path(endpoint_path);
     Ok(url)
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
 }
 
 #[cfg(test)]
@@ -155,17 +121,10 @@ mod tests {
 
     #[test]
     fn station_origin_and_endpoint_are_closed_over_expected_path() {
-        let url = endpoint_url("https://Station.Example", false, "/oauth/mobile/start")
+        let url = endpoint_url("https://Station.Example", "/oauth/mobile/start")
             .expect("valid Station origin");
         assert_eq!(url.as_str(), "https://station.example/oauth/mobile/start");
 
-        assert!(endpoint_url(
-            "https://station.example/redirect",
-            false,
-            "/oauth/mobile/start"
-        )
-        .is_err());
-        assert!(endpoint_url("http://station.example", true, "/oauth/mobile/start").is_err());
-        assert!(endpoint_url("http://127.0.0.1:8080", true, "/oauth/mobile/start").is_ok());
+        assert!(endpoint_url("https://station.example/redirect", "/oauth/mobile/start").is_err());
     }
 }

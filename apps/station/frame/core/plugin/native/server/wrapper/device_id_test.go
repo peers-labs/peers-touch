@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -33,5 +34,31 @@ func TestDeviceIDAcceptsCanonicalizedHTTPHeaderName(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("device id = %q, want %q", got, want)
+	}
+}
+
+func TestRequireStructuredDeviceIDPropagatesMissingHeader(t *testing.T) {
+	var failure server.RouteError
+	var found bool
+	handler := RequireStructuredDeviceID(20001)(func(
+		ctx context.Context,
+		_ server.Request,
+		_ server.Response,
+	) error {
+		failure, found = server.RouteFailureFromContext(ctx)
+		return nil
+	})
+
+	if err := handler(
+		context.Background(),
+		deviceIDTestRequest{headers: map[string]string{}},
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !found ||
+		failure.Status != http.StatusUnauthorized ||
+		failure.StableCode != 20001 {
+		t.Fatalf("structured device failure = %+v, present=%t", failure, found)
 	}
 }

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import socket
 import subprocess
 import unittest
@@ -10,40 +9,52 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def _worktree_offset(worktree_id: str) -> int:
-    import hashlib
-    return int(hashlib.sha256(worktree_id.encode()).hexdigest(), 16) % 100
-
-
 class DevRuntimePortIsolationTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_desktop_dev_uses_worktree_offset_for_ports(self) -> None:
+    def test_desktop_dev_uses_machine_slot_lease_and_assigned_ports(self) -> None:
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
-        self.assertIn("_wt_offset", src)
-        self.assertIn("WORKTREE_ID", src)
-        self.assertIn('$((_base_gw + _wt_offset))', src)
-        self.assertIn('$((_base_web + _wt_offset))', src)
+        self.assertIn('PT_MACHINE_LEASE_KIND:-}" == "local.slot"', src)
+        self.assertIn('PT_MACHINE_LEASE_RESOURCE_ID:-}" == "$PT_DEV_SLOT"', src)
+        self.assertIn("verify-held", src)
+        self.assertIn('exec node "$SCRIPT_DIR/machine-dev.mjs" lease', src)
+        self.assertEqual(src.count("--resource-kind local.slot"), 2)
+        self.assertEqual(src.count('--resource-id "$PT_DEV_SLOT"'), 2)
+        self.assertIn("${PT_DESKTOP_APP_GATEWAY_PORT}", src)
+        self.assertIn("${PT_DESKTOP_APP_WEB_PORT}", src)
+        self.assertIn("${PT_DESKTOP_WEB_GATEWAY_PORT}", src)
+        self.assertIn("${PT_DESKTOP_WEB_WEB_PORT}", src)
+        self.assertNotIn("_wt_offset", src)
 
-    def test_desktop_dev_does_not_use_profile_port_directly(self) -> None:
+    def test_desktop_dev_preserves_explicit_port_overrides(self) -> None:
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
-        self.assertNotIn(
-            'GATEWAY_PORT="${PT_DESKTOP_APP_GATEWAY_PORT',
+        self.assertIn('_caller_gw="${PT_GATEWAY_PORT:-}"', src)
+        self.assertIn('_caller_web="${PT_RENDERER_PORT:-}"', src)
+        self.assertIn(
+            'GATEWAY_PORT="${_caller_gw:-${PT_DESKTOP_APP_GATEWAY_PORT}}"',
             src,
-            "Profile port must not be used directly — it would cause "
-            "cross-worktree collisions when two worktrees share a profile",
+        )
+        self.assertIn(
+            'WEB_PORT="${_caller_web:-${PT_DESKTOP_APP_WEB_PORT}}"',
+            src,
         )
 
     def test_acceptance_owned_runtime_preserves_explicit_resources(self) -> None:
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
-        self.assertIn('PT_ACCEPTANCE_NATIVE_DEV', src)
+        env_src = self.source("tooling/scripts/local-dev/env.sh")
         self.assertIn('_caller_gw="${PT_GATEWAY_PORT:-}"', src)
         self.assertIn('_caller_web="${PT_RENDERER_PORT:-}"', src)
         self.assertIn('_caller_profile="${PT_PROFILE:-}"', src)
         self.assertIn('GATEWAY_PORT="${_caller_gw:-', src)
         self.assertIn('WEB_PORT="${_caller_web:-', src)
         self.assertIn('PT_PROFILE="${_caller_profile:-', src)
+        self.assertIn(
+            'PT_DEV_PROFILE_FILE_AUTHORITY:-}" != "acceptance-runtime-manifest"',
+            env_src,
+        )
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT", env_src)
+        self.assertIn("profile.parent != root", env_src)
 
     def test_rust_pid_file_includes_worktree_id(self) -> None:
         src = self.source("tooling/scripts/_ensure-desktop-rust.sh")
@@ -126,38 +137,19 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
             listener.bind(("127.0.0.1", 0))
             return int(listener.getsockname()[1])
 
-    def test_distinct_worktrees_produce_distinct_ports(self) -> None:
-        worktrees = [
-            "peers-group-chat",
-            "peers-chat-high-chat",
-            "peers-touch",
-            "peers-oss",
-            "peers-ai-agent",
-        ]
-        offsets = {wt: _worktree_offset(wt) for wt in worktrees}
-        self.assertEqual(
-            len(set(offsets.values())),
-            len(worktrees),
-            f"Worktree offsets must be unique: {offsets}",
+    def test_machine_registry_rejects_duplicate_slots(self) -> None:
+        src = self.source(
+            "tooling/scripts/local-dev/machine-dev-registry.mjs"
         )
-        base_gw = 3030
-        base_web = 3210
-        for wt_a, off_a in offsets.items():
-            for wt_b, off_b in offsets.items():
-                if wt_a >= wt_b:
-                    continue
-                gw_a = base_gw + off_a
-                gw_b = base_gw + off_b
-                web_a = base_web + off_a
-                web_b = base_web + off_b
-                self.assertNotEqual(
-                    gw_a, gw_b,
-                    f"Gateway port collision between {wt_a} and {wt_b}",
-                )
-                self.assertNotEqual(
-                    web_a, web_b,
-                    f"Web port collision between {wt_a} and {wt_b}",
-                )
+        self.assertIn("const slots = new Set();", src)
+        self.assertIn("slots.has(normalized.slot)", src)
+        self.assertIn("local slot is allocated more than once", src)
+        self.assertIn("function assertSlotAvailable", src)
+        self.assertIn("'LOCAL_SLOT_CONFLICT'", src)
+        self.assertIn(
+            "entry.workspaceId !== workspaceId && entry.slot === slot",
+            src,
+        )
 
 
 class DevRuntimeProtoOwnershipTest(unittest.TestCase):
@@ -204,68 +196,65 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_env_sh_uses_worktree_specific_active_profile(self) -> None:
+    def test_env_sh_resolves_machine_registry_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        self.assertIn(
-            "ACTIVE_PROFILE", src,
-            "env.sh must resolve the profile from the worktree-specific "
-            "active symlink",
-        )
-        self.assertIn(
-            'LOCAL_DEV_DIR/active/$WORKTREE_ID.env', src,
-            "the active profile path must be scoped by worktree",
-        )
+        self.assertIn('node "$MACHINE_DEV_SCRIPT" resolve', src)
+        self.assertIn("--format shell", src)
+        self.assertIn('PROFILE_FILE="$PT_MACHINE_PROFILE_FILE"', src)
+        self.assertNotIn("ACTIVE_PROFILE", src)
+        self.assertNotIn(".local/dev/active", src)
 
-    def test_env_sh_fails_when_no_profile_configured(self) -> None:
+    def test_env_sh_fails_when_machine_resolution_is_unavailable(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        missing_check = src.find('[[ ! -L "$ACTIVE_PROFILE" ]]')
+        missing_check = src.find('if ! resolved_exports="$(')
         self.assertGreater(
             missing_check, 0,
-            "env.sh must check whether the worktree-specific active symlink exists",
+            "env.sh must require machine control-plane resolution",
         )
         exit_after_missing = src.find("exit 1", missing_check)
         self.assertGreater(
             exit_after_missing, missing_check,
-            "env.sh must exit 1 when no profile is configured, rather than "
-            "silently continuing with empty environment",
+            "env.sh must exit when machine resolution fails",
         )
+        self.assertIn("no profile or slot fallback is allowed", src)
 
-    def test_env_sh_fails_when_active_profile_target_is_invalid(self) -> None:
-        src = self.source("tooling/scripts/local-dev/env.sh")
-        invalid_target_check = src.find('[[ "$active_filename" != *.env ]]')
-        self.assertGreater(
-            invalid_target_check, 0,
-            "env.sh must reject an active symlink target without an .env name",
-        )
-        exit_after_invalid_target = src.find("exit 1", invalid_target_check)
-        self.assertGreater(
-            exit_after_invalid_target, invalid_target_check,
-            "env.sh must exit 1 when the active profile target is invalid",
-        )
-
-    def test_env_sh_rejects_unreviewed_env_and_unauthorized_local_fallback(self) -> None:
+    def test_env_sh_rejects_uncontained_acceptance_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
         self.assertIn(
-            "git -C \"$ENV_REPO\" ls-files --error-unmatch",
+            'PT_DEV_PROFILE_FILE_AUTHORITY:-}" != "acceptance-runtime-manifest"',
             src,
-            "env.sh must reject untracked env-repository profiles",
+        )
+        self.assertIn('"$runtime_profile_root" != /*', src)
+        self.assertIn("resolve(strict=True)", src)
+        self.assertIn("stat.S_ISREG(metadata.st_mode)", src)
+        self.assertIn("metadata.st_uid != os.getuid()", src)
+        self.assertIn("profile.parent != root", src)
+
+    def test_machine_registry_rejects_unreviewed_or_unauthorized_profiles(self) -> None:
+        src = self.source(
+            "tooling/scripts/local-dev/machine-dev-registry.mjs"
         )
         self.assertIn(
-            'AUTHORIZATION_SCRIPT="$SCRIPT_DIR/environment-creation-authorization.py"',
+            "['ls-files', '--error-unmatch', relative]",
             src,
-            "env.sh must resolve the machine authorization verifier",
+            "machine resolution must reject untracked env-repository profiles",
         )
         self.assertIn(
-            'python3 "$AUTHORIZATION_SCRIPT" verify',
+            "['status', '--porcelain', '--untracked-files=all', '--', relativeDirectory]",
             src,
-            "env.sh must require a consumed human authorization receipt for "
-            "a machine-local profile",
+            "machine resolution must reject dirty profile directories",
         )
-        self.assertNotIn(
-            'PROFILE_FILE="$ACTIVE_PROFILE"\n  else',
+        self.assertIn(
+            "environmentAuthorizationHelperPath()",
             src,
-            "env.sh must not silently accept a local profile fallback",
+            "machine resolution must use the canonical authorization helper",
         )
+        self.assertIn(
+            "'verify'",
+            src,
+            "machine-local profiles require a consumed authorization receipt",
+        )
+        self.assertIn("sourceState = 'authorized-local'", src)
 
     def test_env_sh_scopes_runtime_dirs_by_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
@@ -277,19 +266,16 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
                 "do not collide",
             )
 
-    def test_profile_sh_activates_only_the_worktree_specific_symlink(self) -> None:
-        src = self.source("tooling/scripts/local-dev/profile.sh")
-        self.assertNotIn(
-            'echo "$name" > "$LOCAL_DEV_DIR/profile"',
-            src,
-            "profile.sh must not mutate the retired shared profile selector",
+    def test_profile_selection_updates_machine_binding_without_symlink(self) -> None:
+        make_src = self.source("tooling/make/local-dev.mk")
+        profile_src = self.source("tooling/scripts/local-dev/profile.sh")
+        self.assertIn(
+            '@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"',
+            make_src,
         )
-        symlink_pos = src.find('ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"')
-        self.assertGreater(
-            symlink_pos, 0,
-            "profile.sh must activate the profile through the worktree-specific "
-            "symlink",
-        )
+        self.assertIn("profile.sh {authorize|init|list}", profile_src)
+        self.assertNotIn("activate)", profile_src)
+        self.assertNotIn("ln -sfn", profile_src)
 
     def test_profile_init_consumes_human_authorization(self) -> None:
         src = self.source("tooling/scripts/local-dev/profile.sh")

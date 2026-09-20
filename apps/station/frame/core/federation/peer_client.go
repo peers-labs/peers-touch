@@ -257,16 +257,37 @@ func (c *peerClient) Open(
 	}
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
+		// #region debug-point K:federated-attachment-error-body
+		var diagnosticBody []byte
+		if call.Route == PeerRouteConversationAttachmentObject {
+			diagnosticBody, _ = io.ReadAll(io.LimitReader(response.Body, 1024))
+		}
+		// #endregion
 		_, _ = io.Copy(
 			io.Discard,
-			io.LimitReader(response.Body, peerResponseLimit),
+			io.LimitReader(
+				response.Body,
+				int64(peerResponseLimit)-int64(len(diagnosticBody)),
+			),
 		)
 		_ = response.Body.Close()
 
+		detail := fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+		// #region debug-point K:federated-attachment-error-body
+		if call.Route == PeerRouteConversationAttachmentObject {
+			detail = fmt.Errorf(
+				"peer returned HTTP %d code=%q details=%q body=%s",
+				response.StatusCode,
+				response.Header.Get("X-Peers-Error-Code"),
+				response.Header.Get("X-Peers-Error-Details"),
+				strings.TrimSpace(string(diagnosticBody)),
+			)
+		}
+		// #endregion
 		return nil, delivery.NewError(
 			delivery.FailureTransportUnavailable,
 			"call Federation peer",
-			fmt.Errorf("peer returned HTTP %d", response.StatusCode),
+			detail,
 		)
 	}
 

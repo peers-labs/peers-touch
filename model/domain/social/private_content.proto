@@ -1,0 +1,501 @@
+syntax = "proto3";
+
+package peers_touch.model.social.v1;
+
+import "domain/actor/actor.proto";
+import "domain/secure_content/content.proto";
+import "domain/secure_content/object.proto";
+import "domain/social/post.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent;privatecontent";
+
+enum PrivateMomentKind {
+  PRIVATE_MOMENT_KIND_UNSPECIFIED = 0;
+  PRIVATE_MOMENT_KIND_TEXT = 1;
+  PRIVATE_MOMENT_KIND_IMAGE = 2;
+  PRIVATE_MOMENT_KIND_VIDEO = 3;
+  PRIVATE_MOMENT_KIND_LINK = 4;
+  PRIVATE_MOMENT_KIND_POLL = 5;
+  PRIVATE_MOMENT_KIND_REPOST = 6;
+  PRIVATE_MOMENT_KIND_LOCATION = 7;
+}
+
+message PreparePrivateMomentRequest {
+  string content_id = 1;
+  .peers_touch.model.social.v1.Audience audience = 2;
+  uint32 object_count = 3;
+  string command_id = 4;
+  PrivateMomentKind kind = 5;
+  PrivateRepostAuthority repost_authority = 6;
+  PrivatePollAuthority poll_authority = 7;
+}
+
+message PreparePrivateMomentResponse {
+  .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
+}
+
+message PreparePrivateCommentRequest {
+  string post_id = 1;
+  string comment_content_id = 2;
+  string reply_to_comment_id = 3;
+  uint32 object_count = 4;
+  string command_id = 5;
+}
+
+message PreparePrivateCommentResponse {
+  .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
+}
+
+message PrivateMomentContent {
+  uint32 format_version = 1;
+  oneof body {
+    PrivateTextContent text = 2;
+    PrivateImageContent image = 3;
+    PrivateVideoContent video = 4;
+    PrivateLinkContent link = 5;
+    PrivatePollContent poll = 6;
+    PrivateRepostContent repost = 7;
+    PrivateLocationContent location = 8;
+  }
+  bytes mention_commitment_salt = 9;
+}
+
+message PrivateTextContent {
+  string text = 1;
+  repeated string hashtags = 2;
+  repeated .peers_touch.model.social.v1.Mention mentions = 3;
+}
+
+message PrivateImageContent {
+  string text = 1;
+  repeated PrivateAttachmentMetadata images = 2;
+  repeated string hashtags = 3;
+  repeated .peers_touch.model.social.v1.Mention mentions = 4;
+}
+
+message PrivateVideoVariant {
+  string variant_id = 1;
+  uint32 bitrate = 2;
+  string codec = 3;
+  uint32 width = 4;
+  uint32 height = 5;
+  PrivateAttachmentMetadata media = 6;
+}
+
+message PrivateVideoContent {
+  string text = 1;
+  PrivateAttachmentMetadata source = 2;
+  PrivateAttachmentMetadata poster = 3;
+  repeated PrivateVideoVariant variants = 4;
+  repeated string hashtags = 5;
+  repeated .peers_touch.model.social.v1.Mention mentions = 6;
+}
+
+message PrivateLinkContent {
+  string text = 1;
+  .peers_touch.model.social.v1.LinkPreview link = 2;
+  repeated string hashtags = 3;
+  repeated .peers_touch.model.social.v1.Mention mentions = 4;
+}
+
+message PrivatePollOption {
+  bytes opaque_option_id = 1;
+  string label = 2;
+}
+
+message PrivatePollContent {
+  string text = 1;
+  string question = 2;
+  repeated PrivatePollOption options = 3;
+  bytes option_set_sha256 = 4;
+  uint32 min_choices = 5;
+  uint32 max_choices = 6;
+  .google.protobuf.Timestamp expires_at = 7;
+  repeated .peers_touch.model.social.v1.Mention mentions = 8;
+}
+
+enum PrivateRenderedSourceKind {
+  PRIVATE_RENDERED_SOURCE_KIND_UNSPECIFIED = 0;
+  PRIVATE_RENDERED_SOURCE_KIND_TEXT = 1;
+  PRIVATE_RENDERED_SOURCE_KIND_IMAGE = 2;
+  PRIVATE_RENDERED_SOURCE_KIND_VIDEO = 3;
+  PRIVATE_RENDERED_SOURCE_KIND_LINK = 4;
+  PRIVATE_RENDERED_SOURCE_KIND_POLL = 5;
+  PRIVATE_RENDERED_SOURCE_KIND_LOCATION = 6;
+}
+
+message SocialPostSourceRef {
+  string post_id = 1;
+  string private_content_id = 2;
+  uint64 private_generation = 3;
+}
+
+message PublicRenderedSourceSnapshot {
+  SocialPostSourceRef source = 1;
+  .peers_touch.model.actor.v1.ActorRef author = 2;
+  .google.protobuf.Timestamp created_at = 3;
+  PrivateRenderedSourceKind kind = 4;
+  repeated .peers_touch.model.social.v1.Mention typed_mentions = 5;
+  oneof body {
+    .peers_touch.model.social.v1.TextPost text = 10;
+    .peers_touch.model.social.v1.ImagePost image = 11;
+    .peers_touch.model.social.v1.VideoPost video = 12;
+    .peers_touch.model.social.v1.LinkPost link = 13;
+    .peers_touch.model.social.v1.PollPost poll = 14;
+    .peers_touch.model.social.v1.LocationPost location = 15;
+  }
+}
+
+message PrivateRenderedSourceSnapshot {
+  SocialPostSourceRef source = 1;
+  .peers_touch.model.actor.v1.ActorRef author = 2;
+  .google.protobuf.Timestamp created_at = 3;
+  PrivateRenderedSourceKind kind = 4;
+  oneof body {
+    PrivateTextContent text = 10;
+    PrivateImageContent image = 11;
+    PrivateVideoContent video = 12;
+    PrivateLinkContent link = 13;
+    PrivatePollContent poll = 14;
+    PrivateLocationContent location = 15;
+  }
+}
+
+message RenderedSourceSnapshot {
+  oneof source_class {
+    PublicRenderedSourceSnapshot public_source = 1;
+    PrivateRenderedSourceSnapshot private_source = 2;
+  }
+}
+
+message PrivateRepostContent {
+  string comment = 1;
+  SocialPostSourceRef original_source = 2;
+  RenderedSourceSnapshot rendered_source = 3;
+  repeated .peers_touch.model.social.v1.Mention mentions = 4;
+  bytes rendered_source_commitment_salt = 5;
+}
+
+message PrivateLocationContent {
+  string text = 1;
+  .peers_touch.model.social.v1.Location location = 2;
+  repeated PrivateAttachmentMetadata images = 3;
+  repeated string hashtags = 4;
+  repeated .peers_touch.model.social.v1.Mention mentions = 5;
+}
+
+message PrivateCommentContent {
+  uint32 format_version = 1;
+  string content_id = 2;
+  string parent_content_id = 3;
+  string text = 4;
+  repeated .peers_touch.model.social.v1.Mention mentions = 5;
+  bytes mention_commitment_salt = 6;
+}
+
+message PrivateAttachmentMetadata {
+  string attachment_id = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 plaintext_size = 4;
+  bytes plaintext_sha256 = 5;
+  bytes object_key = 6;
+  bytes base_nonce = 7;
+  .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor object = 8;
+  uint32 width = 9;
+  uint32 height = 10;
+  uint32 duration_ms = 11;
+  string alt_text = 12;
+}
+
+message MentionRoutingFact {
+  .peers_touch.model.actor.v1.ActorRef mentioned_actor = 1;
+  bytes mention_commitment = 2;
+}
+
+message SignedMentionRouting {
+  uint32 format_version = 1;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 2;
+  bytes authorization_snapshot_sha256 = 3;
+  bytes encrypted_payload_sha256 = 4;
+  repeated MentionRoutingFact facts = 5;
+  .peers_touch.model.actor.v1.ActorDeviceRef sender = 6;
+  string sender_signing_key_id = 7;
+  bytes canonical_facts_sha256 = 8;
+  bytes sender_signature = 9;
+}
+
+message PrivatePollAuthority {
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 1;
+  repeated bytes opaque_option_ids = 2;
+  bytes option_set_sha256 = 3;
+  uint32 min_choices = 4;
+  uint32 max_choices = 5;
+  .google.protobuf.Timestamp expires_at = 6;
+}
+
+message PublicRepostSourceProof {
+  bytes canonical_public_post_sha256 = 1;
+}
+
+message PrivateRepostSourceProof {
+  .peers_touch.model.secure_content.v1.SecureResourceRef source_resource = 1;
+  bytes source_authorization_snapshot_sha256 = 2;
+  bytes source_encrypted_payload_sha256 = 3;
+  bytes source_commit_proof_sha256 = 4;
+}
+
+message PrivateRepostAuthority {
+  SocialPostSourceRef source = 1;
+  .peers_touch.model.actor.v1.ActorRef source_author = 2;
+  bytes rendered_source_commitment = 3;
+  oneof source_proof {
+    PublicRepostSourceProof public_source = 4;
+    PrivateRepostSourceProof private_source = 5;
+  }
+}
+
+message VotePrivatePollRequest {
+  string post_id = 1;
+  repeated bytes opaque_option_ids = 2;
+  string command_id = 3;
+}
+
+message PrivateMomentDomainBinding {
+  uint32 format_version = 1;
+  PrivateMomentKind kind = 2;
+  bytes subtype_prepare_authority_sha256 = 3;
+}
+
+message PrivateCommentDomainBinding {
+  uint32 format_version = 1;
+  string post_id = 2;
+  string reply_to_comment_id = 3;
+}
+
+message PreparePrivateMomentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string content_id = 3;
+  PrivateMomentKind kind = 4;
+  bytes audience_sha256 = 5;
+  uint32 object_count = 6;
+  bytes subtype_prepare_authority_sha256 = 7;
+}
+
+message PreparePrivateCommentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string post_id = 3;
+  string comment_content_id = 4;
+  string reply_to_comment_id = 5;
+  uint32 object_count = 6;
+}
+
+message EnvelopeSubmitCommitment {
+  string recipient_slot_id = 1;
+  bytes binding_sha256 = 2;
+  bytes envelope_sha256 = 3;
+}
+
+message ObjectSubmitCommitment {
+  string object_id = 1;
+  bytes descriptor_sha256 = 2;
+}
+
+message SubmitPrivateContentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  bytes canonical_plan_sha256 = 3;
+  bytes encrypted_payload_sha256 = 4;
+  repeated EnvelopeSubmitCommitment envelopes = 5;
+  repeated ObjectSubmitCommitment objects = 6;
+  bytes mention_routing_sha256 = 7;
+  bytes subtype_authority_sha256 = 8;
+}
+
+message VotePrivatePollHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string post_id = 3;
+  repeated bytes opaque_option_ids = 4;
+}
+
+message PrivatePollProjection {
+  repeated PrivatePollOptionResult options = 1;
+  uint64 voter_count = 2;
+}
+
+message PrivateContentVerification {
+  .peers_touch.model.secure_content.v1.ViewerContentCommitProof commit_proof = 1;
+  SignedMentionRouting mention_routing = 2;
+  oneof subtype_authority {
+    PrivatePollAuthority poll_authority = 3;
+    PrivateRepostAuthority repost_authority = 4;
+  }
+  .peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation station_signing_key_attestation = 5;
+}
+
+message PrivateContentAccess {
+  .peers_touch.model.secure_content.v1.EncryptedPayload payload = 1;
+  .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope viewer_envelope = 2;
+  repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 3;
+  PrivatePollProjection poll = 4;
+  PrivateContentVerification verification = 5;
+}
+
+message PostMetadata {
+  string post_id = 1;
+  string content_id = 2;
+  .peers_touch.model.actor.v1.ActorRef author = 3;
+  .peers_touch.model.social.v1.PostType type = 4;
+  .peers_touch.model.social.v1.Audience.Kind audience_kind = 5;
+  .google.protobuf.Timestamp created_at = 6;
+  .google.protobuf.Timestamp updated_at = 7;
+  bool is_deleted = 8;
+  .peers_touch.model.social.v1.PostStats stats = 9;
+}
+
+message PublicPostContent {
+  .peers_touch.model.social.v1.Post post = 1;
+}
+
+message PostResource {
+  PostMetadata metadata = 1;
+  oneof body {
+    PublicPostContent public_content = 2;
+    PrivateContentAccess private_content = 3;
+  }
+}
+
+message CommentMetadata {
+  string comment_id = 1;
+  string content_id = 2;
+  string post_id = 3;
+  string reply_to_comment_id = 4;
+  .peers_touch.model.actor.v1.ActorRef author = 5;
+  .google.protobuf.Timestamp created_at = 6;
+  .google.protobuf.Timestamp updated_at = 7;
+  bool is_deleted = 8;
+  int64 reactions_count = 9;
+  int64 replies_count = 10;
+}
+
+message PublicCommentContent {
+  string text = 1;
+  repeated .peers_touch.model.social.v1.Mention mentions = 2;
+}
+
+message CommentResource {
+  CommentMetadata metadata = 1;
+  oneof body {
+    PublicCommentContent public_content = 2;
+    PrivateContentAccess private_content = 3;
+  }
+}
+
+message SubmitPrivateMomentRequest {
+  .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
+  .peers_touch.model.secure_content.v1.EncryptedPayload payload = 2;
+  repeated .peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope envelopes = 3;
+  repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 4;
+  SignedMentionRouting mention_routing = 5;
+  PrivatePollAuthority poll_authority = 6;
+  PrivateRepostAuthority repost_authority = 7;
+  string command_id = 8;
+}
+
+message SubmitPrivateMomentResponse {
+  PostResource post = 1;
+  bool exact_replay = 2;
+}
+
+message SubmitPrivateCommentRequest {
+  .peers_touch.model.secure_content.v1.ContentEncryptionPlan plan = 1;
+  .peers_touch.model.secure_content.v1.EncryptedPayload payload = 2;
+  repeated .peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope envelopes = 3;
+  repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 4;
+  SignedMentionRouting mention_routing = 5;
+  string command_id = 6;
+}
+
+message SubmitPrivateCommentResponse {
+  CommentResource comment = 1;
+  bool exact_replay = 2;
+}
+
+message GetMomentResourceRequest {
+  string post_id = 1;
+}
+
+message GetMomentResourceResponse {
+  // Fields 1 and 2 intentionally preserve GetPostResponse wire semantics so
+  // existing Moment clients can keep decoding public reads during W6/W7.
+  .peers_touch.model.social.v1.Post post = 1;
+  .peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;
+  PostResource resource = 3;
+}
+
+message GetMomentCommentResourceRequest {
+  string post_id = 1;
+  string comment_id = 2;
+}
+
+message GetMomentCommentResourceResponse {
+  CommentResource comment = 1;
+}
+
+message ListMomentCommentsRequest {
+  string post_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
+}
+
+message ListMomentCommentsResponse {
+  repeated CommentResource comments = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message PrivatePollOptionResult {
+  bytes opaque_option_id = 1;
+  uint64 vote_count = 2;
+  bool selected_by_viewer = 3;
+}
+
+message VotePrivatePollResponse {
+  repeated PrivatePollOptionResult options = 1;
+  uint64 voter_count = 2;
+  bool exact_replay = 3;
+}
+
+message ListRecoverablePrivateContentRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+}
+
+message PrivateCommentLocator {
+  string post_id = 1;
+  string comment_id = 2;
+}
+
+message SocialPrivateContentLocator {
+  oneof resource {
+    string post_id = 1;
+    PrivateCommentLocator comment = 2;
+  }
+}
+
+message RecoverablePrivateContent {
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 1;
+  SocialPrivateContentLocator locator = 2;
+  .peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope recovery_envelope = 3;
+  bytes payload_ciphertext_sha256 = 4;
+}
+
+message ListRecoverablePrivateContentResponse {
+  repeated RecoverablePrivateContent resources = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}

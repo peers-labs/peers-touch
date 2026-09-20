@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shlex
@@ -109,11 +110,17 @@ class SshTunnel:
         self._process = None
         try:
             if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    if os.name == "posix":
+                        os.killpg(process.pid, signal.SIGKILL)
+                    else:
+                        process.kill()
                     process.wait(timeout=5)
         finally:
             for stream in (process.stdout, process.stderr):
@@ -171,16 +178,23 @@ class SshTransport:
     def render_remote_argv(self, argv: Sequence[str]) -> str:
         if self.target.remote_platform == RemotePlatform.POSIX:
             return shlex.join(str(argument) for argument in argv)
-        arguments = " ".join(
-            "'" + str(argument).replace("'", "''") + "'"
-            for argument in argv
+        encoded_argv = base64.b64encode(
+            json.dumps(
+                [str(argument) for argument in argv],
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).decode("ascii")
+        bootstrap = (
+            "import base64,json,subprocess,sys;"
+            "argv=json.loads(base64.b64decode(sys.argv[1]));"
+            "raise SystemExit(subprocess.run(argv).returncode)"
         )
         script = (
             "$ErrorActionPreference='Stop'; "
             "$utf8=[System.Text.UTF8Encoding]::new($false); "
             "$OutputEncoding=$utf8; "
             "[Console]::OutputEncoding=$utf8; "
-            f"& {arguments}; "
+            f"& 'python' '-c' '{bootstrap}' '{encoded_argv}'; "
             "if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }"
         )
         encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
@@ -210,6 +224,8 @@ class SshTransport:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             input=input_text,
             timeout=timeout,
             check=False,
@@ -278,6 +294,8 @@ class SshTransport:
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )
@@ -378,6 +396,35 @@ class SshTransport:
         except subprocess.TimeoutExpired:
             return False
         return probe.returncode == 0
+
+    def available_remote_port(self, *, timeout: float = 10) -> int:
+        executable = (
+            "python"
+            if self.target.remote_platform == RemotePlatform.WINDOWS
+            else "python3"
+        )
+        completed = self.run_argv(
+            (
+                executable,
+                "-c",
+                (
+                    "import socket;"
+                    "listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);"
+                    "listener.bind(('127.0.0.1',0));"
+                    "print(listener.getsockname()[1]);"
+                    "listener.close()"
+                ),
+            ),
+            timeout=timeout,
+            check=True,
+        )
+        value = completed.stdout.strip()
+        if not value.isdecimal():
+            raise ProvisioningError("remote port allocation returned invalid output")
+        port = int(value)
+        if port < 1 or port > 65535:
+            raise ProvisioningError("remote port allocation returned invalid port")
+        return port
 
     @staticmethod
     def _valid_windows_path(value: str) -> bool:

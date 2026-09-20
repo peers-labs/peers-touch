@@ -756,6 +756,13 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			},
 			30,
 		),
+		directDomainBundle(
+			domain.Endpoint{
+				ActorPTID: carol.GetActor().GetPtid(),
+				DeviceID:  "carol-2",
+			},
+			31,
+		),
 	}
 	remoteMLS := []byte("remote-mls-key-package")
 	fixture.federation.mlsReservation = &domain.MLSKeyPackageReservation{
@@ -776,7 +783,6 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 		alice.GetDeviceId(),
 		&kemodel.FetchDirectKeyBundlesRequest{
 			Actor:             carol.GetActor(),
-			TargetDeviceId:    carol.GetDeviceId(),
 			HomeStationPeerId: testRemoteStation,
 			RequestId:         "remote-direct-fetch",
 			Requester:         alice,
@@ -785,7 +791,7 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch remote Direct bundle: %v", err)
 	}
-	if len(directResponse.GetBundles()) != 1 ||
+	if len(directResponse.GetBundles()) != 2 ||
 		fixture.federation.DirectFetchLen() != 1 {
 		t.Fatalf(
 			"remote Direct fetch response=%+v calls=%d",
@@ -793,7 +799,6 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			fixture.federation.DirectFetchLen(),
 		)
 	}
-	fixture.devices.routes[remoteRouteKey] = remoteRoute
 
 	mlsResponse, err := fixture.api.FetchMLSKeyPackage(
 		ctx,
@@ -818,6 +823,7 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			fixture.federation.MLSFetchLen(),
 		)
 	}
+	fixture.devices.routes[remoteRouteKey] = remoteRoute
 	reserved, err := fixture.service.ReserveMLSKeyPackage(
 		ctx,
 		"remote-claim-request",

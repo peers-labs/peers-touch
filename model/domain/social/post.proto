@@ -594,6 +594,8 @@ message RepostResponse {
 //   PUBLIC         — visible to anyone (federated when ActivityPub lands).
 //                    target_id / actor_ptids / base_kind: unused.
 //   FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
+//   FRIENDS        — visible to accepted Social relationship peers + author.
+//                    target_id / actor_ptids / base_kind: unused.
 //   CIRCLE         — visible to members of `target_id` circle (publisher-owned).
 //                    target_id required.
 //   GROUP          — visible to members of `target_id` chat.Group.
@@ -613,6 +615,7 @@ message Audience {
     SELF = 5;
     CUSTOM_ALLOW = 6;
     CUSTOM_DENY = 7;
+    FRIENDS = 8;
   }
   Kind kind = 1;
   // Required iff kind == CIRCLE or GROUP.

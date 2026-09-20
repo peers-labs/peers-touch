@@ -232,7 +232,7 @@ func resolveViewFromResolved(r *resolver.Resolved) *apipb.FederationResolveView 
 	}
 	env := r.Envelope
 	view := &apipb.FederationResolveView{
-		FederatedHandle:   env.GetFederatedHandle(),
+		FederatedHandle:   wireFederatedHandle(env.GetFederatedHandle()),
 		HomeStationPeerId: env.GetHomeStationPeerId(),
 		HomeStationDomain: env.GetHomeStationDomain(),
 		IsLocal:           r.IsLocal,
@@ -244,6 +244,13 @@ func resolveViewFromResolved(r *resolver.Resolved) *apipb.FederationResolveView 
 		SigningKeyKid:     env.GetSigningKeyKid(),
 	}
 	return view
+}
+
+func wireFederatedHandle(handle string) string {
+	if handle == "" {
+		return ""
+	}
+	return "@" + strings.TrimPrefix(handle, "@")
 }
 
 // visibilityToProto maps the int16 DB value into the wire enum. The

@@ -53,3 +53,6 @@ export type {
   SocialEmptyKind,
   SocialEmptyStateProps,
 } from './SocialEmptyState';
+
+export { SocialPrivateState } from './SocialPrivateState';
+export type { SocialPrivateStateProps } from './SocialPrivateState';

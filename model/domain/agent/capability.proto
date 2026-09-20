@@ -104,6 +104,9 @@ enum ConnectorResourceStatus {
   CONNECTOR_RESOURCE_STATUS_SCOPE_DENIED = 3;
   CONNECTOR_RESOURCE_STATUS_REMOVED = 4;
   CONNECTOR_RESOURCE_STATUS_MANIFEST_STALE = 5;
+  CONNECTOR_RESOURCE_STATUS_DISCONNECTED = 6;
+  CONNECTOR_RESOURCE_STATUS_REVOKED = 7;
+  CONNECTOR_RESOURCE_STATUS_REVOCATION_UNCONFIRMED = 8;
 }
 
 enum ConnectorErrorCode {
@@ -112,6 +115,9 @@ enum ConnectorErrorCode {
   CONNECTOR_ERROR_CODE_SCOPE_DENIED = 2;
   CONNECTOR_ERROR_CODE_RESOURCE_REMOVED = 3;
   CONNECTOR_ERROR_CODE_MANIFEST_STALE = 4;
+  CONNECTOR_ERROR_CODE_DISCONNECTED = 5;
+  CONNECTOR_ERROR_CODE_PROVIDER_REVOKED = 6;
+  CONNECTOR_ERROR_CODE_REVOCATION_UNCONFIRMED = 7;
 }
 
 enum KnowledgeResourceKind {
@@ -310,6 +316,31 @@ message ConnectorResourceManifest {
   repeated ConnectorToolManifestRef tool_manifests = 8;
   ConnectorResourceStatus status = 9;
   google.protobuf.Timestamp expires_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message ConnectorResourceProjection {
+  string resource_id = 1;
+  string resource_version = 2;
+  repeated string required_scopes = 3;
+  ConnectorResourceStatus status = 4;
+}
+
+message SyncConnectorResourceManifestsRequest {
+  string connector_id = 1;
+  string oauth_connection_id = 2;
+  uint64 expected_connection_revision = 3;
+  uint64 connection_revision = 4;
+  repeated string granted_scopes = 5;
+  ConnectorResourceStatus connection_status = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  repeated ConnectorResourceProjection resources = 8;
+  string idempotency_key = 9;
+}
+
+message SyncConnectorResourceManifestsResponse {
+  repeated ConnectorResourceManifest manifests = 1;
+  repeated CapabilityManifest capability_manifests = 2;
 }
 
 message KnowledgeStationContentRef {

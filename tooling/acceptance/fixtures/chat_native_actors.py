@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -22,9 +23,10 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
+    FixtureActorRecord,
     acceptance_station_environment,
     read_fixture_actor,
-    seed_cross_station_contact,
+    seed_bound_contact,
     verify_disposable_station_runtime,
 )
 
@@ -40,6 +42,12 @@ ACTOR_PASSWORD = "1"
 RESET_TIMEOUT_SECONDS = 120.0
 RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
+
+
+@dataclass(frozen=True)
+class ResolvedActorIdentity(ActorIdentity):
+    federated_handle: str = ""
+    home_station_peer_id: str = ""
 
 
 def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
@@ -118,6 +126,7 @@ def reset_fixture(
     deployment_environment: str,
     actors: Iterable[str],
     *,
+    reset_authorized: bool | None = None,
     deadline_monotonic: float | None = None,
     cancellation: threading.Event | None = None,
 ) -> None:
@@ -134,6 +143,12 @@ def reset_fixture(
     )
     operation_deadline = effective_deadline - termination_reserve
     try:
+        child_environment = os.environ.copy()
+        if reset_authorized is not None:
+            if reset_authorized:
+                child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
+            else:
+                child_environment.pop("CHAT_ACCEPTANCE_RESET", None)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -145,6 +160,7 @@ def reset_fixture(
                 *accounts,
             ],
             cwd=REPO_ROOT,
+            env=child_environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -227,7 +243,10 @@ def _terminate_reset_process(
     try:
         process.communicate(timeout=min(0.25, remaining))
     except subprocess.TimeoutExpired:
-        _signal_reset_process_group(process, signal.SIGKILL)
+        if os.name == "posix":
+            _signal_reset_process_group(process, signal.SIGKILL)
+        else:
+            process.kill()
         remaining = max(0.0, deadline_monotonic - time.monotonic())
         try:
             process.communicate(timeout=remaining)
@@ -242,9 +261,9 @@ def _kill_remaining_reset_group(
     process: subprocess.Popen[str],
     deadline_monotonic: float,
 ) -> None:
-    _signal_reset_process_group(process, signal.SIGKILL)
     if os.name != "posix":
         return
+    _signal_reset_process_group(process, signal.SIGKILL)
     while True:
         try:
             os.killpg(process.pid, 0)
@@ -269,7 +288,7 @@ def resolve_actor_identity(
     station_url: str,
     deployment_environment: str,
     role: str,
-) -> ActorIdentity:
+) -> ResolvedActorIdentity:
     account = ACTOR_ACCOUNTS.get(role)
     if not account:
         raise BlockedError(
@@ -287,10 +306,12 @@ def resolve_actor_identity(
             reason=f"Cannot resolve canonical PTID for fixture role {role}: {error}",
             resource=f"fixture-actor:{role}",
         ) from error
-    return ActorIdentity(
+    return ResolvedActorIdentity(
         role=role,
         account_ref=f"station-account:{account}",
         ptid=record.ptid,
+        federated_handle=record.federated_handle,
+        home_station_peer_id=record.home_station_peer_id,
     )
 
 
@@ -298,39 +319,37 @@ def prepare_bound_friendships(
     role_targets: Mapping[str, tuple[str, str]],
     actors: tuple[ActorIdentity, ...],
 ) -> None:
-    if "alice" not in role_targets or "bob" not in role_targets:
-        return
-    if role_targets["alice"] == role_targets["bob"]:
-        return
-
     by_role = {actor.role: actor for actor in actors}
-    alice = by_role["alice"]
-    bob = by_role["bob"]
-    alice_station_url, alice_environment = role_targets["alice"]
-    bob_station_url, bob_environment = role_targets["bob"]
-    alice_record = read_fixture_actor(
-        alice_station_url,
-        alice_environment,
-        ACTOR_ACCOUNTS["alice"],
-    )
-    bob_record = read_fixture_actor(
-        bob_station_url,
-        bob_environment,
-        ACTOR_ACCOUNTS["bob"],
-    )
+    records: dict[str, FixtureActorRecord] = {}
+    for role, (station_url, environment) in role_targets.items():
+        record = read_fixture_actor(
+            station_url,
+            environment,
+            ACTOR_ACCOUNTS[role],
+        )
+        identity = by_role.get(role)
+        if identity is None or identity.ptid != record.ptid:
+            raise BlockedError(
+                reason=(
+                    f"Fixture actor identity drifted while preparing contacts "
+                    f"for role {role}"
+                ),
+                resource=f"fixture-actor:{role}",
+            )
+        records[role] = record
 
-    seed_cross_station_contact(
-        alice_station_url,
-        alice_environment,
-        alice_record,
-        bob_record,
-    )
-    seed_cross_station_contact(
-        bob_station_url,
-        bob_environment,
-        bob_record,
-        alice_record,
-    )
+    federation_members = tuple(records.values())
+    for actor_role, (station_url, environment) in role_targets.items():
+        for peer_role in role_targets:
+            if actor_role == peer_role:
+                continue
+            seed_bound_contact(
+                station_url,
+                environment,
+                records[actor_role],
+                records[peer_role],
+                federation_members,
+            )
 
 
 def produce_actor_manifest(
@@ -382,7 +401,11 @@ def produce_bound_actor_manifest(
         ).append(role)
     for (station_url, deployment_environment), target_roles in grouped_roles.items():
         verify_reset_target(station_url, deployment_environment)
-        reset_fixture(deployment_environment, target_roles)
+        reset_fixture(
+            deployment_environment,
+            target_roles,
+            reset_authorized=reset_authorized,
+        )
     actors = tuple(
         resolve_actor_identity(
             role_targets[role][0],

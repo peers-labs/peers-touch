@@ -17,9 +17,10 @@ function getWorktreeInfo() {
     const toplevel = execSync('git rev-parse --show-toplevel', { cwd: configDir, encoding: 'utf8' }).trim()
     const worktreeName = path.basename(toplevel)
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
-    return { worktreeName, branch }
+    const sourceCommit = execSync('git rev-parse HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
+    return { worktreeName, branch, sourceCommit }
   } catch {
-    return { worktreeName: 'unknown', branch: 'unknown' }
+    return { worktreeName: 'unknown', branch: 'unknown', sourceCommit: 'unknown' }
   }
 }
 
@@ -50,6 +51,7 @@ export default defineConfig(({ command }) => ({
   define: {
     __PT_DEV_WORKTREE__: JSON.stringify(worktreeInfo.worktreeName),
     __PT_DEV_BRANCH__: JSON.stringify(worktreeInfo.branch),
+    __PT_SOURCE_COMMIT__: JSON.stringify(worktreeInfo.sourceCommit),
     'import.meta.env.VITE_LYNX_WEB_RUNTIME_BASE': JSON.stringify(
       command === 'serve'
         ? `/@fs/${lynxStaticSourceDir}`
@@ -65,7 +67,9 @@ export default defineConfig(({ command }) => ({
     port: 3210,
     strictPort: true,
     hmr: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? false : undefined,
-    watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? { ignored: ['**/*'] } : undefined,
+    watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS
+      ? { ignored: ['**/*'] }
+      : { ignored: ['**/src-tauri/target/**'] },
     proxy: {
       '/api': {
         target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',

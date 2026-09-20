@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -17,28 +16,30 @@ import (
 )
 
 type ModelConfigService struct{}
-
 func NewModelConfigService() *ModelConfigService {
+	return &ModelConfigService{}
 	return &ModelConfigService{}
 }
 
 type ModelCreateRequest struct {
-	ActorPTID        string
-	ProviderID       string
-	ModelID          string
-	DisplayName      string
-	Enabled          bool
-	CapabilitiesJSON json.RawMessage
-	ContextWindow    int
+	ActorPTID     string
+	ProviderID    string
+	ModelID       string
+	DisplayName   string
+	Enabled       bool
+	Capabilities  map[string]bool
+	ContextWindow int
 }
 
 type ModelUpdateRequest struct {
-	ActorPTID   string
-	ProviderID  string
-	ModelID     string
-	Version     int64
-	DisplayName *string
-	Enabled     *bool
+	ActorPTID     string
+	ProviderID    string
+	ModelID       string
+	Version       int64
+	DisplayName   *string
+	Enabled       *bool
+	Capabilities  map[string]bool
+	ContextWindow *int
 }
 
 func (s *ModelConfigService) List(ctx context.Context, actorPTID, providerID string) ([]persistence.AgentModel, error) {
@@ -64,6 +65,15 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 	if err != nil {
 		return nil, err
 	}
+	capabilitiesJSON, err := EncodeModelCapabilityFlags(req.Capabilities)
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"invalid model capabilities",
+			err,
+		)
+	}
 
 	var existing persistence.AgentModel
 	if err := db.WithContext(ctx).
@@ -79,7 +89,7 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 		ModelID:          req.ModelID,
 		DisplayName:      req.DisplayName,
 		Enabled:          req.Enabled,
-		CapabilitiesJSON: req.CapabilitiesJSON,
+		CapabilitiesJSON: capabilitiesJSON,
 		ContextWindow:    req.ContextWindow,
 		Version:          1,
 	}
@@ -126,6 +136,21 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
 	}
+	if req.Capabilities != nil {
+		capabilitiesJSON, encodeErr := EncodeModelCapabilityFlags(req.Capabilities)
+		if encodeErr != nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusBadRequest,
+				"invalid model capabilities",
+				encodeErr,
+			)
+		}
+		updates["capabilities_json"] = capabilitiesJSON
+	}
+	if req.ContextWindow != nil {
+		updates["context_window"] = *req.ContextWindow
+	}
 
 	if err := db.WithContext(ctx).
 		Model(&model).
@@ -134,7 +159,12 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 			"failed to update model", err)
 	}
 
-	model.Version++
+	if err := db.WithContext(ctx).
+		Where("id = ?", model.ID).
+		First(&model).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to reload updated model", err)
+	}
 	logger.Infof(ctx, "model updated: actor=%s, provider=%s, model=%s, version=%d",
 		req.ActorPTID, req.ProviderID, req.ModelID, model.Version)
 	return &model, nil

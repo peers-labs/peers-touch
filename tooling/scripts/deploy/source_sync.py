@@ -24,6 +24,35 @@ from tooling.acceptance.core.source_sync import (
     SourceSyncRequest,
 )
 
+def _continuation_pass_fds(environment: dict[str, str]) -> tuple[int, ...]:
+    raw_fd = environment.get("PT_MACHINE_LEASE_FD", "").strip()
+    if not raw_fd:
+        return ()
+    try:
+        lease_fd = int(raw_fd)
+    except ValueError as error:
+        raise RuntimeError("PT_MACHINE_LEASE_FD must be an integer") from error
+    if lease_fd < 3:
+        raise RuntimeError("PT_MACHINE_LEASE_FD must reference an inherited descriptor")
+    try:
+        os.fstat(lease_fd)
+    except OSError as error:
+        raise RuntimeError("PT_MACHINE_LEASE_FD is not open") from error
+    return (lease_fd,)
+
+
+def _run_continuation(
+    command: list[str],
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        env=environment,
+        check=False,
+        pass_fds=_continuation_pass_fds(environment),
+    )
+
 
 def main() -> int:
     arguments = sys.argv[1:]
@@ -85,12 +114,7 @@ def main() -> int:
                 _write_result(result.to_dict(), as_json=args.json)
                 environment = os.environ.copy()
                 environment["PT_SOURCE_LEASE_HELD"] = "1"
-                return subprocess.run(
-                    command,
-                    cwd=REPO_ROOT,
-                    env=environment,
-                    check=False,
-                ).returncode
+                return _run_continuation(command, environment).returncode
         result = RemoteSourceSynchronizer(request).sync()
     except (
         OSError,

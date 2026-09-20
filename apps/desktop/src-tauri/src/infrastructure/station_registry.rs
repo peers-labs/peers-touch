@@ -6,7 +6,7 @@
 // 2026-05-29: Initial creation for dynamic Station URL picker.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::RwLock;
@@ -26,6 +26,13 @@ pub struct StationEntry {
 pub struct StationRegistry {
     state: RwLock<PersistedData>,
     persist_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FederationSigningKeyPin {
+    pub station_peer_id: String,
+    pub signing_key_id: String,
+    pub ed25519_public_key: [u8; 32],
 }
 
 impl StationRegistry {
@@ -156,11 +163,27 @@ impl StationRegistry {
             .write()
             .expect("StationRegistry write lock poisoned");
         let mut next = state.clone();
+        let existing_pin = next.federation_signing_key_pins.get(&entry.url).cloned();
         if let Some(current) = next
             .entries
             .iter_mut()
             .find(|current| current.url == entry.url)
         {
+            if let Some(pin) = existing_pin.as_ref() {
+                if entry
+                    .peer_id
+                    .as_deref()
+                    .is_some_and(|peer_id| peer_id != pin.station_peer_id)
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Station peer ID conflicts with its pinned Federation key",
+                    ));
+                }
+                if entry.peer_id.is_none() {
+                    entry.peer_id = current.peer_id.clone();
+                }
+            }
             *current = entry;
         } else {
             next.entries.push(entry);
@@ -179,6 +202,7 @@ impl StationRegistry {
             .expect("StationRegistry write lock poisoned");
         let mut next = state.clone();
         next.entries.retain(|entry| entry.url != normalized);
+        next.federation_signing_key_pins.remove(&normalized);
         if next.active_url.as_deref() == Some(normalized.as_str()) {
             next.active_url = None;
         }
@@ -192,7 +216,7 @@ impl StationRegistry {
         &self,
         url: &str,
         label: Option<String>,
-        peer_id: Option<String>,
+        mut peer_id: Option<String>,
         peers_count: Option<u32>,
         online: bool,
     ) -> io::Result<()> {
@@ -202,6 +226,20 @@ impl StationRegistry {
             .write()
             .expect("StationRegistry write lock poisoned");
         let mut next = state.clone();
+        if let Some(pin) = next.federation_signing_key_pins.get(&normalized) {
+            if peer_id
+                .as_deref()
+                .is_some_and(|peer_id| peer_id != pin.station_peer_id)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Station probe identity conflicts with its pinned Federation key",
+                ));
+            }
+            if peer_id.is_none() {
+                peer_id = Some(pin.station_peer_id.clone());
+            }
+        }
         if let Some(entry) = next
             .entries
             .iter_mut()
@@ -216,6 +254,110 @@ impl StationRegistry {
         self.persist(&next)?;
         *state = next;
         Ok(())
+    }
+
+    pub fn pin_or_verify_federation_signing_key(
+        &self,
+        url: &str,
+        station_peer_id: &str,
+        signing_key_id: &str,
+        ed25519_public_key: [u8; 32],
+    ) -> io::Result<FederationSigningKeyPin> {
+        let normalized = normalize_url(url);
+        if normalized.is_empty()
+            || station_peer_id.trim().is_empty()
+            || signing_key_id.trim().is_empty()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Station Federation signing-key pin is incomplete",
+            ));
+        }
+        let mut state = self
+            .state
+            .write()
+            .expect("StationRegistry write lock poisoned");
+        let entry = state
+            .entries
+            .iter()
+            .find(|entry| entry.url == normalized)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Station must be registered before its Federation key is pinned",
+                )
+            })?;
+        if entry.peer_id.as_deref() != Some(station_peer_id) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Station Federation key does not match the registered peer ID",
+            ));
+        }
+
+        let candidate = PersistedFederationSigningKeyPin {
+            station_peer_id: station_peer_id.to_string(),
+            signing_key_id: signing_key_id.to_string(),
+            ed25519_public_key: ed25519_public_key.to_vec(),
+        };
+        if let Some(existing) = state.federation_signing_key_pins.get(&normalized) {
+            if existing != &candidate {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Station Federation signing key changed without explicit Station replacement",
+                ));
+            }
+        } else {
+            let mut next = state.clone();
+            next.federation_signing_key_pins
+                .insert(normalized.clone(), candidate);
+            self.persist(&next)?;
+            *state = next;
+        }
+        Ok(FederationSigningKeyPin {
+            station_peer_id: station_peer_id.to_string(),
+            signing_key_id: signing_key_id.to_string(),
+            ed25519_public_key,
+        })
+    }
+
+    pub fn federation_signing_key_pin(
+        &self,
+        url: &str,
+    ) -> io::Result<Option<FederationSigningKeyPin>> {
+        let normalized = normalize_url(url);
+        let state = self
+            .state
+            .read()
+            .expect("StationRegistry read lock poisoned");
+        let entry_peer_id = state
+            .entries
+            .iter()
+            .find(|entry| entry.url == normalized)
+            .and_then(|entry| entry.peer_id.as_deref());
+        state
+            .federation_signing_key_pins
+            .get(&normalized)
+            .map(|pin| {
+                if entry_peer_id != Some(pin.station_peer_id.as_str()) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Pinned Station Federation key no longer matches the Station peer ID",
+                    ));
+                }
+                let public_key: [u8; 32] =
+                    pin.ed25519_public_key.as_slice().try_into().map_err(|_| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Pinned Station Federation signing key is malformed",
+                        )
+                    })?;
+                Ok(FederationSigningKeyPin {
+                    station_peer_id: pin.station_peer_id.clone(),
+                    signing_key_id: pin.signing_key_id.clone(),
+                    ed25519_public_key: public_key,
+                })
+            })
+            .transpose()
     }
 }
 
@@ -235,6 +377,15 @@ struct PersistedData {
     entries: Vec<StationEntry>,
     #[serde(default)]
     active_url: Option<String>,
+    #[serde(default)]
+    federation_signing_key_pins: HashMap<String, PersistedFederationSigningKeyPin>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct PersistedFederationSigningKeyPin {
+    station_peer_id: String,
+    signing_key_id: String,
+    ed25519_public_key: Vec<u8>,
 }
 
 fn normalize_url(url: &str) -> String {
@@ -341,6 +492,7 @@ mod tests {
             let persisted = PersistedData {
                 entries: vec![empty_entry("http://chosen.example".to_string())],
                 active_url: Some("http://chosen.example".to_string()),
+                ..Default::default()
             };
             std::fs::write(
                 dir.join("stations.json"),
@@ -371,6 +523,94 @@ mod tests {
             registry.set_active("http://chosen.example").unwrap();
             registry.remove("http://chosen.example").unwrap();
             assert_eq!(registry.active_url(), None);
+        });
+    }
+
+    #[test]
+    fn federation_signing_key_pin_is_tofu_and_survives_reload() {
+        with_seed(None, || {
+            let dir = temp_dir("federation-pin");
+            let registry = StationRegistry::new(&dir);
+            registry
+                .add(StationEntry {
+                    url: "https://station.example".to_string(),
+                    label: None,
+                    peer_id: Some("station-peer-1".to_string()),
+                    peers_count: None,
+                    last_probe: None,
+                    online: true,
+                })
+                .unwrap();
+
+            registry
+                .pin_or_verify_federation_signing_key(
+                    "https://station.example/",
+                    "station-peer-1",
+                    "key-1",
+                    [7; 32],
+                )
+                .unwrap();
+            registry
+                .pin_or_verify_federation_signing_key(
+                    "https://station.example",
+                    "station-peer-1",
+                    "key-1",
+                    [7; 32],
+                )
+                .unwrap();
+            assert!(registry
+                .pin_or_verify_federation_signing_key(
+                    "https://station.example",
+                    "station-peer-1",
+                    "key-2",
+                    [8; 32],
+                )
+                .is_err());
+
+            let reloaded = StationRegistry::new(&dir);
+            let pin = reloaded
+                .federation_signing_key_pin("https://station.example/")
+                .unwrap()
+                .unwrap();
+            assert_eq!(pin.station_peer_id, "station-peer-1");
+            assert_eq!(pin.signing_key_id, "key-1");
+            assert_eq!(pin.ed25519_public_key, [7; 32]);
+        });
+    }
+
+    #[test]
+    fn federation_signing_key_pin_blocks_probe_identity_replacement() {
+        with_seed(None, || {
+            let dir = temp_dir("federation-pin-peer-mismatch");
+            let registry = StationRegistry::new(&dir);
+            registry
+                .add(StationEntry {
+                    url: "https://station.example".to_string(),
+                    label: None,
+                    peer_id: Some("station-peer-1".to_string()),
+                    peers_count: None,
+                    last_probe: None,
+                    online: true,
+                })
+                .unwrap();
+            registry
+                .pin_or_verify_federation_signing_key(
+                    "https://station.example",
+                    "station-peer-1",
+                    "key-1",
+                    [7; 32],
+                )
+                .unwrap();
+
+            assert!(registry
+                .update_probe(
+                    "https://station.example",
+                    None,
+                    Some("station-peer-attacker".to_string()),
+                    None,
+                    true,
+                )
+                .is_err());
         });
     }
 

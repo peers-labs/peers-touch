@@ -1,6 +1,7 @@
 use crate::inbox::{
-    ClaimedItemConsumer, ConversationStateProcessor, DeliveryReceiptProcessor,
-    DirectMessageProcessor, PublicEventProcessor,
+    ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor, CommandResultRepository,
+    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor,
+    PublicEventProcessor,
 };
 use crate::proto::chat::{
     conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
@@ -46,20 +47,29 @@ pub trait MlsItemConsumer: Send + Sync {
     ) -> Result<(), String>;
 }
 
-pub struct MessagingItemConsumer<R: MessagingRepository, M: MlsItemConsumer> {
+pub struct MessagingItemConsumer<
+    R: MessagingRepository + CommandResultRepository,
+    M: MlsItemConsumer + CommandResultLifecycle,
+> {
     direct: DirectMessageProcessor<R>,
     mls: Arc<M>,
     public_event: PublicEventProcessor<R>,
     conversation_state: ConversationStateProcessor<R>,
+    command_result: CommandResultProcessor<R, M>,
     delivery_receipt: DeliveryReceiptProcessor<R>,
 }
 
-impl<R: MessagingRepository, M: MlsItemConsumer> MessagingItemConsumer<R, M> {
+impl<R, M> MessagingItemConsumer<R, M>
+where
+    R: MessagingRepository + CommandResultRepository,
+    M: MlsItemConsumer + CommandResultLifecycle,
+{
     pub fn new(
         direct: DirectMessageProcessor<R>,
         mls: Arc<M>,
         public_event: PublicEventProcessor<R>,
         conversation_state: ConversationStateProcessor<R>,
+        command_result: CommandResultProcessor<R, M>,
         delivery_receipt: DeliveryReceiptProcessor<R>,
     ) -> Self {
         Self {
@@ -67,19 +77,25 @@ impl<R: MessagingRepository, M: MlsItemConsumer> MessagingItemConsumer<R, M> {
             mls,
             public_event,
             conversation_state,
+            command_result,
             delivery_receipt,
         }
     }
 }
 
-impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
-    for MessagingItemConsumer<R, M>
+impl<R, M> ClaimedItemConsumer for MessagingItemConsumer<R, M>
+where
+    R: MessagingRepository + CommandResultRepository,
+    M: MlsItemConsumer + CommandResultLifecycle,
 {
     fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let payload_type = DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging queue payload type is invalid".to_string())?;
         if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
+        }
+        if payload_type == DeviceInboxPayloadType::CommandResult {
+            return self.command_result.consume(item, consumer_epoch);
         }
         if payload_type != DeviceInboxPayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());

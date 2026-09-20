@@ -249,6 +249,7 @@ func (productionManifestTestActorCapabilities) ResolveVerifiedActorDeviceSigning
 	string,
 	string,
 	string,
+	string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
 	return nil, errors.New("device signing key resolution is outside this test")
 }
@@ -375,6 +376,74 @@ func TestProductionEndpointRoutesUseSignedRemoteManifest(t *testing.T) {
 			routesByActor[alice] != productionManifestTestLocalStation ||
 			routesByActor[bob] != productionManifestTestRemoteStation {
 			t.Fatalf("resolved routes = %+v", routes)
+		}
+
+		typingRoutes, err := (productionTypingRouteDirectory{
+			composition: server.composition,
+		}).ListActiveEndpoints(
+			context.Background(),
+			[]valueobject.PTID{alice, bob},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		typingRoutesByActor := make(
+			map[valueobject.PTID]valueobject.StationID,
+			len(typingRoutes),
+		)
+		for _, route := range typingRoutes {
+			typingRoutesByActor[route.Endpoint.Actor] = route.HomeStation
+		}
+		if len(typingRoutes) != 2 ||
+			typingRoutesByActor[alice] != productionManifestTestLocalStation ||
+			typingRoutesByActor[bob] != productionManifestTestRemoteStation {
+			t.Fatalf("typing routes = %+v", typingRoutes)
+		}
+	})
+
+	t.Run("membership submit refreshes the plan actor manifests", func(t *testing.T) {
+		server := newProductionManifestTestServer(
+			alice,
+			bob,
+			localManifest,
+			validRemoteManifest,
+			remotePrivateKey.Public().(ed25519.PublicKey),
+		)
+		aliceEndpoint := valueobject.Endpoint{
+			Actor:  alice,
+			Device: "alice-device",
+		}
+		bobEndpoint := valueobject.Endpoint{
+			Actor:  bob,
+			Device: "bob-device",
+		}
+		plan := entity.AuthorityPlan{
+			Requester: aliceEndpoint,
+			Changes: []entity.MembershipChange{{
+				Action: entity.MembershipActionRemoveActor,
+				Actor:  bob,
+			}},
+			PreEndpoints:  []valueobject.Endpoint{aliceEndpoint, bobEndpoint},
+			PostEndpoints: []valueobject.Endpoint{aliceEndpoint},
+		}
+
+		routes, stateHash, err := server.composition.productionSubmitCommandRoutes(
+			context.Background(),
+			&plan,
+			true,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, expectedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, validRemoteManifest},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(routes) != 2 || stateHash != expectedStateHash {
+			t.Fatalf("membership submit routes = %+v, state hash = %x", routes, stateHash)
 		}
 	})
 

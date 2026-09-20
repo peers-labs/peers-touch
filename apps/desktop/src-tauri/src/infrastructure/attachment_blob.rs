@@ -1,4 +1,4 @@
-use messaging_core::ports::AttachmentBlob;
+use secure_content_core::ports::ObjectBlob as AttachmentBlob;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -82,7 +82,10 @@ impl AttachmentBlob for FilesystemAttachmentBlob {
             .ok_or_else(|| "messaging attachment blob target parent is unavailable".to_string())?;
         fs::create_dir_all(parent)
             .map_err(|error| format!("create messaging attachment blob directory: {error}"))?;
-        File::open(source_ref)
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(source_ref)
             .and_then(|source| source.sync_all())
             .map_err(|error| format!("sync messaging attachment blob before promotion: {error}"))?;
         fs::rename(source_ref, target)

@@ -22,6 +22,11 @@ from .provisioning import ServiceAttestation, utc_now
 _GENERATED_COVERAGE_REPORT = (
     "docs/architecture/acceptance-framework/coverage-report.md"
 )
+PROTOCOL_SOURCE_PATHS = (
+    ":(glob)model/domain/**/*.proto",
+    ":(glob)apps/desktop/src/gen/proto/**/*.ts",
+    ":(glob)apps/station/**/*.pb.go",
+)
 RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
 
 
@@ -40,9 +45,7 @@ def source_proto_digest(root: Path) -> str:
             "ls-files",
             "-z",
             "--",
-            ":(glob)model/domain/**/*.proto",
-            ":(glob)apps/desktop/src/gen/proto/**/*.ts",
-            ":(glob)apps/station/**/*.pb.go",
+            *PROTOCOL_SOURCE_PATHS,
         ],
         cwd=root,
         capture_output=True,

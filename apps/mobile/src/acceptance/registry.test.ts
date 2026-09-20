@@ -62,6 +62,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('messaging.send');
     expect(actionNames).toContain('messaging.interact');
     expect(actionNames).toContain('messaging.projection.read');
+    expect(actionNames).toContain('social.people.search');
     expect(actionNames).toContain('social.request.send');
     expect(actionNames).toContain('social.request.accept');
     expect(actionNames).toContain('social.reconcile');
@@ -203,6 +204,21 @@ describe('Mobile Acceptance Harness', () => {
       /lifecycle\.restart[\s\S]*getMobileLifecycleKernel\(\)\.restartRuntimeGraph\('acceptance-restart'\)/,
     );
     expect(source).not.toMatch(/window\.location\.reload/);
+  });
+
+  it('derives searched Federation identity from observed runtime output', () => {
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const searchAction = source.slice(
+      source.indexOf("'social.people.search':"),
+      source.indexOf("'social.request.send':"),
+    );
+
+    expect(searchAction).toContain('federationId: result.federationId');
+    expect(searchAction).not.toContain('input?.federationId');
+    expect(searchAction).not.toContain('input.federationId');
   });
 
   it('routes platform evidence through production Rust commands', async () => {

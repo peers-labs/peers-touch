@@ -67,6 +67,9 @@ _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
 
 _MK_LBUTTON = 0x0001
+_BM_CLICK = 0x00F5
+_WM_SETTEXT = 0x000C
+_IDOK = 1
 
 # Virtual key codes
 _VK_LBUTTON = 0x01
@@ -100,6 +103,7 @@ _MODIFIER_VK_MAP: dict[NativeModifier, int] = {
 # File-chooser navigation constants
 _FILE_CHOOSER_FOCUS_STEPS = 8
 _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS = 1.0
+_FILE_CHOOSER_SELECTION_TIMEOUT_SECONDS = 10.0
 
 # ---------------------------------------------------------------------------
 # Win32 structs for SendInput
@@ -186,6 +190,31 @@ class _BITMAPINFO(ctypes.Structure):
 _user32 = ctypes.windll.user32  # type: ignore[attr-defined]
 _kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 _gdi32 = ctypes.windll.gdi32  # type: ignore[attr-defined]
+
+_kernel32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
+_kernel32.GlobalAlloc.restype = ctypes.c_void_p
+_kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalLock.restype = ctypes.c_void_p
+_kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+_kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalFree.restype = ctypes.c_void_p
+_user32.GetClipboardData.argtypes = [ctypes.wintypes.UINT]
+_user32.GetClipboardData.restype = ctypes.c_void_p
+_user32.SetClipboardData.argtypes = [
+    ctypes.wintypes.UINT,
+    ctypes.c_void_p,
+]
+_user32.SetClipboardData.restype = ctypes.c_void_p
+_user32.GetDlgItem.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+_user32.GetDlgItem.restype = ctypes.wintypes.HWND
+_user32.SendMessageW.argtypes = [
+    ctypes.wintypes.HWND,
+    ctypes.wintypes.UINT,
+    ctypes.wintypes.WPARAM,
+    ctypes.wintypes.LPARAM,
+]
+_user32.SendMessageW.restype = ctypes.c_ssize_t
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +592,102 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             "Win32 Native file chooser did not expose its location field: "
             f"{last_control.to_dict()}"
         )
+
+    def select_file_chooser_path_to_process(
+        self,
+        process_id: int,
+        path: str,
+    ) -> NativeControlSnapshot:
+        process_id = _validated_process_id(process_id)
+        if not path:
+            raise DriverError("Win32 Native file chooser path is required")
+        dialog_hwnd = self._file_chooser_window(process_id)
+        if not dialog_hwnd:
+            raise DriverError(
+                "Win32 Native file chooser window is not visible "
+                f"for process {process_id}"
+            )
+
+        edit_controls: list[ctypes.wintypes.HWND] = []
+
+        @_ENUM_WINDOWS_PROC
+        def collect_edit_controls(
+            child_hwnd: ctypes.wintypes.HWND,
+            _lparam: ctypes.wintypes.LPARAM,
+        ) -> bool:
+            if self._window_class_name(child_hwnd).lower() == "edit":
+                edit_controls.append(child_hwnd)
+            return True
+
+        _user32.EnumChildWindows(dialog_hwnd, collect_edit_controls, 0)
+        if not edit_controls:
+            raise DriverError(
+                "Win32 Native file chooser has no filename edit control"
+            )
+        filename_control = max(
+            edit_controls,
+            key=lambda hwnd: self._window_rect(hwnd).top,
+        )
+        submit_button = _user32.GetDlgItem(dialog_hwnd, _IDOK)
+        if not submit_button:
+            raise DriverError(
+                "Win32 Native file chooser has no submit button"
+            )
+        self._activate_window(dialog_hwnd, process_id)
+        current_thread = _kernel32.GetCurrentThreadId()
+        target_thread = _user32.GetWindowThreadProcessId(
+            filename_control,
+            None,
+        )
+        attached = bool(
+            target_thread
+            and target_thread != current_thread
+            and _user32.AttachThreadInput(
+                current_thread,
+                target_thread,
+                True,
+            )
+        )
+        path_buffer = ctypes.create_unicode_buffer(path)
+        try:
+            _user32.SetFocus(filename_control)
+            accepted = _user32.SendMessageW(
+                filename_control,
+                _WM_SETTEXT,
+                0,
+                ctypes.cast(path_buffer, ctypes.c_void_p).value,
+            )
+            if accepted:
+                _user32.SendMessageW(
+                    submit_button,
+                    _BM_CLICK,
+                    0,
+                    0,
+                )
+        finally:
+            if attached:
+                _user32.AttachThreadInput(
+                    current_thread,
+                    target_thread,
+                    False,
+                )
+        if not accepted:
+            raise DriverError(
+                "Win32 Native file chooser rejected its filename path"
+            )
+        deadline = time.monotonic() + _FILE_CHOOSER_SELECTION_TIMEOUT_SECONDS
+        while self._file_chooser_window(process_id):
+            if time.monotonic() >= deadline:
+                raise DriverError(
+                    "Win32 Native file chooser did not close after submit"
+                )
+            time.sleep(0.05)
+        control = self.focused_control(process_id)
+        if control.dialog_count:
+            raise DriverError(
+                "Win32 Native file chooser remained visible after submit"
+            )
+        return control
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = _validated_process_id(process_id)

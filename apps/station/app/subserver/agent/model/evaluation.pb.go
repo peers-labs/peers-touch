@@ -211,37 +211,46 @@ func (EvaluationCommandKind) EnumDescriptor() ([]byte, []int) {
 type EvaluationErrorCode int32
 
 const (
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_UNSPECIFIED               EvaluationErrorCode = 0
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT EvaluationErrorCode = 1
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID   EvaluationErrorCode = 2
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE       EvaluationErrorCode = 3
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT       EvaluationErrorCode = 4
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE     EvaluationErrorCode = 5
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT      EvaluationErrorCode = 6
-	EvaluationErrorCode_EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT        EvaluationErrorCode = 7
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_UNSPECIFIED                 EvaluationErrorCode = 0
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT   EvaluationErrorCode = 1
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID     EvaluationErrorCode = 2
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE         EvaluationErrorCode = 3
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT         EvaluationErrorCode = 4
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE       EvaluationErrorCode = 5
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT        EvaluationErrorCode = 6
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT          EvaluationErrorCode = 7
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT EvaluationErrorCode = 8
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT EvaluationErrorCode = 9
+	EvaluationErrorCode_EVALUATION_ERROR_CODE_RETENTION_CONFLICT          EvaluationErrorCode = 10
 )
 
 // Enum value maps for EvaluationErrorCode.
 var (
 	EvaluationErrorCode_name = map[int32]string{
-		0: "EVALUATION_ERROR_CODE_UNSPECIFIED",
-		1: "EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT",
-		2: "EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID",
-		3: "EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE",
-		4: "EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT",
-		5: "EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE",
-		6: "EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT",
-		7: "EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT",
+		0:  "EVALUATION_ERROR_CODE_UNSPECIFIED",
+		1:  "EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT",
+		2:  "EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID",
+		3:  "EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE",
+		4:  "EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT",
+		5:  "EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE",
+		6:  "EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT",
+		7:  "EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT",
+		8:  "EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT",
+		9:  "EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT",
+		10: "EVALUATION_ERROR_CODE_RETENTION_CONFLICT",
 	}
 	EvaluationErrorCode_value = map[string]int32{
-		"EVALUATION_ERROR_CODE_UNSPECIFIED":               0,
-		"EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT": 1,
-		"EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID":   2,
-		"EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE":       3,
-		"EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT":       4,
-		"EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE":     5,
-		"EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT":      6,
-		"EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT":        7,
+		"EVALUATION_ERROR_CODE_UNSPECIFIED":                 0,
+		"EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT":   1,
+		"EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID":     2,
+		"EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE":         3,
+		"EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT":         4,
+		"EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE":       5,
+		"EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT":        6,
+		"EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT":          7,
+		"EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT": 8,
+		"EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT": 9,
+		"EVALUATION_ERROR_CODE_RETENTION_CONFLICT":          10,
 	}
 )
 
@@ -277,6 +286,9 @@ type EvaluationError struct {
 	Code           EvaluationErrorCode    `protobuf:"varint,1,opt,name=code,proto3,enum=peers_touch.model.agent.v1.EvaluationErrorCode" json:"code,omitempty"`
 	Retryable      bool                   `protobuf:"varint,2,opt,name=retryable,proto3" json:"retryable,omitempty"`
 	RecoveryAction string                 `protobuf:"bytes,3,opt,name=recovery_action,json=recoveryAction,proto3" json:"recovery_action,omitempty"`
+	LocaleKey      string                 `protobuf:"bytes,4,opt,name=locale_key,json=localeKey,proto3" json:"locale_key,omitempty"`
+	Terminal       bool                   `protobuf:"varint,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	Details        map[string]string      `protobuf:"bytes,6,rep,name=details,proto3" json:"details,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -332,6 +344,27 @@ func (x *EvaluationError) GetRecoveryAction() string {
 	return ""
 }
 
+func (x *EvaluationError) GetLocaleKey() string {
+	if x != nil {
+		return x.LocaleKey
+	}
+	return ""
+}
+
+func (x *EvaluationError) GetTerminal() bool {
+	if x != nil {
+		return x.Terminal
+	}
+	return false
+}
+
+func (x *EvaluationError) GetDetails() map[string]string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
 type EvaluationBenchmark struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BenchmarkId   string                 `protobuf:"bytes,1,opt,name=benchmark_id,json=benchmarkId,proto3" json:"benchmark_id,omitempty"`
@@ -339,6 +372,9 @@ type EvaluationBenchmark struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Rubric        string                 `protobuf:"bytes,4,opt,name=rubric,proto3" json:"rubric,omitempty"`
 	Revision      uint64                 `protobuf:"varint,5,opt,name=revision,proto3" json:"revision,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DeletedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -408,6 +444,27 @@ func (x *EvaluationBenchmark) GetRevision() uint64 {
 	return 0
 }
 
+func (x *EvaluationBenchmark) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationBenchmark) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationBenchmark) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return nil
+}
+
 type EvaluationDataset struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DatasetId     string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
@@ -415,6 +472,10 @@ type EvaluationDataset struct {
 	Ptid          string                 `protobuf:"bytes,3,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Revision      uint64                 `protobuf:"varint,5,opt,name=revision,proto3" json:"revision,omitempty"`
+	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DeletedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -484,6 +545,34 @@ func (x *EvaluationDataset) GetRevision() uint64 {
 	return 0
 }
 
+func (x *EvaluationDataset) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *EvaluationDataset) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationDataset) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationDataset) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return nil
+}
+
 type EvaluationTestCase struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	CaseId         string                 `protobuf:"bytes,1,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
@@ -492,6 +581,10 @@ type EvaluationTestCase struct {
 	Expected       string                 `protobuf:"bytes,4,opt,name=expected,proto3" json:"expected,omitempty"`
 	RubricOverride *string                `protobuf:"bytes,5,opt,name=rubric_override,json=rubricOverride,proto3,oneof" json:"rubric_override,omitempty"`
 	Revision       uint64                 `protobuf:"varint,6,opt,name=revision,proto3" json:"revision,omitempty"`
+	Tags           []string               `protobuf:"bytes,7,rep,name=tags,proto3" json:"tags,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DeletedAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -568,6 +661,126 @@ func (x *EvaluationTestCase) GetRevision() uint64 {
 	return 0
 }
 
+func (x *EvaluationTestCase) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *EvaluationTestCase) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationTestCase) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationTestCase) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return nil
+}
+
+type EvaluationRunCaseSnapshot struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CaseId         string                 `protobuf:"bytes,1,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	Input          string                 `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	Expected       string                 `protobuf:"bytes,3,opt,name=expected,proto3" json:"expected,omitempty"`
+	Rubric         string                 `protobuf:"bytes,4,opt,name=rubric,proto3" json:"rubric,omitempty"`
+	RubricVersion  string                 `protobuf:"bytes,5,opt,name=rubric_version,json=rubricVersion,proto3" json:"rubric_version,omitempty"`
+	Tags           []string               `protobuf:"bytes,6,rep,name=tags,proto3" json:"tags,omitempty"`
+	SourceRevision uint64                 `protobuf:"varint,7,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EvaluationRunCaseSnapshot) Reset() {
+	*x = EvaluationRunCaseSnapshot{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EvaluationRunCaseSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EvaluationRunCaseSnapshot) ProtoMessage() {}
+
+func (x *EvaluationRunCaseSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EvaluationRunCaseSnapshot.ProtoReflect.Descriptor instead.
+func (*EvaluationRunCaseSnapshot) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EvaluationRunCaseSnapshot) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
+func (x *EvaluationRunCaseSnapshot) GetInput() string {
+	if x != nil {
+		return x.Input
+	}
+	return ""
+}
+
+func (x *EvaluationRunCaseSnapshot) GetExpected() string {
+	if x != nil {
+		return x.Expected
+	}
+	return ""
+}
+
+func (x *EvaluationRunCaseSnapshot) GetRubric() string {
+	if x != nil {
+		return x.Rubric
+	}
+	return ""
+}
+
+func (x *EvaluationRunCaseSnapshot) GetRubricVersion() string {
+	if x != nil {
+		return x.RubricVersion
+	}
+	return ""
+}
+
+func (x *EvaluationRunCaseSnapshot) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *EvaluationRunCaseSnapshot) GetSourceRevision() uint64 {
+	if x != nil {
+		return x.SourceRevision
+	}
+	return 0
+}
+
 type EvaluationMetrics struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TotalCases     uint32                 `protobuf:"varint,1,opt,name=total_cases,json=totalCases,proto3" json:"total_cases,omitempty"`
@@ -576,13 +789,15 @@ type EvaluationMetrics struct {
 	AverageScore   float64                `protobuf:"fixed64,4,opt,name=average_score,json=averageScore,proto3" json:"average_score,omitempty"`
 	MetricsVersion string                 `protobuf:"bytes,5,opt,name=metrics_version,json=metricsVersion,proto3" json:"metrics_version,omitempty"`
 	Comparable     bool                   `protobuf:"varint,6,opt,name=comparable,proto3" json:"comparable,omitempty"`
+	FailedCases    uint32                 `protobuf:"varint,7,opt,name=failed_cases,json=failedCases,proto3" json:"failed_cases,omitempty"`
+	CancelledCases uint32                 `protobuf:"varint,8,opt,name=cancelled_cases,json=cancelledCases,proto3" json:"cancelled_cases,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EvaluationMetrics) Reset() {
 	*x = EvaluationMetrics{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[4]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +809,7 @@ func (x *EvaluationMetrics) String() string {
 func (*EvaluationMetrics) ProtoMessage() {}
 
 func (x *EvaluationMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[4]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +822,7 @@ func (x *EvaluationMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluationMetrics.ProtoReflect.Descriptor instead.
 func (*EvaluationMetrics) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{4}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EvaluationMetrics) GetTotalCases() uint32 {
@@ -652,6 +867,20 @@ func (x *EvaluationMetrics) GetComparable() bool {
 	return false
 }
 
+func (x *EvaluationMetrics) GetFailedCases() uint32 {
+	if x != nil {
+		return x.FailedCases
+	}
+	return 0
+}
+
+func (x *EvaluationMetrics) GetCancelledCases() uint32 {
+	if x != nil {
+		return x.CancelledCases
+	}
+	return 0
+}
+
 type EvaluationRun struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	RunId               string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -676,13 +905,17 @@ type EvaluationRun struct {
 	CreatedAt           *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	TerminalAt          *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=terminal_at,json=terminalAt,proto3" json:"terminal_at,omitempty"`
 	Error               *EvaluationError       `protobuf:"bytes,22,opt,name=error,proto3" json:"error,omitempty"`
+	TargetAgentId       string                 `protobuf:"bytes,23,opt,name=target_agent_id,json=targetAgentId,proto3" json:"target_agent_id,omitempty"`
+	TargetAgentRevision uint64                 `protobuf:"varint,24,opt,name=target_agent_revision,json=targetAgentRevision,proto3" json:"target_agent_revision,omitempty"`
+	UpdatedAt           *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DeletedAt           *timestamppb.Timestamp `protobuf:"bytes,26,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *EvaluationRun) Reset() {
 	*x = EvaluationRun{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[5]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +927,7 @@ func (x *EvaluationRun) String() string {
 func (*EvaluationRun) ProtoMessage() {}
 
 func (x *EvaluationRun) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[5]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +940,7 @@ func (x *EvaluationRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluationRun.ProtoReflect.Descriptor instead.
 func (*EvaluationRun) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{5}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EvaluationRun) GetRunId() string {
@@ -864,6 +1097,34 @@ func (x *EvaluationRun) GetError() *EvaluationError {
 	return nil
 }
 
+func (x *EvaluationRun) GetTargetAgentId() string {
+	if x != nil {
+		return x.TargetAgentId
+	}
+	return ""
+}
+
+func (x *EvaluationRun) GetTargetAgentRevision() uint64 {
+	if x != nil {
+		return x.TargetAgentRevision
+	}
+	return 0
+}
+
+func (x *EvaluationRun) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *EvaluationRun) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return nil
+}
+
 type EvaluationCaseAttempt struct {
 	state             protoimpl.MessageState  `protogen:"open.v1"`
 	AttemptId         string                  `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
@@ -880,13 +1141,15 @@ type EvaluationCaseAttempt struct {
 	Error             *EvaluationError        `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
 	CancellationAckAt *timestamppb.Timestamp  `protobuf:"bytes,13,opt,name=cancellation_ack_at,json=cancellationAckAt,proto3" json:"cancellation_ack_at,omitempty"`
 	TerminalAt        *timestamppb.Timestamp  `protobuf:"bytes,14,opt,name=terminal_at,json=terminalAt,proto3" json:"terminal_at,omitempty"`
+	StartedAt         *timestamppb.Timestamp  `protobuf:"bytes,15,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	SchedulerClaim    string                  `protobuf:"bytes,16,opt,name=scheduler_claim,json=schedulerClaim,proto3" json:"scheduler_claim,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *EvaluationCaseAttempt) Reset() {
 	*x = EvaluationCaseAttempt{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[6]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -898,7 +1161,7 @@ func (x *EvaluationCaseAttempt) String() string {
 func (*EvaluationCaseAttempt) ProtoMessage() {}
 
 func (x *EvaluationCaseAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[6]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -911,7 +1174,7 @@ func (x *EvaluationCaseAttempt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluationCaseAttempt.ProtoReflect.Descriptor instead.
 func (*EvaluationCaseAttempt) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{6}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EvaluationCaseAttempt) GetAttemptId() string {
@@ -1012,6 +1275,20 @@ func (x *EvaluationCaseAttempt) GetTerminalAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *EvaluationCaseAttempt) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *EvaluationCaseAttempt) GetSchedulerClaim() string {
+	if x != nil {
+		return x.SchedulerClaim
+	}
+	return ""
+}
+
 type EvaluationResult struct {
 	state          protoimpl.MessageState  `protogen:"open.v1"`
 	ResultId       string                  `protobuf:"bytes,1,opt,name=result_id,json=resultId,proto3" json:"result_id,omitempty"`
@@ -1023,13 +1300,16 @@ type EvaluationResult struct {
 	RubricVersion  string                  `protobuf:"bytes,7,opt,name=rubric_version,json=rubricVersion,proto3" json:"rubric_version,omitempty"`
 	TerminalStatus EvaluationAttemptStatus `protobuf:"varint,8,opt,name=terminal_status,json=terminalStatus,proto3,enum=peers_touch.model.agent.v1.EvaluationAttemptStatus" json:"terminal_status,omitempty"`
 	CreatedAt      *timestamppb.Timestamp  `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Output         string                  `protobuf:"bytes,10,opt,name=output,proto3" json:"output,omitempty"`
+	LatencyMs      uint64                  `protobuf:"varint,11,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	TurnTraceId    string                  `protobuf:"bytes,12,opt,name=turn_trace_id,json=turnTraceId,proto3" json:"turn_trace_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EvaluationResult) Reset() {
 	*x = EvaluationResult{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[7]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1041,7 +1321,7 @@ func (x *EvaluationResult) String() string {
 func (*EvaluationResult) ProtoMessage() {}
 
 func (x *EvaluationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[7]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1054,7 +1334,7 @@ func (x *EvaluationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluationResult.ProtoReflect.Descriptor instead.
 func (*EvaluationResult) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EvaluationResult) GetResultId() string {
@@ -1120,6 +1400,27 @@ func (x *EvaluationResult) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *EvaluationResult) GetOutput() string {
+	if x != nil {
+		return x.Output
+	}
+	return ""
+}
+
+func (x *EvaluationResult) GetLatencyMs() uint64 {
+	if x != nil {
+		return x.LatencyMs
+	}
+	return 0
+}
+
+func (x *EvaluationResult) GetTurnTraceId() string {
+	if x != nil {
+		return x.TurnTraceId
+	}
+	return ""
+}
+
 type EvaluationRunEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	RunId          string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -1131,13 +1432,14 @@ type EvaluationRunEvent struct {
 	AttemptId      string                 `protobuf:"bytes,7,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
 	Error          *EvaluationError       `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
 	OccurredAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	ResultId       string                 `protobuf:"bytes,10,opt,name=result_id,json=resultId,proto3" json:"result_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EvaluationRunEvent) Reset() {
 	*x = EvaluationRunEvent{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[8]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1149,7 +1451,7 @@ func (x *EvaluationRunEvent) String() string {
 func (*EvaluationRunEvent) ProtoMessage() {}
 
 func (x *EvaluationRunEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[8]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1162,7 +1464,7 @@ func (x *EvaluationRunEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluationRunEvent.ProtoReflect.Descriptor instead.
 func (*EvaluationRunEvent) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *EvaluationRunEvent) GetRunId() string {
@@ -1228,6 +1530,13 @@ func (x *EvaluationRunEvent) GetOccurredAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *EvaluationRunEvent) GetResultId() string {
+	if x != nil {
+		return x.ResultId
+	}
+	return ""
+}
+
 type CreateEvaluationBenchmarkRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1239,7 +1548,7 @@ type CreateEvaluationBenchmarkRequest struct {
 
 func (x *CreateEvaluationBenchmarkRequest) Reset() {
 	*x = CreateEvaluationBenchmarkRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[9]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1560,7 @@ func (x *CreateEvaluationBenchmarkRequest) String() string {
 func (*CreateEvaluationBenchmarkRequest) ProtoMessage() {}
 
 func (x *CreateEvaluationBenchmarkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[9]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1573,7 @@ func (x *CreateEvaluationBenchmarkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationBenchmarkRequest.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationBenchmarkRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreateEvaluationBenchmarkRequest) GetName() string {
@@ -1297,7 +1606,7 @@ type CreateEvaluationBenchmarkResponse struct {
 
 func (x *CreateEvaluationBenchmarkResponse) Reset() {
 	*x = CreateEvaluationBenchmarkResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[10]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1309,7 +1618,7 @@ func (x *CreateEvaluationBenchmarkResponse) String() string {
 func (*CreateEvaluationBenchmarkResponse) ProtoMessage() {}
 
 func (x *CreateEvaluationBenchmarkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[10]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1322,12 +1631,316 @@ func (x *CreateEvaluationBenchmarkResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CreateEvaluationBenchmarkResponse.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationBenchmarkResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CreateEvaluationBenchmarkResponse) GetBenchmark() *EvaluationBenchmark {
 	if x != nil {
 		return x.Benchmark
+	}
+	return nil
+}
+
+type UpdateEvaluationBenchmarkRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	BenchmarkId      string                 `protobuf:"bytes,1,opt,name=benchmark_id,json=benchmarkId,proto3" json:"benchmark_id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Rubric           string                 `protobuf:"bytes,3,opt,name=rubric,proto3" json:"rubric,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) Reset() {
+	*x = UpdateEvaluationBenchmarkRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationBenchmarkRequest) ProtoMessage() {}
+
+func (x *UpdateEvaluationBenchmarkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationBenchmarkRequest.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationBenchmarkRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) GetBenchmarkId() string {
+	if x != nil {
+		return x.BenchmarkId
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) GetRubric() string {
+	if x != nil {
+		return x.Rubric
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *UpdateEvaluationBenchmarkRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type UpdateEvaluationBenchmarkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Benchmark     *EvaluationBenchmark   `protobuf:"bytes,1,opt,name=benchmark,proto3" json:"benchmark,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationBenchmarkResponse) Reset() {
+	*x = UpdateEvaluationBenchmarkResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationBenchmarkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationBenchmarkResponse) ProtoMessage() {}
+
+func (x *UpdateEvaluationBenchmarkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationBenchmarkResponse.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationBenchmarkResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UpdateEvaluationBenchmarkResponse) GetBenchmark() *EvaluationBenchmark {
+	if x != nil {
+		return x.Benchmark
+	}
+	return nil
+}
+
+type DeleteEvaluationBenchmarkRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	BenchmarkId      string                 `protobuf:"bytes,1,opt,name=benchmark_id,json=benchmarkId,proto3" json:"benchmark_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationBenchmarkRequest) Reset() {
+	*x = DeleteEvaluationBenchmarkRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationBenchmarkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationBenchmarkRequest) ProtoMessage() {}
+
+func (x *DeleteEvaluationBenchmarkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationBenchmarkRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationBenchmarkRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DeleteEvaluationBenchmarkRequest) GetBenchmarkId() string {
+	if x != nil {
+		return x.BenchmarkId
+	}
+	return ""
+}
+
+func (x *DeleteEvaluationBenchmarkRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *DeleteEvaluationBenchmarkRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type DeleteEvaluationBenchmarkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationBenchmarkResponse) Reset() {
+	*x = DeleteEvaluationBenchmarkResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationBenchmarkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationBenchmarkResponse) ProtoMessage() {}
+
+func (x *DeleteEvaluationBenchmarkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationBenchmarkResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationBenchmarkResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *DeleteEvaluationBenchmarkResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+type ListEvaluationBenchmarksRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationBenchmarksRequest) Reset() {
+	*x = ListEvaluationBenchmarksRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationBenchmarksRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationBenchmarksRequest) ProtoMessage() {}
+
+func (x *ListEvaluationBenchmarksRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationBenchmarksRequest.ProtoReflect.Descriptor instead.
+func (*ListEvaluationBenchmarksRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{16}
+}
+
+type ListEvaluationBenchmarksResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Benchmarks    []*EvaluationBenchmark `protobuf:"bytes,1,rep,name=benchmarks,proto3" json:"benchmarks,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationBenchmarksResponse) Reset() {
+	*x = ListEvaluationBenchmarksResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationBenchmarksResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationBenchmarksResponse) ProtoMessage() {}
+
+func (x *ListEvaluationBenchmarksResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationBenchmarksResponse.ProtoReflect.Descriptor instead.
+func (*ListEvaluationBenchmarksResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListEvaluationBenchmarksResponse) GetBenchmarks() []*EvaluationBenchmark {
+	if x != nil {
+		return x.Benchmarks
 	}
 	return nil
 }
@@ -1338,13 +1951,14 @@ type CreateEvaluationDatasetRequest struct {
 	Name                      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	ExpectedBenchmarkRevision uint64                 `protobuf:"varint,3,opt,name=expected_benchmark_revision,json=expectedBenchmarkRevision,proto3" json:"expected_benchmark_revision,omitempty"`
 	IdempotencyKey            string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Description               string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *CreateEvaluationDatasetRequest) Reset() {
 	*x = CreateEvaluationDatasetRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[11]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1356,7 +1970,7 @@ func (x *CreateEvaluationDatasetRequest) String() string {
 func (*CreateEvaluationDatasetRequest) ProtoMessage() {}
 
 func (x *CreateEvaluationDatasetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[11]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1369,7 +1983,7 @@ func (x *CreateEvaluationDatasetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationDatasetRequest.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationDatasetRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateEvaluationDatasetRequest) GetBenchmarkId() string {
@@ -1400,16 +2014,24 @@ func (x *CreateEvaluationDatasetRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *CreateEvaluationDatasetRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 type CreateEvaluationDatasetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Dataset       *EvaluationDataset     `protobuf:"bytes,1,opt,name=dataset,proto3" json:"dataset,omitempty"`
+	Benchmark     *EvaluationBenchmark   `protobuf:"bytes,2,opt,name=benchmark,proto3" json:"benchmark,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEvaluationDatasetResponse) Reset() {
 	*x = CreateEvaluationDatasetResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[12]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1421,7 +2043,7 @@ func (x *CreateEvaluationDatasetResponse) String() string {
 func (*CreateEvaluationDatasetResponse) ProtoMessage() {}
 
 func (x *CreateEvaluationDatasetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[12]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1434,12 +2056,331 @@ func (x *CreateEvaluationDatasetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationDatasetResponse.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationDatasetResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CreateEvaluationDatasetResponse) GetDataset() *EvaluationDataset {
 	if x != nil {
 		return x.Dataset
+	}
+	return nil
+}
+
+func (x *CreateEvaluationDatasetResponse) GetBenchmark() *EvaluationBenchmark {
+	if x != nil {
+		return x.Benchmark
+	}
+	return nil
+}
+
+type UpdateEvaluationDatasetRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DatasetId        string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description      string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationDatasetRequest) Reset() {
+	*x = UpdateEvaluationDatasetRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationDatasetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationDatasetRequest) ProtoMessage() {}
+
+func (x *UpdateEvaluationDatasetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationDatasetRequest.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationDatasetRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *UpdateEvaluationDatasetRequest) GetDatasetId() string {
+	if x != nil {
+		return x.DatasetId
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationDatasetRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationDatasetRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationDatasetRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *UpdateEvaluationDatasetRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type UpdateEvaluationDatasetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dataset       *EvaluationDataset     `protobuf:"bytes,1,opt,name=dataset,proto3" json:"dataset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationDatasetResponse) Reset() {
+	*x = UpdateEvaluationDatasetResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationDatasetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationDatasetResponse) ProtoMessage() {}
+
+func (x *UpdateEvaluationDatasetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationDatasetResponse.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationDatasetResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UpdateEvaluationDatasetResponse) GetDataset() *EvaluationDataset {
+	if x != nil {
+		return x.Dataset
+	}
+	return nil
+}
+
+type DeleteEvaluationDatasetRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DatasetId        string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationDatasetRequest) Reset() {
+	*x = DeleteEvaluationDatasetRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationDatasetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationDatasetRequest) ProtoMessage() {}
+
+func (x *DeleteEvaluationDatasetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationDatasetRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationDatasetRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeleteEvaluationDatasetRequest) GetDatasetId() string {
+	if x != nil {
+		return x.DatasetId
+	}
+	return ""
+}
+
+func (x *DeleteEvaluationDatasetRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *DeleteEvaluationDatasetRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type DeleteEvaluationDatasetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationDatasetResponse) Reset() {
+	*x = DeleteEvaluationDatasetResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationDatasetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationDatasetResponse) ProtoMessage() {}
+
+func (x *DeleteEvaluationDatasetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationDatasetResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationDatasetResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DeleteEvaluationDatasetResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+type ListEvaluationDatasetsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BenchmarkId   string                 `protobuf:"bytes,1,opt,name=benchmark_id,json=benchmarkId,proto3" json:"benchmark_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationDatasetsRequest) Reset() {
+	*x = ListEvaluationDatasetsRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationDatasetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationDatasetsRequest) ProtoMessage() {}
+
+func (x *ListEvaluationDatasetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationDatasetsRequest.ProtoReflect.Descriptor instead.
+func (*ListEvaluationDatasetsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListEvaluationDatasetsRequest) GetBenchmarkId() string {
+	if x != nil {
+		return x.BenchmarkId
+	}
+	return ""
+}
+
+type ListEvaluationDatasetsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Datasets      []*EvaluationDataset   `protobuf:"bytes,1,rep,name=datasets,proto3" json:"datasets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationDatasetsResponse) Reset() {
+	*x = ListEvaluationDatasetsResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationDatasetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationDatasetsResponse) ProtoMessage() {}
+
+func (x *ListEvaluationDatasetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationDatasetsResponse.ProtoReflect.Descriptor instead.
+func (*ListEvaluationDatasetsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListEvaluationDatasetsResponse) GetDatasets() []*EvaluationDataset {
+	if x != nil {
+		return x.Datasets
 	}
 	return nil
 }
@@ -1452,13 +2393,14 @@ type CreateEvaluationTestCaseRequest struct {
 	RubricOverride          *string                `protobuf:"bytes,4,opt,name=rubric_override,json=rubricOverride,proto3,oneof" json:"rubric_override,omitempty"`
 	ExpectedDatasetRevision uint64                 `protobuf:"varint,5,opt,name=expected_dataset_revision,json=expectedDatasetRevision,proto3" json:"expected_dataset_revision,omitempty"`
 	IdempotencyKey          string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Tags                    []string               `protobuf:"bytes,7,rep,name=tags,proto3" json:"tags,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
 
 func (x *CreateEvaluationTestCaseRequest) Reset() {
 	*x = CreateEvaluationTestCaseRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[13]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1470,7 +2412,7 @@ func (x *CreateEvaluationTestCaseRequest) String() string {
 func (*CreateEvaluationTestCaseRequest) ProtoMessage() {}
 
 func (x *CreateEvaluationTestCaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[13]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1483,7 +2425,7 @@ func (x *CreateEvaluationTestCaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationTestCaseRequest.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationTestCaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateEvaluationTestCaseRequest) GetDatasetId() string {
@@ -1528,16 +2470,24 @@ func (x *CreateEvaluationTestCaseRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *CreateEvaluationTestCaseRequest) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
 type CreateEvaluationTestCaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TestCase      *EvaluationTestCase    `protobuf:"bytes,1,opt,name=test_case,json=testCase,proto3" json:"test_case,omitempty"`
+	Dataset       *EvaluationDataset     `protobuf:"bytes,2,opt,name=dataset,proto3" json:"dataset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEvaluationTestCaseResponse) Reset() {
 	*x = CreateEvaluationTestCaseResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[14]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1549,7 +2499,7 @@ func (x *CreateEvaluationTestCaseResponse) String() string {
 func (*CreateEvaluationTestCaseResponse) ProtoMessage() {}
 
 func (x *CreateEvaluationTestCaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[14]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1562,7 +2512,7 @@ func (x *CreateEvaluationTestCaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationTestCaseResponse.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationTestCaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateEvaluationTestCaseResponse) GetTestCase() *EvaluationTestCase {
@@ -1572,20 +2522,374 @@ func (x *CreateEvaluationTestCaseResponse) GetTestCase() *EvaluationTestCase {
 	return nil
 }
 
+func (x *CreateEvaluationTestCaseResponse) GetDataset() *EvaluationDataset {
+	if x != nil {
+		return x.Dataset
+	}
+	return nil
+}
+
+type UpdateEvaluationTestCaseRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CaseId           string                 `protobuf:"bytes,1,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	Input            string                 `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	Expected         string                 `protobuf:"bytes,3,opt,name=expected,proto3" json:"expected,omitempty"`
+	RubricOverride   *string                `protobuf:"bytes,4,opt,name=rubric_override,json=rubricOverride,proto3,oneof" json:"rubric_override,omitempty"`
+	Tags             []string               `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,6,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationTestCaseRequest) Reset() {
+	*x = UpdateEvaluationTestCaseRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationTestCaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationTestCaseRequest) ProtoMessage() {}
+
+func (x *UpdateEvaluationTestCaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationTestCaseRequest.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationTestCaseRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetInput() string {
+	if x != nil {
+		return x.Input
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetExpected() string {
+	if x != nil {
+		return x.Expected
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetRubricOverride() string {
+	if x != nil && x.RubricOverride != nil {
+		return *x.RubricOverride
+	}
+	return ""
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *UpdateEvaluationTestCaseRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type UpdateEvaluationTestCaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TestCase      *EvaluationTestCase    `protobuf:"bytes,1,opt,name=test_case,json=testCase,proto3" json:"test_case,omitempty"`
+	Dataset       *EvaluationDataset     `protobuf:"bytes,2,opt,name=dataset,proto3" json:"dataset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateEvaluationTestCaseResponse) Reset() {
+	*x = UpdateEvaluationTestCaseResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateEvaluationTestCaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateEvaluationTestCaseResponse) ProtoMessage() {}
+
+func (x *UpdateEvaluationTestCaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateEvaluationTestCaseResponse.ProtoReflect.Descriptor instead.
+func (*UpdateEvaluationTestCaseResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *UpdateEvaluationTestCaseResponse) GetTestCase() *EvaluationTestCase {
+	if x != nil {
+		return x.TestCase
+	}
+	return nil
+}
+
+func (x *UpdateEvaluationTestCaseResponse) GetDataset() *EvaluationDataset {
+	if x != nil {
+		return x.Dataset
+	}
+	return nil
+}
+
+type DeleteEvaluationTestCaseRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CaseId           string                 `protobuf:"bytes,1,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationTestCaseRequest) Reset() {
+	*x = DeleteEvaluationTestCaseRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationTestCaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationTestCaseRequest) ProtoMessage() {}
+
+func (x *DeleteEvaluationTestCaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationTestCaseRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationTestCaseRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *DeleteEvaluationTestCaseRequest) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
+func (x *DeleteEvaluationTestCaseRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *DeleteEvaluationTestCaseRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type DeleteEvaluationTestCaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	Dataset       *EvaluationDataset     `protobuf:"bytes,2,opt,name=dataset,proto3" json:"dataset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationTestCaseResponse) Reset() {
+	*x = DeleteEvaluationTestCaseResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationTestCaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationTestCaseResponse) ProtoMessage() {}
+
+func (x *DeleteEvaluationTestCaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationTestCaseResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationTestCaseResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *DeleteEvaluationTestCaseResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+func (x *DeleteEvaluationTestCaseResponse) GetDataset() *EvaluationDataset {
+	if x != nil {
+		return x.Dataset
+	}
+	return nil
+}
+
+type ListEvaluationTestCasesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DatasetId     string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationTestCasesRequest) Reset() {
+	*x = ListEvaluationTestCasesRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationTestCasesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationTestCasesRequest) ProtoMessage() {}
+
+func (x *ListEvaluationTestCasesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationTestCasesRequest.ProtoReflect.Descriptor instead.
+func (*ListEvaluationTestCasesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListEvaluationTestCasesRequest) GetDatasetId() string {
+	if x != nil {
+		return x.DatasetId
+	}
+	return ""
+}
+
+type ListEvaluationTestCasesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TestCases     []*EvaluationTestCase  `protobuf:"bytes,1,rep,name=test_cases,json=testCases,proto3" json:"test_cases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationTestCasesResponse) Reset() {
+	*x = ListEvaluationTestCasesResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationTestCasesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationTestCasesResponse) ProtoMessage() {}
+
+func (x *ListEvaluationTestCasesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationTestCasesResponse.ProtoReflect.Descriptor instead.
+func (*ListEvaluationTestCasesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ListEvaluationTestCasesResponse) GetTestCases() []*EvaluationTestCase {
+	if x != nil {
+		return x.TestCases
+	}
+	return nil
+}
+
 type CreateEvaluationRunRequest struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	DatasetId           string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
-	DatasetRevision     uint64                 `protobuf:"varint,2,opt,name=dataset_revision,json=datasetRevision,proto3" json:"dataset_revision,omitempty"`
-	TargetAgentSnapshot *RuntimeSnapshot       `protobuf:"bytes,3,opt,name=target_agent_snapshot,json=targetAgentSnapshot,proto3" json:"target_agent_snapshot,omitempty"`
-	ReadinessSnapshotId string                 `protobuf:"bytes,4,opt,name=readiness_snapshot_id,json=readinessSnapshotId,proto3" json:"readiness_snapshot_id,omitempty"`
-	IdempotencyKey      string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	DatasetId             string                 `protobuf:"bytes,1,opt,name=dataset_id,json=datasetId,proto3" json:"dataset_id,omitempty"`
+	DatasetRevision       uint64                 `protobuf:"varint,2,opt,name=dataset_revision,json=datasetRevision,proto3" json:"dataset_revision,omitempty"`
+	ReadinessSnapshotId   string                 `protobuf:"bytes,4,opt,name=readiness_snapshot_id,json=readinessSnapshotId,proto3" json:"readiness_snapshot_id,omitempty"`
+	IdempotencyKey        string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	TargetAgentId         string                 `protobuf:"bytes,6,opt,name=target_agent_id,json=targetAgentId,proto3" json:"target_agent_id,omitempty"`
+	ExpectedAgentRevision uint64                 `protobuf:"varint,7,opt,name=expected_agent_revision,json=expectedAgentRevision,proto3" json:"expected_agent_revision,omitempty"`
+	RuntimeProfileId      *string                `protobuf:"bytes,8,opt,name=runtime_profile_id,json=runtimeProfileId,proto3,oneof" json:"runtime_profile_id,omitempty"`
+	ModelId               *string                `protobuf:"bytes,9,opt,name=model_id,json=modelId,proto3,oneof" json:"model_id,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *CreateEvaluationRunRequest) Reset() {
 	*x = CreateEvaluationRunRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[15]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1597,7 +2901,7 @@ func (x *CreateEvaluationRunRequest) String() string {
 func (*CreateEvaluationRunRequest) ProtoMessage() {}
 
 func (x *CreateEvaluationRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[15]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1610,7 +2914,7 @@ func (x *CreateEvaluationRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationRunRequest.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationRunRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateEvaluationRunRequest) GetDatasetId() string {
@@ -1627,13 +2931,6 @@ func (x *CreateEvaluationRunRequest) GetDatasetRevision() uint64 {
 	return 0
 }
 
-func (x *CreateEvaluationRunRequest) GetTargetAgentSnapshot() *RuntimeSnapshot {
-	if x != nil {
-		return x.TargetAgentSnapshot
-	}
-	return nil
-}
-
 func (x *CreateEvaluationRunRequest) GetReadinessSnapshotId() string {
 	if x != nil {
 		return x.ReadinessSnapshotId
@@ -1648,6 +2945,34 @@ func (x *CreateEvaluationRunRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *CreateEvaluationRunRequest) GetTargetAgentId() string {
+	if x != nil {
+		return x.TargetAgentId
+	}
+	return ""
+}
+
+func (x *CreateEvaluationRunRequest) GetExpectedAgentRevision() uint64 {
+	if x != nil {
+		return x.ExpectedAgentRevision
+	}
+	return 0
+}
+
+func (x *CreateEvaluationRunRequest) GetRuntimeProfileId() string {
+	if x != nil && x.RuntimeProfileId != nil {
+		return *x.RuntimeProfileId
+	}
+	return ""
+}
+
+func (x *CreateEvaluationRunRequest) GetModelId() string {
+	if x != nil && x.ModelId != nil {
+		return *x.ModelId
+	}
+	return ""
+}
+
 type CreateEvaluationRunResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Run           *EvaluationRun         `protobuf:"bytes,1,opt,name=run,proto3" json:"run,omitempty"`
@@ -1657,7 +2982,7 @@ type CreateEvaluationRunResponse struct {
 
 func (x *CreateEvaluationRunResponse) Reset() {
 	*x = CreateEvaluationRunResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[16]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1669,7 +2994,7 @@ func (x *CreateEvaluationRunResponse) String() string {
 func (*CreateEvaluationRunResponse) ProtoMessage() {}
 
 func (x *CreateEvaluationRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[16]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1682,7 +3007,7 @@ func (x *CreateEvaluationRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvaluationRunResponse.ProtoReflect.Descriptor instead.
 func (*CreateEvaluationRunResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateEvaluationRunResponse) GetRun() *EvaluationRun {
@@ -1703,7 +3028,7 @@ type StartEvaluationRunRequest struct {
 
 func (x *StartEvaluationRunRequest) Reset() {
 	*x = StartEvaluationRunRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[17]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1715,7 +3040,7 @@ func (x *StartEvaluationRunRequest) String() string {
 func (*StartEvaluationRunRequest) ProtoMessage() {}
 
 func (x *StartEvaluationRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[17]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1728,7 +3053,7 @@ func (x *StartEvaluationRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartEvaluationRunRequest.ProtoReflect.Descriptor instead.
 func (*StartEvaluationRunRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *StartEvaluationRunRequest) GetRunId() string {
@@ -1761,7 +3086,7 @@ type StartEvaluationRunResponse struct {
 
 func (x *StartEvaluationRunResponse) Reset() {
 	*x = StartEvaluationRunResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[18]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1773,7 +3098,7 @@ func (x *StartEvaluationRunResponse) String() string {
 func (*StartEvaluationRunResponse) ProtoMessage() {}
 
 func (x *StartEvaluationRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[18]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1786,7 +3111,7 @@ func (x *StartEvaluationRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartEvaluationRunResponse.ProtoReflect.Descriptor instead.
 func (*StartEvaluationRunResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *StartEvaluationRunResponse) GetRun() *EvaluationRun {
@@ -1807,7 +3132,7 @@ type CancelEvaluationRunRequest struct {
 
 func (x *CancelEvaluationRunRequest) Reset() {
 	*x = CancelEvaluationRunRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[19]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1819,7 +3144,7 @@ func (x *CancelEvaluationRunRequest) String() string {
 func (*CancelEvaluationRunRequest) ProtoMessage() {}
 
 func (x *CancelEvaluationRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[19]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1832,7 +3157,7 @@ func (x *CancelEvaluationRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelEvaluationRunRequest.ProtoReflect.Descriptor instead.
 func (*CancelEvaluationRunRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CancelEvaluationRunRequest) GetRunId() string {
@@ -1865,7 +3190,7 @@ type CancelEvaluationRunResponse struct {
 
 func (x *CancelEvaluationRunResponse) Reset() {
 	*x = CancelEvaluationRunResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[20]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1877,7 +3202,7 @@ func (x *CancelEvaluationRunResponse) String() string {
 func (*CancelEvaluationRunResponse) ProtoMessage() {}
 
 func (x *CancelEvaluationRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[20]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1890,7 +3215,7 @@ func (x *CancelEvaluationRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelEvaluationRunResponse.ProtoReflect.Descriptor instead.
 func (*CancelEvaluationRunResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{20}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CancelEvaluationRunResponse) GetRun() *EvaluationRun {
@@ -1901,17 +3226,18 @@ func (x *CancelEvaluationRunResponse) GetRun() *EvaluationRun {
 }
 
 type RetryEvaluationCasesRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ParentRunId    string                 `protobuf:"bytes,1,opt,name=parent_run_id,json=parentRunId,proto3" json:"parent_run_id,omitempty"`
-	CaseIds        []string               `protobuf:"bytes,2,rep,name=case_ids,json=caseIds,proto3" json:"case_ids,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ParentRunId            string                 `protobuf:"bytes,1,opt,name=parent_run_id,json=parentRunId,proto3" json:"parent_run_id,omitempty"`
+	CaseIds                []string               `protobuf:"bytes,2,rep,name=case_ids,json=caseIds,proto3" json:"case_ids,omitempty"`
+	IdempotencyKey         string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ExpectedParentRevision uint64                 `protobuf:"varint,4,opt,name=expected_parent_revision,json=expectedParentRevision,proto3" json:"expected_parent_revision,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *RetryEvaluationCasesRequest) Reset() {
 	*x = RetryEvaluationCasesRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[21]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1923,7 +3249,7 @@ func (x *RetryEvaluationCasesRequest) String() string {
 func (*RetryEvaluationCasesRequest) ProtoMessage() {}
 
 func (x *RetryEvaluationCasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[21]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1936,7 +3262,7 @@ func (x *RetryEvaluationCasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryEvaluationCasesRequest.ProtoReflect.Descriptor instead.
 func (*RetryEvaluationCasesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{21}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *RetryEvaluationCasesRequest) GetParentRunId() string {
@@ -1960,6 +3286,13 @@ func (x *RetryEvaluationCasesRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *RetryEvaluationCasesRequest) GetExpectedParentRevision() uint64 {
+	if x != nil {
+		return x.ExpectedParentRevision
+	}
+	return 0
+}
+
 type RetryEvaluationCasesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ChildRun      *EvaluationRun         `protobuf:"bytes,1,opt,name=child_run,json=childRun,proto3" json:"child_run,omitempty"`
@@ -1969,7 +3302,7 @@ type RetryEvaluationCasesResponse struct {
 
 func (x *RetryEvaluationCasesResponse) Reset() {
 	*x = RetryEvaluationCasesResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[22]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +3314,7 @@ func (x *RetryEvaluationCasesResponse) String() string {
 func (*RetryEvaluationCasesResponse) ProtoMessage() {}
 
 func (x *RetryEvaluationCasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[22]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +3327,7 @@ func (x *RetryEvaluationCasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryEvaluationCasesResponse.ProtoReflect.Descriptor instead.
 func (*RetryEvaluationCasesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{22}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *RetryEvaluationCasesResponse) GetChildRun() *EvaluationRun {
@@ -2013,7 +3346,7 @@ type GetEvaluationRunRequest struct {
 
 func (x *GetEvaluationRunRequest) Reset() {
 	*x = GetEvaluationRunRequest{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[23]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2025,7 +3358,7 @@ func (x *GetEvaluationRunRequest) String() string {
 func (*GetEvaluationRunRequest) ProtoMessage() {}
 
 func (x *GetEvaluationRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[23]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2038,7 +3371,7 @@ func (x *GetEvaluationRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEvaluationRunRequest.ProtoReflect.Descriptor instead.
 func (*GetEvaluationRunRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{23}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetEvaluationRunRequest) GetRunId() string {
@@ -2049,17 +3382,18 @@ func (x *GetEvaluationRunRequest) GetRunId() string {
 }
 
 type GetEvaluationRunResponse struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Run           *EvaluationRun           `protobuf:"bytes,1,opt,name=run,proto3" json:"run,omitempty"`
-	Attempts      []*EvaluationCaseAttempt `protobuf:"bytes,2,rep,name=attempts,proto3" json:"attempts,omitempty"`
-	Results       []*EvaluationResult      `protobuf:"bytes,3,rep,name=results,proto3" json:"results,omitempty"`
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Run           *EvaluationRun               `protobuf:"bytes,1,opt,name=run,proto3" json:"run,omitempty"`
+	Attempts      []*EvaluationCaseAttempt     `protobuf:"bytes,2,rep,name=attempts,proto3" json:"attempts,omitempty"`
+	Results       []*EvaluationResult          `protobuf:"bytes,3,rep,name=results,proto3" json:"results,omitempty"`
+	Cases         []*EvaluationRunCaseSnapshot `protobuf:"bytes,4,rep,name=cases,proto3" json:"cases,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetEvaluationRunResponse) Reset() {
 	*x = GetEvaluationRunResponse{}
-	mi := &file_domain_agent_evaluation_proto_msgTypes[24]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2071,7 +3405,7 @@ func (x *GetEvaluationRunResponse) String() string {
 func (*GetEvaluationRunResponse) ProtoMessage() {}
 
 func (x *GetEvaluationRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_evaluation_proto_msgTypes[24]
+	mi := &file_domain_agent_evaluation_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2084,7 +3418,7 @@ func (x *GetEvaluationRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEvaluationRunResponse.ProtoReflect.Descriptor instead.
 func (*GetEvaluationRunResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{24}
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetEvaluationRunResponse) GetRun() *EvaluationRun {
@@ -2108,28 +3442,375 @@ func (x *GetEvaluationRunResponse) GetResults() []*EvaluationResult {
 	return nil
 }
 
+func (x *GetEvaluationRunResponse) GetCases() []*EvaluationRunCaseSnapshot {
+	if x != nil {
+		return x.Cases
+	}
+	return nil
+}
+
+type ListEvaluationRunsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ParentRunId   *string                `protobuf:"bytes,1,opt,name=parent_run_id,json=parentRunId,proto3,oneof" json:"parent_run_id,omitempty"`
+	Page          uint32                 `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      uint32                 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationRunsRequest) Reset() {
+	*x = ListEvaluationRunsRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationRunsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationRunsRequest) ProtoMessage() {}
+
+func (x *ListEvaluationRunsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationRunsRequest.ProtoReflect.Descriptor instead.
+func (*ListEvaluationRunsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ListEvaluationRunsRequest) GetParentRunId() string {
+	if x != nil && x.ParentRunId != nil {
+		return *x.ParentRunId
+	}
+	return ""
+}
+
+func (x *ListEvaluationRunsRequest) GetPage() uint32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListEvaluationRunsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListEvaluationRunsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Runs          []*EvaluationRun       `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	Total         uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationRunsResponse) Reset() {
+	*x = ListEvaluationRunsResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationRunsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationRunsResponse) ProtoMessage() {}
+
+func (x *ListEvaluationRunsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationRunsResponse.ProtoReflect.Descriptor instead.
+func (*ListEvaluationRunsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ListEvaluationRunsResponse) GetRuns() []*EvaluationRun {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
+func (x *ListEvaluationRunsResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+type ListEvaluationRunEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	AfterSequence uint64                 `protobuf:"varint,2,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEvaluationRunEventsRequest) Reset() {
+	*x = ListEvaluationRunEventsRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationRunEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationRunEventsRequest) ProtoMessage() {}
+
+func (x *ListEvaluationRunEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationRunEventsRequest.ProtoReflect.Descriptor instead.
+func (*ListEvaluationRunEventsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ListEvaluationRunEventsRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *ListEvaluationRunEventsRequest) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+type ListEvaluationRunEventsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Events         []*EvaluationRunEvent  `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	LatestSequence uint64                 `protobuf:"varint,2,opt,name=latest_sequence,json=latestSequence,proto3" json:"latest_sequence,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListEvaluationRunEventsResponse) Reset() {
+	*x = ListEvaluationRunEventsResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEvaluationRunEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEvaluationRunEventsResponse) ProtoMessage() {}
+
+func (x *ListEvaluationRunEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEvaluationRunEventsResponse.ProtoReflect.Descriptor instead.
+func (*ListEvaluationRunEventsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ListEvaluationRunEventsResponse) GetEvents() []*EvaluationRunEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ListEvaluationRunEventsResponse) GetLatestSequence() uint64 {
+	if x != nil {
+		return x.LatestSequence
+	}
+	return 0
+}
+
+type DeleteEvaluationRunRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	RunId            string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationRunRequest) Reset() {
+	*x = DeleteEvaluationRunRequest{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationRunRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationRunRequest) ProtoMessage() {}
+
+func (x *DeleteEvaluationRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationRunRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationRunRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *DeleteEvaluationRunRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *DeleteEvaluationRunRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *DeleteEvaluationRunRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type DeleteEvaluationRunResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEvaluationRunResponse) Reset() {
+	*x = DeleteEvaluationRunResponse{}
+	mi := &file_domain_agent_evaluation_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEvaluationRunResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEvaluationRunResponse) ProtoMessage() {}
+
+func (x *DeleteEvaluationRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_evaluation_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEvaluationRunResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEvaluationRunResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_evaluation_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *DeleteEvaluationRunResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 var File_domain_agent_evaluation_proto protoreflect.FileDescriptor
 
 const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/agent/evaluation.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x01\n" +
+	"\x1ddomain/agent/evaluation.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe8\x02\n" +
 	"\x0fEvaluationError\x12C\n" +
 	"\x04code\x18\x01 \x01(\x0e2/.peers_touch.model.agent.v1.EvaluationErrorCodeR\x04code\x12\x1c\n" +
 	"\tretryable\x18\x02 \x01(\bR\tretryable\x12'\n" +
-	"\x0frecovery_action\x18\x03 \x01(\tR\x0erecoveryAction\"\x94\x01\n" +
+	"\x0frecovery_action\x18\x03 \x01(\tR\x0erecoveryAction\x12\x1d\n" +
+	"\n" +
+	"locale_key\x18\x04 \x01(\tR\tlocaleKey\x12\x1a\n" +
+	"\bterminal\x18\x05 \x01(\bR\bterminal\x12R\n" +
+	"\adetails\x18\x06 \x03(\v28.peers_touch.model.agent.v1.EvaluationError.DetailsEntryR\adetails\x1a:\n" +
+	"\fDetailsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc5\x02\n" +
 	"\x13EvaluationBenchmark\x12!\n" +
 	"\fbenchmark_id\x18\x01 \x01(\tR\vbenchmarkId\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n" +
 	"\x06rubric\x18\x04 \x01(\tR\x06rubric\x12\x1a\n" +
-	"\brevision\x18\x05 \x01(\x04R\brevision\"\x99\x01\n" +
+	"\brevision\x18\x05 \x01(\x04R\brevision\x129\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
+	"\n" +
+	"deleted_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"\xec\x02\n" +
 	"\x11EvaluationDataset\x12\x1d\n" +
 	"\n" +
 	"dataset_id\x18\x01 \x01(\tR\tdatasetId\x12!\n" +
 	"\fbenchmark_id\x18\x02 \x01(\tR\vbenchmarkId\x12\x12\n" +
 	"\x04ptid\x18\x03 \x01(\tR\x04ptid\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x1a\n" +
-	"\brevision\x18\x05 \x01(\x04R\brevision\"\xdc\x01\n" +
+	"\brevision\x18\x05 \x01(\x04R\brevision\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
+	"\n" +
+	"deleted_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"\xa1\x03\n" +
 	"\x12EvaluationTestCase\x12\x17\n" +
 	"\acase_id\x18\x01 \x01(\tR\x06caseId\x12\x1d\n" +
 	"\n" +
@@ -2137,8 +3818,24 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\x05input\x18\x03 \x01(\tR\x05input\x12\x1a\n" +
 	"\bexpected\x18\x04 \x01(\tR\bexpected\x12,\n" +
 	"\x0frubric_override\x18\x05 \x01(\tH\x00R\x0erubricOverride\x88\x01\x01\x12\x1a\n" +
-	"\brevision\x18\x06 \x01(\x04R\brevisionB\x12\n" +
-	"\x10_rubric_override\"\xec\x01\n" +
+	"\brevision\x18\x06 \x01(\x04R\brevision\x12\x12\n" +
+	"\x04tags\x18\a \x03(\tR\x04tags\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
+	"\n" +
+	"deleted_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAtB\x12\n" +
+	"\x10_rubric_override\"\xe2\x01\n" +
+	"\x19EvaluationRunCaseSnapshot\x12\x17\n" +
+	"\acase_id\x18\x01 \x01(\tR\x06caseId\x12\x14\n" +
+	"\x05input\x18\x02 \x01(\tR\x05input\x12\x1a\n" +
+	"\bexpected\x18\x03 \x01(\tR\bexpected\x12\x16\n" +
+	"\x06rubric\x18\x04 \x01(\tR\x06rubric\x12%\n" +
+	"\x0erubric_version\x18\x05 \x01(\tR\rrubricVersion\x12\x12\n" +
+	"\x04tags\x18\x06 \x03(\tR\x04tags\x12'\n" +
+	"\x0fsource_revision\x18\a \x01(\x04R\x0esourceRevision\"\xb8\x02\n" +
 	"\x11EvaluationMetrics\x12\x1f\n" +
 	"\vtotal_cases\x18\x01 \x01(\rR\n" +
 	"totalCases\x12%\n" +
@@ -2148,7 +3845,10 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\x0fmetrics_version\x18\x05 \x01(\tR\x0emetricsVersion\x12\x1e\n" +
 	"\n" +
 	"comparable\x18\x06 \x01(\bR\n" +
-	"comparable\"\xf3\b\n" +
+	"comparable\x12!\n" +
+	"\ffailed_cases\x18\a \x01(\rR\vfailedCases\x12'\n" +
+	"\x0fcancelled_cases\x18\b \x01(\rR\x0ecancelledCases\"\xc5\n" +
+	"\n" +
 	"\rEvaluationRun\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12'\n" +
@@ -2176,8 +3876,14 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"created_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12;\n" +
 	"\vterminal_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"terminalAt\x12A\n" +
-	"\x05error\x18\x16 \x01(\v2+.peers_touch.model.agent.v1.EvaluationErrorR\x05errorB\x10\n" +
-	"\x0e_parent_run_id\"\xaa\x05\n" +
+	"\x05error\x18\x16 \x01(\v2+.peers_touch.model.agent.v1.EvaluationErrorR\x05error\x12&\n" +
+	"\x0ftarget_agent_id\x18\x17 \x01(\tR\rtargetAgentId\x122\n" +
+	"\x15target_agent_revision\x18\x18 \x01(\x04R\x13targetAgentRevision\x129\n" +
+	"\n" +
+	"updated_at\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
+	"\n" +
+	"deleted_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAtB\x10\n" +
+	"\x0e_parent_run_id\"\x8e\x06\n" +
 	"\x15EvaluationCaseAttempt\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x15\n" +
@@ -2196,10 +3902,13 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\x05error\x18\f \x01(\v2+.peers_touch.model.agent.v1.EvaluationErrorR\x05error\x12J\n" +
 	"\x13cancellation_ack_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\x11cancellationAckAt\x12;\n" +
 	"\vterminal_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"terminalAtB\x14\n" +
+	"terminalAt\x129\n" +
+	"\n" +
+	"started_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12'\n" +
+	"\x0fscheduler_claim\x18\x10 \x01(\tR\x0eschedulerClaimB\x14\n" +
 	"\x12_source_attempt_idB\x13\n" +
 	"\x11_source_result_idB\b\n" +
-	"\x06_score\"\xf3\x02\n" +
+	"\x06_score\"\xce\x03\n" +
 	"\x10EvaluationResult\x12\x1b\n" +
 	"\tresult_id\x18\x01 \x01(\tR\bresultId\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x17\n" +
@@ -2212,7 +3921,12 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\x0erubric_version\x18\a \x01(\tR\rrubricVersion\x12\\\n" +
 	"\x0fterminal_status\x18\b \x01(\x0e23.peers_touch.model.agent.v1.EvaluationAttemptStatusR\x0eterminalStatus\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x92\x03\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x16\n" +
+	"\x06output\x18\n" +
+	" \x01(\tR\x06output\x12\x1d\n" +
+	"\n" +
+	"latency_ms\x18\v \x01(\x04R\tlatencyMs\x12\"\n" +
+	"\rturn_trace_id\x18\f \x01(\tR\vturnTraceId\"\xaf\x03\n" +
 	"\x12EvaluationRunEvent\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12G\n" +
@@ -2225,20 +3939,63 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"attempt_id\x18\a \x01(\tR\tattemptId\x12A\n" +
 	"\x05error\x18\b \x01(\v2+.peers_touch.model.agent.v1.EvaluationErrorR\x05error\x12;\n" +
 	"\voccurred_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"w\n" +
+	"occurredAt\x12\x1b\n" +
+	"\tresult_id\x18\n" +
+	" \x01(\tR\bresultId\"w\n" +
 	" CreateEvaluationBenchmarkRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06rubric\x18\x02 \x01(\tR\x06rubric\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"r\n" +
 	"!CreateEvaluationBenchmarkResponse\x12M\n" +
-	"\tbenchmark\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.EvaluationBenchmarkR\tbenchmark\"\xc0\x01\n" +
+	"\tbenchmark\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.EvaluationBenchmarkR\tbenchmark\"\xc7\x01\n" +
+	" UpdateEvaluationBenchmarkRequest\x12!\n" +
+	"\fbenchmark_id\x18\x01 \x01(\tR\vbenchmarkId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06rubric\x18\x03 \x01(\tR\x06rubric\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"r\n" +
+	"!UpdateEvaluationBenchmarkResponse\x12M\n" +
+	"\tbenchmark\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.EvaluationBenchmarkR\tbenchmark\"\x9b\x01\n" +
+	" DeleteEvaluationBenchmarkRequest\x12!\n" +
+	"\fbenchmark_id\x18\x01 \x01(\tR\vbenchmarkId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"=\n" +
+	"!DeleteEvaluationBenchmarkResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"!\n" +
+	"\x1fListEvaluationBenchmarksRequest\"s\n" +
+	" ListEvaluationBenchmarksResponse\x12O\n" +
+	"\n" +
+	"benchmarks\x18\x01 \x03(\v2/.peers_touch.model.agent.v1.EvaluationBenchmarkR\n" +
+	"benchmarks\"\xe2\x01\n" +
 	"\x1eCreateEvaluationDatasetRequest\x12!\n" +
 	"\fbenchmark_id\x18\x01 \x01(\tR\vbenchmarkId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12>\n" +
 	"\x1bexpected_benchmark_revision\x18\x03 \x01(\x04R\x19expectedBenchmarkRevision\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"j\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\"\xb9\x01\n" +
 	"\x1fCreateEvaluationDatasetResponse\x12G\n" +
-	"\adataset\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\"\x99\x02\n" +
+	"\adataset\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\x12M\n" +
+	"\tbenchmark\x18\x02 \x01(\v2/.peers_touch.model.agent.v1.EvaluationBenchmarkR\tbenchmark\"\xcb\x01\n" +
+	"\x1eUpdateEvaluationDatasetRequest\x12\x1d\n" +
+	"\n" +
+	"dataset_id\x18\x01 \x01(\tR\tdatasetId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"j\n" +
+	"\x1fUpdateEvaluationDatasetResponse\x12G\n" +
+	"\adataset\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\"\x95\x01\n" +
+	"\x1eDeleteEvaluationDatasetRequest\x12\x1d\n" +
+	"\n" +
+	"dataset_id\x18\x01 \x01(\tR\tdatasetId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\";\n" +
+	"\x1fDeleteEvaluationDatasetResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"B\n" +
+	"\x1dListEvaluationDatasetsRequest\x12!\n" +
+	"\fbenchmark_id\x18\x01 \x01(\tR\vbenchmarkId\"k\n" +
+	"\x1eListEvaluationDatasetsResponse\x12I\n" +
+	"\bdatasets\x18\x01 \x03(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\bdatasets\"\xad\x02\n" +
 	"\x1fCreateEvaluationTestCaseRequest\x12\x1d\n" +
 	"\n" +
 	"dataset_id\x18\x01 \x01(\tR\tdatasetId\x12\x14\n" +
@@ -2246,17 +4003,49 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\bexpected\x18\x03 \x01(\tR\bexpected\x12,\n" +
 	"\x0frubric_override\x18\x04 \x01(\tH\x00R\x0erubricOverride\x88\x01\x01\x12:\n" +
 	"\x19expected_dataset_revision\x18\x05 \x01(\x04R\x17expectedDatasetRevision\x12'\n" +
-	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKeyB\x12\n" +
-	"\x10_rubric_override\"o\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12\x12\n" +
+	"\x04tags\x18\a \x03(\tR\x04tagsB\x12\n" +
+	"\x10_rubric_override\"\xb8\x01\n" +
 	" CreateEvaluationTestCaseResponse\x12K\n" +
-	"\ttest_case\x18\x01 \x01(\v2..peers_touch.model.agent.v1.EvaluationTestCaseR\btestCase\"\xa4\x02\n" +
+	"\ttest_case\x18\x01 \x01(\v2..peers_touch.model.agent.v1.EvaluationTestCaseR\btestCase\x12G\n" +
+	"\adataset\x18\x02 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\"\x98\x02\n" +
+	"\x1fUpdateEvaluationTestCaseRequest\x12\x17\n" +
+	"\acase_id\x18\x01 \x01(\tR\x06caseId\x12\x14\n" +
+	"\x05input\x18\x02 \x01(\tR\x05input\x12\x1a\n" +
+	"\bexpected\x18\x03 \x01(\tR\bexpected\x12,\n" +
+	"\x0frubric_override\x18\x04 \x01(\tH\x00R\x0erubricOverride\x88\x01\x01\x12\x12\n" +
+	"\x04tags\x18\x05 \x03(\tR\x04tags\x12+\n" +
+	"\x11expected_revision\x18\x06 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKeyB\x12\n" +
+	"\x10_rubric_override\"\xb8\x01\n" +
+	" UpdateEvaluationTestCaseResponse\x12K\n" +
+	"\ttest_case\x18\x01 \x01(\v2..peers_touch.model.agent.v1.EvaluationTestCaseR\btestCase\x12G\n" +
+	"\adataset\x18\x02 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\"\x90\x01\n" +
+	"\x1fDeleteEvaluationTestCaseRequest\x12\x17\n" +
+	"\acase_id\x18\x01 \x01(\tR\x06caseId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\x85\x01\n" +
+	" DeleteEvaluationTestCaseResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\x12G\n" +
+	"\adataset\x18\x02 \x01(\v2-.peers_touch.model.agent.v1.EvaluationDatasetR\adataset\"?\n" +
+	"\x1eListEvaluationTestCasesRequest\x12\x1d\n" +
+	"\n" +
+	"dataset_id\x18\x01 \x01(\tR\tdatasetId\"p\n" +
+	"\x1fListEvaluationTestCasesResponse\x12M\n" +
+	"\n" +
+	"test_cases\x18\x01 \x03(\v2..peers_touch.model.agent.v1.EvaluationTestCaseR\ttestCases\"\xb7\x03\n" +
 	"\x1aCreateEvaluationRunRequest\x12\x1d\n" +
 	"\n" +
 	"dataset_id\x18\x01 \x01(\tR\tdatasetId\x12)\n" +
-	"\x10dataset_revision\x18\x02 \x01(\x04R\x0fdatasetRevision\x12_\n" +
-	"\x15target_agent_snapshot\x18\x03 \x01(\v2+.peers_touch.model.agent.v1.RuntimeSnapshotR\x13targetAgentSnapshot\x122\n" +
+	"\x10dataset_revision\x18\x02 \x01(\x04R\x0fdatasetRevision\x122\n" +
 	"\x15readiness_snapshot_id\x18\x04 \x01(\tR\x13readinessSnapshotId\x12'\n" +
-	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"Z\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\x12&\n" +
+	"\x0ftarget_agent_id\x18\x06 \x01(\tR\rtargetAgentId\x126\n" +
+	"\x17expected_agent_revision\x18\a \x01(\x04R\x15expectedAgentRevision\x121\n" +
+	"\x12runtime_profile_id\x18\b \x01(\tH\x00R\x10runtimeProfileId\x88\x01\x01\x12\x1e\n" +
+	"\bmodel_id\x18\t \x01(\tH\x01R\amodelId\x88\x01\x01B\x15\n" +
+	"\x13_runtime_profile_idB\v\n" +
+	"\t_model_idJ\x04\b\x03\x10\x04R\x15target_agent_snapshot\"Z\n" +
 	"\x1bCreateEvaluationRunResponse\x12;\n" +
 	"\x03run\x18\x01 \x01(\v2).peers_touch.model.agent.v1.EvaluationRunR\x03run\"\x88\x01\n" +
 	"\x19StartEvaluationRunRequest\x12\x15\n" +
@@ -2270,19 +4059,41 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"Z\n" +
 	"\x1bCancelEvaluationRunResponse\x12;\n" +
-	"\x03run\x18\x01 \x01(\v2).peers_touch.model.agent.v1.EvaluationRunR\x03run\"\x85\x01\n" +
+	"\x03run\x18\x01 \x01(\v2).peers_touch.model.agent.v1.EvaluationRunR\x03run\"\xbf\x01\n" +
 	"\x1bRetryEvaluationCasesRequest\x12\"\n" +
 	"\rparent_run_id\x18\x01 \x01(\tR\vparentRunId\x12\x19\n" +
 	"\bcase_ids\x18\x02 \x03(\tR\acaseIds\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"f\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x128\n" +
+	"\x18expected_parent_revision\x18\x04 \x01(\x04R\x16expectedParentRevision\"f\n" +
 	"\x1cRetryEvaluationCasesResponse\x12F\n" +
 	"\tchild_run\x18\x01 \x01(\v2).peers_touch.model.agent.v1.EvaluationRunR\bchildRun\"0\n" +
 	"\x17GetEvaluationRunRequest\x12\x15\n" +
-	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\xee\x01\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\"\xbb\x02\n" +
 	"\x18GetEvaluationRunResponse\x12;\n" +
 	"\x03run\x18\x01 \x01(\v2).peers_touch.model.agent.v1.EvaluationRunR\x03run\x12M\n" +
 	"\battempts\x18\x02 \x03(\v21.peers_touch.model.agent.v1.EvaluationCaseAttemptR\battempts\x12F\n" +
-	"\aresults\x18\x03 \x03(\v2,.peers_touch.model.agent.v1.EvaluationResultR\aresults*\x8b\x03\n" +
+	"\aresults\x18\x03 \x03(\v2,.peers_touch.model.agent.v1.EvaluationResultR\aresults\x12K\n" +
+	"\x05cases\x18\x04 \x03(\v25.peers_touch.model.agent.v1.EvaluationRunCaseSnapshotR\x05cases\"\x87\x01\n" +
+	"\x19ListEvaluationRunsRequest\x12'\n" +
+	"\rparent_run_id\x18\x01 \x01(\tH\x00R\vparentRunId\x88\x01\x01\x12\x12\n" +
+	"\x04page\x18\x02 \x01(\rR\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\rR\bpageSizeB\x10\n" +
+	"\x0e_parent_run_id\"q\n" +
+	"\x1aListEvaluationRunsResponse\x12=\n" +
+	"\x04runs\x18\x01 \x03(\v2).peers_touch.model.agent.v1.EvaluationRunR\x04runs\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x04R\x05total\"^\n" +
+	"\x1eListEvaluationRunEventsRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12%\n" +
+	"\x0eafter_sequence\x18\x02 \x01(\x04R\rafterSequence\"\x92\x01\n" +
+	"\x1fListEvaluationRunEventsResponse\x12F\n" +
+	"\x06events\x18\x01 \x03(\v2..peers_touch.model.agent.v1.EvaluationRunEventR\x06events\x12'\n" +
+	"\x0flatest_sequence\x18\x02 \x01(\x04R\x0elatestSequence\"\x89\x01\n" +
+	"\x1aDeleteEvaluationRunRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"7\n" +
+	"\x1bDeleteEvaluationRunResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted*\x8b\x03\n" +
 	"\x13EvaluationRunStatus\x12%\n" +
 	"!EVALUATION_RUN_STATUS_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bEVALUATION_RUN_STATUS_DRAFT\x10\x01\x12!\n" +
@@ -2307,7 +4118,7 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	"\"EVALUATION_COMMAND_KIND_CREATE_RUN\x10\x01\x12%\n" +
 	"!EVALUATION_COMMAND_KIND_START_RUN\x10\x02\x12&\n" +
 	"\"EVALUATION_COMMAND_KIND_CANCEL_RUN\x10\x03\x12'\n" +
-	"#EVALUATION_COMMAND_KIND_RETRY_CASES\x10\x04*\x91\x03\n" +
+	"#EVALUATION_COMMAND_KIND_RETRY_CASES\x10\x04*\xad\x04\n" +
 	"\x13EvaluationErrorCode\x12%\n" +
 	"!EVALUATION_ERROR_CODE_UNSPECIFIED\x10\x00\x123\n" +
 	"/EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT\x10\x01\x121\n" +
@@ -2316,7 +4127,11 @@ const file_domain_agent_evaluation_proto_rawDesc = "" +
 	")EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT\x10\x04\x12/\n" +
 	"+EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE\x10\x05\x12.\n" +
 	"*EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\x06\x12,\n" +
-	"(EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT\x10\aBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"(EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT\x10\a\x125\n" +
+	"1EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT\x10\b\x125\n" +
+	"1EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT\x10\t\x12,\n" +
+	"(EVALUATION_ERROR_CODE_RETENTION_CONFLICT\x10\n" +
+	"BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_evaluation_proto_rawDescOnce sync.Once
@@ -2331,7 +4146,7 @@ func file_domain_agent_evaluation_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_evaluation_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_agent_evaluation_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_domain_agent_evaluation_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
 var file_domain_agent_evaluation_proto_goTypes = []any{
 	(EvaluationRunStatus)(0),                  // 0: peers_touch.model.agent.v1.EvaluationRunStatus
 	(EvaluationAttemptStatus)(0),              // 1: peers_touch.model.agent.v1.EvaluationAttemptStatus
@@ -2341,65 +4156,116 @@ var file_domain_agent_evaluation_proto_goTypes = []any{
 	(*EvaluationBenchmark)(nil),               // 5: peers_touch.model.agent.v1.EvaluationBenchmark
 	(*EvaluationDataset)(nil),                 // 6: peers_touch.model.agent.v1.EvaluationDataset
 	(*EvaluationTestCase)(nil),                // 7: peers_touch.model.agent.v1.EvaluationTestCase
-	(*EvaluationMetrics)(nil),                 // 8: peers_touch.model.agent.v1.EvaluationMetrics
-	(*EvaluationRun)(nil),                     // 9: peers_touch.model.agent.v1.EvaluationRun
-	(*EvaluationCaseAttempt)(nil),             // 10: peers_touch.model.agent.v1.EvaluationCaseAttempt
-	(*EvaluationResult)(nil),                  // 11: peers_touch.model.agent.v1.EvaluationResult
-	(*EvaluationRunEvent)(nil),                // 12: peers_touch.model.agent.v1.EvaluationRunEvent
-	(*CreateEvaluationBenchmarkRequest)(nil),  // 13: peers_touch.model.agent.v1.CreateEvaluationBenchmarkRequest
-	(*CreateEvaluationBenchmarkResponse)(nil), // 14: peers_touch.model.agent.v1.CreateEvaluationBenchmarkResponse
-	(*CreateEvaluationDatasetRequest)(nil),    // 15: peers_touch.model.agent.v1.CreateEvaluationDatasetRequest
-	(*CreateEvaluationDatasetResponse)(nil),   // 16: peers_touch.model.agent.v1.CreateEvaluationDatasetResponse
-	(*CreateEvaluationTestCaseRequest)(nil),   // 17: peers_touch.model.agent.v1.CreateEvaluationTestCaseRequest
-	(*CreateEvaluationTestCaseResponse)(nil),  // 18: peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse
-	(*CreateEvaluationRunRequest)(nil),        // 19: peers_touch.model.agent.v1.CreateEvaluationRunRequest
-	(*CreateEvaluationRunResponse)(nil),       // 20: peers_touch.model.agent.v1.CreateEvaluationRunResponse
-	(*StartEvaluationRunRequest)(nil),         // 21: peers_touch.model.agent.v1.StartEvaluationRunRequest
-	(*StartEvaluationRunResponse)(nil),        // 22: peers_touch.model.agent.v1.StartEvaluationRunResponse
-	(*CancelEvaluationRunRequest)(nil),        // 23: peers_touch.model.agent.v1.CancelEvaluationRunRequest
-	(*CancelEvaluationRunResponse)(nil),       // 24: peers_touch.model.agent.v1.CancelEvaluationRunResponse
-	(*RetryEvaluationCasesRequest)(nil),       // 25: peers_touch.model.agent.v1.RetryEvaluationCasesRequest
-	(*RetryEvaluationCasesResponse)(nil),      // 26: peers_touch.model.agent.v1.RetryEvaluationCasesResponse
-	(*GetEvaluationRunRequest)(nil),           // 27: peers_touch.model.agent.v1.GetEvaluationRunRequest
-	(*GetEvaluationRunResponse)(nil),          // 28: peers_touch.model.agent.v1.GetEvaluationRunResponse
-	(*timestamppb.Timestamp)(nil),             // 29: google.protobuf.Timestamp
-	(*RuntimeSnapshot)(nil),                   // 30: peers_touch.model.agent.v1.RuntimeSnapshot
+	(*EvaluationRunCaseSnapshot)(nil),         // 8: peers_touch.model.agent.v1.EvaluationRunCaseSnapshot
+	(*EvaluationMetrics)(nil),                 // 9: peers_touch.model.agent.v1.EvaluationMetrics
+	(*EvaluationRun)(nil),                     // 10: peers_touch.model.agent.v1.EvaluationRun
+	(*EvaluationCaseAttempt)(nil),             // 11: peers_touch.model.agent.v1.EvaluationCaseAttempt
+	(*EvaluationResult)(nil),                  // 12: peers_touch.model.agent.v1.EvaluationResult
+	(*EvaluationRunEvent)(nil),                // 13: peers_touch.model.agent.v1.EvaluationRunEvent
+	(*CreateEvaluationBenchmarkRequest)(nil),  // 14: peers_touch.model.agent.v1.CreateEvaluationBenchmarkRequest
+	(*CreateEvaluationBenchmarkResponse)(nil), // 15: peers_touch.model.agent.v1.CreateEvaluationBenchmarkResponse
+	(*UpdateEvaluationBenchmarkRequest)(nil),  // 16: peers_touch.model.agent.v1.UpdateEvaluationBenchmarkRequest
+	(*UpdateEvaluationBenchmarkResponse)(nil), // 17: peers_touch.model.agent.v1.UpdateEvaluationBenchmarkResponse
+	(*DeleteEvaluationBenchmarkRequest)(nil),  // 18: peers_touch.model.agent.v1.DeleteEvaluationBenchmarkRequest
+	(*DeleteEvaluationBenchmarkResponse)(nil), // 19: peers_touch.model.agent.v1.DeleteEvaluationBenchmarkResponse
+	(*ListEvaluationBenchmarksRequest)(nil),   // 20: peers_touch.model.agent.v1.ListEvaluationBenchmarksRequest
+	(*ListEvaluationBenchmarksResponse)(nil),  // 21: peers_touch.model.agent.v1.ListEvaluationBenchmarksResponse
+	(*CreateEvaluationDatasetRequest)(nil),    // 22: peers_touch.model.agent.v1.CreateEvaluationDatasetRequest
+	(*CreateEvaluationDatasetResponse)(nil),   // 23: peers_touch.model.agent.v1.CreateEvaluationDatasetResponse
+	(*UpdateEvaluationDatasetRequest)(nil),    // 24: peers_touch.model.agent.v1.UpdateEvaluationDatasetRequest
+	(*UpdateEvaluationDatasetResponse)(nil),   // 25: peers_touch.model.agent.v1.UpdateEvaluationDatasetResponse
+	(*DeleteEvaluationDatasetRequest)(nil),    // 26: peers_touch.model.agent.v1.DeleteEvaluationDatasetRequest
+	(*DeleteEvaluationDatasetResponse)(nil),   // 27: peers_touch.model.agent.v1.DeleteEvaluationDatasetResponse
+	(*ListEvaluationDatasetsRequest)(nil),     // 28: peers_touch.model.agent.v1.ListEvaluationDatasetsRequest
+	(*ListEvaluationDatasetsResponse)(nil),    // 29: peers_touch.model.agent.v1.ListEvaluationDatasetsResponse
+	(*CreateEvaluationTestCaseRequest)(nil),   // 30: peers_touch.model.agent.v1.CreateEvaluationTestCaseRequest
+	(*CreateEvaluationTestCaseResponse)(nil),  // 31: peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse
+	(*UpdateEvaluationTestCaseRequest)(nil),   // 32: peers_touch.model.agent.v1.UpdateEvaluationTestCaseRequest
+	(*UpdateEvaluationTestCaseResponse)(nil),  // 33: peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse
+	(*DeleteEvaluationTestCaseRequest)(nil),   // 34: peers_touch.model.agent.v1.DeleteEvaluationTestCaseRequest
+	(*DeleteEvaluationTestCaseResponse)(nil),  // 35: peers_touch.model.agent.v1.DeleteEvaluationTestCaseResponse
+	(*ListEvaluationTestCasesRequest)(nil),    // 36: peers_touch.model.agent.v1.ListEvaluationTestCasesRequest
+	(*ListEvaluationTestCasesResponse)(nil),   // 37: peers_touch.model.agent.v1.ListEvaluationTestCasesResponse
+	(*CreateEvaluationRunRequest)(nil),        // 38: peers_touch.model.agent.v1.CreateEvaluationRunRequest
+	(*CreateEvaluationRunResponse)(nil),       // 39: peers_touch.model.agent.v1.CreateEvaluationRunResponse
+	(*StartEvaluationRunRequest)(nil),         // 40: peers_touch.model.agent.v1.StartEvaluationRunRequest
+	(*StartEvaluationRunResponse)(nil),        // 41: peers_touch.model.agent.v1.StartEvaluationRunResponse
+	(*CancelEvaluationRunRequest)(nil),        // 42: peers_touch.model.agent.v1.CancelEvaluationRunRequest
+	(*CancelEvaluationRunResponse)(nil),       // 43: peers_touch.model.agent.v1.CancelEvaluationRunResponse
+	(*RetryEvaluationCasesRequest)(nil),       // 44: peers_touch.model.agent.v1.RetryEvaluationCasesRequest
+	(*RetryEvaluationCasesResponse)(nil),      // 45: peers_touch.model.agent.v1.RetryEvaluationCasesResponse
+	(*GetEvaluationRunRequest)(nil),           // 46: peers_touch.model.agent.v1.GetEvaluationRunRequest
+	(*GetEvaluationRunResponse)(nil),          // 47: peers_touch.model.agent.v1.GetEvaluationRunResponse
+	(*ListEvaluationRunsRequest)(nil),         // 48: peers_touch.model.agent.v1.ListEvaluationRunsRequest
+	(*ListEvaluationRunsResponse)(nil),        // 49: peers_touch.model.agent.v1.ListEvaluationRunsResponse
+	(*ListEvaluationRunEventsRequest)(nil),    // 50: peers_touch.model.agent.v1.ListEvaluationRunEventsRequest
+	(*ListEvaluationRunEventsResponse)(nil),   // 51: peers_touch.model.agent.v1.ListEvaluationRunEventsResponse
+	(*DeleteEvaluationRunRequest)(nil),        // 52: peers_touch.model.agent.v1.DeleteEvaluationRunRequest
+	(*DeleteEvaluationRunResponse)(nil),       // 53: peers_touch.model.agent.v1.DeleteEvaluationRunResponse
+	nil,                                       // 54: peers_touch.model.agent.v1.EvaluationError.DetailsEntry
+	(*timestamppb.Timestamp)(nil),             // 55: google.protobuf.Timestamp
+	(*RuntimeSnapshot)(nil),                   // 56: peers_touch.model.agent.v1.RuntimeSnapshot
 }
 var file_domain_agent_evaluation_proto_depIdxs = []int32{
 	3,  // 0: peers_touch.model.agent.v1.EvaluationError.code:type_name -> peers_touch.model.agent.v1.EvaluationErrorCode
-	2,  // 1: peers_touch.model.agent.v1.EvaluationRun.command_kind:type_name -> peers_touch.model.agent.v1.EvaluationCommandKind
-	29, // 2: peers_touch.model.agent.v1.EvaluationRun.cancel_ack_deadline:type_name -> google.protobuf.Timestamp
-	30, // 3: peers_touch.model.agent.v1.EvaluationRun.target_agent_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	0,  // 4: peers_touch.model.agent.v1.EvaluationRun.status:type_name -> peers_touch.model.agent.v1.EvaluationRunStatus
-	8,  // 5: peers_touch.model.agent.v1.EvaluationRun.metrics:type_name -> peers_touch.model.agent.v1.EvaluationMetrics
-	29, // 6: peers_touch.model.agent.v1.EvaluationRun.created_at:type_name -> google.protobuf.Timestamp
-	29, // 7: peers_touch.model.agent.v1.EvaluationRun.terminal_at:type_name -> google.protobuf.Timestamp
-	4,  // 8: peers_touch.model.agent.v1.EvaluationRun.error:type_name -> peers_touch.model.agent.v1.EvaluationError
-	1,  // 9: peers_touch.model.agent.v1.EvaluationCaseAttempt.status:type_name -> peers_touch.model.agent.v1.EvaluationAttemptStatus
-	4,  // 10: peers_touch.model.agent.v1.EvaluationCaseAttempt.error:type_name -> peers_touch.model.agent.v1.EvaluationError
-	29, // 11: peers_touch.model.agent.v1.EvaluationCaseAttempt.cancellation_ack_at:type_name -> google.protobuf.Timestamp
-	29, // 12: peers_touch.model.agent.v1.EvaluationCaseAttempt.terminal_at:type_name -> google.protobuf.Timestamp
-	1,  // 13: peers_touch.model.agent.v1.EvaluationResult.terminal_status:type_name -> peers_touch.model.agent.v1.EvaluationAttemptStatus
-	29, // 14: peers_touch.model.agent.v1.EvaluationResult.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 15: peers_touch.model.agent.v1.EvaluationRunEvent.status:type_name -> peers_touch.model.agent.v1.EvaluationRunStatus
-	4,  // 16: peers_touch.model.agent.v1.EvaluationRunEvent.error:type_name -> peers_touch.model.agent.v1.EvaluationError
-	29, // 17: peers_touch.model.agent.v1.EvaluationRunEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	5,  // 18: peers_touch.model.agent.v1.CreateEvaluationBenchmarkResponse.benchmark:type_name -> peers_touch.model.agent.v1.EvaluationBenchmark
-	6,  // 19: peers_touch.model.agent.v1.CreateEvaluationDatasetResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
-	7,  // 20: peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse.test_case:type_name -> peers_touch.model.agent.v1.EvaluationTestCase
-	30, // 21: peers_touch.model.agent.v1.CreateEvaluationRunRequest.target_agent_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	9,  // 22: peers_touch.model.agent.v1.CreateEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
-	9,  // 23: peers_touch.model.agent.v1.StartEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
-	9,  // 24: peers_touch.model.agent.v1.CancelEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
-	9,  // 25: peers_touch.model.agent.v1.RetryEvaluationCasesResponse.child_run:type_name -> peers_touch.model.agent.v1.EvaluationRun
-	9,  // 26: peers_touch.model.agent.v1.GetEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
-	10, // 27: peers_touch.model.agent.v1.GetEvaluationRunResponse.attempts:type_name -> peers_touch.model.agent.v1.EvaluationCaseAttempt
-	11, // 28: peers_touch.model.agent.v1.GetEvaluationRunResponse.results:type_name -> peers_touch.model.agent.v1.EvaluationResult
-	29, // [29:29] is the sub-list for method output_type
-	29, // [29:29] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	54, // 1: peers_touch.model.agent.v1.EvaluationError.details:type_name -> peers_touch.model.agent.v1.EvaluationError.DetailsEntry
+	55, // 2: peers_touch.model.agent.v1.EvaluationBenchmark.created_at:type_name -> google.protobuf.Timestamp
+	55, // 3: peers_touch.model.agent.v1.EvaluationBenchmark.updated_at:type_name -> google.protobuf.Timestamp
+	55, // 4: peers_touch.model.agent.v1.EvaluationBenchmark.deleted_at:type_name -> google.protobuf.Timestamp
+	55, // 5: peers_touch.model.agent.v1.EvaluationDataset.created_at:type_name -> google.protobuf.Timestamp
+	55, // 6: peers_touch.model.agent.v1.EvaluationDataset.updated_at:type_name -> google.protobuf.Timestamp
+	55, // 7: peers_touch.model.agent.v1.EvaluationDataset.deleted_at:type_name -> google.protobuf.Timestamp
+	55, // 8: peers_touch.model.agent.v1.EvaluationTestCase.created_at:type_name -> google.protobuf.Timestamp
+	55, // 9: peers_touch.model.agent.v1.EvaluationTestCase.updated_at:type_name -> google.protobuf.Timestamp
+	55, // 10: peers_touch.model.agent.v1.EvaluationTestCase.deleted_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: peers_touch.model.agent.v1.EvaluationRun.command_kind:type_name -> peers_touch.model.agent.v1.EvaluationCommandKind
+	55, // 12: peers_touch.model.agent.v1.EvaluationRun.cancel_ack_deadline:type_name -> google.protobuf.Timestamp
+	56, // 13: peers_touch.model.agent.v1.EvaluationRun.target_agent_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
+	0,  // 14: peers_touch.model.agent.v1.EvaluationRun.status:type_name -> peers_touch.model.agent.v1.EvaluationRunStatus
+	9,  // 15: peers_touch.model.agent.v1.EvaluationRun.metrics:type_name -> peers_touch.model.agent.v1.EvaluationMetrics
+	55, // 16: peers_touch.model.agent.v1.EvaluationRun.created_at:type_name -> google.protobuf.Timestamp
+	55, // 17: peers_touch.model.agent.v1.EvaluationRun.terminal_at:type_name -> google.protobuf.Timestamp
+	4,  // 18: peers_touch.model.agent.v1.EvaluationRun.error:type_name -> peers_touch.model.agent.v1.EvaluationError
+	55, // 19: peers_touch.model.agent.v1.EvaluationRun.updated_at:type_name -> google.protobuf.Timestamp
+	55, // 20: peers_touch.model.agent.v1.EvaluationRun.deleted_at:type_name -> google.protobuf.Timestamp
+	1,  // 21: peers_touch.model.agent.v1.EvaluationCaseAttempt.status:type_name -> peers_touch.model.agent.v1.EvaluationAttemptStatus
+	4,  // 22: peers_touch.model.agent.v1.EvaluationCaseAttempt.error:type_name -> peers_touch.model.agent.v1.EvaluationError
+	55, // 23: peers_touch.model.agent.v1.EvaluationCaseAttempt.cancellation_ack_at:type_name -> google.protobuf.Timestamp
+	55, // 24: peers_touch.model.agent.v1.EvaluationCaseAttempt.terminal_at:type_name -> google.protobuf.Timestamp
+	55, // 25: peers_touch.model.agent.v1.EvaluationCaseAttempt.started_at:type_name -> google.protobuf.Timestamp
+	1,  // 26: peers_touch.model.agent.v1.EvaluationResult.terminal_status:type_name -> peers_touch.model.agent.v1.EvaluationAttemptStatus
+	55, // 27: peers_touch.model.agent.v1.EvaluationResult.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 28: peers_touch.model.agent.v1.EvaluationRunEvent.status:type_name -> peers_touch.model.agent.v1.EvaluationRunStatus
+	4,  // 29: peers_touch.model.agent.v1.EvaluationRunEvent.error:type_name -> peers_touch.model.agent.v1.EvaluationError
+	55, // 30: peers_touch.model.agent.v1.EvaluationRunEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	5,  // 31: peers_touch.model.agent.v1.CreateEvaluationBenchmarkResponse.benchmark:type_name -> peers_touch.model.agent.v1.EvaluationBenchmark
+	5,  // 32: peers_touch.model.agent.v1.UpdateEvaluationBenchmarkResponse.benchmark:type_name -> peers_touch.model.agent.v1.EvaluationBenchmark
+	5,  // 33: peers_touch.model.agent.v1.ListEvaluationBenchmarksResponse.benchmarks:type_name -> peers_touch.model.agent.v1.EvaluationBenchmark
+	6,  // 34: peers_touch.model.agent.v1.CreateEvaluationDatasetResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	5,  // 35: peers_touch.model.agent.v1.CreateEvaluationDatasetResponse.benchmark:type_name -> peers_touch.model.agent.v1.EvaluationBenchmark
+	6,  // 36: peers_touch.model.agent.v1.UpdateEvaluationDatasetResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	6,  // 37: peers_touch.model.agent.v1.ListEvaluationDatasetsResponse.datasets:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	7,  // 38: peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse.test_case:type_name -> peers_touch.model.agent.v1.EvaluationTestCase
+	6,  // 39: peers_touch.model.agent.v1.CreateEvaluationTestCaseResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	7,  // 40: peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse.test_case:type_name -> peers_touch.model.agent.v1.EvaluationTestCase
+	6,  // 41: peers_touch.model.agent.v1.UpdateEvaluationTestCaseResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	6,  // 42: peers_touch.model.agent.v1.DeleteEvaluationTestCaseResponse.dataset:type_name -> peers_touch.model.agent.v1.EvaluationDataset
+	7,  // 43: peers_touch.model.agent.v1.ListEvaluationTestCasesResponse.test_cases:type_name -> peers_touch.model.agent.v1.EvaluationTestCase
+	10, // 44: peers_touch.model.agent.v1.CreateEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	10, // 45: peers_touch.model.agent.v1.StartEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	10, // 46: peers_touch.model.agent.v1.CancelEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	10, // 47: peers_touch.model.agent.v1.RetryEvaluationCasesResponse.child_run:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	10, // 48: peers_touch.model.agent.v1.GetEvaluationRunResponse.run:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	11, // 49: peers_touch.model.agent.v1.GetEvaluationRunResponse.attempts:type_name -> peers_touch.model.agent.v1.EvaluationCaseAttempt
+	12, // 50: peers_touch.model.agent.v1.GetEvaluationRunResponse.results:type_name -> peers_touch.model.agent.v1.EvaluationResult
+	8,  // 51: peers_touch.model.agent.v1.GetEvaluationRunResponse.cases:type_name -> peers_touch.model.agent.v1.EvaluationRunCaseSnapshot
+	10, // 52: peers_touch.model.agent.v1.ListEvaluationRunsResponse.runs:type_name -> peers_touch.model.agent.v1.EvaluationRun
+	13, // 53: peers_touch.model.agent.v1.ListEvaluationRunEventsResponse.events:type_name -> peers_touch.model.agent.v1.EvaluationRunEvent
+	54, // [54:54] is the sub-list for method output_type
+	54, // [54:54] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_evaluation_proto_init() }
@@ -2409,16 +4275,19 @@ func file_domain_agent_evaluation_proto_init() {
 	}
 	file_domain_agent_agent_proto_init()
 	file_domain_agent_evaluation_proto_msgTypes[3].OneofWrappers = []any{}
-	file_domain_agent_evaluation_proto_msgTypes[5].OneofWrappers = []any{}
 	file_domain_agent_evaluation_proto_msgTypes[6].OneofWrappers = []any{}
-	file_domain_agent_evaluation_proto_msgTypes[13].OneofWrappers = []any{}
+	file_domain_agent_evaluation_proto_msgTypes[7].OneofWrappers = []any{}
+	file_domain_agent_evaluation_proto_msgTypes[26].OneofWrappers = []any{}
+	file_domain_agent_evaluation_proto_msgTypes[28].OneofWrappers = []any{}
+	file_domain_agent_evaluation_proto_msgTypes[34].OneofWrappers = []any{}
+	file_domain_agent_evaluation_proto_msgTypes[44].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_evaluation_proto_rawDesc), len(file_domain_agent_evaluation_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   25,
+			NumMessages:   51,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: HTTP handlers for ecosystem
-//   entities (AgentGroups, TopicComments, EvalDatasets, CustomPlugins).
+//   entities (AgentGroups, TopicComments, CustomPlugins).
 
 package handler
 
@@ -182,93 +182,6 @@ func (h *EcosystemHandlers) HandleListTopicComments(ctx context.Context, req ser
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "comments": comments})
-	return nil
-}
-
-// --- Eval Datasets ---
-
-func (h *EcosystemHandlers) HandleCreateEvalDataset(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		ItemsJSON   string `json:"items_json"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	actorPTID := subjectActorPTID(ctx)
-	dataset := &persistence.EcosystemEvalDataset{
-		Name:           input.Name,
-		Description:    input.Description,
-		ItemsJSON:      input.ItemsJSON,
-		OwnerActorPTID: actorPTID,
-	}
-	if err := h.svc.CreateEvalDataset(ctx, dataset); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "dataset": dataset})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleUpdateEvalDataset(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		ItemsJSON   string `json:"items_json"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	if input.ID == "" {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "id is required"})
-		return nil
-	}
-	dataset := &persistence.EcosystemEvalDataset{
-		ID:          input.ID,
-		Name:        input.Name,
-		Description: input.Description,
-		ItemsJSON:   input.ItemsJSON,
-	}
-	if err := h.svc.UpdateEvalDataset(ctx, dataset); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleDeleteEvalDataset(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	if input.ID == "" {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "id is required"})
-		return nil
-	}
-	if err := h.svc.DeleteEvalDataset(ctx, input.ID); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleListEvalDatasets(ctx context.Context, req server.Request, resp server.Response) error {
-	actorPTID := subjectActorPTID(ctx)
-	datasets, err := h.svc.ListEvalDatasets(ctx, actorPTID)
-	if err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "datasets": datasets})
 	return nil
 }
 

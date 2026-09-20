@@ -15,7 +15,7 @@ review-hard-rules:
 	tooling/scripts/review/hard-rules.sh --range "$(REVIEW_RANGE)"
 
 review-frontend-runtime-registry:
-	bash tooling/scripts/check-frontend-runtime-registry.sh --range "$(REVIEW_RANGE)"
+	node tooling/scripts/check-frontend-runtime-registry.mjs --range "$(REVIEW_RANGE)"
 
 review-knowledge:
 	tooling/scripts/review/knowledge-match.sh --range "$(REVIEW_RANGE)" --strict

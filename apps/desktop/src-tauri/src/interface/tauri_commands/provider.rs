@@ -6,7 +6,6 @@ use crate::contracts::{
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 use serde::Deserialize;
-use serde_json::json;
 use std::sync::Arc;
 use tauri::{State, Window};
 
@@ -214,39 +213,25 @@ pub fn model_add(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    let provider_id = input.provider_id.trim();
-    let model_id = input
-        .data
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim();
-    let display_name = input
-        .data
-        .get("display_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim();
-    let context_window = input
-        .data
-        .get("context_window")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
-    if model_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "model id is required", None);
-    }
-    match application_provider::station_api::create_model(
-        &token,
-        provider_id,
-        model_id,
-        display_name,
-        true,
-        context_window,
-    ) {
-        Ok(resp) => AppResult::success(StubPayload {
-            command: "model_add".to_string(),
-            status: resp.to_string(),
-        }),
-        Err(e) => AppResult::fail(ErrorCode::InternalError, &format!("{:?}", e), None),
-    }
+    application_provider::model_add(&token, &input.provider_id, &input.data)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelUpdateInput {
+    pub provider_id: String,
+    pub model_id: String,
+    pub data: serde_json::Value,
+}
+
+#[tauri::command]
+pub fn model_update(
+    input: ModelUpdateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let (_scope, token) = match resolve_auth(&state, &window) {
+        Ok(auth) => auth,
+        Err(error) => return error,
+    };
+    application_provider::model_update(&token, &input.provider_id, &input.model_id, &input.data)
 }

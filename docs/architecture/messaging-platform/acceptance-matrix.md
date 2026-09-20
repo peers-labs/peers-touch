@@ -46,6 +46,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-C14 Search | J11 | A05 | W10 | MP-G14 | 仅本地 plaintext index 返回结果 |
 | MP-C15 Typing presence | J14; S40-S42 | A04/A18 | W12 | MP-G16 | Direct/Group receiver 只显示 fresh active-member typing，TTL 后清除 |
 | MP-C16 Message interactions | J13; S30-S38 | A02/A03/A05/A09/A17 | W12 | MP-G15 | Direct/Group receiver 对 reply/edit/retract/reaction/pin/read 收敛且重启不回退 |
+| MP-C17 Member authority | J15; S43-S46 | A02/A03/A08/A09 | W5-OWNER | MP-G17 | role/mute/deadline 与 owner transfer 通过一个 authority event 原子收敛 |
 
 ## 3. Required Runtime Cells
 
@@ -83,6 +84,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-G14 | SQLCipher FTS 对 text/filename 精确命中；offline/restart/recovery 后结果一致；bounded query/cursor；Station 请求/存储/log 中无 query 或 plaintext corpus |
 | MP-G15 | Direct/Group Native clients 逐项执行 reply/thread、author-only edit/retract、reaction add/remove、pin/unpin 和 read；receiver DOM、Station authority event、device queue、Engine durable projection 一致；submit timeout 保持 pending/retrying，exact retry 只收敛为一个 Authority fact 和一个 visible result；offline/restart/duplicate/unauthorized/removed-device 均符合 J13 |
 | MP-G16 | Direct/Group Native clients 执行 typing start/stop/session-switch/disconnect/TTL；只显示 active member fresh pulse，removed/non-member 被拒绝，durable lane 和 history 无 typing item |
+| MP-G17 | owner/admin/member 执行目标成员 role 与 mute/deadline 更新；owner transfer 同时更新旧 owner、新 owner、`owner_ptid`、membership epoch 和 authority hash；exact replay、并发 stale head、事务回滚、权限拒绝、目标非成员、owner protection 均有确定结果；Authority、Follower 和客户端事件投影读取同一 hashed post-state，任意时点无双 owner 或无 owner |
 
 ## 5. Crash Matrix
 

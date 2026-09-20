@@ -1,28 +1,30 @@
 # Agent Delivery Recovery
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-08 | **Updated**: 2026-09-08
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-08 | **Updated**: 2026-09-16
 > **Owner**: Peers-Touch Agent Team
-> **Approval**: PENDING_OWNER_APPROVAL
+> **Approval**: OWNER_APPROVED 2026-09-16
 > **Parent plan**: [Modern Chat Agent execution](./20260817-modern-chat-agent-v2-execution.md)
 
-## 1. Decision Requested
+## 1. Approved Decision
 
-Approve one Home-only scheduling change: implement W2 and extract C11 Home
+Implement W2 and extract C11 Home
 activation/deletion from W8b into a concern-atomic Home delivery. Allow that
 delivery to progress while G-F stabilization remains open. Retain the complete
 419-cell Foundation Gate, 33-cell Home Gate, seven-Gate source-bound final
 proof set, and W9 readiness requirements unchanged.
 
-This is not approved by the inventory below. Until the Owner approves it, the
-parent plan's G-F prerequisite and W8b dependency graph remain in effect.
+The Owner approved this amendment on 2026-09-16. The parent plan now makes W2
+the current product slice, removes complete G-F as its entry condition, and
+requires W2 to own the complete C11 production cutover.
 
 ## 2. Evidence And Reason
 
-- The parent plan explicitly blocks W2/W4/W5/W7 on complete G-F proof.
-- Even after W2 implementation, Home activation is bundled into W8b with MCP,
-  Connector, and Evaluation. W2 alone therefore cannot deliver visible Home.
+- Before this amendment, the parent plan blocked W2/W4/W5/W7 on complete G-F
+  proof.
+- Before this amendment, Home activation was bundled into W8b with MCP,
+  Connector, and Evaluation, so W2 alone could not deliver visible Home.
 - Accepted MCA-D14 defines a Station-owned Home projection and a pure-renderer
   Home page; it does not require MCP, Connector, or Evaluation implementation.
   Their unavailable states must remain truthful.
@@ -82,15 +84,14 @@ Current implementation gaps:
 
 ## 5. Immediate Execution Method
 
-The parent plan section 5.3 records the within-scope G-F diagnostic loop:
-retained evidence first, cheap focused checks, existing-binary smoke, bounded
-failure reproduction, then whole-Gate certification. Fix the ignored dry-run
-flag before using configuration validation. Do not build a new general
-Acceptance framework to implement this proposal.
+Execute one W2 vertical increment at a time: freeze the minimum contract, land
+Station ownership through Desktop projection/UI, run focused checks, then run
+the exact-source V2-J01 Journey. Do not run or expand the G-F matrix as a W2
+precondition and do not build a new general Acceptance framework.
 
 ## 6. Independent Review Prompt
 
-Review this proposed delta and the parent plan, then read the accepted
+Review this approved delta and the parent plan, then read the accepted
 MCA-D14/C11/A15 sources and the current Home proto, Station command owners,
 Desktop Home page, runtime registry, and C11 deletion fixture.
 
@@ -100,5 +101,5 @@ cell proof requirements. Verify that separating C11 activation from W8b does
 not create parallel authority or imply final readiness.
 
 Return `passed`, `conditionally passed`, or `changes required`, with exact
-source references and blocking decisions. Do not edit files or approve
-execution on the Owner's behalf.
+source references and blocking decisions. Do not edit files or weaken the
+approved product-first sequencing.

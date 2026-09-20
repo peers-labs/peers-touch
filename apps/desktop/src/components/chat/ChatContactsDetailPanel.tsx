@@ -39,7 +39,9 @@ export function ChatContactsDetailPanel({
     ? findContactConversation(selectedContact, getIMConversations())
     : undefined;
   const isGroup = selectedContact?.kind === 'group';
-  const peerPtid = selectedContact?.kind === 'friend' ? selectedContact.peerPtid : '';
+  const peerPtid = selectedContact && selectedContact.kind !== 'group'
+    ? selectedContact.peerPtid
+    : '';
   const cachedPeer = peerPtid ? peerProfiles[peerPtid] : undefined;
 
   // Lazy peer profile load. The cache is single-owner (socialChat store);
@@ -67,19 +69,72 @@ export function ChatContactsDetailPanel({
       };
     }
     if (!selectedContact) return null;
+    const technicalDetails = [
+      {
+        id: 'actor-ptid',
+        label: t('chat.social.identity.details.actorPtid'),
+        value: selectedContact.peerPtid,
+      },
+      {
+        id: 'station-peer-id',
+        label: t('chat.social.identity.details.stationPeerId'),
+        value: selectedContact.homeStationPeerId,
+      },
+      {
+        id: 'federated-handle',
+        label: t('chat.social.identity.details.federatedHandle'),
+        value: selectedContact.federatedHandle,
+      },
+      {
+        id: 'federation-id',
+        label: t('chat.social.identity.details.federationId'),
+        value: selectedContact.federationId,
+      },
+    ].filter((detail) => detail.value).map((detail) => ({
+      ...detail,
+      copyLabel: t('chat.social.identity.details.copy', {
+        label: detail.label,
+      }),
+      copiedLabel: t('chat.social.identity.details.copied', {
+        label: detail.label,
+      }),
+      copyFailedLabel: t('chat.social.identity.details.copyFailed', {
+        label: detail.label,
+      }),
+    }));
     const sessionFallback: PublicProfileModel = {
       displayName: selectedContact.displayName,
       avatar: selectedContact.avatar || '',
       username: selectedContact.username || undefined,
       did: peerPtid,
       identityMetadata: [
-        selectedContact.federationName || selectedContact.federationId,
-        selectedContact.federatedHandle
-          || selectedContact.homeStationDomain
-          || selectedContact.homeStationPeerId,
+        selectedContact.federationName || selectedContact.federationId
+          ? t('chat.social.identity.federation', {
+              federation: selectedContact.federationName
+                || selectedContact.federationId,
+            })
+          : '',
+        selectedContact.homeStationName || selectedContact.homeStationDomain
+          ? t('chat.social.identity.station', {
+              station: selectedContact.homeStationName
+                || selectedContact.homeStationDomain,
+            })
+          : selectedContact.homeStationPeerId
+            ? t('chat.social.identity.stationUnavailable')
+            : '',
       ].filter(Boolean),
-      relationLabel: t('chat.social.contacts.friendLabel'),
-      relationTone: 'success',
+      technicalDetails,
+      technicalDetailsLabel: t('chat.social.identity.details.title'),
+      relationLabel: selectedContact.kind === 'friend'
+        ? t('chat.social.contacts.friendLabel')
+        : t(`chat.social.contacts.status.${requestStateKey(
+            selectedContact.requestState,
+          )}`),
+      relationTone: selectedContact.kind === 'friend'
+        ? 'success'
+        : selectedContact.requestState === 1
+          ? 'processing'
+          : 'default',
     };
     if (!cachedPeer) return sessionFallback;
     return mergePeerProfile(sessionFallback, cachedPeer, t);
@@ -105,6 +160,25 @@ export function ChatContactsDetailPanel({
 
   return (
     <Flexbox
+      data-chat-contact-detail-kind={selectedContact.kind}
+      data-chat-contact-detail-peer-ptid={
+        selectedContact.kind === 'group' ? '' : selectedContact.peerPtid
+      }
+      data-chat-contact-detail-home-station-name={
+        selectedContact.kind === 'group'
+          ? ''
+          : selectedContact.homeStationName ?? ''
+      }
+      data-chat-contact-detail-home-station-peer-id={
+        selectedContact.kind === 'group'
+          ? ''
+          : selectedContact.homeStationPeerId
+      }
+      data-chat-contact-detail-request-attempt-count={
+        selectedContact.kind === 'person'
+          ? selectedContact.requestAttemptCount
+          : ''
+      }
       flex={1}
       align="center"
       justify="center"
@@ -128,7 +202,7 @@ export function ChatContactsDetailPanel({
             <Users size={34} />
           </Flexbox>
         ) : undefined}
-        actions={(
+        actions={selectedContact.kind !== 'person' ? (
           <Button
             data-chat-contact-message
             block
@@ -143,10 +217,16 @@ export function ChatContactsDetailPanel({
           >
             {t('chat.social.contacts.sendMessage')}
           </Button>
-        )}
+        ) : undefined}
       />
     </Flexbox>
   );
+}
+
+function requestStateKey(state: number): 'pending' | 'accepted' | 'rejected' {
+  if (state === 2) return 'accepted';
+  if (state === 3) return 'rejected';
+  return 'pending';
 }
 
 // Merge a session-derived fallback with the rich Station profile. Station

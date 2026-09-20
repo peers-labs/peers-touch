@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    _rfc3339_millis,
     evaluate_base_attachment_rejected,
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
@@ -15,6 +16,13 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
+    evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
+    evaluate_base_incompatible_capability,
+    evaluate_base_interrupted,
+    evaluate_base_invalid_reference,
+    evaluate_base_invalid_resource_reference,
+    evaluate_base_lease_expired,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -60,6 +68,29 @@ def valid_capture() -> dict[str, object]:
             "overflow": {
                 "errorCode": "ADMISSION_QUEUE_FULL",
                 "queueSize": 8,
+                "typedError": {
+                    "errorType": "ADMISSION_QUEUE_FULL",
+                    "localeKey": "agent.errors.queueFull",
+                    "retryable": True,
+                    "terminal": True,
+                    "details": {
+                        "conversation_id": "conversation-1",
+                        "capacity": "8",
+                    },
+                },
+                "resolution": {
+                    "type": "editQueue",
+                    "conversationId": "conversation-1",
+                    "capacity": 8,
+                },
+                "recovery": {
+                    "visible": True,
+                    "queueFocused": True,
+                },
+                "queueSizeAfterAction": 8,
+                "conversationVersionBeforeAction": 10,
+                "conversationVersionAfterAction": 10,
+                "stationMessageDelta": 0,
             },
             "cancellation": {
                 "queueEntryId": "queue-1",
@@ -936,6 +967,209 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
     }
 
 
+def valid_forbidden_actor_capture() -> dict[str, object]:
+    owner_actor_hash = "a" * 64
+    receiver_actor_hash = "b" * 64
+    owner_state_hash = "c" * 64
+    replay_hash = "d" * 64
+    return {
+        "outcome": {
+            "error": "agent.errors.forbiddenActor",
+            "error_type": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "locale_key": "agent.errors.forbiddenActor",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "resource_kind": "conversation",
+                "resource_id": "conversation-owner",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "This account cannot access the requested item.",
+            "expectedErrorText": (
+                "This account cannot access the requested item."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Switch account",
+            "expectedRecoveryText": "Switch account",
+            "accountGateObserved": True,
+            "recoveryExecuted": True,
+            "receiverActorHash": receiver_actor_hash,
+            "receiverRestored": True,
+        },
+        "foreignAccess": {
+            "resourceKind": "conversation",
+            "resourceId": "conversation-owner",
+            "ownerActorHash": owner_actor_hash,
+            "receiverActorHash": receiver_actor_hash,
+            "requestCount": 2,
+            "foreignPayloadCount": 0,
+        },
+        "owner": {
+            "resourceKind": "conversation",
+            "resourceId": "conversation-owner",
+            "ownerActorHash": owner_actor_hash,
+            "beforeHash": owner_state_hash,
+            "afterHash": owner_state_hash,
+            "versionBefore": 1,
+            "versionAfter": 1,
+        },
+        "station": {
+            "conversationDelta": 0,
+            "turnDelta": 0,
+            "messageDelta": 0,
+            "queueDelta": 0,
+            "providerExecutionDelta": 0,
+        },
+        "runtimeEvent": {
+            "eventId": "e" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-11T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "f" * 64,
+            "conversationIdHash": "1" * 64,
+            "payloadHash": replay_hash,
+            "errorType": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": receiver_actor_hash,
+            "sourceConversationId": "conversation-owner",
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "replay": {
+            "sourceHash": replay_hash,
+            "replayHash": replay_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "localProjectionCleared": True,
+            "foreignResourceDeleted": True,
+            "foreignAgentDeleted": True,
+            "ownerSelectionRestored": True,
+            "receiverRestored": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_incompatible_capability_capture(
+    locale: str = "en",
+) -> dict[str, object]:
+    conversation_id = "conversation-incompatible-capability"
+    state_hash = "2" * 64
+    payload_hash = "7" * 64
+    receiver_copy = {
+        "en": (
+            "The selected runtime does not support a required capability.",
+            "Choose compatible model",
+        ),
+        "zh-CN": (
+            "所选运行时不支持必需能力。",
+            "选择兼容模型",
+        ),
+    }
+    error_text, recovery_text = receiver_copy[locale]
+    return {
+        "outcome": {
+            "error": "agent.errors.incompatibleCapability",
+            "error_type": "RUNTIME_INCOMPATIBLE_CAPABILITY",
+            "locale_key": "agent.errors.incompatibleCapability",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "capability_id": "tool:skills_list",
+                "reason_code": "runtime_capability_unavailable",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": error_text,
+            "expectedErrorText": error_text,
+            "recoveryVisible": True,
+            "recoveryLocaleKey": "agent.recovery.chooseCompatibleModel",
+            "recoveryText": recovery_text,
+            "expectedRecoveryText": recovery_text,
+            "recoveryExecuted": True,
+            "profileVisible": True,
+            "profileAgentId": "agent-incompatible",
+            "modelSelectionVisible": True,
+            "selectedModelId": "model-incompatible",
+        },
+        "readiness": {
+            "source": "station-capability-readiness",
+            "capabilityId": "tool:skills_list",
+            "reasonCode": "runtime_capability_unavailable",
+            "incompatibleModelId": "model-incompatible",
+            "snapshotIdBefore": "readiness-before",
+            "snapshotIdAfter": "readiness-after",
+            "runtimeSnapshotIdBefore": "runtime-incompatible",
+            "runtimeSnapshotIdAfter": "runtime-incompatible",
+            "bindingRevisionBefore": 7,
+            "bindingRevisionAfter": 7,
+            "stateBefore": "unavailable",
+            "stateAfter": "unavailable",
+        },
+        "station": {
+            "agentId": "agent-incompatible",
+            "conversationId": conversation_id,
+            "turnId": "turn-incompatible",
+            "selectedModelIdBefore": "model-incompatible",
+            "selectedModelIdAfter": "model-incompatible",
+            "conversationVersionBefore": 3,
+            "conversationVersionAfter": 4,
+            "beforeHash": state_hash,
+            "afterHash": state_hash,
+            "turnDelta": 1,
+            "messageDelta": 0,
+            "queueDelta": 0,
+        },
+        "execution": {
+            "runtimeExecutionDelta": 0,
+            "providerCallDelta": 0,
+            "toolCallDelta": 0,
+            "toolExecutionDelta": 0,
+            "sideEffectDelta": 0,
+        },
+        "runtimeEvent": {
+            "eventId": "3" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-11T01:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "4" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "5" * 64,
+            "errorType": "RUNTIME_INCOMPATIBLE_CAPABILITY",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "6" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": "turn-incompatible",
+            "sourceSequence": 1,
+            "sourceEventType": "error",
+        },
+        "replay": {
+            "sourceHash": payload_hash,
+            "replayHash": payload_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+            "disposableAgentDeleted": True,
+            "capabilityBindingRemoved": True,
+            "fixtureProviderRestored": True,
+            "modelConfigurationUnchanged": True,
+            "priorSelection": "agent-default",
+            "restoredSelection": "agent-default",
+        },
+    }
+
+
 def valid_cancelled_capture() -> dict[str, object]:
     outcome = {
         "error": "agent.errors.lifecycleCancelled",
@@ -1035,6 +1269,142 @@ def valid_cancelled_capture() -> dict[str, object]:
     }
 
 
+def valid_interrupted_capture(
+    locale: str = "en",
+) -> dict[str, object]:
+    recovery_copy = {
+        "en": "Recover",
+        "zh-CN": "恢复",
+    }[locale]
+    error_copy = {
+        "en": "This operation was interrupted before completion.",
+        "zh-CN": "该操作在完成前被中断。",
+    }[locale]
+    outcome = {
+        "error": "agent.errors.lifecycleInterrupted",
+        "error_type": "LIFECYCLE_INTERRUPTED",
+        "locale_key": "agent.errors.lifecycleInterrupted",
+        "retryable": True,
+        "terminal": True,
+        "details": {
+            "turn_id": "turn-interrupted",
+            "reason_code": "station_restart_interrupted",
+        },
+    }
+    source = {
+        "turnId": "turn-interrupted",
+        "attemptId": "attempt-interrupted",
+        "attemptStatus": "interrupted",
+        "attemptErrorCode": "station_restart_interrupted",
+        "attemptRecordHash": "1" * 64,
+        "terminalEventSequence": 4,
+        "terminalEventHash": "e" * 64,
+        "stateHash": "f" * 64,
+    }
+    return {
+        "outcome": outcome,
+        "receiver": {
+            "visible": True,
+            "terminalStatus": "interrupted",
+            "errorType": "LIFECYCLE_INTERRUPTED",
+            "turnId": "turn-interrupted",
+            "messageId": "message-interrupted",
+            "reasonCode": "station_restart_interrupted",
+            "errorText": error_copy,
+            "expectedErrorText": error_copy,
+            "recoveryVisible": True,
+            "recoveryText": recovery_copy,
+            "expectedRecoveryText": recovery_copy,
+            "recoveryExecuted": True,
+        },
+        "recovery": {
+            "action": "recover",
+            "executed": True,
+            "attemptCountBefore": 1,
+            "attemptCountAfter": 2,
+            "sourceTurnId": "turn-interrupted",
+            "sourceAttemptId": "attempt-interrupted",
+            "recoveryAttemptId": "attempt-recovery",
+            "recoveryAttemptStatus": "cancelled",
+            "cancellationStatus": "cancelled",
+            "sourceAttemptStatusAfter": "interrupted",
+            "sourceTerminalHashBefore": "e" * 64,
+            "sourceTerminalHashAfter": "e" * 64,
+            "completedInferenceCount": 0,
+        },
+        "station": {
+            "conversationId": "conversation-interrupted",
+            "turnId": "turn-interrupted",
+            "attemptId": "attempt-interrupted",
+            "messageId": "message-interrupted",
+            "turnStatus": "interrupted",
+            "attemptStatus": "interrupted",
+            "attemptErrorCode": "station_restart_interrupted",
+            "messageStatus": "interrupted",
+            "terminalReason": "station_restart_interrupted",
+            "persistedOutcome": copy.deepcopy(outcome),
+            "terminalEventCount": 1,
+            "errorEventCount": 1,
+            "doneEventCount": 0,
+            "liveDoneEventCount": 0,
+            "recoveryAttemptCount": 1,
+            "recoveryAttemptId": "attempt-recovery",
+            "sourceBeforeRecovery": copy.deepcopy(source),
+            "sourceAfterRecovery": copy.deepcopy(source),
+        },
+        "replay": {
+            "sourceHash": "a" * 64,
+            "replayHash": "a" * 64,
+            "equal": True,
+            "snapshot": {
+                "sourceTransport": "station-sse",
+                "sourcePtidHash": "a" * 64,
+                "sourceConversationId": "conversation-interrupted",
+                "sourceTurnId": "turn-interrupted",
+                "sourceSequence": 4,
+                "sourceEventType": "error",
+                "status": "interrupted",
+                "reasonCode": "station_restart_interrupted",
+                "attemptId": "attempt-interrupted",
+                "messageId": "message-interrupted",
+            },
+        },
+        "cleanup": {
+            "recoveryAttemptSettled": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+            "cleanupComplete": True,
+            "handoffCleared": True,
+            "recoveryRecordCleared": True,
+        },
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "eventType": "error",
+            "sequence": 4,
+            "observedAt": "2026-09-11T08:30:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "LIFECYCLE_INTERRUPTED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-interrupted",
+            "sourceTurnId": "turn-interrupted",
+            "sourceSequence": 4,
+            "sourceEventType": "error",
+        },
+        "restart": {
+            "outageObserved": True,
+            "beforeStartedAt": "2026-09-11T08:29:00Z",
+            "afterStartedAt": "2026-09-11T08:29:05Z",
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+            "sourceCommit": "a" * 40,
+        },
+    }
+
+
 def valid_context_overflow_capture() -> dict[str, object]:
     return {
         "runtimeEvent": {
@@ -1100,6 +1470,227 @@ def valid_context_overflow_capture() -> dict[str, object]:
         },
         "cleanup": {
             "draftCleared": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_invalid_reference_capture() -> dict[str, object]:
+    return {
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-14T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "CONTEXT_INVALID_REFERENCE",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-invalid-reference",
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "outcome": {
+            "error": "agent.errors.contextInvalidReference",
+            "error_type": "CONTEXT_INVALID_REFERENCE",
+            "locale_key": "agent.errors.contextInvalidReference",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "reference_kind": "file",
+                "reference_hash": "f" * 64,
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "A context reference is invalid or unavailable.",
+            "expectedErrorText": (
+                "A context reference is invalid or unavailable."
+            ),
+            "removalVisible": True,
+            "removalText": "Remove reference",
+            "expectedRemovalText": "Remove reference",
+            "draftLengthBefore": 64,
+            "draftLengthAfterRejection": 64,
+            "draftHashBefore": "1" * 64,
+            "draftHashAfterRejection": "1" * 64,
+            "draftHashAfterRemoval": "2" * 64,
+            "correctedDraftHash": "2" * 64,
+            "referencePresentAfterRemoval": False,
+            "composerFocusedAfterRemoval": True,
+            "removalExecuted": True,
+            "successfulAssistantVisible": True,
+            "successfulAssistantCount": 1,
+            "successfulAssistantPeakCount": 1,
+            "successfulAssistantId": "message-assistant",
+            "successfulAssistantTurnId": "turn-success",
+            "successfulAssistantOptimistic": False,
+        },
+        "station": {
+            "conversationId": "conversation-invalid-reference",
+            "referenceKind": "file",
+            "referenceHash": "f" * 64,
+            "rejectionVersionBefore": 1,
+            "rejectionVersionAfter": 1,
+            "rejectionHashBefore": "3" * 64,
+            "rejectionHashAfter": "3" * 64,
+            "rejectedTurnDelta": 0,
+            "rejectedMessageDelta": 0,
+            "rejectedQueueDelta": 0,
+            "rejectedProviderExecutionDelta": 0,
+            "successfulTurnId": "turn-success",
+            "successfulAssistantMessageId": "message-assistant",
+            "successfulTurnDelta": 1,
+            "successfulMessageDelta": 2,
+            "successfulQueueDelta": 0,
+            "successfulProviderExecutionDelta": 1,
+        },
+        "completion": {
+            "status": "completed",
+            "turnId": "turn-success",
+            "assistantMessageId": "message-assistant",
+            "sourceTransport": "station-sse",
+            "sourceConversationId": "conversation-invalid-reference",
+            "sourceTurnId": "turn-success",
+            "sourceSequence": 2,
+            "sourceEventType": "done",
+            "responseHash": "4" * 64,
+            "expectedResponseHash": "4" * 64,
+        },
+        "replay": {
+            "sourceHash": "5" * 64,
+            "replayHash": "5" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "draftCleared": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_invalid_resource_reference_capture() -> dict[str, object]:
+    conversation_id = "conversation-invalid-resource"
+    turn_id = "turn-invalid-resource"
+    stream_id = "stream-invalid-resource"
+    stream_generation = 1
+    source_sequence = 7
+    outcome = {
+        "error": "agent.errors.invalidResourceReference",
+        "error_type": "CLIENT_INVALID_RESOURCE_REFERENCE",
+        "locale_key": "agent.errors.invalidResourceReference",
+        "retryable": False,
+        "terminal": True,
+        "details": {
+            "resource_kind": "file",
+            "resource_ref_hash": "f" * 64,
+        },
+    }
+    runtime_payload = {
+        "eventType": "error",
+        "data": {
+            "error": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "outcome_error": outcome,
+        },
+    }
+    payload_hash = canonical_payload_hash(runtime_payload)
+    return {
+        "runtimeEvent": {
+            "eventId": canonical_payload_hash(
+                {
+                    "streamId": stream_id,
+                    "streamGeneration": stream_generation,
+                    "conversationId": conversation_id,
+                    "turnId": turn_id,
+                    "sequence": source_sequence,
+                    "payloadHash": payload_hash,
+                }
+            ),
+            "sequence": source_sequence,
+            "eventType": "error",
+            "observedAt": "2026-09-14T10:00:00Z",
+            "streamGeneration": stream_generation,
+            "streamIdHash": hashlib.sha256(
+                stream_id.encode("utf-8")
+            ).hexdigest(),
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": payload_hash,
+            "errorType": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": turn_id,
+            "sourceSequence": source_sequence,
+            "sourceEventType": "error",
+        },
+        "outcome": outcome,
+        "receiver": {
+            "approvedThroughReceiver": True,
+            "errorVisible": True,
+            "errorText": "A selected resource reference is no longer valid.",
+            "expectedErrorText": (
+                "A selected resource reference is no longer valid."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Choose resource again",
+            "expectedRecoveryText": "Choose resource again",
+            "resourceKind": "file",
+            "resourceRefHash": "f" * 64,
+            "pickerActivationCount": 1,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "toolCallId": "tool-call-invalid-resource",
+            "factCount": 1,
+            "status": "failed",
+            "errorCode": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "resultId": "result-invalid-resource",
+            "continuationId": "",
+            "resourceKind": "file",
+            "resourceRefHash": "f" * 64,
+            "streamId": stream_id,
+            "streamGeneration": stream_generation,
+            "payloadHash": payload_hash,
+            "sourceSequence": source_sequence,
+            "runtimePayload": runtime_payload,
+        },
+        "executor": {
+            "evidenceSource": "native-executor-coordinator",
+            "capabilitySessionIdHash": "c" * 64,
+            "targetDeviceIdHash": "d" * 64,
+            "targetCapabilityId": "filesystem.read",
+            "targetPlatform": "desktop",
+            "executionAttemptCountBefore": 3,
+            "executionAttemptCountAfter": 3,
+            "sideEffectCountBefore": 2,
+            "sideEffectCountAfter": 2,
+        },
+        "recovery": {
+            "pickerActivationCount": 1,
+            "explicitResendRequired": True,
+            "providerCallCountBefore": 4,
+            "providerCallCountAfter": 4,
+            "turnCountBefore": 8,
+            "turnCountAfter": 8,
+            "messageCountBefore": 12,
+            "messageCountAfter": 12,
+        },
+        "replay": {
+            "sourceHash": "1" * 64,
+            "replayHash": "1" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
             "localProjectionCleared": True,
             "conversationDeleted": True,
         },
@@ -1382,6 +1973,246 @@ def valid_approval_denied_capture() -> dict[str, object]:
         },
         "cleanup": {
             "bindingRestored": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_lease_expired_capture() -> dict[str, object]:
+    session_id = "capability-session-expired"
+    lease_id = "capability-lease-expired"
+    current_session_id = "capability-session-current"
+    current_lease_id = "capability-lease-current"
+    expired_at = "2026-09-15T03:00:00Z"
+    current_expires_at = "2026-09-15T03:05:00Z"
+    request_hash = "1" * 64
+    station_error = {
+        "status": 409,
+        "body": "agent.errors.clientLeaseExpired",
+        "error_code": "CLIENT_LEASE_EXPIRED",
+        "locale_key": "agent.errors.clientLeaseExpired",
+        "retryable": "true",
+        "terminal": "false",
+        "session_id": session_id,
+        "lease_id": lease_id,
+        "expired_at": expired_at,
+    }
+    station_request = {
+        "endpoint": "/sub-agent/agent/capability/requests/pull",
+        "requestSent": True,
+        "responseReceived": True,
+        "requestHash": request_hash,
+        "commandErrorCode": None,
+        "httpStatus": 409,
+        "transportErrorKind": "httpStatus",
+        "stationErrorDetails": station_error,
+    }
+    station_error_hash = canonical_payload_hash(station_error)
+    return {
+        "runtimeEvent": {
+            "eventId": "event-lease-expired",
+            "sequence": 7,
+            "eventType": "progress",
+            "observedAt": "2026-09-15T03:00:01Z",
+            "streamGeneration": 1,
+            "streamIdHash": "2" * 64,
+            "conversationIdHash": "3" * 64,
+            "payloadHash": "4" * 64,
+            "errorType": "CLIENT_LEASE_EXPIRED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "5" * 64,
+            "sourceConversationId": "conversation-lease-expired",
+            "sourceTurnId": "turn-lease-expired",
+            "sourceSequence": 7,
+            "sourceEventType": "progress",
+        },
+        "outcome": {
+            "error": "agent.errors.clientLeaseExpired",
+            "error_type": "CLIENT_LEASE_EXPIRED",
+            "locale_key": "agent.errors.clientLeaseExpired",
+            "retryable": True,
+            "terminal": False,
+            "details": {
+                "session_id": session_id,
+                "lease_id": lease_id,
+                "expired_at": expired_at,
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The client capability lease has expired.",
+            "expectedErrorText": "The client capability lease has expired.",
+            "recoveryVisible": True,
+            "recoveryText": "Reconcile",
+            "expectedRecoveryText": "Reconcile",
+            "recoveryExecuted": True,
+            "errorClearedAfterReconcile": True,
+            "messageLoading": True,
+            "terminalStatus": "",
+            "toolCallPending": True,
+        },
+        "station": {
+            "toolCallId": "tool-call-lease-expired",
+            "toolCallIdBefore": "tool-call-lease-expired",
+            "status": "dispatch_committed",
+            "statusBefore": "dispatch_committed",
+            "resultId": "",
+            "continuationId": "",
+            "executionClaimIdBefore": "execution-claim-lease-expired",
+            "executionClaimIdAfter": "execution-claim-lease-expired",
+            "executionAttemptCountBefore": 1,
+            "executionAttemptCountAfter": 1,
+            "dispatchSequenceBefore": 1,
+            "dispatchSequenceAfter": 1,
+            "sideEffectReceiptIdBefore": "",
+            "sideEffectReceiptIdAfter": "",
+            "resultIdBefore": "",
+            "continuationIdBefore": "",
+            "sourceHash": "6" * 64,
+            "replayHash": "6" * 64,
+        },
+        "lease": {
+            "sourceCapabilitySessionIdHash": hashlib.sha256(
+                session_id.encode("utf-8")
+            ).hexdigest(),
+            "sourceLeaseIdHash": hashlib.sha256(
+                lease_id.encode("utf-8")
+            ).hexdigest(),
+            "sourceLeaseRevision": 9,
+            "sourceExpiresAtMs": 1789441200000,
+            "currentCapabilitySessionIdHash": hashlib.sha256(
+                current_session_id.encode("utf-8")
+            ).hexdigest(),
+            "currentLeaseIdHash": hashlib.sha256(
+                current_lease_id.encode("utf-8")
+            ).hexdigest(),
+            "currentExpiresAtMs": 1789441500000,
+            "currentLeaseRevision": 1,
+            "currentPullCursor": 0,
+            "currentSessionIdBefore": current_session_id,
+            "currentLeaseIdBefore": current_lease_id,
+            "currentLeaseRevisionBefore": 1,
+            "currentExpiresAtBefore": current_expires_at,
+            "currentSessionIdAfter": current_session_id,
+            "currentLeaseIdAfter": current_lease_id,
+            "currentLeaseRevisionAfter": 1,
+            "currentExpiresAtAfter": current_expires_at,
+        },
+        "audit": {
+            "source": copy.deepcopy(station_request),
+            "replay": copy.deepcopy(station_request),
+            "sourceRequestHash": request_hash,
+            "replayRequestHash": request_hash,
+            "sourceErrorHash": station_error_hash,
+            "replayErrorHash": station_error_hash,
+        },
+        "executor": {
+            "before": {
+                "localExecutionAttemptCount": 2,
+                "localSideEffectCount": 1,
+            },
+            "after": {
+                "localExecutionAttemptCount": 2,
+                "localSideEffectCount": 1,
+            },
+        },
+        "replay": {
+            "sourceHash": station_error_hash,
+            "replayHash": station_error_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "turnCancelled": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_executor_unavailable_capture() -> dict[str, object]:
+    station = {
+        "policy": "manual",
+        "states": ["policy_check", "awaiting_user"],
+        "errorCode": "",
+        "executionOwner": "client_capability",
+        "executionAttemptCount": 0,
+        "sideEffectCount": 0,
+        "resultCount": 0,
+        "continuationCount": 0,
+        "lineage": {
+            "toolCallId": "tool-call-executor",
+            "approvalId": "approval-executor",
+            "decisionId": "",
+            "decisionRevision": 0,
+            "executionClaimId": "",
+            "fencingToken": 0,
+            "sideEffectReceiptId": "",
+            "resultId": "",
+            "continuationId": "",
+            "dispatchCommittedAt": None,
+        },
+    }
+    return {
+        "outcome": {
+            "error": "agent.errors.executorUnavailable",
+            "error_type": "CLIENT_EXECUTOR_UNAVAILABLE",
+            "locale_key": "agent.errors.executorUnavailable",
+            "retryable": True,
+            "terminal": True,
+            "details": {
+                "target_device_id": "device-executor",
+                "capability_id": "clipboard.read",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The required client executor is unavailable.",
+            "expectedErrorText": "The required client executor is unavailable.",
+            "recoveryVisible": True,
+            "recoveryText": "Reconnect executor",
+            "expectedRecoveryText": "Reconnect executor",
+            "approveDisabled": True,
+            "repeatedApprovalBlocked": True,
+            "recoveryExecuted": True,
+            "approvalEnabledAfterRecovery": True,
+        },
+        "decision": {
+            "accepted": False,
+            "approved": True,
+            "errorCode": (
+                "TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE"
+            ),
+            "approvalId": "approval-executor",
+            "toolCallId": "tool-call-executor",
+            "decisionId": "decision-executor",
+            "decisionRevision": 0,
+        },
+        "station": station,
+        "stationAfterRecovery": copy.deepcopy(station),
+        "executor": {
+            "targetDeviceId": "device-executor",
+            "targetCapabilityId": "clipboard.read",
+            "sessionRemoved": True,
+            "localSessionRemoved": True,
+            "sessionRestored": True,
+            "restoredDeviceId": "device-executor",
+            "restoredCapabilityId": "clipboard.read",
+            "withdrawnExecutionAttemptCount": 0,
+            "restoredExecutionAttemptCount": 0,
+            "withdrawnSideEffectCount": 0,
+            "restoredSideEffectCount": 0,
+        },
+        "replay": {
+            "acknowledgementSourceHash": "a" * 64,
+            "acknowledgementReplayHash": "a" * 64,
+            "diagnosticSourceHash": "b" * 64,
+            "diagnosticReplayHash": "b" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "executorRestored": True,
+            "turnCancelled": True,
             "conversationDeleted": True,
         },
     }
@@ -2008,6 +2839,16 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f02(capture)
 
+    def test_as_f02_rejects_queue_edit_mutation(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["queueSubmission"]["overflow"]["queueSizeAfterAction"] = 7
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "overflowVisible",
+        ):
+            evaluate_as_f02(capture)
+
     def test_as_f02_rejects_placeholder_duplicate_identity(self) -> None:
         capture = copy.deepcopy(valid_capture())
         capture["duplicateSubmission"]["firstTurnId"] = ""
@@ -2450,6 +3291,304 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_base_active_mutation_conflict(capture)
 
+    def test_forbidden_actor_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_forbidden_actor(
+            valid_forbidden_actor_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_forbidden_actor_rejects_typed_contract_drift(self) -> None:
+        mutations = (
+            lambda capture: capture["outcome"].update(
+                {"error": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"error_type": "OWNERSHIP_UNAUTHORIZED_RESOURCE"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"locale_key": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update({"retryable": True}),
+            lambda capture: capture["outcome"].update({"terminal": False}),
+            lambda capture: capture["outcome"]["details"].update(
+                {"actor_id": "private-actor"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"resource_kind": "agent"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"resource_id": "conversation-other"}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_forbidden_actor_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedForbiddenActorRejected",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_requires_localized_switch_account(self) -> None:
+        for key, value, expected in (
+            ("errorText", "Forbidden", "localizedRecoveryVisible"),
+            ("recoveryVisible", False, "localizedRecoveryVisible"),
+            ("recoveryText", "Sign out", "localizedRecoveryVisible"),
+            ("accountGateObserved", False, "switchAccountExecuted"),
+            ("recoveryExecuted", False, "switchAccountExecuted"),
+            ("receiverRestored", False, "switchAccountExecuted"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_foreign_payload_or_identity_drift(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["foreignAccess"].update(
+                {"foreignPayloadCount": 1}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"requestCount": 1}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"resourceId": "conversation-other"}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"receiverActorHash": "a" * 64}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_forbidden_actor_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "foreignReadRejected",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_owner_state_drift(self) -> None:
+        for key, value in (
+            ("afterHash", "e" * 64),
+            ("versionAfter", 2),
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["owner"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "ownerStatePreserved",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_each_cross_mutation(self) -> None:
+        for key in (
+            "conversationDelta",
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["station"][key] = 1
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroCrossMutation",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_replay_drift(self) -> None:
+        capture = valid_forbidden_actor_capture()
+        capture["replay"]["replayHash"] = "e" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_requires_complete_cleanup(self) -> None:
+        for key in (
+            "localProjectionCleared",
+            "foreignResourceDeleted",
+            "foreignAgentDeleted",
+            "ownerSelectionRestored",
+            "receiverRestored",
+            "conversationDeleted",
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["cleanup"][key] = False
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "cleanupComplete",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_incompatible_capability_accepts_exact_production_facts(self) -> None:
+        for locale in ("en", "zh-CN"):
+            with self.subTest(locale=locale):
+                assertions = evaluate_base_incompatible_capability(
+                    valid_incompatible_capability_capture(locale)
+                )
+                self.assertEqual(len(assertions), 6)
+                self.assertTrue(all(assertions.values()))
+                self.assertTrue(
+                    all(type(value) is bool for value in assertions.values())
+                )
+
+    def test_incompatible_capability_rejects_typed_contract_tampering(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["outcome"].update(
+                {"error": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"error_type": "RUNTIME_UNAVAILABLE"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"locale_key": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update({"retryable": True}),
+            lambda capture: capture["outcome"].update({"terminal": False}),
+            lambda capture: capture["outcome"]["details"].update(
+                {"model_id": "private-model"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"capability_id": "tools.execute"}
+            ),
+            lambda capture: capture["runtimeEvent"].update(
+                {"errorType": "RUNTIME_UNAVAILABLE"}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_incompatible_capability_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedIncompatibleCapabilityRejected",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_requires_localized_recovery(self) -> None:
+        for key, value in (
+            ("errorText", "Incompatible"),
+            ("recoveryVisible", False),
+            ("recoveryLocaleKey", "agent.recovery.chooseModel"),
+            ("recoveryText", "Choose model"),
+            ("recoveryExecuted", False),
+            ("profileVisible", False),
+            ("profileAgentId", "agent-other"),
+            ("modelSelectionVisible", False),
+            ("selectedModelId", "model-compatible"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_incompatible_capability_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "localizedChooseCompatibleModelRecovery",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_station_readback_tampering(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["readiness"].update(
+                {"source": "desktop-cache"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"stateAfter": "ready"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"reasonCode": "model_capability_inferred"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"runtimeSnapshotIdAfter": "runtime-compatible"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"bindingRevisionAfter": 8}
+            ),
+            lambda capture: capture["station"].update(
+                {"selectedModelIdAfter": "model-compatible"}
+            ),
+            lambda capture: capture["station"].update(
+                {"conversationVersionAfter": 3}
+            ),
+            lambda capture: capture["station"].update(
+                {"afterHash": "7" * 64}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_incompatible_capability_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "stationReadinessReadback",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_each_side_effect(self) -> None:
+        for owner, key, value in (
+            ("execution", "runtimeExecutionDelta", 1),
+            ("execution", "providerCallDelta", 1),
+            ("execution", "toolCallDelta", 1),
+            ("execution", "toolExecutionDelta", 1),
+            ("execution", "sideEffectDelta", 1),
+            ("station", "turnDelta", 2),
+            ("station", "messageDelta", 1),
+            ("station", "queueDelta", 1),
+        ):
+            with self.subTest(owner=owner, key=key):
+                capture = valid_incompatible_capability_capture()
+                capture[owner][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroRejectedPathSideEffects",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_replay_tampering(self) -> None:
+        capture = valid_incompatible_capability_capture()
+        capture["replay"]["replayHash"] = "8" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_requires_complete_cleanup(self) -> None:
+        for key in (
+            "localProjectionCleared",
+            "conversationDeleted",
+            "disposableAgentDeleted",
+            "capabilityBindingRemoved",
+            "fixtureProviderRestored",
+            "modelConfigurationUnchanged",
+        ):
+            with self.subTest(key=key):
+                capture = valid_incompatible_capability_capture()
+                capture["cleanup"][key] = False
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "cleanupComplete",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
     def test_cancelled_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_cancelled(valid_cancelled_capture())
 
@@ -2522,6 +3661,153 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_base_cancelled(capture)
 
+    def test_interrupted_accepts_exact_production_facts(self) -> None:
+        for locale in ("en", "zh-CN"):
+            with self.subTest(locale=locale):
+                assertions = evaluate_base_interrupted(
+                    valid_interrupted_capture(locale),
+                )
+                self.assertEqual(
+                    set(assertions),
+                    {
+                        "typedInterruptionProjected",
+                        "localizedRecoveryVisible",
+                        "recoverExecuted",
+                        "interruptedPersisted",
+                        "exactlyOneAuthoritativeTerminal",
+                        "zeroCompletedInference",
+                        "replayEqual",
+                        "cleanupComplete",
+                    },
+                )
+                self.assertTrue(all(assertions.values()))
+
+    def test_interrupted_rejects_unsafe_details(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["outcome"]["details"]["actor_id"] = "private-actor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedInterruptionProjected",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_exact_typed_error_contract(self) -> None:
+        for key, value in (
+            ("error_type", "LIFECYCLE_CANCELLED"),
+            ("locale_key", "agent.errors.lifecycleCancelled"),
+            ("retryable", False),
+            ("terminal", False),
+        ):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["outcome"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedInterruptionProjected",
+                ):
+                    evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_recover_ui_and_action(self) -> None:
+        for section, key, value, assertion in (
+            ("receiver", "recoveryText", "Retry", "localizedRecoveryVisible"),
+            ("receiver", "recoveryExecuted", False, "recoverExecuted"),
+            ("recovery", "attemptCountAfter", 3, "recoverExecuted"),
+        ):
+            with self.subTest(section=section, key=key):
+                capture = valid_interrupted_capture()
+                capture[section][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_persisted_station_statuses(self) -> None:
+        for key in ("turnStatus", "attemptStatus", "messageStatus"):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["station"][key] = "completed"
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "interruptedPersisted",
+                ):
+                    evaluate_base_interrupted(capture)
+        capture = valid_interrupted_capture()
+        capture["station"]["attemptErrorCode"] = "provider_failed"
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "interruptedPersisted",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_rejects_recovery_source_mutation(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["station"]["sourceAfterRecovery"][
+            "terminalEventHash"
+        ] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "recoverExecuted",
+        ):
+            evaluate_base_interrupted(capture)
+
+        capture = valid_interrupted_capture()
+        capture["station"]["sourceAfterRecovery"][
+            "attemptRecordHash"
+        ] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "recoverExecuted",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_one_error_terminal_and_zero_done(
+        self,
+    ) -> None:
+        for key, value, assertion in (
+            ("terminalEventCount", 2, "exactlyOneAuthoritativeTerminal"),
+            ("errorEventCount", 2, "exactlyOneAuthoritativeTerminal"),
+            ("doneEventCount", 1, "zeroCompletedInference"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["station"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_interrupted(capture)
+        capture = valid_interrupted_capture()
+        capture["recovery"]["completedInferenceCount"] = 1
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroCompletedInference",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_rejects_replay_source_identity_drift(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["replay"]["snapshot"]["sourceTurnId"] = "turn-other"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_cleanup(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["cleanup"]["recoveryAttemptSettled"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_interrupted(capture)
+
     def test_context_overflow_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_context_overflow(
             valid_context_overflow_capture()
@@ -2580,6 +3866,328 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_context_overflow(capture)
+
+    def test_invalid_reference_accepts_exact_product_journey(self) -> None:
+        assertions = evaluate_base_invalid_reference(
+            valid_invalid_reference_capture()
+        )
+
+        self.assertEqual(len(assertions), 9)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_invalid_reference_rejects_typed_contract_drift(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["outcome"]["details"]["reference_path"] = "/private/path"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedInvalidReferenceRejected",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_exact_token_removal(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["receiver"]["referencePresentAfterRemoval"] = True
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "onlyRejectedReferenceRemoved",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_one_authoritative_assistant(
+        self,
+    ) -> None:
+        for key in (
+            "successfulAssistantCount",
+            "successfulAssistantPeakCount",
+        ):
+            with self.subTest(key=key):
+                capture = valid_invalid_reference_capture()
+                capture["receiver"][key] = 2
+
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "exactlyOneAuthoritativeAssistant",
+                ):
+                    evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_rejects_rejected_path_side_effects(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["station"]["rejectedProviderExecutionDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroRejectedPathSideEffects",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_cleanup(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_resource_reference_accepts_exact_product_journey(
+        self,
+    ) -> None:
+        assertions = evaluate_base_invalid_resource_reference(
+            valid_invalid_resource_reference_capture()
+        )
+
+        self.assertEqual(len(assertions), 12)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_invalid_resource_reference_rejects_typed_contract_drift(
+        self,
+    ) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["outcome"]["details"]["resource_path"] = "/private/path"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "boundedDetails",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_rejects_executor_activity(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["executor"]["executionAttemptCountAfter"] = 4
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroResourceRead",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_native_executor_provenance(
+        self,
+    ) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["executor"]["evidenceSource"] = "browser"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroLocalSideEffect",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_rejects_runtime_identity_drift(
+        self,
+    ) -> None:
+        for key, value in (
+            ("eventId", "0" * 64),
+            ("streamIdHash", "0" * 64),
+            ("conversationIdHash", "0" * 64),
+            ("payloadHash", "0" * 64),
+        ):
+            with self.subTest(key=key):
+                capture = valid_invalid_resource_reference_capture()
+                capture["runtimeEvent"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedInvalidResourceReference",
+                ):
+                    evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_explicit_resend(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["recovery"]["turnCountAfter"] = 9
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "noAutomaticResend",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_cleanup(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["cleanup"]["bindingRestored"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_lease_expired_accepts_exact_product_facts(self) -> None:
+        assertions = evaluate_base_lease_expired(
+            valid_lease_expired_capture()
+        )
+
+        self.assertEqual(
+            set(assertions),
+            {
+                "typedLeaseExpired",
+                "boundedDetails",
+                "localizedReconcileVisible",
+                "nonTerminalTurnPreserved",
+                "oldCommandAuditOnly",
+                "currentLeaseUnchanged",
+                "zeroExecutionAndSideEffect",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_lease_expired_rejects_typed_contract_drift(self) -> None:
+        for key, value in (
+            ("error_type", "CLIENT_EXECUTOR_UNAVAILABLE"),
+            ("locale_key", "agent.errors.executorUnavailable"),
+            ("retryable", False),
+            ("terminal", True),
+        ):
+            with self.subTest(key=key):
+                capture = valid_lease_expired_capture()
+                capture["outcome"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedLeaseExpired",
+                ):
+                    evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_exact_rfc3339_details(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["outcome"]["details"]["expired_at"] = "2026-09-15 03:00:00"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "expired_at must be an RFC3339 timestamp",
+        ):
+            evaluate_base_lease_expired(capture)
+
+        capture = valid_lease_expired_capture()
+        capture["outcome"]["details"]["device_id"] = "private-device"
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "boundedDetails",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_accepts_variable_rfc3339_fraction_precision(
+        self,
+    ) -> None:
+        for timestamp, equivalent in (
+            ("2026-09-15T13:28:44.1Z", "2026-09-15T13:28:44.100000Z"),
+            ("2026-09-15T13:28:44.91269Z", "2026-09-15T13:28:44.912690Z"),
+            (
+                "2026-09-15T13:28:44.123456789+08:00",
+                "2026-09-15T13:28:44.123456+08:00",
+            ),
+        ):
+            with self.subTest(timestamp=timestamp):
+                self.assertEqual(
+                    _rfc3339_millis(
+                        {"expired_at": timestamp},
+                        "expired_at",
+                        scenario="BASE-LEASE-EXPIRED",
+                    ),
+                    _rfc3339_millis(
+                        {"expired_at": equivalent},
+                        "expired_at",
+                        scenario="BASE-LEASE-EXPIRED",
+                    ),
+                )
+
+    def test_lease_expired_requires_visible_executed_reconcile(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["receiver"]["recoveryExecuted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "localizedReconcileVisible",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_preserves_non_terminal_turn_and_tool_call(
+        self,
+    ) -> None:
+        capture = valid_lease_expired_capture()
+        capture["receiver"]["toolCallPending"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "nonTerminalTurnPreserved",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_signed_old_command_audit(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["audit"]["replay"]["httpStatus"] = 200
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "oldCommandAuditOnly",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_current_lease_stability(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["lease"]["currentLeaseRevisionAfter"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "currentLeaseUnchanged",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_rejects_execution_or_side_effect(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["executor"]["after"]["localSideEffectCount"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroExecutionAndSideEffect",
+        ):
+            evaluate_base_lease_expired(capture)
+
+        for key, value in (
+            ("executionClaimIdAfter", "execution-claim-replayed"),
+            ("executionAttemptCountAfter", 2),
+            ("dispatchSequenceAfter", 2),
+            ("sideEffectReceiptIdAfter", "side-effect-replayed"),
+            ("resultIdBefore", "result-before-expiry"),
+            ("continuationIdBefore", "continuation-before-expiry"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_lease_expired_capture()
+                capture["station"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroExecutionAndSideEffect",
+                ):
+                    evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_identical_request_and_error_replay(
+        self,
+    ) -> None:
+        capture = valid_lease_expired_capture()
+        capture["audit"]["replay"]["requestHash"] = "9" * 64
+        capture["audit"]["replayRequestHash"] = "9" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "oldCommandAuditOnly|replayEqual",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_full_cleanup(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_lease_expired(capture)
 
     def test_duplicate_conflict_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_duplicate_conflict(
@@ -2856,6 +4464,34 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "zeroSideEffect",
         ):
             evaluate_base_approval_denied(capture)
+
+    def test_executor_unavailable_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_executor_unavailable(
+            valid_executor_unavailable_capture()
+        )
+
+        self.assertEqual(len(assertions), 9)
+        self.assertTrue(all(assertions.values()))
+
+    def test_executor_unavailable_rejects_decision_mutation(self) -> None:
+        capture = valid_executor_unavailable_capture()
+        capture["station"]["lineage"]["decisionId"] = "decision-executor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "waitingApprovalPreserved",
+        ):
+            evaluate_base_executor_unavailable(capture)
+
+    def test_executor_unavailable_rejects_local_side_effect_delta(self) -> None:
+        capture = valid_executor_unavailable_capture()
+        capture["executor"]["restoredSideEffectCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroSideEffect",
+        ):
+            evaluate_base_executor_unavailable(capture)
 
     def test_approval_expired_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_approval_expired(

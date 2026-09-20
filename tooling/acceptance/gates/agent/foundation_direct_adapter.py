@@ -168,6 +168,28 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-FORBIDDEN_ACTOR": frozenset(
+        {
+            "typedForbiddenActorRejected",
+            "localizedRecoveryVisible",
+            "switchAccountExecuted",
+            "foreignReadRejected",
+            "ownerStatePreserved",
+            "zeroCrossMutation",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-INCOMPATIBLE_CAPABILITY": frozenset(
+        {
+            "typedIncompatibleCapabilityRejected",
+            "localizedChooseCompatibleModelRecovery",
+            "stationReadinessReadback",
+            "zeroRejectedPathSideEffects",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CANCELLED": frozenset(
         {
             "typedCancellationProjected",
@@ -175,6 +197,18 @@ REQUIRED_ASSERTIONS = {
             "cancelledPersisted",
             "exactlyOneAuthoritativeTerminal",
             "zeroLateSuccess",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-INTERRUPTED": frozenset(
+        {
+            "typedInterruptionProjected",
+            "localizedRecoveryVisible",
+            "recoverExecuted",
+            "interruptedPersisted",
+            "exactlyOneAuthoritativeTerminal",
+            "zeroCompletedInference",
             "replayEqual",
             "cleanupComplete",
         }
@@ -188,6 +222,35 @@ REQUIRED_ASSERTIONS = {
             "stationStateUnchanged",
             "zeroPersistenceAndProvider",
             "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-INVALID_REFERENCE": frozenset(
+        {
+            "typedInvalidReferenceRejected",
+            "localizedRemovalVisible",
+            "rejectedDraftPreserved",
+            "onlyRejectedReferenceRemoved",
+            "correctedResendCompleted",
+            "exactlyOneAuthoritativeAssistant",
+            "zeroRejectedPathSideEffects",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-INVALID_RESOURCE_REF": frozenset(
+        {
+            "approvedThroughReceiver",
+            "typedInvalidResourceReference",
+            "boundedDetails",
+            "localizedRecoveryVisible",
+            "pickerActivated",
+            "zeroResourceRead",
+            "zeroLocalSideEffect",
+            "zeroProviderContinuation",
+            "oneTerminalResult",
+            "replayEqual",
+            "noAutomaticResend",
             "cleanupComplete",
         }
     ),
@@ -211,6 +274,32 @@ REQUIRED_ASSERTIONS = {
             "providerConfigAbsentAtAdmission",
             "stationStateUnchanged",
             "zeroProviderCall",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-EXECUTOR_UNAVAILABLE": frozenset(
+        {
+            "typedExecutorUnavailable",
+            "localizedRecoveryVisible",
+            "singleRejectedApproval",
+            "waitingApprovalPreserved",
+            "zeroExecutionClaim",
+            "zeroSideEffect",
+            "replayEqual",
+            "executorReconnected",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-LEASE_EXPIRED": frozenset(
+        {
+            "typedLeaseExpired",
+            "boundedDetails",
+            "localizedReconcileVisible",
+            "nonTerminalTurnPreserved",
+            "oldCommandAuditOnly",
+            "currentLeaseUnchanged",
+            "zeroExecutionAndSideEffect",
             "replayEqual",
             "cleanupComplete",
         }

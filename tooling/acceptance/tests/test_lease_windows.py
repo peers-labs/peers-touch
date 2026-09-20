@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,26 @@ from tooling.acceptance.transports.ssh import RemotePlatform
 
 
 class WindowsLeaseTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows pipe semantics")
+    def test_remote_lease_waits_for_ready_on_windows_pipe(self) -> None:
+        lease = RemoteGitSourceLease(
+            "windows-cell",
+            "runtime-cell:windows:run-a",
+            host="windows.example",
+            user="acceptance",
+            deploy_path="runtime/windows-cell",
+            remote_platform=RemotePlatform.WINDOWS,
+        )
+        command = [
+            sys.executable,
+            "-c",
+            "import sys; print('READY', flush=True); sys.stdin.read()",
+        ]
+
+        with patch.object(lease, "_command", return_value=command):
+            lease.acquire()
+            lease.release()
+
     def test_windows_profile_lock_uses_msvcrt_byte_range_lock(self) -> None:
         calls: list[tuple[int, int, int]] = []
         fake_msvcrt = SimpleNamespace(

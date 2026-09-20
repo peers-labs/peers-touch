@@ -195,6 +195,9 @@
 - 实时平面：`architecture/realtime/event-stream.md`
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
 - Chat 端到端加密、设备级投递与恢复：`architecture/encryption/README.md`
+- 跨领域 Secure Content：`architecture/secure-content/README.md`
+  （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、
+  opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
 - 本机多 worktree 开发控制面：`architecture/local-dev-control-plane/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
@@ -205,11 +208,17 @@
 - 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
+- Chat 全生命周期：`architecture/chat-lifecycle/README.md`（active；定义从找人、
+  好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
+  恢复的唯一产品完成口径与当前执行计划）
 - Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
-  Federation API 由各自资源 owner 暴露；CA-HC hard-cut plan 已批准）
+  Federation API 由各自 resource owner 暴露；其 20260808 执行计划已终止并作为
+  Chat Lifecycle 的下游历史实现证据）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
+- Social 私密 Moments 产品合同：`architecture/social/product-definition.md`
+  （active；定义好友/关注者语义、私密内容 E2EE、设备恢复、Browser 降级和验收矩阵）
 - Mobile Shell 产品与跨运行时架构：`architecture/mobile/README.md`
   （active；W2-E2 physical OAuth proof amendment 见
   `architecture/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
@@ -228,6 +237,9 @@
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
+- 跨平台开发工具链：`architecture/developer-toolchain/README.md`
+  （active；`devctl` 是 profile、诊断、本地运行时生命周期与检查的统一控制面，
+  Make、PowerShell 和 package scripts 只保留薄入口）
 
 ### 4.2 平台层真源
 

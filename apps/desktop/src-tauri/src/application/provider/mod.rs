@@ -2,7 +2,7 @@ use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -473,6 +473,77 @@ fn parse_json_models(json_str: &str) -> Vec<String> {
     }
 }
 
+pub fn model_add(token: &str, provider_id: &str, data: &Value) -> AppResult<StubPayload> {
+    let model_id = data.get("id").and_then(Value::as_str).unwrap_or("").trim();
+    if model_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "model id is required", None);
+    }
+
+    let display_name = data
+        .get("display_name")
+        .and_then(Value::as_str)
+        .unwrap_or(model_id)
+        .trim();
+    let enabled = data.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+    let context_window = data
+        .get("context_window")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .unwrap_or(0);
+    let capabilities = data.get("capabilities").filter(|value| value.is_object());
+
+    match station_api::create_model(
+        token,
+        provider_id.trim(),
+        model_id,
+        display_name,
+        enabled,
+        context_window,
+        capabilities,
+    ) {
+        Ok(response) => success_payload("model_add", response),
+        Err(error) => station_error_to_result(error),
+    }
+}
+
+pub fn model_update(
+    token: &str,
+    provider_id: &str,
+    model_id: &str,
+    data: &Value,
+) -> AppResult<StubPayload> {
+    let models = match station_api::list_models(token, provider_id) {
+        Ok(models) => models,
+        Err(error) => return station_error_to_result(error),
+    };
+    let current = match models.iter().find(|model| model.model_id == model_id) {
+        Some(model) => model,
+        None => return AppResult::fail(ErrorCode::NotFound, "Model not found", None),
+    };
+
+    let display_name = data.get("display_name").and_then(Value::as_str);
+    let enabled = data.get("enabled").and_then(Value::as_bool);
+    let context_window = data
+        .get("context_window")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok());
+    let capabilities = data.get("capabilities").filter(|value| value.is_object());
+
+    match station_api::update_model(
+        token,
+        provider_id,
+        model_id,
+        current.version,
+        display_name,
+        enabled,
+        context_window,
+        capabilities,
+    ) {
+        Ok(model) => success_payload("model_update", json!({ "ok": true, "model": model })),
+        Err(error) => station_error_to_result(error),
+    }
+}
+
 pub fn model_toggle(
     token: &str,
     provider_id: &str,
@@ -494,6 +565,8 @@ pub fn model_toggle(
         model.version,
         None,
         Some(enabled),
+        None,
+        None,
     ) {
         return station_error_to_result(e);
     }

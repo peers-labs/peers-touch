@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-07
+> **Created**: 2026-09-06 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -44,7 +44,7 @@ Desktop / Mobile
   +-- /device/* ----------------> Actor Device Identity
   +-- /device/inbox/* ----------> Conversation Device Delivery
   +-- /recovery/* --------------> Opaque Recovery Repository
-  +-- /key-exchange/* ----------> Direct/MLS public material
+  +-- /key-exchange/* ----------> Direct/MLS/Content PreKey public material
 
 Social Graph Authority -----------+
                                   | typed domain command/event adapters
@@ -80,7 +80,8 @@ The route prefix follows the semantic owner:
 | Actor read position | Station Conversation | `/conversation/read-cursor` | Device projection |
 | Recovery revision | Recovery | `/recovery/*` | opaque Station storage |
 | Attachment byte transfer | Conversation Authority data plane | `/conversation/attachments/*` | opaque byte-store adapter |
-| Key packages and DKX | Key Exchange | `/key-exchange/*` | Actor Device Identity |
+| Direct/MLS key packages and DKX | Key Exchange | `/key-exchange/*` | Actor Device Identity |
+| Content PreKey publish/inventory (`SC-D20` accepted) | Key Exchange | `/key-exchange/content-prekeys/*` | Actor Device Identity verified-key capability |
 | Cross-Station delivery | Federation transport | peer-only `/federation/*` | typed domain adapters |
 
 ## 4. Runtime Units And Boundaries
@@ -91,7 +92,8 @@ Owns:
 
 - conversation identity and lifecycle;
 - direct/group creation;
-- membership, roles, settings, and actor read cursor;
+- membership, target-member roles and authority mute deadlines, atomic owner
+  transfer, actor-local settings, and actor read cursor;
 - command admission, command receipt, event ordering, event hash, and authority
   plans;
 - transactional creation of delivery intents.
@@ -189,6 +191,8 @@ where required for security without changing capability ownership.
 /conversation/attachments/*
 /conversation/delivery/receipt
 /conversation/typing
+/conversation/member/update
+/conversation/ownership/transfer
 ```
 
 Each route is owned by the named resource domain. No implementation-shaped public
@@ -260,6 +264,13 @@ source. Human-readable decisions remain authoritative; the registry must match t
 - Duplicate Federation frame: same payload is a no-op; same identity with another hash
   is a security conflict.
 - Missing accepted ownership decision: implementation remains blocked at DESIGN.
+
+For target-member administration, the canonical request must bind the
+authenticated operator and target to the current authority Station, authority
+epoch, authority sequence/hash, membership epoch, MLS epoch, exact command ID,
+and deadline. A member role/mute update or ownership transfer is one
+hash-chained Conversation event and one UOW commit. Ownership transfer may not
+be decomposed into independent role writes. See `AO-D10`.
 
 ## 9. Architecture Gates
 

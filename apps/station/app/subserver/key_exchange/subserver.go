@@ -12,14 +12,17 @@ import (
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 type subServer struct {
-	status      server.Status
-	addrs       []string
-	jwtWrapper  server.Wrapper
-	composition *canonicalComposition
-	api         canonicalAPI
+	status                  server.Status
+	addrs                   []string
+	jwtWrapper              server.Wrapper
+	contentPreKeyJWTWrapper server.Wrapper
+	composition             *canonicalComposition
+	api                     canonicalAPI
+	localStationID          string
 }
 
 // NewKeyExchangeSubServer constructs the canonical Key Exchange HTTP subserver.
@@ -37,6 +40,13 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.jwtWrapper = withCanonicalKeyExchangeSubject(
 		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
 		resolveKeyExchangeSubjectPTID,
+	)
+	s.contentPreKeyJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
 	)
 
 	rds, err := store.GetRDS(ctx)
@@ -67,20 +77,22 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		return err
 	}
 	composition, err := newCanonicalComposition(ctx, canonicalCompositionConfig{
-		database:       rds,
-		devices:        newActorDeviceDirectory(rds),
-		actorHomes:     actorHomeStationDirectory{},
-		deviceInbox:    deviceInbox,
-		federation:     federationPort,
-		clock:          clock,
-		ids:            uuidGenerator{},
-		localStationID: localStationID,
+		database:                rds,
+		devices:                 newActorDeviceDirectory(rds),
+		actorHomes:              actorHomeStationDirectory{},
+		deviceInbox:             deviceInbox,
+		federation:              federationPort,
+		clock:                   clock,
+		ids:                     uuidGenerator{},
+		localStationID:          localStationID,
+		contentPreKeyPublishers: actorSigningKeyResolver{},
 	})
 	if err != nil {
 		return err
 	}
 	s.composition = composition
 	s.api = composition.api
+	s.localStationID = localStationID
 
 	return nil
 }

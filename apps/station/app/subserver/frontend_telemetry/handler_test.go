@@ -168,9 +168,158 @@ func TestHandleRollupQueryReturnsPersistedPercentiles(t *testing.T) {
 	if *rollup.MaxDurationMS != 30 {
 		t.Fatalf("max duration = %v, want 30", *rollup.MaxDurationMS)
 	}
+
+	if _, err := s.handleIngest(ctx, &ingestRequest{Events: []frontendTelemetryEvent{
+		validEvent("event-7", "interaction-rollup", 40),
+	}}); err != nil {
+		t.Fatalf("handleIngest second batch: %v", err)
+	}
+	res, err = s.handleRollupQuery(ctx, &rollupQueryRequest{
+		Module: "desktop-telemetry-live-gate",
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("handleRollupQuery second batch: %v", err)
+	}
+	rollup = res.Rollups[0]
+	if rollup.DurationCount != 4 ||
+		rollup.P50DurationMS == nil ||
+		*rollup.P50DurationMS != 20 ||
+		rollup.P95DurationMS == nil ||
+		*rollup.P95DurationMS != 30 ||
+		rollup.MaxDurationMS == nil ||
+		*rollup.MaxDurationMS != 40 {
+		t.Fatalf("second-batch rollup = %+v, want exact 20/30/40 percentiles", rollup)
+	}
 }
 
-func TestPersistBatchRebuildsLargeRollupSetInBatches(t *testing.T) {
+func TestPersistBatchLeavesUntouchedRollupWindowsUnchanged(t *testing.T) {
+	s := newTestSubServer(t)
+	ctx := context.Background()
+	const actorID = "actor-window-scope"
+	oldObservedAt := time.Now().UTC().
+		Add(-24 * time.Hour).
+		Truncate(rollupWindowDuration).
+		Add(time.Second)
+	oldDuration := float64(91)
+	oldRow := rawEventModel{
+		ActorPTID:     actorID,
+		EventID:       "old-event",
+		SchemaVersion: 1,
+		TS:            float64(oldObservedAt.UnixMilli()),
+		Kind:          "route.visible",
+		Source:        "shell",
+		Module:        "old-module",
+		Runtime:       "tauri-webview",
+		DurationMS:    &oldDuration,
+		CreatedAt:     oldObservedAt,
+		ReceivedAt:    oldObservedAt,
+	}
+	if err := s.store.db.WithContext(ctx).Create(&oldRow).Error; err != nil {
+		t.Fatalf("seed old event: %v", err)
+	}
+	oldWindow := eventWindow(oldRow.TS)
+	sentinelUpdatedAt := oldObservedAt.Add(time.Minute)
+	oldRollup := rollupModel{
+		ActorPTID:      actorID,
+		Runtime:        oldRow.Runtime,
+		Module:         oldRow.Module,
+		Kind:           oldRow.Kind,
+		WindowStart:    oldWindow,
+		WindowMinutes:  int(rollupWindowDuration / time.Minute),
+		Count:          99,
+		DurationCount:  99,
+		LastObservedAt: oldObservedAt,
+		UpdatedAt:      sentinelUpdatedAt,
+	}
+	if err := s.store.db.WithContext(ctx).Create(&oldRollup).Error; err != nil {
+		t.Fatalf("seed old rollup: %v", err)
+	}
+
+	current := validEvent("current-event", "current-interaction", 12)
+	if _, err := s.store.PersistBatch(
+		ctx,
+		actorID,
+		"session-window-scope",
+		[]frontendTelemetryEvent{current},
+	); err != nil {
+		t.Fatalf("PersistBatch current event: %v", err)
+	}
+
+	var preserved rollupModel
+	if err := s.store.db.WithContext(ctx).
+		Where(
+			"actor_ptid = ? AND runtime = ? AND module = ? AND kind = ? AND window_start = ?",
+			actorID,
+			oldRow.Runtime,
+			oldRow.Module,
+			oldRow.Kind,
+			oldWindow,
+		).
+		First(&preserved).Error; err != nil {
+		t.Fatalf("read old rollup: %v", err)
+	}
+	if preserved.Count != 99 || preserved.DurationCount != 99 {
+		t.Fatalf(
+			"untouched old rollup = %+v, want sentinel counts preserved",
+			preserved,
+		)
+	}
+
+	var currentRollup rollupModel
+	if err := s.store.db.WithContext(ctx).
+		Where(
+			"actor_ptid = ? AND runtime = ? AND module = ? AND kind = ? AND window_start = ?",
+			actorID,
+			current.Runtime,
+			current.Module,
+			current.Kind,
+			eventWindow(current.TS),
+		).
+		First(&currentRollup).Error; err != nil {
+		t.Fatalf("read current rollup: %v", err)
+	}
+	if currentRollup.Count != 1 || currentRollup.DurationCount != 1 {
+		t.Fatalf("current rollup = %+v, want count=1 durationCount=1", currentRollup)
+	}
+}
+
+func TestPersistBatchReplayDoesNotDoubleCountTouchedRollup(t *testing.T) {
+	s := newTestSubServer(t)
+	ctx := context.Background()
+	const actorID = "actor-idempotent-rollup"
+	event := validEvent("idempotent-event", "idempotent-interaction", 42)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := s.store.PersistBatch(
+			ctx,
+			actorID,
+			"session-idempotent-rollup",
+			[]frontendTelemetryEvent{event},
+		); err != nil {
+			t.Fatalf("PersistBatch attempt %d: %v", attempt+1, err)
+		}
+	}
+
+	var rollup rollupModel
+	if err := s.store.db.WithContext(ctx).
+		Where(
+			"actor_ptid = ? AND runtime = ? AND module = ? AND kind = ? AND window_start = ?",
+			actorID,
+			event.Runtime,
+			event.Module,
+			event.Kind,
+			eventWindow(event.TS),
+		).
+		First(&rollup).Error; err != nil {
+		t.Fatalf("read idempotent rollup: %v", err)
+	}
+	if rollup.Count != 1 || rollup.DurationCount != 1 {
+		t.Fatalf("idempotent rollup = %+v, want count=1 durationCount=1", rollup)
+	}
+}
+
+func TestPersistBatchUpdatesLargeRollupSetInBatches(t *testing.T) {
 	s := newTestSubServer(t)
 	ctx := context.Background()
 	const actorID = "actor-large-rollups"

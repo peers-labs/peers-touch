@@ -2,10 +2,8 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
@@ -167,9 +165,5 @@ func (h *TurnHandlers) HandleSubmitClientCapabilityRecoveryReceipt(
 }
 
 func toolHandlerError(err error) error {
-	var businessError *errcode.BizError
-	if errors.As(err, &businessError) {
-		return server.NewHandlerError(businessError.HTTPStatus, businessError.Message)
-	}
-	return server.InternalErrorWithCause("tool authority operation failed", err)
+	return toHandlerError(err)
 }

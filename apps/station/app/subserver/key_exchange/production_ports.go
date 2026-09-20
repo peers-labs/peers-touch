@@ -59,6 +59,77 @@ type actorHomeStationCapability interface {
 	) (string, error)
 }
 
+type actorSigningKeyCapability interface {
+	ResolveVerifiedActorDeviceSigningKey(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+	ResolveRetainedActorDeviceSigningKey(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		string,
+		string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+}
+
+type actorSigningKeyResolver struct{}
+
+func (actorSigningKeyResolver) ResolveVerifiedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorSigningKeyCapability)
+	if !ok || provider == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_signing_key.resolve",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	return provider.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		strings.TrimSpace(actorPTID),
+		strings.TrimSpace(deviceID),
+		strings.TrimSpace(signingKeyID),
+	)
+}
+
+func (actorSigningKeyResolver) ResolveRetainedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorSigningKeyCapability)
+	if !ok || provider == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_signing_key.resolve_retained",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	return provider.ResolveRetainedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		strings.TrimSpace(actorPTID),
+		strings.TrimSpace(deviceID),
+		strings.TrimSpace(signingKeyID),
+	)
+}
+
 type actorHomeStationDirectory struct{}
 
 func (actorHomeStationDirectory) ResolveActorHomeStationPeerID(

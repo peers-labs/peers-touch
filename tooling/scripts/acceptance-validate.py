@@ -2288,7 +2288,7 @@ def latest_passed_gates(
     latest_source_matches = (
         not run or run.get("source") == source_identity(REPO_ROOT)
     )
-    if not latest_source_matches and not current_results:
+    if require_run and not latest_source_matches and not current_results:
         raise RuntimeError(
             "latest Acceptance run source does not match current source"
         )
@@ -2467,7 +2467,25 @@ def validate_domain(
         validate_capability(repo_root, acceptance_root, capability, features, gate_defs, passed_gates, require_proven)
         for capability in selected
     ]
-    return {"domain": domain_id, "capabilities": results}, results
+    feature_ids = sorted(
+        {
+            str(feature_id)
+            for capability in selected
+            for feature_id in capability.get("features", [])
+            if isinstance(feature_id, str) and feature_id
+        }
+    )
+    report = {
+        "artifactKind": "acceptance-domain-validation-report",
+        "gate": validation_gate_id or "acceptance-validate",
+        "gateId": validation_gate_id or "acceptance-validate",
+        "phase": "Acceptance Domain Validation",
+        "bom": sorted(str(capability["id"]) for capability in selected),
+        "spec": feature_ids,
+        "domain": domain_id,
+        "capabilities": results,
+    }
+    return report, results
 
 
 def validate_infra(

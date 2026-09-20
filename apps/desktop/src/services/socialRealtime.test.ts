@@ -8,6 +8,8 @@ import {
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   installSocialRealtimeBridge,
+  refreshPeerPresence,
+  refreshSocialProjection,
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
 import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
@@ -47,9 +49,22 @@ const mocks = vi.hoisted(() => ({
   resetMutualFriends: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
+  setPeerOnline: vi.fn(),
+  clearPeerPresence: vi.fn(),
+  presenceQuery: vi.fn(),
+  loadCurrentUserProfile: vi.fn(),
+  loadPeerProfile: vi.fn(),
+  resolveActorStations: vi.fn(),
   currentActorPtid: null as string | null,
   activeTab: 'group' as 'friend' | 'group',
   activeSessionUlid: null as string | null,
+  conversations: [] as Array<{
+    conversationId: string;
+    kind: number;
+    federationId: string;
+  }>,
+  conversationMembers: {} as Record<string, Array<{ ptid: string }>>,
+  peerProfiles: {} as Record<string, { username?: string }>,
 }));
 
 const originalWindow = globalThis.window;
@@ -67,6 +82,7 @@ vi.mock('../store/relationships', () => ({
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
       resetMutualFriends: mocks.resetMutualFriends,
+      mutualFriends: [],
     }),
   },
 }));
@@ -75,8 +91,13 @@ vi.mock('../store/socialChat', () => ({
   useSocialChatStore: {
     getState: () => ({
       currentUserPtid: 'did:peer:self',
+      currentUserProfile: null,
+      conversations: mocks.conversations,
+      conversationMembers: mocks.conversationMembers,
       sessions: [],
       groups: [],
+      friendRequests: [],
+      peerProfiles: mocks.peerProfiles,
       conversationLocalState: {},
       messages: {},
       activeSessionUlid: mocks.activeSessionUlid,
@@ -95,7 +116,19 @@ vi.mock('../store/socialChat', () => ({
       ingestRealtimeMessage: mocks.ingestRealtimeMessage,
       bumpChatUnread: mocks.bumpChatUnread,
       clearChatUnread: mocks.clearChatUnread,
+      setPeerOnline: mocks.setPeerOnline,
+      clearPeerPresence: mocks.clearPeerPresence,
+      loadCurrentUserProfile: mocks.loadCurrentUserProfile,
+      loadPeerProfile: mocks.loadPeerProfile,
       sweepTypingPeers: vi.fn(),
+    }),
+  },
+}));
+
+vi.mock('../store/federation', () => ({
+  useFederationStore: {
+    getState: () => ({
+      resolveActorStations: mocks.resolveActorStations,
     }),
   },
 }));
@@ -137,6 +170,7 @@ vi.mock('./eventStream', () => ({
 vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
+    presenceQuery: mocks.presenceQuery,
   },
 }));
 
@@ -165,9 +199,16 @@ describe('social realtime group membership side effects', () => {
     mocks.loadMessages.mockResolvedValue(undefined);
     mocks.markFriendRead.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
+    mocks.presenceQuery.mockResolvedValue([]);
+    mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
+    mocks.loadPeerProfile.mockResolvedValue(undefined);
+    mocks.resolveActorStations.mockResolvedValue(undefined);
     mocks.currentActorPtid = null;
     mocks.activeTab = 'group';
     mocks.activeSessionUlid = null;
+    mocks.conversations = [];
+    mocks.conversationMembers = {};
+    mocks.peerProfiles = {};
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -322,6 +363,59 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:self', true);
     });
+  });
+
+  it('reconciles peer presence from the authoritative Station snapshot', async () => {
+    mocks.presenceQuery.mockResolvedValue([
+      { actorPtid: 'ptid:alice', online: true },
+      { actorPtid: 'ptid:bob', online: false },
+    ]);
+
+    await refreshPeerPresence(['ptid:alice', 'ptid:bob', 'ptid:alice']);
+
+    expect(mocks.presenceQuery).toHaveBeenCalledWith(['ptid:alice', 'ptid:bob']);
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:alice', true);
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:bob', false);
+  });
+
+  it('removes stale presence when the authoritative snapshot omits a peer', async () => {
+    mocks.presenceQuery.mockResolvedValue([]);
+
+    await refreshPeerPresence(['ptid:alice']);
+
+    expect(mocks.clearPeerPresence).toHaveBeenCalledWith(['ptid:alice']);
+  });
+
+  it('hydrates peer profiles before resolving their Station identities', async () => {
+    const profileLoaded = deferred<void>();
+    mocks.currentActorPtid = 'ptid:self';
+    mocks.conversations = [{
+      conversationId: 'direct-1',
+      kind: 1,
+      federationId: 'federation-1',
+    }];
+    mocks.conversationMembers = {
+      'direct-1': [{ ptid: 'ptid:bob' }],
+    };
+    mocks.loadPeerProfile.mockImplementation(async (ptid: string) => {
+      await profileLoaded.promise;
+      mocks.peerProfiles[ptid] = { username: 'bob' };
+    });
+
+    const refresh = refreshSocialProjection('test');
+    await vi.waitFor(() => {
+      expect(mocks.loadPeerProfile).toHaveBeenCalledWith('ptid:bob', true);
+    });
+    expect(mocks.resolveActorStations).not.toHaveBeenCalled();
+
+    profileLoaded.resolve();
+    await refresh;
+
+    expect(mocks.resolveActorStations).toHaveBeenCalledWith([{
+      actorPtid: 'ptid:bob',
+      federationId: 'federation-1',
+      username: 'bob',
+    }]);
   });
 });
 

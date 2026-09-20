@@ -90,6 +90,7 @@
       "messaging.command.read",
       "messaging.search",
       "messaging.projection.read",
+      "social.people.search",
       "social.request.send",
       "social.request.accept",
       "social.reconcile",

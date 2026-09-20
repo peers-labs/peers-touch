@@ -159,6 +159,21 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
+        self.assertTrue(contract.fixtures[0].authorization_required)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "env:CHAT_ACCEPTANCE_RESET",
+        )
+        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(contract.credentials[0].id, "chat-password")
+        self.assertEqual(
+            contract.credentials[0].source_ref,
+            "fixture:apps/station/app/conf/actor.yml#preset_users",
+        )
+        self.assertTrue(contract.credentials[0].required)
+        self.assertFalse(contract.credentials[0].generated_if_missing)
         self.assertEqual(
             [fixture.id for fixture in contract.fixtures],
             ["chat-native-actors"],
@@ -258,6 +273,19 @@ class EnvironmentContractTests(unittest.TestCase):
         )
         self.assertTrue(
             all(service.kind == "station" for service in contract.services.values())
+        )
+
+    def test_native_tauri_services_use_canonical_profiles(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_embedded_webdriver,
+        )
+
+        self.assertEqual(
+            native_tauri_embedded_webdriver._SERVICE_PROFILES,
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
         )
 
     def test_load_native_tauri_current_profile_contract(self):
@@ -691,6 +719,104 @@ class EnvironmentContractTests(unittest.TestCase):
                 marker["devicePolicy"],
                 "retained-engine-acceptance",
             )
+
+    def test_current_profile_authorized_reset_can_change_storage_policy(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            storage = root / "storage"
+            database = (
+                seed
+                / "peers-touch"
+                / "four-app"
+                / "data"
+                / "db"
+                / "users"
+                / "alice"
+                / "chat.main.db"
+            )
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"actor-identity-continuity")
+            actor = ActorIdentity(
+                role="alice",
+                account_ref="station-account:alice@p.t",
+                ptid="ptid:alice",
+                device_policy="persistent-acceptance",
+            )
+            worktree = native_tauri_current_profile.ClientWorktreeIdentity(
+                root=root / "peers-chat-high-chat",
+                logical_name="peers-chat-high-chat",
+                common_dir=root / "common",
+                head="a" * 40,
+                tree="b" * 40,
+                clean=True,
+            )
+
+            provisioner = (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+            )
+            provisioner._persistent_storage(
+                role="alice",
+                actor=actor,
+                profile_name="four",
+                worktree=worktree,
+                seed_root=seed,
+                storage_root=storage,
+                run_id="persistent",
+            )
+            self.assertFalse(any(storage.rglob("chat.main.db*")))
+
+            provisioner._persistent_storage(
+                role="alice",
+                actor=actor,
+                profile_name="four",
+                worktree=worktree,
+                seed_root=seed,
+                storage_root=storage,
+                run_id="retained",
+                reset_authorized=True,
+                preserve_retained_engine_state=True,
+            )
+            self.assertEqual(
+                (storage / database.relative_to(seed)).read_bytes(),
+                b"actor-identity-continuity",
+            )
+            marker_path = (
+                storage
+                / native_tauri_current_profile.PERSISTENT_STORAGE_MARKER
+            )
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                marker["devicePolicy"],
+                "retained-engine-acceptance",
+            )
+
+            marker["actorPtid"] = "ptid:mallory"
+            marker_path.write_text(
+                json.dumps(marker, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                BlockedError,
+                "persistent storage identity does not match",
+            ):
+                provisioner._persistent_storage(
+                    role="alice",
+                    actor=actor,
+                    profile_name="four",
+                    worktree=worktree,
+                    seed_root=seed,
+                    storage_root=storage,
+                    run_id="mismatched",
+                    reset_authorized=True,
+                )
 
     def test_current_profile_rejects_unknown_retained_engine_role(self) -> None:
         from tooling.acceptance.provisioners import (

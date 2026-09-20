@@ -2,7 +2,7 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: humans AND AI agents acting on this codebase.
-> Updated: 2026-06-19
+> Updated: 2026-09-18
 
 ---
 
@@ -161,6 +161,7 @@ Pick one based on intent:
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
+- [`invariants/workspace-plan-binding-is-immutable.md`](invariants/workspace-plan-binding-is-immutable.md) — each workspace resolves one create-once Plan binding and ignores synchronized foreign Plans.
 
 ### Pitfalls
 
@@ -170,6 +171,8 @@ Pick one based on intent:
 - [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 - [`pitfalls/acceptance-core-transport-import-cycle.md`](pitfalls/acceptance-core-transport-import-cycle.md) — Core attestation must receive remote source identity from a Provisioner adapter instead of importing concrete SSH transport.
 - [`pitfalls/acceptance-mutable-artifact-rewrite.md`](pitfalls/acceptance-mutable-artifact-rewrite.md) — mutable runtime logs must be written once, after the producing client stops, when the Evidence Store path is immutable.
+- [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
+- [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 
 ### Playbooks

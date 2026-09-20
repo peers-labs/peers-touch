@@ -18,6 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from _acceptance_artifacts import explicit_output_path  # noqa: E402
+from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    PLAN_DRIFT,
+    ExecutionPlanError,
+    changed_paths_for_plan,
+    discover_active_plan,
+    load_formal_plan,
+)
 from tooling.acceptance.finalizers import load_strict_json_object  # noqa: E402
 
 
@@ -252,12 +259,88 @@ def main() -> int:
     parser.add_argument("--range", dest="diff_range", default="HEAD")
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--changed-file", action="append", default=[])
+    parser.add_argument("--active-plan", action="store_true")
+    parser.add_argument("--execution-plan")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--completion", action="store_true")
+    mode.add_argument("--full", action="store_true")
     args = parser.parse_args()
 
     root = Path(args.root)
-    paths = args.changed_file or changed_paths(args.diff_range)
-    result = plan(root, paths)
-    result["range"] = args.diff_range
+    formal_plan = None
+    execution_mode = (
+        "completion" if args.completion else "full" if args.full else "closure"
+    )
+    try:
+        if args.execution_plan:
+            formal_plan = load_formal_plan(Path(args.execution_plan))
+        elif args.active_plan:
+            formal_plan = discover_active_plan(REPO_ROOT)
+        paths = args.changed_file or (
+            changed_paths_for_plan(REPO_ROOT, formal_plan)
+            if formal_plan
+            else changed_paths(args.diff_range)
+        )
+        result = plan(root, paths)
+        if formal_plan:
+            candidate_ids = [gate["id"] for gate in result["selected_gates"]]
+            undeclared = sorted(
+                set(candidate_ids) - formal_plan.all_declared_gate_ids()
+            )
+            if undeclared:
+                raise ExecutionPlanError(
+                    PLAN_DRIFT,
+                    "registry impact contains Gates absent from the formal plan: "
+                    + ", ".join(undeclared),
+                )
+            definitions = load_json_yaml(root / "gates.yaml").get("gates", {})
+            bindings = finalizer_bindings(root, definitions)
+            selected_ids = formal_plan.gate_ids(execution_mode)
+            missing = [
+                gate_id for gate_id in selected_ids if gate_id not in definitions
+            ]
+            if missing:
+                raise ExecutionPlanError(
+                    PLAN_DRIFT,
+                    "formal plan references missing Gates: " + ", ".join(missing),
+                )
+            result["candidate_gates"] = candidate_ids
+            result["selected_gates"] = [
+                {
+                    **planned_gate(
+                        gate_id,
+                        definitions[gate_id],
+                        bindings.get(gate_id),
+                    ),
+                    "required_by": [
+                        f"formal-plan:{formal_plan.current_closure}"
+                        if execution_mode == "closure"
+                        else f"formal-plan:{execution_mode}"
+                    ],
+                }
+                for gate_id in selected_ids
+            ]
+            try:
+                formal_plan_path = formal_plan.path.relative_to(REPO_ROOT).as_posix()
+            except ValueError:
+                formal_plan_path = str(formal_plan.path)
+            result["execution"] = {
+                "formalPlan": formal_plan_path,
+                "planFormat": formal_plan.plan_format,
+                "currentTaskId": formal_plan.current_task_id,
+                "currentTaskPath": formal_plan.current_task_path,
+                "closure": formal_plan.current_closure,
+                "mode": execution_mode,
+                "workspaceId": formal_plan.workspace_id,
+            }
+    except ExecutionPlanError as error:
+        print(f"{error.code}: {error}", file=sys.stderr)
+        return 2
+    result["range"] = (
+        f"{formal_plan.initial_head}..WORKTREE"
+        if formal_plan
+        else args.diff_range
+    )
 
     artifact_ref: dict[str, str] | None = None
     run = None
@@ -330,7 +413,11 @@ def main() -> int:
 
     print("Acceptance Plan")
     print("===============")
-    print(f"range: {args.diff_range}")
+    print(f"range: {result['range']}")
+    if formal_plan:
+        print(f"formal_plan: {result['execution']['formalPlan']}")
+        print(f"closure: {formal_plan.current_closure or 'complete'}")
+        print(f"mode: {execution_mode}")
     print(f"changed_paths: {len(result['changed_paths'])}")
     print(f"impacted_features: {', '.join(result['impacted_features']) or 'none'}")
     if result["selected_gates"]:

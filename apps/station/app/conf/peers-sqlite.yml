@@ -3,10 +3,15 @@ peers:
   touch:
     routers:
       management: true
+      activitypub: true
       wellknown: true
       user: true
+      peer: true
+      message: true
+      mastodon: true
+      social: true
   run-mode: 2
-  includes: store.sqlite.yml, sub_agent.yml, sub_oss.yml, sub_turn.yml, sub_aichat.yml, log.yml, actor.yml, server.host.local.yml, oauth.yml, sub_dashboard.yml
+  includes: store.sqlite.yml, sub_bootstrap.yml, sub_agent.yml, sub_oss.yml, sub_turn.yml, sub_aichat.yml, log.yml, actor.yml, server.host.local.yml, oauth.yml, sub_dashboard.yml
   config:
     hierarchy-merge: true
   node:

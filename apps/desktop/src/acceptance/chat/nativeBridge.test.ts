@@ -40,6 +40,7 @@ function logoutResponse(): AuthSessionResponse {
 
 function lifecycleDependencies() {
   return {
+    createRestorableCommand: vi.fn(),
     prepareSubmittedCommand: vi.fn(),
     resumeMessagingLifecycle: vi.fn(),
   };
@@ -173,6 +174,7 @@ describe('nativeAcceptanceBridge', () => {
       completeLogoutLifecycle: vi.fn(),
       readInteractionSnapshot: vi.fn(),
       prepareSubmittedCommand,
+      createRestorableCommand: vi.fn(),
       resumeMessagingLifecycle,
       readMessages: vi.fn(),
       readConversations: vi.fn(),
@@ -199,6 +201,47 @@ describe('nativeAcceptanceBridge', () => {
       bridge.resumeMessagingLifecycle({ actorPtid: ACTOR_PTID }),
     ).resolves.toEqual({ actorPtid: ACTOR_PTID, activated: true });
     expect(resumeMessagingLifecycle).toHaveBeenCalledWith(ACTOR_PTID);
+  });
+
+  it('creates a restorable command for a canonical actor and conversation', async () => {
+    const evidence = snapshot();
+    const createRestorableCommand = vi.fn().mockResolvedValue({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      commandId: 'command-1',
+      snapshot: evidence,
+    });
+    const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
+      activeActorPtid: () => ACTOR_PTID,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      createRestorableCommand,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
+    });
+
+    await expect(
+      bridge.createRestorableCommand({
+        actorPtid: ACTOR_PTID,
+        conversationId: ' conversation-1 ',
+        plaintext: ' recover me ',
+      }),
+    ).resolves.toMatchObject({
+      messageId: 'message-1',
+      commandId: 'command-1',
+    });
+    expect(createRestorableCommand).toHaveBeenCalledWith({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      plaintext: 'recover me',
+    });
   });
 
   it('routes bounded readbacks through the matching Tauri-window actor', async () => {

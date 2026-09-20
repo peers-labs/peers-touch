@@ -80,7 +80,8 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 影响面、原子切换与删除矩阵 |
 | [../api-ownership/README.md](../api-ownership/README.md) | Accepted canonical API owner, route/store hard cut, Conversation DDD, and cross-domain Federation boundary |
-| [execution-plans/20260808-messaging-platform.md](./execution-plans/20260808-messaging-platform.md) | 依赖化执行计划 |
+| [../chat-lifecycle/README.md](../chat-lifecycle/README.md) | 当前 Chat 全生命周期产品合同与执行入口 |
+| [execution-plans/20260808-messaging-platform.md](./execution-plans/20260808-messaging-platform.md) | 已终止的历史实现与证据计划 |
 | [execution-plans/20260808-review-prompt.md](./execution-plans/20260808-review-prompt.md) | 独立产品/架构/计划评审提示 |
 
 ## 5. 当前门状态
@@ -91,13 +92,9 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
   the Conversation owner, and Conversation DDD plus resource-owned APIs are
   accepted. `MP-D31` defines canonical submitted-command reconciliation and
   `MP-D32` defines Authority-mediated cross-Station ephemeral typing.
-- Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
-  superseded for Station authority/API ownership while its Device Messaging Engine
-  and MP-W14 follower-projection work remain historical input, not a second
-  active plan. CA-W0 through CA-W2 are complete; CA-W3 and CA-W4 have source
-  checkpoints only. CA-W5 production cutover and CA-W6 runtime/PostgreSQL proof
-  remain `UNPROVEN`.
-- Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
-  receiver-proof claims. `MP-W13` and `MP-W14` below retain historical source and
-  Native evidence; CA-HC exclusively owns the Station authority cutover and its
-  completion proof.
+- Plan：当前 worktree 只使用
+  [`../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)。
+  `20260808-messaging-platform.md` 已终止，只保留历史实现和证据。
+- Execution：当前 Chat 产品完成度从 Chat Lifecycle 的 current-source Gate
+  重新计算，不继承 MP-W* 或 NDR-W* 的完成百分比。CA-HC 由
+  `peers-access-gate` worktree 独立负责，不进入本 worktree 的 active work。

@@ -38,6 +38,7 @@ tooling/docker/docker-compose.override.yml
 build/
 dist/
 .artifacts/
+*.tsbuildinfo
 *.exe
 *.dll
 *.so

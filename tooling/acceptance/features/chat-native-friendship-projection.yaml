@@ -4,6 +4,10 @@
   "product_area": "chat",
   "owners": [
     "model/domain/social/relationship.proto",
+    "apps/station/frame/core/plugin/server/hertz/hertz.go",
+    "apps/station/frame/core/plugin/server/hertz/hertz_test.go",
+    "apps/station/frame/core/server/typed_handler.go",
+    "apps/station/frame/core/server/typed_handler_test.go",
     "apps/station/frame/touch/federation/cache/cache.go",
     "apps/station/app/subserver/social/application/relationship_service.go",
     "apps/station/app/subserver/social/infrastructure/follow_repo.go",

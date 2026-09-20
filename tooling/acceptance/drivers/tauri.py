@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import signal
 import shutil
@@ -259,6 +260,7 @@ class LocalTauriLauncher(AppLauncher):
         profile: str | None = None,
         storage_root: str | None = None,
         environment: Mapping[str, str] | None = None,
+        log_path: str | Path | None = None,
     ) -> None:
         self.app_binary = app_binary or find_app_binary()
         self.port = port
@@ -271,7 +273,11 @@ class LocalTauriLauncher(AppLauncher):
         self._owns_storage_root = storage_root is None
         self._process: subprocess.Popen[bytes] | None = None
         self._log_file: Any | None = None
-        self.log_path: Path | None = None
+        self.log_path = (
+            Path(log_path).expanduser()
+            if log_path is not None
+            else None
+        )
 
     @property
     def metadata(self) -> AppLaunchMetadata:
@@ -294,12 +300,16 @@ class LocalTauriLauncher(AppLauncher):
         env["PT_PROFILE"] = self.profile
         env["PEERS_STORAGE_ROOT"] = self.storage_root
         env.update(self.environment)
-        self._log_file = tempfile.NamedTemporaryFile(
-            prefix=f"peers-touch-webdriver-{self.port}-",
-            suffix=".log",
-            delete=False,
-        )
-        self.log_path = Path(self._log_file.name)
+        if self.log_path is None:
+            self._log_file = tempfile.NamedTemporaryFile(
+                prefix=f"peers-touch-webdriver-{self.port}-",
+                suffix=".log",
+                delete=False,
+            )
+            self.log_path = Path(self._log_file.name)
+        else:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file = self.log_path.open("wb")
         self._process = subprocess.Popen(
             [self.app_binary],
             env=env,
@@ -383,6 +393,8 @@ class MakeDesktopLauncher(AppLauncher):
         self._runtime_pid: int | None = None
         self._log_file: Any | None = None
         self.log_path: Path | None = None
+        self._launch_environment: dict[str, str] | None = None
+        self._runtime_profile_root: Path | None = None
 
     @property
     def metadata(self) -> AppLaunchMetadata:
@@ -406,10 +418,14 @@ class MakeDesktopLauncher(AppLauncher):
         Path(self.storage_root).mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         env.update(self.environment)
+        runtime_profile = self._prepare_runtime_profile()
         env.update(
             {
                 "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_DESKTOP_E2E": "true",
+                "VITE_ACCEPTANCE_HARNESS": "1",
                 "PT_ACCEPTANCE_WEBDRIVER_PORT": str(self.port),
+                "TAURI_WEBDRIVER_PORT": str(self.port),
                 "PT_GATEWAY_PORT": str(self.gateway_port),
                 "PT_RENDERER_PORT": str(self.renderer_port),
                 "PT_PROFILE": self.profile,
@@ -417,8 +433,14 @@ class MakeDesktopLauncher(AppLauncher):
                 "DESKTOP_RUST_STARTUP_TIMEOUT_SECONDS": str(
                     max(1, int(self.startup_timeout))
                 ),
+                "PT_DEV_PROFILE_FILE": str(runtime_profile),
+                "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
+                "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(
+                    runtime_profile.parent
+                ),
             }
         )
+        self._launch_environment = env
         self._log_file = tempfile.NamedTemporaryFile(
             prefix=f"peers-touch-make-desktop-{self.port}-",
             suffix=".log",
@@ -437,7 +459,7 @@ class MakeDesktopLauncher(AppLauncher):
         try:
             while time.monotonic() < deadline:
                 return_code = self._process.poll()
-                if return_code is not None:
+                if return_code not in (None, 0):
                     raise DriverError(
                         "make desktop exited before native readiness "
                         f"(code {return_code}): {self._log_tail()}"
@@ -450,7 +472,10 @@ class MakeDesktopLauncher(AppLauncher):
                 except Exception:
                     time.sleep(0.25)
                     continue
-                self._runtime_pid = self._owned_listener_pid(self.port)
+                self._runtime_pid = self._owned_listener_pid(
+                    self.port,
+                    self._managed_process_pid(),
+                )
                 return self.metadata
             raise DriverError(
                 "make desktop did not expose embedded WebDriver within "
@@ -464,6 +489,24 @@ class MakeDesktopLauncher(AppLauncher):
         del preserve_state
         errors: list[str] = []
         process = self._process
+        if self._launch_environment is not None:
+            try:
+                stopped = subprocess.run(
+                    ["make", "desktop-stop"],
+                    cwd=self.worktree,
+                    env=self._launch_environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                if stopped.returncode != 0:
+                    errors.append(
+                        "managed-runtime: "
+                        + (stopped.stderr.strip() or stopped.stdout.strip())
+                    )
+            except Exception as error:
+                errors.append(f"managed-runtime: {error}")
         if process is not None:
             try:
                 if process.poll() is None:
@@ -480,6 +523,7 @@ class MakeDesktopLauncher(AppLauncher):
             finally:
                 self._process = None
                 self._runtime_pid = None
+        self._launch_environment = None
         if self._log_file is not None:
             try:
                 self._log_file.close()
@@ -487,16 +531,23 @@ class MakeDesktopLauncher(AppLauncher):
                 errors.append(f"log: {error}")
             finally:
                 self._log_file = None
+        if self._runtime_profile_root is not None:
+            try:
+                shutil.rmtree(self._runtime_profile_root)
+            except FileNotFoundError:
+                pass
+            except Exception as error:
+                errors.append(f"runtime-profile: {error}")
+            finally:
+                self._runtime_profile_root = None
         if errors:
             raise DriverError(
                 "make Desktop launcher cleanup failed: " + "; ".join(errors)
             )
 
     def is_alive(self) -> bool:
-        if self._process is None or self._process.poll() is not None:
-            return False
         if self._runtime_pid is None:
-            return True
+            return self._process is not None and self._process.poll() is None
         try:
             os.kill(self._runtime_pid, 0)
         except (ProcessLookupError, PermissionError):
@@ -534,7 +585,7 @@ class MakeDesktopLauncher(AppLauncher):
             )
         return candidates.pop()
 
-    def _owned_listener_pid(self, port: int) -> int:
+    def _owned_listener_pid(self, port: int, ancestor: int) -> int:
         completed = subprocess.run(
             ["lsof", "-tiTCP:" + str(port), "-sTCP:LISTEN"],
             capture_output=True,
@@ -546,19 +597,92 @@ class MakeDesktopLauncher(AppLauncher):
             for value in completed.stdout.split()
             if value.isdigit()
         }
-        if self._process is None:
-            raise DriverError("make Desktop process is unavailable")
         owned = [
             pid
             for pid in listeners
-            if self._is_descendant(pid, self._process.pid)
+            if self._is_descendant(pid, ancestor)
         ]
         if len(owned) != 1:
             raise DriverError(
                 f"embedded WebDriver port {port} is not owned by the "
-                f"launched make desktop process; listeners={sorted(listeners)}"
+                f"managed Desktop process; listeners={sorted(listeners)}"
             )
         return owned[0]
+
+    def _managed_process_pid(self) -> int:
+        state_path = (
+            self.worktree
+            / ".local"
+            / "dev"
+            / "state"
+            / self.profile
+            / "desktop-app-tauri.json"
+        )
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise DriverError(
+                f"managed Desktop runtime state is unavailable: {error}"
+            ) from error
+        pid = state.get("pid")
+        if (
+            state.get("service") != "desktop-app-tauri"
+            or state.get("profile") != self.profile
+            or state.get("worktreeId") != self.worktree.name
+            or not isinstance(pid, int)
+            or pid <= 0
+        ):
+            raise DriverError(
+                f"managed Desktop runtime state is invalid: {state_path}"
+            )
+        return pid
+
+    def _prepare_runtime_profile(self) -> Path:
+        active_profile = (
+            self.worktree
+            / ".local"
+            / "dev"
+            / "active"
+            / f"{self.worktree.name}.env"
+        )
+        try:
+            source = active_profile.resolve(strict=True)
+            lines = source.read_text(encoding="utf-8").splitlines()
+        except OSError as error:
+            raise DriverError(
+                f"active Desktop profile is unavailable: {error}"
+            ) from error
+
+        overrides = {
+            "PT_DEV_PROFILE": self.profile,
+            "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
+            "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
+        }
+        found: set[str] = set()
+        rendered: list[str] = []
+        for line in lines:
+            key = line.split("=", 1)[0] if "=" in line else ""
+            if key in overrides:
+                rendered.append(f"{key}={overrides[key]}")
+                found.add(key)
+            else:
+                rendered.append(line)
+        for key in overrides.keys() - found:
+            rendered.append(f"{key}={overrides[key]}")
+
+        root = Path(
+            tempfile.mkdtemp(
+                prefix=f"peers-touch-runtime-profile-{self.port}-"
+            )
+        )
+        if os.name != "nt":
+            root.chmod(0o700)
+        profile = root / f"{self.profile}.env"
+        profile.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+        if os.name != "nt":
+            profile.chmod(0o600)
+        self._runtime_profile_root = root
+        return profile
 
     @staticmethod
     def _is_descendant(pid: int, ancestor: int) -> bool:

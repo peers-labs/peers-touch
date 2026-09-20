@@ -6,10 +6,36 @@ import (
 	"testing"
 	"time"
 
+	agentmodel "github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
+
+type legacyToolReceiptAttempt struct {
+	ID     string `gorm:"primaryKey;type:varchar(64)"`
+	Status string `gorm:"not null;type:varchar(32)"`
+}
+
+func (legacyToolReceiptAttempt) TableName() string {
+	return "agent_tool_receipt_attempts"
+}
+
+func TestAllModelsIncludesAgentPackageImportReceipt(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:agent-all-models?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(AllModels()...); err != nil {
+		t.Fatalf("migrate production Agent models: %v", err)
+	}
+	if !db.Migrator().HasTable(&AgentPackageImportReceipt{}) {
+		t.Fatal("production Agent models omit agent_package_import_receipts")
+	}
+}
 
 func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	parsed, err := schema.Parse(
@@ -23,6 +49,92 @@ func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
 	field := parsed.LookUpField("SchemaVersion")
 	if field == nil || field.TagSettings["TYPE"] != "varchar(64)" {
 		t.Fatalf("ToolCall schema_version type = %v, want varchar(64)", field)
+	}
+}
+
+func TestToolReceiptAttemptStatusFitsReceiptStatus(t *testing.T) {
+	parsed, err := schema.Parse(
+		&ToolReceiptAttempt{},
+		&sync.Map{},
+		schema.NamingStrategy{},
+	)
+	if err != nil {
+		t.Fatalf("parse ToolReceiptAttempt schema: %v", err)
+	}
+	field := parsed.LookUpField("Status")
+	if field == nil || field.TagSettings["TYPE"] != "varchar(64)" {
+		t.Fatalf("ToolReceiptAttempt status type = %v, want varchar(64)", field)
+	}
+
+	for value, status := range agentmodel.ClientCapabilityReceiptStatus_name {
+		if len(status) > 64 {
+			t.Fatalf("receipt status %d length = %d, exceeds varchar(64)", value, len(status))
+		}
+	}
+}
+
+func TestMigrateFencedClientExecutionExpandsReceiptAttemptStatus(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:fenced-client-receipt-status?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&legacyToolReceiptAttempt{}); err != nil {
+		t.Fatalf("create legacy receipt attempt table: %v", err)
+	}
+	if err := db.Create(&legacyToolReceiptAttempt{
+		ID:     "receipt-legacy",
+		Status: "FAILED",
+	}).Error; err != nil {
+		t.Fatalf("seed legacy receipt attempt: %v", err)
+	}
+
+	if err := MigrateFencedClientExecution(db); err != nil {
+		t.Fatalf("migrate receipt attempt status: %v", err)
+	}
+	if err := MigrateFencedClientExecution(db); err != nil {
+		t.Fatalf("repeat receipt attempt status migration: %v", err)
+	}
+
+	columnTypes, err := db.Migrator().ColumnTypes(&ToolReceiptAttempt{})
+	if err != nil {
+		t.Fatalf("inspect receipt attempt columns: %v", err)
+	}
+	var statusLength int64
+	for _, columnType := range columnTypes {
+		if columnType.Name() != "status" {
+			continue
+		}
+		var bounded bool
+		statusLength, bounded = columnType.Length()
+		if !bounded {
+			t.Fatal("receipt attempt status column is not length-bounded")
+		}
+		break
+	}
+	if statusLength != 64 {
+		t.Fatalf("receipt attempt status length = %d, want 64", statusLength)
+	}
+
+	var legacyStatus string
+	if err := db.Table("agent_tool_receipt_attempts").
+		Select("status").
+		Where("id = ?", "receipt-legacy").
+		Scan(&legacyStatus).Error; err != nil {
+		t.Fatalf("read migrated receipt attempt: %v", err)
+	}
+	if legacyStatus != "FAILED" {
+		t.Fatalf("migrated receipt attempt status = %q, want FAILED", legacyStatus)
+	}
+
+	preparedStatus := agentmodel.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED.String()
+	if err := db.Exec(`
+		INSERT INTO agent_tool_receipt_attempts (id, status)
+		VALUES ('receipt-prepared', ?)
+	`, preparedStatus).Error; err != nil {
+		t.Fatalf("insert full prepared receipt status: %v", err)
 	}
 }
 
@@ -108,6 +220,161 @@ func TestMigrateActorIdentityColumnsRenamesLegacyColumnsIdempotently(t *testing.
 		if actorPTID != "ptid:actor-1" {
 			t.Fatalf("%s.%s = %q, want %q", migration.table, migration.targetColumn, actorPTID, "ptid:actor-1")
 		}
+	}
+}
+
+func TestMigrateActorIdentityColumnsResolvesNumericValuesToCanonicalPTIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-values?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE touch_actor (
+			id INTEGER PRIMARY KEY,
+			ptid TEXT NOT NULL UNIQUE
+		)
+	`).Error; err != nil {
+		t.Fatalf("create actor table: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO touch_actor (id, ptid)
+		VALUES (42, 'ptid:v1:actor:peers:p:fixture')
+	`).Error; err != nil {
+		t.Fatalf("seed actor table: %v", err)
+	}
+
+	for _, migration := range actorIdentityColumnMigrations {
+		createTable := fmt.Sprintf(
+			`CREATE TABLE %s (id TEXT PRIMARY KEY, %s TEXT)`,
+			migration.table,
+			migration.targetColumn,
+		)
+		if err := db.Exec(createTable).Error; err != nil {
+			t.Fatalf("create target table %s: %v", migration.table, err)
+		}
+		insertRows := fmt.Sprintf(
+			`INSERT INTO %s (id, %s) VALUES (?, ?), (?, ?), (?, ?)`,
+			migration.table,
+			migration.targetColumn,
+		)
+		if err := db.Exec(
+			insertRows,
+			"numeric", "42",
+			"canonical", "ptid:v1:actor:peers:p:existing",
+			"global", "",
+		).Error; err != nil {
+			t.Fatalf("seed target table %s: %v", migration.table, err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err != nil {
+		t.Fatalf("migrate actor identity values: %v", err)
+	}
+	if err := MigrateActorIdentityColumns(db); err != nil {
+		t.Fatalf("repeat actor identity value migration: %v", err)
+	}
+
+	expectedValues := map[string]string{
+		"numeric":   "ptid:v1:actor:peers:p:fixture",
+		"canonical": "ptid:v1:actor:peers:p:existing",
+		"global":    "",
+	}
+	for _, migration := range actorIdentityColumnMigrations {
+		for rowID, expected := range expectedValues {
+			var actorPTID string
+			if err := db.Table(migration.table).
+				Select(migration.targetColumn).
+				Where("id = ?", rowID).
+				Scan(&actorPTID).Error; err != nil {
+				t.Fatalf("read %s row %s: %v", migration.table, rowID, err)
+			}
+			if actorPTID != expected {
+				t.Fatalf(
+					"%s.%s row %s = %q, want %q",
+					migration.table,
+					migration.targetColumn,
+					rowID,
+					actorPTID,
+					expected,
+				)
+			}
+		}
+	}
+}
+
+func TestMigrateActorIdentityColumnsRollsBackUnresolvedNumericValues(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-unresolved?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	statements := []string{
+		`CREATE TABLE touch_actor (id INTEGER PRIMARY KEY, ptid TEXT NOT NULL UNIQUE)`,
+		`INSERT INTO touch_actor (id, ptid) VALUES (42, 'ptid:v1:actor:peers:p:fixture')`,
+		`CREATE TABLE agents (id TEXT PRIMARY KEY, owner_actor_ptid TEXT NOT NULL)`,
+		`INSERT INTO agents (id, owner_actor_ptid) VALUES ('agent-1', '42')`,
+		`CREATE TABLE agent_conversations (id TEXT PRIMARY KEY, actor_ptid TEXT NOT NULL)`,
+		`INSERT INTO agent_conversations (id, actor_ptid) VALUES ('conversation-1', '999')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare unresolved actor migration: %v", err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err == nil {
+		t.Fatal("expected unresolved numeric actor identity to fail closed")
+	}
+
+	var actorPTID string
+	if err := db.Table("agents").
+		Select("owner_actor_ptid").
+		Where("id = ?", "agent-1").
+		Scan(&actorPTID).Error; err != nil {
+		t.Fatalf("read rolled-back agent identity: %v", err)
+	}
+	if actorPTID != "42" {
+		t.Fatalf("agent identity after rollback = %q, want numeric source value", actorPTID)
+	}
+}
+
+func TestMigrateActorIdentityColumnsRollsBackCanonicalCollision(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-collision?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	statements := []string{
+		`CREATE TABLE touch_actor (id INTEGER PRIMARY KEY, ptid TEXT NOT NULL UNIQUE)`,
+		`INSERT INTO touch_actor (id, ptid) VALUES (42, 'ptid:v1:actor:peers:p:fixture')`,
+		`CREATE TABLE agent_providers (
+			id TEXT PRIMARY KEY,
+			actor_ptid TEXT NOT NULL,
+			name TEXT NOT NULL,
+			UNIQUE (actor_ptid, name)
+		)`,
+		`INSERT INTO agent_providers (id, actor_ptid, name)
+		 VALUES
+			('provider-numeric', '42', 'ark'),
+			('provider-canonical', 'ptid:v1:actor:peers:p:fixture', 'ark')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare colliding actor migration: %v", err)
+		}
+	}
+
+	if err := MigrateActorIdentityColumns(db); err == nil {
+		t.Fatal("expected canonical identity collision to fail closed")
+	}
+
+	var actorPTID string
+	if err := db.Table("agent_providers").
+		Select("actor_ptid").
+		Where("id = ?", "provider-numeric").
+		Scan(&actorPTID).Error; err != nil {
+		t.Fatalf("read rolled-back provider identity: %v", err)
+	}
+	if actorPTID != "42" {
+		t.Fatalf("provider identity after rollback = %q, want numeric source value", actorPTID)
 	}
 }
 

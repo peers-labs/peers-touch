@@ -782,6 +782,352 @@ func TestConversationActorRejoinAllowsHistoricalDeviceRoute(t *testing.T) {
 	}
 }
 
+func TestConversationMemberAuthorityRoleAndMute(t *testing.T) {
+	fixture, admin, member := mustCreateThreeMemberGroup(t)
+
+	adminRole := valueobject.MemberRoleAdmin
+	promote := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		member.Actor,
+		"promote-member",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(time.Minute),
+	)
+	promote.Role = &adminRole
+	if _, err := fixture.conversation.ApplyMemberAuthority(promote); err != nil {
+		t.Fatalf("ApplyMemberAuthority(promote) error = %v", err)
+	}
+	if got := mustConversationMember(t, fixture.conversation, member.Actor).Role; got != adminRole {
+		t.Fatalf("promoted role = %q, want %q", got, adminRole)
+	}
+
+	muted := true
+	adminMutePeer := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		admin,
+		member.Actor,
+		"admin-mute-admin",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(2*time.Minute),
+	)
+	adminMutePeer.Muted = &muted
+	beforeDenied := fixture.conversation.Snapshot()
+	_, err := fixture.conversation.ApplyMemberAuthority(adminMutePeer)
+	assertErrorCode(t, err, conversationdomain.ErrorCodeUnauthorized)
+	if !reflect.DeepEqual(beforeDenied, fixture.conversation.Snapshot()) {
+		t.Fatal("denied admin mute mutated the aggregate")
+	}
+
+	memberRole := valueobject.MemberRoleMember
+	demote := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		member.Actor,
+		"demote-member",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(3*time.Minute),
+	)
+	demote.Role = &memberRole
+	if _, err := fixture.conversation.ApplyMemberAuthority(demote); err != nil {
+		t.Fatalf("ApplyMemberAuthority(demote) error = %v", err)
+	}
+
+	mutedUntil := testTime.Add(30 * time.Minute)
+	adminMuteMember := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		admin,
+		member.Actor,
+		"admin-mute-member",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(4*time.Minute),
+	)
+	adminMuteMember.Muted = &muted
+	adminMuteMember.MutedUntil = &mutedUntil
+	transition, err := fixture.conversation.ApplyMemberAuthority(adminMuteMember)
+	if err != nil {
+		t.Fatalf("ApplyMemberAuthority(mute) error = %v", err)
+	}
+	committed := mustConversationMember(t, fixture.conversation, member.Actor)
+	if !committed.Muted || committed.MutedUntil == nil ||
+		!committed.MutedUntil.Equal(mutedUntil) {
+		t.Fatalf("committed mute state = %+v", committed)
+	}
+	if transition.Event.Fact.MemberAuthority == nil ||
+		transition.Event.Fact.MemberAuthority.Muted == nil ||
+		!*transition.Event.Fact.MemberAuthority.Muted {
+		t.Fatalf("member authority fact = %+v", transition.Event.Fact.MemberAuthority)
+	}
+
+	blockedSend := mustCommand(
+		t,
+		fixture,
+		member,
+		"muted-send",
+		domainevent.KindMessageCommitted,
+		testTime.Add(5*time.Minute),
+	)
+	_, err = fixture.conversation.ApplyCommand(blockedSend)
+	assertErrorCode(t, err, conversationdomain.ErrorCodeMemberMuted)
+
+	allowedAfterDeadline := mustCommand(
+		t,
+		fixture,
+		member,
+		"send-after-mute-deadline",
+		domainevent.KindMessageCommitted,
+		mutedUntil.Add(time.Second),
+	)
+	if _, err := fixture.conversation.ApplyCommand(allowedAfterDeadline); err != nil {
+		t.Fatalf("ApplyCommand(after mute deadline) error = %v", err)
+	}
+
+	ownerProtected := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		fixture.owner.Actor,
+		"mutate-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(31*time.Minute),
+	)
+	ownerProtected.Muted = &muted
+	_, err = fixture.conversation.ApplyMemberAuthority(ownerProtected)
+	assertErrorCode(t, err, conversationdomain.ErrorCodeOwnerProtected)
+
+	nonMember := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		"ptid:not-a-member",
+		"mute-non-member",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(32*time.Minute),
+	)
+	nonMember.Muted = &muted
+	_, err = fixture.conversation.ApplyMemberAuthority(nonMember)
+	assertErrorCode(t, err, conversationdomain.ErrorCodeTargetNotMember)
+}
+
+func TestConversationMemberAuthorityRejectsExpiredAndStaleCommands(t *testing.T) {
+	tests := []struct {
+		name   string
+		code   conversationdomain.ErrorCode
+		mutate func(*aggregate.MemberAuthorityCommand)
+	}{
+		{
+			name: "command deadline expired",
+			code: conversationdomain.ErrorCodeCommandExpired,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.Deadline = command.CommittedAt
+			},
+		},
+		{
+			name: "mute deadline expired",
+			code: conversationdomain.ErrorCodeCommandExpired,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				mutedUntil := command.CommittedAt
+				command.MutedUntil = &mutedUntil
+			},
+		},
+		{
+			name: "authority sequence stale",
+			code: conversationdomain.ErrorCodeStaleAuthorityHead,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.ObservedAuthorityHead.Sequence--
+			},
+		},
+		{
+			name: "authority hash stale",
+			code: conversationdomain.ErrorCodeStaleAuthorityHead,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.ObservedAuthorityHead.EventHash = valueobject.HashBytes([]byte("stale"))
+			},
+		},
+		{
+			name: "authority epoch stale",
+			code: conversationdomain.ErrorCodeStaleAuthorityHead,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.ObservedAuthorityEpoch++
+			},
+		},
+		{
+			name: "membership epoch stale",
+			code: conversationdomain.ErrorCodeStaleMembershipEpoch,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.ObservedMembershipEpoch--
+			},
+		},
+		{
+			name: "MLS epoch stale",
+			code: conversationdomain.ErrorCodeStaleMLSEpoch,
+			mutate: func(command *aggregate.MemberAuthorityCommand) {
+				command.ObservedMLSEpoch--
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := mustCreateGroup(t)
+			muted := true
+			command := mustMemberAuthorityCommand(
+				t,
+				fixture,
+				fixture.owner,
+				fixture.member.Actor,
+				"rejected-member-command",
+				domainevent.MemberAuthorityActionUpdateMember,
+				testTime.Add(time.Minute),
+			)
+			command.Muted = &muted
+			test.mutate(&command)
+			before := fixture.conversation.Snapshot()
+
+			_, err := fixture.conversation.ApplyMemberAuthority(command)
+			assertErrorCode(t, err, test.code)
+			if !reflect.DeepEqual(before, fixture.conversation.Snapshot()) {
+				t.Fatal("rejected member authority command mutated the aggregate")
+			}
+		})
+	}
+}
+
+func TestConversationOwnerTransferIsAtomicAndFollowerReconcilesSameState(t *testing.T) {
+	fixture := mustCreateGroup(t)
+	muted := true
+	mute := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		fixture.member.Actor,
+		"mute-future-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		testTime.Add(time.Minute),
+	)
+	mute.Muted = &muted
+	if _, err := fixture.conversation.ApplyMemberAuthority(mute); err != nil {
+		t.Fatalf("ApplyMemberAuthority(mute) error = %v", err)
+	}
+	before := fixture.conversation.Snapshot()
+
+	transfer := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		fixture.member.Actor,
+		"transfer-owner",
+		domainevent.MemberAuthorityActionTransferOwnership,
+		testTime.Add(2*time.Minute),
+	)
+	transition, err := fixture.conversation.ApplyMemberAuthority(transfer)
+	if err != nil {
+		t.Fatalf("ApplyMemberAuthority(transfer) error = %v", err)
+	}
+	after := fixture.conversation.Snapshot()
+	if after.Owner != fixture.member.Actor {
+		t.Fatalf("owner = %q, want %q", after.Owner, fixture.member.Actor)
+	}
+	if after.Head.Sequence != before.Head.Sequence.Next() ||
+		after.Head.MembershipEpoch != before.Head.MembershipEpoch.Next() ||
+		after.Head.MLSEpoch != before.Head.MLSEpoch {
+		t.Fatalf("owner transfer head = %+v, before = %+v", after.Head, before.Head)
+	}
+	previousOwner := mustConversationMember(t, fixture.conversation, fixture.owner.Actor)
+	newOwner := mustConversationMember(t, fixture.conversation, fixture.member.Actor)
+	if previousOwner.Role != valueobject.MemberRoleAdmin ||
+		newOwner.Role != valueobject.MemberRoleOwner ||
+		newOwner.Muted ||
+		newOwner.MutedUntil != nil {
+		t.Fatalf("atomic owner roles = previous %+v, new %+v", previousOwner, newOwner)
+	}
+	ownerCount := 0
+	for _, member := range after.Members {
+		if member.Active() && member.Role == valueobject.MemberRoleOwner {
+			ownerCount++
+		}
+	}
+	if ownerCount != 1 {
+		t.Fatalf("active owner count = %d, want one", ownerCount)
+	}
+	mutation := transition.Event.Fact.MemberAuthority
+	if mutation == nil ||
+		mutation.PreviousOwner != fixture.owner.Actor ||
+		mutation.Owner != fixture.member.Actor ||
+		mutation.FromMembershipEpoch != before.Head.MembershipEpoch ||
+		mutation.ToMembershipEpoch != after.Head.MembershipEpoch ||
+		transition.Event.Fact.PostState == nil {
+		t.Fatalf("owner transfer fact = %+v", mutation)
+	}
+	reconciled, err := aggregate.ReconcileCommittedMemberAuthorityProjection(
+		before,
+		*mutation,
+		after,
+	)
+	if err != nil {
+		t.Fatalf("ReconcileCommittedMemberAuthorityProjection() error = %v", err)
+	}
+	if reconciled.Owner != after.Owner ||
+		!reflect.DeepEqual(reconciled.Members, after.Members) {
+		t.Fatalf("reconciled snapshot = %+v, want %+v", reconciled, after)
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*aggregate.Snapshot)
+	}{
+		{
+			name: "no owner",
+			mutate: func(snapshot *aggregate.Snapshot) {
+				for index := range snapshot.Members {
+					if snapshot.Members[index].Actor == snapshot.Owner {
+						snapshot.Members[index].Role = valueobject.MemberRoleAdmin
+					}
+				}
+			},
+		},
+		{
+			name: "double owner",
+			mutate: func(snapshot *aggregate.Snapshot) {
+				for index := range snapshot.Members {
+					if snapshot.Members[index].Actor == fixture.owner.Actor {
+						snapshot.Members[index].Role = valueobject.MemberRoleOwner
+					}
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			contradictory := after
+			contradictory.Members = append([]entity.Member(nil), after.Members...)
+			test.mutate(&contradictory)
+			if _, err := aggregate.ReconcileCommittedMemberAuthorityProjection(
+				before,
+				*mutation,
+				contradictory,
+			); err == nil {
+				t.Fatal("follower reconciliation accepted contradictory owner state")
+			}
+		})
+	}
+
+	unauthorized := mustMemberAuthorityCommand(
+		t,
+		fixture,
+		fixture.owner,
+		fixture.owner.Actor,
+		"former-owner-transfer",
+		domainevent.MemberAuthorityActionTransferOwnership,
+		testTime.Add(3*time.Minute),
+	)
+	_, err = fixture.conversation.ApplyMemberAuthority(unauthorized)
+	assertErrorCode(t, err, conversationdomain.ErrorCodeUnauthorized)
+}
+
 func TestConversationUpdateSettings(t *testing.T) {
 	fixture := mustCreateGroup(t)
 	name := "  Project Room  "
@@ -1242,6 +1588,107 @@ func mustCreateGroup(t *testing.T) conversationFixture {
 		station:      station,
 		genesis:      transition,
 	}
+}
+
+func mustCreateThreeMemberGroup(
+	t *testing.T,
+) (conversationFixture, valueobject.Endpoint, valueobject.Endpoint) {
+	t.Helper()
+
+	owner := mustEndpoint(t, "ptid:authority-owner", "owner-device")
+	admin := mustEndpoint(t, "ptid:authority-admin", "admin-device")
+	member := mustEndpoint(t, "ptid:authority-member", "member-device")
+	station := valueobject.StationID("station-a")
+	conversation, transition, err := aggregate.CreateGroup(aggregate.CreateInput{
+		ID:               valueobject.ConversationID("group-member-authority"),
+		FederationID:     testFederationID,
+		AuthorityStation: station,
+		AuthorityEpoch:   testAuthorityEpoch,
+		Owner:            owner.Actor,
+		Participants: []aggregate.Participant{
+			{Actor: owner.Actor, HomeStation: station},
+			{Actor: admin.Actor, HomeStation: station, Role: valueobject.MemberRoleAdmin},
+			{Actor: member.Actor, HomeStation: station, Role: valueobject.MemberRoleMember},
+		},
+		Devices: []entity.MemberDevice{
+			mustMemberDevice(t, owner, station),
+			mustMemberDevice(t, admin, station),
+			mustMemberDevice(t, member, station),
+		},
+		Settings: valueobject.ConversationSettings{
+			Name:       "Member Authority Group",
+			Visibility: "private",
+		},
+		CommandID: valueobject.CommandID("create-member-authority-group"),
+		Creator:   owner,
+		Deliveries: mustGroupCreationDeliveries(
+			t,
+			[]valueobject.Endpoint{owner, admin, member},
+			station,
+			owner,
+			"member-authority-genesis",
+		),
+		EventPayload: []byte("member-authority-group-created"),
+		CreatedAt:    testTime,
+		EventSealer:  testEventSealer{},
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup(member authority) error = %v", err)
+	}
+
+	return conversationFixture{
+		conversation: conversation,
+		owner:        owner,
+		member:       member,
+		station:      station,
+		genesis:      transition,
+	}, admin, member
+}
+
+func mustMemberAuthorityCommand(
+	t *testing.T,
+	fixture conversationFixture,
+	operator valueobject.Endpoint,
+	target valueobject.PTID,
+	id string,
+	action domainevent.MemberAuthorityAction,
+	at time.Time,
+) aggregate.MemberAuthorityCommand {
+	t.Helper()
+
+	command := mustCommand(
+		t,
+		fixture,
+		operator,
+		id,
+		domainevent.KindMemberAuthority,
+		at,
+	)
+	return aggregate.MemberAuthorityCommand{
+		Command:                command,
+		Action:                 action,
+		Target:                 target,
+		ObservedAuthorityHead:  fixture.conversation.AuthorityHead(),
+		ObservedFederationID:   fixture.conversation.FederationID(),
+		ObservedAuthorityEpoch: fixture.conversation.AuthorityEpoch(),
+		Deadline:               at.Add(5 * time.Minute),
+	}
+}
+
+func mustConversationMember(
+	t *testing.T,
+	conversation *aggregate.Conversation,
+	actor valueobject.PTID,
+) entity.Member {
+	t.Helper()
+
+	for _, member := range conversation.Members() {
+		if member.Actor == actor {
+			return member
+		}
+	}
+	t.Fatalf("member %q is missing", actor)
+	return entity.Member{}
 }
 
 func mustCommand(

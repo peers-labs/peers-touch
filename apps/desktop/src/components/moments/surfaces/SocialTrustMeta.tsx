@@ -53,6 +53,8 @@ function AudienceIcon({ kind }: { kind: Audience_Kind }) {
       return <Globe size={size} color={color} />;
     case Audience_Kind.FOLLOWERS:
       return <UserCheck size={size} color={color} />;
+    case Audience_Kind.FRIENDS:
+      return <Users size={size} color={color} />;
     case Audience_Kind.CIRCLE:
       return <UsersRound size={size} color={color} />;
     case Audience_Kind.GROUP:

@@ -30,10 +30,71 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import (
 
 
 WAIT_TICK = threading.Event()
+PROCESS_TERMINATION_TIMEOUT_SECONDS = 15.0
+PROCESS_KILL_TIMEOUT_SECONDS = 5.0
 
 
 class FoundationClientError(RuntimeError):
     """A provisioned Foundation client failed its lifecycle contract."""
+
+
+# #region debug-point A-F:foundation-native-harness-startup
+def report_foundation_native_harness_startup_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    try:
+        env_path = (
+            Path(__file__).resolve().parents[4]
+            / ".dbg"
+            / "foundation-native-harness-startup.env"
+        )
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        debug_url = env_values["DEBUG_SERVER_URL"]
+        session_id = env_values["DEBUG_SESSION_ID"]
+    except Exception:
+        return
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ) as response:
+                response.read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="foundation-native-harness-startup-debug-report",
+        daemon=True,
+    ).start()
+# #endregion
 
 
 def report_browser_f06_timeout_debug(
@@ -129,6 +190,216 @@ def report_identity_boot_debug(
     # #endregion
 
 
+# #region debug-point A-D:native-restart-port-release
+def _native_restart_debug_env() -> tuple[str, str] | None:
+    env_path = (
+        Path(__file__).resolve().parents[4]
+        / ".dbg"
+        / "native-restart-port-release.env"
+    )
+    try:
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        return (
+            env_values["DEBUG_SERVER_URL"],
+            env_values["DEBUG_SESSION_ID"],
+        )
+    except Exception:
+        return None
+
+
+def report_native_restart_port_release_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    debug_env = _native_restart_debug_env()
+    if debug_env is None:
+        return
+    debug_url, session_id = debug_env
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py:_stop_runtime"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ) as response:
+                response.read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="native-restart-port-release-debug-report",
+        daemon=True,
+    ).start()
+
+
+def _native_restart_process_snapshot(
+    process: subprocess.Popen[str] | None,
+    process_group_id: int | None,
+) -> dict[str, Any]:
+    process_id = None if process is None else process.pid
+    process_return_code = None if process is None else process.poll()
+    live_process_group_id: int | None = None
+    live_session_id: int | None = None
+    if process_id is not None and process_return_code is None:
+        try:
+            live_process_group_id = os.getpgid(process_id)
+            live_session_id = os.getsid(process_id)
+        except ProcessLookupError:
+            pass
+    return {
+        "processPid": process_id,
+        "processReturnCode": process_return_code,
+        "storedProcessGroupId": process_group_id,
+        "liveProcessGroupId": live_process_group_id,
+        "liveSessionId": live_session_id,
+        "storedProcessGroupAlive": (
+            False
+            if process_group_id is None
+            else FoundationRuntimeClient._process_group_alive(
+                process_group_id
+            )
+        ),
+    }
+
+
+def _native_restart_listener_snapshot(
+    ports: Mapping[str, int],
+) -> dict[str, Any]:
+    if _native_restart_debug_env() is None:
+        return {}
+    snapshots: dict[str, Any] = {}
+    for name, port in ports.items():
+        try:
+            result = subprocess.run(
+                [
+                    "lsof",
+                    "-nP",
+                    f"-iTCP:{port}",
+                    "-sTCP:LISTEN",
+                    "-FpcgR",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+        except Exception as error:
+            snapshots[name] = {
+                "port": port,
+                "errorType": type(error).__name__,
+            }
+            continue
+        owners: list[dict[str, Any]] = []
+        owner: dict[str, Any] | None = None
+        for line in result.stdout.splitlines():
+            if not line:
+                continue
+            field, value = line[0], line[1:]
+            if field == "p":
+                if owner is not None:
+                    owners.append(owner)
+                owner = {"pid": int(value)}
+            elif owner is not None and field == "R":
+                owner["parentPid"] = int(value)
+            elif owner is not None and field == "g":
+                owner["processGroupId"] = int(value)
+            elif owner is not None and field == "c":
+                owner["command"] = value
+        if owner is not None:
+            owners.append(owner)
+        snapshots[name] = {
+            "port": port,
+            "lsofReturnCode": result.returncode,
+            "owners": owners,
+        }
+    return snapshots
+# #endregion
+
+
+# #region debug-point A-D:browser-renderer-lifecycle
+def report_browser_renderer_closed_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    try:
+        env_path = (
+            Path(__file__).resolve().parents[4]
+            / ".dbg"
+            / "browser-renderer-closed.env"
+        )
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        debug_url = env_values["DEBUG_SERVER_URL"]
+        session_id = env_values["DEBUG_SESSION_ID"]
+    except Exception:
+        debug_url = "http://127.0.0.1:7786/event"
+        session_id = "browser-renderer-closed"
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ).read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="browser-renderer-closed-debug-report",
+        daemon=True,
+    ).start()
+# #endregion
+
+
 def port_open(port: int) -> bool:
     """Check if a port is listening on localhost (IPv4 or IPv6)."""
     for family, addr in (
@@ -210,6 +481,10 @@ class FoundationClientSpec:
         return "desktop" if self.runtime == "native-tauri" else "browser"
 
     @property
+    def devctl_mode(self) -> str:
+        return "app" if self.runtime == "native-tauri" else "web"
+
+    @property
     def cargo_target_dir(self) -> Path:
         return (
             self.worktree
@@ -237,9 +512,15 @@ class FoundationRuntimeClient:
         self.profile_env = dict(profile_env)
         self.startup_timeout = startup_timeout
         self.run_root = spec.storage_root.parent
-        self.runtime_profile = self.run_root / f"{spec.profile}.env"
+        self.dev_profile = os.environ.get(
+            "PT_ACCEPTANCE_APPROVED_PROFILE",
+            "one",
+        )
+        self.runtime_profile = self.run_root / f"{self.dev_profile}.env"
         self.log_path = self.run_root / f"{spec.runtime}.log"
         self.process: subprocess.Popen[str] | None = None
+        self._process_group_id: int | None = None
+        self._managed_runtime_started = False
         self.log_handle: Any = None
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
@@ -256,7 +537,7 @@ class FoundationRuntimeClient:
         self.actor_identity_root.chmod(0o700)
         values = {
             **self.profile_env,
-            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
+            "PT_DEV_PROFILE": self.dev_profile,
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self._station_url,
             "PEERS_STATION_URL": self._station_url,
@@ -266,6 +547,7 @@ class FoundationRuntimeClient:
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_WEB_WEB_PORT": str(self.spec.renderer_port),
+            "VITE_ACCEPTANCE_HARNESS": "1",
         }
         self.runtime_profile.write_text(
             "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
@@ -277,7 +559,7 @@ class FoundationRuntimeClient:
     def launch_environment(self) -> dict[str, str]:
         return {
             "WORKTREE_ID": self.spec.worktree.name,
-            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
+            "PT_DEV_PROFILE": self.dev_profile,
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
             "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
             "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
@@ -294,7 +576,9 @@ class FoundationRuntimeClient:
             "PT_STATION_URL": self._station_url,
             "PEERS_STATION_URL": self._station_url,
             "PT_DESKTOP_E2E": "true",
+            "VITE_ACCEPTANCE_HARNESS": "1",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
+            "PT_AGENT_GFE1_EXECUTOR_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
             "CARGO_TARGET_DIR": str(self.spec.cargo_target_dir),
             "RESTART": "1",
@@ -325,6 +609,20 @@ class FoundationRuntimeClient:
             self.log_handle = self.log_path.open("w", encoding="utf-8")
             environment = os.environ.copy()
             environment.update(self.launch_environment())
+            # #region debug-point A:launch-environment
+            report_foundation_native_harness_startup_debug(
+                "A",
+                "launch-environment-ready",
+                {
+                    "runtime": self.spec.runtime,
+                    "makeTarget": self.spec.make_target,
+                    "desktopE2E": environment.get("PT_DESKTOP_E2E") == "true",
+                    "viteAcceptanceHarness": (
+                        environment.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                    ),
+                },
+            )
+            # #endregion
             self.process = subprocess.Popen(
                 ["make", self.spec.make_target],
                 cwd=self.spec.worktree,
@@ -332,6 +630,10 @@ class FoundationRuntimeClient:
                 stdout=self.log_handle,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+            )
+            self._managed_runtime_started = True
+            self._process_group_id = (
+                self.process.pid if os.name == "posix" else None
             )
             # #region debug-point C:runtime-process-launched
             report_browser_f06_timeout_debug(
@@ -347,10 +649,52 @@ class FoundationRuntimeClient:
             )
             # #endregion
             self._connect_driver()
-            if not harness_ready(self.driver, namespace="agent", timeout=60):
+            # #region debug-point B-D:webdriver-connected
+            report_foundation_native_harness_startup_debug(
+                "B-D",
+                "webdriver-connected",
+                (
+                    self._native_harness_debug_snapshot()
+                    if self.spec.runtime == "native-tauri"
+                    else {
+                        "runtime": self.spec.runtime,
+                        "driverPresent": self.driver is not None,
+                    }
+                ),
+            )
+            # #endregion
+            agent_harness_ready = harness_ready(
+                self.driver,
+                namespace="agent",
+                timeout=60,
+            )
+            # #region debug-point A-D:harness-probe
+            report_foundation_native_harness_startup_debug(
+                "A-D",
+                "agent-harness-probe-completed",
+                {
+                    "runtime": self.spec.runtime,
+                    "ready": agent_harness_ready,
+                    **(
+                        self._native_harness_debug_snapshot()
+                        if self.spec.runtime == "native-tauri"
+                        else {}
+                    ),
+                },
+            )
+            # #endregion
+            if not agent_harness_ready:
                 raise FoundationClientError(
                     f"{self.spec.runtime} Agent acceptance Harness is unavailable"
                 )
+            if self.spec.runtime == "native-tauri":
+                # #region debug-point E-H:native-harness-ready
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-runtime-harness-ready",
+                    self._native_harness_debug_snapshot(),
+                )
+                # #endregion
             # #region debug-point A-C:runtime-start-completed
             report_browser_f06_timeout_debug(
                 "A-C",
@@ -544,15 +888,161 @@ class FoundationRuntimeClient:
         )
         # #endregion
         self.chrome.wait_for_ready(30)
+        # #region debug-point A-C:browser-session-ready
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "A-C",
+                "browser-session-ready",
+                self._browser_lifecycle_debug_snapshot(),
+            )
+        # #endregion
 
     def _process_alive(self) -> bool:
         if self.process is None:
             return False
-        if self.process.poll() is not None:
-            raise FoundationClientError(
-                f"{self.spec.runtime} exited with code {self.process.returncode}"
+        return_code = self.process.poll()
+        if return_code is None:
+            return True
+        if self._managed_runtime_started and return_code == 0:
+            return True
+        raise FoundationClientError(
+            f"{self.spec.runtime} exited with code {return_code}"
+        )
+
+    # #region debug-point E-H:native-harness-snapshot
+    def _native_harness_debug_snapshot(self) -> dict[str, Any]:
+        snapshot = {
+            "runtime": self.spec.runtime,
+            "restartGeneration": self.restart_generation,
+            **_native_restart_process_snapshot(
+                self.process,
+                self._process_group_id,
+            ),
+            "listeners": _native_restart_listener_snapshot(
+                {
+                    "gateway": self.spec.gateway_port,
+                    "renderer": self.spec.renderer_port,
+                    "webdriver": self.spec.webdriver_port,
+                }
+            ),
+            "driverPresent": self.driver is not None,
+        }
+        if self.driver is None:
+            return snapshot
+        if not port_open(self.spec.webdriver_port):
+            snapshot["domProbe"] = {"error": "webdriver-port-closed"}
+            return snapshot
+        raw_driver = (
+            self.driver.driver
+            if hasattr(self.driver, "driver")
+            else self.driver
+        )
+        try:
+            snapshot["domProbe"] = raw_driver.execute_script(
+                """
+                return {
+                  url: String(window.location.href || ''),
+                  readyState: String(document.readyState || ''),
+                  rootElementPresent: Boolean(document.querySelector('#root')),
+                  acceptanceRootPresent: Boolean(window.__PT_ACCEPTANCE__),
+                  agentNamespacePresent: Boolean(
+                    window.__PT_ACCEPTANCE__?.agent
+                  ),
+                  localeMethodPresent: Boolean(
+                    window.__PT_ACCEPTANCE__?.agent?.setFoundationLocale
+                  ),
+                };
+                """
             )
-        return True
+            snapshot["windowCount"] = len(raw_driver.window_handles)
+        except Exception as error:
+            snapshot["domProbe"] = {
+                "errorType": type(error).__name__,
+                "error": str(error)[:512],
+            }
+        return snapshot
+    # #endregion
+
+    # #region debug-point A-D:browser-window-snapshot
+    def _browser_window_debug_snapshot(self) -> dict[str, Any]:
+        if self.driver is None:
+            return {
+                "windowCount": None,
+                "currentWindowAvailable": False,
+                "currentWindowInHandles": False,
+                "errorType": "driver-missing",
+            }
+        raw_driver = (
+            self.driver.driver
+            if hasattr(self.driver, "driver")
+            else self.driver
+        )
+        handles: list[str] | None = None
+        current_handle: str | None = None
+        error_types: list[str] = []
+        try:
+            handles = list(raw_driver.window_handles)
+        except Exception as error:
+            error_types.append(type(error).__name__)
+        try:
+            current_handle = str(raw_driver.current_window_handle)
+        except Exception as error:
+            error_types.append(type(error).__name__)
+        return {
+            "windowCount": None if handles is None else len(handles),
+            "currentWindowAvailable": current_handle is not None,
+            "currentWindowInHandles": (
+                current_handle in handles
+                if current_handle is not None and handles is not None
+                else False
+            ),
+            "errorType": ",".join(error_types),
+        }
+    # #endregion
+
+    # #region debug-point A-D:browser-runtime-snapshot
+    def _browser_lifecycle_debug_snapshot(self) -> dict[str, Any]:
+        process_return_code = (
+            None if self.process is None else self.process.poll()
+        )
+        driver_service = (
+            getattr(self.driver, "service", None)
+            if self.driver is not None
+            else None
+        )
+        driver_process = (
+            getattr(driver_service, "process", None)
+            if driver_service is not None
+            else None
+        )
+        driver_return_code = (
+            None if driver_process is None else driver_process.poll()
+        )
+        return {
+            "runtime": self.spec.runtime,
+            "restartGeneration": self.restart_generation,
+            "processPid": (
+                None if self.process is None else self.process.pid
+            ),
+            "processReturnCode": process_return_code,
+            "processGroupId": self._process_group_id,
+            "driverPresent": self.driver is not None,
+            "driverSessionPresent": bool(
+                getattr(self.driver, "session_id", None)
+                if self.driver is not None
+                else None
+            ),
+            "driverServicePid": (
+                None if driver_process is None else driver_process.pid
+            ),
+            "driverServiceReturnCode": driver_return_code,
+            "chromePresent": self.chrome is not None,
+            "gatewayPortOpen": port_open(self.spec.gateway_port),
+            "rendererPortOpen": port_open(self.spec.renderer_port),
+            "webdriverPortOpen": port_open(self.spec.webdriver_port),
+            "windowState": self._browser_window_debug_snapshot(),
+        }
+    # #endregion
 
     def harness(
         self,
@@ -564,15 +1054,101 @@ class FoundationRuntimeClient:
             raise FoundationClientError(
                 f"{self.spec.runtime} client is not connected"
             )
+        started_at = time.monotonic()
+        native_locale_probe = (
+            self.spec.runtime == "native-tauri"
+            and method == "setFoundationLocale"
+        )
+        if native_locale_probe:
+            # #region debug-point E-H:native-locale-call
+            report_native_restart_port_release_debug(
+                "E-H",
+                "native-locale-call-started",
+                self._native_harness_debug_snapshot(),
+            )
+            # #endregion
+        if self.spec.runtime == "browser":
+            # #region debug-point A-D:browser-harness-call
+            report_browser_renderer_closed_debug(
+                "A-D",
+                "browser-harness-started",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "method": method,
+                    "cell": str((payload or {}).get("cell") or ""),
+                },
+            )
+            # #endregion
         try:
-            return call_async_harness(
+            result = call_async_harness(
                 self.driver,
                 method,
                 payload,
                 namespace="agent",
                 script_timeout=timeout,
             )
+            if native_locale_probe:
+                # #region debug-point E-H:native-locale-call-completed
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-locale-call-completed",
+                    {
+                        **self._native_harness_debug_snapshot(),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                    },
+                )
+                # #endregion
+            if self.spec.runtime == "browser":
+                # #region debug-point A-D:browser-harness-result
+                report_browser_renderer_closed_debug(
+                    "A-D",
+                    "browser-harness-completed",
+                    {
+                        **self._browser_lifecycle_debug_snapshot(),
+                        "method": method,
+                        "cell": str((payload or {}).get("cell") or ""),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                    },
+                )
+                # #endregion
+            return result
         except Exception as error:
+            if native_locale_probe:
+                # #region debug-point E-H:native-locale-call-failed
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-locale-call-failed",
+                    {
+                        **self._native_harness_debug_snapshot(),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                        "errorType": type(error).__name__,
+                        "error": str(error)[:512],
+                    },
+                )
+                # #endregion
+            if self.spec.runtime == "browser":
+                # #region debug-point A-D:browser-harness-failure
+                report_browser_renderer_closed_debug(
+                    "A-D",
+                    "browser-harness-failed",
+                    {
+                        **self._browser_lifecycle_debug_snapshot(),
+                        "method": method,
+                        "cell": str((payload or {}).get("cell") or ""),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                        "errorType": type(error).__name__,
+                        "error": str(error)[:512],
+                    },
+                )
+                # #endregion
             # #region debug-point C:client-harness-failure
             try:
                 urllib.request.urlopen(
@@ -628,7 +1204,7 @@ class FoundationRuntimeClient:
                 f"{self.spec.runtime} harness {method} failed: {error}"
             ) from error
 
-    def configure_station(self, *, timeout: float = 60) -> None:
+    def configure_station(self, *, timeout: float = 60) -> dict[str, Any]:
         result = self.harness(
             "configureStation",
             {"stationUrl": self._station_url},
@@ -639,10 +1215,12 @@ class FoundationRuntimeClient:
             or result.get("configured") is not True
             or result.get("activeUrl") != self._station_url
             or result.get("peerIdAvailable") is not True
+            or not str(result.get("activeStationPeerId") or "").strip()
         ):
             raise FoundationClientError(
                 f"{self.spec.runtime} Station configuration failed: {result}"
             )
+        return dict(result)
 
     def prepare_foundation_f06(
         self,
@@ -762,12 +1340,49 @@ class FoundationRuntimeClient:
         logout: bool,
         remove_storage: bool,
     ) -> dict[str, Any]:
+        stop_started_at = time.monotonic()
+        process = self.process
+        process_group_id = self._process_group_id
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-runtime-stop-entered",
+                {
+                    "restartGeneration": self.restart_generation,
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
+        # #region debug-point B-D:browser-runtime-stop
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "B-D",
+                "browser-runtime-stop-entered",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                },
+            )
+        # #endregion
         failures: list[str] = []
         if logout and self.driver is not None:
             try:
                 self.harness("logout", timeout=30)
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
-                failures.append(f"logout: {error}")
+                if port_open(self.spec.webdriver_port):
+                    failures.append(f"logout: {error}")
         if self.chrome is not None:
             try:
                 self.chrome.stop()
@@ -780,18 +1395,112 @@ class FoundationRuntimeClient:
             try:
                 self.driver.quit()
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
-                failures.append(f"webdriver: {error}")
+                if port_open(self.spec.webdriver_port):
+                    failures.append(f"webdriver: {error}")
             self.driver = None
-        if self.process is not None and self.process.poll() is None:
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-driver-stop-completed",
+                {
+                    "restartGeneration": self.restart_generation,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
+        process_released = process is None and process_group_id is None
+        term_wait_completed: bool | None = None
+        kill_sent = False
+        kill_wait_completed: bool | None = None
+        if os.name == "posix" and process_group_id is not None:
             try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                self.process.wait(timeout=5)
+                self._signal_process_group(
+                    process_group_id,
+                    signal.SIGTERM,
+                )
+                term_wait_completed = self._wait_for_process_group_exit(
+                    process_group_id,
+                    process,
+                    PROCESS_TERMINATION_TIMEOUT_SECONDS,
+                )
+                if not term_wait_completed:
+                    kill_sent = True
+                    self._signal_process_group(
+                        process_group_id,
+                        signal.SIGKILL,
+                    )
+                    kill_wait_completed = self._wait_for_process_group_exit(
+                        process_group_id,
+                        process,
+                        PROCESS_KILL_TIMEOUT_SECONDS,
+                    )
+                    if not kill_wait_completed:
+                        raise FoundationClientError(
+                            f"process group {process_group_id} survived "
+                            "forced termination"
+                        )
+                process_released = True
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"process: {error}")
-        self.process = None
+        elif process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=PROCESS_TERMINATION_TIMEOUT_SECONDS)
+                process_released = True
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+                    process_released = True
+                except subprocess.TimeoutExpired as error:
+                    failures.append(f"process: {error}")
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"process: {error}")
+        else:
+            process_released = True
+        if process_released:
+            self.process = None
+            self._process_group_id = None
+        if self.spec.runtime == "native-tauri":
+            failures.extend(self._stop_owned_listener_processes())
+        if self._managed_runtime_started:
+            environment = os.environ.copy()
+            environment.update(self.launch_environment())
+            try:
+                completed = subprocess.run(
+                    [
+                        "node",
+                        "tooling/devctl/index.mjs",
+                        "desktop",
+                        "stop",
+                        "--mode",
+                        self.spec.devctl_mode,
+                    ],
+                    cwd=self.spec.worktree,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode != 0:
+                    failures.append(
+                        "devctl cleanup exited with "
+                        f"status {completed.returncode}"
+                    )
+                else:
+                    self._managed_runtime_started = False
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"devctl cleanup: {error}")
         if self.log_handle is not None:
             try:
                 self.log_handle.flush()
@@ -807,11 +1516,63 @@ class FoundationRuntimeClient:
             "renderer": not port_open(self.spec.renderer_port),
             "webdriver": not port_open(self.spec.webdriver_port),
         }
+        # #region debug-point E-F:runtime-stop
+        report_foundation_native_harness_startup_debug(
+            "E-F",
+            "runtime-stop-evaluated",
+            {
+                "runtime": self.spec.runtime,
+                "processReleased": process_released,
+                "termWaitCompleted": term_wait_completed,
+                "killSent": kill_sent,
+                "killWaitCompleted": kill_wait_completed,
+                "portsReleased": ports,
+                **_native_restart_process_snapshot(
+                    process,
+                    process_group_id,
+                ),
+                "listeners": _native_restart_listener_snapshot(
+                    {
+                        "gateway": self.spec.gateway_port,
+                        "renderer": self.spec.renderer_port,
+                        "webdriver": self.spec.webdriver_port,
+                    }
+                ),
+            },
+        )
+        # #endregion
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-runtime-stop-evaluated",
+                {
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - stop_started_at) * 1000
+                    ),
+                    "processReleased": process_released,
+                    "termWaitCompleted": term_wait_completed,
+                    "killSent": kill_sent,
+                    "killWaitCompleted": kill_wait_completed,
+                    "portsReleased": ports,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
         if not all(ports.values()):
             failures.append(f"ports still listening: {ports}")
         if remove_storage and self.spec.storage_root.exists():
             failures.append(f"storage remains: {self.spec.storage_root}")
-        return {
+        result = {
             "status": "clean" if not failures else "failed",
             "portsReleased": ports,
             "storageReleased": (
@@ -826,6 +1587,101 @@ class FoundationRuntimeClient:
             ),
             "failures": failures,
         }
+        # #region debug-point B-D:browser-runtime-stopped
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "B-D",
+                "browser-runtime-stopped",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                    "cleanupStatus": result["status"],
+                    "cleanupFailures": list(failures),
+                },
+            )
+        # #endregion
+        return result
+
+    @staticmethod
+    def _signal_process_group(
+        process_group_id: int,
+        signal_number: signal.Signals,
+    ) -> None:
+        try:
+            os.killpg(process_group_id, signal_number)
+        except ProcessLookupError:
+            return
+
+    def _stop_owned_listener_processes(self) -> list[str]:
+        failures: list[str] = []
+        worktree = str(self.spec.worktree.resolve())
+        ports = {
+            self.spec.gateway_port,
+            self.spec.renderer_port,
+            self.spec.webdriver_port,
+        }
+        for port in ports:
+            result = subprocess.run(
+                ["lsof", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            for value in result.stdout.split():
+                try:
+                    pid = int(value)
+                    command = subprocess.run(
+                        ["ps", "-p", str(pid), "-o", "command="],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip()
+                    if worktree not in command:
+                        failures.append(
+                            f"port {port} held by non-worktree process {pid}"
+                        )
+                        continue
+                    os.kill(pid, signal.SIGTERM)
+                    deadline = time.monotonic() + PROCESS_KILL_TIMEOUT_SECONDS
+                    while port_open(port) and time.monotonic() < deadline:
+                        WAIT_TICK.wait(0.05)
+                    if port_open(port):
+                        os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    continue
+                except Exception as error:  # noqa: BLE001
+                    failures.append(f"port {port} cleanup: {error}")
+        return failures
+
+    @staticmethod
+    def _process_group_alive(process_group_id: int) -> bool:
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @classmethod
+    def _wait_for_process_group_exit(
+        cls,
+        process_group_id: int,
+        process: subprocess.Popen[str] | None,
+        timeout: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        while cls._process_group_alive(process_group_id):
+            if process is not None:
+                process.poll()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            WAIT_TICK.wait(min(0.05, remaining))
+        if process is not None:
+            process.poll()
+        return True
 
     def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
         try:

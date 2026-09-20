@@ -1,15 +1,20 @@
 use super::fenced_executor::{CapabilityContract, ExecutionLease, FencedExecutor};
 use super::local_executor::LocalCapabilityExecutor;
+use super::mcp_operation_executor::McpLifecycleExecutor;
+use super::operation_ledger::OperationLedger;
+use super::operation_worker::CapabilityOperationWorker;
 use super::receipt_ledger::{ReceiptLedger, ToolCallSideEffectCount};
 use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
+use crate::application::oauth2;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityConstraints, CapabilityPermissionState, ClientCapability,
     ClientCapabilityAdvertisement, ClientCapabilityLease, ClientCapabilityLeaseRevokeReason,
-    ClientPlatform,
+    ClientPlatform, TakeOverCapabilityCleanupRequest, TakeOverCapabilityCleanupResponse,
+    TakeOverCapabilityOperationRequest, TakeOverCapabilityOperationResponse,
 };
 use crate::state::AppState;
 use serde::Serialize;
@@ -27,6 +32,8 @@ const RENEW_BEFORE_EXPIRY_MS: i64 = 60_000;
 const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: u64 = 256 * 1024;
 const NEGATIVE_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
+const LEASE_EXPIRED_NEGATIVE_CONTROL_TIMEOUT: Duration = Duration::from_secs(6 * 60);
+const LEASE_EXPIRY_SETTLE_DELAY_MS: i64 = 250;
 
 pub struct CapabilityWorkerSupervisor {
     state: Arc<AppState>,
@@ -91,6 +98,12 @@ pub struct CapabilityWorkerSnapshot {
     pub expires_at_ms: i64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapabilityOperationTarget {
+    pub device_id: String,
+    pub capability_session_id: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestedCapabilityNegativeControl {
     Unsupported,
@@ -98,6 +111,8 @@ pub enum RequestedCapabilityNegativeControl {
     SignatureTamper,
     SchemaMismatch,
     CrossDevice,
+    LeasePause,
+    LeaseExpired,
 }
 
 impl RequestedCapabilityNegativeControl {
@@ -108,6 +123,19 @@ impl RequestedCapabilityNegativeControl {
             Self::SignatureTamper => "signatureTamper",
             Self::SchemaMismatch => "schemaMismatch",
             Self::CrossDevice => "crossDevice",
+            Self::LeasePause => "leasePause",
+            Self::LeaseExpired => "leaseExpired",
+        }
+    }
+
+    pub fn requires_lease_lifecycle_control(self) -> bool {
+        matches!(self, Self::LeasePause | Self::LeaseExpired)
+    }
+
+    fn receive_timeout(self) -> Duration {
+        match self {
+            Self::LeaseExpired => LEASE_EXPIRED_NEGATIVE_CONTROL_TIMEOUT,
+            _ => NEGATIVE_CONTROL_TIMEOUT,
         }
     }
 
@@ -116,7 +144,9 @@ impl RequestedCapabilityNegativeControl {
             Self::Unauthorized => Some(CapabilityNegativeControl::Unauthorized),
             Self::SignatureTamper => Some(CapabilityNegativeControl::SignatureTamper),
             Self::CrossDevice => Some(CapabilityNegativeControl::CrossDevice),
-            Self::Unsupported | Self::SchemaMismatch => None,
+            Self::Unsupported | Self::SchemaMismatch | Self::LeasePause | Self::LeaseExpired => {
+                None
+            }
         }
     }
 }
@@ -130,13 +160,37 @@ pub struct CapabilityExecutionCounters {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CapabilityLeaseTransitionFacts {
+    pub source_capability_session_id_hash: String,
+    pub source_lease_id_hash: String,
+    pub source_lease_revision: u64,
+    pub source_expires_at_ms: i64,
+    pub current_capability_session_id_hash: String,
+    pub current_lease_id_hash: String,
+    pub current_expires_at_ms: i64,
+    pub current_lease_revision: u64,
+    pub current_pull_cursor: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilityNegativeControlFacts {
     pub control: &'static str,
     pub availability: &'static str,
     pub unavailable_reason: Option<&'static str>,
     pub capability_session_id_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_paused: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_expires_at_ms: Option<i64>,
     pub before: CapabilityExecutionCounters,
     pub station: Option<CapabilityNegativeControlStationFact>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_station: Option<CapabilityNegativeControlStationFact>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay_station: Option<CapabilityNegativeControlStationFact>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lease_transition: Option<CapabilityLeaseTransitionFacts>,
     pub after: CapabilityExecutionCounters,
 }
 
@@ -214,6 +268,57 @@ impl CapabilityWorkerSupervisor {
             .map_err(|_| "client capability supervisor snapshot lock poisoned".to_string())
     }
 
+    pub fn operation_target(&self, actor_ptid: &str) -> Result<CapabilityOperationTarget, String> {
+        self.snapshot()?
+            .into_iter()
+            .filter(|worker| {
+                worker.actor_ptid == actor_ptid
+                    && worker.platform == ClientPlatform::Desktop as i32
+                    && worker.capability_ids.iter().any(|id| id == "mcp.invoke")
+            })
+            .max_by_key(|worker| worker.expires_at_ms)
+            .map(|worker| CapabilityOperationTarget {
+                device_id: worker.device_id,
+                capability_session_id: worker.capability_session_id,
+            })
+            .ok_or_else(|| "MCP_CLIENT_CAPABILITY_SESSION_UNAVAILABLE".to_string())
+    }
+
+    pub fn take_over_operation(
+        &self,
+        actor_ptid: &str,
+        mut request: TakeOverCapabilityOperationRequest,
+    ) -> Result<TakeOverCapabilityOperationResponse, String> {
+        let target = self.operation_target(actor_ptid)?;
+        request.target_device_id = target.device_id;
+        request.capability_session_id = target.capability_session_id;
+        let context = self.context_for_actor(actor_ptid)?;
+        context.transport()?.take_over_operation(request)
+    }
+
+    pub fn take_over_cleanup(
+        &self,
+        actor_ptid: &str,
+        mut request: TakeOverCapabilityCleanupRequest,
+    ) -> Result<TakeOverCapabilityCleanupResponse, String> {
+        let target = self.operation_target(actor_ptid)?;
+        request.target_device_id = target.device_id;
+        request.capability_session_id = target.capability_session_id;
+        let context = self.context_for_actor(actor_ptid)?;
+        context.transport()?.take_over_cleanup(request)
+    }
+
+    fn context_for_actor(&self, actor_ptid: &str) -> Result<WorkerContext, String> {
+        let session = self
+            .state
+            .sessions
+            .snapshot_all()
+            .into_iter()
+            .find(|session| session.actor.ptid == actor_ptid)
+            .ok_or_else(|| "authenticated actor session is unavailable".to_string())?;
+        worker_context(&self.state, session)
+    }
+
     pub fn emit_negative_control(
         &self,
         control: RequestedCapabilityNegativeControl,
@@ -234,7 +339,7 @@ impl CapabilityWorkerSupervisor {
                 response,
             });
         receiver
-            .recv_timeout(NEGATIVE_CONTROL_TIMEOUT)
+            .recv_timeout(control.receive_timeout())
             .map_err(|_| "AS_F10_NEGATIVE_CONTROL_TIMEOUT".to_string())?
     }
 }
@@ -249,27 +354,56 @@ struct WorkerContext {
     signing_key: ed25519_dalek::SigningKey,
 }
 
+impl WorkerContext {
+    fn transport(&self) -> Result<CapabilityStationTransport<'_>, String> {
+        CapabilityStationTransport::new(
+            &self.station_url,
+            &self.actor_ptid,
+            &self.device_id,
+            &self.token,
+            &self.signing_key_id,
+            &self.signing_key,
+        )
+    }
+}
+
 struct ActiveWorker {
     context: WorkerContext,
     lease: ClientCapabilityLease,
     ledger: Option<ReceiptLedger>,
     resources: Option<ResourceRegistry>,
     executor: Option<LocalCapabilityExecutor>,
+    operation_ledger: Option<OperationLedger>,
+    operation_executor: Option<McpLifecycleExecutor>,
     pull_cursor: u64,
     surface: ClientSurface,
+    paused: bool,
+    connector_projection_epoch: u64,
 }
 
 impl ActiveWorker {
     fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
-        let contracts = local_contracts(surface);
-        let (executor, ledger, resources) = if surface == ClientSurface::Desktop {
-            let executor = LocalCapabilityExecutor::new(contracts.clone())?;
+        let connector_projection_epoch = oauth2::connector_projection_epoch();
+        let contracts = local_contracts(surface, &context.actor_ptid)?;
+        let (executor, ledger, resources) = if !contracts.is_empty() {
+            let executor = LocalCapabilityExecutor::new(&context.actor_ptid, contracts.clone())?;
             let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
             let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
             recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
             (Some(executor), Some(ledger), Some(resources))
         } else {
             (None, None, None)
+        };
+        let (operation_ledger, operation_executor) = if surface == ClientSurface::Desktop {
+            (
+                Some(OperationLedger::open(
+                    &context.actor_ptid,
+                    &context.device_id,
+                )?),
+                Some(McpLifecycleExecutor::new(&context.actor_ptid)?),
+            )
+        } else {
+            (None, None)
         };
         let transport = CapabilityStationTransport::new(
             &context.station_url,
@@ -284,11 +418,15 @@ impl ActiveWorker {
         Ok(Self {
             ledger,
             resources,
+            operation_ledger,
+            operation_executor,
             context,
             lease,
             executor,
             pull_cursor: 0,
             surface,
+            paused: false,
+            connector_projection_epoch,
         })
     }
 
@@ -303,13 +441,13 @@ impl ActiveWorker {
 
     fn tick(&mut self) -> Result<(), String> {
         let now_ms = now_unix_ms();
-        if lease_expiry_ms(&self.lease)? <= now_ms {
-            return Err("CLIENT_CAPABILITY_LEASE_EXPIRED".to_string());
+        match lease_tick_decision(self.paused, lease_expiry_ms(&self.lease)?, now_ms) {
+            LeaseTickDecision::Paused => return Ok(()),
+            LeaseTickDecision::Expired => return Err("CLIENT_CAPABILITY_LEASE_EXPIRED".to_string()),
+            LeaseTickDecision::Renew => self.renew()?,
+            LeaseTickDecision::Pull => {}
         }
-        if lease_expiry_ms(&self.lease)? - now_ms <= RENEW_BEFORE_EXPIRY_MS {
-            self.renew()?;
-        }
-        if self.surface == ClientSurface::Browser {
+        if self.executor.is_none() {
             return Ok(());
         }
 
@@ -326,6 +464,20 @@ impl ActiveWorker {
             .executor
             .as_ref()
             .ok_or_else(|| "CLIENT_CAPABILITY_EXECUTOR_UNAVAILABLE".to_string())?;
+        if let (Some(operation_ledger), Some(operation_executor)) = (
+            self.operation_ledger.as_ref(),
+            self.operation_executor.as_ref(),
+        ) {
+            CapabilityOperationWorker::new(
+                &self.context.station_url,
+                &self.context.device_id,
+                &self.lease.capability_session_id,
+                operation_ledger,
+                operation_executor,
+                &transport,
+            )
+            .tick_at(now_ms)?;
+        }
         let response = transport.pull(
             &self.lease.capability_session_id,
             self.pull_cursor,
@@ -398,7 +550,7 @@ fn run_supervisor(
     let mut enrollment_backoff: HashMap<String, std::time::Instant> = HashMap::new();
     while !stopping.load(Ordering::SeqCst) {
         reconcile_workers(&state, surface, &mut workers, &mut enrollment_backoff);
-        process_negative_controls(&negative_controls, &workers);
+        process_negative_controls(&negative_controls, &mut workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
             if let Err(error) = worker.tick() {
@@ -438,34 +590,73 @@ fn run_supervisor(
 
 fn process_negative_controls(
     queue: &Mutex<VecDeque<CapabilityNegativeControlRequest>>,
-    workers: &HashMap<String, ActiveWorker>,
+    workers: &mut HashMap<String, ActiveWorker>,
 ) {
-    loop {
-        let request = match queue.lock() {
-            Ok(mut queue) => queue.pop_front(),
-            Err(_) => return,
-        };
+    let pending_count = queue
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .len();
+    for _ in 0..pending_count {
+        let request = queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop_front();
         let Some(request) = request else {
             return;
         };
+        if request.control == RequestedCapabilityNegativeControl::LeaseExpired {
+            match lease_expired_control_ready(workers, &request) {
+                Ok(false) => {
+                    queue
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push_back(request);
+                    continue;
+                }
+                Ok(true) => {}
+                Err(error) => {
+                    unpause_matching_worker(workers, &request.capability_session_id_hash);
+                    let _ = request.response.send(Err(error));
+                    continue;
+                }
+            }
+        }
         let result = emit_negative_control_from_worker(workers, &request);
         let _ = request.response.send(result);
     }
 }
 
 fn emit_negative_control_from_worker(
-    workers: &HashMap<String, ActiveWorker>,
+    workers: &mut HashMap<String, ActiveWorker>,
     request: &CapabilityNegativeControlRequest,
 ) -> Result<CapabilityNegativeControlFacts, String> {
-    let mut matches = workers.values().filter(|worker| {
-        hash_identifier(&worker.lease.capability_session_id) == request.capability_session_id_hash
-    });
-    let worker = matches
-        .next()
+    let account_id = matching_worker_account_id(workers, &request.capability_session_id_hash)?;
+    let worker = workers
+        .get_mut(&account_id)
         .ok_or_else(|| "AS_F10_CAPABILITY_SESSION_NOT_FOUND".to_string())?;
-    if matches.next().is_some() {
-        return Err("AS_F10_CAPABILITY_SESSION_AMBIGUOUS".to_string());
+    if request.control == RequestedCapabilityNegativeControl::LeasePause {
+        let before = execution_counters(worker)?;
+        let source_expires_at_ms = lease_expiry_ms(&worker.lease)?;
+        worker.paused = true;
+        return Ok(CapabilityNegativeControlFacts {
+            control: request.control.as_str(),
+            availability: "available",
+            unavailable_reason: None,
+            capability_session_id_hash: request.capability_session_id_hash.clone(),
+            worker_paused: Some(true),
+            source_expires_at_ms: Some(source_expires_at_ms),
+            before: before.clone(),
+            station: None,
+            source_station: None,
+            replay_station: None,
+            lease_transition: None,
+            after: before,
+        });
     }
+    if request.control == RequestedCapabilityNegativeControl::LeaseExpired {
+        return emit_lease_expired_control_from_worker(worker, request);
+    }
+
     let before = execution_counters(worker)?;
     let Some(station_control) = request.control.station_control() else {
         return Ok(CapabilityNegativeControlFacts {
@@ -473,8 +664,13 @@ fn emit_negative_control_from_worker(
             availability: "unavailable",
             unavailable_reason: Some("NO_PRODUCTION_CAPABILITY_ENDPOINT"),
             capability_session_id_hash: request.capability_session_id_hash.clone(),
+            worker_paused: None,
+            source_expires_at_ms: None,
             before: before.clone(),
             station: None,
+            source_station: None,
+            replay_station: None,
+            lease_transition: None,
             after: before,
         });
     };
@@ -488,9 +684,151 @@ fn emit_negative_control_from_worker(
         availability: "available",
         unavailable_reason: None,
         capability_session_id_hash: request.capability_session_id_hash.clone(),
+        worker_paused: None,
+        source_expires_at_ms: None,
         before,
         station: Some(station),
+        source_station: None,
+        replay_station: None,
+        lease_transition: None,
         after: execution_counters(worker)?,
+    })
+}
+
+fn matching_worker_account_id(
+    workers: &HashMap<String, ActiveWorker>,
+    capability_session_id_hash: &str,
+) -> Result<String, String> {
+    let mut matches = workers.iter().filter(|(_, worker)| {
+        hash_identifier(&worker.lease.capability_session_id) == capability_session_id_hash
+    });
+    let account_id = matches
+        .next()
+        .map(|(account_id, _)| account_id.clone())
+        .ok_or_else(|| "AS_F10_CAPABILITY_SESSION_NOT_FOUND".to_string())?;
+    if matches.next().is_some() {
+        return Err("AS_F10_CAPABILITY_SESSION_AMBIGUOUS".to_string());
+    }
+    Ok(account_id)
+}
+
+fn unpause_matching_worker(
+    workers: &mut HashMap<String, ActiveWorker>,
+    capability_session_id_hash: &str,
+) {
+    if let Ok(account_id) = matching_worker_account_id(workers, capability_session_id_hash) {
+        if let Some(worker) = workers.get_mut(&account_id) {
+            worker.paused = false;
+        }
+    }
+}
+
+fn lease_expired_control_ready(
+    workers: &HashMap<String, ActiveWorker>,
+    request: &CapabilityNegativeControlRequest,
+) -> Result<bool, String> {
+    let account_id = matching_worker_account_id(workers, &request.capability_session_id_hash)?;
+    let worker = workers
+        .get(&account_id)
+        .ok_or_else(|| "AS_F10_CAPABILITY_SESSION_NOT_FOUND".to_string())?;
+    if !worker.paused {
+        return Err("GFE1_LEASE_EXPIRED_REQUIRES_PAUSED_WORKER".to_string());
+    }
+    Ok(lease_expiry_control_ready(
+        lease_expiry_ms(&worker.lease)?,
+        now_unix_ms(),
+    ))
+}
+
+fn emit_lease_expired_control_from_worker(
+    worker: &mut ActiveWorker,
+    request: &CapabilityNegativeControlRequest,
+) -> Result<CapabilityNegativeControlFacts, String> {
+    let result = (|| {
+        if !worker.paused {
+            return Err("GFE1_LEASE_EXPIRED_REQUIRES_PAUSED_WORKER".to_string());
+        }
+        let before = execution_counters(worker)?;
+        let source_lease = worker.lease.clone();
+        let source_pull_cursor = worker.pull_cursor;
+        let source_expires_at_ms = lease_expiry_ms(&source_lease)?;
+        if !lease_expiry_control_ready(source_expires_at_ms, now_unix_ms()) {
+            return Err("GFE1_LEASE_EXPIRY_NOT_REACHED".to_string());
+        }
+
+        let contracts = local_contracts(worker.surface, &worker.context.actor_ptid)?;
+        let replacement = {
+            let transport = worker.transport()?;
+            transport.register(advertisement(&worker.context, &contracts, worker.surface))?
+        };
+        ensure_lease_identity(&worker.context, &replacement)?;
+        ensure_replacement_lease(&source_lease, &replacement, now_unix_ms())?;
+
+        worker.lease = replacement;
+        worker.pull_cursor = 0;
+
+        let (source_station, replay_station) = worker.transport()?.emit_expired_lease_pull_replay(
+            &source_lease.capability_session_id,
+            source_pull_cursor,
+            PULL_LIMIT,
+        )?;
+        let lease_transition =
+            lease_transition_facts(&source_lease, &worker.lease, worker.pull_cursor)?;
+        Ok(CapabilityNegativeControlFacts {
+            control: request.control.as_str(),
+            availability: "available",
+            unavailable_reason: None,
+            capability_session_id_hash: request.capability_session_id_hash.clone(),
+            worker_paused: Some(false),
+            source_expires_at_ms: Some(source_expires_at_ms),
+            before: before.clone(),
+            station: Some(source_station.clone()),
+            source_station: Some(source_station),
+            replay_station: Some(replay_station),
+            lease_transition: Some(lease_transition),
+            after: before,
+        })
+    })();
+
+    worker.paused = false;
+    result.and_then(|mut facts| {
+        facts.after = execution_counters(worker)?;
+        Ok(facts)
+    })
+}
+
+fn ensure_replacement_lease(
+    source: &ClientCapabilityLease,
+    replacement: &ClientCapabilityLease,
+    now_ms: i64,
+) -> Result<(), String> {
+    if replacement.capability_session_id == source.capability_session_id
+        || replacement.lease_id == source.lease_id
+        || replacement.capability_set_hash != source.capability_set_hash
+        || replacement.device_signing_key_id != source.device_signing_key_id
+        || replacement.platform != source.platform
+        || lease_expiry_ms(replacement)? <= now_ms
+    {
+        return Err("GFE1_REPLACEMENT_LEASE_MISMATCH".to_string());
+    }
+    Ok(())
+}
+
+fn lease_transition_facts(
+    source: &ClientCapabilityLease,
+    current: &ClientCapabilityLease,
+    current_pull_cursor: u64,
+) -> Result<CapabilityLeaseTransitionFacts, String> {
+    Ok(CapabilityLeaseTransitionFacts {
+        source_capability_session_id_hash: hash_identifier(&source.capability_session_id),
+        source_lease_id_hash: hash_identifier(&source.lease_id),
+        source_lease_revision: source.lease_revision,
+        source_expires_at_ms: lease_expiry_ms(source)?,
+        current_capability_session_id_hash: hash_identifier(&current.capability_session_id),
+        current_lease_id_hash: hash_identifier(&current.lease_id),
+        current_expires_at_ms: lease_expiry_ms(current)?,
+        current_lease_revision: current.lease_revision,
+        current_pull_cursor,
     })
 }
 
@@ -620,11 +958,21 @@ fn reconcile_workers(
         let identity_changed = workers
             .get(&account_id)
             .is_some_and(|worker| !worker.same_identity(&context));
-        if identity_changed {
+        let connector_projection_changed = workers.get(&account_id).is_some_and(|worker| {
+            connector_projection_changed(
+                worker.connector_projection_epoch,
+                oauth2::connector_projection_epoch(),
+            )
+        });
+        if identity_changed || connector_projection_changed {
             stop_worker(
                 workers,
                 &account_id,
-                ClientCapabilityLeaseRevokeReason::StationSwitch,
+                if identity_changed {
+                    ClientCapabilityLeaseRevokeReason::StationSwitch
+                } else {
+                    ClientCapabilityLeaseRevokeReason::AdminPolicy
+                },
             );
             enrollment_backoff.remove(&account_id);
         }
@@ -658,6 +1006,10 @@ fn reconcile_workers(
             }
         }
     }
+}
+
+fn connector_projection_changed(registered_epoch: u64, current_epoch: u64) -> bool {
+    registered_epoch != current_epoch
 }
 
 fn stop_worker(
@@ -759,32 +1111,57 @@ fn advertisement(
     }
 }
 
-fn local_contracts(surface: ClientSurface) -> Vec<CapabilityContract> {
-    if surface == ClientSurface::Browser {
-        return Vec::new();
+fn local_contracts(
+    surface: ClientSurface,
+    actor_ptid: &str,
+) -> Result<Vec<CapabilityContract>, String> {
+    let mut contracts = Vec::new();
+    if surface == ClientSurface::Desktop {
+        contracts.extend(
+            [
+                "filesystem.read",
+                "filesystem.list",
+                "clipboard.read",
+                "clipboard.write",
+                "shell.execute",
+                "mcp.invoke",
+            ]
+            .into_iter()
+            .map(|capability_id| CapabilityContract {
+                capability_id: capability_id.to_string(),
+                schema_version: if capability_id == "mcp.invoke" {
+                    "2".to_string()
+                } else {
+                    "1".to_string()
+                },
+                max_argument_bytes: MAX_ARGUMENT_BYTES,
+                max_result_bytes: MAX_RESULT_BYTES as usize,
+                supports_external_idempotency: false,
+            }),
+        );
     }
-    [
-        "filesystem.read",
-        "filesystem.list",
-        "clipboard.read",
-        "clipboard.write",
-        "shell.execute",
-        "mcp.invoke",
-    ]
-    .into_iter()
-    .map(|capability_id| CapabilityContract {
-        capability_id: capability_id.to_string(),
-        schema_version: "1".to_string(),
-        max_argument_bytes: MAX_ARGUMENT_BYTES,
-        max_result_bytes: MAX_RESULT_BYTES as usize,
-        supports_external_idempotency: false,
-    })
-    .collect()
+    contracts.extend(
+        oauth2::connector_capability_contracts(actor_ptid)?
+            .into_iter()
+            .map(|(capability_id, schema_version)| CapabilityContract {
+                capability_id,
+                schema_version,
+                max_argument_bytes: MAX_ARGUMENT_BYTES,
+                max_result_bytes: MAX_RESULT_BYTES as usize,
+                supports_external_idempotency: false,
+            }),
+    );
+    contracts.sort_by(|left, right| {
+        left.capability_id
+            .cmp(&right.capability_id)
+            .then_with(|| left.schema_version.cmp(&right.schema_version))
+    });
+    Ok(contracts)
 }
 
 fn resource_kinds(capability_id: &str) -> Vec<String> {
     match capability_id {
-        "filesystem.read" | "filesystem.list" | "shell.execute" | "mcp.invoke" => {
+        "filesystem.read" | "filesystem.list" | "shell.execute" => {
             vec!["workspace".to_string()]
         }
         _ => Vec::new(),
@@ -923,6 +1300,30 @@ fn requires_worker_replacement(error: &str) -> bool {
         || error.contains("Station rejected capability lease renewal")
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LeaseTickDecision {
+    Paused,
+    Expired,
+    Renew,
+    Pull,
+}
+
+fn lease_tick_decision(paused: bool, expires_at_ms: i64, now_ms: i64) -> LeaseTickDecision {
+    if paused {
+        LeaseTickDecision::Paused
+    } else if expires_at_ms <= now_ms {
+        LeaseTickDecision::Expired
+    } else if expires_at_ms - now_ms <= RENEW_BEFORE_EXPIRY_MS {
+        LeaseTickDecision::Renew
+    } else {
+        LeaseTickDecision::Pull
+    }
+}
+
+fn lease_expiry_control_ready(expires_at_ms: i64, now_ms: i64) -> bool {
+    now_ms >= expires_at_ms.saturating_add(LEASE_EXPIRY_SETTLE_DELAY_MS)
+}
+
 fn token_digest(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
@@ -938,6 +1339,27 @@ fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_lease(
+        capability_session_id: &str,
+        lease_id: &str,
+        lease_revision: u64,
+        expires_at_ms: i64,
+    ) -> ClientCapabilityLease {
+        ClientCapabilityLease {
+            capability_session_id: capability_session_id.to_string(),
+            lease_id: lease_id.to_string(),
+            lease_revision,
+            capability_set_hash: "capability-set".to_string(),
+            device_signing_key_id: "signing-key".to_string(),
+            platform: ClientPlatform::Browser as i32,
+            expires_at: Some(prost_types::Timestamp {
+                seconds: expires_at_ms / 1_000,
+                nanos: ((expires_at_ms % 1_000) * 1_000_000) as i32,
+            }),
+            ..ClientCapabilityLease::default()
+        }
+    }
 
     #[test]
     fn pull_cursor_never_advances_past_the_station_commit() {
@@ -956,7 +1378,7 @@ mod tests {
 
     #[test]
     fn local_capability_advertisement_has_no_unimplemented_replay_claim() {
-        let contracts = local_contracts(ClientSurface::Desktop);
+        let contracts = local_contracts(ClientSurface::Desktop, "ptid:person:test").unwrap();
         assert!(contracts
             .iter()
             .all(|contract| !contract.supports_external_idempotency));
@@ -964,8 +1386,8 @@ mod tests {
     }
 
     #[test]
-    fn browser_surface_advertises_no_desktop_execution_capabilities() {
-        let contracts = local_contracts(ClientSurface::Browser);
+    fn browser_surface_advertises_only_connector_capabilities() {
+        let contracts = local_contracts(ClientSurface::Browser, "ptid:person:test").unwrap();
         assert!(contracts.is_empty());
         assert_eq!(ClientSurface::Browser.platform(), ClientPlatform::Browser);
         assert_eq!(ClientSurface::Browser.connection_prefix(), "browser");
@@ -975,5 +1397,86 @@ mod tests {
     fn browser_surface_requires_explicit_lifecycle_start() {
         assert!(!ClientSurface::Browser.starts_automatically());
         assert!(ClientSurface::Desktop.starts_automatically());
+    }
+
+    #[test]
+    fn connector_projection_change_replaces_a_stale_capability_lease() {
+        assert!(!connector_projection_changed(7, 7));
+        assert!(connector_projection_changed(7, 8));
+    }
+
+    #[test]
+    fn lease_pause_suppresses_pull_renew_and_expiry_replacement() {
+        assert_eq!(
+            lease_tick_decision(true, 1_000, 2_000),
+            LeaseTickDecision::Paused
+        );
+        assert_eq!(
+            lease_tick_decision(false, 1_000, 2_000),
+            LeaseTickDecision::Expired
+        );
+        assert_eq!(
+            lease_tick_decision(false, 61_000, 2_000),
+            LeaseTickDecision::Renew
+        );
+        assert_eq!(
+            lease_tick_decision(false, 62_001, 2_000),
+            LeaseTickDecision::Pull
+        );
+    }
+
+    #[test]
+    fn lease_expired_control_has_a_real_lease_sized_receive_timeout() {
+        assert_eq!(
+            RequestedCapabilityNegativeControl::LeaseExpired.receive_timeout(),
+            Duration::from_secs(6 * 60)
+        );
+        assert_eq!(
+            RequestedCapabilityNegativeControl::LeasePause.receive_timeout(),
+            NEGATIVE_CONTROL_TIMEOUT
+        );
+        assert!(RequestedCapabilityNegativeControl::LeaseExpired.requires_lease_lifecycle_control());
+    }
+
+    #[test]
+    fn lease_expiry_control_waits_past_the_station_expiry_boundary() {
+        assert!(!lease_expiry_control_ready(10_000, 10_249));
+        assert!(lease_expiry_control_ready(10_000, 10_250));
+    }
+
+    #[test]
+    fn lease_transition_exposes_only_hashed_authority_and_reset_cursor() {
+        let source = test_lease("source-session", "source-lease", 9, 10_000);
+        let current = test_lease("current-session", "current-lease", 1, 20_000);
+
+        ensure_replacement_lease(&source, &current, 15_000).unwrap();
+        let facts = lease_transition_facts(&source, &current, 0).unwrap();
+
+        assert_eq!(
+            facts.source_capability_session_id_hash,
+            hash_identifier("source-session")
+        );
+        assert_eq!(
+            facts.current_capability_session_id_hash,
+            hash_identifier("current-session")
+        );
+        assert_ne!(
+            facts.source_capability_session_id_hash,
+            facts.current_capability_session_id_hash
+        );
+        assert_eq!(facts.source_expires_at_ms, 10_000);
+        assert_eq!(facts.current_expires_at_ms, 20_000);
+        assert_eq!(facts.current_lease_revision, 1);
+        assert_eq!(facts.current_pull_cursor, 0);
+    }
+
+    #[test]
+    fn replacement_lease_must_be_new_current_authority() {
+        let source = test_lease("source-session", "source-lease", 9, 10_000);
+        let same_session = test_lease("source-session", "current-lease", 1, 20_000);
+        let stale = test_lease("current-session", "current-lease", 1, 15_000);
+
+        assert!(ensure_replacement_lease(&source, &same_session, 15_000).is_err());
+        assert!(ensure_replacement_lease(&source, &stale, 15_000).is_err());
     }
 }

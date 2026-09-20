@@ -161,6 +161,8 @@ func (r *authorityRepository) replaceChildren(
 			HomeStation:    string(member.HomeStation),
 			JoinedSequence: uint64(member.JoinedAt),
 			LeftSequence:   uint64(member.LeftAt),
+			Muted:          member.Muted,
+			MutedUntil:     cloneTimePointer(member.MutedUntil),
 		})
 	}
 	if len(members) > 0 {
@@ -219,6 +221,8 @@ func (r *authorityRepository) loadSnapshot(
 			HomeStation: valueobject.StationID(member.HomeStation),
 			JoinedAt:    valueobject.Sequence(member.JoinedSequence),
 			LeftAt:      valueobject.Sequence(member.LeftSequence),
+			Muted:       member.Muted,
+			MutedUntil:  cloneTimePointer(member.MutedUntil),
 		})
 	}
 	devices := make([]entity.MemberDevice, 0, len(deviceModels))
@@ -353,6 +357,14 @@ func activeDeviceEndpoints(devices []entity.MemberDevice) []valueobject.Endpoint
 		}
 	}
 	return valueobject.SortEndpoints(endpoints)
+}
+
+func cloneTimePointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := value.UTC()
+	return &copy
 }
 
 type eventRepository struct {

@@ -276,7 +276,8 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
             from_mls_epoch,
             to_mls_epoch,
             changes,
-            join_projection,
+            authority_projection,
+            allow_join_checkpoint,
             genesis,
         ) = match event.payload.as_ref() {
             Some(conversation_event::Payload::MembershipTransitionCommitted(transition)) => {
@@ -288,25 +289,24 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                 {
                     return Err("messaging MLS transition binding mismatch".to_string());
                 }
-                validate_authority_snapshot(event, transition.post_state.as_ref())?;
-                let join_projection = if queue_kind == MlsQueuePayloadKind::Welcome {
+                let snapshot = transition.post_state.as_ref().ok_or_else(|| {
+                    "messaging MLS transition has no authority snapshot".to_string()
+                })?;
+                let authority_projection = authority_snapshot_projection(event, snapshot, now)?;
+                let allow_join_checkpoint = if queue_kind == MlsQueuePayloadKind::Welcome {
                     let (local_sequence, _) = self.store.authority_head(&event.conversation_id)?;
                     if local_sequence == 0
                         || self
                             .store
                             .has_mls_retired_checkpoint(&event.conversation_id)?
                     {
-                        Some(join_checkpoint_projection(
-                            event,
-                            transition,
-                            &self.endpoint,
-                            now,
-                        )?)
+                        join_checkpoint_projection(event, transition, &self.endpoint, now)?;
+                        true
                     } else {
-                        None
+                        false
                     }
                 } else {
-                    None
+                    false
                 };
                 let changes = transition
                     .changes
@@ -326,7 +326,8 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                     transition.from_mls_epoch,
                     transition.to_mls_epoch,
                     changes,
-                    join_projection,
+                    authority_projection,
+                    allow_join_checkpoint,
                     false,
                 )
             }
@@ -352,7 +353,8 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                     payload.from_mls_epoch,
                     payload.to_mls_epoch,
                     group_genesis_changes(snapshot)?,
-                    Some(projection),
+                    projection,
+                    true,
                     true,
                 )
             }
@@ -411,7 +413,8 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                 to_membership_epoch,
                 from_mls_epoch,
                 to_mls_epoch,
-                join_projection: join_projection.as_ref(),
+                authority_projection: &authority_projection,
+                allow_join_checkpoint,
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
                 consumed_at_unix_ms: now,
@@ -500,12 +503,15 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
         if pending.command_id != event.command_id {
             return Err("messaging MLS sender pending transition mismatch".to_string());
         }
-        let (genesis_projection, genesis_snapshot) = match event.payload.as_ref() {
+        let (authority_projection, genesis_snapshot) = match event.payload.as_ref() {
             Some(conversation_event::Payload::MembershipTransitionCommitted(transition)) => {
                 if pending.transition_id != transition.transition_id {
                     return Err("messaging MLS sender pending transition mismatch".to_string());
                 }
-                (None, None)
+                let snapshot = transition.post_state.as_ref().ok_or_else(|| {
+                    "messaging MLS transition has no authority snapshot".to_string()
+                })?;
+                (authority_snapshot_projection(event, snapshot, now)?, None)
             }
             Some(conversation_event::Payload::ConversationCreated(created)) => {
                 let snapshot = created
@@ -513,13 +519,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
                     .as_ref()
                     .ok_or_else(|| "messaging MLS genesis has no authority snapshot".to_string())?;
                 (
-                    Some(group_genesis_projection(
-                        event,
-                        created,
-                        &self.endpoint,
-                        now,
-                        true,
-                    )?),
+                    group_genesis_projection(event, created, &self.endpoint, now, true)?,
                     Some(snapshot),
                 )
             }
@@ -552,7 +552,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
                     session_state: &session_state,
                     membership_epoch: event.membership_epoch,
                     mls_epoch: event.mls_epoch,
-                    genesis_projection: genesis_projection.as_ref(),
+                    authority_projection: &authority_projection,
                     receipt_id: &receipt.receipt_id,
                     receipt_bytes: &receipt_bytes,
                     consumed_at_unix_ms: now,
@@ -1040,26 +1040,39 @@ mod tests {
     }
 
     fn authority_snapshot(membership_epoch: i64, mls_epoch: i64) -> ConversationAuthoritySnapshot {
+        authority_snapshot_for(
+            membership_epoch,
+            mls_epoch,
+            &[
+                ("ptid:alice", "owner", "station-local"),
+                ("ptid:bob", "member", "station-remote"),
+            ],
+            &[("ptid:alice", "alice-device"), ("ptid:bob", "bob-device")],
+        )
+    }
+
+    fn authority_snapshot_for(
+        membership_epoch: i64,
+        mls_epoch: i64,
+        members: &[(&str, &str, &str)],
+        endpoints: &[(&str, &str)],
+    ) -> ConversationAuthoritySnapshot {
         ConversationAuthoritySnapshot {
             kind: ConversationKind::Group as i32,
             name: "Test group".to_string(),
             owner_ptid: "ptid:alice".to_string(),
-            active_members: vec![
-                ConversationAuthorityMember {
-                    ptid: "ptid:alice".to_string(),
-                    role: "owner".to_string(),
-                    home_station_peer_id: "station-local".to_string(),
-                },
-                ConversationAuthorityMember {
-                    ptid: "ptid:bob".to_string(),
-                    role: "member".to_string(),
-                    home_station_peer_id: "station-remote".to_string(),
-                },
-            ],
-            active_endpoints: vec![
-                proto_endpoint(&endpoint("ptid:alice", "alice-device")),
-                proto_endpoint(&endpoint("ptid:bob", "bob-device")),
-            ],
+            active_members: members
+                .iter()
+                .map(|(ptid, role, station)| ConversationAuthorityMember {
+                    ptid: (*ptid).to_string(),
+                    role: (*role).to_string(),
+                    home_station_peer_id: (*station).to_string(),
+                })
+                .collect(),
+            active_endpoints: endpoints
+                .iter()
+                .map(|(ptid, device_id)| proto_endpoint(&endpoint(ptid, device_id)))
+                .collect(),
             federation_id: "federation-1".to_string(),
             membership_epoch,
             mls_epoch,
@@ -1218,6 +1231,7 @@ mod tests {
         transition_id: &str,
         commit_bytes: Vec<u8>,
         change: MessagingMembershipChangeCommitted,
+        post_state: ConversationAuthoritySnapshot,
     ) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", recipient_device_id));
         let commit_hash = Sha256::digest(&commit_bytes).to_vec();
@@ -1261,7 +1275,7 @@ mod tests {
                     from_mls_epoch: 1,
                     to_mls_epoch: 2,
                     changes: vec![change],
-                    post_state: Some(authority_snapshot(2, 2)),
+                    post_state: Some(post_state),
                     ..Default::default()
                 },
             )),
@@ -1641,7 +1655,7 @@ mod tests {
         );
         let processor = MlsTransitionProcessor::new(
             bob.clone(),
-            store,
+            store.clone(),
             endpoint("ptid:bob", "bob-device"),
             now,
         )
@@ -1663,11 +1677,33 @@ mod tests {
                         home_station_peer_id: "station-c".to_string(),
                         role: "member".to_string(),
                     },
+                    authority_snapshot_for(
+                        2,
+                        2,
+                        &[
+                            ("ptid:alice", "owner", "station-local"),
+                            ("ptid:bob", "member", "station-remote"),
+                            ("ptid:charlie", "member", "station-c"),
+                        ],
+                        &[
+                            ("ptid:alice", "alice-device"),
+                            ("ptid:bob", "bob-device"),
+                            ("ptid:charlie", "charlie-device"),
+                        ],
+                    ),
                 ),
                 1,
             )
             .unwrap();
         assert_eq!(bob.group_epoch("group-commit").unwrap(), 2);
+        assert_eq!(
+            store.conversations()[0]
+                .members
+                .iter()
+                .map(|member| member.ptid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ptid:alice", "ptid:bob", "ptid:charlie"]
+        );
 
         alice
             .accept_pending_transition("group-commit", &prepared.transition_id)
@@ -1737,7 +1773,7 @@ mod tests {
         );
         let processor = MlsTransitionProcessor::new(
             bob_device_1.clone(),
-            store,
+            store.clone(),
             endpoint("ptid:bob", "bob-device-1"),
             now,
         )
@@ -1759,10 +1795,27 @@ mod tests {
                         home_station_peer_id: "station-b".to_string(),
                         role: "member".to_string(),
                     },
+                    authority_snapshot_for(
+                        2,
+                        2,
+                        &[
+                            ("ptid:alice", "owner", "station-local"),
+                            ("ptid:bob", "member", "station-remote"),
+                        ],
+                        &[("ptid:alice", "alice-device"), ("ptid:bob", "bob-device-1")],
+                    ),
                 ),
                 1,
             )
             .unwrap();
+        assert_eq!(
+            store.conversations()[0]
+                .members
+                .iter()
+                .map(|member| member.ptid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ptid:alice", "ptid:bob"]
+        );
         let head = bob_device_1.public_head("group-remove-device").unwrap();
         assert!(head
             .members

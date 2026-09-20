@@ -274,6 +274,10 @@ export interface EventPayloadMap {
   [EVENT.AGENT_BUILDER_STREAM_ENDED]: void;
   [EVENT.AGENT_TURN_STREAM_EVENT]: AgentTurnStreamEventPayload;
   [EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED]: { conversationId: string };
+  [EVENT.EVALUATION_PROJECTION_INVALIDATED]: {
+    reason: string;
+    runId?: string;
+  };
   [EVENT.GLOBAL_CONTEXT_UPDATED]: { slice: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_STARTED]: { name: string; timestamp_ms: number };
   [EVENT.GLOBAL_CONTEXT_PIPELINE_FINISHED]: { name: string; timestamp_ms: number };

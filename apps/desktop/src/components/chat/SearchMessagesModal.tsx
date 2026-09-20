@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Input } from '@lobehub/ui';
 import { Button, Empty, Modal, Spin, Tag, Typography, theme } from 'antd';
-import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, Users, Video } from 'lucide-react';
+import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, Users, Video, X } from 'lucide-react';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import type { SearchResult } from '../../store/socialChat';
 import { log } from '../../utils/logger';
@@ -243,6 +243,23 @@ export function SearchMessagesModal({
     return () => window.clearTimeout(handle);
   }, [localQuery, open, initialScope, conversationId, searchMessages]);
 
+  useEffect(() => {
+    if (!open || !localQuery) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLElement>('[data-chat-message-search-input]');
+      const field = input?.closest<HTMLElement>('.ant-input-affix-wrapper') ?? input?.parentElement ?? null;
+      const clear = field?.querySelector<HTMLElement>('[data-chat-message-search-clear]') ?? null;
+      const suffix = field?.querySelector<HTMLElement>('.ant-input-suffix') ?? null;
+      const fieldRect = field?.getBoundingClientRect();
+      const clearRect = clear?.getBoundingClientRect();
+      const suffixRect = suffix?.getBoundingClientRect();
+      // #region debug-point D:search-clear-geometry
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'D', location: 'SearchMessagesModal.tsx:search-clear-geometry', msg: '[DEBUG] Search field clear-control geometry', data: { field: fieldRect ? { left: fieldRect.left, right: fieldRect.right, width: fieldRect.width } : null, clear: clearRect ? { left: clearRect.left, right: clearRect.right, width: clearRect.width } : null, suffix: suffixRect ? { left: suffixRect.left, right: suffixRect.right, width: suffixRect.width } : null, rightInset: fieldRect && clearRect ? Math.round(fieldRect.right - clearRect.right) : null, loading: searchLoading }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [localQuery, open, searchLoading]);
+
   const handleClose = useCallback(() => {
     clearSearch();
     setLocalQuery('');
@@ -348,21 +365,42 @@ export function SearchMessagesModal({
     >
       <Flexbox gap={12} style={{ minHeight: 492 }}>
         <Input
-          allowClear
+          data-chat-message-search-input
           prefix={<Search size={16} style={{ color: token.colorTextQuaternary }} />}
-          suffix={
+          suffix={searchLoading || localQuery ? (
             <span
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                width: 18,
-                height: 18,
+                gap: 6,
+                height: 24,
               }}
             >
               {searchLoading ? <Spin size="small" /> : null}
+              {localQuery ? (
+                <button
+                  data-chat-message-search-clear
+                  type="button"
+                  aria-label={t('chat.social.search.clear')}
+                  onClick={() => setLocalQuery('')}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    padding: 0,
+                    border: 0,
+                    background: 'transparent',
+                    color: token.colorTextTertiary,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
             </span>
-          }
+          ) : undefined}
           placeholder={t('chat.social.search.placeholder')}
           value={localQuery}
           onChange={(e) => setLocalQuery(e.target.value)}

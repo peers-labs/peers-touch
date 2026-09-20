@@ -63,6 +63,45 @@ describe('mergeServerMessages', () => {
     expect(merged[0].toolCalls).toHaveLength(1);
   });
 
+  it('carries a live ToolCall onto an unkeyed authoritative assistant reply', () => {
+    const current = [
+      msg('temp-assistant-1', 'assistant', '', {
+        loading: true,
+        turnId: 'turn-1',
+        toolCalls: [{
+          id: 'tool-call-1',
+          name: 'memory',
+          args: '{"action":"add"}',
+          pending: true,
+          status: 'approval_required',
+          approvalId: 'approval-1',
+        }],
+      }),
+    ];
+    const server = [
+      msg('server-assistant-1', 'assistant', 'Saved.', {
+        loading: false,
+        terminalStatus: 'completed',
+        timestamp: current[0].timestamp + 500,
+      }),
+    ];
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: 'server-assistant-1',
+      turnId: 'turn-1',
+      content: 'Saved.',
+      terminalStatus: 'completed',
+      toolCalls: [{
+        id: 'tool-call-1',
+        status: 'approval_required',
+        approvalId: 'approval-1',
+      }],
+    });
+  });
+
   it('removes an inactive branch when the authoritative projection selects an older sibling', () => {
     const current = [
       msg('user-1', 'user', 'question'),
@@ -176,6 +215,7 @@ describe('mergeServerMessages', () => {
         cancelled: true,
         terminalStatus: 'cancelled',
         error: typedError.locale_key,
+        errorDetail: 'cancelled_by_user',
         typedError,
       }),
     ];
@@ -200,6 +240,7 @@ describe('mergeServerMessages', () => {
       cancelled: true,
       terminalStatus: 'cancelled',
       error: 'agent.errors.lifecycleCancelled',
+      errorDetail: 'cancelled_by_user',
       typedError,
     });
   });

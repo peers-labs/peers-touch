@@ -42,6 +42,7 @@ import {
   acceptSocialFriendRequest,
   readSocialRuntimeProjection,
   reconcileSocialRuntime,
+  searchSocialPeople,
   sendSocialFriendRequest,
 } from '../features/social/socialRuntime';
 import {
@@ -511,7 +512,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return { conversationId, isTyping: input.isTyping, submitted: result.submitted };
   },
 
-  'messaging.reconcile': async () => reconcileActiveMessagingSession(),
+  'messaging.reconcile': async () => {
+    return reconcileActiveMessagingSession();
+  },
 
   'messaging.command.read': async (input) => messagingCommandStatus({
     ...requireMessagingAccount(),
@@ -561,6 +564,17 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       }),
     ] as const)));
     return sanitizeMessagingProjection({ runtime, conversations, messages });
+  },
+
+  'social.people.search': async (input) => {
+    const results = await searchSocialPeople(
+      requireString(input?.query, 'social.people.search.query'),
+    );
+    return results.map((result) => ({
+      ptid: result.ptid,
+      federationId: result.federationId,
+      homeStationPeerId: result.homeStationPeerId,
+    }));
   },
 
   'social.request.send': async (input) => sendSocialFriendRequest(

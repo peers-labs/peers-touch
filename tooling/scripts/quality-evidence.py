@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -80,7 +81,27 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
-    completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    invocation = list(command)
+    if os.name == "nt" and invocation[0].endswith(".sh"):
+        bash = shutil.which("bash")
+        if not bash:
+            candidate = Path("C:/Program Files/Git/bin/bash.exe")
+            bash = str(candidate) if candidate.is_file() else ""
+        if not bash:
+            return {
+                "command": " ".join(command),
+                "exit_code": 127,
+                "stdout": "",
+                "stderr": "Git Bash is required for the remaining review scripts",
+                "ok": False,
+            }
+        invocation.insert(0, bash)
+    completed = subprocess.run(
+        invocation,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+    )
     return {
         "command": " ".join(command),
         "exit_code": completed.returncode,
@@ -136,7 +157,8 @@ def parse_knowledge_matches(output: str) -> list[dict[str, str]]:
 
 
 def run_acceptance_plan(repo_root: Path, root: Path, diff_range: str, changed_paths: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
-    with tempfile.NamedTemporaryFile(prefix="pt-acceptance-plan-", suffix=".json") as plan_file:
+    with tempfile.TemporaryDirectory(prefix="pt-acceptance-plan-") as temporary:
+        plan_path = Path(temporary) / "projection.json"
         command = [
             "python3",
             "tooling/scripts/acceptance-plan.py",
@@ -145,12 +167,12 @@ def run_acceptance_plan(repo_root: Path, root: Path, diff_range: str, changed_pa
             "--range",
             diff_range,
             "--output",
-            plan_file.name,
+            str(plan_path),
         ]
         for path in changed_paths:
             command.extend(["--changed-file", path])
         result = run_command(command, repo_root)
-        plan = load(Path(plan_file.name)) if result["ok"] else {}
+        plan = load(plan_path) if result["ok"] else {}
     return result, plan
 
 

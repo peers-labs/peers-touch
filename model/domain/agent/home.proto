@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.agent.v1;
 
+import "domain/agent/agent.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
@@ -42,6 +43,10 @@ message HomePinnedAgent {
   string display_name = 2;
   string avatar_ref = 3;
   string readiness_snapshot_id = 4;
+  string agent_name = 5;
+  uint64 agent_version = 6;
+  string provider_id = 7;
+  string model_id = 8;
 }
 
 message HomeRecentWork {
@@ -83,6 +88,7 @@ message HomeTaskProjection {
   HomeTaskStatus status = 4;
   uint32 progress_percent = 5;
   google.protobuf.Timestamp updated_at = 6;
+  string topic_ref = 7;
 }
 
 message HomeCapabilitySummary {
@@ -129,6 +135,9 @@ message SubmitHomeChatCommandRequest {
   string runtime_profile_id = 3;
   string client_idempotency_key = 4;
   optional string conversation_id = 5;
+  uint64 expected_agent_version = 6;
+  string readiness_snapshot_id = 7;
+  repeated AgentAttachmentRef attachments = 8;
 }
 
 message SubmitHomeChatCommandResponse {
@@ -142,6 +151,9 @@ message SubmitHomeTaskCommandRequest {
   string input = 2;
   string runtime_profile_id = 3;
   string client_idempotency_key = 4;
+  uint64 expected_agent_version = 5;
+  string readiness_snapshot_id = 6;
+  optional string topic_ref = 7;
 }
 
 message SubmitHomeTaskCommandResponse {

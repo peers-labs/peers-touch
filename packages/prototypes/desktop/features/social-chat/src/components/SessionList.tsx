@@ -322,8 +322,7 @@ export function SessionList({
                   const selected = groupSelectedIds.has(contact.id);
                   const station = contact.homeStation
                     || contact.federatedHandle
-                    || contact.homeStationPeerId
-                    || contact.id;
+                    || 'Station unavailable';
                   return (
                     <button
                       key={contact.id}

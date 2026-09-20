@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	httpinterface "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/interface/http"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
@@ -15,6 +16,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -26,6 +30,10 @@ const (
 	fetchMLSKeyPackagePath            = "/key-exchange/mls/key-package/fetch"
 	countMLSKeyPackagesPath           = "/key-exchange/mls/key-package/count"
 	sendDirectKeyExchangePath         = "/key-exchange/dkx/send"
+	publishContentPreKeysPath         = "/key-exchange/content-prekeys/publish"
+	inventoryContentPreKeysPath       = "/key-exchange/content-prekeys/inventory"
+	publishContentPreKeysBodyLimit    = int64(128 << 10)
+	inventoryContentPreKeysBodyLimit  = int64(4 << 10)
 )
 
 type canonicalAPI interface {
@@ -120,7 +128,7 @@ func (s *subServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
 	deviceIDWrapper := serverwrapper.DeviceID()
 
-	return []server.Handler{
+	handlers := []server.Handler{
 		server.NewTypedHandler(
 			"key-exchange-direct-bundle-upload",
 			uploadDirectKeyBundlePath,
@@ -193,6 +201,242 @@ func (s *subServer) Handlers() []server.Handler {
 			deviceIDWrapper,
 			s.jwtWrapper,
 		),
+	}
+	if s.composition == nil ||
+		s.composition.contentPreKeyService == nil ||
+		s.contentPreKeyJWTWrapper == nil {
+		return handlers
+	}
+	contentPreKeyErrorOptions := server.CanonicalProtobufHandlerOptions{
+		ErrorCodes: server.CanonicalProtobufErrorCodes{
+			Unauthorized: int32(
+				actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			),
+			InvalidQueryParameters: int32(
+				actormodel.ErrorCode_ERROR_CODE_INVALID_QUERY_PARAMETERS,
+			),
+			InvalidRequestBody: int32(
+				actormodel.ErrorCode_ERROR_CODE_INVALID_REQUEST_BODY,
+			),
+			InvalidProtobuf: int32(
+				actormodel.ErrorCode_ERROR_CODE_INVALID_PROTOBUF,
+			),
+			FailedToReadBody: int32(
+				actormodel.ErrorCode_ERROR_CODE_FAILED_TO_READ_BODY,
+			),
+			PayloadTooLarge: int32(
+				actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE,
+			),
+			InternalServer: int32(
+				actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR,
+			),
+		},
+		ProjectError: projectContentPreKeyRouteError,
+	}
+	contentDeviceWrapper := serverwrapper.RequireStructuredDeviceID(
+		int32(actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+	)
+	publishOptions := contentPreKeyErrorOptions
+	publishOptions.MaxBodyBytes = publishContentPreKeysBodyLimit
+	inventoryOptions := contentPreKeyErrorOptions
+	inventoryOptions.MaxBodyBytes = inventoryContentPreKeysBodyLimit
+	handlers = append(
+		handlers,
+		server.NewCanonicalProtobufHandler(
+			"key-exchange-content-prekey-publish",
+			publishContentPreKeysPath,
+			server.POST,
+			func() *securecontentpb.PublishContentPreKeysRequest {
+				return &securecontentpb.PublishContentPreKeysRequest{}
+			},
+			s.handlePublishContentPreKeysClient,
+			publishOptions,
+			logIDWrapper,
+			contentDeviceWrapper,
+			s.contentPreKeyJWTWrapper,
+		),
+		server.NewCanonicalProtobufHandler(
+			"key-exchange-content-prekey-inventory",
+			inventoryContentPreKeysPath,
+			server.POST,
+			func() *securecontentpb.GetContentPreKeyInventoryRequest {
+				return &securecontentpb.GetContentPreKeyInventoryRequest{}
+			},
+			s.handleGetContentPreKeyInventoryClient,
+			inventoryOptions,
+			logIDWrapper,
+			contentDeviceWrapper,
+			s.contentPreKeyJWTWrapper,
+		),
+	)
+	return handlers
+}
+
+func (s *subServer) handlePublishContentPreKeysClient(
+	ctx context.Context,
+	request *securecontentpb.PublishContentPreKeysRequest,
+) (*securecontentpb.PublishContentPreKeysResponse, error) {
+	publisher, sessionID, service, err := s.authenticatedContentPreKeyClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := service.PublishContentPreKeysClient(
+		ctx,
+		publisher,
+		s.localStationID,
+		sessionID,
+		request,
+	)
+	return response, mapContentPreKeyRouteError(
+		ctx,
+		"publish Content PreKeys",
+		err,
+	)
+}
+
+func (s *subServer) handleGetContentPreKeyInventoryClient(
+	ctx context.Context,
+	request *securecontentpb.GetContentPreKeyInventoryRequest,
+) (*securecontentpb.GetContentPreKeyInventoryResponse, error) {
+	publisher, sessionID, service, err := s.authenticatedContentPreKeyClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := service.ContentPreKeyInventoryClient(
+		ctx,
+		publisher,
+		s.localStationID,
+		sessionID,
+		request,
+	)
+	return response, mapContentPreKeyRouteError(
+		ctx,
+		"get Content PreKey inventory",
+		err,
+	)
+}
+
+func (s *subServer) authenticatedContentPreKeyClient(
+	ctx context.Context,
+) (
+	domain.Endpoint,
+	string,
+	*application.ContentPreKeyService,
+	error,
+) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil ||
+		strings.TrimSpace(subject.ID) == "" ||
+		strings.TrimSpace(subject.SessionID) == "" {
+		return domain.Endpoint{}, "", nil, server.NewRouteError(
+			nethttp.StatusUnauthorized,
+			int32(actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			"unauthorized",
+			nil,
+		)
+	}
+	actorPTID, err := resolveKeyExchangeSubjectPTID(ctx, subject.ID)
+	if err != nil {
+		return domain.Endpoint{}, "", nil, server.NewRouteError(
+			nethttp.StatusInternalServerError,
+			int32(actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR),
+			"internal server error",
+			err,
+		)
+	}
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return domain.Endpoint{}, "", nil, server.NewRouteError(
+			nethttp.StatusUnauthorized,
+			int32(actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			"unauthorized",
+			nil,
+		)
+	}
+	service, err := s.requireContentPreKeyService()
+	if err != nil {
+		return domain.Endpoint{}, "", nil, mapContentPreKeyRouteError(
+			ctx,
+			"resolve Content PreKey service",
+			err,
+		)
+	}
+	return domain.Endpoint{
+		ActorPTID: strings.TrimSpace(actorPTID),
+		DeviceID:  deviceID,
+	}, strings.TrimSpace(subject.SessionID), service, nil
+}
+
+func projectContentPreKeyRouteError(
+	failure server.RouteError,
+) ([]byte, error) {
+	return proto.MarshalOptions{Deterministic: true}.Marshal(
+		&actormodel.ErrorResponse{
+			Code:    actormodel.ErrorCode(failure.StableCode),
+			Message: failure.Message,
+		},
+	)
+}
+
+func mapContentPreKeyRouteError(
+	ctx context.Context,
+	operation string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+	logger.Warnf(ctx, "%s failed: %v", operation, err)
+	status := nethttp.StatusInternalServerError
+	code := actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR
+	message := "internal server error"
+	retryAfter := time.Duration(0)
+	switch domain.CodeOf(err) {
+	case domain.ErrorCodeInvalidArgument, domain.ErrorCodeInvalidMaterial:
+		status = nethttp.StatusBadRequest
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL
+		message = "invalid Content PreKey material"
+	case domain.ErrorCodeUnauthorized:
+		status = nethttp.StatusForbidden
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN
+		message = "Content PreKey endpoint is forbidden"
+	case domain.ErrorCodeNotFound:
+		status = nethttp.StatusNotFound
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND
+		message = "Content PreKey pool not found"
+	case domain.ErrorCodeStaleMaterial:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH
+		message = "Content PreKey epoch is stale"
+	case domain.ErrorCodeConflict:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT
+		message = "Content PreKey command conflicts with persisted state"
+	case domain.ErrorCodePoolDepleted:
+		status = nethttp.StatusConflict
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED
+		message = "Content PreKey pool is depleted"
+	case domain.ErrorCodePayloadTooLarge:
+		status = nethttp.StatusRequestEntityTooLarge
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE
+		message = "Content PreKey payload is too large"
+	case domain.ErrorCodeQuotaExceeded:
+		status = nethttp.StatusTooManyRequests
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED
+		message = "Content PreKey quota exceeded"
+		retryAfter = time.Second
+	case domain.ErrorCodeDependency:
+		status = nethttp.StatusServiceUnavailable
+		code = actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE
+		message = "Content PreKey dependency unavailable"
+		retryAfter = time.Second
+	}
+	return &server.RouteError{
+		Status:     status,
+		StableCode: int32(code),
+		Message:    message,
+		RetryAfter: retryAfter,
+		Cause:      err,
 	}
 }
 
@@ -628,10 +872,17 @@ func mapCanonicalError(
 		)
 	case domain.ErrorCodeConflict,
 		domain.ErrorCodeStaleMaterial,
-		domain.ErrorCodePlanExpired:
+		domain.ErrorCodePlanExpired,
+		domain.ErrorCodePoolDepleted:
 		return server.NewHandlerErrorWithCause(
 			nethttp.StatusConflict,
 			"Key Exchange material conflicts with current state",
+			err,
+		)
+	case domain.ErrorCodeQuotaExceeded:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusTooManyRequests,
+			"Key Exchange quota was exceeded",
 			err,
 		)
 	case domain.ErrorCodePayloadTooLarge:

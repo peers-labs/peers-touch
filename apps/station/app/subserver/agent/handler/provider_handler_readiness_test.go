@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
@@ -52,5 +53,37 @@ func TestProviderProjectionDoesNotInferRuntimeCapabilityFromCatalog(t *testing.T
 
 	if info.Protocol != "" || info.RuntimeKind != "" || info.CliCommand != "" || info.ModelsCommand != "" {
 		t.Fatalf("catalog metadata must not infer an advertised runtime capability: %+v", info)
+	}
+}
+
+func TestModelProjectionReturnsPersistedCapabilityAuthority(t *testing.T) {
+	info, err := modelToProto(&persistence.AgentModel{
+		ModelID:          "custom-model",
+		ContextWindow:    128000,
+		CapabilitiesJSON: json.RawMessage(`{"streaming":true,"native-tools":false}`),
+	})
+	if err != nil {
+		t.Fatalf("project model: %v", err)
+	}
+	if info.GetContextWindow() != 128000 ||
+		!info.GetCapabilities().GetFlags()["streaming"] ||
+		info.GetCapabilities().GetFlags()["native-tools"] {
+		t.Fatalf("model projection dropped capability authority: %+v", info)
+	}
+}
+
+func TestCatalogModelProjectionReturnsDeclaredCapabilities(t *testing.T) {
+	info, err := catalogModelToProto(&catalog.CatalogModel{
+		ID:            "catalog-model",
+		Type:          "chat",
+		ContextWindow: 64000,
+		Capabilities:  []string{"streaming", "native-tools"},
+	})
+	if err != nil {
+		t.Fatalf("project catalog model: %v", err)
+	}
+	if !info.GetCapabilities().GetFlags()["streaming"] ||
+		!info.GetCapabilities().GetFlags()["native-tools"] {
+		t.Fatalf("catalog projection dropped declared capabilities: %+v", info)
 	}
 }

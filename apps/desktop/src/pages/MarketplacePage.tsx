@@ -2,8 +2,20 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, SearchBar } from '@lobehub/ui';
-import { Alert, App, Descriptions, Empty, Input, Modal, Segmented, Spin, Tag, theme } from 'antd';
-import { Bot, Plus, Puzzle, RefreshCw, Wrench } from 'lucide-react';
+import {
+  Alert,
+  App,
+  Descriptions,
+  Drawer,
+  Empty,
+  Input,
+  Modal,
+  Segmented,
+  Spin,
+  Tag,
+  theme,
+} from 'antd';
+import { Bot, Plus, Puzzle, RefreshCw, ShieldCheck, Wrench } from 'lucide-react';
 
 import { api } from '../services/desktop_api';
 import type {
@@ -23,19 +35,37 @@ interface MarketplaceCatalog {
   packages: MarketSkillEntry[];
 }
 
+async function loadSourcePackages(marketId: string): Promise<MarketSkillEntry[]> {
+  const packages: MarketSkillEntry[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await api.listMarketSkills(marketId, undefined, cursor, PACKAGE_BATCH_SIZE);
+    packages.push(...page.skills);
+    cursor = page.nextCursor;
+    if (cursor && !seenCursors.add(cursor)) {
+      throw new Error('marketplace pagination cursor repeated');
+    }
+    if (packages.length > 500) {
+      throw new Error('marketplace package limit exceeded');
+    }
+  } while (cursor);
+  return packages;
+}
+
 async function loadMarketplaceCatalog(): Promise<MarketplaceCatalog> {
   const markets = await api.listSkillMarkets();
   const results = await Promise.allSettled(
     markets
       .filter((source) => source.synced)
-      .map((source) => api.listMarketSkills(source.id)),
+      .map((source) => loadSourcePackages(source.id)),
   );
 
   return {
     failedSources: results.filter((result) => result.status === 'rejected').length,
     markets,
     packages: results.flatMap((result) =>
-      result.status === 'fulfilled' ? result.value.skills : [],
+      result.status === 'fulfilled' ? result.value : [],
     ),
   };
 }
@@ -56,7 +86,7 @@ function belongsToTab(entry: MarketSkillEntry, tab: TabKey): boolean {
 export const MarketplacePage = memo(() => {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
 
   const [activeTab, setActiveTab] = useState<TabKey>('agents');
   const [search, setSearch] = useState('');
@@ -75,6 +105,13 @@ export const MarketplacePage = memo(() => {
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceName, setSourceName] = useState('');
   const [sourceBranch, setSourceBranch] = useState('main');
+  const [sourceId, setSourceId] = useState('');
+  const [sourcePublisherId, setSourcePublisherId] = useState('');
+  const [sourceSigningKeyId, setSourceSigningKeyId] = useState('');
+  const [sourcePublicKey, setSourcePublicKey] = useState('');
+  const [sourceManifestPath, setSourceManifestPath] = useState(
+    'packages/agent-catalog/official-catalog.v1.envelope.json',
+  );
   const [addingSource, setAddingSource] = useState(false);
 
   const [selectedEntry, setSelectedEntry] = useState<MarketSkillEntry | null>(null);
@@ -96,17 +133,29 @@ export const MarketplacePage = memo(() => {
   const tabOptions = useMemo(
     () => [
       {
-        label: t('agent.marketplace.tabs.agents'),
+        label: (
+          <span data-testid="marketplace-tab-agents">
+            {t('agent.marketplace.tabs.agents')}
+          </span>
+        ),
         value: 'agents' as TabKey,
         icon: <Bot size={14} />,
       },
       {
-        label: t('agent.marketplace.tabs.skills'),
+        label: (
+          <span data-testid="marketplace-tab-skills">
+            {t('agent.marketplace.tabs.skills')}
+          </span>
+        ),
         value: 'skills' as TabKey,
         icon: <Puzzle size={14} />,
       },
       {
-        label: t('agent.marketplace.tabs.tools'),
+        label: (
+          <span data-testid="marketplace-tab-tools">
+            {t('agent.marketplace.tabs.tools')}
+          </span>
+        ),
         value: 'tools' as TabKey,
         icon: <Wrench size={14} />,
       },
@@ -128,7 +177,9 @@ export const MarketplacePage = memo(() => {
       const results = await Promise.allSettled(
         markets.map((market) => api.syncSkillMarket(market.id)),
       );
-      const failed = results.filter((result) => result.status === 'rejected').length;
+      const failed = results.filter(
+        (result) => result.status === 'rejected' || result.value.stale,
+      ).length;
       reloadCatalog();
       if (failed > 0) {
         void message.warning(t('agent.marketplace.syncPartial', {
@@ -145,7 +196,14 @@ export const MarketplacePage = memo(() => {
 
   const handleAddSource = useCallback(async () => {
     const url = sourceUrl.trim();
-    if (!url) {
+    if (
+      !url
+      || !sourceId.trim()
+      || !sourcePublisherId.trim()
+      || !sourceSigningKeyId.trim()
+      || !sourcePublicKey.trim()
+      || !sourceManifestPath.trim()
+    ) {
       void message.warning(t('agent.marketplace.sourceUrlRequired'));
       return;
     }
@@ -157,6 +215,13 @@ export const MarketplacePage = memo(() => {
         url,
         sourceName.trim() || defaultNameFromUrl(url),
         sourceBranch.trim() || 'main',
+        {
+          sourceId: sourceId.trim(),
+          publisherId: sourcePublisherId.trim(),
+          signingKeyId: sourceSigningKeyId.trim(),
+          publicKeyBase64: sourcePublicKey.trim(),
+          manifestPath: sourceManifestPath.trim(),
+        },
       );
       if (!('id' in result) || typeof result.id !== 'string' || !result.id) {
         throw new Error(t('agent.marketplace.addSourceFailed'));
@@ -176,16 +241,56 @@ export const MarketplacePage = memo(() => {
         setSourceUrl('');
         setSourceName('');
         setSourceBranch('main');
+        setSourceId('');
+        setSourcePublisherId('');
+        setSourceSigningKeyId('');
+        setSourcePublicKey('');
+        setSourceManifestPath(
+          'packages/agent-catalog/official-catalog.v1.envelope.json',
+        );
         reloadCatalog();
       }
       setAddingSource(false);
     }
-  }, [message, reloadCatalog, sourceBranch, sourceName, sourceUrl, t]);
+  }, [
+    message,
+    reloadCatalog,
+    sourceBranch,
+    sourceId,
+    sourceManifestPath,
+    sourceName,
+    sourcePublicKey,
+    sourcePublisherId,
+    sourceSigningKeyId,
+    sourceUrl,
+    t,
+  ]);
 
   const handleInstall = useCallback(async (entry: MarketSkillEntry) => {
     if (!entry.marketId) return;
+    if (entry.installPolicy === 'blocked' || entry.revoked) {
+      void message.error(t('agent.marketplace.installBlocked'));
+      return;
+    }
+    let riskAcknowledged = false;
+    if (entry.installPolicy === 'confirmation_required') {
+      riskAcknowledged = await new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: t('agent.marketplace.riskConfirmTitle'),
+          content: t('agent.marketplace.riskConfirmDescription', {
+            name: entry.name,
+            risk: entry.riskLevel || t('agent.marketplace.risk.unknown'),
+          }),
+          okText: t('agent.marketplace.install'),
+          okButtonProps: { danger: true },
+          onCancel: () => resolve(false),
+          onOk: () => resolve(true),
+        });
+      });
+      if (!riskAcknowledged) return;
+    }
     try {
-      await api.installMarketSkill(entry.marketId, entry.filePath);
+      await api.installMarketSkill(entry.marketId, entry.filePath, riskAcknowledged);
       void message.success(t('agent.marketplace.installSuccess'));
       setSelectedEntry(null);
       setSelectedDetail(null);
@@ -194,7 +299,7 @@ export const MarketplacePage = memo(() => {
       const detail = error instanceof Error ? error.message : t('agent.marketplace.installFailed');
       void message.error(detail);
     }
-  }, [message, reloadCatalog, t]);
+  }, [message, modal, reloadCatalog, t]);
 
   const handleUninstall = useCallback(async (entry: MarketSkillEntry) => {
     if (!entry.marketId) return;
@@ -209,6 +314,28 @@ export const MarketplacePage = memo(() => {
       void message.error(detail);
     }
   }, [message, reloadCatalog, t]);
+
+  const handleRemoveSource = useCallback((market: MarketSummary) => {
+    if (market.builtIn) return;
+    modal.confirm({
+      title: t('agent.marketplace.removeSourceTitle'),
+      content: t('agent.marketplace.removeSourceDescription', { name: market.name }),
+      okText: t('agent.marketplace.removeSource'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await api.removeSkillMarketSource(market.id);
+          reloadCatalog();
+        } catch (error) {
+          const detail = error instanceof Error
+            ? error.message
+            : t('agent.marketplace.removeSourceFailed');
+          void message.error(detail);
+          throw error;
+        }
+      },
+    });
+  }, [message, modal, reloadCatalog, t]);
 
   const handleOpenDetail = useCallback(async (entry: MarketSkillEntry) => {
     setSelectedEntry(entry);
@@ -310,6 +437,7 @@ export const MarketplacePage = memo(() => {
 
   return (
     <Flexbox
+      data-testid="marketplace-page"
       gap={token.marginLG}
       padding={token.paddingLG}
       style={{ height: '100%', overflow: 'auto' }}
@@ -349,11 +477,30 @@ export const MarketplacePage = memo(() => {
           {markets.map((market) => (
             <Tag
               key={market.id}
-              color={market.error ? 'error' : market.synced ? 'success' : 'default'}
-              title={market.error || market.url}
+              color={market.revoked || market.signatureStatus === 'invalid'
+                ? 'error'
+                : market.stale
+                  ? 'warning'
+                  : market.synced
+                    ? 'success'
+                    : 'default'}
+              icon={market.signatureStatus === 'verified' ? <ShieldCheck size={10} /> : undefined}
+              title={[
+                market.url,
+                market.branch,
+                market.catalogRevision,
+                market.publicKeyFingerprint,
+                market.error,
+              ].filter(Boolean).join('\n')}
               style={{ margin: 0 }}
+              data-testid={`marketplace-source-${market.id}`}
+              closable={!market.builtIn}
+              onClose={(event) => {
+                event.preventDefault();
+                handleRemoveSource(market);
+              }}
             >
-              {market.name} · {market.skillCount}
+              {market.name} · {market.skillCount} · {market.trustLevel}
             </Tag>
           ))}
         </Flexbox>
@@ -420,47 +567,71 @@ export const MarketplacePage = memo(() => {
             onChange={(event) => setSourceName(event.target.value)}
           />
           <Input
+            placeholder={t('agent.marketplace.sourceId')}
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+          />
+          <Input
             placeholder={t('agent.marketplace.sourceBranch')}
             value={sourceBranch}
             onChange={(event) => setSourceBranch(event.target.value)}
           />
+          <Input
+            placeholder={t('agent.marketplace.sourceManifestPath')}
+            value={sourceManifestPath}
+            onChange={(event) => setSourceManifestPath(event.target.value)}
+          />
+          <Input
+            placeholder={t('agent.marketplace.sourcePublisherId')}
+            value={sourcePublisherId}
+            onChange={(event) => setSourcePublisherId(event.target.value)}
+          />
+          <Input
+            placeholder={t('agent.marketplace.sourceSigningKeyId')}
+            value={sourceSigningKeyId}
+            onChange={(event) => setSourceSigningKeyId(event.target.value)}
+          />
+          <Input.TextArea
+            autoSize={{ minRows: 2, maxRows: 3 }}
+            placeholder={t('agent.marketplace.sourcePublicKey')}
+            value={sourcePublicKey}
+            onChange={(event) => setSourcePublicKey(event.target.value)}
+          />
         </Flexbox>
       </Modal>
 
-      <Modal
+      <Drawer
         width={720}
         title={detail?.name}
         open={Boolean(selectedEntry)}
-        onCancel={closeDetail}
-        footer={[
-          <Button key="close" onClick={closeDetail}>
-            {t('agent.marketplace.close')}
-          </Button>,
-          detail?.installed ? (
-            <Button
-              key="uninstall"
-              danger
-              onClick={() => detail && void handleUninstall(detail)}
-            >
-              {t('agent.marketplace.uninstall')}
-            </Button>
-          ) : (
-            <Button
-              key="install"
-              type="primary"
-              onClick={() => detail && void handleInstall(detail)}
-            >
-              {t('agent.marketplace.install')}
-            </Button>
-          ),
-        ]}
+        onClose={closeDetail}
+        extra={detail?.installed ? (
+          <Button
+            danger
+            onClick={() => detail && void handleUninstall(detail)}
+          >
+            {t('agent.marketplace.uninstall')}
+          </Button>
+        ) : (
+          <Button
+            disabled={detail?.installPolicy === 'blocked' || detail?.revoked}
+            type="primary"
+            onClick={() => detail && void handleInstall(detail)}
+          >
+            {t('agent.marketplace.install')}
+          </Button>
+        )}
       >
         {detailLoading ? (
           <Flexbox align="center" justify="center" style={{ minHeight: 180 }}>
             <Spin />
           </Flexbox>
         ) : detail ? (
-          <Flexbox gap={16}>
+          <Flexbox
+            data-package-id={detail.identifier}
+            data-testid="marketplace-package-detail"
+            gap={16}
+          >
             <Descriptions bordered column={2} size="small">
               <Descriptions.Item label={t('agent.marketplace.detail.packageType')}>
                 {t(`agent.marketplace.packageType.${detailPackageType}`)}
@@ -477,7 +648,7 @@ export const MarketplacePage = memo(() => {
                 {detail.license || t('agent.marketplace.notProvided')}
               </Descriptions.Item>
               <Descriptions.Item label={t('agent.marketplace.detail.trust')}>
-                {detail.trustLevel || t('agent.marketplace.trust.community')}
+                {detail.trustLevel || t('agent.marketplace.trust.unknown')}
               </Descriptions.Item>
               <Descriptions.Item label={t('agent.marketplace.detail.risk')}>
                 {detail.riskLevel || t('agent.marketplace.risk.unknown')}
@@ -485,9 +656,31 @@ export const MarketplacePage = memo(() => {
               <Descriptions.Item label={t('agent.marketplace.detail.source')} span={2}>
                 {selectedDetail?.repository || detail.source || detail.filePath}
               </Descriptions.Item>
+              <Descriptions.Item label={t('agent.marketplace.detail.signature')}>
+                {detail.signatureStatus || t('agent.marketplace.signature.invalid')}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('agent.marketplace.detail.policy')}>
+                {t(`agent.marketplace.policy.${detail.installPolicy || 'blocked'}`)}
+              </Descriptions.Item>
+              {detail.contentHash && (
+                <Descriptions.Item label={t('agent.marketplace.detail.digest')} span={2}>
+                  <code style={{ wordBreak: 'break-all' }}>{detail.contentHash}</code>
+                </Descriptions.Item>
+              )}
+              {detail.revoked && (
+                <Descriptions.Item label={t('agent.marketplace.detail.revocation')} span={2}>
+                  <Tag color="error">{t('agent.marketplace.revoked')}</Tag>
+                  {detail.revokedAt}
+                </Descriptions.Item>
+              )}
               {detail.scanVerdict && (
                 <Descriptions.Item label={t('agent.marketplace.detail.scan')} span={2}>
                   {detail.scanVerdict}
+                </Descriptions.Item>
+              )}
+              {detail.installed && detail.targetAuthority && (
+                <Descriptions.Item label={t('agent.marketplace.detail.authority')} span={2}>
+                  {detail.targetAuthority}
                 </Descriptions.Item>
               )}
             </Descriptions>
@@ -515,7 +708,7 @@ export const MarketplacePage = memo(() => {
             )}
           </Flexbox>
         ) : null}
-      </Modal>
+      </Drawer>
     </Flexbox>
   );
 });

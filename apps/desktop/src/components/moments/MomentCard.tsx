@@ -4,6 +4,7 @@ import { Button, Dropdown, Typography, theme, message } from 'antd';
 import { MoreHorizontal } from 'lucide-react';
 import {
   Audience_Kind,
+  PostVisibility,
   RelationshipReason_Kind,
   PostType,
   ReactionKind,
@@ -13,12 +14,17 @@ import {
 } from '../../gen/proto/domain/social/post_pb';
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ImageGrid } from './ImageGrid';
+import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
-import { useActiveMomentsFederationSlice } from './useActiveMomentsStore';
+import {
+  useActiveMomentsFederationSlice,
+  useActivePrivateMomentsSlice,
+} from './useActiveMomentsStore';
 import {
   SocialTrustMeta,
   SocialActionBar,
+  SocialPrivateState,
 } from './surfaces';
 
 const { Paragraph, Text, Link } = Typography;
@@ -63,6 +69,8 @@ function audienceLabel(kind: Audience_Kind, t: (k: string) => string) {
       return t('moments.audience.public');
     case Audience_Kind.FOLLOWERS:
       return t('moments.audience.followers');
+    case Audience_Kind.FRIENDS:
+      return t('moments.audience.friends');
     case Audience_Kind.SELF:
       return t('moments.audience.self');
     case Audience_Kind.CIRCLE:
@@ -206,16 +214,43 @@ export function MomentCard({
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
   const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.homeStationDomain);
+  const {
+    privateProjection,
+    privatePlatform,
+    readPrivateMoment,
+    recoverPrivateMoment,
+    openPrivateMedia,
+  } = useActivePrivateMomentsSlice((s) => ({
+    privateProjection: s.postsById[post.id],
+    privatePlatform: s.platform,
+    readPrivateMoment: s.readMoment,
+    recoverPrivateMoment: s.recoverMoment,
+    openPrivateMedia: s.openMedia,
+  }));
   const [expanded, setExpanded] = useState(false);
   const [reactionSubmitting, setReactionSubmitting] = useState(false);
 
   const author = post.author;
   const audience = post.audience;
+  const privateByLegacyVisibility = post.visibility === PostVisibility.PRIVATE;
   const audienceKind =
-    explanation?.audienceExplanation?.kind ?? audience?.kind ?? Audience_Kind.PUBLIC;
-  const body = getBodyText(post);
-  const images = getImages(post);
-  const original = getRepostOriginal(post);
+    explanation?.audienceExplanation?.kind
+    ?? audience?.kind
+    ?? (privateByLegacyVisibility ? Audience_Kind.FRIENDS : Audience_Kind.PUBLIC);
+  const isPrivate = (
+    audience?.kind !== undefined
+    && audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+  )
+    ? audience.kind === Audience_Kind.FRIENDS
+    : privateByLegacyVisibility;
+  const privateState = privateProjection?.state ?? (
+    privatePlatform === 'native'
+      ? 'LOADING_AUTHORIZED_RESOURCE'
+      : 'PRIVATE_UNSUPPORTED_ON_DEVICE'
+  );
+  const body = isPrivate ? privateProjection?.content?.text ?? '' : getBodyText(post);
+  const images = isPrivate ? [] : getImages(post);
+  const original = isPrivate ? undefined : getRepostOriginal(post);
   const longBody = body.length > 320;
   const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
   const commentsCount = Number(post.stats?.commentsCount ?? 0n);
@@ -347,6 +382,17 @@ export function MomentCard({
             audience={{ kind: audienceKind, label: audienceLabel(audienceKind, t) }}
           />
 
+          {isPrivate && privateState !== 'CONTENT_READY' && (
+            <div onClick={(event) => event.stopPropagation()}>
+              <SocialPrivateState
+                state={privateState}
+                compact
+                onRetry={() => void readPrivateMoment(post.id)}
+                onRecover={() => void recoverPrivateMoment(post.id)}
+              />
+            </div>
+          )}
+
           {body && (
             <Paragraph
               style={{
@@ -375,13 +421,22 @@ export function MomentCard({
           {images.length > 0 && (
             <div style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
               <ImageGrid
-                images={images.slice(0, 9)}
                 cids={images.slice(0, 9).map((im) => im.url || im.id)}
-                audience={audience}
-                authorPtid={post.authorPtid || author?.id || null}
               />
             </div>
           )}
+
+          {isPrivate
+            && privateState === 'CONTENT_READY'
+            && privateProjection?.content?.kind === 'IMAGE'
+            && (
+              <div style={{ marginTop: 8 }} onClick={(event) => event.stopPropagation()}>
+                <PrivateMediaGrid
+                  media={privateProjection.content.media}
+                  onOpen={(objectId) => void openPrivateMedia(post.id, objectId)}
+                />
+              </div>
+            )}
 
           {original && (
             <div
@@ -417,7 +472,7 @@ export function MomentCard({
             </div>
           )}
 
-          {(visibleComments.length > 0 || commentsCount > 0) && (
+          {!isPrivate && (visibleComments.length > 0 || commentsCount > 0) && (
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -450,16 +505,18 @@ export function MomentCard({
             </div>
           )}
 
-          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
-            <SocialActionBar
-              reactions={reactions ?? post.reactions ?? []}
-              commentCount={commentsCount}
-              loading={reactionSubmitting}
-              onReact={(kind) => handleReact(kind)}
-              onUnreact={handleUnreact}
-              onOpenComments={() => onOpenComments?.(post.id)}
-            />
-          </div>
+          {!isPrivate && (
+            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
+              <SocialActionBar
+                reactions={reactions ?? post.reactions ?? []}
+                commentCount={commentsCount}
+                loading={reactionSubmitting}
+                onReact={(kind) => handleReact(kind)}
+                onUnreact={handleUnreact}
+                onOpenComments={() => onOpenComments?.(post.id)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

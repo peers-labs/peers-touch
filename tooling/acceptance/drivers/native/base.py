@@ -197,6 +197,14 @@ class NativeDesktopAdapter(ABC):
         self.reveal_file_chooser_location()
         return None
 
+    def select_file_chooser_path_to_process(
+        self,
+        process_id: int,
+        path: str,
+    ) -> NativeControlSnapshot | None:
+        del process_id, path
+        return None
+
     @abstractmethod
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         ...

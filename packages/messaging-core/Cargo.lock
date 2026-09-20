@@ -1060,6 +1060,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.7",
+ "secure-content-core",
  "serde",
  "serde_json",
  "sha2",
@@ -1786,6 +1787,20 @@ dependencies = [
  "generic-array",
  "pkcs8",
  "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "secure-content-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "hkdf",
+ "hpke-rs",
+ "rand 0.8.7",
+ "sha2",
+ "thiserror 1.0.69",
+ "x25519-dalek",
  "zeroize",
 ]
 

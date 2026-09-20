@@ -14,15 +14,9 @@
 //      `local_path` (served via Tauri's `convertFileSrc`). Fall back to
 //      the absolute `url` when no local mirror is available.
 //
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import {
-  clientMediaEncryptionDescriptorFromAttachment,
-  decryptClientMediaBlob,
-} from '@peers-touch/client-media-security';
 import { api } from '../../../services/desktop_api';
-import { openMomentMediaKeyFromAudience } from '../../../services/momentAudienceKeys';
-import type { Audience } from '../../../gen/proto/domain/social/post_pb';
 import {
   clearInflightOssAttachmentUrl,
   getCachedOssAttachmentUrl,
@@ -87,67 +81,4 @@ export function useOssAttachmentUrl(
   }, [cid]);
 
   return src;
-}
-
-export function useDecryptedOssAttachmentUrl(
-  attachment: {
-    readonly cid?: string;
-    readonly mimeType?: string;
-    readonly mime_type?: string;
-    readonly audience?: Audience | null;
-    readonly authorPtid?: string | null;
-  } & Parameters<typeof clientMediaEncryptionDescriptorFromAttachment>[0],
-): string | null {
-  const sourceUrl = useOssAttachmentUrl(attachment.cid);
-  const descriptor = useMemo(
-    () => clientMediaEncryptionDescriptorFromAttachment(attachment),
-    [attachment],
-  );
-  const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!sourceUrl || (!descriptor && !attachment.mediaEncryption && !attachment.media_encryption)) {
-      setDecryptedUrl(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    (async () => {
-      const mediaDescriptor = descriptor ?? clientMediaEncryptionDescriptorFromAttachment(
-        attachment,
-        await openMomentMediaKeyFromAudience({
-          cid: attachment.cid ?? '',
-          audience: attachment.audience,
-          authorPtid: attachment.authorPtid,
-        }) ?? undefined,
-      );
-      if (!mediaDescriptor) {
-        if (!cancelled) setDecryptedUrl(null);
-        return;
-      }
-      const response = await fetch(sourceUrl, { cache: 'no-store' });
-      const ciphertext = await response.blob();
-      const plaintext = await decryptClientMediaBlob({
-        ciphertext,
-        descriptor: mediaDescriptor,
-        mimeType: attachment.mimeType ?? attachment.mime_type ?? 'application/octet-stream',
-      });
-      objectUrl = URL.createObjectURL(plaintext);
-      if (cancelled) {
-        URL.revokeObjectURL(objectUrl);
-        return;
-      }
-      setDecryptedUrl(objectUrl);
-    })().catch(() => {
-      if (!cancelled) setDecryptedUrl(null);
-    });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [attachment, descriptor, sourceUrl]);
-
-  return (descriptor || attachment.mediaEncryption || attachment.media_encryption) ? decryptedUrl : sourceUrl;
 }

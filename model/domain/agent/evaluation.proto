@@ -47,12 +47,18 @@ enum EvaluationErrorCode {
   EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE = 5;
   EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 6;
   EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT = 7;
+  EVALUATION_ERROR_CODE_BENCHMARK_REVISION_CONFLICT = 8;
+  EVALUATION_ERROR_CODE_TEST_CASE_REVISION_CONFLICT = 9;
+  EVALUATION_ERROR_CODE_RETENTION_CONFLICT = 10;
 }
 
 message EvaluationError {
   EvaluationErrorCode code = 1;
   bool retryable = 2;
   string recovery_action = 3;
+  string locale_key = 4;
+  bool terminal = 5;
+  map<string, string> details = 6;
 }
 
 message EvaluationBenchmark {
@@ -61,6 +67,9 @@ message EvaluationBenchmark {
   string name = 3;
   string rubric = 4;
   uint64 revision = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  google.protobuf.Timestamp deleted_at = 8;
 }
 
 message EvaluationDataset {
@@ -69,6 +78,10 @@ message EvaluationDataset {
   string ptid = 3;
   string name = 4;
   uint64 revision = 5;
+  string description = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp deleted_at = 9;
 }
 
 message EvaluationTestCase {
@@ -78,6 +91,20 @@ message EvaluationTestCase {
   string expected = 4;
   optional string rubric_override = 5;
   uint64 revision = 6;
+  repeated string tags = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  google.protobuf.Timestamp deleted_at = 10;
+}
+
+message EvaluationRunCaseSnapshot {
+  string case_id = 1;
+  string input = 2;
+  string expected = 3;
+  string rubric = 4;
+  string rubric_version = 5;
+  repeated string tags = 6;
+  uint64 source_revision = 7;
 }
 
 message EvaluationMetrics {
@@ -87,6 +114,8 @@ message EvaluationMetrics {
   double average_score = 4;
   string metrics_version = 5;
   bool comparable = 6;
+  uint32 failed_cases = 7;
+  uint32 cancelled_cases = 8;
 }
 
 message EvaluationRun {
@@ -112,6 +141,10 @@ message EvaluationRun {
   google.protobuf.Timestamp created_at = 20;
   google.protobuf.Timestamp terminal_at = 21;
   EvaluationError error = 22;
+  string target_agent_id = 23;
+  uint64 target_agent_revision = 24;
+  google.protobuf.Timestamp updated_at = 25;
+  google.protobuf.Timestamp deleted_at = 26;
 }
 
 message EvaluationCaseAttempt {
@@ -129,6 +162,8 @@ message EvaluationCaseAttempt {
   EvaluationError error = 12;
   google.protobuf.Timestamp cancellation_ack_at = 13;
   google.protobuf.Timestamp terminal_at = 14;
+  google.protobuf.Timestamp started_at = 15;
+  string scheduler_claim = 16;
 }
 
 message EvaluationResult {
@@ -141,6 +176,9 @@ message EvaluationResult {
   string rubric_version = 7;
   EvaluationAttemptStatus terminal_status = 8;
   google.protobuf.Timestamp created_at = 9;
+  string output = 10;
+  uint64 latency_ms = 11;
+  string turn_trace_id = 12;
 }
 
 message EvaluationRunEvent {
@@ -153,6 +191,7 @@ message EvaluationRunEvent {
   string attempt_id = 7;
   EvaluationError error = 8;
   google.protobuf.Timestamp occurred_at = 9;
+  string result_id = 10;
 }
 
 message CreateEvaluationBenchmarkRequest {
@@ -165,15 +204,75 @@ message CreateEvaluationBenchmarkResponse {
   EvaluationBenchmark benchmark = 1;
 }
 
+message UpdateEvaluationBenchmarkRequest {
+  string benchmark_id = 1;
+  string name = 2;
+  string rubric = 3;
+  uint64 expected_revision = 4;
+  string idempotency_key = 5;
+}
+
+message UpdateEvaluationBenchmarkResponse {
+  EvaluationBenchmark benchmark = 1;
+}
+
+message DeleteEvaluationBenchmarkRequest {
+  string benchmark_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message DeleteEvaluationBenchmarkResponse {
+  bool deleted = 1;
+}
+
+message ListEvaluationBenchmarksRequest {}
+
+message ListEvaluationBenchmarksResponse {
+  repeated EvaluationBenchmark benchmarks = 1;
+}
+
 message CreateEvaluationDatasetRequest {
   string benchmark_id = 1;
   string name = 2;
   uint64 expected_benchmark_revision = 3;
   string idempotency_key = 4;
+  string description = 5;
 }
 
 message CreateEvaluationDatasetResponse {
   EvaluationDataset dataset = 1;
+  EvaluationBenchmark benchmark = 2;
+}
+
+message UpdateEvaluationDatasetRequest {
+  string dataset_id = 1;
+  string name = 2;
+  string description = 3;
+  uint64 expected_revision = 4;
+  string idempotency_key = 5;
+}
+
+message UpdateEvaluationDatasetResponse {
+  EvaluationDataset dataset = 1;
+}
+
+message DeleteEvaluationDatasetRequest {
+  string dataset_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message DeleteEvaluationDatasetResponse {
+  bool deleted = 1;
+}
+
+message ListEvaluationDatasetsRequest {
+  string benchmark_id = 1;
+}
+
+message ListEvaluationDatasetsResponse {
+  repeated EvaluationDataset datasets = 1;
 }
 
 message CreateEvaluationTestCaseRequest {
@@ -183,18 +282,60 @@ message CreateEvaluationTestCaseRequest {
   optional string rubric_override = 4;
   uint64 expected_dataset_revision = 5;
   string idempotency_key = 6;
+  repeated string tags = 7;
 }
 
 message CreateEvaluationTestCaseResponse {
   EvaluationTestCase test_case = 1;
+  EvaluationDataset dataset = 2;
+}
+
+message UpdateEvaluationTestCaseRequest {
+  string case_id = 1;
+  string input = 2;
+  string expected = 3;
+  optional string rubric_override = 4;
+  repeated string tags = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+
+message UpdateEvaluationTestCaseResponse {
+  EvaluationTestCase test_case = 1;
+  EvaluationDataset dataset = 2;
+}
+
+message DeleteEvaluationTestCaseRequest {
+  string case_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message DeleteEvaluationTestCaseResponse {
+  bool deleted = 1;
+  EvaluationDataset dataset = 2;
+}
+
+message ListEvaluationTestCasesRequest {
+  string dataset_id = 1;
+}
+
+message ListEvaluationTestCasesResponse {
+  repeated EvaluationTestCase test_cases = 1;
 }
 
 message CreateEvaluationRunRequest {
+  reserved 3;
+  reserved "target_agent_snapshot";
+
   string dataset_id = 1;
   uint64 dataset_revision = 2;
-  RuntimeSnapshot target_agent_snapshot = 3;
   string readiness_snapshot_id = 4;
   string idempotency_key = 5;
+  string target_agent_id = 6;
+  uint64 expected_agent_revision = 7;
+  optional string runtime_profile_id = 8;
+  optional string model_id = 9;
 }
 
 message CreateEvaluationRunResponse {
@@ -225,6 +366,7 @@ message RetryEvaluationCasesRequest {
   string parent_run_id = 1;
   repeated string case_ids = 2;
   string idempotency_key = 3;
+  uint64 expected_parent_revision = 4;
 }
 
 message RetryEvaluationCasesResponse {
@@ -239,4 +381,36 @@ message GetEvaluationRunResponse {
   EvaluationRun run = 1;
   repeated EvaluationCaseAttempt attempts = 2;
   repeated EvaluationResult results = 3;
+  repeated EvaluationRunCaseSnapshot cases = 4;
+}
+
+message ListEvaluationRunsRequest {
+  optional string parent_run_id = 1;
+  uint32 page = 2;
+  uint32 page_size = 3;
+}
+
+message ListEvaluationRunsResponse {
+  repeated EvaluationRun runs = 1;
+  uint64 total = 2;
+}
+
+message ListEvaluationRunEventsRequest {
+  string run_id = 1;
+  uint64 after_sequence = 2;
+}
+
+message ListEvaluationRunEventsResponse {
+  repeated EvaluationRunEvent events = 1;
+  uint64 latest_sequence = 2;
+}
+
+message DeleteEvaluationRunRequest {
+  string run_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+}
+
+message DeleteEvaluationRunResponse {
+  bool deleted = 1;
 }

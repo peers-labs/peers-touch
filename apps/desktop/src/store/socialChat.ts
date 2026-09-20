@@ -36,6 +36,7 @@ import type {
   ConversationMember,
 } from '../gen/proto/domain/chat/conversation_pb';
 import {
+  ConversationStatus,
   MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
@@ -376,6 +377,28 @@ export interface SearchResultAttachment {
   mimeType: string;
 }
 
+export interface MessageSearchTarget {
+  conversationId: string;
+  scope: 'friend' | 'group';
+}
+
+export function resolveMessageSearchTargets(
+  conversations: readonly Conversation[],
+  scope?: string,
+  conversationId?: string,
+): MessageSearchTarget[] {
+  return conversations
+    .filter((conversation) => conversation.status === ConversationStatus.ACTIVE)
+    .map((conversation) => ({
+      conversationId: conversation.conversationId,
+      scope: conversation.kind === 1 ? 'friend' as const : 'group' as const,
+    }))
+    .filter((target) => (
+      (!conversationId || target.conversationId === conversationId)
+      && (!scope || scope === target.scope)
+    ));
+}
+
 interface ThreadLoadOptions {
   append?: boolean;
   afterUlid?: string;
@@ -408,9 +431,13 @@ interface SocialChatState {
   /** Own DID for message ownership; prefer profile.id, may align with participant DIDs in sessions */
   currentUserPtid: string | null;
   friendRequests: FriendRequestData[];
+  friendRequestsLoading: boolean;
+  friendRequestsLoadedAt?: number;
+  friendRequestsError: string | null;
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
   conversationLocalState: Record<string, ConversationLocalState>;
+  conversationBackgroundPreviews: Record<string, string>;
   sendOutcomes: Record<string, MessagingSendOutcomeRecord>;
 
   /**
@@ -487,11 +514,13 @@ interface SocialChatState {
    * up (e.g. bootstrapping ICE), so the two concepts must not be
    * conflated in the UI.
    *
-   * Source of truth: Station `StreamEvent.PresenceFlip` events carried
+   * Source of truth: Station `/presence/query` snapshots reconciled by the
+   * social runtime plus immediate `StreamEvent.PresenceFlip` updates carried
    * by the unified `/events/stream`.
    */
   peerOnline: Record<string, boolean>;
   setPeerOnline: (did: string, online: boolean) => void;
+  clearPeerPresence: (actorPtids: readonly string[]) => void;
 
   /**
    * Per-session typing-state map.
@@ -661,6 +690,11 @@ interface SocialChatState {
     ulid: string,
     patch: Partial<ConversationLocalState>,
   ) => Promise<void>;
+  setConversationBackgroundPreview: (
+    kind: 'friend' | 'group',
+    ulid: string,
+    previewUrl: string | null,
+  ) => void;
   hideConversation: (kind: 'friend' | 'group', ulid: string, keepHistory: boolean) => Promise<void>;
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
@@ -889,11 +923,15 @@ const initialSocialState: Pick<
   | 'currentUserProfile'
   | 'currentUserPtid'
   | 'friendRequests'
+  | 'friendRequestsLoading'
+  | 'friendRequestsLoadedAt'
+  | 'friendRequestsError'
   | 'groupUnreadCounts'
   | 'lastPreviews'
   | 'peerProfiles'
   | 'peerProfileLoading'
   | 'conversationLocalState'
+  | 'conversationBackgroundPreviews'
   | 'searchQuery'
   | 'searchResults'
   | 'searchLoading'
@@ -939,11 +977,15 @@ const initialSocialState: Pick<
   currentUserProfile: null,
   currentUserPtid: null,
   friendRequests: [],
+  friendRequestsLoading: false,
+  friendRequestsLoadedAt: undefined,
+  friendRequestsError: null,
   groupUnreadCounts: {},
   lastPreviews: {},
   peerProfiles: {},
   peerProfileLoading: {},
   conversationLocalState: {},
+  conversationBackgroundPreviews: {},
   searchQuery: '',
   searchResults: [],
   searchLoading: false,
@@ -1038,6 +1080,20 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set((state) => {
       const next = applyPresenceToMap(state.peerOnline, did, online);
       return next ? { peerOnline: next } : state;
+    });
+  },
+  clearPeerPresence: (actorPtids) => {
+    const requested = new Set(actorPtids.filter(Boolean));
+    if (requested.size === 0) return;
+    set((state) => {
+      const next = { ...state.peerOnline };
+      let changed = false;
+      for (const actorPtid of requested) {
+        if (!(actorPtid in next)) continue;
+        delete next[actorPtid];
+        changed = true;
+      }
+      return changed ? { peerOnline: next } : state;
     });
   },
 
@@ -1768,18 +1824,32 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
+    set({
+      friendRequestsLoading: true,
+      friendRequestsError: null,
+    });
     try {
       const data = await api.socialFriendRequestList(status, limit, offset);
       const requests = normalizeFriendRequests(
         (data as Record<string, unknown>)?.requests ?? [],
       );
-      set({ friendRequests: requests });
+      set({
+        friendRequests: requests,
+        friendRequestsLoading: false,
+        friendRequestsLoadedAt: Date.now(),
+        friendRequestsError: null,
+      });
       await Promise.allSettled(
         friendRequestProfileDids(requests, get().currentUserPtid)
           .map((did) => get().loadPeerProfile(did)),
       );
-    } catch {
-      set({ friendRequests: [] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({
+        friendRequestsLoading: false,
+        friendRequestsError: message,
+      });
+      throw error;
     }
   },
 
@@ -1790,14 +1860,109 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     message,
   ) => {
     try {
-      await api.socialFriendRequestSend({
+      // #region debug-point A-D:friend-request-retry-command
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'A-D',
+          location: 'socialChat.ts:sendFriendRequest:command',
+          msg: '[DEBUG] Sending friend request command',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            receiverHomeStationPeerId,
+            federationId,
+            matchingRequests: get().friendRequests
+              .filter((request) => (
+                request.senderPtid === receiverPtid
+                || request.receiverPtid === receiverPtid
+              ))
+              .map((request) => ({
+                id: request.id,
+                senderPtid: request.senderPtid,
+                receiverPtid: request.receiverPtid,
+                status: request.status,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
+      const response = await api.socialFriendRequestSend({
         receiverPtid,
         receiverHomeStationPeerId,
         federationId,
         message,
       });
+      // #region debug-point A:friend-request-retry-command-response
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'A',
+          location: 'socialChat.ts:sendFriendRequest:response',
+          msg: '[DEBUG] Friend request command returned',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            responseRequestId: (
+              response as unknown as { request?: { requestId?: string } }
+            ).request?.requestId ?? '',
+            responseStatus: (
+              response as unknown as { request?: { status?: number } }
+            ).request?.status ?? null,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await get().loadFriendRequests();
+      // #region debug-point C-E:friend-request-retry-projection
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'C-E',
+          location: 'socialChat.ts:sendFriendRequest:projection',
+          msg: '[DEBUG] Friend request projection refreshed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            matchingRequests: get().friendRequests
+              .filter((request) => (
+                request.senderPtid === receiverPtid
+                || request.receiverPtid === receiverPtid
+              ))
+              .map((request) => ({
+                id: request.id,
+                senderPtid: request.senderPtid,
+                receiverPtid: request.receiverPtid,
+                status: request.status,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (error) {
+      // #region debug-point A-C:friend-request-retry-command-error
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'A-C',
+          location: 'socialChat.ts:sendFriendRequest:error',
+          msg: '[DEBUG] Friend request command failed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            receiverPtid,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'sendFriendRequest failed', error);
       throw error;
     }
@@ -1806,6 +1971,30 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   acceptFriendRequest: async (request) => {
     try {
       const requestId = request.id;
+      // #region debug-point C:friend-request-accept-command
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C',
+          location: 'socialChat.ts:acceptFriendRequest:command',
+          msg: '[DEBUG] Sending friend request accept command',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            request: {
+              id: request.id,
+              senderPtid: request.senderPtid,
+              receiverPtid: request.receiverPtid,
+              senderHomeStationPeerId: request.senderHomeStationPeerId,
+              receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+              federationId: request.federationId,
+              status: request.status,
+            },
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       const data = await api.socialFriendRequestAccept({
         requestId,
         senderPtid: request.senderPtid,
@@ -1814,6 +2003,24 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         message: request.message,
       });
       const acceptedRequest = normalizeFriendRequestData(data?.request);
+      // #region debug-point C-D:friend-request-accept-response
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C-D',
+          location: 'socialChat.ts:acceptFriendRequest:response',
+          msg: '[DEBUG] Friend request accept command returned',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId,
+            responseRequestId: acceptedRequest?.id ?? '',
+            responseStatus: acceptedRequest?.status ?? null,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       set((state) => ({
         friendRequests: state.friendRequests.map((candidate) =>
           candidate.id === requestId
@@ -1826,11 +2033,54 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
       await get().loadFriendRequests();
+      // #region debug-point D-E:friend-request-accept-projection
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'D-E',
+          location: 'socialChat.ts:acceptFriendRequest:projection',
+          msg: '[DEBUG] Friend request accept projection refreshed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId,
+            matchingRequests: get().friendRequests
+              .filter((candidate) => (
+                candidate.senderPtid === request.senderPtid
+                && candidate.receiverPtid === request.receiverPtid
+              ))
+              .map((candidate) => ({
+                id: candidate.id,
+                status: candidate.status,
+                federationId: candidate.federationId,
+              })),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await get().loadSessions();
       // Retry loadSessions after a short delay to catch the DM conversation
       // that Station creates asynchronously upon friend acceptance.
       setTimeout(() => { get().loadSessions().catch(() => {}); }, 1500);
     } catch (error) {
+      // #region debug-point C-D:friend-request-accept-error
+      void fetch('http://127.0.0.1:7782/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-accept',
+          runId: 'pre-fix',
+          hypothesisId: 'C-D',
+          location: 'socialChat.ts:acceptFriendRequest:error',
+          msg: '[DEBUG] Friend request accept failed',
+          data: {
+            currentUserPtid: get().currentUserPtid,
+            requestId: request.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'acceptFriendRequest failed', error);
       throw error;
     }
@@ -1935,6 +2185,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
     let committedPatch = patch;
+    // #region debug-point B-E:conversation-settings-command
+    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:start', msg: '[DEBUG] Conversation settings command started', data: { kind, conversationId: ulid, patch: { background: patch.background, backgroundImage: patch.backgroundImage, clearedAt: patch.clearedAt } }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     try {
       const settingsPatch: Partial<MemberSettingsResult> = {
         muted: patch.muted,
@@ -1950,8 +2203,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...patch,
           ...projectConversationMemberSettings(settings),
         };
+        // #region debug-point B-E:conversation-settings-result
+        void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:result', msg: '[DEBUG] Conversation settings command returned', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, returnedClearedAt: settings.clearedAtUnixMs, returnedBackgroundImage: settings.backgroundImage }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
       }
     } catch (error) {
+      // #region debug-point B-E:conversation-settings-error
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:error', msg: '[DEBUG] Conversation settings command failed', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, error: String(error) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
       throw error;
     }
@@ -1965,6 +2224,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       };
       saveConversationLocalState(state.currentUserPtid, nextLocalState);
       return { conversationLocalState: nextLocalState };
+    });
+  },
+
+  setConversationBackgroundPreview: (kind, ulid, previewUrl) => {
+    const key = conversationKey(kind, ulid);
+    set((state) => {
+      const next = { ...state.conversationBackgroundPreviews };
+      if (previewUrl) {
+        next[key] = previewUrl;
+      } else {
+        delete next[key];
+      }
+      return { conversationBackgroundPreviews: next };
     });
   },
 
@@ -2257,13 +2529,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ searchLoading: true, searchQuery: trimmedQuery });
     try {
       const state = get();
-      const targets = [
-        ...state.sessions.map(session => ({ conversationId: session.ulid, scope: 'friend' as const })),
-        ...state.groups.map(group => ({ conversationId: group.ulid, scope: 'group' as const })),
-      ].filter(target => (
-        (!conversationId || target.conversationId === conversationId)
-        && (!scope || scope === target.scope)
-      ));
+      const targets = resolveMessageSearchTargets(
+        state.conversations,
+        scope,
+        conversationId,
+      );
+      // #region debug-point C:message-search-targets
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:targets', msg: '[DEBUG] Message search targets resolved', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', targetCount: targets.length, targetIds: targets.map(target => target.conversationId) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       const projected = await Promise.all(targets.map(async target => ({
         ...target,
         messages: await imServiceV1.messaging.searchMessages(
@@ -2309,8 +2582,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }).sort((left, right) => (
         right.sentAt - left.sentAt || right.messageId.localeCompare(left.messageId)
       )).slice(0, 100);
+      // #region debug-point C:message-search-results
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:results', msg: '[DEBUG] Message search completed', data: { queryLength: trimmedQuery.length, rawCounts: projected.map(item => ({ conversationId: item.conversationId, count: item.messages.length })), visibleResultCount: results.length, clearedAtByConversation: Object.fromEntries(projected.map(item => [item.conversationId, state.conversationLocalState[conversationKey(item.scope, item.conversationId)]?.clearedAt ?? 0])) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       set({ searchResults: results, searchLoading: false });
     } catch (error) {
+      // #region debug-point C:message-search-error
+      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:error', msg: '[DEBUG] Message search failed', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', error: String(error) }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       log.error('socialChat', 'searchMessages failed', error);
       if (get().searchQuery === trimmedQuery) {
         set({ searchLoading: false });

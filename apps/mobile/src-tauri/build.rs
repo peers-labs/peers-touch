@@ -9,11 +9,24 @@ fn main() {
 
     let proto_root = "../../../model";
     let protos = [
+        "../../../model/domain/activity/activity.proto",
         "../../../model/domain/peer/station_identity.proto",
         "../../../model/domain/actor/actor.proto",
         "../../../model/domain/auth/auth.proto",
         "../../../model/domain/access_gate/access_gate.proto",
+        "../../../model/domain/common/common.proto",
+        "../../../model/domain/error/error.proto",
         "../../../model/domain/oauth/mobile_oauth.proto",
+        "../../../model/domain/secure_content/content.proto",
+        "../../../model/domain/secure_content/prekey.proto",
+        "../../../model/domain/secure_content/object.proto",
+        "../../../model/domain/social/post.proto",
+        "../../../model/domain/social/comment.proto",
+        "../../../model/domain/social/media.proto",
+        "../../../model/domain/social/poll.proto",
+        "../../../model/domain/social/circle.proto",
+        "../../../model/domain/social/relationship.proto",
+        "../../../model/domain/social/private_content.proto",
     ];
     for proto in protos {
         writeln!(output, "cargo:rerun-if-changed={proto}")

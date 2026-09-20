@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Image, theme } from 'antd';
 import { ImageIcon } from 'lucide-react';
-import { useDecryptedOssAttachmentUrl, useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
-import type { Audience, ImageAttachment } from '../../gen/proto/domain/social/post_pb';
+import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 
 // ImageThumbnail — displays a Moments image attachment.
 //
@@ -21,9 +20,6 @@ import type { Audience, ImageAttachment } from '../../gen/proto/domain/social/po
 
 interface ImageThumbnailProps {
   cid: string;
-  attachment?: ImageAttachment;
-  audience?: Audience | null;
-  authorPtid?: string | null;
   /** Optional fallback alt text for accessibility. */
   alt?: string;
   /** Disable AntD's built-in preview (parent owns lightbox). */
@@ -36,9 +32,6 @@ interface ImageThumbnailProps {
 
 export function ImageThumbnail({
   cid,
-  attachment,
-  audience,
-  authorPtid,
   alt,
   disablePreview = false,
   onClick,
@@ -48,19 +41,7 @@ export function ImageThumbnail({
   const [err, setErr] = useState<boolean>(false);
 
   const isHttp = cid.startsWith('http://') || cid.startsWith('https://');
-  const encryptedAttachment = useMemo(
-    () => ({
-      cid: isHttp ? undefined : cid,
-      mimeType: 'image/*',
-      mediaEncryption: attachment?.mediaEncryption,
-      audience,
-      authorPtid,
-    }),
-    [attachment?.mediaEncryption, audience, authorPtid, cid, isHttp],
-  );
-  const encryptedResolved = useDecryptedOssAttachmentUrl(encryptedAttachment);
-  const plainResolved = useOssAttachmentUrl(isHttp || attachment?.mediaEncryption ? null : cid);
-  const resolved = attachment?.mediaEncryption ? encryptedResolved : plainResolved;
+  const resolved = useOssAttachmentUrl(isHttp ? null : cid);
   const src = isHttp ? cid : resolved;
 
   if (!src || err) {

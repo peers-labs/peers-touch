@@ -49,6 +49,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'messaging.command.read',
   'messaging.search',
   'messaging.projection.read',
+  'social.people.search',
   'social.request.send',
   'social.request.accept',
   'social.reconcile',
@@ -654,6 +655,16 @@ export interface SocialRequestSendActionInput {
   message?: string;
 }
 
+export interface SocialPeopleSearchActionInput {
+  query: string;
+}
+
+export interface PublicActorSearchResult {
+  ptid: string;
+  federationId: string;
+  homeStationPeerId: string;
+}
+
 export interface SocialRequestAcceptActionInput {
   requestId: string;
 }
@@ -811,6 +822,10 @@ export interface MobileAcceptanceActionContract {
   'messaging.projection.read': {
     input: MessagingProjectionReadActionInput;
     output: PublicMessagingProjection;
+  };
+  'social.people.search': {
+    input: SocialPeopleSearchActionInput;
+    output: PublicActorSearchResult[];
   };
   'social.request.send': {
     input: SocialRequestSendActionInput;

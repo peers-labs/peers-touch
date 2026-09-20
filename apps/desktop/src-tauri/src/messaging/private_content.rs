@@ -8,9 +8,11 @@ pub use messaging_core::codec::private_content::{
 pub(super) fn test_attachment_metadata(
     attachment_id: &str,
 ) -> crate::model::chat::AttachmentPlaintextMetadata {
-    use super::attachment::{ATTACHMENT_CHUNK_SIZE, ATTACHMENT_TAG_SIZE};
     use crate::model::chat::{
         AttachmentEncryptionSuite, AttachmentNonceStrategy, EncryptedObjectDescriptor,
+    };
+    use secure_content_core::object::{
+        OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
     };
     use sha2::{Digest, Sha256};
 
@@ -29,7 +31,7 @@ pub(super) fn test_attachment_metadata(
             storage_ref: format!("opaque/{attachment_id}"),
             ciphertext_size: ciphertext.len() as u64,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            media_type: "text/plain".to_string(),
+            media_type: "application/octet-stream".to_string(),
             chunk_size: ATTACHMENT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,

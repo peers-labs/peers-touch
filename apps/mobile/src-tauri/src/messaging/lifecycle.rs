@@ -702,7 +702,8 @@ fn run_engine_cycle(
     }
 
     let now = now_unix_ms();
-    let attachment_upload_progressed = engine.resume_attachment_upload_once(now)?;
+    let attachment_upload_result = engine.resume_attachment_upload_once(now);
+    let attachment_upload_progressed = attachment_upload_result?;
     if !worker_is_running(state) {
         return Ok(None);
     }
@@ -710,7 +711,8 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let draft = engine.resume_message_draft_once(now)?;
+    let draft_result = engine.resume_message_draft_once(now);
+    let draft = draft_result?;
     if !worker_is_running(state) {
         return Ok(None);
     }
@@ -718,7 +720,8 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let command = engine.dispatch_command_once()?;
+    let command_result = engine.dispatch_command_once();
+    let command = command_result?;
     if !worker_is_running(state) {
         return Ok(None);
     }

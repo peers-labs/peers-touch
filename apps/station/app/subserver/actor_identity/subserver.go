@@ -483,6 +483,7 @@ func (s *subServer) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -492,6 +493,30 @@ func (s *subServer) ResolveVerifiedActorDeviceSigningKey(
 	}
 
 	return capabilities.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		actorPTID,
+		expectedHomeStationPeerID,
+		deviceID,
+		signingKeyID,
+	)
+}
+
+// ResolveRetainedActorDeviceSigningKey resolves a previously verified key
+// without refreshing current remote profile membership.
+func (s *subServer) ResolveRetainedActorDeviceSigningKey(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	capabilities, err := s.currentCapabilities()
+	if err != nil {
+		return nil, err
+	}
+
+	return capabilities.ResolveRetainedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,

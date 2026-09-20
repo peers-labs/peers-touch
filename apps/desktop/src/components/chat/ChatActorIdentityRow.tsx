@@ -37,6 +37,7 @@ export function ChatActorIdentityRow({
       data-chat-identity-federated-handle={identity.federatedHandle}
       data-chat-identity-home-station-domain={identity.homeStationDomain}
       data-chat-identity-home-station-peer-id={identity.homeStationPeerId}
+      data-chat-identity-home-station-name={identity.homeStationName ?? ''}
       data-chat-identity-federation-id={identity.federationId}
       data-chat-identity-federation-name={identity.federationName}
       horizontal
@@ -89,11 +90,11 @@ export function ChatActorIdentityRow({
               {t('chat.social.identity.federation', { federation })}
             </Text>
           ) : null}
-          {station ? (
+          {station || identity.homeStationPeerId ? (
             <Text
               data-chat-identity-station
               type="secondary"
-              title={station}
+              title={station || t('chat.social.identity.stationUnavailable')}
               style={{
                 display: 'block',
                 fontSize: 11,
@@ -102,10 +103,12 @@ export function ChatActorIdentityRow({
                 whiteSpace: 'normal',
               }}
             >
-              {t('chat.social.identity.station', { station })}
+              {station
+                ? t('chat.social.identity.station', { station })
+                : t('chat.social.identity.stationUnavailable')}
             </Text>
           ) : null}
-          {!federation && !station ? (
+          {!federation && !station && !identity.homeStationPeerId ? (
             <Text
               type="secondary"
               title={metadata}

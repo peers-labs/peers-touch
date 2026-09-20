@@ -30,6 +30,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"google.golang.org/protobuf/encoding/protojson"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -545,6 +546,17 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 				reasonCode = string(terminalStatus)
 			}
 		}
+		var outcomeErrorJSON json.RawMessage
+		if terminalStatus == domain.TurnStatusInterrupted {
+			encodedOutcomeError, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(errcode.NewLifecycleInterruptedPayload(turn.ID, reasonCode))
+			if err != nil {
+				return err
+			}
+			outcomeErrorJSON = encodedOutcomeError
+		}
 		if attempt.EndedAt == nil {
 			if err := tx.Model(&attempt).
 				Where("ended_at IS NULL").
@@ -556,12 +568,16 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 				return err
 			}
 		}
+		messageUpdates := map[string]interface{}{
+			"status":     messageStatus,
+			"updated_at": now,
+		}
+		if len(outcomeErrorJSON) > 0 {
+			messageUpdates["error_json"] = outcomeErrorJSON
+		}
 		if err := tx.Model(&persistence.AgentMessage{}).
 			Where("turn_id = ? AND role = ? AND status = ?", turn.ID, string(domain.MessageRoleAssistant), "pending").
-			Updates(map[string]interface{}{
-				"status":     messageStatus,
-				"updated_at": now,
-			}).Error; err != nil {
+			Updates(messageUpdates).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&persistence.ExecutionStep{}).
@@ -610,6 +626,7 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 				AgentID:        turn.AgentID,
 				Stage:          reasonCode,
 				Error:          reasonCode,
+				OutcomeError:   outcomeErrorJSON,
 			})
 			if err != nil {
 				return err

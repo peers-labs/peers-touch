@@ -4,7 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	social "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestJSONSerializer(t *testing.T) {
@@ -90,6 +93,72 @@ func TestProtoSerializer(t *testing.T) {
 		_, err := serializer.Marshal(&NonProto{Field: "test"})
 		if err == nil {
 			t.Error("Marshal() expected error for non-proto type, got nil")
+		}
+	})
+
+	strict := &ProtoSerializer{RejectDuplicateSingular: true}
+	t.Run("strict rejects duplicate singular field", func(t *testing.T) {
+		wire := protowire.AppendString(
+			protowire.AppendTag(nil, 1, protowire.BytesType),
+			"first",
+		)
+		wire = protowire.AppendString(
+			protowire.AppendTag(wire, 1, protowire.BytesType),
+			"second",
+		)
+		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
+			t.Fatal("strict protobuf accepted a duplicate singular field")
+		}
+	})
+
+	t.Run("strict rejects duplicate nested singular field", func(t *testing.T) {
+		attachment := protowire.AppendString(
+			protowire.AppendTag(nil, 1, protowire.BytesType),
+			"first",
+		)
+		attachment = protowire.AppendString(
+			protowire.AppendTag(attachment, 1, protowire.BytesType),
+			"second",
+		)
+		wire := protowire.AppendBytes(
+			protowire.AppendTag(nil, 7, protowire.BytesType),
+			attachment,
+		)
+		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
+			t.Fatal("strict protobuf accepted a nested duplicate singular field")
+		}
+	})
+
+	t.Run("strict accepts repeated message fields", func(t *testing.T) {
+		wire, err := proto.Marshal(&chat.FriendChatMessage{
+			Attachments: []*chat.FriendMessageAttachment{
+				{Cid: "first"},
+				{Cid: "second"},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := &chat.FriendChatMessage{}
+		if err := strict.Unmarshal(wire, decoded); err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded.GetAttachments()) != 2 {
+			t.Fatalf("attachments = %d, want 2", len(decoded.GetAttachments()))
+		}
+	})
+
+	t.Run("strict rejects multiple oneof alternatives", func(t *testing.T) {
+		wire := protowire.AppendBytes(
+			protowire.AppendTag(nil, 10, protowire.BytesType),
+			nil,
+		)
+		wire = protowire.AppendBytes(
+			protowire.AppendTag(wire, 11, protowire.BytesType),
+			nil,
+		)
+		if err := strict.Unmarshal(wire, &social.CreatePostRequest{}); err == nil {
+			t.Fatal("strict protobuf accepted multiple oneof alternatives")
 		}
 	})
 }

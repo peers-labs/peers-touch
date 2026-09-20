@@ -21,6 +21,8 @@
 7. **No silent gap** — 缺少 Acceptance contract、runtime resource、evidence 或责任边界时必须输出结构化 gap 并保持 `UNPROVEN`，不得临场绕过。
 8. **Ephemeral authority stays ephemeral** — process-local capability只通过受控
    child inheritance存在，不进入durable manifest、environment secret、文件或网络。
+9. **Impact is not scheduling** — Registry只产生保守影响投影；正式Execution
+   Plan的当前closure决定本次执行。Evidence latest pointer不得充当工作状态。
 
 ### 1.1 Runtime Provisioning 扩展证据账本
 
@@ -108,10 +110,15 @@
                                          ▼
 ┌──────────────────┐      ┌────────────────────────────┐
 │ Feature Contract │◄────►│       Impact Registry       │
-│ truth/surface/   │      │ path -> feature -> gates    │
+│ truth/surface/   │      │ path -> feature -> candidates│
 │ negative/gates   │      └──────────────┬─────────────┘
-└────────┬─────────┘                     │ selected gates
+└────────┬─────────┘                     │ drift validation
          │                               ▼
+         │                 ┌────────────────────────────┐
+         │                 │ Formal Plan / current closure│
+         │                 └──────────────┬─────────────┘
+         │                                │ scheduled gates
+         │                                ▼
          │                 ┌────────────────────────────┐
          │                 │       Gate Execution        │
          │                 │ local / fedp5 / desktop     │

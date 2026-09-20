@@ -14,7 +14,8 @@ use crate::model::recovery::{
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use messaging_core::identity::{generate_fresh_device_identity, FreshDeviceEnrollment};
+use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
+use messaging_core::identity::FreshDeviceEnrollment;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -22,11 +23,11 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryMessageProjection {
     pub conversation_id: String,
     pub event_id: String,
@@ -56,21 +57,49 @@ pub struct RecoveryConversationProjection {
     pub updated_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl Zeroize for RecoveryConversationProjection {
+    fn zeroize(&mut self) {
+        self.conversation_id.zeroize();
+        self.authority_station_id.zeroize();
+        self.federation_id.zeroize();
+        self.kind.zeroize();
+        self.name.zeroize();
+        self.owner_ptid.zeroize();
+        self.member_ptids.zeroize();
+        for (mut ptid, mut role) in std::mem::take(&mut self.member_roles) {
+            ptid.zeroize();
+            role.zeroize();
+        }
+        self.membership_epoch.zeroize();
+        self.mls_epoch.zeroize();
+        self.active.zeroize();
+        self.updated_at_unix_ms.zeroize();
+    }
+}
+
+impl Drop for RecoveryConversationProjection {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for RecoveryConversationProjection {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryAttachmentMetadata {
     pub message_id: String,
     pub attachment_id: String,
     pub metadata: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryTrustRecord {
     pub peer_ptid: String,
     pub fingerprint: String,
     pub verified_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct MessagingRecoveryArchive {
     pub ptid: String,
     pub actor_identity_seed: [u8; 32],
@@ -85,36 +114,70 @@ pub struct MessagingRecoveryArchive {
 pub struct EncodedRecoveryRevision {
     pub revision_id: String,
     pub format_version: u32,
+    pub recovery_epoch: u64,
     pub bytes: Vec<u8>,
     pub sha256: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedRecoveryRevision {
+    pub recovery_epoch: u64,
+    pub archive: MessagingRecoveryArchive,
 }
 
 #[derive(Serialize, Deserialize)]
 struct RecoveryRevisionEnvelope {
     kdf: BackupKdfParameters,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
     manifest: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct ActorIdentitySection {
     seed: [u8; 32],
     profile_version: u64,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct AttachmentSection {
     attachments: Vec<RecoveryAttachmentMetadata>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct TrustSection {
     trust: Vec<RecoveryTrustRecord>,
+}
+
+#[derive(Serialize)]
+struct ActorIdentitySectionRef<'a> {
+    seed: &'a [u8; 32],
+    profile_version: u64,
+    recovery_epoch: u64,
+}
+
+#[derive(Serialize)]
+struct MessageHistorySectionRef<'a> {
+    conversations: &'a [RecoveryConversationProjection],
+    messages: &'a [RecoveryMessageProjection],
+}
+
+#[derive(Serialize)]
+struct AttachmentSectionRef<'a> {
+    attachments: &'a [RecoveryAttachmentMetadata],
+}
+
+#[derive(Serialize)]
+struct TrustSectionRef<'a> {
+    trust: &'a [RecoveryTrustRecord],
 }
 
 pub fn encode_recovery_revision(
@@ -122,9 +185,13 @@ pub fn encode_recovery_revision(
     revision_id: &str,
     created_by_device_id: &str,
     created_at_unix_ms: i64,
+    recovery_epoch: u64,
     archive: &MessagingRecoveryArchive,
 ) -> Result<EncodedRecoveryRevision, String> {
     validate_archive_identity(recovery_phrase, revision_id, created_by_device_id, archive)?;
+    if recovery_epoch == 0 || recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let mut salt = vec![0_u8; BACKUP_SALT_BYTES];
     OsRng.fill_bytes(&mut salt);
     let kdf = BackupKdfParameters {
@@ -134,17 +201,19 @@ pub fn encode_recovery_revision(
         parallelism: ARGON2_PARALLELISM,
         output_length: BACKUP_KEY_BYTES as u32,
     };
-    let mut key =
-        derive_backup_key(recovery_phrase.as_bytes(), &kdf).map_err(|error| error.to_string())?;
+    let key = Zeroizing::new(
+        derive_backup_key(recovery_phrase.as_bytes(), &kdf).map_err(|error| error.to_string())?,
+    );
     let mut sections = Vec::new();
     sections.push(encrypt_section(
         &key,
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
-        &ActorIdentitySection {
-            seed: archive.actor_identity_seed,
+        &ActorIdentitySectionRef {
+            seed: &archive.actor_identity_seed,
             profile_version: archive.actor_profile_version,
+            recovery_epoch,
         },
         1,
     )?);
@@ -153,9 +222,9 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
-        &MessageHistorySection {
-            conversations: archive.conversations.clone(),
-            messages: archive.messages.clone(),
+        &MessageHistorySectionRef {
+            conversations: &archive.conversations,
+            messages: &archive.messages,
         },
         (archive.conversations.len() + archive.messages.len()) as u64,
     )?);
@@ -164,8 +233,8 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
-        &AttachmentSection {
-            attachments: archive.attachments.clone(),
+        &AttachmentSectionRef {
+            attachments: &archive.attachments,
         },
         archive.attachments.len() as u64,
     )?);
@@ -174,13 +243,11 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::Trust,
-        &TrustSection {
-            trust: archive.trust.clone(),
+        &TrustSectionRef {
+            trust: &archive.trust,
         },
         archive.trust.len() as u64,
     )?);
-    key.zeroize();
-
     let mut manifest = OpaqueRecoveryArchiveManifest {
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
         actor: Some(ActorRef {
@@ -199,6 +266,7 @@ pub fn encode_recovery_revision(
     manifest.archive_sha256 = manifest_hash(&manifest);
     let envelope = RecoveryRevisionEnvelope {
         kdf,
+        recovery_epoch,
         manifest: manifest.encode_to_vec(),
     };
     let bytes = serde_json::to_vec(&envelope).map_err(|error| error.to_string())?;
@@ -206,6 +274,7 @@ pub fn encode_recovery_revision(
     Ok(EncodedRecoveryRevision {
         revision_id: revision_id.to_string(),
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
+        recovery_epoch,
         bytes,
         sha256,
     })
@@ -217,7 +286,7 @@ pub fn decode_recovery_revision(
     expected_revision_id: &str,
     encoded: &[u8],
     expected_sha256: &[u8],
-) -> Result<MessagingRecoveryArchive, String> {
+) -> Result<DecodedRecoveryRevision, String> {
     validate_mnemonic(recovery_phrase).map_err(|error| error.to_string())?;
     if expected_ptid.trim().is_empty()
         || expected_revision_id.trim().is_empty()
@@ -228,6 +297,9 @@ pub fn decode_recovery_revision(
     }
     let envelope: RecoveryRevisionEnvelope =
         serde_json::from_slice(encoded).map_err(|_| "messaging recovery envelope invalid")?;
+    if envelope.recovery_epoch == 0 || envelope.recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let manifest = OpaqueRecoveryArchiveManifest::decode(envelope.manifest.as_slice())
         .map_err(|_| "messaging recovery manifest invalid")?;
     let manifest_ptid = manifest
@@ -244,37 +316,48 @@ pub fn decode_recovery_revision(
     {
         return Err("messaging recovery manifest binding is invalid".to_string());
     }
-    let mut key = derive_backup_key(recovery_phrase.as_bytes(), &envelope.kdf)
-        .map_err(|_| "messaging recovery phrase or KDF invalid".to_string())?;
-    let identity: ActorIdentitySection = decrypt_required_section(
+    let key = Zeroizing::new(
+        derive_backup_key(recovery_phrase.as_bytes(), &envelope.kdf)
+            .map_err(|_| "messaging recovery phrase or KDF invalid".to_string())?,
+    );
+    let mut identity: ActorIdentitySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
     )?;
-    let history: MessageHistorySection = decrypt_required_section(
+    if identity.recovery_epoch != envelope.recovery_epoch {
+        return Err("messaging recovery epoch binding is invalid".to_string());
+    }
+    let mut history: MessageHistorySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
     )?;
-    let attachments: AttachmentSection = decrypt_required_section(
+    let mut attachments: AttachmentSection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
     )?;
-    let trust: TrustSection =
+    let mut trust: TrustSection =
         decrypt_required_section(&key, &manifest, OpaqueRecoveryArchiveSectionKind::Trust)?;
-    key.zeroize();
     let archive = MessagingRecoveryArchive {
         ptid: manifest_ptid.to_string(),
-        actor_identity_seed: identity.seed,
+        actor_identity_seed: std::mem::take(&mut identity.seed),
         actor_profile_version: identity.profile_version,
-        conversations: history.conversations,
-        messages: history.messages,
-        attachments: attachments.attachments,
-        trust: trust.trust,
+        conversations: std::mem::take(&mut history.conversations),
+        messages: std::mem::take(&mut history.messages),
+        attachments: std::mem::take(&mut attachments.attachments),
+        trust: std::mem::take(&mut trust.trust),
     };
     validate_archive(&archive)?;
-    Ok(archive)
+    Ok(DecodedRecoveryRevision {
+        recovery_epoch: envelope.recovery_epoch,
+        archive,
+    })
+}
+
+fn initial_recovery_epoch() -> u64 {
+    1
 }
 
 // The profile Engine and every legacy connection to the same database must be
@@ -311,15 +394,15 @@ pub fn restore_profile_database_atomically(
             .map_err(|error| format!("{error:?}"))?;
         let staging = MessagingStore::from_connection(connection)?;
         staging.populate_recovery_staging(archive)?;
-        let fresh_device = generate_fresh_device_identity(
+        let fresh_device = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )?;
         staging.install_fresh_device_identity(&fresh_device)?;
         let readback = staging.build_recovery_archive(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )?;
         if &readback != archive {
@@ -431,7 +514,7 @@ fn encrypt_section<T: Serialize>(
     value: &T,
     record_count: u64,
 ) -> Result<OpaqueRecoveryArchiveSection, String> {
-    let plaintext = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let plaintext = Zeroizing::new(serde_json::to_vec(value).map_err(|error| error.to_string())?);
     let mut nonce = [0_u8; BACKUP_NONCE_BYTES];
     OsRng.fill_bytes(&mut nonce);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
@@ -476,23 +559,25 @@ fn decrypt_required_section<T: DeserializeOwned>(
     }
     let (nonce, ciphertext) = section.ciphertext.split_at(BACKUP_NONCE_BYTES);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &section_aad(
-                    manifest
-                        .actor
-                        .as_ref()
-                        .map(|actor| actor.ptid.as_str())
-                        .unwrap_or_default(),
-                    &manifest.revision_id,
-                    kind,
-                ),
-            },
-        )
-        .map_err(|_| "messaging recovery phrase or section integrity invalid")?;
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(
+                Nonce::from_slice(nonce),
+                Payload {
+                    msg: ciphertext,
+                    aad: &section_aad(
+                        manifest
+                            .actor
+                            .as_ref()
+                            .map(|actor| actor.ptid.as_str())
+                            .unwrap_or_default(),
+                        &manifest.revision_id,
+                        kind,
+                    ),
+                },
+            )
+            .map_err(|_| "messaging recovery phrase or section integrity invalid")?,
+    );
     serde_json::from_slice(&plaintext).map_err(|_| "messaging recovery section invalid".to_string())
 }
 
@@ -549,6 +634,21 @@ mod tests {
     use crate::messaging::private_content::test_attachment_metadata;
 
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+
+    #[test]
+    fn recovery_secret_bearing_types_zeroize_on_drop() {
+        fn require_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
+        require_zeroize_on_drop::<RecoveryMessageProjection>();
+        require_zeroize_on_drop::<RecoveryConversationProjection>();
+        require_zeroize_on_drop::<RecoveryAttachmentMetadata>();
+        require_zeroize_on_drop::<RecoveryTrustRecord>();
+        require_zeroize_on_drop::<MessagingRecoveryArchive>();
+        require_zeroize_on_drop::<ActorIdentitySection>();
+        require_zeroize_on_drop::<MessageHistorySection>();
+        require_zeroize_on_drop::<AttachmentSection>();
+        require_zeroize_on_drop::<TrustSection>();
+    }
 
     fn archive() -> MessagingRecoveryArchive {
         MessagingRecoveryArchive {
@@ -629,7 +729,8 @@ mod tests {
     fn recovery_revision_round_trips_all_recoverable_sections() {
         let expected = archive();
         let encoded =
-            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, &expected).unwrap();
+            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, 7, &expected)
+                .unwrap();
         let actual = decode_recovery_revision(
             PHRASE,
             "ptid:alice",
@@ -638,13 +739,15 @@ mod tests {
             &encoded.sha256,
         )
         .unwrap();
-        assert_eq!(actual, expected);
+        assert_eq!(actual.recovery_epoch, 7);
+        assert_eq!(actual.archive, expected);
     }
 
     #[test]
     fn wrong_phrase_and_corruption_fail_closed() {
         let encoded =
-            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, &archive()).unwrap();
+            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, 1, &archive())
+                .unwrap();
         let wrong_phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow legal winner thank year wave sausage worth useful legal winner thank yellow";
         assert!(decode_recovery_revision(
             wrong_phrase,
@@ -663,6 +766,27 @@ mod tests {
             "revision-1",
             &corrupted,
             &encoded.sha256,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn recovery_epoch_is_bound_by_encrypted_identity_section() {
+        let encoded =
+            encode_recovery_revision(PHRASE, "revision-epoch", "alice-device", 10, 7, &archive())
+                .unwrap();
+        let mut envelope: RecoveryRevisionEnvelope =
+            serde_json::from_slice(&encoded.bytes).unwrap();
+        envelope.recovery_epoch = 8;
+        let tampered = serde_json::to_vec(&envelope).unwrap();
+        let tampered_sha = Sha256::digest(&tampered);
+
+        assert!(decode_recovery_revision(
+            PHRASE,
+            "ptid:alice",
+            "revision-epoch",
+            &tampered,
+            tampered_sha.as_slice(),
         )
         .is_err());
     }
@@ -711,15 +835,15 @@ mod tests {
     #[test]
     fn recovery_generates_fresh_cross_signed_device_identity() {
         let archive = archive();
-        let first = generate_fresh_device_identity(
+        let first = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )
         .unwrap();
-        let second = generate_fresh_device_identity(
+        let second = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )
         .unwrap();

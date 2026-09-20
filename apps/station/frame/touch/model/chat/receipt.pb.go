@@ -190,6 +190,106 @@ func (x *ActorReadCursor) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type FederatedConversationReadCursor struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion           uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	FederationId            string                 `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	ConversationId          string                 `protobuf:"bytes,3,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	AuthorityStationPeerId  string                 `protobuf:"bytes,4,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	AuthorityEpoch          uint64                 `protobuf:"varint,5,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	Reader                  *CryptoEndpoint        `protobuf:"bytes,6,opt,name=reader,proto3" json:"reader,omitempty"`
+	ReaderHomeStationPeerId string                 `protobuf:"bytes,7,opt,name=reader_home_station_peer_id,json=readerHomeStationPeerId,proto3" json:"reader_home_station_peer_id,omitempty"`
+	LastReadSequence        int64                  `protobuf:"varint,8,opt,name=last_read_sequence,json=lastReadSequence,proto3" json:"last_read_sequence,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *FederatedConversationReadCursor) Reset() {
+	*x = FederatedConversationReadCursor{}
+	mi := &file_domain_chat_receipt_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FederatedConversationReadCursor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FederatedConversationReadCursor) ProtoMessage() {}
+
+func (x *FederatedConversationReadCursor) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_receipt_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FederatedConversationReadCursor.ProtoReflect.Descriptor instead.
+func (*FederatedConversationReadCursor) Descriptor() ([]byte, []int) {
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *FederatedConversationReadCursor) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *FederatedConversationReadCursor) GetFederationId() string {
+	if x != nil {
+		return x.FederationId
+	}
+	return ""
+}
+
+func (x *FederatedConversationReadCursor) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *FederatedConversationReadCursor) GetAuthorityStationPeerId() string {
+	if x != nil {
+		return x.AuthorityStationPeerId
+	}
+	return ""
+}
+
+func (x *FederatedConversationReadCursor) GetAuthorityEpoch() uint64 {
+	if x != nil {
+		return x.AuthorityEpoch
+	}
+	return 0
+}
+
+func (x *FederatedConversationReadCursor) GetReader() *CryptoEndpoint {
+	if x != nil {
+		return x.Reader
+	}
+	return nil
+}
+
+func (x *FederatedConversationReadCursor) GetReaderHomeStationPeerId() string {
+	if x != nil {
+		return x.ReaderHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *FederatedConversationReadCursor) GetLastReadSequence() int64 {
+	if x != nil {
+		return x.LastReadSequence
+	}
+	return 0
+}
+
 type MessageDeliveryAggregate struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId      string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
@@ -207,7 +307,7 @@ type MessageDeliveryAggregate struct {
 
 func (x *MessageDeliveryAggregate) Reset() {
 	*x = MessageDeliveryAggregate{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[2]
+	mi := &file_domain_chat_receipt_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -219,7 +319,7 @@ func (x *MessageDeliveryAggregate) String() string {
 func (*MessageDeliveryAggregate) ProtoMessage() {}
 
 func (x *MessageDeliveryAggregate) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[2]
+	mi := &file_domain_chat_receipt_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -232,7 +332,7 @@ func (x *MessageDeliveryAggregate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageDeliveryAggregate.ProtoReflect.Descriptor instead.
 func (*MessageDeliveryAggregate) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MessageDeliveryAggregate) GetConversationId() string {
@@ -307,7 +407,7 @@ type SubmitConversationReadCursorRequest struct {
 
 func (x *SubmitConversationReadCursorRequest) Reset() {
 	*x = SubmitConversationReadCursorRequest{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[3]
+	mi := &file_domain_chat_receipt_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +419,7 @@ func (x *SubmitConversationReadCursorRequest) String() string {
 func (*SubmitConversationReadCursorRequest) ProtoMessage() {}
 
 func (x *SubmitConversationReadCursorRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[3]
+	mi := &file_domain_chat_receipt_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +432,7 @@ func (x *SubmitConversationReadCursorRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use SubmitConversationReadCursorRequest.ProtoReflect.Descriptor instead.
 func (*SubmitConversationReadCursorRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SubmitConversationReadCursorRequest) GetCursor() *ActorReadCursor {
@@ -351,7 +451,7 @@ type SubmitConversationReadCursorResponse struct {
 
 func (x *SubmitConversationReadCursorResponse) Reset() {
 	*x = SubmitConversationReadCursorResponse{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	mi := &file_domain_chat_receipt_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +463,7 @@ func (x *SubmitConversationReadCursorResponse) String() string {
 func (*SubmitConversationReadCursorResponse) ProtoMessage() {}
 
 func (x *SubmitConversationReadCursorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	mi := &file_domain_chat_receipt_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +476,7 @@ func (x *SubmitConversationReadCursorResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use SubmitConversationReadCursorResponse.ProtoReflect.Descriptor instead.
 func (*SubmitConversationReadCursorResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SubmitConversationReadCursorResponse) GetCursor() *ActorReadCursor {
@@ -395,7 +495,7 @@ type SubmitConversationDeliveryReceiptRequest struct {
 
 func (x *SubmitConversationDeliveryReceiptRequest) Reset() {
 	*x = SubmitConversationDeliveryReceiptRequest{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[5]
+	mi := &file_domain_chat_receipt_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -407,7 +507,7 @@ func (x *SubmitConversationDeliveryReceiptRequest) String() string {
 func (*SubmitConversationDeliveryReceiptRequest) ProtoMessage() {}
 
 func (x *SubmitConversationDeliveryReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[5]
+	mi := &file_domain_chat_receipt_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -420,7 +520,7 @@ func (x *SubmitConversationDeliveryReceiptRequest) ProtoReflect() protoreflect.M
 
 // Deprecated: Use SubmitConversationDeliveryReceiptRequest.ProtoReflect.Descriptor instead.
 func (*SubmitConversationDeliveryReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SubmitConversationDeliveryReceiptRequest) GetReceipt() *DeviceConsumptionReceipt {
@@ -439,7 +539,7 @@ type SubmitConversationDeliveryReceiptResponse struct {
 
 func (x *SubmitConversationDeliveryReceiptResponse) Reset() {
 	*x = SubmitConversationDeliveryReceiptResponse{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[6]
+	mi := &file_domain_chat_receipt_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -451,7 +551,7 @@ func (x *SubmitConversationDeliveryReceiptResponse) String() string {
 func (*SubmitConversationDeliveryReceiptResponse) ProtoMessage() {}
 
 func (x *SubmitConversationDeliveryReceiptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[6]
+	mi := &file_domain_chat_receipt_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -464,7 +564,7 @@ func (x *SubmitConversationDeliveryReceiptResponse) ProtoReflect() protoreflect.
 
 // Deprecated: Use SubmitConversationDeliveryReceiptResponse.ProtoReflect.Descriptor instead.
 func (*SubmitConversationDeliveryReceiptResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SubmitConversationDeliveryReceiptResponse) GetDelivery() *MessageDeliveryAggregate {
@@ -496,7 +596,16 @@ const file_domain_chat_receipt_proto_rawDesc = "" +
 	"readerPtid\x12,\n" +
 	"\x12last_read_sequence\x18\x03 \x01(\x03R\x10lastReadSequence\x129\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xfa\x02\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa9\x03\n" +
+	"\x1fFederatedConversationReadCursor\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
+	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x12'\n" +
+	"\x0fconversation_id\x18\x03 \x01(\tR\x0econversationId\x129\n" +
+	"\x19authority_station_peer_id\x18\x04 \x01(\tR\x16authorityStationPeerId\x12'\n" +
+	"\x0fauthority_epoch\x18\x05 \x01(\x04R\x0eauthorityEpoch\x12A\n" +
+	"\x06reader\x18\x06 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x06reader\x12<\n" +
+	"\x1breader_home_station_peer_id\x18\a \x01(\tR\x17readerHomeStationPeerId\x12,\n" +
+	"\x12last_read_sequence\x18\b \x01(\x03R\x10lastReadSequence\"\xfa\x02\n" +
 	"\x18MessageDeliveryAggregate\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12%\n" +
@@ -528,31 +637,33 @@ func file_domain_chat_receipt_proto_rawDescGZIP() []byte {
 	return file_domain_chat_receipt_proto_rawDescData
 }
 
-var file_domain_chat_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_domain_chat_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_domain_chat_receipt_proto_goTypes = []any{
 	(*DeviceConsumptionReceipt)(nil),                  // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt
 	(*ActorReadCursor)(nil),                           // 1: peers_touch.model.chat.v1.ActorReadCursor
-	(*MessageDeliveryAggregate)(nil),                  // 2: peers_touch.model.chat.v1.MessageDeliveryAggregate
-	(*SubmitConversationReadCursorRequest)(nil),       // 3: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
-	(*SubmitConversationReadCursorResponse)(nil),      // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
-	(*SubmitConversationDeliveryReceiptRequest)(nil),  // 5: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest
-	(*SubmitConversationDeliveryReceiptResponse)(nil), // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse
-	(*CryptoEndpoint)(nil),                            // 7: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),                     // 8: google.protobuf.Timestamp
+	(*FederatedConversationReadCursor)(nil),           // 2: peers_touch.model.chat.v1.FederatedConversationReadCursor
+	(*MessageDeliveryAggregate)(nil),                  // 3: peers_touch.model.chat.v1.MessageDeliveryAggregate
+	(*SubmitConversationReadCursorRequest)(nil),       // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
+	(*SubmitConversationReadCursorResponse)(nil),      // 5: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
+	(*SubmitConversationDeliveryReceiptRequest)(nil),  // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest
+	(*SubmitConversationDeliveryReceiptResponse)(nil), // 7: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse
+	(*CryptoEndpoint)(nil),                            // 8: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                     // 9: google.protobuf.Timestamp
 }
 var file_domain_chat_receipt_proto_depIdxs = []int32{
-	7, // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumer:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	8, // 1: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumed_at:type_name -> google.protobuf.Timestamp
-	8, // 2: peers_touch.model.chat.v1.ActorReadCursor.updated_at:type_name -> google.protobuf.Timestamp
-	1, // 3: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
-	1, // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
-	0, // 5: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest.receipt:type_name -> peers_touch.model.chat.v1.DeviceConsumptionReceipt
-	2, // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse.delivery:type_name -> peers_touch.model.chat.v1.MessageDeliveryAggregate
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	8, // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumer:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	9, // 1: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumed_at:type_name -> google.protobuf.Timestamp
+	9, // 2: peers_touch.model.chat.v1.ActorReadCursor.updated_at:type_name -> google.protobuf.Timestamp
+	8, // 3: peers_touch.model.chat.v1.FederatedConversationReadCursor.reader:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	1, // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
+	1, // 5: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
+	0, // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest.receipt:type_name -> peers_touch.model.chat.v1.DeviceConsumptionReceipt
+	3, // 7: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse.delivery:type_name -> peers_touch.model.chat.v1.MessageDeliveryAggregate
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_receipt_proto_init() }
@@ -567,7 +678,7 @@ func file_domain_chat_receipt_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_receipt_proto_rawDesc), len(file_domain_chat_receipt_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

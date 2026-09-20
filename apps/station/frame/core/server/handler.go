@@ -40,6 +40,14 @@ type Request interface {
 	Body() []byte
 }
 
+// StreamingRequest exposes the unread transport body for handlers that must
+// enforce a route-specific bound before allocating. Ordinary typed handlers
+// continue to use Request.Body.
+type StreamingRequest interface {
+	Request
+	BodyStream() io.Reader
+}
+
 type Response interface {
 	Header() map[string]string
 	SetHeader(key, value string)
@@ -47,6 +55,13 @@ type Response interface {
 	Flush() error
 	WriteHeader(int)
 	Status() int
+}
+
+// StreamingResponse transfers ownership of reader to the transport so large
+// response bodies do not pass through an in-memory Response.Write buffer.
+type StreamingResponse interface {
+	Response
+	SetBodyStream(reader io.ReadCloser, size int64) error
 }
 
 type EndpointHandler func(ctx context.Context, req Request, resp Response) error
@@ -296,6 +311,19 @@ func (w *httpResponseWriter) Flush() {
 	_ = w.resp.Flush()
 }
 
+func (w *httpResponseWriter) SetBodyStream(
+	reader io.ReadCloser,
+	size int64,
+) error {
+	w.syncHeaders()
+	if streaming, ok := w.resp.(StreamingResponse); ok {
+		return streaming.SetBodyStream(reader, size)
+	}
+	defer reader.Close()
+	_, err := io.CopyN(w, reader, size)
+	return err
+}
+
 func (w *httpResponseWriter) syncHeaders() {
 	if w.header != nil {
 		for k, vals := range w.header {
@@ -319,7 +347,17 @@ func HTTPWrapperAdapter(httpWrapper func(ctx context.Context, next http.Handler)
 			})
 
 			wrapped := httpWrapper(ctx, httpHandler)
-			bodyReader := io.NopCloser(bytes.NewReader(req.Body()))
+			var bodyReader io.ReadCloser
+			if streaming, ok := req.(StreamingRequest); ok {
+				reader := streaming.BodyStream()
+				if closer, ok := reader.(io.ReadCloser); ok {
+					bodyReader = closer
+				} else {
+					bodyReader = io.NopCloser(reader)
+				}
+			} else {
+				bodyReader = io.NopCloser(bytes.NewReader(req.Body()))
+			}
 
 			// Parse the full path which may include query string
 			fullPath := req.Path()
@@ -394,6 +432,17 @@ func (r *httpRequestAdapter) Body() []byte {
 	return r.bodyCache
 }
 
+func (r *httpRequestAdapter) BodyStream() io.Reader {
+	if r.bodyRead {
+		return bytes.NewReader(r.bodyCache)
+	}
+	r.bodyRead = true
+	if r.r.Body == nil {
+		return bytes.NewReader(nil)
+	}
+	return r.r.Body
+}
+
 // GetHertzContext returns the underlying Hertz context if available
 // This preserves the Hertz context through HTTP wrapper adapters
 func (r *httpRequestAdapter) GetHertzContext() interface{} {
@@ -437,6 +486,20 @@ func (r *httpResponseAdapter) Flush() error {
 
 func (r *httpResponseAdapter) WriteHeader(statusCode int) {
 	r.w.WriteHeader(statusCode)
+}
+
+func (r *httpResponseAdapter) SetBodyStream(
+	reader io.ReadCloser,
+	size int64,
+) error {
+	if streaming, ok := r.w.(interface {
+		SetBodyStream(io.ReadCloser, int64) error
+	}); ok {
+		return streaming.SetBodyStream(reader, size)
+	}
+	defer reader.Close()
+	_, err := io.CopyN(r.w, reader, size)
+	return err
 }
 
 func (r *httpResponseAdapter) Status() int {

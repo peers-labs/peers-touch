@@ -3,6 +3,7 @@ package social
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -24,23 +28,30 @@ type subServer struct {
 	status server.Status
 
 	// Wrappers
-	commonWrapper server.Wrapper
-	jwtWrapper    server.Wrapper
+	commonWrapper                    server.Wrapper
+	jwtWrapper                       server.Wrapper
+	optionalJWTWrapper               server.Wrapper
+	privateContentJWTWrapper         server.Wrapper
+	privateContentOptionalJWTWrapper server.Wrapper
 
 	// Application services
-	momentSvc       *application.MomentService
-	commentSvc      *application.CommentService
-	reactionSvc     *application.ReactionService
-	circleSvc       *application.CircleService
-	timelineSvc     *application.TimelineService
-	relationshipSvc *application.RelationshipService
-	statsSvc        *application.StatsService
-	moderationSvc   *application.ModerationService
+	momentSvc         *application.MomentService
+	commentSvc        *application.CommentService
+	reactionSvc       *application.ReactionService
+	circleSvc         *application.CircleService
+	timelineSvc       *application.TimelineService
+	relationshipSvc   *application.RelationshipService
+	statsSvc          *application.StatsService
+	moderationSvc     *application.ModerationService
+	privateContentSvc *application.PrivateContentService
+	privateObjectSvc  *application.PrivateObjectService
 
 	federatedFriendRequestSvc *application.FederatedFriendRequestService
 	friendRequestEffectSvc    *application.FriendRequestDirectEffectService
 	friendRequestEffectCancel context.CancelFunc
 	friendRequestEffectWait   sync.WaitGroup
+	privateObjectCancel       context.CancelFunc
+	privateObjectWait         sync.WaitGroup
 }
 
 func NewSocialSubServer(_ ...option.Option) server.Subserver {
@@ -55,6 +66,21 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.commonWrapper = touch.CommonAccessControlWrapper(model.RouteNameSocial)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.optionalJWTWrapper = server.HTTPWrapperAdapter(httpadapter.OptionalJWT(provider))
+	s.privateContentJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
+	s.privateContentOptionalJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.OptionalStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -92,6 +118,78 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social Federation composition: %w", err)
 	}
+	actorCapabilities, err := resolvePrivateContentActorCapabilities()
+	if err != nil {
+		return fmt.Errorf("initialize Social private Actor Identity port: %w", err)
+	}
+	privateContentStore, err := infrastructure.NewGORMPrivateContentStore(rds)
+	if err != nil {
+		return fmt.Errorf("initialize Social private content store: %w", err)
+	}
+	if err := privateContentStore.Migrate(ctx); err != nil {
+		return err
+	}
+	privateAudienceAuthority, err :=
+		infrastructure.NewGORMPrivateAudienceAuthority(rds)
+	if err != nil {
+		return fmt.Errorf("initialize Social private audience authority: %w", err)
+	}
+	privateRecipientDirectory, err := newPrivateContentRecipientDirectory(
+		actorCapabilities,
+		federationRuntime,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Social private recipient directory: %w", err)
+	}
+	privateStationKeyStore := authfed.NewKeyStoreGORMWithDB(rds)
+	privateProofKeyAuthority, err := authfed.NewContentProofKeyAuthority(
+		federationRuntime.LocalStationPeerID(),
+		privateStationKeyStore,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"initialize Social private proof-key authority: %w",
+			err,
+		)
+	}
+	privateStationSigner := privateContentStationSigner{
+		stationPeerID:     federationRuntime.LocalStationPeerID(),
+		proofKeyAuthority: privateProofKeyAuthority,
+	}
+	s.privateContentSvc, err = application.NewPrivateContentService(
+		privateContentStore,
+		privateAudienceAuthority,
+		privateRecipientDirectory,
+		privateContentKeyExchangePort{},
+		privateStationSigner,
+		privateContentAuthorSignatureVerifier{actors: actorCapabilities},
+		privateContentSystemClock{},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Social private content service: %w", err)
+	}
+	dataDirectory, err := appdir.Resolve("station", "data")
+	if err != nil {
+		return fmt.Errorf("resolve Social private object data directory: %w", err)
+	}
+	privateObjectBlobs, err := infrastructure.NewPrivateObjectBlobStore(
+		storage.NewLocalBackend(
+			filepath.Join(dataDirectory, "social-private-objects"),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Social private object storage: %w", err)
+	}
+	s.privateObjectSvc, err = application.NewPrivateObjectService(
+		privateContentStore,
+		privateObjectBlobs,
+		privateRecipientDirectory,
+		privateStationSigner,
+		privateContentSystemClock{},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Social private object service: %w", err)
+	}
 	clock := delivery.SystemClock{}
 	federatedStore, err := infrastructure.NewGORMFederatedFriendRequestStore(
 		rds,
@@ -103,10 +201,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err := federatedStore.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate Social Friend Request store: %w", err)
 	}
-	keyHydrator, err := infrastructure.NewVerifiedFriendRequestActorKeyHydrator(rds)
-	if err != nil {
-		return fmt.Errorf("initialize Social Friend Request identity: %w", err)
-	}
 	s.federatedFriendRequestSvc, err = application.NewFederatedFriendRequestService(
 		federatedStore,
 		federationRuntime.Signer(),
@@ -116,7 +210,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize federated Friend Request service: %w", err)
 	}
-	s.federatedFriendRequestSvc.WithActorKeyHydrator(keyHydrator)
+	s.federatedFriendRequestSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
 		return infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,
@@ -150,7 +244,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.federatedFriendRequestSvc == nil || s.friendRequestEffectSvc == nil {
+	if s.federatedFriendRequestSvc == nil ||
+		s.friendRequestEffectSvc == nil ||
+		s.privateObjectSvc == nil {
 		s.status = server.StatusError
 		return fmt.Errorf("start Social Federation composition: services are not initialized")
 	}
@@ -161,6 +257,13 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	go func() {
 		defer s.friendRequestEffectWait.Done()
 		s.runFriendRequestDirectEffects(effectContext)
+	}()
+	objectContext, objectCancel := context.WithCancel(ctx)
+	s.privateObjectCancel = objectCancel
+	s.privateObjectWait.Add(1)
+	go func() {
+		defer s.privateObjectWait.Done()
+		s.runPrivateObjectCleanup(objectContext)
 	}()
 
 	s.status = server.StatusRunning
@@ -176,10 +279,36 @@ func (s *subServer) Stop(ctx context.Context) error {
 		s.friendRequestEffectCancel()
 		s.friendRequestEffectCancel = nil
 	}
+	if s.privateObjectCancel != nil {
+		s.privateObjectCancel()
+		s.privateObjectCancel = nil
+	}
 	s.friendRequestEffectWait.Wait()
+	s.privateObjectWait.Wait()
 	s.status = server.StatusStopped
 	log.Infof(ctx, "[social] subserver stopped")
 	return nil
+}
+
+func (s *subServer) runPrivateObjectCleanup(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		if _, err := s.privateObjectSvc.CleanupUnattached(ctx); err != nil &&
+			ctx.Err() == nil {
+			log.Warnf(
+				ctx,
+				"[social] private object cleanup remains retryable: %v",
+				err,
+			)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *subServer) Name() string                     { return "social" }

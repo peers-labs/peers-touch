@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-13
-covered_docs_hash: b7d36ba0fe25c29d5a626a08b1c67902e33dba7aabfc98e6fd9723da30c638dd
+last_verified_at: 2026-09-18
+covered_docs_hash: f970f74b60fc70e411a2928f9b53eb5a9677e2499afbecf4c34f74a4f8d78ce1
 
 covered_docs:
   - AGENTS.md
@@ -193,3 +193,105 @@ Remote deployment and Foundation restart now resolve only unique,
 Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
 are confined to declared Acceptance runtime roots. Existing repository hygiene
 checks and profile-only startup invariants own the other two rules.
+
+## 2026-09-14 Review
+
+DWF-D13 corrects source-claim isolation: overlapping writes in independent
+worktrees on different branches emit a coordination warning instead of
+blocking development. Same-workspace overlap, same-branch writes, and exclusive
+runtime resources remain fail-closed. This changes development coordination,
+not PR review severity or evidence semantics, so no review fixture or
+`pt-github-review/SKILL.md` behavior change is required.
+
+## 2026-09-15 Review
+
+The covered-document drift records source-bound Native Desktop Runtime evidence,
+scope boundaries, and navigation to the already-reviewed cross-platform
+`devctl` architecture. It does not change PR review severity, ownership, or
+evidence semantics. Existing Acceptance review rules and the
+`station-profile-bypass` and `unauthorized-environment-creation` hard rules
+already cover these changes, so no `pt-github-review/SKILL.md` update or new
+review fixture is required.
+
+## 2026-09-16 Review
+
+PR #112 reconciliation combines the reviewed Native Desktop and Mobile
+reliability contracts with the Secure Content hard cut and Machine Dev Control
+Plane. The merged sources preserve existing review severity, exact-source
+evidence, environment authorization, source-of-truth ownership, and old-path
+deletion rules. No `pt-github-review/SKILL.md` behavior or fixture change is
+required.
+
+The Development Skill responsibility refinement makes `pt-god-view` a thin
+router, `pt-dev-workflow` the sole Development Run application service,
+`pt-trae-goal-orchestrator` the scheduler, `pt-execution-plan-guardian` a
+read-only policy guard, and `pt-context-anchor` a read-only projection. PLAN is
+split between vertical dependency modeling and repository persistence.
+Review severity is unchanged, but review must reject any change that lets the
+router, scheduler, policy guard, or projection mutate durable workflow state,
+or that restores a generic five-variant Acceptance requirement.
+
+The follow-up review makes every non-trivial stage dispatch through
+`pt-dev-workflow` and requires `acceptance-aggregate` work to reference current
+functional proof for every product Journey it aggregates. These changes close
+workflow bypasses without changing PR review severity or adding a new review
+fixture.
+
+The W2 Home slice registers `homeRuntime` as the owner of the Station-backed
+Home projection while retaining the existing `eager + forever` page lifetime.
+This changes projection ownership, not review severity; runtime, store, and
+page-descriptor checks cover the boundary without a new review fixture.
+
+## 2026-09-17 Review
+
+Progress-bearing continuation makes Task closure the user-facing progress unit,
+derives the exact next completion effect through `planctl status`, and prevents
+Context Anchor from returning successful zero-delta administrative actions.
+Profile Agent control and the read-only Development Control Plane dashboard
+refine Local Dev operation policy without weakening declaration, capability,
+lease, reset-scope, source-identity, or evidence rules. The dashboard now uses
+one worktree-first projection for requirements, Journeys and runtime resources,
+with profile occupancy retained as a secondary capacity view. PR review
+severity and fixtures remain unchanged; `review/skill-check.sh`, Plan tests,
+Local Dev tests, and dashboard tests own the executable contract.
+
+Peers Dev now owns that projection as a first-class `apps/dev` application with
+one fixed machine endpoint and a fail-closed server identity contract. Concurrent
+read-only lease observers use shared locks so they do not impersonate live
+exclusive holders. These changes preserve existing review severity and require
+no new review fixture.
+
+Plan-aware observability adds an explicit declaration-to-Plan locator, a
+read-only Development Session bridge for mixed-version rollout, typed legacy
+and stale states, and separate work versus environment projections. Review must
+reject inferred percentages, hidden stale work, environment failures presented
+as Task failure, absolute Plan path exposure, or server identities that omit
+dirty source state. Existing Local Dev, Plan, Peers Dev, redaction, and visual
+regressions cover these rules; no new generic review fixture is required.
+
+DWF-D17 removes repository-wide sibling worktree inventory from immutable
+execution identity. Review still fails closed on canonical root, branch,
+workspace and expected-HEAD drift, while unrelated worktree add/remove/prune
+operations no longer invalidate another task. The verifier integration test,
+Plan/Session/migration suites, and contract checks cover the hard cut; review
+severity and golden fixtures remain unchanged.
+
+## 2026-09-18 Review
+
+DWF-D18 makes workspace-to-Plan ownership a machine-local create-once binding.
+Review must reject branch/repository Plan scans, synchronized foreign Plan
+selection, locator-less declarations after binding, and any unbind/rebind path.
+`pt-github-review/SKILL.md` now requires an explicit PR `Execution Plans` list;
+CI validates every listed path instead of scanning the branch. Dedicated Node,
+Python, PR-input and Development declaration regressions cover the contract, so
+no new golden review fixture is required.
+
+DWF-D19 removes advancing `expectedHead` from tracked Plan Packages. Review
+must reject schema-v1 packages and any attempt to move current source identity
+back into `plan.md`; declarations, Sessions and `active_work` retain their
+separate source-identity duties. The review Skill now states this hard cut, and
+the Plan, migration, Session and dashboard regressions provide executable
+coverage without a new golden fixture. A declaration may retain only its exact
+blocked/done Task locator while the corresponding Plan is blocked/completed so
+cleanup and delivery can finish; this terminal allowance must not select a new
+Task or reopen execution.

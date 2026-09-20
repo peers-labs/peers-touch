@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, theme } from 'antd';
-import { Globe, Lock, UserCheck } from 'lucide-react';
+import { Globe, Users } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import {
   Audience_Kind,
@@ -30,8 +30,7 @@ interface OptionDef {
 // first, most private last, then the disabled-in-P2 options grouped.
 const OPTIONS: OptionDef[] = [
   { kind: Audience_Kind.PUBLIC, i18nKey: 'moments.audience.public', Icon: Globe },
-  { kind: Audience_Kind.FOLLOWERS, i18nKey: 'moments.audience.followers', Icon: UserCheck },
-  { kind: Audience_Kind.SELF, i18nKey: 'moments.audience.self', Icon: Lock },
+  { kind: Audience_Kind.FRIENDS, i18nKey: 'moments.audience.friends', Icon: Users },
 ];
 
 export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProps) {

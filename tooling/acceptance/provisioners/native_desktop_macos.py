@@ -33,6 +33,7 @@ from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
+    NativeWindowStack,
 )
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.tauri import (
@@ -387,20 +388,13 @@ class NativeDesktopMacOSProvisioner:
                 "window bounds",
                 str(process_id),
             )
-            point = (
-                float(bounds["left"]) + float(bounds["width"]) / 2,
-                float(bounds["top"]) + float(bounds["height"]) / 2,
+            point, pointer, stack, input_probe, attempted_points = (
+                self._probe_owned_point(
+                    adapter,
+                    process_id,
+                    bounds,
+                )
             )
-            adapter.post_mouse((MouseAction.MOVE,), point)
-            pointer = self._json_probe(
-                _POINTER_LOCATION_PROBE,
-                "pointer location",
-            )
-            input_probe = (
-                abs(float(pointer.get("x") or 0) - point[0]) <= 1
-                and abs(float(pointer.get("y") or 0) - point[1]) <= 1
-            )
-            stack = adapter.window_stack_at_point(point)
             adapter.capture_screenshot(screenshot)
             probes = CellAdapterIdentity(
                 input_backend=self.contract.native_adapter.input,
@@ -432,6 +426,7 @@ class NativeDesktopMacOSProvisioner:
                         f"control={control.to_dict()} "
                         f"pointer={pointer} expectedPoint={point} "
                         f"windowStack={stack.to_dict()} "
+                        f"attemptedPoints={attempted_points} "
                         f"screenshot={probes.screenshot_probe}"
                     ),
                     resource="runtime-cell-native-adapter",
@@ -445,6 +440,56 @@ class NativeDesktopMacOSProvisioner:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    @classmethod
+    def _probe_owned_point(
+        cls,
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        bounds: dict[str, Any],
+    ) -> tuple[
+        tuple[float, float],
+        dict[str, Any],
+        NativeWindowStack,
+        bool,
+        tuple[tuple[float, float], ...],
+    ]:
+        left = float(bounds["left"])
+        top = float(bounds["top"])
+        width = float(bounds["width"])
+        height = float(bounds["height"])
+        ratios = (
+            (0.5, 0.5),
+            (0.25, 0.75),
+            (0.75, 0.75),
+            (0.25, 0.25),
+            (0.75, 0.25),
+        )
+        points = tuple(
+            (left + width * x_ratio, top + height * y_ratio)
+            for x_ratio, y_ratio in ratios
+        )
+        pointer: dict[str, Any] = {}
+        stack = NativeWindowStack(error="Native point ownership probe did not run")
+        input_probe = False
+        for point in points:
+            adapter.post_mouse((MouseAction.MOVE,), point)
+            pointer = cls._json_probe(
+                _POINTER_LOCATION_PROBE,
+                "pointer location",
+            )
+            input_probe = (
+                abs(float(pointer.get("x") or 0) - point[0]) <= 1
+                and abs(float(pointer.get("y") or 0) - point[1]) <= 1
+            )
+            stack = adapter.window_stack_at_point(point)
+            if (
+                input_probe
+                and not stack.error
+                and stack.point_owned_by(process_id)
+            ):
+                return point, pointer, stack, True, points
+        return points[-1], pointer, stack, input_probe, points
 
     @staticmethod
     def _await_focused_process(

@@ -1,6 +1,8 @@
 import { create } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RuntimeCapabilitySnapshotSchema } from '../gen/proto/domain/agent/agent_pb';
 import {
   AgentCapabilityBindingSchema,
   CapabilityApprovalPolicy,
@@ -37,10 +39,11 @@ import {
   selectCapabilityManifestBySource,
   useAgentCapabilityStore,
 } from './agentCapabilities';
+import { projectAgentComposerReadiness } from './agentCapabilityReadiness';
 
 const mcpManifest = create(CapabilityManifestSchema, {
   capabilityId: 'mcp.invoke',
-  version: '1',
+  version: '2',
   sourceKind: CapabilitySourceKind.MCP,
   sourceInstanceId: 'local-mcp',
 });
@@ -156,7 +159,7 @@ describe('agent capability authority store', () => {
       bindingId: 'binding-mcp',
       agentId: 'agent-1',
       capabilityId: 'mcp.invoke',
-      capabilityVersion: '1',
+      capabilityVersion: '2',
       enabled: true,
       approvalPolicy: CapabilityApprovalPolicy.MANUAL,
       expectedAgentVersion: 8n,
@@ -278,6 +281,119 @@ describe('agent capability authority store', () => {
       readinessByAgentId: {},
       readinessInputByAgentId: {},
       pendingMutations: {},
+    });
+  });
+});
+
+describe('Agent composer readiness projection', () => {
+  function stationSnapshot(
+    state: CapabilityReadinessState,
+    expiresAtMs = 10_000,
+    agentRevision = 8,
+  ) {
+    return create(CapabilityReadinessSnapshotSchema, {
+      snapshotId: 'readiness-1',
+      agentId: 'agent-1',
+      runtimeSnapshotId: 'runtime-1',
+      modelCapabilities: create(RuntimeCapabilitySnapshotSchema, {
+        snapshotId: 'runtime-1',
+      }),
+      bindingRevisions: [
+        `agent:agent-1:${agentRevision}`,
+        'binding:binding-mcp:3',
+      ],
+      capabilities: [{
+        capabilityId: mcpBinding.capabilityId,
+        capabilityVersion: mcpBinding.capabilityVersion,
+        bindingId: mcpBinding.bindingId,
+        bindingRevision: mcpBinding.revision,
+        state,
+        authority: 'station-capability-authority',
+        reasonCode: state === CapabilityReadinessState.READY
+          ? 'capability_ready'
+          : 'runtime_capability_unavailable',
+      }],
+      createdAt: timestampFromDate(new Date(1_000)),
+      expiresAt: timestampFromDate(new Date(expiresAtMs)),
+    });
+  }
+
+  it('allows only fresh Station snapshots in an accepted ready or degraded state', () => {
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      stationSnapshot(CapabilityReadinessState.READY),
+      5_000,
+    )).toMatchObject({
+      state: 'ready',
+      compatibility: 'compatible',
+      canSend: true,
+      snapshotId: 'readiness-1',
+      runtimeSnapshotId: 'runtime-1',
+      authority: 'station-capability-authority',
+    });
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      stationSnapshot(CapabilityReadinessState.DEGRADED),
+      5_000,
+    )).toMatchObject({
+      state: 'degraded',
+      compatibility: 'degraded',
+      canSend: true,
+    });
+  });
+
+  it('blocks unknown, stale, and authoritative non-ready snapshots', () => {
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      undefined,
+      5_000,
+    )).toMatchObject({
+      state: 'unknown',
+      canSend: false,
+      reasonCode: 'readiness_snapshot_missing',
+    });
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      stationSnapshot(CapabilityReadinessState.READY, 4_999),
+      5_000,
+    )).toMatchObject({
+      state: 'stale',
+      canSend: false,
+      reasonCode: 'readiness_snapshot_expired',
+    });
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      stationSnapshot(CapabilityReadinessState.UNAVAILABLE),
+      5_000,
+    )).toMatchObject({
+      state: 'unavailable',
+      compatibility: 'incompatible',
+      canSend: false,
+      reasonCode: 'runtime_capability_unavailable',
+    });
+  });
+
+  it('rejects a snapshot that does not cover the selected Agent revision', () => {
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [mcpBinding],
+      stationSnapshot(CapabilityReadinessState.READY, 10_000, 7),
+      5_000,
+    )).toMatchObject({
+      state: 'stale',
+      canSend: false,
+      reasonCode: 'agent_revision_stale',
     });
   });
 });

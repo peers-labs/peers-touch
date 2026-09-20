@@ -9,7 +9,9 @@ Score each dimension from 0 to 2.
 | Slice closure | The Slice is dependency-, ownership-, evidence-, recovery-, and scope-closed |
 | Queue completeness | All in-scope actions are classified as ready, in progress, parked, or done |
 | Queue liveness | A blocked action is parked and the complete ready frontier continues |
-| Dynamic admission | Newly discovered work is admitted only when accepted sources determine it and the durable plan is updated first |
+| Progress contract | The Slice targets one current Task closure with a machine-derived baseline, exact `+1` delta, and unlock effect |
+| Reporting boundary | Supporting actions stay inside the Slice; success cannot stop at setup, authorization, diagnosis, deploy, or one check |
+| Dynamic admission | Only already-modeled remediation is admitted; new deliverables return `PLAN_AMENDMENT_REQUIRED` to the Development Run |
 | Exhaustion proof | Goal-level blocked requires an empty Ready Queue, no legal remediation, and explicit hard blockers |
 | Scope fidelity | Selected work and remainder match the owning workflow or formal plan |
 | Dependency fidelity | The Goal does not invent, remove, or reorder semantic dependencies |
@@ -43,8 +45,8 @@ Reject regardless of score when:
   `GOAL_REPLACEMENT_REQUIRED`;
 - no current stage can be resolved;
 - the `Worktree Binding` section is absent or leaves the canonical runtime
-  worktree root, branch, `workspaceId`, initial `HEAD`, expected `HEAD`, or
-  worktree-set digest unresolved or as a placeholder;
+  worktree root, branch, `workspaceId`, initial `HEAD`, or expected `HEAD`
+  unresolved or as a placeholder;
 - the binding is inferred from a skill resolution or source location instead
   of the current verified worktree;
 - the explicit-root capture command is missing, does not run from that exact
@@ -57,6 +59,10 @@ Reject regardless of score when:
 - `active_work` or the current Context Anchor disagrees with the verified
   binding; return `WORKTREE_IDENTITY_MISMATCH` without automatically running
   `cd` or changing branch or worktree;
+- the Plan ID/path is unresolved, inferred from branch/repository contents, or
+  differs from `make plan-binding`; return
+  `WORKSPACE_PLAN_BINDING_REQUIRED` or `WORKSPACE_PLAN_BINDING_MISMATCH`;
+- the Goal permits Plan unbind/rebind in the same workspace;
 - any mutating tool call can run without the bound canonical root as explicit
   `workdir`;
 - binding reverification is omitted after resume or context compaction, before
@@ -67,11 +73,12 @@ Reject regardless of score when:
   `git worktree remove`, `git worktree prune`, or new-worktree creation without
   an explicit user request for that exact operation;
 - expected `HEAD` can refresh without an explicitly authorized commit, rebase,
-  or merge, or the worktree-set digest can refresh without the exact explicitly
-  requested worktree operation;
+  or merge;
 - the Goal crosses a stage review boundary;
 - an EXECUTE Goal has no approved plan or matching tracked-work state;
 - the Goal changes product, architecture, or plan semantics;
+- the Goal, scheduler, or Guardian writes Plan, Task, Session, `active_work`, or
+  evidence state instead of returning the result to `pt-dev-workflow`;
 - concurrent writers overlap;
 - execution mode is chosen from task count or speed preference without explicit
   dependency, write-set, generated-output, shared-resource, verification, and
@@ -82,6 +89,8 @@ Reject regardless of score when:
 - Goal-level blocked is allowed without an exhaustion proof or before the
   repeated-blocker lifecycle threshold is satisfied;
 - blocked external work is treated as ready or counted as progress;
+- the Goal can complete successfully without closing its target Task;
+- the reported next continuation has no exact Task-closure delta;
 - dynamic admission may change product behavior, architecture, ownership,
   topology, version/schema policy, destructive authorization, or proof
   strength;

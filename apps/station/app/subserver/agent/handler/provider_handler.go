@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -87,13 +88,11 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			if contains(hidden, m.ID) {
 				continue
 			}
-			models = append(models, &model.ProviderModelInfo{
-				Id:            m.ID,
-				DisplayName:   m.DisplayName,
-				Type:          m.Type,
-				Enabled:       m.Enabled,
-				ContextWindow: int32(m.ContextWindow),
-			})
+			info, err := catalogModelToProto(&m)
+			if err != nil {
+				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+			}
+			models = append(models, info)
 		}
 
 		catalogIDs := make(map[string]bool, len(models))
@@ -108,13 +107,11 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
 				continue
 			}
-			models = append(models, &model.ProviderModelInfo{
-				Id:            dbModels[i].ModelID,
-				DisplayName:   dbModels[i].DisplayName,
-				Type:          "chat",
-				Enabled:       dbModels[i].Enabled,
-				ContextWindow: int32(dbModels[i].ContextWindow),
-			})
+			info, err := persistedModelToProviderProto(&dbModels[i])
+			if err != nil {
+				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+			}
+			models = append(models, info)
 		}
 
 		baseURL := cp.DefaultBaseURL
@@ -163,13 +160,11 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			return nil, toHandlerError(err)
 		}
 		for i := range dbModels {
-			p.Models = append(p.Models, &model.ProviderModelInfo{
-				Id:            dbModels[i].ModelID,
-				DisplayName:   dbModels[i].DisplayName,
-				Type:          "chat",
-				Enabled:       dbModels[i].Enabled,
-				ContextWindow: int32(dbModels[i].ContextWindow),
-			})
+			info, err := persistedModelToProviderProto(&dbModels[i])
+			if err != nil {
+				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+			}
+			p.Models = append(p.Models, info)
 		}
 		resp.Providers = append(resp.Providers, p)
 	}
@@ -244,13 +239,11 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			if contains(hidden, m.ID) {
 				continue
 			}
-			models = append(models, &model.ProviderModelInfo{
-				Id:            m.ID,
-				DisplayName:   m.DisplayName,
-				Type:          m.Type,
-				Enabled:       m.Enabled,
-				ContextWindow: int32(m.ContextWindow),
-			})
+			info, err := catalogModelToProto(&m)
+			if err != nil {
+				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+			}
+			models = append(models, info)
 		}
 
 		catalogIDs := make(map[string]bool, len(models))
@@ -265,13 +258,11 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
 				continue
 			}
-			models = append(models, &model.ProviderModelInfo{
-				Id:            dbModels[i].ModelID,
-				DisplayName:   dbModels[i].DisplayName,
-				Type:          "chat",
-				Enabled:       dbModels[i].Enabled,
-				ContextWindow: int32(dbModels[i].ContextWindow),
-			})
+			info, err := persistedModelToProviderProto(&dbModels[i])
+			if err != nil {
+				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+			}
+			models = append(models, info)
 		}
 
 		showAPIKey := true
@@ -318,13 +309,11 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 		return nil, toHandlerError(err)
 	}
 	for i := range dbModels {
-		p.Models = append(p.Models, &model.ProviderModelInfo{
-			Id:            dbModels[i].ModelID,
-			DisplayName:   dbModels[i].DisplayName,
-			Type:          "chat",
-			Enabled:       dbModels[i].Enabled,
-			ContextWindow: int32(dbModels[i].ContextWindow),
-		})
+		info, err := persistedModelToProviderProto(&dbModels[i])
+		if err != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+		}
+		p.Models = append(p.Models, info)
 	}
 	return &model.GetProviderResponse{Provider: p}, nil
 }
@@ -429,6 +418,7 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 			Type:          m.Type,
 			Enabled:       m.Enabled,
 			ContextWindow: m.ContextWindow,
+			Capabilities:  modelCapabilityConfig(m.Capabilities),
 		})
 	}
 
@@ -488,7 +478,11 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 		Models: make([]*model.AgentModelInfo, 0, len(models)),
 	}
 	for i := range models {
-		resp.Models = append(resp.Models, modelToProto(&models[i]))
+		info, convertErr := modelToProto(&models[i])
+		if convertErr != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, convertErr.Error())
+		}
+		resp.Models = append(resp.Models, info)
 	}
 	return resp, nil
 }
@@ -515,6 +509,7 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 		ModelID:       modelID,
 		DisplayName:   req.GetDisplayName(),
 		Enabled:       req.GetEnabled(),
+		Capabilities:  capabilityFlags(req.GetCapabilities()),
 		ContextWindow: int(req.GetContextWindow()),
 	})
 	if err != nil {
@@ -523,25 +518,35 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 
 	_ = h.providerConfig.UnhideModel(ctx, actorPTID, providerID, modelID)
 
-	return &model.CreateModelResponse{Model: modelToProto(m)}, nil
+	info, err := modelToProto(m)
+	if err != nil {
+		return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+	}
+	return &model.CreateModelResponse{Model: info}, nil
 }
 
 func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.UpdateModelRequest) (*model.UpdateModelResponse, error) {
 	actorPTID := subjectActorPTID(ctx)
 
 	m, err := h.modelConfig.Update(ctx, service.ModelUpdateRequest{
-		ActorPTID:   actorPTID,
-		ProviderID:  req.GetProviderId(),
-		ModelID:     req.GetModelId(),
-		Version:     req.GetVersion(),
-		DisplayName: req.DisplayName,
-		Enabled:     req.Enabled,
+		ActorPTID:     actorPTID,
+		ProviderID:    req.GetProviderId(),
+		ModelID:       req.GetModelId(),
+		Version:       req.GetVersion(),
+		DisplayName:   req.DisplayName,
+		Enabled:       req.Enabled,
+		Capabilities:  capabilityFlags(req.GetCapabilities()),
+		ContextWindow: int32PtrToInt(req.ContextWindow),
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
 
-	return &model.UpdateModelResponse{Model: modelToProto(m)}, nil
+	info, err := modelToProto(m)
+	if err != nil {
+		return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+	}
+	return &model.UpdateModelResponse{Model: info}, nil
 }
 
 func (h *ProviderHandlers) HandleCredentialSet(ctx context.Context, req *model.SetCredentialRequest) (*model.SetCredentialResponse, error) {
@@ -676,7 +681,11 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 	return info
 }
 
-func modelToProto(m *persistence.AgentModel) *model.AgentModelInfo {
+func modelToProto(m *persistence.AgentModel) (*model.AgentModelInfo, error) {
+	capabilities, err := persistedModelCapabilityConfig(m)
+	if err != nil {
+		return nil, err
+	}
 	return &model.AgentModelInfo{
 		Id:          m.ID,
 		ActorPtid:   m.ActorPTID,
@@ -687,7 +696,69 @@ func modelToProto(m *persistence.AgentModel) *model.AgentModelInfo {
 		Version:     m.Version,
 		CreatedAt:   timestamppb.New(m.CreatedAt),
 		UpdatedAt:   timestamppb.New(m.UpdatedAt),
+		ContextWindow: int32(m.ContextWindow),
+		Capabilities:  capabilities,
+	}, nil
+}
+
+func catalogModelToProto(m *catalog.CatalogModel) (*model.ProviderModelInfo, error) {
+	flags, err := service.ModelCapabilityFlagsFromNames(m.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("model %q capability metadata is invalid: %w", m.ID, err)
 	}
+	return &model.ProviderModelInfo{
+		Id:            m.ID,
+		DisplayName:   m.DisplayName,
+		Type:          m.Type,
+		Enabled:       m.Enabled,
+		ContextWindow: int32(m.ContextWindow),
+		Capabilities:  modelCapabilityConfig(flags),
+	}, nil
+}
+
+func persistedModelToProviderProto(m *persistence.AgentModel) (*model.ProviderModelInfo, error) {
+	capabilities, err := persistedModelCapabilityConfig(m)
+	if err != nil {
+		return nil, err
+	}
+	return &model.ProviderModelInfo{
+		Id:            m.ModelID,
+		DisplayName:   m.DisplayName,
+		Type:          "chat",
+		Enabled:       m.Enabled,
+		ContextWindow: int32(m.ContextWindow),
+		Capabilities:  capabilities,
+	}, nil
+}
+
+func persistedModelCapabilityConfig(m *persistence.AgentModel) (*model.ModelCapabilityConfig, error) {
+	flags, err := service.DecodeModelCapabilityFlags(m.CapabilitiesJSON)
+	if err != nil {
+		return nil, fmt.Errorf("model %q capability metadata is invalid: %w", m.ModelID, err)
+	}
+	return modelCapabilityConfig(flags), nil
+}
+
+func modelCapabilityConfig(flags map[string]bool) *model.ModelCapabilityConfig {
+	if flags == nil {
+		return nil
+	}
+	return &model.ModelCapabilityConfig{Flags: flags}
+}
+
+func capabilityFlags(config *model.ModelCapabilityConfig) map[string]bool {
+	if config == nil {
+		return nil
+	}
+	return config.GetFlags()
+}
+
+func int32PtrToInt(value *int32) *int {
+	if value == nil {
+		return nil
+	}
+	converted := int(*value)
+	return &converted
 }
 
 func credentialStatusToProto(s *service.CredentialStatusResponse) *model.CredentialStatusInfo {

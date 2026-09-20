@@ -171,6 +171,41 @@ conversation_member_settings
 conversation_read_cursors
 ```
 
+`conversation_members` also stores the Conversation-authoritative moderation
+projection:
+
+```text
+role                 member | admin | owner
+muted                boolean
+muted_until          nullable timestamp
+```
+
+These fields are part of the hashed authority post-state. They are distinct
+from `conversation_member_settings`, which remains actor-local UI preference
+state.
+
+AO-D10 member commands use `(conversation_id, command_id)` in
+`conversation_command_receipts`. An accepted command atomically persists:
+
+```text
+conversation aggregate + all member rows
++ one ConversationEvent
++ exact command receipt
++ device delivery intents
++ Federation follower projection outbox
+```
+
+Member role/mute updates and owner transfer advance `membership_epoch` once
+while preserving `mls_epoch`, because no MLS leaf is added or removed. Owner
+transfer stores the old owner as `admin`, the target as the sole `owner`, and
+the new `owner_ptid` in the same transaction.
+
+For Group conversations both epochs remain non-zero and
+`membership_epoch >= mls_epoch`. MLS membership transitions advance both
+epochs once; authority-only role/mute/owner transitions advance only
+`membership_epoch`. Equality is therefore a genesis condition, not a durable
+invariant.
+
 The modern authority transaction semantics currently implemented under the Messaging
 package move to this owner. The parallel `messaging_conversations`,
 `messaging_conversation_members`, `messaging_conversation_member_devices`,

@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  actorGetMyProfile: vi.fn(),
   actorSearchActors: vi.fn(),
   peerProfileGet: vi.fn(),
 }));
 
 vi.mock('../services/desktop_api', () => ({
   api: {
-    actorGetMyProfile: vi.fn(),
+    actorGetMyProfile: mocks.actorGetMyProfile,
     actorSearchActors: mocks.actorSearchActors,
     peerProfileGet: mocks.peerProfileGet,
   },
@@ -29,6 +30,7 @@ function deferred<T>() {
 
 describe('discovery store request isolation', () => {
   beforeEach(() => {
+    mocks.actorGetMyProfile.mockReset();
     mocks.actorSearchActors.mockReset();
     mocks.peerProfileGet.mockReset();
     useDiscoveryStore.getState().reset();
@@ -88,6 +90,29 @@ describe('discovery store request isolation', () => {
 
     expect(useDiscoveryStore.getState().usersById).toEqual({});
     expect(useDiscoveryStore.getState().profileLoadingById).toEqual({});
+  });
+
+  it('does not write the previous actor profile after reset', async () => {
+    const pending = deferred<{
+      actorPtid: string;
+      username: string;
+      displayName: string;
+      avatar: string;
+    }>();
+    mocks.actorGetMyProfile.mockReturnValueOnce(pending.promise);
+
+    const load = useDiscoveryStore.getState().loadMe();
+    useDiscoveryStore.getState().reset();
+    pending.resolve({
+      actorPtid: 'ptid:alice',
+      username: 'alice',
+      displayName: 'Alice',
+      avatar: '',
+    });
+    await load;
+
+    expect(useDiscoveryStore.getState().me).toBeUndefined();
+    expect(useDiscoveryStore.getState().meLoading).toBe(false);
   });
 
   it('keeps search failure distinct from an empty result', async () => {

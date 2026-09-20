@@ -47,9 +47,161 @@ class ChangedPathsTests(unittest.TestCase):
             makefile,
         )
         self.assertIn(
+            "acceptance-plan.py --root tooling/acceptance --active-plan",
+            makefile,
+        )
+        self.assertIn(
             'ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))',
             makefile,
         )
+
+    def test_formal_plan_schedules_closure_without_running_full_candidates(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            acceptance = root / "acceptance"
+            acceptance.mkdir()
+            (acceptance / "registry.yaml").write_text(
+                json.dumps(
+                    {
+                        "rules": [
+                            {
+                                "id": "feature",
+                                "features": ["feature"],
+                                "when": {"paths": ["src/**"]},
+                                "require": ["cheap-gate", "runtime-gate"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (acceptance / "gates.yaml").write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "cheap-gate": {
+                                "command": "cheap",
+                                "tier": "ci-cheap",
+                            },
+                            "runtime-gate": {
+                                "command": "runtime",
+                                "tier": "env-evidence",
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            execution_plan = root / "plan.md"
+            execution_plan.write_text(
+                f"""# Plan
+
+> **Status**: active, approved for execution
+> **Branch**: `feat/example`
+> **Workspace ID**: `{'1' * 16}`
+> **Initial HEAD**: `{'a' * 40}`
+
+## Acceptance Execution
+
+```json
+{{
+  "schemaVersion": 1,
+  "closures": {{"C1": ["cheap-gate"]}},
+  "completion": ["cheap-gate"],
+  "full": ["cheap-gate", "runtime-gate"]
+}}
+```
+
+## Implementation Status
+
+| Closure | Status |
+|---|---|
+| C1 | in progress |
+""",
+                encoding="utf-8",
+            )
+            output = root / "projection.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            projection = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(projection["candidate_gates"], ["cheap-gate", "runtime-gate"])
+            self.assertEqual(
+                [gate["id"] for gate in projection["selected_gates"]],
+                ["cheap-gate"],
+            )
+            self.assertEqual(projection["execution"]["mode"], "closure")
+
+            full = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--full",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(full.returncode, 0, full.stderr)
+            full_projection = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [gate["id"] for gate in full_projection["selected_gates"]],
+                ["cheap-gate", "runtime-gate"],
+            )
+            self.assertEqual(full_projection["execution"]["mode"], "full")
+
+            execution_plan.write_text(
+                execution_plan.read_text(encoding="utf-8").replace(
+                    '["cheap-gate", "runtime-gate"]',
+                    '["cheap-gate"]',
+                ),
+                encoding="utf-8",
+            )
+            drift = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(drift.returncode, 2)
+            self.assertIn("ACCEPTANCE_PLAN_DRIFT", drift.stderr)
 
     def test_head_includes_untracked_files(self) -> None:
         responses = [
@@ -90,7 +242,7 @@ class ChangedPathsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = EvidenceStore(Path(tmp) / "artifacts", worktree=ROOT)
             self_run = store.begin_run("acceptance-plan-self", source={})
-            with patch.dict(os.environ, self_run.subprocess_environment({}), clear=True):
+            with patch.dict(os.environ, self_run.subprocess_environment({}), clear=False):
                 self.assertEqual(
                     MODULE.default_output_path(True),
                     self_run.run_dir / "reports" / "acceptance-plan-self.json",
@@ -98,7 +250,7 @@ class ChangedPathsTests(unittest.TestCase):
             self_run.close()
 
             plan_run = store.begin_run("acceptance-plan", source={})
-            with patch.dict(os.environ, plan_run.subprocess_environment({}), clear=True):
+            with patch.dict(os.environ, plan_run.subprocess_environment({}), clear=False):
                 self.assertEqual(
                     MODULE.default_output_path(False),
                     plan_run.run_dir / "reports" / "plan.json",
@@ -262,6 +414,112 @@ class BehaviorRuleTests(unittest.TestCase):
                 "mobile-native-chat-contacts-e2e",
             },
         )
+
+    def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
+        expected = {
+            "mobile-simulator-social-convergence-e2e",
+            "mobile-simulator-chat-contacts-e2e",
+            "mobile-native-social-convergence-e2e",
+            "mobile-native-chat-contacts-e2e",
+            "mobile-native-moments-e2e",
+            "mobile-native-settings-e2e",
+        }
+        for path in (
+            "apps/mobile/src/runtimes/socialEventIngress.ts",
+            "apps/mobile/src/runtimes/socialProjectionRuntime.ts",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(expected, self.selected_ids(path))
+
+        runtime_registry_gates = self.selected_ids(
+            "apps/mobile/src/runtimes/runtimeRegistry.ts"
+        )
+        self.assertTrue(expected.issubset(runtime_registry_gates))
+
+    def test_mobile_domain_projection_owners_select_targeted_social_gates(
+        self,
+    ) -> None:
+        self.assertEqual(
+            {
+                "mobile-simulator-social-convergence-e2e",
+                "mobile-native-social-convergence-e2e",
+                "mobile-native-moments-e2e",
+            },
+            self.selected_ids(
+                "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts"
+            ),
+        )
+        self.assertEqual(
+            {
+                "mobile-simulator-social-convergence-e2e",
+                "mobile-native-social-convergence-e2e",
+                "mobile-native-settings-e2e",
+            },
+            self.selected_ids(
+                "apps/mobile/src/runtimes/profileProjectionDescriptor.ts"
+            ),
+        )
+
+    def test_mobile_command_callers_select_recovery_and_product_gates(
+        self,
+    ) -> None:
+        recovery_gates = {
+            "mobile-contract-static",
+            "mobile-hard-cut-static",
+            "mobile-native-recovery-e2e",
+            "mobile-native-recovery-ui-e2e",
+        }
+        chat_contact_gates = {
+            "mobile-simulator-social-convergence-e2e",
+            "mobile-simulator-chat-contacts-e2e",
+            "mobile-native-social-convergence-e2e",
+            "mobile-native-chat-contacts-e2e",
+        }
+        moment_gates = {
+            "mobile-native-social-convergence-e2e",
+            "mobile-native-moments-e2e",
+        }
+
+        for path in (
+            "apps/mobile/src/features/chat/chatCommands.ts",
+            "apps/mobile/src/features/social/contactCommands.ts",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertTrue(recovery_gates.issubset(selected))
+                self.assertTrue(chat_contact_gates.issubset(selected))
+
+        selected = self.selected_ids(
+            "apps/mobile/src/pages/moments/MomentCommentsSection.tsx"
+        )
+        self.assertTrue(recovery_gates.issubset(selected))
+        self.assertTrue(moment_gates.issubset(selected))
+
+    def test_mobile_simulator_provisioner_selects_runtime_lifecycle(self) -> None:
+        selected = self.selected_ids(
+            "tooling/acceptance/provisioners/mobile_simulator.py"
+        )
+        self.assertIn(
+            "mobile-simulator-runtime-lifecycle-e2e",
+            selected,
+        )
+
+    def test_mobile_station_runtime_selects_station_lifecycle_proof(self) -> None:
+        selected = self.selected_ids(
+            "apps/mobile/src/runtimes/stationRuntime.ts"
+        )
+        self.assertIn("mobile-contract-static", selected)
+        self.assertIn("mobile-simulator-runtime-lifecycle-e2e", selected)
+        self.assertIn("mobile-simulator-station-lifecycle-e2e", selected)
+        self.assertIn("mobile-native-lifecycle-e2e", selected)
+
+    def test_mobile_service_bindings_select_all_runtime_consumers(self) -> None:
+        selected = self.selected_ids(
+            "tooling/acceptance/provisioners/mobile_service_bindings.py"
+        )
+        self.assertIn("mobile-native-access-e2e", selected)
+        self.assertIn("mobile-simulator-station-lifecycle-e2e", selected)
+        self.assertIn("mobile-simulator-runtime-lifecycle-e2e", selected)
 
     def test_acceptance_framework_change_selects_provisioning_self_gate(self) -> None:
         selected = self.selected_ids(

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
@@ -100,10 +101,24 @@ func (r *Repository) CreateUpload(
 		return attachment.Upload{}, false, invalid("create_upload", "transaction")
 	}
 	if maximumActiveUploads <= 0 ||
-		maximumActiveUploads > attachment.MaximumActiveUploadCount ||
+		maximumActiveUploads > securecontent.MaximumActiveUploadCount ||
 		maximumMessageObjects <= 0 ||
-		maximumMessageObjects > attachment.MaximumMessageObjects {
+		maximumMessageObjects > securecontent.MaximumObjectsPerResource {
 		return attachment.Upload{}, false, invalid("create_upload", "admission_limits")
+	}
+	if err := securecontent.ValidateUploadRecord(
+		securecontent.UploadRecord{
+			Commitment:          upload.Spec.SecureContentCommitment(),
+			State:               upload.State,
+			ReceivedChunkBitmap: upload.ReceivedChunkBitmap,
+			ExpiresAt:           upload.ExpiresAt,
+		},
+		securecontent.DefaultPolicy(),
+	); err != nil {
+		return attachment.Upload{}, false, attachment.FromKernelError(
+			err,
+			"attachment_repository.create_upload",
+		)
 	}
 	model := uploadModel(upload)
 	var persisted attachment.Upload
@@ -145,13 +160,13 @@ func (r *Repository) CreateUpload(
 				string(upload.ConversationID),
 				string(upload.MessageID),
 				[]int32{
-					int32(attachment.TransferStateQueued),
-					int32(attachment.TransferStateTransferring),
+					int32(securecontent.TransferStateQueued),
+					int32(securecontent.TransferStateTransferring),
 				},
 				upload.CreatedAt,
-				int32(attachment.TransferStateVerifying),
+				int32(securecontent.TransferStateVerifying),
 				upload.CreatedAt,
-				int32(attachment.TransferStateComplete),
+				int32(securecontent.TransferStateComplete),
 			).
 			Count(&messageObjects).Error; err != nil {
 			return err
@@ -173,11 +188,11 @@ func (r *Repository) CreateUpload(
 					"(state = ? AND verification_lease_expires_at > ?))",
 				string(upload.Uploader.Actor),
 				[]int32{
-					int32(attachment.TransferStateQueued),
-					int32(attachment.TransferStateTransferring),
+					int32(securecontent.TransferStateQueued),
+					int32(securecontent.TransferStateTransferring),
 				},
 				upload.CreatedAt,
-				int32(attachment.TransferStateVerifying),
+				int32(securecontent.TransferStateVerifying),
 				upload.CreatedAt,
 			).
 			Count(&active).Error; err != nil {
@@ -287,13 +302,13 @@ func (r *Repository) PutPart(
 		if err != nil {
 			return err
 		}
-		if upload.State != int32(attachment.TransferStateQueued) &&
-			upload.State != int32(attachment.TransferStateTransferring) {
-			return attachment.NewError(
-				attachment.ErrorCodeInvalidState,
+		if transitionErr := securecontent.ValidateTransferTransition(
+			securecontent.TransferState(upload.State),
+			securecontent.TransferStateTransferring,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
 				"attachment_repository.put_part",
-				"state",
-				"is not receiving chunks",
 			)
 		}
 		if !upload.ExpiresAt.After(updatedAt) {
@@ -356,13 +371,13 @@ func (r *Repository) PutPart(
 				part.UploadID,
 				part.Generation,
 				[]int32{
-					int32(attachment.TransferStateQueued),
-					int32(attachment.TransferStateTransferring),
+					int32(securecontent.TransferStateQueued),
+					int32(securecontent.TransferStateTransferring),
 				},
 			).
 			Updates(map[string]any{
 				"received_chunk_bitmap": bitmap,
-				"state":                 int32(attachment.TransferStateTransferring),
+				"state":                 int32(securecontent.TransferStateTransferring),
 				"updated_at":            updatedAt.UTC(),
 			})
 		if result.Error != nil {
@@ -445,13 +460,13 @@ func (r *Repository) StageUploadVerification(
 	object.CreatedAt = persistentTime(object.CreatedAt)
 	if !validIdentifier(lease.Token, 64) ||
 		lease.Attempt == 0 ||
-		lease.Attempt > attachment.MaximumVerificationAttemptCount ||
+		lease.Attempt > securecontent.MaximumVerificationAttemptCount ||
 		stagedAt.IsZero() ||
 		!lease.ExpiresAt.After(stagedAt) ||
-		lease.ExpiresAt.Sub(stagedAt) > attachment.MaximumVerificationLeaseTTL ||
-		object.State != attachment.ObjectStateCompleteUnattached ||
+		lease.ExpiresAt.Sub(stagedAt) > securecontent.MaximumVerificationLeaseTTL ||
+		object.State != securecontent.ObjectStateCompleteUnattached ||
 		!object.ExpiresAt.After(stagedAt) ||
-		object.ExpiresAt.Sub(stagedAt) > attachment.MaximumUnattachedObjectTTL ||
+		object.ExpiresAt.Sub(stagedAt) > securecontent.MaximumUnattachedObjectTTL ||
 		!object.CleanupNextAttemptAt.Equal(object.ExpiresAt) {
 		return attachment.Upload{}, invalid("stage_upload_verification", "verification")
 	}
@@ -483,7 +498,16 @@ func (r *Repository) StageUploadVerification(
 	previousState := upload.State
 	previousToken := upload.VerificationToken
 	previousAttempt := upload.VerificationAttemptCount
-	if upload.State == int32(attachment.TransferStateVerifying) {
+	if transitionErr := securecontent.ValidateTransferTransition(
+		securecontent.TransferState(upload.State),
+		securecontent.TransferStateVerifying,
+	); transitionErr != nil {
+		return attachment.Upload{}, attachment.FromKernelError(
+			transitionErr,
+			"attachment_repository.stage_upload_verification",
+		)
+	}
+	if upload.State == int32(securecontent.TransferStateVerifying) {
 		commitment, commitmentErr := valueobject.NewHash(
 			upload.DescriptorCommitmentSHA256,
 		)
@@ -498,7 +522,7 @@ func (r *Repository) StageUploadVerification(
 		)
 		if upload.VerificationAttemptCount == 0 ||
 			upload.VerificationAttemptCount >
-				attachment.MaximumVerificationAttemptCount ||
+				securecontent.MaximumVerificationAttemptCount ||
 			upload.VerificationToken != expectedExistingToken ||
 			upload.VerificationStorageKey != attachment.VerificationObjectStorageKey(
 				upload.StorageRef,
@@ -531,7 +555,7 @@ func (r *Repository) StageUploadVerification(
 				"another verifier owns the active upload lease",
 			)
 		}
-		if upload.VerificationAttemptCount >= attachment.MaximumVerificationAttemptCount ||
+		if upload.VerificationAttemptCount >= securecontent.MaximumVerificationAttemptCount ||
 			lease.Attempt != upload.VerificationAttemptCount+1 {
 			return attachment.Upload{}, attachment.NewError(
 				attachment.ErrorCodeInvalidState,
@@ -540,7 +564,7 @@ func (r *Repository) StageUploadVerification(
 				"has reached or skipped the bounded verification attempt limit",
 			)
 		}
-	} else if upload.State == int32(attachment.TransferStateTransferring) {
+	} else if upload.State == int32(securecontent.TransferStateTransferring) {
 		if upload.VerificationAttemptCount != 0 || lease.Attempt != 1 {
 			return attachment.Upload{}, attachment.NewError(
 				attachment.ErrorCodePartConflict,
@@ -576,7 +600,7 @@ func (r *Repository) StageUploadVerification(
 			previousAttempt,
 		).
 		Updates(map[string]any{
-			"state":                         int32(attachment.TransferStateVerifying),
+			"state":                         int32(securecontent.TransferStateVerifying),
 			"object_id":                     string(object.ObjectID),
 			"storage_ref":                   object.StorageRef,
 			"verification_token":            lease.Token,
@@ -598,7 +622,7 @@ func (r *Repository) StageUploadVerification(
 			"changed before verification staging",
 		)
 	}
-	upload.State = int32(attachment.TransferStateVerifying)
+	upload.State = int32(securecontent.TransferStateVerifying)
 	upload.ObjectID = string(object.ObjectID)
 	upload.StorageRef = object.StorageRef
 	upload.VerificationToken = lease.Token
@@ -634,12 +658,12 @@ func (r *Repository) FinalizeUploadVerification(
 	object.CreatedAt = persistentTime(object.CreatedAt)
 	if !validIdentifier(lease.Token, 64) ||
 		lease.Attempt == 0 ||
-		lease.Attempt > attachment.MaximumVerificationAttemptCount ||
+		lease.Attempt > securecontent.MaximumVerificationAttemptCount ||
 		lease.ExpiresAt.IsZero() ||
 		finalizedAt.IsZero() ||
-		object.State != attachment.ObjectStateCompleteUnattached ||
+		object.State != securecontent.ObjectStateCompleteUnattached ||
 		!object.ExpiresAt.After(object.CreatedAt) ||
-		object.ExpiresAt.Sub(object.CreatedAt) > attachment.MaximumUnattachedObjectTTL ||
+		object.ExpiresAt.Sub(object.CreatedAt) > securecontent.MaximumUnattachedObjectTTL ||
 		!object.CleanupNextAttemptAt.Equal(object.ExpiresAt) {
 		return attachment.Object{}, false, invalid(
 			"finalize_upload_verification",
@@ -651,7 +675,7 @@ func (r *Repository) FinalizeUploadVerification(
 	if err != nil {
 		return attachment.Object{}, false, err
 	}
-	if upload.State == int32(attachment.TransferStateComplete) {
+	if upload.State == int32(securecontent.TransferStateComplete) {
 		existing, objectErr := getObject(
 			r.db.WithContext(ctx),
 			valueobject.ObjectID(upload.ObjectID),
@@ -678,7 +702,7 @@ func (r *Repository) FinalizeUploadVerification(
 
 		return existing, true, nil
 	}
-	if upload.State != int32(attachment.TransferStateVerifying) ||
+	if upload.State != int32(securecontent.TransferStateVerifying) ||
 		upload.VerificationToken != lease.Token ||
 		upload.VerificationAttemptCount != lease.Attempt ||
 		upload.VerificationStorageKey != object.StorageKey ||
@@ -729,6 +753,15 @@ func (r *Repository) FinalizeUploadVerification(
 			"already identifies a different object",
 		)
 	}
+	if transitionErr := securecontent.ValidateTransferTransition(
+		securecontent.TransferState(upload.State),
+		securecontent.TransferStateComplete,
+	); transitionErr != nil {
+		return attachment.Object{}, false, attachment.FromKernelError(
+			transitionErr,
+			"attachment_repository.finalize_upload_verification",
+		)
+	}
 	update := r.db.WithContext(ctx).
 		Model(&UploadModel{}).
 		Where(
@@ -737,13 +770,13 @@ func (r *Repository) FinalizeUploadVerification(
 				"AND verification_lease_expires_at = ?",
 			uploadID,
 			generation,
-			int32(attachment.TransferStateVerifying),
+			int32(securecontent.TransferStateVerifying),
 			lease.Token,
 			lease.Attempt,
 			lease.ExpiresAt,
 		).
 		Updates(map[string]any{
-			"state":      int32(attachment.TransferStateComplete),
+			"state":      int32(securecontent.TransferStateComplete),
 			"updated_at": finalizedAt,
 		})
 	if update.Error != nil {
@@ -781,15 +814,24 @@ func (r *Repository) CancelUpload(
 		if err != nil {
 			return err
 		}
-		switch attachment.TransferState(upload.State) {
-		case attachment.TransferStateCancelled:
+		switch securecontent.TransferState(upload.State) {
+		case securecontent.TransferStateCancelled:
 			duplicate = true
 			audit.Outcome = attachment.AuditOutcomeReplay
-		case attachment.TransferStateQueued, attachment.TransferStateTransferring:
+		case securecontent.TransferStateQueued, securecontent.TransferStateTransferring:
+			if transitionErr := securecontent.ValidateTransferTransition(
+				securecontent.TransferState(upload.State),
+				securecontent.TransferStateCancelled,
+			); transitionErr != nil {
+				return attachment.FromKernelError(
+					transitionErr,
+					"attachment_repository.cancel_upload",
+				)
+			}
 			if err := tx.Model(&UploadModel{}).
 				Where("upload_id = ? AND generation = ?", uploadID, generation).
 				Updates(map[string]any{
-					"state":      int32(attachment.TransferStateCancelled),
+					"state":      int32(securecontent.TransferStateCancelled),
 					"updated_at": cancelledAt.UTC(),
 				}).Error; err != nil {
 				return err
@@ -861,7 +903,7 @@ func (r *Repository) GetGrantedObject(
 				"AND objects.state = ? AND grants.recipient_ptid = ?",
 			string(objectID),
 			string(conversationID),
-			string(attachment.ObjectStateAttached),
+			string(securecontent.ObjectStateAttached),
 			string(recipient),
 		).
 		First(&model).Error
@@ -895,9 +937,9 @@ func (r *Repository) ClaimExpiredUnattachedObjects(
 	if now.IsZero() ||
 		!validIdentifier(leaseOwner, 128) ||
 		leaseTTL <= 0 ||
-		leaseTTL > attachment.MaximumCleanupLeaseTTL ||
+		leaseTTL > securecontent.MaximumCleanupLeaseTTL ||
 		limit <= 0 ||
-		limit > attachment.MaximumCleanupBatchSize {
+		limit > securecontent.MaximumCleanupBatchSize {
 		return nil, invalid("claim_expired_unattached_objects", "claim")
 	}
 
@@ -916,10 +958,10 @@ func (r *Repository) ClaimExpiredUnattachedObjects(
 						"(state = ? AND expires_at <= ? AND cleanup_next_attempt_at <= ?) OR "+
 						"(state = ? AND cleanup_lease_expires_at <= ?))",
 					"",
-					string(attachment.ObjectStateCompleteUnattached),
+					string(securecontent.ObjectStateCompleteUnattached),
 					now,
 					now,
-					string(attachment.ObjectStateCleanupClaimed),
+					string(securecontent.ObjectStateCleanupClaimed),
 					now,
 				).
 				Order("cleanup_next_attempt_at ASC, object_id ASC").
@@ -933,7 +975,16 @@ func (r *Repository) ClaimExpiredUnattachedObjects(
 				model := &models[index]
 				previousState := model.State
 				previousAttempt := model.CleanupAttemptCount
-				model.State = string(attachment.ObjectStateCleanupClaimed)
+				if transitionErr := securecontent.ValidateObjectTransition(
+					securecontent.ObjectState(previousState),
+					securecontent.ObjectStateCleanupClaimed,
+				); transitionErr != nil {
+					return attachment.FromKernelError(
+						transitionErr,
+						"attachment_repository.claim_expired_unattached_objects",
+					)
+				}
+				model.State = string(securecontent.ObjectStateCleanupClaimed)
 				model.CleanupLeaseOwner = leaseOwner
 				model.CleanupLeaseExpiresAt = &leaseExpiresAt
 				model.CleanupAttemptCount++
@@ -1013,7 +1064,7 @@ func (r *Repository) FinalizeObjectCleanup(
 		if err != nil {
 			return err
 		}
-		if model.State == string(attachment.ObjectStateGarbageCollected) &&
+		if model.State == string(securecontent.ObjectStateGarbageCollected) &&
 			model.CleanupLeaseOwner == claim.LeaseOwner &&
 			model.CleanupAttemptCount == claim.Attempt {
 			replay = true
@@ -1023,7 +1074,7 @@ func (r *Repository) FinalizeObjectCleanup(
 				cleanupAudit(claim, attachment.AuditActionGCFinish, attachment.AuditOutcomeReplay, completedAt),
 			)
 		}
-		if model.State != string(attachment.ObjectStateCleanupClaimed) ||
+		if model.State != string(securecontent.ObjectStateCleanupClaimed) ||
 			model.EventID != "" ||
 			model.CleanupLeaseOwner != claim.LeaseOwner ||
 			model.CleanupAttemptCount != claim.Attempt ||
@@ -1036,6 +1087,15 @@ func (r *Repository) FinalizeObjectCleanup(
 				"is stale or no longer owns the object",
 			)
 		}
+		if transitionErr := securecontent.ValidateObjectTransition(
+			securecontent.ObjectState(model.State),
+			securecontent.ObjectStateGarbageCollected,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
+				"attachment_repository.finalize_object_cleanup",
+			)
+		}
 
 		completed := completedAt
 		result := tx.Model(&ObjectModel{}).
@@ -1043,13 +1103,13 @@ func (r *Repository) FinalizeObjectCleanup(
 				"object_id = ? AND state = ? AND cleanup_lease_owner = ? "+
 					"AND cleanup_attempt_count = ? AND event_id = ?",
 				model.ObjectID,
-				string(attachment.ObjectStateCleanupClaimed),
+				string(securecontent.ObjectStateCleanupClaimed),
 				claim.LeaseOwner,
 				claim.Attempt,
 				"",
 			).
 			Updates(map[string]any{
-				"state":                string(attachment.ObjectStateGarbageCollected),
+				"state":                string(securecontent.ObjectStateGarbageCollected),
 				"storage_key":          "",
 				"cleanup_completed_at": completed,
 			})
@@ -1064,14 +1124,23 @@ func (r *Repository) FinalizeObjectCleanup(
 				"lost cleanup ownership before finalization",
 			)
 		}
+		if transitionErr := securecontent.ValidateTransferTransition(
+			securecontent.TransferStateComplete,
+			securecontent.TransferStateTerminal,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
+				"attachment_repository.finalize_object_cleanup",
+			)
+		}
 		if err := tx.Model(&UploadModel{}).
 			Where(
 				"object_id = ? AND state = ?",
 				model.ObjectID,
-				int32(attachment.TransferStateComplete),
+				int32(securecontent.TransferStateComplete),
 			).
 			Updates(map[string]any{
-				"state":                    int32(attachment.TransferStateTerminal),
+				"state":                    int32(securecontent.TransferStateTerminal),
 				"verification_storage_key": "",
 				"cleanup_lease_expires_at": nil,
 				"cleanup_completed_at":     completed,
@@ -1100,8 +1169,8 @@ func (r *Repository) RetryObjectCleanup(
 	delay := nextAttemptAt.Sub(failedAt)
 	if err := validateCleanupClaim(claim); err != nil ||
 		failedAt.IsZero() ||
-		delay < attachment.MinimumCleanupRetryDelay ||
-		delay > attachment.MaximumCleanupRetryDelay {
+		delay < securecontent.MinimumCleanupRetryDelay ||
+		delay > securecontent.MaximumCleanupRetryDelay {
 		return attachment.CleanupRetryResult{}, invalid("retry_object_cleanup", "retry")
 	}
 
@@ -1111,20 +1180,20 @@ func (r *Repository) RetryObjectCleanup(
 		if err != nil {
 			return err
 		}
-		if ((model.State == string(attachment.ObjectStateCompleteUnattached) &&
+		if ((model.State == string(securecontent.ObjectStateCompleteUnattached) &&
 			model.CleanupNextAttemptAt.Equal(nextAttemptAt)) ||
-			model.State == string(attachment.ObjectStateCleanupFailed)) &&
+			model.State == string(securecontent.ObjectStateCleanupFailed)) &&
 			model.CleanupLeaseOwner == claim.LeaseOwner &&
 			model.CleanupAttemptCount == claim.Attempt {
 			result.Replay = true
-			result.Terminal = model.State == string(attachment.ObjectStateCleanupFailed)
+			result.Terminal = model.State == string(securecontent.ObjectStateCleanupFailed)
 
 			return appendAudit(
 				tx,
 				cleanupAudit(claim, attachment.AuditActionGCRetry, attachment.AuditOutcomeReplay, failedAt),
 			)
 		}
-		if model.State != string(attachment.ObjectStateCleanupClaimed) ||
+		if model.State != string(securecontent.ObjectStateCleanupClaimed) ||
 			model.EventID != "" ||
 			model.CleanupLeaseOwner != claim.LeaseOwner ||
 			model.CleanupAttemptCount != claim.Attempt {
@@ -1136,17 +1205,26 @@ func (r *Repository) RetryObjectCleanup(
 			)
 		}
 
-		nextState := attachment.ObjectStateCompleteUnattached
-		if claim.Attempt >= attachment.MaximumCleanupAttemptCount {
-			nextState = attachment.ObjectStateCleanupFailed
+		nextState := securecontent.ObjectStateCompleteUnattached
+		if claim.Attempt >= securecontent.MaximumCleanupAttemptCount {
+			nextState = securecontent.ObjectStateCleanupFailed
 			result.Terminal = true
+		}
+		if transitionErr := securecontent.ValidateObjectTransition(
+			securecontent.ObjectState(model.State),
+			nextState,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
+				"attachment_repository.retry_object_cleanup",
+			)
 		}
 		result := tx.Model(&ObjectModel{}).
 			Where(
 				"object_id = ? AND state = ? AND cleanup_lease_owner = ? "+
 					"AND cleanup_attempt_count = ? AND event_id = ?",
 				model.ObjectID,
-				string(attachment.ObjectStateCleanupClaimed),
+				string(securecontent.ObjectStateCleanupClaimed),
 				claim.LeaseOwner,
 				claim.Attempt,
 				"",
@@ -1188,9 +1266,9 @@ func (r *Repository) ClaimExpiredUploads(
 	if now.IsZero() ||
 		!validIdentifier(leaseOwner, 128) ||
 		leaseTTL <= 0 ||
-		leaseTTL > attachment.MaximumCleanupLeaseTTL ||
+		leaseTTL > securecontent.MaximumCleanupLeaseTTL ||
 		limit <= 0 ||
-		limit > attachment.MaximumCleanupBatchSize {
+		limit > securecontent.MaximumCleanupBatchSize {
 		return nil, invalid("claim_expired_uploads", "claim")
 	}
 
@@ -1209,18 +1287,18 @@ func (r *Repository) ClaimExpiredUploads(
 					"(state = ? AND cleanup_next_attempt_at <= ?) OR "+
 					"(state = ? AND cleanup_lease_expires_at <= ?))",
 				[]int32{
-					int32(attachment.TransferStateQueued),
-					int32(attachment.TransferStateTransferring),
-					int32(attachment.TransferStateCancelled),
-					int32(attachment.TransferStateTerminal),
+					int32(securecontent.TransferStateQueued),
+					int32(securecontent.TransferStateTransferring),
+					int32(securecontent.TransferStateCancelled),
+					int32(securecontent.TransferStateTerminal),
 				},
 				now,
 				now,
-				int32(attachment.TransferStateVerifying),
+				int32(securecontent.TransferStateVerifying),
 				now,
-				int32(attachment.TransferStateRetryWait),
+				int32(securecontent.TransferStateRetryWait),
 				now,
-				int32(attachment.TransferStateCleanupClaimed),
+				int32(securecontent.TransferStateCleanupClaimed),
 				now,
 			).
 			Order("cleanup_next_attempt_at ASC, upload_id ASC").
@@ -1234,7 +1312,16 @@ func (r *Repository) ClaimExpiredUploads(
 			model := &models[index]
 			previousState := model.State
 			previousAttempt := model.CleanupAttemptCount
-			model.State = int32(attachment.TransferStateCleanupClaimed)
+			if transitionErr := securecontent.ValidateTransferTransition(
+				securecontent.TransferState(previousState),
+				securecontent.TransferStateCleanupClaimed,
+			); transitionErr != nil {
+				return attachment.FromKernelError(
+					transitionErr,
+					"attachment_repository.claim_expired_uploads",
+				)
+			}
+			model.State = int32(securecontent.TransferStateCleanupClaimed)
 			model.CleanupLeaseOwner = leaseOwner
 			model.CleanupLeaseExpiresAt = &leaseExpiresAt
 			model.CleanupAttemptCount++
@@ -1318,7 +1405,7 @@ func (r *Repository) FinalizeUploadCleanup(
 		if err != nil {
 			return err
 		}
-		if model.State == int32(attachment.TransferStateTerminal) &&
+		if model.State == int32(securecontent.TransferStateTerminal) &&
 			model.CleanupCompletedAt != nil &&
 			model.CleanupLeaseOwner == claim.LeaseOwner &&
 			model.CleanupAttemptCount == claim.Attempt {
@@ -1334,7 +1421,7 @@ func (r *Repository) FinalizeUploadCleanup(
 				),
 			)
 		}
-		if model.State != int32(attachment.TransferStateCleanupClaimed) ||
+		if model.State != int32(securecontent.TransferStateCleanupClaimed) ||
 			model.CleanupLeaseOwner != claim.LeaseOwner ||
 			model.CleanupAttemptCount != claim.Attempt ||
 			model.CleanupLeaseExpiresAt == nil ||
@@ -1346,6 +1433,15 @@ func (r *Repository) FinalizeUploadCleanup(
 				"is stale or no longer owns the upload",
 			)
 		}
+		if transitionErr := securecontent.ValidateTransferTransition(
+			securecontent.TransferState(model.State),
+			securecontent.TransferStateTerminal,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
+				"attachment_repository.finalize_upload_cleanup",
+			)
+		}
 
 		completed := completedAt
 		result := tx.Model(&UploadModel{}).
@@ -1354,12 +1450,12 @@ func (r *Repository) FinalizeUploadCleanup(
 					"AND cleanup_lease_owner = ? AND cleanup_attempt_count = ?",
 				model.UploadID,
 				model.Generation,
-				int32(attachment.TransferStateCleanupClaimed),
+				int32(securecontent.TransferStateCleanupClaimed),
 				claim.LeaseOwner,
 				claim.Attempt,
 			).
 			Updates(map[string]any{
-				"state":                    int32(attachment.TransferStateTerminal),
+				"state":                    int32(securecontent.TransferStateTerminal),
 				"verification_storage_key": "",
 				"cleanup_lease_expires_at": nil,
 				"cleanup_completed_at":     completed,
@@ -1402,8 +1498,8 @@ func (r *Repository) RetryUploadCleanup(
 	delay := nextAttemptAt.Sub(failedAt)
 	if err := validateUploadCleanupClaim(claim); err != nil ||
 		failedAt.IsZero() ||
-		delay < attachment.MinimumCleanupRetryDelay ||
-		delay > attachment.MaximumCleanupRetryDelay {
+		delay < securecontent.MinimumCleanupRetryDelay ||
+		delay > securecontent.MaximumCleanupRetryDelay {
 		return attachment.CleanupRetryResult{}, invalid("retry_upload_cleanup", "retry")
 	}
 
@@ -1413,13 +1509,13 @@ func (r *Repository) RetryUploadCleanup(
 		if err != nil {
 			return err
 		}
-		if ((model.State == int32(attachment.TransferStateRetryWait) &&
+		if ((model.State == int32(securecontent.TransferStateRetryWait) &&
 			model.CleanupNextAttemptAt.Equal(nextAttemptAt)) ||
-			model.State == int32(attachment.TransferStateCleanupFailed)) &&
+			model.State == int32(securecontent.TransferStateCleanupFailed)) &&
 			model.CleanupLeaseOwner == claim.LeaseOwner &&
 			model.CleanupAttemptCount == claim.Attempt {
 			retry.Replay = true
-			retry.Terminal = model.State == int32(attachment.TransferStateCleanupFailed)
+			retry.Terminal = model.State == int32(securecontent.TransferStateCleanupFailed)
 
 			return appendAudit(
 				tx,
@@ -1431,7 +1527,7 @@ func (r *Repository) RetryUploadCleanup(
 				),
 			)
 		}
-		if model.State != int32(attachment.TransferStateCleanupClaimed) ||
+		if model.State != int32(securecontent.TransferStateCleanupClaimed) ||
 			model.CleanupLeaseOwner != claim.LeaseOwner ||
 			model.CleanupAttemptCount != claim.Attempt {
 			return attachment.NewError(
@@ -1442,10 +1538,19 @@ func (r *Repository) RetryUploadCleanup(
 			)
 		}
 
-		nextState := attachment.TransferStateRetryWait
-		if claim.Attempt >= attachment.MaximumCleanupAttemptCount {
-			nextState = attachment.TransferStateCleanupFailed
+		nextState := securecontent.TransferStateRetryWait
+		if claim.Attempt >= securecontent.MaximumCleanupAttemptCount {
+			nextState = securecontent.TransferStateCleanupFailed
 			retry.Terminal = true
+		}
+		if transitionErr := securecontent.ValidateTransferTransition(
+			securecontent.TransferState(model.State),
+			nextState,
+		); transitionErr != nil {
+			return attachment.FromKernelError(
+				transitionErr,
+				"attachment_repository.retry_upload_cleanup",
+			)
 		}
 		result := tx.Model(&UploadModel{}).
 			Where(
@@ -1453,7 +1558,7 @@ func (r *Repository) RetryUploadCleanup(
 					"AND cleanup_lease_owner = ? AND cleanup_attempt_count = ?",
 				model.UploadID,
 				model.Generation,
-				int32(attachment.TransferStateCleanupClaimed),
+				int32(securecontent.TransferStateCleanupClaimed),
 				claim.LeaseOwner,
 				claim.Attempt,
 			).
@@ -1543,9 +1648,18 @@ func (r *Repository) GrantBatch(
 				)
 			}
 			switch {
-			case object.State == string(attachment.ObjectStateCompleteUnattached) &&
+			case object.State == string(securecontent.ObjectStateCompleteUnattached) &&
 				object.EventID == "":
 				allReplay = false
+				if transitionErr := securecontent.ValidateObjectTransition(
+					securecontent.ObjectState(object.State),
+					securecontent.ObjectStateAttached,
+				); transitionErr != nil {
+					return attachment.FromKernelError(
+						transitionErr,
+						"attachment_repository.grant_batch",
+					)
+				}
 				if !object.ExpiresAt.After(grantedAt) {
 					return attachment.NewError(
 						attachment.ErrorCodeUploadExpired,
@@ -1554,10 +1668,10 @@ func (r *Repository) GrantBatch(
 						"contain an expired unattached object",
 					)
 				}
-			case object.State == string(attachment.ObjectStateAttached) &&
+			case object.State == string(securecontent.ObjectStateAttached) &&
 				object.EventID == string(grant.EventID):
 				allUnattached = false
-			case object.State == string(attachment.ObjectStateAttached):
+			case object.State == string(securecontent.ObjectStateAttached):
 				return attachment.NewError(
 					attachment.ErrorCodePartConflict,
 					"attachment_repository.grant_batch",
@@ -1588,7 +1702,7 @@ func (r *Repository) GrantBatch(
 			if decodeErr != nil {
 				return decodeErr
 			}
-			if validationErr := attachment.ValidateUploadSpec(decoded.Spec); validationErr != nil {
+			if validationErr := attachment.ValidateChatUploadSpec(decoded.Spec); validationErr != nil {
 				return validationErr
 			}
 			if !objectMatchesUpload(decoded, upload) ||
@@ -1600,11 +1714,17 @@ func (r *Repository) GrantBatch(
 					"does not match the immutable completed upload",
 				)
 			}
-			plaintextSize, sizeErr := plaintextSizeForObject(*object)
+			plaintextSize, sizeErr := securecontent.PlaintextSize(
+				decoded.Spec.SecureContentCommitment(),
+				securecontent.DefaultPolicy(),
+			)
 			if sizeErr != nil {
-				return sizeErr
+				return attachment.FromKernelError(
+					sizeErr,
+					"attachment_repository.grant_batch",
+				)
 			}
-			if plaintextSize > attachment.MaximumPlaintextSize-totalPlaintext {
+			if plaintextSize > securecontent.MaximumObjectPlaintextSize-totalPlaintext {
 				return attachment.NewError(
 					attachment.ErrorCodeQuotaExceeded,
 					"attachment_repository.grant_batch",
@@ -1659,12 +1779,12 @@ func (r *Repository) GrantBatch(
 					string(grant.ConversationID),
 					string(grant.MessageID),
 					string(grant.Uploader),
-					string(attachment.ObjectStateCompleteUnattached),
+					string(securecontent.ObjectStateCompleteUnattached),
 					"",
 				).
 				Updates(map[string]any{
 					"event_id": string(grant.EventID),
-					"state":    string(attachment.ObjectStateAttached),
+					"state":    string(securecontent.ObjectStateAttached),
 				})
 			if update.Error != nil {
 				return update.Error
@@ -1748,7 +1868,7 @@ func validateGrantBatch(
 		grant.EventID == "" ||
 		grant.GrantedAt.IsZero() ||
 		len(grant.ObjectIDs) == 0 ||
-		len(grant.ObjectIDs) > attachment.MaximumMessageObjects ||
+		len(grant.ObjectIDs) > securecontent.MaximumObjectsPerResource ||
 		len(grant.Recipients) == 0 {
 		return nil, nil, invalid("grant_batch", "grant")
 	}
@@ -1798,7 +1918,7 @@ func validateExactExistingGrants(
 			"conversation_id = ? AND event_id = ? AND state = ?",
 			string(grant.ConversationID),
 			string(grant.EventID),
-			string(attachment.ObjectStateAttached),
+			string(securecontent.ObjectStateAttached),
 		).
 		Order("object_id ASC").
 		Find(&eventObjects).Error; err != nil {
@@ -1884,7 +2004,7 @@ func loadCompletedUploadForObject(tx *gorm.DB, objectID string) (*UploadModel, e
 		return nil, err
 	}
 	if len(uploads) != 1 ||
-		uploads[0].State != int32(attachment.TransferStateComplete) {
+		uploads[0].State != int32(securecontent.TransferStateComplete) {
 		return nil, attachment.NewError(
 			attachment.ErrorCodePartConflict,
 			"attachment_repository.grant_batch",
@@ -1894,31 +2014,6 @@ func loadCompletedUploadForObject(tx *gorm.DB, objectID string) (*UploadModel, e
 	}
 
 	return &uploads[0], nil
-}
-
-func plaintextSizeForObject(object ObjectModel) (uint64, error) {
-	tagBytes := uint64(object.ChunkCount) * uint64(object.TagSize)
-	if object.ChunkCount == 0 ||
-		object.TagSize != attachment.TagSize ||
-		tagBytes >= object.CiphertextSize {
-		return 0, attachment.NewError(
-			attachment.ErrorCodeIntegrityFailed,
-			"attachment_repository.grant_batch",
-			"ciphertext_size",
-			"cannot derive a valid plaintext size",
-		)
-	}
-	plaintextSize := object.CiphertextSize - tagBytes
-	if plaintextSize > attachment.MaximumPlaintextSize {
-		return 0, attachment.NewError(
-			attachment.ErrorCodeQuotaExceeded,
-			"attachment_repository.grant_batch",
-			"plaintext_size",
-			"exceeds the per-object attachment limit",
-		)
-	}
-
-	return plaintextSize, nil
 }
 
 func cleanupKeysForObject(
@@ -1962,7 +2057,7 @@ func cleanupKeysForUpload(tx *gorm.DB, upload UploadModel) ([]string, error) {
 		Find(&parts).Error; err != nil {
 		return nil, err
 	}
-	if upload.VerificationAttemptCount > attachment.MaximumVerificationAttemptCount {
+	if upload.VerificationAttemptCount > securecontent.MaximumVerificationAttemptCount {
 		return nil, attachment.NewError(
 			attachment.ErrorCodeIntegrityFailed,
 			"attachment_repository.cleanup_keys_for_upload",
@@ -2264,31 +2359,14 @@ func loadPartModels(
 }
 
 func validateStoredParts(upload *UploadModel, parts []UploadPartModel) error {
-	if len(parts) != int(upload.ChunkCount) {
-		return attachment.NewError(
-			attachment.ErrorCodeInvalidState,
-			"attachment_repository.validate_stored_parts",
-			"parts",
-			"are incomplete",
-		)
-	}
 	hashes, err := decodeHashes(upload.ChunkCiphertextSHA256, upload.ChunkCount)
 	if err != nil {
 		return err
 	}
-	var total uint64
+	kernelParts := make([]securecontent.Part, len(parts))
 	for index, part := range parts {
-		expectedSize := uint64(upload.ChunkSize + upload.TagSize)
-		if index == len(parts)-1 {
-			expectedSize = upload.CiphertextSize -
-				uint64(upload.ChunkCount-1)*uint64(upload.ChunkSize+upload.TagSize)
-		}
 		if part.UploadID != upload.UploadID ||
 			part.Generation != upload.Generation ||
-			part.ChunkIndex != uint32(index) ||
-			part.ByteOffset != uint64(index)*uint64(upload.ChunkSize+upload.TagSize) ||
-			part.CiphertextSize != expectedSize ||
-			!bytes.Equal(part.CiphertextSHA256, hashes[index].Bytes()) ||
 			part.StorageKey == "" {
 			return attachment.NewError(
 				attachment.ErrorCodePartConflict,
@@ -2297,18 +2375,38 @@ func validateStoredParts(upload *UploadModel, parts []UploadPartModel) error {
 				"do not match the immutable upload commitments",
 			)
 		}
-		total += part.CiphertextSize
-	}
-	if total != upload.CiphertextSize {
-		return attachment.NewError(
-			attachment.ErrorCodePartConflict,
-			"attachment_repository.validate_stored_parts",
-			"ciphertext_size",
-			"does not match the immutable upload",
-		)
+		kernelParts[index] = securecontent.Part{
+			ChunkIndex:     part.ChunkIndex,
+			ByteOffset:     part.ByteOffset,
+			CiphertextSize: part.CiphertextSize,
+			CiphertextHash: append([]byte(nil), part.CiphertextSHA256...),
+		}
 	}
 
-	return nil
+	kernelErr := securecontent.ValidateCompletePartSet(
+		securecontent.ObjectCommitment{
+			CiphertextSize: upload.CiphertextSize,
+			CiphertextHash: append([]byte(nil), upload.CiphertextSHA256...),
+			ChunkSize:      upload.ChunkSize,
+			ChunkCount:     upload.ChunkCount,
+			Encryption:     securecontent.EncryptionSuite(upload.EncryptionSuite),
+			TagSize:        upload.TagSize,
+			NonceStrategy:  securecontent.NonceStrategy(upload.NonceStrategy),
+			ChunkHashes: func() [][]byte {
+				result := make([][]byte, len(hashes))
+				for index, hash := range hashes {
+					result[index] = hash.Bytes()
+				}
+				return result
+			}(),
+		},
+		kernelParts,
+		securecontent.DefaultPolicy(),
+	)
+	return attachment.FromKernelError(
+		kernelErr,
+		"attachment_repository.validate_stored_parts",
+	)
 }
 
 func lockObject(tx *gorm.DB, objectID valueobject.ObjectID) (*ObjectModel, error) {
@@ -2369,7 +2467,7 @@ func verificationObjectIdentityMatchesUpload(
 func validateCleanupClaim(claim attachment.CleanupClaim) error {
 	if claim.Object.ObjectID == "" ||
 		claim.Object.StorageKey == "" ||
-		claim.Object.State != attachment.ObjectStateCleanupClaimed ||
+		claim.Object.State != securecontent.ObjectStateCleanupClaimed ||
 		!validClaimStorageKeys(claim.StorageKeys, true) ||
 		!validIdentifier(claim.LeaseOwner, 128) ||
 		claim.Attempt == 0 ||
@@ -2386,7 +2484,7 @@ func validateCleanupClaim(claim attachment.CleanupClaim) error {
 func validateUploadCleanupClaim(claim attachment.UploadCleanupClaim) error {
 	if !validIdentifier(claim.Upload.UploadID, 64) ||
 		claim.Upload.Generation == 0 ||
-		claim.Upload.State != attachment.TransferStateCleanupClaimed ||
+		claim.Upload.State != securecontent.TransferStateCleanupClaimed ||
 		!validClaimStorageKeys(claim.StorageKeys, false) ||
 		!validIdentifier(claim.LeaseOwner, 128) ||
 		claim.Attempt == 0 ||
@@ -2595,14 +2693,14 @@ func uploadFromModel(model UploadModel) (attachment.Upload, error) {
 			MediaType:      model.MediaType,
 			ChunkSize:      model.ChunkSize,
 			ChunkCount:     model.ChunkCount,
-			Encryption:     attachment.EncryptionSuite(model.EncryptionSuite),
+			Encryption:     securecontent.EncryptionSuite(model.EncryptionSuite),
 			TagSize:        model.TagSize,
-			NonceStrategy:  attachment.NonceStrategy(model.NonceStrategy),
+			NonceStrategy:  securecontent.NonceStrategy(model.NonceStrategy),
 			ChunkHashes:    chunkHashes,
 		},
 		DescriptorCommitment:   commitment,
 		IdempotencyKey:         model.IdempotencyKey,
-		State:                  attachment.TransferState(model.State),
+		State:                  securecontent.TransferState(model.State),
 		ReceivedChunkBitmap:    append([]byte(nil), model.ReceivedChunkBitmap...),
 		ObjectID:               valueobject.ObjectID(model.ObjectID),
 		StorageRef:             model.StorageRef,
@@ -2627,6 +2725,20 @@ func uploadFromModel(model UploadModel) (attachment.Upload, error) {
 	}
 	if model.CleanupCompletedAt != nil {
 		upload.CleanupCompletedAt = *model.CleanupCompletedAt
+	}
+	if err := securecontent.ValidateUploadRecord(
+		securecontent.UploadRecord{
+			Commitment:          upload.Spec.SecureContentCommitment(),
+			State:               upload.State,
+			ReceivedChunkBitmap: upload.ReceivedChunkBitmap,
+			ExpiresAt:           upload.ExpiresAt,
+		},
+		securecontent.DefaultPolicy(),
+	); err != nil {
+		return attachment.Upload{}, attachment.FromKernelError(
+			err,
+			"attachment_repository.decode_upload",
+		)
 	}
 
 	return upload, nil
@@ -2707,14 +2819,14 @@ func objectFromModel(model ObjectModel) (attachment.Object, error) {
 			MediaType:      model.MediaType,
 			ChunkSize:      model.ChunkSize,
 			ChunkCount:     model.ChunkCount,
-			Encryption:     attachment.EncryptionSuite(model.EncryptionSuite),
+			Encryption:     securecontent.EncryptionSuite(model.EncryptionSuite),
 			TagSize:        model.TagSize,
-			NonceStrategy:  attachment.NonceStrategy(model.NonceStrategy),
+			NonceStrategy:  securecontent.NonceStrategy(model.NonceStrategy),
 			ChunkHashes:    chunkHashes,
 		},
 		DescriptorCommitment: commitment,
 		EventID:              valueobject.EventID(model.EventID),
-		State:                attachment.ObjectState(model.State),
+		State:                securecontent.ObjectState(model.State),
 		ExpiresAt:            model.ExpiresAt,
 		CleanupLeaseOwner:    model.CleanupLeaseOwner,
 		CleanupAttempt:       model.CleanupAttemptCount,
@@ -2726,6 +2838,20 @@ func objectFromModel(model ObjectModel) (attachment.Object, error) {
 	}
 	if model.CleanupCompletedAt != nil {
 		object.CleanupCompletedAt = *model.CleanupCompletedAt
+	}
+	if err := securecontent.ValidateObjectRecord(
+		securecontent.ObjectRecord{
+			Commitment: object.Spec.SecureContentCommitment(),
+			State:      object.State,
+			CreatedAt:  object.CreatedAt,
+			ExpiresAt:  object.ExpiresAt,
+		},
+		securecontent.DefaultPolicy(),
+	); err != nil {
+		return attachment.Object{}, attachment.FromKernelError(
+			err,
+			"attachment_repository.decode_object",
+		)
 	}
 
 	return object, nil

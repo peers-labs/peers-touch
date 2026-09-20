@@ -3,16 +3,24 @@ import { log } from '@/utils/logger';
 import { Flexbox } from 'react-layout-kit';
 import {
   Alert, Card, Modal, Switch, Empty,
-  Typography, Select, message, Popconfirm, Spin, theme, Input as AntInput,
+  Typography, Select, message, Popconfirm, Progress, Spin, theme, Input as AntInput,
 } from 'antd';
 import { Button, Input, Tag, Tooltip } from '@lobehub/ui';
 import {
   Plus, Trash2, Play, Pencil, Upload,
-  CheckCircle, XCircle,
+  RotateCcw, Square,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import {
+  CapabilityOperationStatus,
+  type CapabilityOperation,
+} from '../gen/proto/domain/agent/capability_pb';
 import { api, type MCPServerItem, type MCPServerRecord } from '../services/desktop_api';
-import { useMCPStore } from '../store/mcp';
+import {
+  isMcpOperationActive,
+  isMcpOperationRetryable,
+  useMCPStore,
+} from '../store/mcp';
 import { SettingsContainer } from './settings/SettingsLayout';
 
 const { Text, Title } = Typography;
@@ -28,17 +36,29 @@ function transportColor(type: MCPTransport) {
 export function MCPTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const { servers, loading, error, loadServers, createServer, updateServer, toggleServer, deleteServer } = useMCPStore();
+  const {
+    servers,
+    operationsByServer,
+    loading,
+    error,
+    loadServers,
+    createServer,
+    updateServer,
+    toggleServer,
+    deleteServer,
+    testServer,
+    reconnectServer,
+    recoverCleanup,
+    cancelOperation,
+    retryOperation,
+  } = useMCPStore();
   const [addModal, setAddModal] = useState(false);
   const [importModal, setImportModal] = useState(false);
   const [detailName, setDetailName] = useState<string | null>(null);
 
-  useEffect(() => { loadServers(); }, [loadServers]);
-
   const handleToggle = async (name: string, enabled: boolean) => {
     try {
       await toggleServer(name, enabled);
-      message.success(enabled ? t('provider.mcp.serverEnabled') : t('provider.mcp.serverDisabled'));
     } catch (e: any) {
       message.error(e.message);
     }
@@ -47,7 +67,6 @@ export function MCPTab() {
   const handleDelete = async (name: string) => {
     try {
       await deleteServer(name);
-      message.success(t('provider.mcp.serverDeleted'));
     } catch (e: any) {
       message.error(e.message);
     }
@@ -55,12 +74,7 @@ export function MCPTab() {
 
   const handleTest = async (name: string) => {
     try {
-      const result = await api.testMCPServer(name);
-      if (result.ok) {
-        message.success(t('provider.mcp.testPassed', { count: result.tools?.length || 0 }));
-      } else {
-        message.error(t('provider.mcp.testFailed', { error: result.error }));
-      }
+      await testServer(name);
     } catch (e: any) {
       message.error(e.message);
     }
@@ -160,9 +174,14 @@ export function MCPTab() {
             <MCPServerCard
               key={srv.name}
               server={srv}
+              operation={operationsByServer[srv.name]}
               onToggle={handleToggle}
               onDelete={handleDelete}
               onTest={handleTest}
+              onCancel={cancelOperation}
+              onReconnect={reconnectServer}
+              onRecoverCleanup={recoverCleanup}
+              onRetry={retryOperation}
               onEdit={() => setDetailName(srv.name)}
               token={token}
             />
@@ -188,7 +207,9 @@ export function MCPTab() {
       {detailName && (
         <MCPServerEditModal
           name={detailName}
+          operation={operationsByServer[detailName]}
           onSave={updateServer}
+          onTest={handleTest}
           onClose={() => { setDetailName(null); loadServers(); }}
         />
       )}
@@ -198,30 +219,48 @@ export function MCPTab() {
 
 function MCPServerCard({
   server,
+  operation,
   onToggle,
   onDelete,
   onTest,
+  onCancel,
+  onReconnect,
+  onRecoverCleanup,
+  onRetry,
   onEdit,
   token,
 }: {
   server: MCPServerItem;
+  operation?: CapabilityOperation;
   onToggle: (name: string, enabled: boolean) => void;
   onDelete: (name: string) => void;
   onTest: (name: string) => void;
+  onCancel: (name: string) => void;
+  onReconnect: (name: string) => void;
+  onRecoverCleanup: (name: string) => void;
+  onRetry: (name: string) => void;
   onEdit: () => void;
   token: any;
 }) {
   const { t } = useTranslation('provider');
-  const [testing, setTesting] = useState(false);
-
-  const handleTest = async () => {
-    setTesting(true);
-    await onTest(server.name);
-    setTesting(false);
-  };
+  const active = operation ? isMcpOperationActive(operation.status) : false;
+  const disconnected =
+    operation?.status === CapabilityOperationStatus.DISCONNECTED
+    || server.status === 'disconnected';
+  const cleaning =
+    operation?.status === CapabilityOperationStatus.SETTLING_CLEANUP;
+  const retryable = isMcpOperationRetryable(operation);
+  const statusName =
+    operation && (
+      isMcpOperationActive(operation.status)
+      || operation.status !== CapabilityOperationStatus.SUCCEEDED
+    )
+      ? capabilityOperationStatusName(operation.status)
+      : server.status || 'unknown';
 
   return (
     <Card
+      data-pt-mcp-server={server.name}
       size="small"
       hoverable
       style={{ borderColor: token.colorBorderSecondary, cursor: 'default' }}
@@ -261,6 +300,7 @@ function MCPServerCard({
               type="text"
               size="small"
               icon={<Pencil size={14} />}
+              disabled={active}
               onClick={onEdit}
             />
           </Tooltip>
@@ -269,14 +309,16 @@ function MCPServerCard({
               type="text"
               size="small"
               icon={<Play size={14} />}
-              loading={testing}
-              onClick={handleTest}
+              loading={active && operation?.operationKind === 'test'}
+              disabled={active}
+              onClick={() => onTest(server.name)}
             />
           </Tooltip>
           <Tooltip title={server.enabled ? t('provider.mcp.disable') : t('provider.mcp.enable')}>
             <Switch
               size="small"
               checked={server.enabled}
+              disabled={active}
               onChange={(checked) => onToggle(server.name, checked)}
             />
           </Tooltip>
@@ -284,12 +326,124 @@ function MCPServerCard({
             title={t('provider.mcp.deleteConfirm')}
             onConfirm={() => onDelete(server.name)}
           >
-            <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
+            <Button
+              type="text"
+              size="small"
+              danger
+              disabled={active}
+              icon={<Trash2 size={14} />}
+            />
           </Popconfirm>
         </Flexbox>
       </Flexbox>
+      {(operation || disconnected) && (
+        <Flexbox
+          data-pt-mcp-operation-id={operation?.operationId || undefined}
+          data-pt-mcp-operation-status={statusName}
+          gap={8}
+          style={{ marginTop: 12 }}
+        >
+          <Flexbox horizontal align="center" justify="space-between" gap={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t(`provider.mcp.operation.status.${statusName}`, {
+                action: operation?.operationKind || 'reconnect',
+              })}
+            </Text>
+            <Flexbox horizontal gap={6}>
+              {disconnected && (
+                <Button
+                  size="small"
+                  icon={<RotateCcw size={13} />}
+                  onClick={() => onReconnect(server.name)}
+                >
+                  {t('provider.mcp.operation.reconnect')}
+                </Button>
+              )}
+              {retryable && (
+                <Button
+                  size="small"
+                  icon={<RotateCcw size={13} />}
+                  onClick={() => onRetry(server.name)}
+                >
+                  {t('provider.mcp.operation.retry')}
+                </Button>
+              )}
+              {cleaning && (
+                <Button
+                  size="small"
+                  icon={<RotateCcw size={13} />}
+                  onClick={() => onRecoverCleanup(server.name)}
+                >
+                  {t('provider.mcp.operation.recoverCleanup')}
+                </Button>
+              )}
+              {active && !disconnected && !cleaning && (
+                <Button
+                  danger
+                  size="small"
+                  icon={<Square size={13} />}
+                  onClick={() => onCancel(server.name)}
+                >
+                  {t('provider.mcp.operation.cancel')}
+                </Button>
+              )}
+            </Flexbox>
+          </Flexbox>
+          {operation && active && (
+            <Progress
+              percent={operation.progressPercent || undefined}
+              showInfo={operation.progressPercent > 0}
+              size="small"
+              status="active"
+            />
+          )}
+          {operation?.error && (
+            <Text type="danger" style={{ fontSize: 12 }}>
+              {t('provider.mcp.operation.error', {
+                code: operation.error.code,
+                action: operation.error.recoveryAction,
+              })}
+            </Text>
+          )}
+        </Flexbox>
+      )}
     </Card>
   );
+}
+
+function capabilityOperationStatusName(
+  status: CapabilityOperationStatus,
+): string {
+  switch (status) {
+    case CapabilityOperationStatus.PENDING:
+      return 'pending';
+    case CapabilityOperationStatus.DISPATCHED:
+      return 'dispatched';
+    case CapabilityOperationStatus.RUNNING:
+      return 'running';
+    case CapabilityOperationStatus.DISCONNECTED:
+      return 'disconnected';
+    case CapabilityOperationStatus.RECONNECTING:
+      return 'reconnecting';
+    case CapabilityOperationStatus.CANCELLING:
+      return 'cancelling';
+    case CapabilityOperationStatus.SETTLING_CLEANUP:
+      return 'cleaning';
+    case CapabilityOperationStatus.SUCCEEDED:
+      return 'succeeded';
+    case CapabilityOperationStatus.CANCELLED:
+      return 'cancelled';
+    case CapabilityOperationStatus.TIMED_OUT:
+      return 'timedOut';
+    case CapabilityOperationStatus.CLEANUP_FAILED:
+      return 'cleanupFailed';
+    case CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT:
+      return 'unknownSideEffect';
+    case CapabilityOperationStatus.FAILED:
+      return 'failed';
+    default:
+      return 'unknown';
+  }
 }
 
 function AddMCPServerModal({
@@ -468,18 +622,20 @@ function ImportMCPModal({
 
 function MCPServerEditModal({
   name,
+  operation,
   onSave,
+  onTest,
   onClose,
 }: {
   name: string;
+  operation?: CapabilityOperation;
   onSave: (name: string, data: Partial<MCPServerRecord>) => Promise<void>;
+  onTest: (name: string) => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
   const [server, setServer] = useState<MCPServerRecord | null>(null);
-  const [testResult, setTestResult] = useState<{ ok: boolean; tools?: string[]; error?: string } | null>(null);
-  const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -502,18 +658,6 @@ function MCPServerEditModal({
       setEnvText(s.env ? JSON.stringify(s.env, null, 2) : '{}');
     }).catch((err) => log.error('mcp', 'Failed to load MCP server', { error: String(err) }));
   }, [name]);
-
-  const handleTest = async () => {
-    setTesting(true);
-    try {
-      const result = await api.testMCPServer(name);
-      setTestResult(result);
-    } catch (e: any) {
-      setTestResult({ ok: false, error: e.message });
-    } finally {
-      setTesting(false);
-    }
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -557,7 +701,11 @@ function MCPServerEditModal({
       width={640}
       footer={
         <Flexbox horizontal gap={8} justify="flex-end">
-          <Button onClick={handleTest} loading={testing} icon={<Play size={14} />}>
+          <Button
+            onClick={() => onTest(name)}
+            loading={Boolean(operation && isMcpOperationActive(operation.status))}
+            icon={<Play size={14} />}
+          >
             {t('provider.mcp.testConnection')}
           </Button>
           <Button onClick={onClose}>{t('common.action.close', { ns: 'common' })}</Button>
@@ -618,6 +766,13 @@ function MCPServerEditModal({
                 autoSize={{ minRows: 3, maxRows: 8 }}
                 placeholder='{"KEY": "value"}'
               />
+              {server.envKeys && server.envKeys.length > 0 && (
+                <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                  {t('provider.mcp.edit.secretKeysStored', {
+                    keys: server.envKeys.join(', '),
+                  })}
+                </Text>
+              )}
             </div>
           </>
         ) : (
@@ -627,36 +782,37 @@ function MCPServerEditModal({
           </div>
         )}
 
-        {testResult && (
+        {operation && (
           <Flexbox
             style={{
-              background: testResult.ok ? token.colorSuccessBg : token.colorErrorBg,
+              background:
+                operation.status === CapabilityOperationStatus.SUCCEEDED
+                  ? token.colorSuccessBg
+                  : isMcpOperationActive(operation.status)
+                    ? token.colorInfoBg
+                    : token.colorErrorBg,
               borderRadius: 8,
               padding: 12,
             }}
             gap={4}
+            data-pt-mcp-operation-id={operation.operationId}
+            data-pt-mcp-operation-status={capabilityOperationStatusName(operation.status)}
           >
             <Flexbox horizontal gap={6} align="center">
-              {testResult.ok ? (
-                <CheckCircle size={16} color={token.colorSuccess} />
-              ) : (
-                <XCircle size={16} color={token.colorError} />
-              )}
               <Text strong>
-                {testResult.ok
-                  ? t('provider.mcp.connected', { count: testResult.tools?.length || 0 })
-                  : t('provider.mcp.connectionFailed')}
+                {t(
+                  `provider.mcp.operation.status.${capabilityOperationStatusName(operation.status)}`,
+                  { action: operation.operationKind },
+                )}
               </Text>
             </Flexbox>
-            {testResult.ok && testResult.tools && testResult.tools.length > 0 && (
-              <Flexbox horizontal gap={4} wrap="wrap" style={{ marginTop: 4 }}>
-                {testResult.tools.map((tool) => (
-                  <Tag key={tool} style={{ fontSize: 11 }}>{tool}</Tag>
-                ))}
-              </Flexbox>
-            )}
-            {testResult.error && (
-              <Text type="danger" style={{ fontSize: 12 }}>{testResult.error}</Text>
+            {operation.error && (
+              <Text type="danger" style={{ fontSize: 12 }}>
+                {t('provider.mcp.operation.error', {
+                  code: operation.error.code,
+                  action: operation.error.recoveryAction,
+                })}
+              </Text>
             )}
           </Flexbox>
         )}

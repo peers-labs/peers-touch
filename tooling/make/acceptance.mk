@@ -1,6 +1,6 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+.PHONY: acceptance-plan acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
@@ -67,13 +67,19 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 
+acceptance-run-completion:
+	python3 tooling/scripts/acceptance-run.py --completion
+
+acceptance-run-full:
+	python3 tooling/scripts/acceptance-run.py --full
+
 acceptance-run-ci:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier ci-structure --tier ci-cheap
+	$(if $(PLAN),python3 tooling/scripts/acceptance-run.py --plan "$(PLAN)" --tier ci-structure --tier ci-cheap,python3 tooling/scripts/acceptance-run.py --completion --tier ci-structure --tier ci-cheap)
 
 acceptance-run-local-evidence:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier local-evidence
@@ -88,7 +94,6 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_OUTPUT_ARG))
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 

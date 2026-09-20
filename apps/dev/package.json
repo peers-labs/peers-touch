@@ -1,0 +1,12 @@
+{
+  "name": "@peers-touch/app-dev",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.mjs serve",
+    "snapshot": "node server/index.mjs snapshot",
+    "check": "node --check server/index.mjs && node --check server/status.mjs && node --check server/status-worker.mjs && node --check web/app.js",
+    "test": "node --test server/*.test.mjs"
+  }
+}

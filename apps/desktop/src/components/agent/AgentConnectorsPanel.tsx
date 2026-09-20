@@ -106,6 +106,11 @@ function ConnectorStatusBadge({ status }: { status: ConnectorInfo['status'] }) {
     connected: { color: token.colorSuccess, label: t('agent.connectors.connected') },
     disconnected: { color: token.colorTextQuaternary, label: t('agent.connectors.disconnected') },
     expired: { color: token.colorWarning, label: t('agent.connectors.expired') },
+    revoked: { color: token.colorError, label: t('agent.connectors.revoked') },
+    revocation_unconfirmed: {
+      color: token.colorWarning,
+      label: t('agent.connectors.revocationUnconfirmed'),
+    },
   };
 
   const { color, label } = config[status];
@@ -231,7 +236,7 @@ function ConnectorRow({
         <ConnectorReadinessBadge state={readiness} />
       )}
 
-      {connector.status === 'disconnected' ? (
+      {connector.status !== 'connected' ? (
         <Button
           data-pt-agent-connector-connect={connector.id}
           loading={pending}
@@ -263,6 +268,7 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
   const [pendingConnectorId, setPendingConnectorId] = useState<string | null>(null);
 
   const availableConnectors = useAgentConnectorStore((s) => s.availableConnectors);
+  const resourceManifests = useAgentConnectorStore((s) => s.resourceManifests);
   const loading = useAgentConnectorStore((s) => s.loading);
   const connectConnector = useAgentConnectorStore((s) => s.connectConnector);
   const bindConnector = useAgentConnectorStore((s) => s.bindConnector);
@@ -274,13 +280,18 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
   const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
   const connectorCapabilities = useMemo(
     () => new Map(availableConnectors.map((connector) => {
+      const manifestKeys = new Set(
+        resourceManifests
+          .filter((resource) => resource.connectorId === connector.id)
+          .flatMap((resource) => resource.toolManifests)
+          .map((reference) =>
+            `${reference.capabilityId}\u0000${reference.capabilityVersion}`),
+      );
       const manifests = capabilityProjection.manifests.filter(
         (manifest) =>
-          manifest.sourceInstanceId === connector.id
+          manifestKeys.has(`${manifest.capabilityId}\u0000${manifest.version}`)
           && !manifest.retiredAt,
       );
-      const manifestKeys = new Set(manifests.map((manifest) =>
-        `${manifest.capabilityId}\u0000${manifest.version}`));
       const bindings = capabilityProjection.bindings.filter(
         (binding) =>
           binding.enabled
@@ -295,7 +306,7 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
           : undefined,
       }] as const;
     })),
-    [availableConnectors, capabilityProjection],
+    [availableConnectors, capabilityProjection, resourceManifests],
   );
 
   const runConnectorAction = useCallback(

@@ -3,11 +3,13 @@ import { usePageActiveStoreSelector } from '../../kernel/PageActivityContext';
 import { useDiscoveryStore } from '../../store/discovery';
 import { useFederationStore } from '../../store/federation';
 import { useMomentsStore } from '../../store/moments';
+import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useRelationshipsStore } from '../../store/relationships';
 
 type DiscoveryState = ReturnType<typeof useDiscoveryStore.getState>;
 type FederationState = ReturnType<typeof useFederationStore.getState>;
 type MomentsState = ReturnType<typeof useMomentsStore.getState>;
+type PrivateMomentsState = ReturnType<typeof usePrivateMomentsStore.getState>;
 type RelationshipsState = ReturnType<typeof useRelationshipsStore.getState>;
 
 export function useActiveMomentsStore<TSelected>(
@@ -21,6 +23,12 @@ export function useActiveMomentsSlice<TSelected>(
   selector: (state: MomentsState) => TSelected,
 ): TSelected {
   return useActiveMomentsStore(selector, shallow);
+}
+
+export function useActivePrivateMomentsSlice<TSelected>(
+  selector: (state: PrivateMomentsState) => TSelected,
+): TSelected {
+  return usePageActiveStoreSelector(usePrivateMomentsStore, selector, shallow);
 }
 
 export function useActiveDiscoverySlice<TSelected>(selector: (state: DiscoveryState) => TSelected): TSelected {

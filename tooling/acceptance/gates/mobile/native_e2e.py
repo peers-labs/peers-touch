@@ -79,6 +79,84 @@ SCENARIO_METADATA = {
             "W5 event-ingress reconciliation",
         ],
     },
+    "recovery": {
+        "phase": "W4 Command Recovery",
+        "bom": ["W4"],
+        "spec": ["MS-AG04"],
+        "observed": [
+            "physical durable-command convergence across forced disconnect and cold restart",
+        ],
+        "unproven": [
+            "pre-dispatch, post-dispatch, and post-commit disconnect recovery",
+            "ten-trial exactly-once Station commit evidence",
+            "visible unresolved outcome after cold restart",
+        ],
+    },
+    "recovery-ui": {
+        "phase": "W6-D Recovery UI",
+        "bom": ["W6-D"],
+        "spec": ["MS-AG05", "MS-AG08", "MS-AG11"],
+        "observed": [
+            "physical degraded-state and recovery UI across iOS and Android",
+        ],
+        "unproven": [
+            "production-triggered recovery overlays",
+            "native accessibility and focus recovery",
+            "blocking trust-state recovery",
+        ],
+    },
+    "social-convergence": {
+        "phase": "W5 Social Convergence",
+        "bom": ["W5"],
+        "spec": ["MS-AG06"],
+        "observed": [
+            "physical Social projection convergence through realtime and forced reconciliation",
+        ],
+        "unproven": [
+            "five-second realtime convergence",
+            "thirty-second forced-reconcile convergence",
+            "Station readback agreement across both clients",
+        ],
+    },
+    "chat-contacts": {
+        "phase": "W6-A Chat And Contacts",
+        "bom": ["W6-A"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
+        "observed": [
+            "physical two-actor Chat, contacts, and group journeys",
+        ],
+        "unproven": [
+            "cross-client Direct and Group Messaging readback",
+            "contact-request convergence",
+            "native layout and overload behavior",
+        ],
+    },
+    "moments": {
+        "phase": "W6-B Moments",
+        "bom": ["W6-B"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
+        "observed": [
+            "physical Moments feed, publish, rollback, and readback",
+        ],
+        "unproven": [
+            "cross-client feed convergence",
+            "publish rollback and Station readback",
+            "native layout and overload behavior",
+        ],
+    },
+    "settings": {
+        "phase": "W6-C Settings",
+        "bom": ["W6-C"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
+        "observed": [
+            "physical account and local settings conflict/readback behavior",
+        ],
+        "unproven": [
+            "account-setting cross-client convergence",
+            "local-setting isolation",
+            "conflict and Station readback behavior",
+        ],
+    },
     "platform": {
         "phase": "W7 Native Platform",
         "bom": ["W7-C", "W7-D"],

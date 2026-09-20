@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+message GetOfficialPackageCatalogRequest {}
+
+message GetOfficialPackageCatalogResponse {
+  bytes envelope_json = 1 [json_name = "envelope_json"];
+  string media_type = 2 [json_name = "media_type"];
+  string distribution_id = 3 [json_name = "distribution_id"];
+  string envelope_sha256 = 4 [json_name = "envelope_sha256"];
+}

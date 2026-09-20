@@ -1,0 +1,57 @@
+{
+  "id": "agent-trusted-package-catalog",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/package_catalog.proto",
+    "packages/agent-catalog/official-catalog.v1.envelope.json",
+    "apps/station/app/subserver/agent/catalog/official_catalog_gen.go",
+    "apps/station/app/subserver/agent/handler/package_catalog_handler.go",
+    "apps/desktop/src-tauri/src/application/skills_market/trusted_catalog.rs",
+    "apps/desktop/src-tauri/src/application/skills_market/mod.rs",
+    "apps/desktop/src/pages/MarketplacePage.tsx",
+    "apps/desktop/src/acceptance/agent/harness.ts",
+    "tooling/acceptance/fixtures/agent_marketplace_catalog_fault_proxy.py"
+  ],
+  "truth_sources": [
+    "publisher-signed peers.package-catalog.v1 snapshot",
+    "pinned catalog source registration",
+    "authenticated Station distribution of exact signed envelope bytes",
+    "Desktop-pinned Peers publisher key",
+    "Station Agent package and Skill authorities",
+    "actor-scoped Desktop Rust MCP authority"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "selector": "[data-testid=\"marketplace-page\"]"},
+    {"type": "desktop-native", "selector": "[data-testid^=\"marketplace-source-\"]"},
+    {"type": "desktop-native", "selector": "[data-testid^=\"marketplace-package-\"]"},
+    {"type": "desktop-native", "selector": "[data-testid=\"marketplace-package-detail\"]"}
+  ],
+  "required_gates": ["agent-marketplace-catalog-e2e"],
+  "acceptance": {
+    "service": [
+      "a new profile exposes the built-in Peers source and real Agent, Skill, and MCP entries before network synchronization",
+      "the built-in source synchronizes only through the authenticated Station package-catalog endpoint and verifies its transport digest before publisher signature verification",
+      "catalog synchronization verifies the pinned Ed25519 key, source and publisher identity, schema, artifact digests, and immutable revision",
+      "network, auth, old-Station, invalid-digest, invalid-signature, and rollback failures retain the last verified snapshot as stale without reporting fresh synchronization",
+      "cursor pagination remains bound to one source revision and query",
+      "Agent and Skill installs read back Station authority while MCP installs read back the actor-scoped Desktop Rust authority",
+      "uninstall removes each target through the same authority before clearing the local reconciliation ledger"
+    ],
+    "visible": [
+      "the native Marketplace shows source trust, signature state, package type, version, derived risk, scan verdict, install policy, and revocation",
+      "high-risk installation requires an explicit confirmation",
+      "revoked packages remain inspectable but cannot be installed"
+    ]
+  },
+  "negative": [
+    "an arbitrary URL must not be interpreted as an unsigned JSON market index",
+    "the official source must not fall back to private GitHub, embedded bytes, or a credential-bearing transport while reporting a fresh sync",
+    "Station authentication and envelope_sha256 must not replace publisher signature verification",
+    "a catalog envelope must not supply or replace its own trust root",
+    "source-provided trust, risk, scan, or install-policy labels must not become authority",
+    "the local install ledger must not report success before target-authority readback",
+    "catalog revocation must not silently delete a user-owned installed resource",
+    "static checks or mocked catalogs must not be reported as native product proof"
+  ]
+}

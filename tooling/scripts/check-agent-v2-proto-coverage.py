@@ -19,6 +19,7 @@ REQUIRED_PROTOS = (
     "domain/agent/home.proto",
     "domain/agent/capability.proto",
     "domain/agent/evaluation.proto",
+    "domain/agent/package_catalog.proto",
 )
 
 CONST_PATTERN = re.compile(
@@ -48,7 +49,7 @@ def check_build_source(build_source: str) -> None:
         missing = sorted(set(REQUIRED_PROTOS) - set(actual))
         unexpected = sorted(set(actual) - set(REQUIRED_PROTOS))
         raise CoverageError(
-            "AGENT_V2_PROTO_FILES must exactly match the six canonical protos; "
+            "AGENT_V2_PROTO_FILES must exactly match the canonical Agent protos; "
             f"missing={missing}, unexpected={unexpected}, order={list(actual)}"
         )
     if ".chain(AGENT_V2_PROTO_FILES.iter())" not in build_source:
@@ -62,7 +63,7 @@ def check_build_source(build_source: str) -> None:
 def compile_descriptor(repo_root: Path) -> None:
     protoc = shutil.which("protoc")
     if protoc is None:
-        raise CoverageError("protoc is required to compile the six-proto descriptor set")
+        raise CoverageError("protoc is required to compile the Agent descriptor set")
 
     model_root = repo_root / "model"
     proto_paths = [model_root / proto for proto in REQUIRED_PROTOS]
@@ -82,7 +83,7 @@ def compile_descriptor(repo_root: Path) -> None:
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             detail = completed.stderr.strip() or completed.stdout.strip()
-            raise CoverageError(f"six-proto descriptor compilation failed: {detail}")
+            raise CoverageError(f"Agent descriptor compilation failed: {detail}")
         if not descriptor.is_file() or descriptor.stat().st_size == 0:
             raise CoverageError("protoc returned success without a non-empty descriptor set")
 
@@ -137,7 +138,10 @@ def main() -> int:
         build_rs = repo_root / "apps/desktop/src-tauri/build.rs"
         check_build_source(build_rs.read_text(encoding="utf-8"))
         compile_descriptor(repo_root)
-        print("agent-v2 proto coverage: PASS (6/6 Rust inputs, descriptor compiled)")
+        print(
+            "agent-v2 proto coverage: PASS "
+            f"({len(REQUIRED_PROTOS)}/{len(REQUIRED_PROTOS)} Rust inputs, descriptor compiled)"
+        )
         return 0
     except (CoverageError, OSError) as error:
         print(f"agent-v2 proto coverage: FAIL: {error}", file=sys.stderr)

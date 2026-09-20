@@ -14,7 +14,9 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.simulator_e2e import (
+    DOCUMENT_TIME_ORIGIN_SCRIPT,
     GATE_ID,
+    HARNESS_INVENTORY_SCRIPT,
     MAX_APPIUM_ERROR_RESPONSE_BYTES,
     MAX_APPIUM_RESPONSE_BYTES,
     MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
@@ -204,6 +206,13 @@ class FakeAppiumTransport:
         self.requests.append((method, path, body))
         if method == "POST" and path == "/session":
             return {"sessionId": self.session_id, "capabilities": {}}
+        if (
+            method == "POST"
+            and path.endswith("/execute/sync")
+            and body
+            and body.get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT
+        ):
+            return 1000.0
         return None
 
 
@@ -705,6 +714,74 @@ class SimulatorSeamContractTests(unittest.TestCase):
 
 
 class SimulatorAppiumCapabilityTests(unittest.TestCase):
+    def test_refresh_waits_for_a_new_webview_document(self) -> None:
+        class ReloadTransport(FakeAppiumTransport):
+            def __init__(self) -> None:
+                super().__init__("ios-session")
+                self.document_time_origins = iter((1000.0, 1000.0, 2000.0))
+
+            def request(
+                self,
+                method: str,
+                path: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                result = super().request(method, path, payload)
+                if method == "GET" and path.endswith("/contexts"):
+                    return [
+                        "NATIVE_APP",
+                        "WEBVIEW_com.peers.touch.mobile",
+                    ]
+                if (
+                    method == "POST"
+                    and path.endswith("/execute/sync")
+                    and payload
+                ):
+                    if payload.get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT:
+                        return next(self.document_time_origins)
+                    if payload.get("script") == HARNESS_INVENTORY_SCRIPT:
+                        return ["projection.read"]
+                return result
+
+        transport = ReloadTransport()
+        session = SimulatorAppiumSession(
+            transport,
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="ios-simulator-udid",
+                role="ios-simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+        session.start()
+        session.refresh_webview()
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e.time.sleep",
+            return_value=None,
+        ):
+            context = session.switch_to_app_webview(timeout=1.0)
+
+        self.assertEqual(context, "WEBVIEW_com.peers.touch.mobile")
+        epoch_requests = [
+            request
+            for request in transport.requests
+            if request[0] == "POST"
+            and request[1].endswith("/execute/sync")
+            and request[2]
+            and request[2].get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT
+        ]
+        self.assertEqual(len(epoch_requests), 3)
+
     def test_public_w3c_element_and_orientation_operations(self) -> None:
         class ElementTransport(FakeAppiumTransport):
             def request(

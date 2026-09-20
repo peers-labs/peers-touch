@@ -86,6 +86,12 @@ const root = window.__PEERS_MOBILE_ACCEPTANCE__;
 return root ? Object.keys(root).sort() : null;
 """
 
+DOCUMENT_TIME_ORIGIN_SCRIPT = """
+return window.performance && Number.isFinite(window.performance.timeOrigin)
+  ? window.performance.timeOrigin
+  : null;
+"""
+
 HARNESS_ACTION_SCRIPT = """
 const action = arguments[0];
 const input = arguments[1] || {};
@@ -351,6 +357,7 @@ class SimulatorAppiumSession:
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
         self.session_id = ""
+        self._document_time_origin_before_refresh: float | None = None
 
     def start(self) -> "SimulatorAppiumSession":
         capabilities: dict[str, Any] = {
@@ -490,8 +497,25 @@ class SimulatorAppiumSession:
             ]
             for context in webviews:
                 self.switch_context(context)
-                inventory = self.execute_script(HARNESS_INVENTORY_SCRIPT)
+                try:
+                    document_time_origin = self.execute_script(
+                        DOCUMENT_TIME_ORIGIN_SCRIPT
+                    )
+                    inventory = self.execute_script(HARNESS_INVENTORY_SCRIPT)
+                except DriverError:
+                    continue
+                previous_time_origin = (
+                    self._document_time_origin_before_refresh
+                )
+                if previous_time_origin is not None and (
+                    isinstance(document_time_origin, bool)
+                    or not isinstance(document_time_origin, (int, float))
+                    or not math.isfinite(document_time_origin)
+                    or float(document_time_origin) == previous_time_origin
+                ):
+                    continue
                 if isinstance(inventory, list):
+                    self._document_time_origin_before_refresh = None
                     return context
             time.sleep(0.25)
         raise DriverError(
@@ -550,6 +574,20 @@ class SimulatorAppiumSession:
         )
 
     def refresh_webview(self) -> None:
+        document_time_origin = self.execute_script(
+            DOCUMENT_TIME_ORIGIN_SCRIPT
+        )
+        if (
+            isinstance(document_time_origin, bool)
+            or not isinstance(document_time_origin, (int, float))
+            or not math.isfinite(document_time_origin)
+        ):
+            raise DriverError(
+                "Mobile WebView document identity is unavailable before refresh"
+            )
+        self._document_time_origin_before_refresh = float(
+            document_time_origin
+        )
         self._request("POST", self._path("/refresh"), {})
 
     def find_element(self, using: str, value: str) -> str:

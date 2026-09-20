@@ -1,0 +1,38 @@
+name: Devctl Contract
+
+on:
+  pull_request:
+    paths:
+      - 'tooling/devctl/**'
+      - 'tooling/acceptance/core/execution_plan.py'
+      - 'tooling/acceptance/tests/test_execution_plan.py'
+      - 'tooling/scripts/acceptance-plan.py'
+      - 'tooling/scripts/acceptance-run.py'
+      - 'tooling/scripts/execution-plan.py'
+      - 'tooling/dev.ps1'
+      - 'tooling/make/local-dev.mk'
+      - 'tooling/scripts/check-frontend-runtime-registry.mjs'
+      - 'apps/desktop/package.json'
+      - 'apps/mobile/package.json'
+      - 'package.json'
+      - '.github/workflows/devctl-contract.yml'
+  push:
+    branches:
+      - master
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run devctl contract tests
+        run: node --test tooling/devctl/test/*.test.mjs
+      - name: Check frontend runtime registry
+        run: node tooling/scripts/check-frontend-runtime-registry.mjs

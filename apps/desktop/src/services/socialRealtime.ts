@@ -21,7 +21,7 @@ import type {
 } from '../kernel/events/types';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
-import { type NotificationData } from './desktop_api';
+import { api, type NotificationData } from './desktop_api';
 import {
   FriendChatMessageSchema,
   type FriendChatMessage,
@@ -32,6 +32,8 @@ import { useNotificationStore } from '../store/notification';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useRelationshipsStore } from '../store/relationships';
 import { currentAuthenticatedActorPtid, useSessionStore } from '../store/session';
+import { useFederationStore } from '../store/federation';
+import { projectChatFriendRequestPeers } from '../store/friendshipProjection';
 import { useSocialChatStore } from '../store/socialChat';
 import { conversationKey, conversationSuppressesAlerts } from '../store/socialProjection';
 import { log } from '../utils/logger';
@@ -90,6 +92,61 @@ async function refreshFriendshipProjection(refresh = true): Promise<void> {
   await useRelationshipsStore.getState().loadMutualFriends(actorPtid, refresh);
 }
 
+async function refreshFriendStationIdentities(): Promise<void> {
+  const chat = useSocialChatStore.getState();
+  const currentUserPtid = chat.currentUserPtid
+    || currentAuthenticatedActorPtid()
+    || '';
+  const requestCandidates = projectChatFriendRequestPeers(
+    chat.friendRequests,
+    currentUserPtid,
+  ).map(({ peerPtid, request }) => ({
+    actorPtid: peerPtid,
+    federationId: request.federationId,
+    username: chat.peerProfiles[peerPtid]?.username?.trim() || '',
+  }));
+  const conversationCandidates = chat.conversations
+    .filter((conversation) => conversation.kind === 1)
+    .flatMap((conversation) => {
+      const peer = chat.conversationMembers[conversation.conversationId]
+        ?.find((member) => member.ptid && member.ptid !== currentUserPtid);
+      if (!peer?.ptid) return [];
+      return [{
+        actorPtid: peer.ptid,
+        federationId: conversation.federationId,
+        username: chat.peerProfiles[peer.ptid]?.username?.trim() || '',
+      }];
+    });
+  // #region debug-point A:station-candidates
+  void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'socialRealtime.ts:refreshFriendStationIdentities', msg: '[DEBUG] Station identity candidates resolved', data: { requestCandidates, conversationCandidates: conversationCandidates.map((candidate) => ({ ...candidate, displayName: chat.peerProfiles[candidate.actorPtid]?.display_name?.trim() || '', memberNickname: chat.conversationMembers[chat.conversations.find((conversation) => conversation.kind === 1 && conversation.federationId === candidate.federationId)?.conversationId || '']?.find((member) => member.ptid === candidate.actorPtid)?.nickname?.trim() || '' })) }, ts: Date.now() }) }).catch(() => {});
+  // #endregion
+  await useFederationStore.getState().resolveActorStations([
+    ...requestCandidates,
+    ...conversationCandidates,
+  ]);
+}
+
+export async function refreshPeerPresence(peerPtids: readonly string[]): Promise<void> {
+  const requested = Array.from(new Set(peerPtids.filter(Boolean)));
+  if (requested.length === 0) return;
+  const store = useSocialChatStore.getState();
+  try {
+    const statuses = await api.presenceQuery(requested);
+    const byActor = new Map(statuses.map((status) => [status.actorPtid, status.online]));
+    for (const actorPtid of requested) {
+      const online = byActor.get(actorPtid);
+      if (online == null) {
+        store.clearPeerPresence([actorPtid]);
+      } else {
+        store.setPeerOnline(actorPtid, online);
+      }
+    }
+  } catch (error) {
+    store.clearPeerPresence(requested);
+    throw error;
+  }
+}
+
 function rememberBounded(set: Set<string>, key: string, maxSize: number): boolean {
   if (!key) return true;
   if (set.has(key)) return false;
@@ -140,6 +197,15 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+    ]);
+    await Promise.allSettled([
+      refreshFriendStationIdentities(),
+      refreshPeerPresence(peerPtids),
+      refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
+        ? refreshed.loadMessages(refreshed.activeSessionUlid, 'friend')
+        : refreshed.activeTab === 'group' && refreshed.activeGroupUlid
+          ? refreshed.loadMessages(refreshed.activeGroupUlid, 'group')
+          : Promise.resolve(),
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
     ]);
@@ -216,9 +282,21 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
       .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
   ));
   await Promise.allSettled([
+    ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+  ]);
+
+  if (sequence !== bootstrapSequence) return;
+
+  await Promise.allSettled([
     refreshed.loadGroupUnreadCounts(),
     refreshed.loadConversationPreviews(),
-    ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+    refreshFriendStationIdentities(),
+    refreshPeerPresence(peerPtids),
+    refreshed.activeTab === 'friend' && refreshed.activeSessionUlid
+      ? refreshed.loadMessages(refreshed.activeSessionUlid, 'friend')
+      : refreshed.activeTab === 'group' && refreshed.activeGroupUlid
+        ? refreshed.loadMessages(refreshed.activeGroupUlid, 'group')
+        : Promise.resolve(),
     notifications.loadNotifications(),
   ]);
 
@@ -481,6 +559,9 @@ function onNotificationProjectionChanged(): void {
 
 function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   if (!payload.actorPtid) return;
+  // #region debug-point A:presence-flip
+  void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'socialRealtime.ts:onPresenceFlip', msg: '[DEBUG] Authoritative presence flip received', data: { actorPtid: payload.actorPtid, online: payload.online }, ts: Date.now() }) }).catch(() => {});
+  // #endregion
   const store = useSocialChatStore.getState();
   store.setPeerOnline(payload.actorPtid, payload.online);
 }
@@ -490,14 +571,16 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
   switch (payload.kind) {
     case 'friend_request_received':
     case 'friend_request_rejected':
-      store.loadFriendRequests().catch(() => {});
+      store.loadFriendRequests()
+        .then(refreshFriendStationIdentities)
+        .catch(() => {});
       break;
     case 'friend_request_accepted':
       Promise.allSettled([
         store.loadFriendRequests(),
         store.loadSessions(),
         refreshFriendshipProjection(true),
-      ]).catch(() => {});
+      ]).then(refreshFriendStationIdentities).catch(() => {});
       break;
     case 'conversation_created':
       store.loadSessions().catch(() => {});
@@ -507,7 +590,7 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
         store.loadFriendRequests(),
         store.loadSessions(),
         refreshFriendshipProjection(true),
-      ]).catch(() => {});
+      ]).then(refreshFriendStationIdentities).catch(() => {});
       break;
   }
 }

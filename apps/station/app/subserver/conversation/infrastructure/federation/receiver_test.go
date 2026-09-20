@@ -648,6 +648,121 @@ func TestDeliveryReceiptReceiverBindsSourceAndPreservesReplayConflict(
 	}
 }
 
+func TestReadCursorReceiverBindsSourceAndPreservesReplay(t *testing.T) {
+	fixture := newReceiverFixture(t, testStationB)
+	cursor := &chatmodel.FederatedConversationReadCursor{
+		FormatVersion:          1,
+		FederationId:           "federation-1",
+		ConversationId:         "conversation-1",
+		AuthorityStationPeerId: testStationB,
+		AuthorityEpoch:         3,
+		Reader: &chatmodel.CryptoEndpoint{
+			Ptid:     testActor,
+			DeviceId: testDevice,
+		},
+		ReaderHomeStationPeerId: testStationA,
+		LastReadSequence:        7,
+	}
+	frame := fixture.readCursorFrame(t, cursor)
+
+	first, err := fixture.coreReceiver.Receive(context.Background(), frame)
+	if err != nil {
+		t.Fatalf("receive read cursor: %v", err)
+	}
+	if first != federationdelivery.AcceptedResult() {
+		t.Fatalf("read cursor result = %+v", first)
+	}
+	var stored readCursorApplyTestModel
+	payloadID, err := conversationfederation.ReadCursorPayloadID(cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.First(&stored, "payload_id = ?", payloadID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Source != testStationA {
+		t.Fatalf("read cursor source = %q, want %q", stored.Source, testStationA)
+	}
+
+	replayed, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		proto.Clone(frame).(*federationdelivery.Frame),
+	)
+	if err != nil {
+		t.Fatalf("receive exact read cursor replay: %v", err)
+	}
+	if replayed != federationdelivery.DuplicateResult() {
+		t.Fatalf("read cursor replay = %+v", replayed)
+	}
+
+	fixture.readCursor.expectedSource = testStationB
+	rejected := proto.Clone(cursor).(*chatmodel.FederatedConversationReadCursor)
+	rejected.LastReadSequence++
+	rejection, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		fixture.readCursorFrame(t, rejected),
+	)
+	if err != nil {
+		t.Fatalf("receive wrong-source read cursor: %v", err)
+	}
+	if rejection != federationdelivery.TerminalResult(
+		federationdelivery.FrameErrorDomainRejected,
+	) {
+		t.Fatalf("wrong-source read cursor = %+v", rejection)
+	}
+}
+
+func TestReadCursorReceiverDoesNotLetStaleEpochBlockCurrentRetry(t *testing.T) {
+	fixture := newReceiverFixture(t, testStationB)
+	fixture.readCursor.expectedAuthorityEpoch = 4
+	stale := &chatmodel.FederatedConversationReadCursor{
+		FormatVersion:          1,
+		FederationId:           "federation-1",
+		ConversationId:         "conversation-1",
+		AuthorityStationPeerId: testStationB,
+		AuthorityEpoch:         3,
+		Reader: &chatmodel.CryptoEndpoint{
+			Ptid:     testActor,
+			DeviceId: testDevice,
+		},
+		ReaderHomeStationPeerId: testStationA,
+		LastReadSequence:        7,
+	}
+	staleFrame := fixture.readCursorFrame(t, stale)
+	staleResult, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		staleFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive stale-epoch cursor: %v", err)
+	}
+	if staleResult != federationdelivery.TerminalResult(
+		federationdelivery.FrameErrorDomainRejected,
+	) {
+		t.Fatalf("stale-epoch cursor result = %+v", staleResult)
+	}
+
+	current := proto.Clone(stale).(*chatmodel.FederatedConversationReadCursor)
+	current.AuthorityEpoch = 4
+	currentFrame := fixture.readCursorFrame(t, current)
+	if currentFrame.GetOrderingKey() == staleFrame.GetOrderingKey() {
+		t.Fatalf(
+			"stale/current authority epochs share ordering lane %q",
+			currentFrame.GetOrderingKey(),
+		)
+	}
+	currentResult, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		currentFrame,
+	)
+	if err != nil {
+		t.Fatalf("receive current-epoch cursor: %v", err)
+	}
+	if currentResult != federationdelivery.AcceptedResult() {
+		t.Fatalf("current-epoch cursor result = %+v", currentResult)
+	}
+}
+
 func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	fixture := newReceiverFixture(t, testStationA)
 	proposal := fixture.signedProposal(t, "command-result")
@@ -865,6 +980,7 @@ type receiverFixture struct {
 	result       *transactionalResultPort
 	device       *transactionalDevicePort
 	receipt      *transactionalDeliveryReceiptPort
+	readCursor   *transactionalReadCursorPort
 	coreReceiver *federationdelivery.DeliveryReceiver
 }
 
@@ -898,11 +1014,13 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 	resultPort := &transactionalResultPort{}
 	devicePort := &transactionalDevicePort{}
 	receiptPort := &transactionalDeliveryReceiptPort{}
+	readCursorPort := &transactionalReadCursorPort{}
 	if err := db.AutoMigrate(
 		&authorityReceiptTestModel{},
 		&authorityResultTestModel{},
 		&deviceApplyTestModel{},
 		&deliveryReceiptApplyTestModel{},
+		&readCursorApplyTestModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -931,6 +1049,7 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 			AuthorityResults:   resultPort,
 			DeviceDeliveries:   devicePort,
 			DeliveryReceipts:   receiptPort,
+			ReadCursors:        readCursorPort,
 			Sender:             sender,
 			Clock:              clock,
 		},
@@ -964,6 +1083,7 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 		result:       resultPort,
 		device:       devicePort,
 		receipt:      receiptPort,
+		readCursor:   readCursorPort,
 		coreReceiver: coreReceiver,
 	}
 }
@@ -1237,6 +1357,33 @@ func (f *receiverFixture) deliveryReceiptFrame(
 	return outbox.single(t)
 }
 
+func (f *receiverFixture) readCursorFrame(
+	t *testing.T,
+	cursor *chatmodel.FederatedConversationReadCursor,
+) *federationdelivery.Frame {
+	t.Helper()
+	sender, err := conversationfederation.NewSender(
+		testStationA,
+		f.stationKeys[testStationA].signer(),
+		f.clock,
+		24*time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outbox := &capturingOutbox{}
+	if _, err := sender.EnqueueReadCursor(
+		context.Background(),
+		outbox,
+		testStationB,
+		cursor,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	return outbox.single(t)
+}
+
 type testClock struct {
 	mu  sync.RWMutex
 	now time.Time
@@ -1319,6 +1466,7 @@ func (p *recordingActorKeyProjection) ResolveVerifiedActorDeviceSigningKey(
 	_ context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -1329,6 +1477,7 @@ func (p *recordingActorKeyProjection) ResolveVerifiedActorDeviceSigningKey(
 	defer p.mu.Unlock()
 	p.calls++
 	if p.key.GetActorPtid() != actorPTID ||
+		p.key.GetHomeStationPeerId() != expectedHomeStationPeerID ||
 		p.key.GetActorDeviceId() != deviceID ||
 		p.key.GetSigningKeyId() != signingKeyID {
 		return nil, nil
@@ -1592,6 +1741,67 @@ type deliveryReceiptApplyTestModel struct {
 
 func (*deliveryReceiptApplyTestModel) TableName() string {
 	return "test_conversation_delivery_receipt_apply"
+}
+
+type readCursorApplyTestModel struct {
+	PayloadID   string `gorm:"column:payload_id;primaryKey"`
+	Source      string `gorm:"column:source_station;not null"`
+	PayloadHash []byte `gorm:"column:payload_hash;type:blob;not null"`
+}
+
+func (*readCursorApplyTestModel) TableName() string {
+	return "test_conversation_read_cursor_apply"
+}
+
+type transactionalReadCursorPort struct {
+	expectedSource         string
+	expectedAuthorityEpoch uint64
+}
+
+func (p *transactionalReadCursorPort) ApplyReadCursor(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	cursor *chatmodel.FederatedConversationReadCursor,
+	sourceHomeStationPeerID string,
+) error {
+	expectedSource := p.expectedSource
+	if expectedSource == "" {
+		expectedSource = testStationA
+	}
+	if sourceHomeStationPeerID != expectedSource {
+		return conversationfederation.ErrReadCursorRejected
+	}
+	if p.expectedAuthorityEpoch != 0 &&
+		cursor.GetAuthorityEpoch() != p.expectedAuthorityEpoch {
+		return conversationfederation.ErrReadCursorRejected
+	}
+	payload := mustMarshalWithoutTest(cursor)
+	payloadHash := federationdelivery.PayloadSHA256(payload)
+	payloadID, err := conversationfederation.ReadCursorPayloadID(cursor)
+	if err != nil {
+		return err
+	}
+	var existing readCursorApplyTestModel
+	err = transaction.DB().WithContext(ctx).
+		Where("payload_id = ?", payloadID).
+		First(&existing).Error
+	if err == nil {
+		if existing.Source != sourceHomeStationPeerID ||
+			!bytes.Equal(existing.PayloadHash, payloadHash) {
+			return conversationfederation.ErrReadCursorConflict
+		}
+
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return transaction.DB().WithContext(ctx).
+		Create(&readCursorApplyTestModel{
+			PayloadID:   payloadID,
+			Source:      sourceHomeStationPeerID,
+			PayloadHash: payloadHash,
+		}).Error
 }
 
 type transactionalDeliveryReceiptPort struct {

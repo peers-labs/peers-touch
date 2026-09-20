@@ -24,6 +24,7 @@ import { presentError } from '../services/errorPresenter';
 import { imServiceV1 } from '../services/im-service';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
+import { currentAuthenticatedActorPtid } from '../store/session';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { callP2p } from '../modules/p2p/callP2p';
@@ -110,7 +111,10 @@ export function SocialChatPage() {
   const [ownedContactSelection, setOwnedContactSelection] = useState<OwnedContactSelection | null>(null);
   const [directOpenIntent, setDirectOpenIntent] = useState<DirectConversationOpenIntent | null>(null);
   const directOpenGenerationRef = useRef(0);
-  const selectedContact = ownedContactSelection?.actorPtid === currentUserPtid
+  const contactOwnerPtid = currentUserPtid
+    || currentAuthenticatedActorPtid()
+    || '';
+  const selectedContact = ownedContactSelection?.actorPtid === contactOwnerPtid
     ? ownedContactSelection.contact
     : null;
 
@@ -193,6 +197,7 @@ export function SocialChatPage() {
       setSubPage('chats');
       return;
     }
+    if (contact.kind === 'person') return;
     openDirectConversation(contact);
   }, [
     cancelDirectOpenIntent,
@@ -360,10 +365,10 @@ export function SocialChatPage() {
           <ChatContactsPanel
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
-              setOwnedContactSelection({ actorPtid: currentUserPtid || '', contact });
+              setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
             }}
             onStartChat={(contact) => {
-              setOwnedContactSelection({ actorPtid: currentUserPtid || '', contact });
+              setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
               handleContactMessage(contact);
             }}
           />
@@ -388,6 +393,7 @@ export function SocialChatPage() {
                 federatedHandle: directOpenIntent.federatedHandle,
                 homeStationDomain: directOpenIntent.homeStationDomain,
                 homeStationPeerId: directOpenIntent.homeStationPeerId,
+                homeStationName: directOpenIntent.homeStationName,
               });
             }}
           />

@@ -56,7 +56,7 @@ export interface KeyPackageFetchResult {
 
 export interface DeviceServiceContract {
   list(): Promise<DeviceInfo[]>
-  revoke(deviceId: string): Promise<void>
+  revoke(deviceId: string, observedProfileVersion: bigint): Promise<void>
 }
 
 export interface MlsLeaveIntentView {

@@ -7,6 +7,8 @@
     "model/domain/agent/capability.proto",
     "apps/station/app/subserver/agent/**/capability*",
     "apps/desktop/src/runtimes/agentCapabilityRuntime.ts",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src/services/desktop_api.capabilities.test.ts",
     "apps/desktop/src/pages/AgentProfilePage.tsx"
   ],
   "truth_sources": [

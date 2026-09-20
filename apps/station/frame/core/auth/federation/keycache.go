@@ -189,9 +189,8 @@ func (c *KeyCache) ResetForTest() {
 //   • Each instance independently runs the `loadOrGenerate` once-Do
 //     gate; a freshly-bootstrapped station can race three concurrent
 //     MintLocalKey + PutCurrent calls if all three consumers Init()
-//     in parallel. The KeyStore implementation handles the conflict
-//     (last-writer-wins on `current_kid`), but it leaves orphaned
-//     LocalKey rows in the audit-history table.
+//     in parallel. KeyStore rejects a different-key replacement, but
+//     the losing caches would retain sticky initialization errors.
 //
 // Singleton() collapses these to one cache + one rotation fan-out.
 // All production callers MUST go through the accessor; tests that

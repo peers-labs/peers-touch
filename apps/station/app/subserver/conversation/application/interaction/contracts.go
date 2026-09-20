@@ -62,11 +62,15 @@ type ReadCursorRequest struct {
 	ConversationID valueobject.ConversationID
 	Reader         valueobject.Endpoint
 	Sequence       valueobject.Sequence
+	// SourceStation is populated only from an authenticated Federation frame.
+	SourceStation valueobject.StationID
 }
 
 // ReadCursorResult preserves CA-W2's committed result and any post-commit notification failure.
 type ReadCursorResult struct {
-	Result command.ReadCursorResult
+	Result    command.ReadCursorResult
+	Replay    bool
+	Forwarded bool
 }
 
 // DeliveryReceipt proves that one exact device queue item was durably consumed.
@@ -143,6 +147,18 @@ type ReadCursorAdvancer interface {
 		reader valueobject.Endpoint,
 		sequence valueobject.Sequence,
 	) (command.ReadCursorResult, error)
+}
+
+// ReadCursorForwarder durably routes a follower-local cursor to the
+// Conversation authority. It returns true for an exact replay.
+type ReadCursorForwarder interface {
+	ForwardReadCursor(
+		ctx context.Context,
+		authority valueobject.StationID,
+		federationID valueobject.FederationID,
+		authorityEpoch valueobject.AuthorityEpoch,
+		request ReadCursorRequest,
+	) (bool, error)
 }
 
 // DeliveryReceiptRecorder validates the exact queue tuple and records it idempotently.

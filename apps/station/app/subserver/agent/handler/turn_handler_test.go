@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -60,6 +61,9 @@ func openTurnHandlerTestDB(t *testing.T, name string) *gorm.DB {
 	if err := db.AutoMigrate(
 		&persistence.Agent{},
 		&persistence.Conversation{},
+		&persistence.AgentMessage{},
+		&persistence.AgentTurn{},
+		&persistence.TurnQueueEntry{},
 	); err != nil {
 		t.Fatalf("migrate turn handler database: %v", err)
 	}
@@ -352,6 +356,52 @@ func TestWriteTurnStreamErrorPreservesProviderCredentialMissingPayload(t *testin
 	}
 }
 
+func TestWriteTurnStreamErrorPreservesRuntimeIncompatibleCapabilityPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewRuntimeIncompatibleCapability(
+			"tool:skills_list",
+			"runtime_capability_unavailable",
+		),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		payload.ErrorType != string(errcode.AgentRuntimeIncompatibleCapability) ||
+		payload.LocaleKey != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["capability_id"] != "tool:skills_list" ||
+		payload.Details["reason_code"] != "runtime_capability_unavailable" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
 func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
 	resp := &fakeStreamResponse{}
 
@@ -414,6 +464,191 @@ func TestDrainTurnStreamEventsStopsOnDisconnectedClient(t *testing.T) {
 func TestDomainTurnStatusToProtoProjectsLocalToolWaitAsRunning(t *testing.T) {
 	if got := domainTurnStatusToProto(domain.TurnStatusWaitingLocalTool); got != model.TurnStatus_TURN_STATUS_RUNNING {
 		t.Fatalf("waiting local tool must remain a non-terminal running projection, got %s", got)
+	}
+}
+
+func TestExecuteTurnRejectsForeignConversationWithoutMutation(t *testing.T) {
+	db := openTurnHandlerTestDB(t, "turn_handler_foreign_conversation_sync")
+	conversation := seedPrivateTurnHandlerConversation(
+		t,
+		db,
+		"foreign-sync-conversation",
+	)
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:foreign"},
+	)
+	handlers := NewTurnHandlers(nil, nil, nil, service.NewConversationService())
+
+	response, err := handlers.HandleExecuteTurn(ctx, &model.ExecuteTurnRequest{
+		ConversationId: conversation.ID,
+		AgentId:        conversation.AgentID,
+		UserInput:      "must not cross the ownership boundary",
+	})
+	if response != nil {
+		t.Fatalf("foreign execute returned response: %+v", response)
+	}
+	var handlerErr *server.HandlerError
+	if !errors.As(err, &handlerErr) {
+		t.Fatalf("foreign execute error = %T: %v", err, err)
+	}
+	if handlerErr.Code != http.StatusForbidden ||
+		handlerErr.Headers["X-Peers-Error-Code"] != string(errcode.AgentOwnershipForbiddenActor) ||
+		handlerErr.Headers["X-Peers-Error-Locale-Key"] != errcode.AgentOwnershipForbiddenActorLocaleKey ||
+		handlerErr.Headers["X-Peers-Error-Retryable"] != "false" ||
+		handlerErr.Headers["X-Peers-Error-Terminal"] != "true" {
+		t.Fatalf("foreign execute typed headers = %+v", handlerErr)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerErr.Headers[errorDetailsHeader]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode foreign execute details: %v", err)
+	}
+	if len(details) != 2 ||
+		details["resource_kind"] != "conversation" ||
+		details["resource_id"] != conversation.ID {
+		t.Fatalf("foreign execute details = %+v", details)
+	}
+	if strings.Contains(err.Error(), conversation.Title) ||
+		strings.Contains(err.Error(), *conversation.Description) {
+		t.Fatalf("foreign execute exposed owner content: %v", err)
+	}
+	assertPrivateTurnHandlerConversationUnchanged(t, db, conversation)
+}
+
+func TestExecuteTurnStreamRejectsForeignConversationWithTypedPayload(t *testing.T) {
+	db := openTurnHandlerTestDB(t, "turn_handler_foreign_conversation_stream")
+	conversation := seedPrivateTurnHandlerConversation(
+		t,
+		db,
+		"foreign-stream-conversation",
+	)
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:foreign"},
+	)
+	handlers := NewTurnHandlers(nil, nil, nil, service.NewConversationService())
+	requestBody, err := protojson.Marshal(&model.ExecuteTurnRequest{
+		ConversationId: conversation.ID,
+		AgentId:        conversation.AgentID,
+		UserInput:      "must not cross the ownership boundary",
+	})
+	if err != nil {
+		t.Fatalf("encode foreign stream request: %v", err)
+	}
+	response := &fakeStreamResponse{}
+	if err := handlers.HandleExecuteTurnStream(
+		ctx,
+		&fakeTurnRequest{body: requestBody},
+		response,
+	); err != nil {
+		t.Fatalf("foreign stream handler: %v", err)
+	}
+
+	var payload struct {
+		Type           string            `json:"type"`
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(response.body.String(), "\n")[1]),
+		"data: ",
+	)
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode foreign stream payload: %v", err)
+	}
+	if payload.Type != "error" ||
+		payload.Error != errcode.AgentOwnershipForbiddenActorLocaleKey ||
+		payload.ErrorType != string(errcode.AgentOwnershipForbiddenActor) ||
+		payload.LocaleKey != errcode.AgentOwnershipForbiddenActorLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["resource_kind"] != "conversation" ||
+		payload.Details["resource_id"] != conversation.ID ||
+		payload.ConversationID != conversation.ID ||
+		payload.AgentID != conversation.AgentID {
+		t.Fatalf("foreign stream payload = %+v", payload)
+	}
+	if response.headers["X-Agent-Turn-ID"] != "" {
+		t.Fatalf("foreign stream exposed turn identity: %+v", response.headers)
+	}
+	if strings.Contains(response.body.String(), conversation.Title) ||
+		strings.Contains(response.body.String(), *conversation.Description) {
+		t.Fatalf("foreign stream exposed owner content: %q", response.body.String())
+	}
+	assertPrivateTurnHandlerConversationUnchanged(t, db, conversation)
+}
+
+func seedPrivateTurnHandlerConversation(
+	t *testing.T,
+	db *gorm.DB,
+	conversationID string,
+) *persistence.Conversation {
+	t.Helper()
+	description := "owner-only conversation content"
+	conversation := &persistence.Conversation{
+		ID:          conversationID,
+		AgentID:     "agent-private",
+		ActorPTID:   "ptid:person:owner",
+		Title:       "owner-only title",
+		Description: &description,
+		ProviderID:  "provider-private",
+		Status:      string(domain.ConversationStatusActive),
+		Version:     7,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := db.Create(conversation).Error; err != nil {
+		t.Fatalf("seed private conversation: %v", err)
+	}
+	return conversation
+}
+
+func assertPrivateTurnHandlerConversationUnchanged(
+	t *testing.T,
+	db *gorm.DB,
+	want *persistence.Conversation,
+) {
+	t.Helper()
+	assertConversationCount(t, db, 1)
+	var got persistence.Conversation
+	if err := db.First(&got, "id = ?", want.ID).Error; err != nil {
+		t.Fatalf("read private conversation after rejection: %v", err)
+	}
+	if got.ActorPTID != want.ActorPTID ||
+		got.AgentID != want.AgentID ||
+		got.Title != want.Title ||
+		got.Description == nil ||
+		*got.Description != *want.Description ||
+		got.ProviderID != want.ProviderID ||
+		got.Status != want.Status ||
+		got.Version != want.Version {
+		t.Fatalf("foreign request mutated private conversation: got=%+v want=%+v", got, want)
+	}
+	for _, resource := range []struct {
+		name  string
+		model any
+	}{
+		{name: "message", model: &persistence.AgentMessage{}},
+		{name: "turn", model: &persistence.AgentTurn{}},
+		{name: "queue entry", model: &persistence.TurnQueueEntry{}},
+	} {
+		var count int64
+		if err := db.Model(resource.model).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows after rejection: %v", resource.name, err)
+		}
+		if count != 0 {
+			t.Fatalf("foreign request persisted %d %s rows", count, resource.name)
+		}
 	}
 }
 
@@ -519,6 +754,76 @@ func TestExecuteTurnStreamPreflightsBeforeCreatingMissingConversation(t *testing
 	assertConversationCount(t, db, 0)
 }
 
+func TestExecuteTurnStreamRejectsRetiredContextReferenceWithTypedPayloadBeforePersistence(
+	t *testing.T,
+) {
+	db := openTurnHandlerTestDB(t, "turn_handler_invalid_reference_stream")
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:owner"},
+	)
+	handlers := NewTurnHandlers(
+		&service.TurnService{},
+		service.NewToolRegistryService(nil, nil),
+		nil,
+		service.NewConversationService(),
+	)
+	const token = "@url:https://example.test/private"
+	requestBody, err := protojson.Marshal(&model.ExecuteTurnRequest{
+		ConversationId: "missing-invalid-reference-conversation",
+		AgentId:        "agent-1",
+		UserInput:      "Read " + token,
+	})
+	if err != nil {
+		t.Fatalf("encode invalid reference stream request: %v", err)
+	}
+	response := &fakeStreamResponse{}
+	if err := handlers.HandleExecuteTurnStream(
+		ctx,
+		&fakeTurnRequest{body: requestBody},
+		response,
+	); err != nil {
+		t.Fatalf("execute invalid reference stream handler: %v", err)
+	}
+
+	var payload struct {
+		Type           string            `json:"type"`
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(response.body.String(), "\n")[1]),
+		"data: ",
+	)
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode invalid reference stream payload: %v", err)
+	}
+	referenceHash := sha256.Sum256([]byte(token))
+	if payload.Type != "error" ||
+		payload.Error != errcode.AgentContextInvalidReferenceLocaleKey ||
+		payload.ErrorType != string(errcode.AgentContextInvalidReference) ||
+		payload.LocaleKey != errcode.AgentContextInvalidReferenceLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["reference_kind"] != "url" ||
+		payload.Details["reference_hash"] != fmt.Sprintf("%x", referenceHash) ||
+		payload.ConversationID != "missing-invalid-reference-conversation" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("invalid reference stream payload = %+v", payload)
+	}
+	if response.headers["X-Agent-Turn-ID"] != "" {
+		t.Fatalf("invalid reference stream exposed turn identity: %+v", response.headers)
+	}
+	assertNoTurnHandlerPersistence(t, db)
+}
+
 func assertConversationNotCreated(t *testing.T, db *gorm.DB, conversationID string) {
 	t.Helper()
 	var count int64
@@ -529,6 +834,25 @@ func assertConversationNotCreated(t *testing.T, db *gorm.DB, conversationID stri
 	}
 	if count != 0 {
 		t.Fatalf("preflight rejection persisted conversation %q", conversationID)
+	}
+}
+
+func assertNoTurnHandlerPersistence(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	for name, record := range map[string]interface{}{
+		"conversation": &persistence.Conversation{},
+		"message":      &persistence.AgentMessage{},
+		"turn":         &persistence.AgentTurn{},
+		"queue entry":  &persistence.TurnQueueEntry{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("invalid reference persisted %d %s rows", count, name)
+		}
 	}
 }
 

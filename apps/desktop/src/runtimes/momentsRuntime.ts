@@ -6,8 +6,14 @@
 
 import { useDiscoveryStore } from '../store/discovery';
 import { useMomentsStore } from '../store/moments';
+import { usePrivateMomentsStore } from '../store/privateMoments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
+import {
+  Audience_Kind,
+  PostVisibility,
+  type Post,
+} from '../gen/proto/domain/social/post_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import type {
@@ -28,11 +34,30 @@ const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
 let teardownRuntime: (() => void) | null = null;
 let reconcileTimer: number | null = null;
 let bootstrappedActorPtid: string | null = null;
+let bootstrappedSessionEpoch: number | null = null;
 let bootstrapSequence = 0;
-let refreshInFlight: Promise<void> | null = null;
+let refreshInFlight: { generation: number; promise: Promise<void> } | null = null;
 let realtimeWasDisconnected = false;
 let lastReconnectRefreshAt = 0;
 const seenMomentEventIds = new Set<string>();
+
+export function isPrivateMomentPost(post: Post | undefined): boolean {
+  if (!post) return false;
+  if (
+    post.audience?.kind !== undefined
+    && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+  ) {
+    return post.audience.kind === Audience_Kind.FRIENDS;
+  }
+  return post.visibility !== PostVisibility.PUBLIC;
+}
+
+function privatePostIds(): string[] {
+  return Object.values(useMomentsStore.getState().postsById)
+    .filter(isPrivateMomentPost)
+    .map((post) => post.id)
+    .filter(Boolean);
+}
 
 function runDetached(label: string, task: () => Promise<void>): void {
   void task().catch((error) => {
@@ -82,26 +107,45 @@ export async function ensureCircleMemberProfiles(): Promise<void> {
 }
 
 async function refreshMomentsProjection(label: string): Promise<void> {
-  if (refreshInFlight) return refreshInFlight;
+  const generation = bootstrapSequence;
+  if (refreshInFlight?.generation === generation) return refreshInFlight.promise;
 
-  refreshInFlight = (async () => {
+  const promise = (async () => {
     log.info('momentsRuntime', 'moments projection refresh started', { label });
 
     const moments = useMomentsStore.getState();
     const discovery = useDiscoveryStore.getState();
+    const previousPrivatePostIds = [...new Set([
+      ...privatePostIds(),
+      ...Object.keys(usePrivateMomentsStore.getState().postsById),
+    ])];
     await Promise.allSettled([
       discovery.loadMe(),
       moments.syncProjection(label),
       moments.listMyCircles(),
     ]);
+    if (generation !== bootstrapSequence) return;
     await preloadCircleMembers();
+    const currentPrivatePostIds = privatePostIds();
+    const privatePostIdsToReconcile = [...new Set([
+      ...previousPrivatePostIds,
+      ...currentPrivatePostIds,
+    ])];
+    await usePrivateMomentsStore.getState().reconcile(
+      privatePostIdsToReconcile,
+      label,
+      generation,
+    );
 
     log.info('momentsRuntime', 'moments projection refresh completed', { label });
   })().finally(() => {
-    refreshInFlight = null;
+    if (refreshInFlight?.promise === promise) {
+      refreshInFlight = null;
+    }
   });
+  refreshInFlight = { generation, promise };
 
-  return refreshInFlight;
+  return promise;
 }
 
 export async function ensureMomentDetailProjection(postId: string): Promise<void> {
@@ -109,11 +153,19 @@ export async function ensureMomentDetailProjection(postId: string): Promise<void
   if (!trimmedPostId) return;
 
   const moments = useMomentsStore.getState();
+  const privateMoments = usePrivateMomentsStore.getState();
+  const knownPost = moments.postsById[trimmedPostId];
   log.info('momentsRuntime', 'moment detail projection refresh started', { postId: trimmedPostId });
-  await Promise.allSettled([
-    moments.loadPost(trimmedPostId),
-    moments.loadComments(trimmedPostId, true),
-  ]);
+  if (isPrivateMomentPost(knownPost)) {
+    await privateMoments.readMoment(trimmedPostId);
+  } else {
+    const post = await moments.loadPost(trimmedPostId);
+    if (!post || isPrivateMomentPost(post)) {
+      await usePrivateMomentsStore.getState().readMoment(trimmedPostId);
+    } else {
+      await moments.loadComments(trimmedPostId, true);
+    }
+  }
   log.info('momentsRuntime', 'moment detail projection refresh completed', { postId: trimmedPostId });
 }
 
@@ -147,6 +199,7 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
   if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment deleted projection refresh', async () => {
+    await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
     await refreshMomentsProjection('event:moment.deleted');
   });
 }
@@ -212,7 +265,11 @@ function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): voi
   });
 }
 
-async function bootstrapForActor(actorPtid: string, sequence: number): Promise<void> {
+async function bootstrapForActor(
+  actorPtid: string,
+  sessionEpoch: number,
+  sequence: number,
+): Promise<void> {
   if (bootstrappedActorPtid && bootstrappedActorPtid !== actorPtid) {
     useMomentsStore.getState().reset();
     useDiscoveryStore.getState().reset();
@@ -220,7 +277,12 @@ async function bootstrapForActor(actorPtid: string, sequence: number): Promise<v
   }
 
   bootstrappedActorPtid = actorPtid;
-  await refreshMomentsProjection('bootstrap');
+  bootstrappedSessionEpoch = sessionEpoch;
+  usePrivateMomentsStore.getState().activateActor(actorPtid, sequence);
+  await Promise.allSettled([
+    usePrivateMomentsStore.getState().bootstrap(sequence),
+    refreshMomentsProjection('bootstrap'),
+  ]);
 
   if (sequence !== bootstrapSequence) return;
   log.info('momentsRuntime', 'moments projection bootstrap completed', { actorPtid });
@@ -231,18 +293,25 @@ function reconcileAuthenticatedRuntime(): void {
   const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
   if (!actorPtid) {
     bootstrappedActorPtid = null;
+    bootstrappedSessionEpoch = null;
     realtimeWasDisconnected = false;
     lastReconnectRefreshAt = 0;
-    bootstrapSequence += 1;
+    const sequence = ++bootstrapSequence;
+    usePrivateMomentsStore.getState().deactivate(sequence);
     useMomentsStore.getState().reset();
     useDiscoveryStore.getState().reset();
     useRelationshipsStore.getState().reset();
     return;
   }
 
-  if (bootstrappedActorPtid === actorPtid) return;
+  if (
+    bootstrappedActorPtid === actorPtid
+    && bootstrappedSessionEpoch === session.sessionEpoch
+  ) return;
   const sequence = ++bootstrapSequence;
-  runDetached('moments projection bootstrap', () => bootstrapForActor(actorPtid, sequence));
+  runDetached('moments projection bootstrap', () => (
+    bootstrapForActor(actorPtid, session.sessionEpoch, sequence)
+  ));
 }
 
 function startReconcileTimer(): void {
@@ -292,9 +361,11 @@ export const momentsRuntime: RuntimeDescriptor = {
       stopReconcileTimer();
       teardownRuntime = null;
       bootstrappedActorPtid = null;
+      bootstrappedSessionEpoch = null;
       realtimeWasDisconnected = false;
       lastReconnectRefreshAt = 0;
-      bootstrapSequence += 1;
+      const sequence = ++bootstrapSequence;
+      usePrivateMomentsStore.getState().deactivate(sequence);
       seenMomentEventIds.clear();
     };
 

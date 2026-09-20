@@ -71,6 +71,7 @@ class SensitiveKeyTests(unittest.TestCase):
             "authorization_url_ref",
             "contextTokens",
             "fencing_token",
+            "hostKeySha256",
             "idempotencyKeyHash",
             "localeKey",
             "maxOutputTokens",

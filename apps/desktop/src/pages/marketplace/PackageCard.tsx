@@ -3,7 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button } from '@lobehub/ui';
 import { Tag, theme } from 'antd';
-import { Bot, CheckCircle, Download, Eye, Plug, Puzzle, Server, Trash2 } from 'lucide-react';
+import {
+  Bot,
+  CheckCircle,
+  Download,
+  Eye,
+  Plug,
+  Puzzle,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 
 import type { MarketSkillEntry } from '../../services/desktop_api';
 
@@ -38,9 +49,14 @@ export const MarketplacePackageCard = memo<PackageCardProps>(({
   const { token } = theme.useToken();
   const packageType = entry.packageType || 'skill';
   const Icon = packageIcon(packageType);
+  const blocked = entry.installPolicy === 'blocked' || entry.revoked;
 
   return (
     <Flexbox
+      data-package-id={entry.identifier}
+      data-package-policy={entry.installPolicy || 'blocked'}
+      data-package-revoked={entry.revoked ? 'true' : 'false'}
+      data-testid={`marketplace-package-${entry.identifier}`}
       gap={token.marginSM}
       padding={token.paddingMD}
       style={{
@@ -113,18 +129,32 @@ export const MarketplacePackageCard = memo<PackageCardProps>(({
         <Tag style={{ margin: 0 }}>
           {t('agent.marketplace.version', { version: entry.version || '1' })}
         </Tag>
-        <Tag style={{ margin: 0 }}>
-          {entry.trustLevel || t('agent.marketplace.trust.community')}
+        <Tag
+          color={entry.signatureStatus === 'verified' ? 'success' : 'error'}
+          icon={entry.signatureStatus === 'verified'
+            ? <ShieldCheck size={10} />
+            : <ShieldAlert size={10} />}
+          style={{ margin: 0 }}
+        >
+          {entry.signatureStatus === 'verified'
+            ? entry.trustLevel || t('agent.marketplace.trust.unknown')
+            : t('agent.marketplace.signature.invalid')}
         </Tag>
         <Tag color={riskColor(entry.riskLevel)} style={{ margin: 0 }}>
           {t('agent.marketplace.risk', {
             risk: entry.riskLevel || t('agent.marketplace.risk.unknown'),
           })}
         </Tag>
+        {entry.revoked && (
+          <Tag color="error" style={{ margin: 0 }}>
+            {t('agent.marketplace.revoked')}
+          </Tag>
+        )}
       </Flexbox>
 
       <Flexbox horizontal justify="space-between">
         <Button
+          data-testid={`marketplace-detail-${entry.identifier}`}
           icon={<Eye size={12} />}
           size="small"
           onClick={() => onOpen(entry)}
@@ -138,6 +168,7 @@ export const MarketplacePackageCard = memo<PackageCardProps>(({
             </Tag>
             <Button
               aria-label={t('agent.marketplace.uninstall')}
+              data-testid={`marketplace-uninstall-${entry.identifier}`}
               icon={<Trash2 size={12} />}
               size="small"
               title={t('agent.marketplace.uninstall')}
@@ -149,8 +180,11 @@ export const MarketplacePackageCard = memo<PackageCardProps>(({
           </Flexbox>
         ) : (
           <Button
+            data-testid={`marketplace-install-${entry.identifier}`}
+            disabled={blocked}
             icon={<Download size={12} />}
             size="small"
+            title={blocked ? t('agent.marketplace.installBlocked') : undefined}
             type="primary"
             onClick={(event) => {
               event.stopPropagation();

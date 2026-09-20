@@ -8,14 +8,20 @@ source "$SCRIPT_DIR/env.sh"
 
 MODE="${1:-app}"
 
-# Derive a stable port offset from WORKTREE_ID so each worktree gets
-# deterministic, non-conflicting ports without explicit configuration.
-# Range: 0–99, giving base+offset within safe ephemeral territory.
-# In an Acceptance-owned runtime the caller already chose exact resources.
-if [[ "${PT_DESKTOP_E2E:-}" == "true" || "${PT_ACCEPTANCE_NATIVE_DEV:-0}" == "1" ]]; then
-  _wt_offset=0
+if [[ "${PT_MACHINE_LEASE_KIND:-}" == "local.slot" ]] \
+  && [[ "${PT_MACHINE_LEASE_RESOURCE_ID:-}" == "$PT_DEV_SLOT" ]]; then
+  node "$SCRIPT_DIR/machine-dev.mjs" verify-held \
+    --workspace-root "$PROJECT_ROOT" \
+    --resource-kind local.slot \
+    --resource-id "$PT_DEV_SLOT" >/dev/null
 else
-  _wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
+  exec node "$SCRIPT_DIR/machine-dev.mjs" lease \
+    --workspace-root "$PROJECT_ROOT" \
+    --env-repo "$PT_ENV_REPO" \
+    --resource-kind local.slot \
+    --resource-id "$PT_DEV_SLOT" \
+    --budget-seconds "${PT_LOCAL_SLOT_LEASE_BUDGET_SECONDS:-43200}" \
+    -- /bin/bash "$0" "$MODE"
 fi
 
 _caller_gw="${PT_GATEWAY_PORT:-}"
@@ -25,17 +31,13 @@ _caller_profile="${PT_PROFILE:-}"
 case "$MODE" in
   app)
     export PT_PROFILE="${_caller_profile:-${PT_DEV_PROFILE:-desktop}-app}"
-    _base_gw="${PT_DESKTOP_APP_GATEWAY_PORT:-3030}"
-    _base_web="${PT_DESKTOP_APP_WEB_PORT:-3210}"
-    export GATEWAY_PORT="${_caller_gw:-$((_base_gw + _wt_offset))}"
-    export WEB_PORT="${_caller_web:-$((_base_web + _wt_offset))}"
+    export GATEWAY_PORT="${_caller_gw:-${PT_DESKTOP_APP_GATEWAY_PORT}}"
+    export WEB_PORT="${_caller_web:-${PT_DESKTOP_APP_WEB_PORT}}"
     ;;
   web)
     export PT_PROFILE="${_caller_profile:-${PT_DEV_PROFILE:-desktop}-web}"
-    _base_gw="${PT_DESKTOP_WEB_GATEWAY_PORT:-3031}"
-    _base_web="${PT_DESKTOP_WEB_WEB_PORT:-3211}"
-    export GATEWAY_PORT="${_caller_gw:-$((_base_gw + _wt_offset))}"
-    export WEB_PORT="${_caller_web:-$((_base_web + _wt_offset))}"
+    export GATEWAY_PORT="${_caller_gw:-${PT_DESKTOP_WEB_GATEWAY_PORT}}"
+    export WEB_PORT="${_caller_web:-${PT_DESKTOP_WEB_WEB_PORT}}"
     ;;
   *)
     echo "[ERROR] Usage: desktop-dev.sh [app|web]"
@@ -48,6 +50,11 @@ export STATION_HEALTHCHECK_URL="${PT_STATION_HEALTH_URL:-$PEERS_STATION_URL/api/
 export PEERS_STATION_MODE="${PT_STATION_MODE:-local}"
 export STATION_PORT="${PT_STATION_PORT:-18080}"
 export PEERS_STORAGE_ROOT="${PEERS_STORAGE_ROOT:-$PT_DEV_DATA/desktop-$MODE}"
+
+node "$SCRIPT_DIR/machine-dev.mjs" check \
+  --workspace-root "$PROJECT_ROOT" \
+  --env-repo "$PT_ENV_REPO" \
+  --capabilities station.connect >/dev/null
 
 # Ensure Station is reachable (don't redeploy if already running)
 if [[ "${PT_STATION_MODE:-local}" == "remote" ]]; then

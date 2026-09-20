@@ -1,23 +1,35 @@
 package social
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/app"
+	hertzserver "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -179,11 +191,1018 @@ func (f *handlerFixture) withViewer(userID uint64) context.Context {
 	)
 }
 
+func (f *handlerFixture) seedMoment(
+	userID uint64,
+	request *model.CreatePostRequest,
+) *model.Post {
+	f.t.Helper()
+	ctx := f.withViewer(userID)
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		f.t.Fatalf("seed actor %d has no authenticated PTID", userID)
+	}
+	post, err := f.subserver.momentSvc.CreateMoment(ctx, request, actorPTID)
+	if err != nil {
+		f.t.Fatalf("seed moment: %v", err)
+	}
+	return post
+}
+
 func textPostReq(audience *model.Audience, text string) *model.CreatePostRequest {
 	return &model.CreatePostRequest{
 		Type:     model.PostType_TEXT,
 		Audience: audience,
 		Content:  &model.CreatePostRequest_Text{Text: &model.CreateTextPostRequest{Text: text}},
+	}
+}
+
+func TestPublicCreateRoutesRejectPrivateWrites(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	ctx := fixture.withViewer(1)
+
+	_, err := fixture.subserver.handleCreatePost(
+		ctx,
+		textPostReq(&model.Audience{Kind: model.Audience_FRIENDS}, "secret"),
+	)
+	if handlerErr, ok := err.(*server.HandlerError); !ok ||
+		handlerErr.Code != http.StatusBadRequest {
+		t.Fatalf("private Moment on public route error = %v", err)
+	}
+
+	parent := fixture.seedMoment(
+		1,
+		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
+	)
+	_, err = fixture.subserver.handleCreateComment(
+		ctx,
+		&model.CreateCommentRequest{
+			PostId:  parent.GetId(),
+			Content: "must use the private route",
+		},
+	)
+	if handlerErr, ok := err.(*server.HandlerError); !ok ||
+		handlerErr.Code != http.StatusBadRequest {
+		t.Fatalf("private Comment on public route error = %v", err)
+	}
+}
+
+func TestPrivateAndObjectRoutesPreserveOwnedSurfaces(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	handlers := fixture.subserver.Handlers()
+	expected := map[string]struct {
+		method server.Method
+		path   string
+	}{
+		"social-prepare-private-moment": {
+			method: server.POST,
+			path:   routeSocialPreparePrivateMoment,
+		},
+		"social-submit-private-moment": {
+			method: server.POST,
+			path:   routeSocialSubmitPrivateMoment,
+		},
+		"social-prepare-private-comment": {
+			method: server.POST,
+			path:   routeSocialPreparePrivateComment,
+		},
+		"social-submit-private-comment": {
+			method: server.POST,
+			path:   routeSocialSubmitPrivateComment,
+		},
+		"social-private-object-upload-begin": {
+			method: server.POST,
+			path:   routeSocialObjectUploadBegin,
+		},
+		"social-private-object-upload-status": {
+			method: server.GET,
+			path:   routeSocialObjectUploadStatus,
+		},
+		"social-private-object-upload-chunk": {
+			method: server.PUT,
+			path:   routeSocialObjectUploadChunk,
+		},
+		"social-private-object-upload-complete": {
+			method: server.POST,
+			path:   routeSocialObjectUploadComplete,
+		},
+		"social-private-object-upload-cancel": {
+			method: server.POST,
+			path:   routeSocialObjectUploadCancel,
+		},
+		"social-private-object-download": {
+			method: server.GET,
+			path:   routeSocialObjectDownload,
+		},
+	}
+	for name, contract := range expected {
+		handler := socialHandlerByName(t, handlers, name)
+		if handler.Method() != contract.method ||
+			handler.Path() != contract.path {
+			t.Fatalf(
+				"private route %q = %s %s, want %s %s",
+				name,
+				handler.Method(),
+				handler.Path(),
+				contract.method,
+				contract.path,
+			)
+		}
+	}
+}
+
+func TestPrivateAndObjectRoutesRegisterWithHertz(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	engine := hertzserver.New()
+	handler := func(context.Context, *app.RequestContext) {}
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("Hertz route registration panicked: %v", recovered)
+		}
+	}()
+	for _, route := range fixture.subserver.Handlers() {
+		switch route.Method() {
+		case server.GET:
+			engine.GET(route.Path(), handler)
+		case server.POST:
+			engine.POST(route.Path(), handler)
+		case server.PUT:
+			engine.PUT(route.Path(), handler)
+		case server.DELETE:
+			engine.DELETE(route.Path(), handler)
+		case server.PATCH:
+			engine.PATCH(route.Path(), handler)
+		default:
+			engine.Any(route.Path(), handler)
+		}
+	}
+}
+
+func TestPrivateContentRouteStackWritesProtobufAuthenticationErrors(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	fixture.subserver.commonWrapper = func(
+		next server.EndpointHandler,
+	) server.EndpointHandler {
+		return next
+	}
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
+	fixture.subserver.privateContentJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
+	_, token, err := provider.Authenticate(
+		context.Background(),
+		coreauth.Credentials{
+			SubjectID: "ptid:v1:actor:peers:p:alice:alice-fingerprint",
+			SessionID: "private-content-session",
+		},
+	)
+	if err != nil {
+		t.Fatalf("mint private-content token: %v", err)
+	}
+
+	routes := []struct {
+		name           string
+		method         string
+		path           string
+		requiresDevice bool
+	}{
+		{
+			name:           "social-prepare-private-moment",
+			method:         http.MethodPost,
+			path:           routeSocialPreparePrivateMoment,
+			requiresDevice: true,
+		},
+		{
+			name:   "social-private-object-download",
+			method: http.MethodGet,
+			path: "/api/v1/social/moments/objects/object-1" +
+				"?expected_descriptor_sha256=" +
+				strings.Repeat("0", 64),
+			requiresDevice: true,
+		},
+		{
+			name:   "social-list-recoverable-private-content",
+			method: http.MethodGet,
+			path:   routeSocialRecoverablePrivateContent + "?limit=1",
+		},
+	}
+	for _, testCase := range routes {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler := socialHandlerByName(
+				t,
+				fixture.subserver.Handlers(),
+				testCase.name,
+			)
+			testServer := serveSocialHandler(t, handler)
+			t.Cleanup(testServer.Close)
+
+			request, err := http.NewRequest(
+				testCase.method,
+				testServer.URL+testCase.path,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if testCase.requiresDevice {
+				request.Header.Set("X-Device-ID", "alice-device")
+			}
+			response, err := testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request private-content route: %v", err)
+			}
+			assertPrivateContentHTTPError(
+				t,
+				response,
+				http.StatusUnauthorized,
+				model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			)
+
+			if !testCase.requiresDevice {
+				return
+			}
+			request, err = http.NewRequest(
+				testCase.method,
+				testServer.URL+testCase.path,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+token.Value)
+			response, err = testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request private-content route without device: %v", err)
+			}
+			assertPrivateContentHTTPError(
+				t,
+				response,
+				http.StatusUnauthorized,
+				model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			)
+		})
+	}
+}
+
+func assertPrivateContentHTTPError(
+	t *testing.T,
+	response *http.Response,
+	status int,
+	code model.ErrorCode,
+) {
+	t.Helper()
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read private-content error body: %v", err)
+	}
+	errorResponse := &model.ErrorResponse{}
+	if err := proto.Unmarshal(body, errorResponse); err != nil {
+		t.Fatalf("decode private-content ErrorResponse: %v", err)
+	}
+	if response.StatusCode != status ||
+		response.Header.Get("Content-Type") !=
+			server.CanonicalProtobufContentType ||
+		errorResponse.GetCode() != code {
+		t.Fatalf(
+			"private-content response = status %d headers %v body %x",
+			response.StatusCode,
+			response.Header,
+			body,
+		)
+	}
+	deterministic, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		errorResponse,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, deterministic) {
+		t.Fatalf(
+			"private-content ErrorResponse is not deterministic: %x != %x",
+			body,
+			deterministic,
+		)
+	}
+}
+
+func TestPrivateObjectRawHandlerDoesNotTypeGenericNotFound(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	err := socialObjectRawHandler(func(
+		context.Context,
+		server.Request,
+		server.Response,
+	) error {
+		return server.NotFound("private object not found")
+	})(
+		context.Background(),
+		&socialHTTPRequest{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/objects/private-object",
+				nil,
+			),
+		},
+		&socialHTTPResponse{writer: recorder},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusNotFound ||
+		recorder.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf(
+			"generic raw not-found response = status %d headers %v body %s",
+			recorder.Code,
+			recorder.Header(),
+			recorder.Body.String(),
+		)
+	}
+	response := map[string]any{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode generic raw not-found response: %v", err)
+	}
+	if response["code"] != float64(http.StatusNotFound) {
+		t.Fatalf("generic raw not-found response = %v", response)
+	}
+}
+
+func TestPrivateObjectRawHandlerPreservesTypedDomainNotFound(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	err := socialObjectRawHandler(func(
+		context.Context,
+		server.Request,
+		server.Response,
+	) error {
+		return privateObjectDownloadHandlerError(
+			domain.NewPrivateContentError(
+				domain.PrivateContentNotFound,
+				"test.private_object.download",
+				"object_id",
+				"was not found",
+			),
+			false,
+		)
+	})(
+		context.Background(),
+		&socialHTTPRequest{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/objects/private-object",
+				nil,
+			),
+		},
+		&socialHTTPResponse{writer: recorder},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &model.ErrorResponse{}
+	if err := proto.Unmarshal(recorder.Body.Bytes(), response); err != nil {
+		t.Fatalf("decode typed raw not-found ErrorResponse: %v", err)
+	}
+	if recorder.Code != http.StatusNotFound ||
+		recorder.Header().Get("Content-Type") !=
+			server.CanonicalProtobufContentType ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"typed raw not-found response = status %d headers %v body %x",
+			recorder.Code,
+			recorder.Header(),
+			recorder.Body.Bytes(),
+		)
+	}
+}
+
+func TestPrivateObjectChunkBodyIsBoundedBeforeAllocation(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPut, "/", nil)
+	reader := bytes.NewReader(bytes.Repeat([]byte{0x7a}, 100))
+	streaming := &streamingSocialHTTPRequest{
+		socialHTTPRequest: &socialHTTPRequest{request: request},
+		stream:            reader,
+	}
+
+	if _, err := readBoundedSocialObjectBody(streaming, 4); err == nil {
+		t.Fatal("oversized streamed body was accepted")
+	}
+	if streaming.bodyCalled {
+		t.Fatal("bounded path fell back to the allocating Body method")
+	}
+	if reader.Len() != 95 {
+		t.Fatalf("bounded reader consumed %d bytes, want 5", 100-reader.Len())
+	}
+}
+
+func TestPrivateObjectStatusRequiresCanonicalQueryAndNoBody(t *testing.T) {
+	uploadID := strings.Repeat("a", 64)
+	path := "/api/v1/social/moments/objects/uploads/" + uploadID +
+		"?generation=1"
+	gotUploadID, generation, err := canonicalSocialObjectStatusRequest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotUploadID != uploadID || generation != 1 {
+		t.Fatalf("status identity = %q/%d", gotUploadID, generation)
+	}
+	for _, invalid := range []string{
+		"/api/v1/social/moments/objects/uploads/" + uploadID,
+		"/api/v1/social/moments/objects/uploads/" + uploadID + "?generation=01",
+		"/api/v1/social/moments/objects/uploads/" + uploadID + "?generation=%31",
+		"/api/v1/social/moments/objects/uploads/" + uploadID + "?generation=1&extra=1",
+		"/api/v1/social/moments/objects/uploads/" + uploadID + "?generation=1&generation=1",
+	} {
+		if _, _, err := canonicalSocialObjectStatusRequest(invalid); err == nil {
+			t.Fatalf("noncanonical status query was accepted: %s", invalid)
+		}
+	}
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if err := rejectSocialRequestBody(
+		&socialHTTPRequest{
+			request: request,
+			body:    []byte{0x01},
+		},
+		"body forbidden",
+	); err == nil {
+		t.Fatal("status request body was accepted")
+	}
+}
+
+func TestPrivateObjectChunkPathRejectsQuery(t *testing.T) {
+	if _, _, err := socialObjectChunkPath(
+		"/api/v1/social/moments/objects/uploads/upload-1/chunks/0?extra=1",
+	); err == nil {
+		t.Fatal("chunk query was silently discarded")
+	}
+}
+
+func TestMomentPathWrapperRejectsBodyAndQuery(t *testing.T) {
+	called := false
+	wrapped := socialMomentPathWrapper(func(
+		context.Context,
+		server.Request,
+		server.Response,
+	) error {
+		called = true
+		return nil
+	})
+	response := &socialHTTPResponse{writer: httptest.NewRecorder()}
+	for _, request := range []*socialHTTPRequest{
+		{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/1?post_id=1",
+				nil,
+			),
+		},
+		{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/1",
+				nil,
+			),
+			body: []byte(`{"post_id":"1"}`),
+		},
+	} {
+		if err := wrapped(
+			context.Background(),
+			request,
+			response,
+		); err == nil {
+			t.Fatalf("noncanonical Moment request was accepted: %s", request.Path())
+		}
+	}
+	if called {
+		t.Fatal("Moment handler ran for a noncanonical request")
+	}
+}
+
+func TestPrivateContentHandlerErrorProjectsStableProtobuf(t *testing.T) {
+	tests := []struct {
+		domainCode domain.PrivateContentErrorCode
+		status     int
+		stableCode model.ErrorCode
+	}{
+		{domain.PrivateContentInvalidArgument, http.StatusBadRequest, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentUnsupported, http.StatusBadRequest, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentUnauthorized, http.StatusForbidden, model.ErrorCode_ERROR_CODE_UNAUTHORIZED},
+		{domain.PrivateContentNotFound, http.StatusNotFound, model.ErrorCode_ERROR_CODE_POST_NOT_FOUND},
+		{domain.PrivateContentConflict, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentStalePlan, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentExpiredPlan, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentIntegrityFailed, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentDependency, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentIntegrationGap, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentInternal, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+	}
+	for _, testCase := range tests {
+		t.Run(string(testCase.domainCode), func(t *testing.T) {
+			handlerError, response := decodePrivateContentHandlerError(
+				t,
+				privateContentHandlerError(
+					domain.NewPrivateContentError(
+						testCase.domainCode,
+						"test.private_content",
+						"",
+						"bounded failure",
+					),
+				),
+			)
+			if handlerError.Code != testCase.status ||
+				response.GetCode() != testCase.stableCode {
+				t.Fatalf(
+					"projection = status %d code %s, want status %d code %s",
+					handlerError.Code,
+					response.GetCode(),
+					testCase.status,
+					testCase.stableCode,
+				)
+			}
+		})
+	}
+}
+
+type privateMomentReaderFunc func(
+	context.Context,
+	*model.ActorDeviceRef,
+	string,
+) (*privatecontentpb.GetMomentResourceResponse, error)
+
+func (f privateMomentReaderFunc) GetPrivateMoment(
+	ctx context.Context,
+	viewer *model.ActorDeviceRef,
+	postID string,
+) (*privatecontentpb.GetMomentResourceResponse, error) {
+	return f(ctx, viewer, postID)
+}
+
+func TestHiddenPrivateMomentReadReturnsTypedPostNotFound(t *testing.T) {
+	const (
+		postID    = "01K55XG0000000000000000000"
+		actorPTID = "ptid:v1:actor:peers:p:eve:eve-fingerprint"
+		deviceID  = "eve-device"
+	)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/social/moments/"+postID,
+		nil,
+	)
+	request.Header.Set("X-Device-ID", deviceID)
+	var observedViewer *model.ActorDeviceRef
+	reader := privateMomentReaderFunc(func(
+		_ context.Context,
+		viewer *model.ActorDeviceRef,
+		gotPostID string,
+	) (*privatecontentpb.GetMomentResourceResponse, error) {
+		observedViewer = viewer
+		if gotPostID != postID {
+			t.Fatalf("private reader post ID = %q, want %q", gotPostID, postID)
+		}
+		return nil, domain.NewPrivateContentError(
+			domain.PrivateContentNotFound,
+			"test.private_content.hidden_read",
+			"",
+			"resource is missing or hidden",
+		)
+	})
+	handler := serverwrapper.DeviceID()(func(
+		ctx context.Context,
+		_ server.Request,
+		_ server.Response,
+	) error {
+		_, err := (&subServer{}).handleGetMomentResourceWithReader(
+			context.WithValue(
+				ctx,
+				socialMomentPathContextKey{},
+				postID,
+			),
+			&privatecontentpb.GetMomentResourceRequest{PostId: postID},
+			reader,
+		)
+		return err
+	})
+	err := handler(
+		coreauth.WithSubject(
+			context.Background(),
+			&coreauth.Subject{ID: actorPTID},
+		),
+		&socialHTTPRequest{request: request},
+		&socialHTTPResponse{writer: httptest.NewRecorder()},
+	)
+	handlerError, response := decodePrivateContentHandlerError(t, err)
+	if handlerError.Code != http.StatusNotFound ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"hidden private read = status %d code %s",
+			handlerError.Code,
+			response.GetCode(),
+		)
+	}
+	if observedViewer.GetActor().GetPtid() != actorPTID ||
+		observedViewer.GetDeviceId() != deviceID {
+		t.Fatalf("hidden private read viewer = %+v", observedViewer)
+	}
+}
+
+func TestMomentResourceDoesNotParsePrivateIDAsNumericPrefix(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	public := fixture.seedMoment(
+		1,
+		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
+	)
+	_, err := fixture.subserver.handleGetMomentResource(
+		context.WithValue(
+			context.Background(),
+			socialMomentPathContextKey{},
+			public.GetId()+"ABC",
+		),
+		&privatecontentpb.GetMomentResourceRequest{
+			PostId: public.GetId() + "ABC",
+		},
+	)
+	handlerError, response := decodePrivateContentHandlerError(t, err)
+	if handlerError.Code != http.StatusNotFound ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"numeric-prefix private ID = status %d code %s",
+			handlerError.Code,
+			response.GetCode(),
+		)
+	}
+}
+
+func decodePrivateContentHandlerError(
+	t *testing.T,
+	err error,
+) (*server.HandlerError, *model.ErrorResponse) {
+	t.Helper()
+	handlerError, ok := err.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("private-content error type = %T, want *server.HandlerError", err)
+	}
+	if handlerError.ContentType != server.CanonicalProtobufContentType {
+		t.Fatalf(
+			"private-content content type = %q, want %q",
+			handlerError.ContentType,
+			server.CanonicalProtobufContentType,
+		)
+	}
+	response := &model.ErrorResponse{}
+	if err := proto.Unmarshal(handlerError.Body, response); err != nil {
+		t.Fatalf("decode private-content ErrorResponse: %v", err)
+	}
+	deterministic, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
+	if err != nil {
+		t.Fatalf("encode private-content ErrorResponse: %v", err)
+	}
+	if !bytes.Equal(handlerError.Body, deterministic) {
+		t.Fatalf(
+			"private-content ErrorResponse is not deterministic: %x != %x",
+			handlerError.Body,
+			deterministic,
+		)
+	}
+	return handlerError, response
+}
+
+func TestPublicMomentResourcePreservesGetPostResponseWire(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	public := fixture.seedMoment(
+		1,
+		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
+	)
+	response, err := fixture.subserver.handleGetMomentResource(
+		context.WithValue(
+			context.Background(),
+			socialMomentPathContextKey{},
+			public.GetId(),
+		),
+		&privatecontentpb.GetMomentResourceRequest{PostId: public.GetId()},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetResource().GetPublicContent().GetPost().GetId() !=
+		public.GetId() {
+		t.Fatalf("typed public resource = %+v", response.GetResource())
+	}
+	wire, err := proto.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := &model.GetPostResponse{}
+	if err := proto.Unmarshal(wire, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.GetPost().GetId() != public.GetId() ||
+		legacy.GetExplanation() == nil {
+		t.Fatalf("legacy GetPostResponse projection = %+v", legacy)
+	}
+}
+
+type socialHTTPRequest struct {
+	request *http.Request
+	body    []byte
+}
+
+func (r *socialHTTPRequest) Context() context.Context { return r.request.Context() }
+func (r *socialHTTPRequest) Header() map[string]string {
+	headers := make(map[string]string, len(r.request.Header))
+	for key, values := range r.request.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+func (r *socialHTTPRequest) Method() server.Method { return server.Method(r.request.Method) }
+func (r *socialHTTPRequest) Path() string          { return r.request.URL.RequestURI() }
+func (r *socialHTTPRequest) Body() []byte          { return r.body }
+
+type streamingSocialHTTPRequest struct {
+	*socialHTTPRequest
+	stream     io.Reader
+	bodyCalled bool
+}
+
+func (r *streamingSocialHTTPRequest) Body() []byte {
+	r.bodyCalled = true
+	return nil
+}
+
+func (r *streamingSocialHTTPRequest) BodyStream() io.Reader {
+	return r.stream
+}
+
+type socialHTTPResponse struct {
+	writer http.ResponseWriter
+	status int
+}
+
+func (r *socialHTTPResponse) Header() map[string]string {
+	headers := make(map[string]string, len(r.writer.Header()))
+	for key, values := range r.writer.Header() {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+func (r *socialHTTPResponse) SetHeader(key, value string) { r.writer.Header().Set(key, value) }
+func (r *socialHTTPResponse) Write(body []byte) (int, error) {
+	return r.writer.Write(body)
+}
+func (r *socialHTTPResponse) Flush() error { return nil }
+func (r *socialHTTPResponse) WriteHeader(status int) {
+	r.status = status
+	r.writer.WriteHeader(status)
+}
+func (r *socialHTTPResponse) Status() int { return r.status }
+
+type socialSessionValidator struct{}
+
+func (socialSessionValidator) CheckSessionValid(_ context.Context, sessionID string) (bool, string) {
+	if sessionID == "revoked-session" {
+		return false, "revoked"
+	}
+	return true, ""
+}
+
+func socialHandlerByName(t *testing.T, handlers []server.Handler, name string) server.Handler {
+	t.Helper()
+	for _, handler := range handlers {
+		if handler.Name() == name {
+			return handler
+		}
+	}
+	t.Fatalf("handler %q not found", name)
+	return nil
+}
+
+func serveSocialHandler(t *testing.T, handler server.Handler) *httptest.Server {
+	return serveSocialHandlerWithEndpoint(t, handler, handler.Handler())
+}
+
+func serveSocialHandlerWithEndpoint(
+	t *testing.T,
+	handler server.Handler,
+	endpoint server.EndpointHandler,
+) *httptest.Server {
+	t.Helper()
+	for _, wrapper := range handler.Wrappers() {
+		endpoint = wrapper(endpoint)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(w, "read request", http.StatusBadRequest)
+			return
+		}
+		response := &socialHTTPResponse{writer: w}
+		if err := endpoint(
+			request.Context(),
+			&socialHTTPRequest{request: request, body: body},
+			response,
+		); err != nil {
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+		}
+	}))
+}
+
+func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
+	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
+		return next
+	}
+	fixture.subserver.jwtWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireJWT(provider, socialSessionValidator{}),
+	)
+	fixture.subserver.privateContentOptionalJWTWrapper =
+		server.HTTPWrapperAdapter(
+			httpadapter.OptionalStructuredJWT(
+				provider,
+				int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+				true,
+				socialSessionValidator{},
+			),
+		)
+
+	publicPost, err := fixture.subserver.handleCreatePost(
+		fixture.withViewer(41),
+		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
+	)
+	if err != nil {
+		t.Fatalf("seed public post: %v", err)
+	}
+	_, validToken, err := provider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: publicPost.Post.AuthorPtid,
+		SessionID: "live-session",
+	})
+	if err != nil {
+		t.Fatalf("mint valid token: %v", err)
+	}
+	_, revokedToken, err := provider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: publicPost.Post.AuthorPtid,
+		SessionID: "revoked-session",
+	})
+	if err != nil {
+		t.Fatalf("mint revoked token: %v", err)
+	}
+	expiredProvider := coreauth.NewJWTProvider(testSigningKey, -time.Minute)
+	_, expiredToken, err := expiredProvider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: publicPost.Post.AuthorPtid,
+	})
+	if err != nil {
+		t.Fatalf("mint expired token: %v", err)
+	}
+
+	handler := socialHandlerByName(t, fixture.subserver.Handlers(), "social-get-moment")
+	testServer := serveSocialHandler(t, handler)
+	t.Cleanup(testServer.Close)
+
+	tests := []struct {
+		name          string
+		postID        string
+		authorization string
+		wantStatus    int
+	}{
+		{name: "absent credential reads public as anonymous", postID: publicPost.Post.Id, wantStatus: http.StatusOK},
+		{name: "valid credential projects canonical subject", postID: publicPost.Post.Id, authorization: "Bearer " + validToken.Value, wantStatus: http.StatusOK},
+		{name: "malformed credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Basic malformed", wantStatus: http.StatusUnauthorized},
+		{name: "invalid credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "expired credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer " + expiredToken.Value, wantStatus: http.StatusUnauthorized},
+		{name: "revoked credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer " + revokedToken.Value, wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequest(
+				http.MethodGet,
+				testServer.URL+"/api/v1/social/moments/"+test.postID,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+
+			response, err := testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request Social route: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != test.wantStatus {
+				body, _ := io.ReadAll(response.Body)
+				t.Fatalf("status = %d, want %d, body=%s", response.StatusCode, test.wantStatus, body)
+			}
+			if test.wantStatus == http.StatusUnauthorized {
+				assertPrivateContentHTTPError(
+					t,
+					response,
+					http.StatusUnauthorized,
+					model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+				)
+			}
+		})
+	}
+}
+
+func TestSocialPublicCapableCollectionsUseStrictOptionalJWT(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
+	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
+		return next
+	}
+	fixture.subserver.optionalJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.OptionalJWT(provider),
+	)
+
+	routes := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "social-get-timeline",
+			path: "/api/v1/social/timeline",
+		},
+		{
+			name: "social-get-user-posts",
+			path: "/api/v1/social/users/ptid:actor:public/posts",
+		},
+		{
+			name: "social-get-post-comments",
+			path: "/api/v1/social/posts/1/comments",
+		},
+		{
+			name: "social-get-moment-comments",
+			path: "/api/v1/social/moments/1/comments",
+		},
+	}
+
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			handler := socialHandlerByName(t, fixture.subserver.Handlers(), route.name)
+			testServer := serveSocialHandlerWithEndpoint(
+				t,
+				handler,
+				func(_ context.Context, _ server.Request, response server.Response) error {
+					response.WriteHeader(http.StatusNoContent)
+					return nil
+				},
+			)
+			t.Cleanup(testServer.Close)
+
+			for _, requestCase := range []struct {
+				name          string
+				authorization string
+				wantStatus    int
+			}{
+				{name: "anonymous", wantStatus: http.StatusNoContent},
+				{
+					name:          "supplied-invalid-credential",
+					authorization: "Bearer invalid-token",
+					wantStatus:    http.StatusUnauthorized,
+				},
+			} {
+				t.Run(requestCase.name, func(t *testing.T) {
+					request, err := http.NewRequest(
+						http.MethodGet,
+						testServer.URL+route.path,
+						nil,
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					request.Header.Set("Content-Type", "application/json")
+					if requestCase.authorization != "" {
+						request.Header.Set("Authorization", requestCase.authorization)
+					}
+
+					response, err := testServer.Client().Do(request)
+					if err != nil {
+						t.Fatalf("request Social route: %v", err)
+					}
+					defer response.Body.Close()
+					if response.StatusCode != requestCase.wantStatus {
+						body, _ := io.ReadAll(response.Body)
+						t.Fatalf(
+							"status = %d, want %d, body=%s",
+							response.StatusCode,
+							requestCase.wantStatus,
+							body,
+						)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -247,16 +1266,13 @@ func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
 	// The visibility gate should treat that exactly like "post not
 	// found" — a 404 rather than 403, so we don't leak existence.
 	f := newHandlerFixture(t)
-	created, err := f.subserver.handleCreatePost(
-		f.withViewer(1),
+	created := f.seedMoment(
+		1,
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
 	)
-	if err != nil {
-		t.Fatalf("seed create: %v", err)
-	}
-	postID := created.Post.Id
+	postID := created.Id
 
-	_, err = f.subserver.handleReact(f.withViewer(2), &model.ReactToPostRequest{
+	_, err := f.subserver.handleReact(f.withViewer(2), &model.ReactToPostRequest{
 		PostId: postID,
 		Kind:   model.ReactionKind_REACTION_LIKE,
 	})
@@ -301,17 +1317,14 @@ func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
 
 func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 	f := newHandlerFixture(t)
-	created, err := f.subserver.handleCreatePost(
-		f.withViewer(7),
+	created := f.seedMoment(
+		7,
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "secret"),
 	)
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
 
 	// Viewer 9 (anonymous-ish — distinct from 7) attempts to list comments.
-	_, err = f.subserver.handleGetPostComments(f.withViewer(9), &model.GetCommentsRequest{
-		PostId: created.Post.Id,
+	_, err := f.subserver.handleGetPostComments(f.withViewer(9), &model.GetCommentsRequest{
+		PostId: created.Id,
 		Limit:  10,
 	})
 	if err == nil {
@@ -353,16 +1366,13 @@ func TestHandler_Repost_AcceptsPublicSource(t *testing.T) {
 
 func TestHandler_Repost_RejectsUnreadableSource(t *testing.T) {
 	f := newHandlerFixture(t)
-	src, err := f.subserver.handleCreatePost(
-		f.withViewer(1),
+	src := f.seedMoment(
+		1,
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
 	)
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
 	commentText := "nope"
 	resp, err := f.subserver.handleRepostPost(f.withViewer(2), &model.RepostRequest{
-		PostId:  src.Post.Id,
+		PostId:  src.Id,
 		Comment: &commentText,
 	})
 	if err == nil {

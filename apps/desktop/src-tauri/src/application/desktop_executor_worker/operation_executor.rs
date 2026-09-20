@@ -7,8 +7,7 @@ use prost_types::Timestamp;
 pub trait LocalOperationExecutor {
     fn execute(
         &self,
-        operation_kind: &str,
-        bounded_arguments: &[u8],
+        operation: &CapabilityOperation,
         external_idempotency_key: Option<&str>,
     ) -> Result<String, CapabilityOperationError>;
 
@@ -59,18 +58,15 @@ impl<'a> FencedOperationExecutor<'a> {
         ))?;
         let idempotency_key = (!operation.external_idempotency_key.is_empty())
             .then_some(operation.external_idempotency_key.as_str());
-        let (terminal_status, result_ref, error) = match self.executor.execute(
-            &operation.operation_kind,
-            &operation.bounded_arguments,
-            idempotency_key,
-        ) {
-            Ok(result_ref) => (CapabilityOperationStatus::Succeeded, result_ref, None),
-            Err(error) => (
-                CapabilityOperationStatus::Failed,
-                String::new(),
-                Some(error),
-            ),
-        };
+        let (terminal_status, result_ref, error) =
+            match self.executor.execute(&operation, idempotency_key) {
+                Ok(result_ref) => (CapabilityOperationStatus::Succeeded, result_ref, None),
+                Err(error) => (
+                    CapabilityOperationStatus::Failed,
+                    String::new(),
+                    Some(error),
+                ),
+            };
         let settling = self.reporter.report(self.business_event(
             &running,
             terminal_status,
@@ -265,8 +261,7 @@ mod tests {
     impl LocalOperationExecutor for Executor {
         fn execute(
             &self,
-            _operation_kind: &str,
-            _bounded_arguments: &[u8],
+            _operation: &CapabilityOperation,
             _external_idempotency_key: Option<&str>,
         ) -> Result<String, CapabilityOperationError> {
             Ok("result-ref".to_string())

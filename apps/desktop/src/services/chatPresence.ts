@@ -1,7 +1,16 @@
 export type ChatPresenceTag = 'p2p' | 'relay' | 'same-station' | 'online' | 'offline';
 
+export function resolvePresenceOnline(state: number | string): boolean | null {
+  if (state === 1) return true;
+  if (state === 2) return false;
+  const normalized = String(state).trim().toUpperCase();
+  if (normalized === 'PRESENCE_STATE_ONLINE' || normalized === 'ONLINE') return true;
+  if (normalized === 'PRESENCE_STATE_OFFLINE' || normalized === 'OFFLINE') return false;
+  return null;
+}
+
 export function isPresenceOnline(state: number | string): boolean {
-  return state === 1 || state === 'PRESENCE_STATE_ONLINE' || state === 'ONLINE';
+  return resolvePresenceOnline(state) === true;
 }
 
 export function resolveChatPresenceTag(input: {

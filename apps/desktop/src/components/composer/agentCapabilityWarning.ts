@@ -1,7 +1,6 @@
-import type { AvailableModel } from '../../services/desktop_api';
-export type AgentCapabilityWarningKind =
-  | 'model_unavailable'
-  | 'image_input_unsupported';
+import type { CapabilityReadinessSnapshot } from '../../gen/proto/domain/agent/capability_pb';
+
+export type AgentCapabilityWarningKind = 'image_input_unsupported';
 
 export interface AgentCapabilityWarning {
   kind: AgentCapabilityWarningKind;
@@ -10,20 +9,12 @@ export interface AgentCapabilityWarning {
 }
 
 export function selectAgentCapabilityWarning(
-  model: AvailableModel | undefined,
+  readiness: CapabilityReadinessSnapshot | undefined,
   attachments: ReadonlyArray<{ mime_type: string }>,
 ): AgentCapabilityWarning | null {
-  if (model && !model.enabled) {
-    return {
-      kind: 'model_unavailable',
-      messageKey: 'chat.input.capabilityWarning.modelUnavailable',
-      blocking: true,
-    };
-  }
-
   const hasImage = attachments.some((attachment) =>
     attachment.mime_type.toLowerCase().startsWith('image/'));
-  if (hasImage && model?.vision === false) {
+  if (hasImage && readiness?.modelCapabilities?.input?.image === false) {
     return {
       kind: 'image_input_unsupported',
       messageKey: 'chat.input.capabilityWarning.imageUnsupported',

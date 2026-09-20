@@ -12,6 +12,7 @@ import (
 )
 
 const rollupInsertBatchSize = 500
+const rollupWindowDuration = 5 * time.Minute
 
 type rawEventModel struct {
 	ID            uint       `gorm:"column:id;primaryKey"`
@@ -105,15 +106,87 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorPTID, sessionID s
 		if err := lockActorTelemetryRollups(ctx, tx, actorPTID); err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
+		newRows, err := telemetryRowsMissingFromStore(ctx, tx, actorPTID, rows)
+		if err != nil {
+			return err
+		}
+		if len(newRows) == 0 {
+			return nil
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			CreateInBatches(&newRows, rollupInsertBatchSize).Error; err != nil {
 			return fmt.Errorf("persist frontend telemetry events: %w", err)
 		}
-		return s.rebuildRollups(ctx, tx, actorPTID)
+		return s.rebuildRollupWindows(
+			ctx,
+			tx,
+			actorPTID,
+			affectedRollupWindows(newRows),
+		)
 	})
 	if err != nil {
 		return ingestResult{}, err
 	}
 	return ingestResult{Accepted: len(rows), Rejected: len(rejected), RejectedReasons: rejected}, nil
+}
+
+func telemetryRowsMissingFromStore(
+	ctx context.Context,
+	tx *gorm.DB,
+	actorPTID string,
+	rows []rawEventModel,
+) ([]rawEventModel, error) {
+	uniqueRows := make([]rawEventModel, 0, len(rows))
+	eventIDs := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if _, duplicate := seen[row.EventID]; duplicate {
+			continue
+		}
+		seen[row.EventID] = struct{}{}
+		uniqueRows = append(uniqueRows, row)
+		eventIDs = append(eventIDs, row.EventID)
+	}
+
+	var existingIDs []string
+	if err := tx.WithContext(ctx).
+		Model(&rawEventModel{}).
+		Where("actor_ptid = ? AND event_id IN ?", actorPTID, eventIDs).
+		Pluck("event_id", &existingIDs).Error; err != nil {
+		return nil, fmt.Errorf("load existing frontend telemetry event ids: %w", err)
+	}
+	existing := make(map[string]struct{}, len(existingIDs))
+	for _, eventID := range existingIDs {
+		existing[eventID] = struct{}{}
+	}
+
+	missing := make([]rawEventModel, 0, len(uniqueRows)-len(existing))
+	for _, row := range uniqueRows {
+		if _, found := existing[row.EventID]; !found {
+			missing = append(missing, row)
+		}
+	}
+	return missing, nil
+}
+
+func affectedRollupWindows(rows []rawEventModel) []time.Time {
+	byUnixMilli := make(map[int64]time.Time, len(rows))
+	for _, row := range rows {
+		window := eventWindow(row.TS)
+		byUnixMilli[window.UnixMilli()] = window
+	}
+	unixMillis := make([]int64, 0, len(byUnixMilli))
+	for unixMilli := range byUnixMilli {
+		unixMillis = append(unixMillis, unixMilli)
+	}
+	sort.Slice(unixMillis, func(i, j int) bool {
+		return unixMillis[i] < unixMillis[j]
+	})
+	windows := make([]time.Time, 0, len(unixMillis))
+	for _, unixMilli := range unixMillis {
+		windows = append(windows, byUnixMilli[unixMilli])
+	}
+	return windows
 }
 
 func lockActorTelemetryRollups(ctx context.Context, tx *gorm.DB, actorPTID string) error {
@@ -187,16 +260,40 @@ func (s *rawEventStore) QueryRollups(ctx context.Context, actorPTID string, req 
 	return rows, nil
 }
 
-func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorPTID string) error {
-	if err := tx.WithContext(ctx).Where("actor_ptid = ?", actorPTID).Delete(&rollupModel{}).Error; err != nil {
-		return fmt.Errorf("clear frontend telemetry rollups: %w", err)
+func (s *rawEventStore) rebuildRollupWindows(
+	ctx context.Context,
+	tx *gorm.DB,
+	actorPTID string,
+	windows []time.Time,
+) error {
+	for _, window := range windows {
+		var rows []rawEventModel
+		if err := tx.WithContext(ctx).
+			Where(
+				"actor_ptid = ? AND ts >= ? AND ts < ?",
+				actorPTID,
+				float64(window.UnixMilli()),
+				float64(window.Add(rollupWindowDuration).UnixMilli()),
+			).
+			Find(&rows).Error; err != nil {
+			return fmt.Errorf(
+				"load frontend telemetry events for rollup window: %w",
+				err,
+			)
+		}
+		if err := persistRollups(ctx, tx, actorPTID, rows); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
-	var rows []rawEventModel
-	if err := tx.WithContext(ctx).Where("actor_ptid = ?", actorPTID).Find(&rows).Error; err != nil {
-		return fmt.Errorf("load frontend telemetry events for rollup: %w", err)
-	}
-
+func persistRollups(
+	ctx context.Context,
+	tx *gorm.DB,
+	actorPTID string,
+	rows []rawEventModel,
+) error {
 	type key struct {
 		runtime string
 		module  string
@@ -253,7 +350,40 @@ func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorPT
 	if len(rollups) == 0 {
 		return nil
 	}
-	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rollups, rollupInsertBatchSize).Error; err != nil {
+	sort.Slice(rollups, func(i, j int) bool {
+		left := rollups[i]
+		right := rollups[j]
+		if left.WindowStart != right.WindowStart {
+			return left.WindowStart.Before(right.WindowStart)
+		}
+		if left.Runtime != right.Runtime {
+			return left.Runtime < right.Runtime
+		}
+		if left.Module != right.Module {
+			return left.Module < right.Module
+		}
+		return left.Kind < right.Kind
+	})
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "actor_ptid"},
+			{Name: "runtime"},
+			{Name: "module"},
+			{Name: "kind"},
+			{Name: "window_start"},
+			{Name: "window_minutes"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"count",
+			"duration_count",
+			"p50_duration_ms",
+			"p95_duration_ms",
+			"max_duration_ms",
+			"last_observed_at",
+			"last_interaction_id",
+			"updated_at",
+		}),
+	}).CreateInBatches(&rollups, rollupInsertBatchSize).Error; err != nil {
 		return fmt.Errorf("persist frontend telemetry rollups: %w", err)
 	}
 	return nil
@@ -277,7 +407,7 @@ func eventWindow(ts float64) time.Time {
 	if ts <= 0 {
 		return time.Now().UTC().Truncate(5 * time.Minute)
 	}
-	return time.UnixMilli(int64(ts)).UTC().Truncate(5 * time.Minute)
+	return time.UnixMilli(int64(ts)).UTC().Truncate(rollupWindowDuration)
 }
 
 func durationStats(values []float64) (*float64, *float64, *float64) {

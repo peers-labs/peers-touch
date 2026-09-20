@@ -71,6 +71,8 @@ Gate.
 | Direct create and list | `/conversation/direct`, `/conversation/list` | Conversation |
 | Command prepare and submit | `/conversation/command/prepare`, `/conversation/command` | Conversation |
 | Group and membership prepare | `/conversation/group/prepare`, `/conversation/membership/prepare` | Conversation |
+| Target-member administration | `/conversation/member/update` | Conversation |
+| Atomic ownership transfer | `/conversation/ownership/transfer` | Conversation |
 | Read, typing, and delivery facts | `/conversation/read-cursor`, `/conversation/typing`, `/conversation/delivery/receipt` | Conversation and Conversation Delivery |
 | Attachment transfer | `/conversation/attachments/*` | Conversation |
 | Device identity | `/device/*` | Actor Identity |
@@ -83,6 +85,23 @@ Gate.
 Exact retired identifiers are maintained only in
 `station-api-capabilities.yaml` and the regression fixtures that prove their
 absence. They are not part of the public architecture vocabulary.
+
+AO-D10 keeps target-member administration separate from actor-local settings:
+
+```text
+/conversation/member/update
+  -> role member/admin and authority mute/deadline for a target member
+
+/conversation/ownership/transfer
+  -> one atomic old-owner/new-owner authority transition
+
+/conversation/member/settings
+  -> authenticated actor's local nickname/notification/background preferences
+```
+
+The first two routes require exact command identity plus authority
+sequence/hash/epoch preconditions. Their committed event and complete
+post-state are the only Federation follower and device projection input.
 
 ## 4. Pre-Consolidation-To-Target Truth Mapping
 

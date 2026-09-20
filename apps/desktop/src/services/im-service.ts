@@ -264,11 +264,16 @@ const keyPackageService: KeyPackageServiceContract = {
 const deviceService: DeviceServiceContract = {
   async list() {
     const resp = await cmd<void, { devices: JsonValue[] }>('device_list')
-    return (resp.devices ?? []).map(device => fromJson(ActorDeviceSchema, device))
+    return (resp.devices ?? []).map(device =>
+      fromJson(ActorDeviceSchema, device),
+    )
   },
 
-  async revoke(deviceId) {
-    await cmd('device_revoke', { device_id: deviceId })
+  async revoke(deviceId, observedProfileVersion) {
+    await cmd('device_revoke', {
+      device_id: deviceId,
+      observed_profile_version: Number(observedProfileVersion),
+    })
   },
 }
 

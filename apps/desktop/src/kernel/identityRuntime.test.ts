@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     session,
     accountSwitch: vi.fn(),
     authValidateToken: vi.fn(),
+    accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
     loginWithPassword: vi.fn(),
     logout: vi.fn(),
@@ -122,7 +123,7 @@ vi.mock('../services/desktop_api', () => ({
     accountSwitch: mocks.accountSwitch,
     authValidateToken: mocks.authValidateToken,
     syncUserProfile: vi.fn(async () => ({ name: 'New', email: '', avatar_url: '' })),
-    accountListRestorable: vi.fn(async () => []),
+    accountListRestorable: mocks.accountListRestorable,
   },
   AuthCommandException: class AuthCommandException extends Error {},
   onSessionRevoked: vi.fn(),
@@ -172,6 +173,7 @@ describe('identityRuntime account switch ordering', () => {
       mocks.session.authenticated = true;
     });
     mocks.logout.mockResolvedValue(undefined);
+    mocks.accountListRestorable.mockResolvedValue([]);
     mocks.resetSession.mockImplementation(() => {
       mocks.session.currentUser = null;
       mocks.session.authenticated = false;
@@ -256,5 +258,34 @@ describe('identityRuntime account switch ordering', () => {
       reason: 'logout',
     });
     expect(identityRuntime.getSnapshot().lifecycle.authenticated).toBe(false);
+  });
+
+  it('preserves a native restorable session while the renderer is unauthenticated', async () => {
+    mocks.session.authenticated = false;
+    mocks.session.currentUser = null;
+    mocks.accountListRestorable.mockResolvedValue([{
+      id: 'station:local:password:alice',
+      provider: 'password',
+      provider_user_id: 'ptid:person:alice',
+      name: 'Alice',
+      email: 'alice@p.t',
+      avatar_url: '',
+      avatar_local_path: '',
+      profile_url: '',
+      created_at: 1,
+      last_login_at: 2,
+      has_pin: false,
+      has_session: true,
+    }]);
+
+    await identityRuntime.logout();
+
+    expect(identityRuntime.getSnapshot().lifecycle.knownAccounts).toEqual([
+      expect.objectContaining({
+        accountId: 'station:local:password:alice',
+        hasPin: false,
+        hasSession: true,
+      }),
+    ]);
   });
 });

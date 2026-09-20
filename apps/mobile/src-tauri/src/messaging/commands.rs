@@ -915,7 +915,8 @@ fn wake_after_durable_prepare(
     station_peer_id: &str,
     actor_ptid: &str,
 ) {
-    if let Err(error) = runtime.wake(station_peer_id, actor_ptid) {
+    let wake_result = runtime.wake(station_peer_id, actor_ptid);
+    if let Err(error) = wake_result {
         log::warn!("mobile messaging worker wake failed after durable preparation: {error}");
     }
 }

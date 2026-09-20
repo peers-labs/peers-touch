@@ -14,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/gorm"
 )
 
@@ -301,6 +302,61 @@ func TestConcurrentAgentUpdatesAllowOneCASWinner(t *testing.T) {
 	}
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("concurrent CAS results: successes=%d conflicts=%d", successes, conflicts)
+	}
+}
+
+func TestAgentDeleteRejectsActiveEvaluationRuns(t *testing.T) {
+	statuses := []model.EvaluationRunStatus{
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_DRAFT,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PENDING,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_RUNNING,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCEL_INTENT_COMMITTED,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLING,
+	}
+	for _, status := range statuses {
+		status := status
+		t.Run(status.String(), func(t *testing.T) {
+			db := openAgentServiceTestDB(
+				t,
+				"agent_delete_evaluation_"+strconv.Itoa(int(status)),
+			)
+			if err := persistence.MigrateEvaluationAggregate(db); err != nil {
+				t.Fatalf("migrate Evaluation aggregate: %v", err)
+			}
+			agent := seedAgentServiceTestAgent(t, db)
+			run := seedEvaluationRun(
+				t,
+				db,
+				"run-delete-dependency",
+				1,
+				status,
+				time.Now().UTC(),
+			)
+			if err := db.Model(run).Update(
+				"ptid",
+				agent.OwnerActorPTID,
+			).Error; err != nil {
+				t.Fatalf("bind Evaluation run to Agent owner: %v", err)
+			}
+
+			err := NewAgentService().DeleteAgent(
+				context.Background(),
+				agent.OwnerActorPTID,
+				agent.ID,
+			)
+			if !isAgentServiceError(err, errcode.AgentActiveDependency) {
+				t.Fatalf("delete with %s Evaluation run error = %v", status, err)
+			}
+			var count int64
+			if err := db.Model(&persistence.Agent{}).
+				Where("id = ?", agent.ID).
+				Count(&count).Error; err != nil {
+				t.Fatalf("count retained Agent: %v", err)
+			}
+			if count != 1 {
+				t.Fatalf("Agent was deleted with active Evaluation run: count=%d", count)
+			}
+		})
 	}
 }
 

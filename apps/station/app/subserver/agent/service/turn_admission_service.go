@@ -44,6 +44,13 @@ type PendingTurnConversation struct {
 	ConversationID string
 }
 
+type NewConversationAdmission struct {
+	ConversationID string
+	Title          string
+	ProviderID     string
+	ModelName      string
+}
+
 func NewTurnAdmissionService() *TurnAdmissionService {
 	return &TurnAdmissionService{
 		now: func() time.Time { return time.Now().UTC() },
@@ -68,6 +75,139 @@ func (s *TurnAdmissionService) SetRequestPreflight(
 	preflight func(context.Context, string, *model.ExecuteTurnRequest) error,
 ) {
 	s.requestPreflight = preflight
+}
+
+// AdmitNewConversation atomically creates a Conversation and its first
+// admitted Turn. The caller must provide a deterministic conversation ID so a
+// repeated actor-scoped Home command can recover the original result.
+func (s *TurnAdmissionService) AdmitNewConversation(
+	ctx context.Context,
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	spec NewConversationAdmission,
+	commandPayloadHash string,
+) (*model.TurnAdmission, bool, error) {
+	actorID = strings.TrimSpace(actorID)
+	spec.ConversationID = strings.TrimSpace(spec.ConversationID)
+	if actorID == "" || request == nil ||
+		spec.ConversationID == "" ||
+		strings.TrimSpace(request.GetAgentId()) == "" ||
+		strings.TrimSpace(request.GetUserInput()) == "" ||
+		strings.TrimSpace(request.GetClientIdempotencyKey()) == "" {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"actor, conversation_id, agent_id, user_input, and client_idempotency_key are required",
+			nil,
+		)
+	}
+	request.ConversationId = spec.ConversationID
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		return nil, false, admissionInternal("encode first turn admission payload", err)
+	}
+	payloadHash := sha256BytesHex(payload)
+	if strings.TrimSpace(commandPayloadHash) != "" {
+		payloadHash = strings.TrimSpace(commandPayloadHash)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if replay, found, replayErr := findNewConversationAdmissionReplay(
+		db.WithContext(ctx),
+		actorID,
+		request,
+		payloadHash,
+	); replayErr != nil || found {
+		return replay, false, replayErr
+	}
+	if s.requestPreflight == nil {
+		return nil, false, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"turn admission preflight is unavailable",
+			nil,
+		)
+	}
+	if err := s.requestPreflight(ctx, actorID, request); err != nil {
+		return nil, false, err
+	}
+
+	var admission *model.TurnAdmission
+	created := false
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		replay, found, replayErr := findNewConversationAdmissionReplay(
+			tx,
+			actorID,
+			request,
+			payloadHash,
+		)
+		if replayErr != nil || found {
+			admission = replay
+			return replayErr
+		}
+
+		now := s.now()
+		title := strings.TrimSpace(spec.Title)
+		if title == "" {
+			title = "New Chat"
+		}
+		conversation := &persistence.Conversation{
+			ID:         spec.ConversationID,
+			AgentID:    strings.TrimSpace(request.GetAgentId()),
+			ActorPTID:  actorID,
+			Title:      title,
+			ProviderID: strings.TrimSpace(spec.ProviderID),
+			Status:     string(domain.ConversationStatusActive),
+			Version:    2,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if modelName := strings.TrimSpace(spec.ModelName); modelName != "" {
+			conversation.ModelName = &modelName
+		}
+		if err := tx.Create(conversation).Error; err != nil {
+			return admissionInternal("create admitted Home conversation", err)
+		}
+
+		key := request.GetClientIdempotencyKey()
+		turn := &persistence.AgentTurn{
+			ID:                   NewTurnID(),
+			ConversationID:       conversation.ID,
+			AgentID:              request.GetAgentId(),
+			ClientIdempotencyKey: &key,
+			AdmissionPayloadHash: payloadHash,
+			UserInput:            stringPointerValue(request.GetUserInput()),
+			Status:               string(domain.TurnStatusRunning),
+			StartedAt:            now,
+		}
+		if err := tx.Create(turn).Error; err != nil {
+			return admissionInternal("create admitted Home turn", err)
+		}
+		admission = &model.TurnAdmission{
+			Status:              model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED,
+			TurnId:              turn.ID,
+			QueueCapacity:       turnQueueCapacity,
+			ConversationVersion: conversation.Version,
+		}
+		created = true
+		return nil
+	})
+	if err != nil {
+		replay, found, replayErr := findNewConversationAdmissionReplay(
+			db.WithContext(ctx),
+			actorID,
+			request,
+			payloadHash,
+		)
+		if replayErr == nil && found {
+			return replay, false, nil
+		}
+		return nil, false, err
+	}
+	return admission, created, nil
 }
 
 func (s *TurnAdmissionService) Admit(
@@ -219,12 +359,7 @@ func (s *TurnAdmissionService) Admit(
 			return admissionInternal("count queued turns", countErr)
 		}
 		if pendingCount >= int64(turnQueueCapacity) {
-			return errcode.New(
-				errcode.AgentQueueFull,
-				http.StatusTooManyRequests,
-				"agent.errors.queueFull",
-				nil,
-			)
+			return errcode.NewQueueFull(conversation.ID, turnQueueCapacity)
 		}
 		var maxSequence uint64
 		if sequenceErr := tx.Model(&persistence.TurnQueueEntry{}).
@@ -562,6 +697,45 @@ func (s *TurnAdmissionService) PendingConversations(
 		})
 	}
 	return result, nil
+}
+
+func findNewConversationAdmissionReplay(
+	db *gorm.DB,
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	payloadHash string,
+) (*model.TurnAdmission, bool, error) {
+	var conversation persistence.Conversation
+	err := db.Where("id = ?", request.GetConversationId()).First(&conversation).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, admissionInternal("load Home conversation replay", err)
+	}
+	if conversation.ActorPTID != actorID ||
+		conversation.AgentID != strings.TrimSpace(request.GetAgentId()) {
+		return nil, true, errcode.NewAdmissionDuplicateConflict(
+			request.GetClientIdempotencyKey(),
+			conversation.ID,
+		)
+	}
+	replay, replayErr := findAdmissionReplay(
+		db,
+		&conversation,
+		request.GetClientIdempotencyKey(),
+		payloadHash,
+	)
+	if replayErr != nil {
+		return nil, true, replayErr
+	}
+	if replay == nil {
+		return nil, true, errcode.NewAdmissionDuplicateConflict(
+			request.GetClientIdempotencyKey(),
+			conversation.ID,
+		)
+	}
+	return replay, true, nil
 }
 
 func findAdmissionReplay(

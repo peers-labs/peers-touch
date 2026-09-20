@@ -443,6 +443,7 @@ type StreamTurnEventsRequest struct {
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	TurnId         string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
 	AfterSequence  uint64                 `protobuf:"varint,3,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	AttemptId      string                 `protobuf:"bytes,4,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -496,6 +497,13 @@ func (x *StreamTurnEventsRequest) GetAfterSequence() uint64 {
 		return x.AfterSequence
 	}
 	return 0
+}
+
+func (x *StreamTurnEventsRequest) GetAttemptId() string {
+	if x != nil {
+		return x.AttemptId
+	}
+	return ""
 }
 
 type TurnSnapshot struct {
@@ -1516,11 +1524,13 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\tcancelled\x18\x15 \x01(\v2,.peers_touch.model.agent.v1.CancelledPayloadH\x00R\tcancelled\x12F\n" +
 	"\bsnapshot\x18\x16 \x01(\v2(.peers_touch.model.agent.v1.TurnSnapshotH\x00R\bsnapshot\x12S\n" +
 	"\fcatchup_done\x18\x17 \x01(\v2..peers_touch.model.agent.v1.CatchupDonePayloadH\x00R\vcatchupDoneB\t\n" +
-	"\apayload\"\x82\x01\n" +
+	"\apayload\"\xa1\x01\n" +
 	"\x17StreamTurnEventsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12%\n" +
-	"\x0eafter_sequence\x18\x03 \x01(\x04R\rafterSequence\"\xc8\x02\n" +
+	"\x0eafter_sequence\x18\x03 \x01(\x04R\rafterSequence\x12\x1d\n" +
+	"\n" +
+	"attempt_id\x18\x04 \x01(\tR\tattemptId\"\xc8\x02\n" +
 	"\fTurnSnapshot\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x19\n" +

@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { Audience_Kind } from '../gen/proto/domain/social/post_pb';
 import type {
   Audience,
   FeedObjectExplanation,
@@ -32,12 +33,13 @@ import {
   type MomentDraft,
   type TimelineSort,
 } from '../services/social_api';
-import { sealMomentDraftAudienceKeys } from '../services/momentAudienceKeys';
-import { currentAuthenticatedActorPtid } from './session';
+import type { PrivateMomentLocalFileIntent } from '../services/privateMomentsNative';
+import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
+let storeGeneration = 0;
 
 // All proto-shaped types in this store come straight from the
 // `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
@@ -68,6 +70,15 @@ export interface MomentFeedState {
   loadedAt?: number;
   /** Active sort for explore-style feeds; HOME stays on `recent`. */
   sort?: TimelineSort;
+}
+
+export interface MomentComposerDraft {
+  draftId: string;
+  revision: number;
+  text: string;
+  audience: Audience;
+  mentions: Mention[];
+  files: PrivateMomentLocalFileIntent[];
 }
 
 const emptyFeed = (): MomentFeedState => ({
@@ -114,11 +125,7 @@ interface MomentsState {
   circleMembers: Record<string, CircleMember[]>;
 
   // Composer draft — kept in store so navigation away keeps state.
-  composerDraft: {
-    text: string;
-    audience: Audience;
-    mentions: Mention[];
-  } | null;
+  composerDraft: MomentComposerDraft | null;
 
   // ── Actions ─────────────────────────────────────────────────────
 
@@ -251,6 +258,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   loadFeed: async (kind, options) => {
+    const generation = storeGeneration;
     const refresh = options?.refresh ?? false;
     const sort = options?.sort ?? get().feeds[kind].sort ?? 'recent';
     const current = get().feeds[kind];
@@ -263,6 +271,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const cursor = refresh ? '' : current.nextCursor;
     try {
       const resp = await socialGetTimeline(wireKind, cursor || undefined, undefined, sort);
+      if (generation !== storeGeneration) return;
       set((s) => {
         const merged = ingestPosts(s, resp.posts, resp.explanations);
         const prevIds = refresh ? [] : s.feeds[kind].postIds;
@@ -287,6 +296,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'loadFeed failed', { kind, err: String(err) });
       set((s) => ({
         feeds: { ...s.feeds, [kind]: { ...s.feeds[kind], loading: false } },
@@ -296,6 +306,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   syncProjection: async (reason) => {
+    const generation = storeGeneration;
     const currentExploreSort = get().feeds.explore.sort ?? 'recent';
     try {
       const resp = await socialSyncMomentsProjection({
@@ -303,6 +314,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         publicSort: currentExploreSort,
         reason,
       });
+      if (generation !== storeGeneration) return;
       set((s) => {
         const home = resp.homeTimeline;
         const explore = resp.publicTimeline;
@@ -334,6 +346,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'syncProjection failed', { reason, err: String(err) });
       throw err;
     }
@@ -363,6 +376,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   loadUserFeed: async (actorPtid, refresh = false) => {
+    const generation = storeGeneration;
     const current = get().userFeeds[actorPtid] ?? emptyFeed();
     if (current.loading) return;
     set((s) => ({
@@ -374,6 +388,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const cursor = refresh ? '' : current.nextCursor;
     try {
       const resp = await socialListByAuthor(actorPtid, cursor || undefined);
+      if (generation !== storeGeneration) return;
       set((s) => {
         const merged = ingestPosts(s, resp.posts, resp.explanations);
         const prevIds = refresh ? [] : (s.userFeeds[actorPtid]?.postIds ?? []);
@@ -397,6 +412,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'loadUserFeed failed', { actorPtid, err: String(err) });
       set((s) => ({
         userFeeds: {
@@ -413,8 +429,10 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   loadPost: async (postId) => {
+    const generation = storeGeneration;
     try {
       const resp = await socialGetMomentResponse(postId);
+      if (generation !== storeGeneration) return undefined;
       const post = resp.post;
       if (!post) return undefined;
       set((s) => {
@@ -428,14 +446,46 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
       return post;
     } catch (err) {
+      if (generation !== storeGeneration) return undefined;
       log.warn(TAG, 'loadPost failed', { postId, err: String(err) });
       throw err;
     }
   },
 
   createPost: async (draft) => {
-    const sealedDraft = await sealMomentDraftAudienceKeys(draft, currentAuthenticatedActorPtid());
-    const post = await socialCreateMoment(sealedDraft);
+    const generation = storeGeneration;
+    if (draft.audience.kind === Audience_Kind.FRIENDS) {
+      if (draft.kind !== 'text' && draft.kind !== 'image') {
+        throw new Error('PRIVATE_UNSUPPORTED');
+      }
+      if (!draft.draftId || draft.draftRevision === undefined) {
+        throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
+      }
+      const result = await usePrivateMomentsStore.getState().publishMoment({
+        draftId: draft.draftId,
+        draftRevision: draft.draftRevision,
+        audienceKind: 'FRIENDS',
+        text: draft.text,
+        files: draft.kind === 'image' ? draft.localFiles ?? [] : [],
+      });
+      if (generation !== storeGeneration) {
+        throw new Error('MOMENTS_SESSION_STALE');
+      }
+      const postId = result.postId ?? result.projection?.postId;
+      if (result.state !== 'PUBLISHED' || !postId) {
+        throw new Error('UNKNOWN_COMMIT');
+      }
+      refreshProjectionBestEffort(get(), 'action:createPrivatePost');
+      return postId;
+    }
+    if (draft.audience.kind !== Audience_Kind.PUBLIC) {
+      throw new Error('PRIVATE_UNSUPPORTED');
+    }
+
+    const post = await socialCreateMoment(draft);
+    if (generation !== storeGeneration) {
+      throw new Error('MOMENTS_SESSION_STALE');
+    }
     if (!post || !post.id) {
       throw new Error('createPost: server returned no post');
     }
@@ -460,7 +510,17 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   deletePost: async (postId) => {
+    const generation = storeGeneration;
     await socialDeleteMoment(postId);
+    if (generation !== storeGeneration) return;
+    try {
+      await usePrivateMomentsStore.getState().purgeMoment(postId);
+    } catch (error) {
+      log.warn(TAG, 'Native private Moment purge failed after delete', {
+        postId,
+        error: String(error),
+      });
+    }
     set((s) => {
       const { [postId]: _drop, ...rest } = s.postsById;
       const { [postId]: _dropExplanation, ...feedExplanations } = s.feedExplanations;
@@ -493,6 +553,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   loadComments: async (postId, refresh = false) => {
+    const generation = storeGeneration;
     const loading = get().commentsLoading[postId];
     if (loading) return;
     set((s) => ({
@@ -501,6 +562,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const cursor = refresh ? '' : (get().commentsCursor[postId] ?? '');
     try {
       const resp = await socialGetComments(postId, cursor || undefined);
+      if (generation !== storeGeneration) return;
       set((s) => {
         const prev = refresh ? [] : (s.comments[postId] ?? []);
         const seen = new Set(prev.map((c) => c.id));
@@ -513,6 +575,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'loadComments failed', { postId, err: String(err) });
       set((s) => ({
         commentsLoading: { ...s.commentsLoading, [postId]: false },
@@ -522,7 +585,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   createComment: async (postId, content, replyToCommentId) => {
+    const generation = storeGeneration;
     const comment = await socialCreateComment(postId, content, replyToCommentId);
+    if (generation !== storeGeneration) return;
     if (!comment) return;
     set((s) => ({
       comments: {
@@ -545,7 +610,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   deleteComment: async (postId, commentId) => {
+    const generation = storeGeneration;
     await socialDeleteComment(commentId);
+    if (generation !== storeGeneration) return;
     set((s) => ({
       comments: {
         ...s.comments,
@@ -559,26 +626,32 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   reactToPost: async (postId, kind) => {
+    const generation = storeGeneration;
     try {
       const resp = await socialReact(postId, kind);
+      if (generation !== storeGeneration) return;
       // The server returns the post-wide reaction summary list; trust
       // that as the new source of truth instead of doing a local diff.
       set((s) => ({
         reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
       }));
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'reactToPost failed', { postId, kind, err: String(err) });
       throw err;
     }
   },
 
   unreactToPost: async (postId, kind) => {
+    const generation = storeGeneration;
     try {
       const resp = await socialUnreact(postId, kind);
+      if (generation !== storeGeneration) return;
       set((s) => ({
         reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
       }));
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'unreactToPost failed', { postId, kind, err: String(err) });
       throw err;
     }
@@ -589,12 +662,15 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   listMyCircles: async () => {
+    const generation = storeGeneration;
     if (get().circlesLoading) return;
     set({ circlesLoading: true });
     try {
       const resp = await socialCircleListMine();
+      if (generation !== storeGeneration) return;
       set({ circles: resp.circles ?? [], circlesLoading: false });
     } catch (err) {
+      if (generation !== storeGeneration) return;
       log.warn(TAG, 'listMyCircles failed', { err: String(err) });
       set({ circlesLoading: false });
       throw err;
@@ -602,7 +678,11 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   createCircle: async (name, description) => {
+    const generation = storeGeneration;
     const resp = await socialCircleCreate(name, description);
+    if (generation !== storeGeneration) {
+      throw new Error('MOMENTS_SESSION_STALE');
+    }
     if (!resp.circle) {
       throw new Error('createCircle: server returned no circle');
     }
@@ -611,7 +691,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   renameCircle: async (circleId, name, description) => {
+    const generation = storeGeneration;
     await socialCircleRename(circleId, name, description);
+    if (generation !== storeGeneration) return;
     set((s) => ({
       circles: s.circles.map((c) =>
         String(c.id) === circleId
@@ -622,7 +704,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   deleteCircle: async (circleId) => {
+    const generation = storeGeneration;
     await socialCircleDelete(circleId);
+    if (generation !== storeGeneration) return;
     set((s) => ({
       circles: s.circles.filter((c) => String(c.id) !== circleId),
       circleMembers: Object.fromEntries(
@@ -632,21 +716,27 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   loadCircleMembers: async (circleId) => {
+    const generation = storeGeneration;
     const resp = await socialCircleListMembers(circleId);
+    if (generation !== storeGeneration) return;
     set((s) => ({
       circleMembers: { ...s.circleMembers, [circleId]: resp.members ?? [] },
     }));
   },
 
   addCircleMember: async (circleId, actorPtid) => {
+    const generation = storeGeneration;
     await socialCircleAddMembers(circleId, [actorPtid]);
+    if (generation !== storeGeneration) return;
     // Refresh members so the UI reflects the canonical server state
     // (server may dedupe / reject already-present DIDs silently).
     await get().loadCircleMembers(circleId);
   },
 
   removeCircleMember: async (circleId, actorPtid) => {
+    const generation = storeGeneration;
     await socialCircleRemoveMembers(circleId, [actorPtid]);
+    if (generation !== storeGeneration) return;
     set((s) => ({
       circleMembers: {
         ...s.circleMembers,
@@ -664,5 +754,8 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   setComposerDraft: (draft) => set({ composerDraft: draft }),
   clearComposerDraft: () => set({ composerDraft: null }),
 
-  reset: () => set({ ...initialState }),
+  reset: () => {
+    storeGeneration += 1;
+    set({ ...initialState });
+  },
 }));

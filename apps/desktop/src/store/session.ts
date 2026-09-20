@@ -23,12 +23,15 @@ const initialState = {
   currentUser: null as CurrentUser | null,
   authenticated: false,
   restoring: false,
+  sessionEpoch: 0,
 };
 
 interface SessionStore {
   currentUser: CurrentUser | null;
   authenticated: boolean;
   restoring: boolean;
+  /** Monotonic owner signal for every accepted or cleared native session. */
+  sessionEpoch: number;
 
   reset: () => void;
   hydrate: (actorPtid: string) => Promise<void>;
@@ -70,7 +73,10 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
 export const useSessionStore = createDesktopStore<SessionStore>('session', (set, get) => ({
   ...initialState,
 
-  reset: () => set({ ...initialState }),
+  reset: () => set((state) => ({
+    ...initialState,
+    sessionEpoch: state.sessionEpoch + 1,
+  })),
 
   hydrate: async () => {
     await get().restoreSession();
@@ -127,10 +133,20 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
-      set({ currentUser: user, authenticated: !!user, restoring: false });
+      set((state) => ({
+        currentUser: user,
+        authenticated: Boolean(user),
+        restoring: false,
+        sessionEpoch: state.sessionEpoch + 1,
+      }));
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
-        set({ currentUser: null, authenticated: false, restoring: false });
+        set((state) => ({
+          currentUser: null,
+          authenticated: false,
+          restoring: false,
+          sessionEpoch: state.sessionEpoch + 1,
+        }));
         return;
       }
       set({ restoring: false });
@@ -164,11 +180,21 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       isOAuth ? 'oauth' : 'password',
       isOAuth ? method : undefined,
     );
-    set({ currentUser: user, authenticated: Boolean(user), restoring: false });
+    set((state) => ({
+      currentUser: user,
+      authenticated: Boolean(user),
+      restoring: false,
+      sessionEpoch: state.sessionEpoch + 1,
+    }));
   },
 
   activateAppletLaunchSession: (user) => {
-    set({ currentUser: user, authenticated: true, restoring: false });
+    set((state) => ({
+      currentUser: user,
+      authenticated: true,
+      restoring: false,
+      sessionEpoch: state.sessionEpoch + 1,
+    }));
   },
 
   updateProfile: (profile) => {

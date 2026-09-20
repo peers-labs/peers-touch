@@ -86,56 +86,6 @@ message ListTopicCommentsResponse {
   repeated TopicComment comments = 1;
 }
 
-// ─── Evaluation ──────────────────────────────────────────────
-
-message EvalDatasetItem {
-  string id = 1;
-  string input = 2;
-  string expected_output = 3;
-  repeated string tags = 4;
-}
-
-message EvalDataset {
-  string id = 1;
-  string name = 2;
-  string description = 3;
-  repeated EvalDatasetItem items = 4;
-  string created_at = 5;
-}
-
-message CreateEvalDatasetRequest {
-  string name = 1;
-  string description = 2;
-  repeated EvalDatasetItem items = 3;
-}
-
-message CreateEvalDatasetResponse {
-  EvalDataset dataset = 1;
-}
-
-message UpdateEvalDatasetRequest {
-  string id = 1;
-  string name = 2;
-  string description = 3;
-  repeated EvalDatasetItem items = 4;
-}
-
-message UpdateEvalDatasetResponse {
-  EvalDataset dataset = 1;
-}
-
-message DeleteEvalDatasetRequest {
-  string id = 1;
-}
-
-message DeleteEvalDatasetResponse {}
-
-message ListEvalDatasetsRequest {}
-
-message ListEvalDatasetsResponse {
-  repeated EvalDataset datasets = 1;
-}
-
 // ─── Custom Plugins ──────────────────────────────────────────
 
 message CustomPlugin {

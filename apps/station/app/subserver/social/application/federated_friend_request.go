@@ -29,7 +29,7 @@ type FederatedFriendRequestService struct {
 	stationSigner  delivery.Signer
 	localStationID string
 	clock          delivery.Clock
-	keyHydrator    infrastructure.FriendRequestActorKeyHydrator
+	actorKeys      infrastructure.FriendRequestActorKeyResolver
 }
 
 // SubmitFriendRequestCommandResult reports local durable acceptance, not remote success.
@@ -64,11 +64,11 @@ func NewFederatedFriendRequestService(
 	}, nil
 }
 
-// WithActorKeyHydrator overrides the verified profile hydration port.
-func (s *FederatedFriendRequestService) WithActorKeyHydrator(
-	hydrator infrastructure.FriendRequestActorKeyHydrator,
+// WithActorDeviceKeyResolver installs the Actor Identity-owned key capability.
+func (s *FederatedFriendRequestService) WithActorDeviceKeyResolver(
+	resolver infrastructure.FriendRequestActorKeyResolver,
 ) *FederatedFriendRequestService {
-	s.keyHydrator = hydrator
+	s.actorKeys = resolver
 	return s
 }
 
@@ -169,7 +169,7 @@ func (s *FederatedFriendRequestService) SubmitFriendRequestCommand(
 			transaction,
 			command,
 			s.localStationID,
-			s.keyHydrator,
+			s.actorKeys,
 		); verifyErr != nil {
 			return verifyErr
 		}
@@ -346,7 +346,7 @@ func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 		transaction,
 		command,
 		s.localStationID,
-		s.keyHydrator,
+		s.actorKeys,
 	); err != nil {
 		return deliveryResultForSocialError(err), nil
 	}
@@ -807,7 +807,7 @@ func verifyCommandSignatureInTransaction(
 	transaction infrastructure.FederatedFriendRequestTransaction,
 	command *model.FriendRequestCommand,
 	localStationID string,
-	hydrator infrastructure.FriendRequestActorKeyHydrator,
+	actorKeys infrastructure.FriendRequestActorKeyResolver,
 ) error {
 	signingBytes, err := domain.FriendRequestCommandSigningBytes(command)
 	if err != nil {
@@ -818,7 +818,7 @@ func verifyCommandSignatureInTransaction(
 		command.GetBody().GetAuthorizingDevice(),
 		commandSourceStation(command.GetBody()),
 		localStationID,
-		hydrator,
+		actorKeys,
 		command.GetSigningKeyId(),
 		signingBytes,
 		command.GetActorDeviceSignature(),

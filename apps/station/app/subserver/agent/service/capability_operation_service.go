@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ const (
 	capabilityOperationCancelCommand = "cancel"
 	defaultOperationLeaseTTL         = 45 * time.Second
 	defaultOperationCleanupTTL       = 2 * time.Minute
+	maxCapabilityOperationArguments  = 64 * 1024
 )
 
 type CapabilityOperationService struct {
@@ -39,6 +41,80 @@ func NewCapabilityOperationService(db *gorm.DB) *CapabilityOperationService {
 		db:  db,
 		now: func() time.Time { return time.Now().UTC() },
 	}
+}
+
+func (s *CapabilityOperationService) RunDeadlineSweeper(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := s.SweepExecutorLeaseDisconnects(ctx); err != nil {
+			logger.Errorf(ctx, "capability operation executor lease sweep failed: %v", err)
+		}
+		if _, err := s.SweepExecutionDeadlines(ctx); err != nil {
+			logger.Errorf(ctx, "capability operation execution deadline sweep failed: %v", err)
+		}
+		if _, err := s.SweepCleanupDeadlines(ctx); err != nil {
+			logger.Errorf(ctx, "capability operation cleanup deadline sweep failed: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *CapabilityOperationService) SweepExecutorLeaseDisconnects(
+	ctx context.Context,
+) (int64, error) {
+	now := s.now()
+	activeStatuses := []int32{
+		int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISPATCHED),
+		int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RUNNING),
+		int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RECONNECTING),
+	}
+	var operationIDs []string
+	if err := s.db.WithContext(ctx).
+		Table("agent_capability_operations AS operation").
+		Select("operation.operation_id").
+		Joins(
+			"JOIN agent_capability_operation_leases AS lease ON lease.lease_id = operation.executor_lease_id",
+		).
+		Where(
+			"operation.status IN ? AND lease.released_at IS NULL AND lease.expires_at <= ?",
+			activeStatuses,
+			now,
+		).
+		Order("operation.operation_id").
+		Pluck("operation.operation_id", &operationIDs).Error; err != nil {
+		return 0, capabilityInternal("list disconnected capability operations", err)
+	}
+	var transitioned int64
+	for _, operationID := range operationIDs {
+		result := s.db.WithContext(ctx).
+			Model(&persistence.CapabilityOperation{}).
+			Where("operation_id = ? AND status IN ?", operationID, activeStatuses).
+			Updates(map[string]interface{}{
+				"status": int32(
+					model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISCONNECTED,
+				),
+				"error_code": int32(
+					model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_DISCONNECTED,
+				),
+				"error_retryable":       true,
+				"error_recovery_action": "reconnect",
+				"revision":              gorm.Expr("revision + 1"),
+				"updated_at":            now,
+			})
+		if result.Error != nil {
+			return transitioned, capabilityInternal(
+				"mark capability operation disconnected",
+				result.Error,
+			)
+		}
+		transitioned += result.RowsAffected
+	}
+	return transitioned, nil
 }
 
 func (s *CapabilityOperationService) Start(
@@ -63,6 +139,12 @@ func (s *CapabilityOperationService) Start(
 	deadline := req.GetDeadline().AsTime()
 	if !deadline.After(now) {
 		return nil, capabilityInvalid("capability operation deadline must be in the future")
+	}
+	if !capabilityOperationKindAllowed(req.GetOperationKind()) {
+		return nil, capabilityInvalid("unsupported capability operation kind")
+	}
+	if len(req.GetBoundedArguments()) > maxCapabilityOperationArguments {
+		return nil, capabilityInvalid("capability operation arguments exceed limit")
 	}
 	payloadHash, err := capabilityProtoHash(req)
 	if err != nil {
@@ -89,6 +171,13 @@ func (s *CapabilityOperationService) Start(
 			tx, ptid, req.GetTargetDeviceId(), req.GetCapabilitySessionId(), now,
 		)
 		if err != nil {
+			return err
+		}
+		if err := validateOperationCapabilityLease(
+			lease,
+			req.GetCapabilityId(),
+			req.GetCapabilityVersion(),
+		); err != nil {
 			return err
 		}
 		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease)
@@ -168,6 +257,15 @@ func (s *CapabilityOperationService) Start(
 		return nil
 	})
 	return operation, err
+}
+
+func capabilityOperationKindAllowed(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case "install", "configure", "test", "connect", "reconnect", "uninstall":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *CapabilityOperationService) Get(
@@ -636,12 +734,19 @@ func (s *CapabilityOperationService) takeOver(
 		if err != nil {
 			return err
 		}
+		if err := validateOperationCapabilityLease(
+			lease,
+			record.CapabilityID,
+			record.CapabilityVersion,
+		); err != nil {
+			return err
+		}
 		dispatchSequence, err := nextOperationDispatchSequenceTx(tx, lease)
 		if err != nil {
 			return err
 		}
 		if record.SideEffectStartedAt != nil &&
-			strings.TrimSpace(req.GetExternalIdempotencyKey()) == "" {
+			!capabilityOperationAllowsExternalReplay(&record, req.GetExternalIdempotencyKey()) {
 			if err := transitionOperationToUnknownCleanupTx(tx, &record, lease, now); err != nil {
 				return err
 			}
@@ -674,6 +779,12 @@ func (s *CapabilityOperationService) takeOver(
 				"revision":                 nextRevision,
 				"external_idempotency_key": strings.TrimSpace(req.GetExternalIdempotencyKey()),
 				"dispatch_sequence":        dispatchSequence,
+				"progress_percent":         uint32(0),
+				"progress_message":         "",
+				"result_ref":               "",
+				"error_code":               int32(model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_UNSPECIFIED),
+				"error_retryable":          false,
+				"error_recovery_action":    "",
 				"updated_at":               now,
 			})
 		if update.Error != nil {
@@ -705,6 +816,14 @@ func (s *CapabilityOperationService) takeOver(
 		record.Revision = nextRevision
 		record.ExternalIdempotencyKey = strings.TrimSpace(req.GetExternalIdempotencyKey())
 		record.DispatchSequence = dispatchSequence
+		record.ProgressPercent = 0
+		record.ProgressMessage = ""
+		record.ResultRef = ""
+		record.ErrorCode = int32(
+			model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_UNSPECIFIED,
+		)
+		record.ErrorRetryable = false
+		record.ErrorRecoveryAction = ""
 		record.UpdatedAt = now
 		envelope, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 			capabilityOperationModel(&record),
@@ -832,6 +951,13 @@ func (s *CapabilityOperationService) takeOverCleanup(
 		if err != nil {
 			return err
 		}
+		if err := validateOperationCapabilityLease(
+			lease,
+			record.CapabilityID,
+			record.CapabilityVersion,
+		); err != nil {
+			return err
+		}
 		nextEpoch := record.CleanupEpoch + 1
 		nextFence := record.CleanupFencingToken + 1
 		nextRevision := record.Revision + 1
@@ -875,6 +1001,18 @@ func (s *CapabilityOperationService) takeOverCleanup(
 		return nil
 	})
 	return operation, err
+}
+
+func capabilityOperationAllowsExternalReplay(
+	record *persistence.CapabilityOperation,
+	externalIdempotencyKey string,
+) bool {
+	_ = record
+	_ = externalIdempotencyKey
+	// No current local capability operation proves external side-effect
+	// idempotency. Keep takeover fail-closed until a manifest-backed recovery
+	// contract is added.
+	return false
 }
 
 func (s *CapabilityOperationService) SweepCleanupDeadlines(
@@ -1343,6 +1481,31 @@ func loadOperationCapabilityLeaseTx(
 		return nil, capabilityRecordError("active client capability lease", err)
 	}
 	return &lease, nil
+}
+
+func validateOperationCapabilityLease(
+	row *persistence.ClientCapabilityLease,
+	capabilityID string,
+	capabilityVersion string,
+) error {
+	var lease model.ClientCapabilityLease
+	if err := proto.Unmarshal(row.LeasePayload, &lease); err != nil {
+		return capabilityInternal("decode capability operation lease", err)
+	}
+	for _, capability := range lease.GetCapabilities() {
+		if capability.GetCapabilityId() == strings.TrimSpace(capabilityID) &&
+			capability.GetSchemaVersion() == strings.TrimSpace(capabilityVersion) &&
+			capability.GetPermission() ==
+				model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_GRANTED {
+			return nil
+		}
+	}
+	return errcode.New(
+		errcode.AgentInvalidSourceState,
+		http.StatusConflict,
+		"capability session does not authorize operation",
+		nil,
+	)
 }
 
 func nextOperationDispatchSequenceTx(

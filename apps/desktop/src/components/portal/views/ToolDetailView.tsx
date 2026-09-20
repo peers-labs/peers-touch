@@ -36,6 +36,7 @@ export function ToolDetailView({ toolCall }: ToolDetailViewProps) {
     denied: 'red',
     approval_required: 'orange',
     expired: 'orange',
+    unknown_side_effect: 'orange',
   } as const;
 
   return (

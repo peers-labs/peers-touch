@@ -11,7 +11,6 @@ import (
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
-	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,7 +23,7 @@ type FederatedFriendRequestTransaction interface {
 		device *model.ActorDeviceRef,
 		claimedHomeStationPeerID string,
 		localStationPeerID string,
-		hydrator FriendRequestActorKeyHydrator,
+		actorKeys FriendRequestActorKeyResolver,
 		signingKeyID string,
 		canonicalSigningBytes []byte,
 		signature []byte,
@@ -234,10 +233,26 @@ func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
 	}
 
 	query := s.db.WithContext(ctx).
-		Model(&federatedFriendRequestProjectionModel{}).
-		Where("sender_ptid = ? OR receiver_ptid = ?", actorPTID, actorPTID)
+		Table("social_friend_requests AS requests").
+		Where(
+			"requests.sender_ptid = ? OR requests.receiver_ptid = ?",
+			actorPTID,
+			actorPTID,
+		).
+		Where(
+			"requests.state <> ? OR EXISTS ("+
+				"SELECT 1 FROM social_relationship_projections AS relationships "+
+				"WHERE relationships.owner_ptid = ? "+
+				"AND relationships.peer_ptid = CASE "+
+				"WHEN requests.sender_ptid = ? THEN requests.receiver_ptid "+
+				"ELSE requests.sender_ptid END "+
+				"AND relationships.request_id = requests.request_id)",
+			int32(model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED),
+			actorPTID,
+			actorPTID,
+		)
 	if state != model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED {
-		query = query.Where("state = ?", int32(state))
+		query = query.Where("requests.state = ?", int32(state))
 	}
 
 	var total int64
@@ -247,7 +262,7 @@ func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
 
 	var persisted []federatedFriendRequestProjectionModel
 	if err := query.
-		Order("created_at DESC, request_id DESC").
+		Order("requests.created_at DESC, requests.request_id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&persisted).Error; err != nil {
@@ -531,18 +546,18 @@ func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
 	device *model.ActorDeviceRef,
 	claimedHomeStationPeerID string,
 	localStationPeerID string,
-	hydrator FriendRequestActorKeyHydrator,
+	actorKeys FriendRequestActorKeyResolver,
 	signingKeyID string,
 	canonicalSigningBytes []byte,
 	signature []byte,
 ) error {
 	return verifyFriendRequestCommandSignature(
 		ctx,
-		t.db,
+		t,
 		device,
 		claimedHomeStationPeerID,
 		localStationPeerID,
-		hydrator,
+		actorKeys,
 		signingKeyID,
 		canonicalSigningBytes,
 		signature,
@@ -822,6 +837,12 @@ func (t *federatedFriendRequestTransaction) PutRelationship(
 	ctx context.Context,
 	projection domain.FriendRequestRelationshipProjection,
 ) error {
+	if err := lockSocialRelationshipAuthority(
+		t.db.WithContext(ctx),
+		projection.OwnerPTID,
+	); err != nil {
+		return err
+	}
 	persisted := relationshipProjectionModelFromDomain(projection)
 	create := t.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
@@ -854,34 +875,50 @@ func (t *federatedFriendRequestTransaction) PutRelationship(
 		}
 	}
 
-	actorIDs, err := NewActorIdentity(t.db).RequireIDs(
-		ctx,
-		[]string{projection.OwnerPTID, projection.PeerPTID},
-	)
-	if err != nil {
-		return mapFederatedFriendRequestPersistenceError(
-			"social.resolve_relationship_projection_actors",
-			err,
-		)
+	friendship := friendshipModel{
+		ActorPTID: projection.OwnerPTID,
+		PeerPTID:  projection.PeerPTID,
+		Status:    friendRequestPolicyRelationshipAccepted,
+		CreatedAt: projection.AcceptedAt,
+		UpdatedAt: projection.AcceptedAt,
 	}
-	follow := dbmodel.Follow{
-		FollowerID:  actorIDs[0],
-		FollowingID: actorIDs[1],
-		CreatedAt:   projection.AcceptedAt,
-	}
-	if err := t.db.WithContext(ctx).
+	create = t.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
-				{Name: "follower_id"},
-				{Name: "following_id"},
+				{Name: "actor_ptid"},
+				{Name: "peer_ptid"},
 			},
 			DoNothing: true,
 		}).
-		Create(&follow).Error; err != nil {
+		Create(&friendship)
+	if create.Error != nil {
 		return mapFederatedFriendRequestPersistenceError(
-			"social.put_follow_projection",
-			err,
+			"social.put_friendship_projection",
+			create.Error,
 		)
+	}
+	if create.RowsAffected != 1 {
+		var existing friendshipModel
+		if err := t.db.WithContext(ctx).
+			Where(
+				"actor_ptid = ? AND peer_ptid = ?",
+				projection.OwnerPTID,
+				projection.PeerPTID,
+			).
+			First(&existing).Error; err != nil {
+			return mapFederatedFriendRequestPersistenceError(
+				"social.load_friendship_projection",
+				err,
+			)
+		}
+		if existing.Status != friendRequestPolicyRelationshipAccepted {
+			return domain.NewFederationError(
+				domain.FederationErrorStateConflict,
+				"social.put_friendship_projection",
+				"status",
+				"conflicts with the accepted relationship",
+			)
+		}
 	}
 	return nil
 }
@@ -939,6 +976,10 @@ func (t *federatedFriendRequestTransaction) PutDirectConversationEffect(
 
 func (t *federatedFriendRequestTransaction) Outbox() delivery.OutboxWriter {
 	return t.outbox
+}
+
+func (t *federatedFriendRequestTransaction) DB() *gorm.DB {
+	return t.db
 }
 
 func friendRequestTransactionFromDelivery(
