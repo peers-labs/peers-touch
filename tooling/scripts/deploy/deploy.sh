@@ -87,15 +87,6 @@ if [[ "$cmd" == "resolve" ]]; then
   exit 0
 fi
 
-if [[ "$cmd" != "status" && "$cmd" != "logs" && "${PT_PROFILE_LEASE_HELD:-0}" != "1" ]]; then
-  cd "$PROJECT_ROOT"
-  exec env PT_PROFILE_LEASE_HELD=1 \
-    python3 -c 'from tooling.acceptance.core.lease import main; raise SystemExit(main())' \
-      --resource "$env_name" \
-      --owner "deploy:$env_name:${BRANCH:-default}" \
-      -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
-fi
-
 # Load deploy env
 # shellcheck disable=SC1090
 source "$ENV_FILE"
@@ -106,6 +97,36 @@ source "$ENV_FILE"
 : "${PT_DEPLOY_ROLE:?PT_DEPLOY_ROLE not set in $ENV_FILE}"
 
 BRANCH="${BRANCH:-${PT_DEPLOY_BRANCH:-main}}"
+
+if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
+  if [[ "$PT_DEPLOY_ROLE" == "station" ]]; then
+    machine_dev_script="$PROJECT_ROOT/tooling/scripts/local-dev/machine-dev.mjs"
+    env_repo="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
+    if [[ "${PT_MACHINE_LEASE_KIND:-}" == "station.deploy" ]] \
+      && [[ "${PT_MACHINE_LEASE_RESOURCE_ID:-}" == "$env_name" ]]; then
+      node "$machine_dev_script" verify-held \
+        --workspace-root "$PROJECT_ROOT" \
+        --resource-kind station.deploy \
+        --resource-id "$env_name" >/dev/null
+    else
+      exec node "$machine_dev_script" lease \
+        --workspace-root "$PROJECT_ROOT" \
+        --env-repo "$env_repo" \
+        --resource-kind station.deploy \
+        --resource-id "$env_name" \
+        --budget-seconds "${PT_STATION_LEASE_BUDGET_SECONDS:-1200}" \
+        -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+    fi
+  elif [[ "${PT_PROFILE_LEASE_HELD:-0}" != "1" ]]; then
+    cd "$PROJECT_ROOT"
+    exec env PT_PROFILE_LEASE_HELD=1 \
+      python3 -c 'from tooling.acceptance.core.lease import main; raise SystemExit(main())' \
+        --resource "$env_name" \
+        --owner "deploy:$env_name:${BRANCH:-default}" \
+        -- /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
+  fi
+fi
+
 SSH_TARGET="${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}"
 SSH_OPTS=(
   -o BatchMode=yes

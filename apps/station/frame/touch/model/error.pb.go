@@ -24,53 +24,62 @@ const (
 type ErrorCode int32
 
 const (
-	ErrorCode_ERROR_CODE_UNSPECIFIED                        ErrorCode = 0
-	ErrorCode_ERROR_CODE_UNDEFINED                          ErrorCode = 1
-	ErrorCode_ERROR_CODE_WELL_KNOWN_INVALID_RESOURCE_FORMAT ErrorCode = 10001
-	ErrorCode_ERROR_CODE_WELL_KNOWN_UNSUPPORTED_PREFIX_TYPE ErrorCode = 10002
-	ErrorCode_ERROR_CODE_ACTOR_INVALID_NAME                 ErrorCode = 10003
-	ErrorCode_ERROR_CODE_ACTOR_INVALID_EMAIL                ErrorCode = 10004
-	ErrorCode_ERROR_CODE_ACTOR_INVALID_PASSWORD             ErrorCode = 10005
-	ErrorCode_ERROR_CODE_ACTOR_EXISTS                       ErrorCode = 10006
-	ErrorCode_ERROR_CODE_ACTOR_INVALID_PASSPORT             ErrorCode = 10007
-	ErrorCode_ERROR_CODE_ACTOR_NOT_FOUND                    ErrorCode = 10008
-	ErrorCode_ERROR_CODE_ACTOR_INVALID_CREDENTIALS          ErrorCode = 10009
-	ErrorCode_ERROR_CODE_PEER_ADDR_EXISTS                   ErrorCode = 10010
-	ErrorCode_ERROR_CODE_UNAUTHORIZED                       ErrorCode = 20001
-	ErrorCode_ERROR_CODE_INVALID_REQUEST                    ErrorCode = 20002
-	ErrorCode_ERROR_CODE_INVALID_QUERY_PARAMETERS           ErrorCode = 20003
-	ErrorCode_ERROR_CODE_INVALID_REQUEST_BODY               ErrorCode = 20004
-	ErrorCode_ERROR_CODE_INVALID_PROTOBUF                   ErrorCode = 20005
-	ErrorCode_ERROR_CODE_FAILED_TO_READ_BODY                ErrorCode = 20006
-	ErrorCode_ERROR_CODE_METHOD_NOT_ALLOWED                 ErrorCode = 20007
-	ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR              ErrorCode = 20008
-	ErrorCode_ERROR_CODE_POST_ID_REQUIRED                   ErrorCode = 30001
-	ErrorCode_ERROR_CODE_POST_NOT_FOUND                     ErrorCode = 30002
-	ErrorCode_ERROR_CODE_USER_ID_REQUIRED                   ErrorCode = 30003
-	ErrorCode_ERROR_CODE_CREATE_POST_FAILED                 ErrorCode = 30004
-	ErrorCode_ERROR_CODE_UPDATE_POST_FAILED                 ErrorCode = 30005
-	ErrorCode_ERROR_CODE_DELETE_POST_FAILED                 ErrorCode = 30006
-	ErrorCode_ERROR_CODE_LIKE_POST_FAILED                   ErrorCode = 30007
-	ErrorCode_ERROR_CODE_UNLIKE_POST_FAILED                 ErrorCode = 30008
-	ErrorCode_ERROR_CODE_GET_POST_FAILED                    ErrorCode = 30009
-	ErrorCode_ERROR_CODE_LIST_POSTS_FAILED                  ErrorCode = 30010
-	ErrorCode_ERROR_CODE_REPOST_FAILED                      ErrorCode = 30011
-	ErrorCode_ERROR_CODE_GET_LIKERS_FAILED                  ErrorCode = 30012
-	ErrorCode_ERROR_CODE_GET_TIMELINE_FAILED                ErrorCode = 30013
-	ErrorCode_ERROR_CODE_COMMENT_ID_REQUIRED                ErrorCode = 30014
-	ErrorCode_ERROR_CODE_CREATE_COMMENT_FAILED              ErrorCode = 30015
-	ErrorCode_ERROR_CODE_GET_COMMENTS_FAILED                ErrorCode = 30016
-	ErrorCode_ERROR_CODE_DELETE_COMMENT_FAILED              ErrorCode = 30017
-	ErrorCode_ERROR_CODE_NOTE_ID_REQUIRED                   ErrorCode = 30101
-	ErrorCode_ERROR_CODE_NOTE_NOT_FOUND                     ErrorCode = 30102
-	ErrorCode_ERROR_CODE_NOTE_EMPTY_CONTENT                 ErrorCode = 30103
-	ErrorCode_ERROR_CODE_CREATE_NOTE_FAILED                 ErrorCode = 30104
-	ErrorCode_ERROR_CODE_UPDATE_NOTE_FAILED                 ErrorCode = 30105
-	ErrorCode_ERROR_CODE_DELETE_NOTE_FAILED                 ErrorCode = 30106
-	ErrorCode_ERROR_CODE_RESTORE_NOTE_FAILED                ErrorCode = 30107
-	ErrorCode_ERROR_CODE_SEARCH_NOTES_FAILED                ErrorCode = 30108
-	ErrorCode_ERROR_CODE_LIST_NOTES_FAILED                  ErrorCode = 30109
-	ErrorCode_ERROR_CODE_NOTE_PERMISSION_DENIED             ErrorCode = 30110
+	ErrorCode_ERROR_CODE_UNSPECIFIED                           ErrorCode = 0
+	ErrorCode_ERROR_CODE_UNDEFINED                             ErrorCode = 1
+	ErrorCode_ERROR_CODE_WELL_KNOWN_INVALID_RESOURCE_FORMAT    ErrorCode = 10001
+	ErrorCode_ERROR_CODE_WELL_KNOWN_UNSUPPORTED_PREFIX_TYPE    ErrorCode = 10002
+	ErrorCode_ERROR_CODE_ACTOR_INVALID_NAME                    ErrorCode = 10003
+	ErrorCode_ERROR_CODE_ACTOR_INVALID_EMAIL                   ErrorCode = 10004
+	ErrorCode_ERROR_CODE_ACTOR_INVALID_PASSWORD                ErrorCode = 10005
+	ErrorCode_ERROR_CODE_ACTOR_EXISTS                          ErrorCode = 10006
+	ErrorCode_ERROR_CODE_ACTOR_INVALID_PASSPORT                ErrorCode = 10007
+	ErrorCode_ERROR_CODE_ACTOR_NOT_FOUND                       ErrorCode = 10008
+	ErrorCode_ERROR_CODE_ACTOR_INVALID_CREDENTIALS             ErrorCode = 10009
+	ErrorCode_ERROR_CODE_PEER_ADDR_EXISTS                      ErrorCode = 10010
+	ErrorCode_ERROR_CODE_UNAUTHORIZED                          ErrorCode = 20001
+	ErrorCode_ERROR_CODE_INVALID_REQUEST                       ErrorCode = 20002
+	ErrorCode_ERROR_CODE_INVALID_QUERY_PARAMETERS              ErrorCode = 20003
+	ErrorCode_ERROR_CODE_INVALID_REQUEST_BODY                  ErrorCode = 20004
+	ErrorCode_ERROR_CODE_INVALID_PROTOBUF                      ErrorCode = 20005
+	ErrorCode_ERROR_CODE_FAILED_TO_READ_BODY                   ErrorCode = 20006
+	ErrorCode_ERROR_CODE_METHOD_NOT_ALLOWED                    ErrorCode = 20007
+	ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR                 ErrorCode = 20008
+	ErrorCode_ERROR_CODE_POST_ID_REQUIRED                      ErrorCode = 30001
+	ErrorCode_ERROR_CODE_POST_NOT_FOUND                        ErrorCode = 30002
+	ErrorCode_ERROR_CODE_USER_ID_REQUIRED                      ErrorCode = 30003
+	ErrorCode_ERROR_CODE_CREATE_POST_FAILED                    ErrorCode = 30004
+	ErrorCode_ERROR_CODE_UPDATE_POST_FAILED                    ErrorCode = 30005
+	ErrorCode_ERROR_CODE_DELETE_POST_FAILED                    ErrorCode = 30006
+	ErrorCode_ERROR_CODE_LIKE_POST_FAILED                      ErrorCode = 30007
+	ErrorCode_ERROR_CODE_UNLIKE_POST_FAILED                    ErrorCode = 30008
+	ErrorCode_ERROR_CODE_GET_POST_FAILED                       ErrorCode = 30009
+	ErrorCode_ERROR_CODE_LIST_POSTS_FAILED                     ErrorCode = 30010
+	ErrorCode_ERROR_CODE_REPOST_FAILED                         ErrorCode = 30011
+	ErrorCode_ERROR_CODE_GET_LIKERS_FAILED                     ErrorCode = 30012
+	ErrorCode_ERROR_CODE_GET_TIMELINE_FAILED                   ErrorCode = 30013
+	ErrorCode_ERROR_CODE_COMMENT_ID_REQUIRED                   ErrorCode = 30014
+	ErrorCode_ERROR_CODE_CREATE_COMMENT_FAILED                 ErrorCode = 30015
+	ErrorCode_ERROR_CODE_GET_COMMENTS_FAILED                   ErrorCode = 30016
+	ErrorCode_ERROR_CODE_DELETE_COMMENT_FAILED                 ErrorCode = 30017
+	ErrorCode_ERROR_CODE_NOTE_ID_REQUIRED                      ErrorCode = 30101
+	ErrorCode_ERROR_CODE_NOTE_NOT_FOUND                        ErrorCode = 30102
+	ErrorCode_ERROR_CODE_NOTE_EMPTY_CONTENT                    ErrorCode = 30103
+	ErrorCode_ERROR_CODE_CREATE_NOTE_FAILED                    ErrorCode = 30104
+	ErrorCode_ERROR_CODE_UPDATE_NOTE_FAILED                    ErrorCode = 30105
+	ErrorCode_ERROR_CODE_DELETE_NOTE_FAILED                    ErrorCode = 30106
+	ErrorCode_ERROR_CODE_RESTORE_NOTE_FAILED                   ErrorCode = 30107
+	ErrorCode_ERROR_CODE_SEARCH_NOTES_FAILED                   ErrorCode = 30108
+	ErrorCode_ERROR_CODE_LIST_NOTES_FAILED                     ErrorCode = 30109
+	ErrorCode_ERROR_CODE_NOTE_PERMISSION_DENIED                ErrorCode = 30110
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN              ErrorCode = 30201
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL       ErrorCode = 30202
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND         ErrorCode = 30203
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH            ErrorCode = 30204
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT        ErrorCode = 30205
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED          ErrorCode = 30206
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE      ErrorCode = 30207
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED         ErrorCode = 30208
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE ErrorCode = 30209
 	// ── Federation (40000s) ───────────────────────────────────────
 	// Phase E.bridge — public federation API errors. Distinct range
 	// because these are surface-level errors the Desktop client maps
@@ -138,6 +147,15 @@ var (
 		30108: "ERROR_CODE_SEARCH_NOTES_FAILED",
 		30109: "ERROR_CODE_LIST_NOTES_FAILED",
 		30110: "ERROR_CODE_NOTE_PERMISSION_DENIED",
+		30201: "ERROR_CODE_CONTENT_PREKEY_FORBIDDEN",
+		30202: "ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL",
+		30203: "ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND",
+		30204: "ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH",
+		30205: "ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT",
+		30206: "ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED",
+		30207: "ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE",
+		30208: "ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED",
+		30209: "ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE",
 		40001: "ERROR_CODE_FEDERATION_HANDLE_REQUIRED",
 		40002: "ERROR_CODE_FEDERATION_INVALID_VISIBILITY",
 		40003: "ERROR_CODE_FEDERATION_TOMBSTONED",
@@ -148,61 +166,70 @@ var (
 		40008: "ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING",
 	}
 	ErrorCode_value = map[string]int32{
-		"ERROR_CODE_UNSPECIFIED":                        0,
-		"ERROR_CODE_UNDEFINED":                          1,
-		"ERROR_CODE_WELL_KNOWN_INVALID_RESOURCE_FORMAT": 10001,
-		"ERROR_CODE_WELL_KNOWN_UNSUPPORTED_PREFIX_TYPE": 10002,
-		"ERROR_CODE_ACTOR_INVALID_NAME":                 10003,
-		"ERROR_CODE_ACTOR_INVALID_EMAIL":                10004,
-		"ERROR_CODE_ACTOR_INVALID_PASSWORD":             10005,
-		"ERROR_CODE_ACTOR_EXISTS":                       10006,
-		"ERROR_CODE_ACTOR_INVALID_PASSPORT":             10007,
-		"ERROR_CODE_ACTOR_NOT_FOUND":                    10008,
-		"ERROR_CODE_ACTOR_INVALID_CREDENTIALS":          10009,
-		"ERROR_CODE_PEER_ADDR_EXISTS":                   10010,
-		"ERROR_CODE_UNAUTHORIZED":                       20001,
-		"ERROR_CODE_INVALID_REQUEST":                    20002,
-		"ERROR_CODE_INVALID_QUERY_PARAMETERS":           20003,
-		"ERROR_CODE_INVALID_REQUEST_BODY":               20004,
-		"ERROR_CODE_INVALID_PROTOBUF":                   20005,
-		"ERROR_CODE_FAILED_TO_READ_BODY":                20006,
-		"ERROR_CODE_METHOD_NOT_ALLOWED":                 20007,
-		"ERROR_CODE_INTERNAL_SERVER_ERROR":              20008,
-		"ERROR_CODE_POST_ID_REQUIRED":                   30001,
-		"ERROR_CODE_POST_NOT_FOUND":                     30002,
-		"ERROR_CODE_USER_ID_REQUIRED":                   30003,
-		"ERROR_CODE_CREATE_POST_FAILED":                 30004,
-		"ERROR_CODE_UPDATE_POST_FAILED":                 30005,
-		"ERROR_CODE_DELETE_POST_FAILED":                 30006,
-		"ERROR_CODE_LIKE_POST_FAILED":                   30007,
-		"ERROR_CODE_UNLIKE_POST_FAILED":                 30008,
-		"ERROR_CODE_GET_POST_FAILED":                    30009,
-		"ERROR_CODE_LIST_POSTS_FAILED":                  30010,
-		"ERROR_CODE_REPOST_FAILED":                      30011,
-		"ERROR_CODE_GET_LIKERS_FAILED":                  30012,
-		"ERROR_CODE_GET_TIMELINE_FAILED":                30013,
-		"ERROR_CODE_COMMENT_ID_REQUIRED":                30014,
-		"ERROR_CODE_CREATE_COMMENT_FAILED":              30015,
-		"ERROR_CODE_GET_COMMENTS_FAILED":                30016,
-		"ERROR_CODE_DELETE_COMMENT_FAILED":              30017,
-		"ERROR_CODE_NOTE_ID_REQUIRED":                   30101,
-		"ERROR_CODE_NOTE_NOT_FOUND":                     30102,
-		"ERROR_CODE_NOTE_EMPTY_CONTENT":                 30103,
-		"ERROR_CODE_CREATE_NOTE_FAILED":                 30104,
-		"ERROR_CODE_UPDATE_NOTE_FAILED":                 30105,
-		"ERROR_CODE_DELETE_NOTE_FAILED":                 30106,
-		"ERROR_CODE_RESTORE_NOTE_FAILED":                30107,
-		"ERROR_CODE_SEARCH_NOTES_FAILED":                30108,
-		"ERROR_CODE_LIST_NOTES_FAILED":                  30109,
-		"ERROR_CODE_NOTE_PERMISSION_DENIED":             30110,
-		"ERROR_CODE_FEDERATION_HANDLE_REQUIRED":         40001,
-		"ERROR_CODE_FEDERATION_INVALID_VISIBILITY":      40002,
-		"ERROR_CODE_FEDERATION_TOMBSTONED":              40003,
-		"ERROR_CODE_FEDERATION_NOT_READY":               40004,
-		"ERROR_CODE_FEDERATION_NOT_LOCAL":               40005,
-		"ERROR_CODE_FEDERATION_RESOLVE_FAILED":          40006,
-		"ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND":        40007,
-		"ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING":  40008,
+		"ERROR_CODE_UNSPECIFIED":                           0,
+		"ERROR_CODE_UNDEFINED":                             1,
+		"ERROR_CODE_WELL_KNOWN_INVALID_RESOURCE_FORMAT":    10001,
+		"ERROR_CODE_WELL_KNOWN_UNSUPPORTED_PREFIX_TYPE":    10002,
+		"ERROR_CODE_ACTOR_INVALID_NAME":                    10003,
+		"ERROR_CODE_ACTOR_INVALID_EMAIL":                   10004,
+		"ERROR_CODE_ACTOR_INVALID_PASSWORD":                10005,
+		"ERROR_CODE_ACTOR_EXISTS":                          10006,
+		"ERROR_CODE_ACTOR_INVALID_PASSPORT":                10007,
+		"ERROR_CODE_ACTOR_NOT_FOUND":                       10008,
+		"ERROR_CODE_ACTOR_INVALID_CREDENTIALS":             10009,
+		"ERROR_CODE_PEER_ADDR_EXISTS":                      10010,
+		"ERROR_CODE_UNAUTHORIZED":                          20001,
+		"ERROR_CODE_INVALID_REQUEST":                       20002,
+		"ERROR_CODE_INVALID_QUERY_PARAMETERS":              20003,
+		"ERROR_CODE_INVALID_REQUEST_BODY":                  20004,
+		"ERROR_CODE_INVALID_PROTOBUF":                      20005,
+		"ERROR_CODE_FAILED_TO_READ_BODY":                   20006,
+		"ERROR_CODE_METHOD_NOT_ALLOWED":                    20007,
+		"ERROR_CODE_INTERNAL_SERVER_ERROR":                 20008,
+		"ERROR_CODE_POST_ID_REQUIRED":                      30001,
+		"ERROR_CODE_POST_NOT_FOUND":                        30002,
+		"ERROR_CODE_USER_ID_REQUIRED":                      30003,
+		"ERROR_CODE_CREATE_POST_FAILED":                    30004,
+		"ERROR_CODE_UPDATE_POST_FAILED":                    30005,
+		"ERROR_CODE_DELETE_POST_FAILED":                    30006,
+		"ERROR_CODE_LIKE_POST_FAILED":                      30007,
+		"ERROR_CODE_UNLIKE_POST_FAILED":                    30008,
+		"ERROR_CODE_GET_POST_FAILED":                       30009,
+		"ERROR_CODE_LIST_POSTS_FAILED":                     30010,
+		"ERROR_CODE_REPOST_FAILED":                         30011,
+		"ERROR_CODE_GET_LIKERS_FAILED":                     30012,
+		"ERROR_CODE_GET_TIMELINE_FAILED":                   30013,
+		"ERROR_CODE_COMMENT_ID_REQUIRED":                   30014,
+		"ERROR_CODE_CREATE_COMMENT_FAILED":                 30015,
+		"ERROR_CODE_GET_COMMENTS_FAILED":                   30016,
+		"ERROR_CODE_DELETE_COMMENT_FAILED":                 30017,
+		"ERROR_CODE_NOTE_ID_REQUIRED":                      30101,
+		"ERROR_CODE_NOTE_NOT_FOUND":                        30102,
+		"ERROR_CODE_NOTE_EMPTY_CONTENT":                    30103,
+		"ERROR_CODE_CREATE_NOTE_FAILED":                    30104,
+		"ERROR_CODE_UPDATE_NOTE_FAILED":                    30105,
+		"ERROR_CODE_DELETE_NOTE_FAILED":                    30106,
+		"ERROR_CODE_RESTORE_NOTE_FAILED":                   30107,
+		"ERROR_CODE_SEARCH_NOTES_FAILED":                   30108,
+		"ERROR_CODE_LIST_NOTES_FAILED":                     30109,
+		"ERROR_CODE_NOTE_PERMISSION_DENIED":                30110,
+		"ERROR_CODE_CONTENT_PREKEY_FORBIDDEN":              30201,
+		"ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL":       30202,
+		"ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND":         30203,
+		"ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH":            30204,
+		"ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT":        30205,
+		"ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED":          30206,
+		"ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE":      30207,
+		"ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED":         30208,
+		"ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE": 30209,
+		"ERROR_CODE_FEDERATION_HANDLE_REQUIRED":            40001,
+		"ERROR_CODE_FEDERATION_INVALID_VISIBILITY":         40002,
+		"ERROR_CODE_FEDERATION_TOMBSTONED":                 40003,
+		"ERROR_CODE_FEDERATION_NOT_READY":                  40004,
+		"ERROR_CODE_FEDERATION_NOT_LOCAL":                  40005,
+		"ERROR_CODE_FEDERATION_RESOLVE_FAILED":             40006,
+		"ERROR_CODE_FEDERATION_HANDLE_NOT_FOUND":           40007,
+		"ERROR_CODE_FEDERATION_LOCAL_IDENTITY_MISSING":     40008,
 	}
 )
 
@@ -304,7 +331,7 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\adetails\x18\x03 \x03(\v26.peers_touch.model.error.v1.ErrorResponse.DetailsEntryR\adetails\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xb3\x10\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xe8\x13\n" +
 	"\tErrorCode\x12\x1a\n" +
 	"\x16ERROR_CODE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ERROR_CODE_UNDEFINED\x10\x01\x122\n" +
@@ -352,7 +379,16 @@ const file_domain_error_error_proto_rawDesc = "" +
 	"\x1eERROR_CODE_RESTORE_NOTE_FAILED\x10\x9b\xeb\x01\x12$\n" +
 	"\x1eERROR_CODE_SEARCH_NOTES_FAILED\x10\x9c\xeb\x01\x12\"\n" +
 	"\x1cERROR_CODE_LIST_NOTES_FAILED\x10\x9d\xeb\x01\x12'\n" +
-	"!ERROR_CODE_NOTE_PERMISSION_DENIED\x10\x9e\xeb\x01\x12+\n" +
+	"!ERROR_CODE_NOTE_PERMISSION_DENIED\x10\x9e\xeb\x01\x12)\n" +
+	"#ERROR_CODE_CONTENT_PREKEY_FORBIDDEN\x10\xf9\xeb\x01\x120\n" +
+	"*ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL\x10\xfa\xeb\x01\x12.\n" +
+	"(ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND\x10\xfb\xeb\x01\x12+\n" +
+	"%ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH\x10\xfc\xeb\x01\x12/\n" +
+	")ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT\x10\xfd\xeb\x01\x12-\n" +
+	"'ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED\x10\xfe\xeb\x01\x121\n" +
+	"+ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE\x10\xff\xeb\x01\x12.\n" +
+	"(ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED\x10\x80\xec\x01\x126\n" +
+	"0ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE\x10\x81\xec\x01\x12+\n" +
 	"%ERROR_CODE_FEDERATION_HANDLE_REQUIRED\x10\xc1\xb8\x02\x12.\n" +
 	"(ERROR_CODE_FEDERATION_INVALID_VISIBILITY\x10¸\x02\x12&\n" +
 	" ERROR_CODE_FEDERATION_TOMBSTONED\x10ø\x02\x12%\n" +

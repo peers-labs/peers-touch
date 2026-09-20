@@ -51,6 +51,83 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_station_profiles_are_explicit_runtime_bindings(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_station_profile_bindings(
+                [
+                    "station-primary=sixwin-primary",
+                    "station-secondary=sixwin-secondary",
+                ]
+            ),
+            {
+                "station-primary": "sixwin-primary",
+                "station-secondary": "sixwin-secondary",
+            },
+        )
+
+    def test_station_profile_binding_rejects_missing_or_duplicate_values(
+        self,
+    ) -> None:
+        module = load_module()
+
+        for values in (
+            ["sixwin"],
+            ["station-primary="],
+            ["=sixwin"],
+            ["station-primary=sixwin", "station-primary=other"],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_station_profile_bindings(values)
+
+    def test_service_profiles_are_explicit_runtime_bindings(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_service_profile_bindings(["relay=one"]),
+            {"relay": "one"},
+        )
+        for values in (
+            ["relay"],
+            ["relay="],
+            ["=one"],
+            ["relay=one", "relay=two"],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_service_profile_bindings(values)
+
+    def test_load_plan_uses_the_current_python_interpreter(self) -> None:
+        module = load_module()
+        store = mock.Mock()
+        store.root = Path("synthetic-artifacts")
+
+        def project_plan(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+            output = Path(command[command.index("--output") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "execution": {
+                            "formalPlan": "plans/active/plan.md",
+                        },
+                        "gates": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(
+            module.subprocess,
+            "run",
+            side_effect=project_plan,
+        ) as run:
+            plan, source = module.load_plan(None, store)
+
+        self.assertEqual(run.call_args.args[0][0], sys.executable)
+        self.assertEqual(plan["gates"], [])
+        self.assertEqual(source, "plans/active/plan.md")
+
     def test_source_identity_drift_preserves_aggregate_baseline(self) -> None:
         module = load_module()
         expected = {
@@ -209,7 +286,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 module.subprocess,
                 "run",
                 return_value=completed,
-            ):
+            ) as run:
                 exit_code = module.main()
 
             store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
@@ -223,6 +300,9 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(latest["result"]["sourceDrift"]["expected"], expected)
         self.assertEqual(latest["result"]["sourceDrift"]["observed"], observed)
         self.assertIn("source drifted during aggregate execution", log)
+        gate_call = next(call for call in run.call_args_list if call.kwargs.get("shell"))
+        self.assertEqual(gate_call.kwargs["encoding"], "utf-8")
+        self.assertEqual(gate_call.kwargs["errors"], "replace")
 
     def test_core_exports_generic_runner_contracts(self) -> None:
         self.assertTrue(

@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type { InputRef } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon } from '@lobehub/ui';
+import { ActionIcon, Tag } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { useAgentCapabilityStore } from '../store/agentCapabilities';
+import {
+  projectAgentComposerReadiness,
+  type AgentComposerReadinessState,
+} from '../store/agentCapabilityReadiness';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
 import {
@@ -23,9 +28,16 @@ import {
 import { useMentionTrigger } from './chat/composer/useMentionTrigger';
 import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
-import type { AvailableModel, Agent } from '../services/desktop_api';
+import {
+  isAgentAttachmentRejectedError,
+  type AvailableModel,
+  type Agent,
+} from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
+import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
+import { log } from '../utils/logger';
+import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -34,6 +46,55 @@ const COMPOSER_COLORS = {
   textTertiary: '#9b9b9b',
   toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
+
+const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
+
+type ComposerReadinessDisplayState =
+  | AgentComposerReadinessState
+  | 'checking';
+
+function shortSnapshotId(snapshotId: string): string {
+  if (!snapshotId) return '';
+  return snapshotId.length > 18
+    ? `${snapshotId.slice(0, 18)}…`
+    : snapshotId;
+}
+
+function readinessTagColor(
+  state: ComposerReadinessDisplayState,
+): 'success' | 'warning' | 'error' | undefined {
+  if (state === 'ready') return 'success';
+  if (state === 'degraded' || state === 'checking') return 'warning';
+  if (
+    state === 'unavailable'
+    || state === 'blocked'
+    || state === 'stale'
+  ) {
+    return 'error';
+  }
+  return undefined;
+}
+
+// #region debug-point N-Q:context-overflow-composer-owner
+function reportContextOverflowComposerDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'owner-pre-fix',
+      hypothesisId,
+      location: 'ChatInput.tsx:composer-owner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
 
 export interface ChatInputProps {
   placeholder?: string;
@@ -63,14 +124,50 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
+  const composerReferenceRemoval = useChatStore(s => s.composerReferenceRemoval);
   const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
+  const consumeComposerReferenceRemoval = useChatStore(
+    s => s.consumeComposerReferenceRemoval,
+  );
+  const consumeComposerResourceSelection = useChatStore(
+    s => s.consumeComposerResourceSelection,
+  );
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const selectedAgentName = useAgentStore(s => s.selectedAgent);
+  const agents = useAgentStore(s => s.agents);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const availableModels = useAgentStore(s => s.availableModels);
   const setSelectedModel = useAgentStore(s => s.setSelectedModel);
+  const selectedAgentData = useMemo(
+    () => agents.find((agent) => agent.name === selectedAgentName),
+    [agents, selectedAgentName],
+  );
+  const selectedAgentSaveState = useAgentStore((state) => (
+    selectedAgentData
+      ? state.saveStateByAgentId[selectedAgentData.id] ?? 'idle'
+      : 'idle'
+  ));
+  const capabilityBindings = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.bindingsByAgentId[selectedAgentData.id] ?? EMPTY_CAPABILITY_BINDINGS
+      : EMPTY_CAPABILITY_BINDINGS
+  ));
+  const capabilityReadinessSnapshot = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.readinessByAgentId[selectedAgentData.id]
+      : undefined
+  ));
+  const capabilityReadinessLoading = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? Boolean(state.loadingAgentIds[selectedAgentData.id])
+      : false
+  ));
+  const refreshCapabilityReadiness = useAgentCapabilityStore(
+    (state) => state.loadAgent,
+  );
 
   // Mention (@) system — wires the standalone mention store/popup/trigger into
   // the live agent composer. Aligns Peers @mention with LobeHub composer-level
@@ -98,23 +195,72 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const modelInfo =
     availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
     availableModels.find((model) => model.id === currentModelId);
-  const capabilityWarning = selectAgentCapabilityWarning(modelInfo, readyAttachments);
+  const composerReadiness = useMemo(
+    () => projectAgentComposerReadiness(
+      selectedAgentData?.id ?? '',
+      selectedAgentData?.version ?? 0,
+      capabilityBindings,
+      capabilityReadinessSnapshot,
+    ),
+    [
+      capabilityBindings,
+      capabilityReadinessSnapshot,
+      selectedAgentData?.id,
+      selectedAgentData?.version,
+    ],
+  );
+  const readinessDisplayState: ComposerReadinessDisplayState =
+    selectedAgentSaveState === 'saving'
+    || (!capabilityReadinessSnapshot && capabilityReadinessLoading)
+      ? 'checking'
+      : composerReadiness.state;
+  const readinessCanSend =
+    selectedAgentSaveState !== 'saving' && composerReadiness.canSend;
+  const capabilityWarning = selectAgentCapabilityWarning(
+    capabilityReadinessSnapshot,
+    readyAttachments,
+  );
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
     if (previousKey) topicDraftRef.current[previousKey] = input;
-    setInput(topicDraftRef.current[currentSessionKey] || '');
+    const restoredDraft = topicDraftRef.current[currentSessionKey] || '';
+    // #region debug-point O:context-overflow-session-draft
+    void reportContextOverflowComposerDebug('O', 'session-draft-restore', {
+      previousSessionPresent: previousKey.length > 0,
+      currentSessionPresent: currentSessionKey.length > 0,
+      sessionChanged: previousKey !== currentSessionKey,
+      restoredDraftLength: restoredDraft.length,
+    });
+    // #endregion
+    setInput(restoredDraft);
     prevSessionKeyRef.current = currentSessionKey;
   }, [currentSessionKey]);
 
   useEffect(() => {
     if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
+    // #region debug-point N-P:context-overflow-input-state
+    void reportContextOverflowComposerDebug('N-P', 'input-state-committed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      inputEmpty: input.length === 0,
+      inputLength: input.length,
+      storedDraftLength:
+        (topicDraftRef.current[currentSessionKey] || '').length,
+    });
+    // #endregion
   }, [currentSessionKey, input]);
 
   // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
   // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
   useEffect(() => {
     if (!composerFill) return;
+    // #region debug-point N-Q:context-overflow-composer-fill
+    void reportContextOverflowComposerDebug('N-Q', 'composer-fill-observed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      requestedEmpty: composerFill.text.length === 0,
+      requestedLength: composerFill.text.length,
+    });
+    // #endregion
     setInput(composerFill.text);
     consumeComposerFill();
     requestAnimationFrame(() => {
@@ -123,15 +269,86 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         el.focus();
         const end = composerFill.text.length;
         el.setSelectionRange(end, end);
+        // #region debug-point N-P:context-overflow-composer-fill-frame
+        void reportContextOverflowComposerDebug(
+          'N-P',
+          'composer-fill-animation-frame',
+          {
+            currentNodePresent: true,
+            currentNodeConnected: el.isConnected,
+            domEmpty: el.value.length === 0,
+            domLength: el.value.length,
+            requestStillPending:
+              useChatStore.getState().composerFill !== null,
+          },
+        );
+        // #endregion
       }
     });
   }, [composerFill, consumeComposerFill]);
 
+  // Invalid references remain composer-owned: remove only the Station-selected
+  // inline token after the user invokes recovery, without touching attachments.
   useEffect(() => {
-    if (composerFocusNonce === 0) return;
-    consumeComposerFocus();
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [composerFocusNonce, consumeComposerFocus]);
+    if (
+      !composerReferenceRemoval
+      || composerReferenceRemoval.sessionKey !== currentSessionKey
+    ) {
+      return;
+    }
+    let active = true;
+    const request = composerReferenceRemoval;
+    const sourceDraft = input;
+
+    void removeRejectedInlineReferences(
+      sourceDraft,
+      request.referenceKind,
+      request.referenceHash,
+    ).then(({ draft }) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      setInput((current) => current === sourceDraft ? draft : current);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }).catch((error: unknown) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      log.error('chat', 'Failed to remove invalid inline reference', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    composerReferenceRemoval,
+    consumeComposerReferenceRemoval,
+    currentSessionKey,
+    input,
+  ]);
+
+  useEffect(() => {
+    // Keep the native picker composer-owned. The direct store subscription
+    // opens it in the originating user-action stack, then restores the draft
+    // focus without retrying or resending the failed Turn.
+    const unsubscribeResourceSelection = useChatStore.subscribe((state) => {
+      const request = state.composerResourceSelection;
+      if (!request || request.sessionKey !== state.currentSessionKey) return;
+      consumeComposerResourceSelection(request.nonce);
+      fileInputRef.current?.click();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    });
+    if (composerFocusNonce !== 0) {
+      consumeComposerFocus();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+    return unsubscribeResourceSelection;
+  }, [
+    composerFocusNonce,
+    consumeComposerFocus,
+    consumeComposerResourceSelection,
+  ]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -156,7 +373,32 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed || capabilityWarning?.blocking) return;
+    const latestAgentState = useAgentStore.getState();
+    const latestAgent = latestAgentState.agents.find(
+      (agent) => agent.name === latestAgentState.selectedAgent,
+    );
+    if (!latestAgent) return;
+    const latestCapabilityState = useAgentCapabilityStore.getState();
+    const latestReadiness = projectAgentComposerReadiness(
+      latestAgent.id,
+      latestAgent.version,
+      latestCapabilityState.bindingsByAgentId[latestAgent.id]
+        ?? EMPTY_CAPABILITY_BINDINGS,
+      latestCapabilityState.readinessByAgentId[latestAgent.id],
+    );
+    const latestCapabilityWarning = selectAgentCapabilityWarning(
+      latestCapabilityState.readinessByAgentId[latestAgent.id],
+      readyAttachments,
+    );
+    if (
+      (!text && readyAttachments.length === 0)
+      || isStreaming
+      || uploading
+      || failed
+      || latestAgentState.saveStateByAgentId[latestAgent.id] === 'saving'
+      || !latestReadiness.canSend
+      || latestCapabilityWarning?.blocking
+    ) return;
     sendMessage(text, toComposerAttachments(), {
       onAccepted: () => {
         setInput('');
@@ -165,18 +407,24 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
       onRejected: (error) => {
-        if (error?.error_type !== 'CONTEXT_ATTACHMENT_REJECTED') return;
+        if (!isAgentAttachmentRejectedError(error)) return;
         rejectDraft(
           error.details.attachment_id,
           error.locale_key || 'agent.errors.attachmentRejected',
         );
       },
     });
-  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
+  }, [input, readyAttachments, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
+    // #region debug-point Q:context-overflow-native-input
+    void reportContextOverflowComposerDebug('Q', 'native-input-observed', {
+      nextEmpty: value.length === 0,
+      nextLength: value.length,
+    });
+    // #endregion
     setInput(value);
     mentionScan(value, event.target.selectionStart ?? value.length);
   }, [mentionScan]);
@@ -225,15 +473,34 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     const files = Array.from(event.target.files || []);
     if (files.length > 0) addFiles(files);
     event.target.value = '';
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }, [addFiles]);
 
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed || Boolean(capabilityWarning?.blocking);
+  const sendDisabled =
+    (!input.trim() && readyAttachments.length === 0)
+    || isStreaming
+    || uploading
+    || failed
+    || !readinessCanSend
+    || Boolean(capabilityWarning?.blocking);
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
     ? modelDisplayName
     : currentModelId || t('chat.model.select');
+  const providerLabel =
+    selectedAgentData?.provider
+    || selectedProviderId
+    || modelInfo?.provider_name
+    || modelInfo?.provider_id
+    || t('chat.input.runtimeSnapshot.unknown');
+  const runtimeSnapshotLabel = shortSnapshotId(
+    composerReadiness.runtimeSnapshotId,
+  ) || t('chat.input.runtimeSnapshot.unknown');
+  const readinessReasonKey = selectedAgentSaveState === 'saving'
+    ? 'checking'
+    : composerReadiness.state;
 
   const modelMenu = useMemo<MenuProps>(() => {
     const search = modelSearch.trim().toLowerCase();
@@ -343,6 +610,102 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       }}
     >
       <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
+
+      <Flexbox
+        data-pt-agent-runtime-snapshot={
+          composerReadiness.runtimeSnapshotId || 'unknown'
+        }
+        data-pt-agent-readiness-snapshot={
+          composerReadiness.snapshotId || 'unknown'
+        }
+        data-pt-agent-readiness-state={readinessDisplayState}
+        data-pt-agent-model-compatibility={composerReadiness.compatibility}
+        data-pt-agent-selected-provider={selectedAgentData?.provider || 'unknown'}
+        data-pt-agent-selected-model={selectedAgentData?.model || 'unknown'}
+        data-pt-agent-readiness-authority={composerReadiness.authority}
+        data-pt-agent-readiness-reason={composerReadiness.reasonCode}
+        horizontal
+        align="center"
+        gap={7}
+        aria-live="polite"
+        style={{
+          minWidth: 0,
+          borderRadius: token.borderRadiusSM,
+          background: token.colorFillQuaternary,
+          color: token.colorTextSecondary,
+          fontSize: 11,
+          padding: '5px 8px',
+        }}
+      >
+        <ServerCog size={14} style={{ flexShrink: 0 }} />
+        <span
+          title={`${providerLabel} / ${modelLabel}`}
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {t('chat.input.runtimeSnapshot.selection', {
+            model: modelLabel,
+            provider: providerLabel,
+          })}
+        </span>
+        <span aria-hidden style={{ color: token.colorTextQuaternary }}>·</span>
+        <span
+          title={composerReadiness.runtimeSnapshotId}
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {t('chat.input.runtimeSnapshot.snapshot', {
+            snapshot: runtimeSnapshotLabel,
+          })}
+        </span>
+        <Tag color={readinessTagColor(readinessDisplayState)} style={{ margin: 0 }}>
+          {t(`chat.input.runtimeSnapshot.state.${readinessDisplayState}`)}
+        </Tag>
+      </Flexbox>
+
+      {!readinessCanSend && (
+        <Flexbox
+          data-pt-agent-readiness-blocking={readinessDisplayState}
+          horizontal
+          align="center"
+          gap={6}
+          style={{
+            color: token.colorErrorText,
+            background: token.colorErrorBg,
+            border: `1px solid ${token.colorErrorBorder}`,
+            borderRadius: token.borderRadiusSM,
+            fontSize: 12,
+            padding: '6px 8px',
+          }}
+        >
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {t(`chat.input.runtimeSnapshot.blocked.${readinessReasonKey}`)}
+          </span>
+          {selectedAgentData ? (
+            <ActionIcon
+              data-pt-agent-readiness-refresh
+              icon={RefreshCw}
+              aria-label={t('chat.input.runtimeSnapshot.refresh')}
+              title={t('chat.input.runtimeSnapshot.refresh')}
+              loading={capabilityReadinessLoading}
+              onClick={() => {
+                void refreshCapabilityReadiness(selectedAgentData.id)
+                  .catch(() => undefined);
+              }}
+              size={{ blockSize: 26, size: 13 }}
+            />
+          ) : null}
+        </Flexbox>
+      )}
 
       {readinessErrorKey && (
         <div style={{ color: token.colorError, fontSize: 12 }}>
@@ -525,6 +888,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <input
         data-pt-agent-attachment-input
+        data-pt-agent-resource-picker
         ref={fileInputRef}
         type="file"
         accept={AGENT_ATTACHMENT_ACCEPT}

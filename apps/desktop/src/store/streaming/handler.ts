@@ -1,5 +1,4 @@
 import type {
-  BudgetExhaustionKind,
   BudgetNotice,
   ChatMessage,
   KnowledgeChunkInfo,
@@ -8,12 +7,22 @@ import type {
 import type { TurnStreamEvent, StreamingAccumulator } from './types';
 import { useInterventionStore } from '../intervention';
 import type { InterventionType } from '../intervention';
+import {
+  AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE,
+  isAgentLifecycleInterruptedError,
+  isAgentToolLoopBudgetExhaustedError,
+  projectAgentTurnErrorPayload,
+  projectAgentTurnOutcomeErrorPayload,
+  projectAgentTypedErrorPayload,
+  resolveAgentTypedErrorAction,
+} from '../../services/desktop_api';
 
 function s(v: unknown): string {
   return typeof v === 'string' ? v : v != null ? String(v) : '';
 }
 
-export const BUDGET_ERROR_TYPE = 'TOOL_LOOP_BUDGET_EXHAUSTED';
+export const BUDGET_ERROR_TYPE =
+  AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE;
 
 export function terminalReasonFromStreamData(
   data: Record<string, unknown>,
@@ -29,72 +38,24 @@ export function terminalReasonFromStreamData(
 export function projectAgentTypedError(
   data: Record<string, unknown>,
 ): ChatMessage['typedError'] {
-  const errorType = s(data.error_type || data.errorType);
-  const localeKey = s(data.locale_key || data.localeKey);
-  if (
-    !errorType
-    || !localeKey
-    || typeof data.retryable !== 'boolean'
-    || typeof data.terminal !== 'boolean'
-  ) {
-    return undefined;
-  }
-  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
-    ? Object.fromEntries(
-        Object.entries(data.details as Record<string, unknown>)
-          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      )
-    : {};
-  return {
-    error: s(data.error) || localeKey,
-    error_type: errorType,
-    locale_key: localeKey,
-    retryable: data.retryable,
-    terminal: data.terminal,
-    details,
-  };
+  return projectAgentTypedErrorPayload(data);
 }
 
 function cancellationTypedError(
   data: Record<string, unknown>,
 ): ChatMessage['typedError'] {
-  const outcome = data.outcome_error ?? data.outcomeError;
-  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
-    return undefined;
-  }
-  return projectAgentTypedError(outcome as Record<string, unknown>);
-}
-
-function budgetKind(reason: string): BudgetExhaustionKind {
-  if (reason.includes('tool_call')) return 'tool_calls';
-  if (reason.includes('wall_time')) return 'wall_time';
-  if (reason.includes('attempt')) return 'attempts';
-  if (reason.includes('agent_step')) return 'agent_steps';
-  if (reason.includes('input_token')) return 'input_tokens';
-  if (reason.includes('output_token')) return 'output_tokens';
-  if (reason.includes('attachment')) return 'attachments';
-  if (reason.includes('cost')) return 'cost';
-  return 'unknown';
+  return projectAgentTurnOutcomeErrorPayload(data);
 }
 
 export function projectBudgetNotice(data: Record<string, unknown>): BudgetNotice | undefined {
-  const errorType = s(data.error_type || data.errorType || data.type);
-  const localeKey = s(data.locale_key || data.localeKey);
-  const details = data.details && typeof data.details === 'object'
-    ? data.details as Record<string, unknown>
-    : {};
-  const reason = s(details.reason || data.reason || data.terminal_reason || data.terminalReason);
-  const budget_exhausted = errorType === BUDGET_ERROR_TYPE
-    || localeKey === 'agent.errors.toolLoopBudgetExhausted'
-    || reason.includes('exhausted');
-  if (!budget_exhausted) return undefined;
+  const typedError = projectAgentTurnErrorPayload(data);
+  if (!isAgentToolLoopBudgetExhaustedError(typedError)) return undefined;
 
   return {
-    kind: budgetKind(reason),
-    reason,
-    limit: s(details.limit) || undefined,
-    consumed: s(details.consumed) || undefined,
-    localeKey: localeKey || 'chat.message.budget.exhausted',
+    kind: typedError.details.budget_kind,
+    turnId: typedError.details.turn_id,
+    limit: typedError.details.limit,
+    localeKey: typedError.locale_key,
   };
 }
 
@@ -149,6 +110,19 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
           lastEventAt: Date.now(),
         };
       }
+      const typedError = projectAgentTurnOutcomeErrorPayload(d);
+      if (typedError?.terminal === false) {
+        return {
+          ...msg,
+          error: typedError.locale_key,
+          typedError,
+          resolution: resolveAgentTypedErrorAction(typedError) ?? null,
+          loading: true,
+          cancelled: false,
+          terminalStatus: undefined,
+          lastEventAt: Date.now(),
+        };
+      }
       return { ...msg, lastEventAt: Date.now() };
     }
 
@@ -156,15 +130,37 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'error': {
       const errMsg = s(d.error) || 'Unknown error';
       const budgetNotice = projectBudgetNotice(d);
-      const typedError = projectAgentTypedError(d);
+      const typedError = event.event === 'error'
+        ? projectAgentTurnErrorPayload(d)
+        : projectAgentTypedError(d);
+      const outcomeError = event.event === 'error'
+        ? projectAgentTurnOutcomeErrorPayload(d)
+        : undefined;
+      const interruptedError = event.event === 'error'
+        && isAgentLifecycleInterruptedError(outcomeError)
+        ? outcomeError
+        : undefined;
+      const interrupted = Boolean(interruptedError);
+      const suppliedResolution = d.resolution && typeof d.resolution === 'object'
+        ? d.resolution as ErrorResolutionAction
+        : null;
+      const mappedResolution = resolveAgentTypedErrorAction(typedError);
+      const resolution = (
+        mappedResolution?.type === 'recover' && !interrupted
+          ? null
+          : mappedResolution
+      )
+        ?? (suppliedResolution?.type === 'recover' ? null : suppliedResolution);
       return {
         ...msg,
         error: budgetNotice?.localeKey || typedError?.locale_key || errMsg,
         typedError: typedError ?? msg.typedError,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
-        terminalStatus: 'failed',
-        errorDetail: s(d.detail),
-        resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
+        terminalStatus: interrupted ? 'interrupted' : 'failed',
+        errorDetail: interrupted
+          ? terminalReasonFromStreamData(d) || interruptedError?.details.reason_code
+          : s(d.detail),
+        resolution,
         providerId: s(d.providerId),
         loading: false,
       };
@@ -234,11 +230,19 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       const terminalReason = terminalReasonFromStreamData(d);
       const budgetNotice = projectBudgetNotice(d);
       const hasSnapshotText = typeof d.text === 'string';
+      const projectedError = projectAgentTurnErrorPayload(d);
       const cancelledError = (
         status === 'cancelled'
         && msg.typedError?.error_type === 'LIFECYCLE_CANCELLED'
       )
         ? msg.typedError
+        : undefined;
+      const interruptedError = status === 'interrupted'
+        ? isAgentLifecycleInterruptedError(projectedError)
+          ? projectedError
+          : isAgentLifecycleInterruptedError(msg.typedError)
+            ? msg.typedError
+            : undefined
         : undefined;
       const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
         ? status as NonNullable<ChatMessage['terminalStatus']>
@@ -248,22 +252,31 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         content: hasSnapshotText ? d.text as string : msg.content,
         cancelled: status === 'cancelled',
         error:
-          status === 'failed' || status === 'interrupted'
-            ? terminalReason || msg.error
-            : status === 'cancelled'
-              ? cancelledError?.locale_key
-              : status === 'completed'
-              ? undefined
-              : msg.error,
+          status === 'interrupted'
+            ? interruptedError?.locale_key || terminalReason || msg.error
+            : status === 'failed'
+              ? terminalReason || msg.error
+              : status === 'cancelled'
+                ? cancelledError?.locale_key
+                : status === 'completed'
+                  ? undefined
+                  : msg.error,
         typedError:
           status === 'cancelled'
             ? cancelledError
-            : msg.typedError,
+            : status === 'interrupted'
+              ? interruptedError
+              : msg.typedError,
         errorDetail:
           status === 'failed' || status === 'cancelled' || status === 'interrupted'
             ? terminalReason || msg.errorDetail
             : msg.errorDetail,
-        resolution: status === 'cancelled' ? null : msg.resolution,
+        resolution:
+          status === 'cancelled'
+            ? null
+            : status === 'interrupted'
+              ? resolveAgentTypedErrorAction(interruptedError) ?? null
+              : msg.resolution,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus,
         loading: status === 'running',
@@ -294,6 +307,12 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 }
 
 export function isTerminalEvent(event: TurnStreamEvent): boolean {
+  if (
+    event.event === 'error'
+    && projectAgentTurnOutcomeErrorPayload(event.data)?.terminal === false
+  ) {
+    return false;
+  }
   return event.event === 'done'
     || event.event === 'error'
     || event.event === 'budget_exhausted'

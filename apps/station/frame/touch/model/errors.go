@@ -40,6 +40,16 @@ var errorMessages = map[ErrorCode]string{
 	ErrorCode_ERROR_CODE_REPOST_FAILED:       "failed to repost",
 	ErrorCode_ERROR_CODE_GET_LIKERS_FAILED:   "failed to get likers",
 	ErrorCode_ERROR_CODE_GET_TIMELINE_FAILED: "failed to get timeline",
+
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN:              "content pre-key access is forbidden",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL:       "content pre-key material is invalid",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND:         "content pre-key pool was not found",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH:            "content pre-key pool epoch is stale",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT:        "content pre-key request conflicts with persisted state",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED:          "content pre-key pool is depleted",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE:      "content pre-key request is too large",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED:         "content pre-key quota was exceeded",
+	ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE: "content pre-key dependency is unavailable",
 }
 
 func NewErrorResponse(code ErrorCode, customMessage ...string) *ErrorResponse {

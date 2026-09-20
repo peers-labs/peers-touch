@@ -50,7 +50,6 @@ const CALLBACK_SCHEME: &str = "peers-touch";
 const CALLBACK_HOST: &str = "oauth";
 const CALLBACK_PATH: &str = "/callback";
 const CALLBACK_URI: &str = "peers-touch://oauth/callback";
-const ALLOW_INSECURE_LOOPBACK: bool = cfg!(debug_assertions);
 const START_PATH: &str = "/oauth/mobile/start";
 const COMPLETE_PATH: &str = "/oauth/mobile/complete";
 const STATUS_PATH: &str = "/oauth/mobile/status";
@@ -445,7 +444,6 @@ impl OAuthCoordinator {
                 ensure_start_binding(&active, &input)?;
                 if active.station_origin != input.station_origin() {
                     active.station_origin = input.station_origin().to_string();
-                    active.allow_insecure_loopback = input.scope.allow_insecure_loopback;
                     write_attempt(storage, &active)?;
                 }
                 if active.oauth_attempt_id.is_none() {
@@ -477,12 +475,7 @@ impl OAuthCoordinator {
         let request = attempt.start_request();
         let response: StartOAuthAttemptResponse = match self
             .transport
-            .post(
-                &attempt.station_origin,
-                attempt.allow_insecure_loopback,
-                START_PATH,
-                &request,
-            )
+            .post(&attempt.station_origin, START_PATH, &request)
             .await
         {
             Ok(response) => response,
@@ -537,12 +530,7 @@ impl OAuthCoordinator {
 
         let response: CompleteOAuthAttemptResponse = match self
             .transport
-            .post(
-                &attempt.station_origin,
-                attempt.allow_insecure_loopback,
-                COMPLETE_PATH,
-                &request,
-            )
+            .post(&attempt.station_origin, COMPLETE_PATH, &request)
             .await
         {
             Ok(response) => response,
@@ -571,12 +559,7 @@ impl OAuthCoordinator {
         let request = attempt.status_request()?;
         let response: GetOAuthAttemptResponse = self
             .transport
-            .post(
-                &attempt.station_origin,
-                attempt.allow_insecure_loopback,
-                STATUS_PATH,
-                &request,
-            )
+            .post(&attempt.station_origin, STATUS_PATH, &request)
             .await?;
         clear_resolved_callback_material(storage, attempt)?;
         self.apply_station_outcome(storage, attempt, StationOutcome::from_status(response))
@@ -634,12 +617,7 @@ impl OAuthCoordinator {
         let request = attempt.acknowledge_request()?;
         let response: AcknowledgeOAuthCredentialResponse = self
             .transport
-            .post(
-                &attempt.station_origin,
-                attempt.allow_insecure_loopback,
-                ACKNOWLEDGE_PATH,
-                &request,
-            )
+            .post(&attempt.station_origin, ACKNOWLEDGE_PATH, &request)
             .await?;
         let result = OAuthAttemptResult::try_from(response.result)
             .map_err(|_| oauth_error("oauthInvalidAcknowledgeResult"))?;
@@ -661,12 +639,7 @@ impl OAuthCoordinator {
             let request = attempt.cancel_request()?;
             let response: CancelOAuthAttemptResponse = self
                 .transport
-                .post(
-                    &attempt.station_origin,
-                    attempt.allow_insecure_loopback,
-                    CANCEL_PATH,
-                    &request,
-                )
+                .post(&attempt.station_origin, CANCEL_PATH, &request)
                 .await?;
             let result = OAuthAttemptResult::try_from(response.result)
                 .map_err(|_| oauth_error("oauthInvalidCancelResult"))?;
@@ -737,18 +710,13 @@ fn completion_request_kind(attempt: &PersistedOAuthAttempt) -> CompletionRequest
 struct ValidatedScope {
     station_origin: String,
     station_peer_id: String,
-    allow_insecure_loopback: bool,
 }
 
 impl ValidatedScope {
     fn new(input: OAuthScopeIntent) -> MobileResult<Self> {
         Ok(Self {
-            station_origin: validate_station_origin(
-                &input.station_origin,
-                ALLOW_INSECURE_LOOPBACK,
-            )?,
+            station_origin: validate_station_origin(&input.station_origin)?,
             station_peer_id: clean_required(input.station_peer_id, "stationPeerId")?,
-            allow_insecure_loopback: ALLOW_INSECURE_LOOPBACK,
         })
     }
 }
@@ -806,7 +774,6 @@ struct PersistedOAuthAttempt {
     storage_key: String,
     station_origin: String,
     station_peer_id: String,
-    allow_insecure_loopback: bool,
     access_attempt_id: String,
     gate_id: String,
     provider: String,
@@ -866,7 +833,6 @@ impl PersistedOAuthAttempt {
             storage_key,
             station_origin: input.station_origin().to_string(),
             station_peer_id: input.station_peer_id().to_string(),
-            allow_insecure_loopback: input.scope.allow_insecure_loopback,
             access_attempt_id: input.access_attempt_id,
             gate_id: input.gate_id,
             provider: input.provider,
@@ -1419,7 +1385,6 @@ fn ensure_scope_matches<S: SecretStore>(
 ) -> MobileResult<()> {
     if attempt.station_peer_id != scope.station_peer_id
         || attempt.station_origin != scope.station_origin
-        || attempt.allow_insecure_loopback != scope.allow_insecure_loopback
     {
         return Err(oauth_error("oauthStationMismatch"));
     }

@@ -25,6 +25,17 @@ message ActorReadCursor {
   google.protobuf.Timestamp updated_at = 4;
 }
 
+message FederatedConversationReadCursor {
+  uint32 format_version = 1;
+  string federation_id = 2;
+  string conversation_id = 3;
+  string authority_station_peer_id = 4;
+  uint64 authority_epoch = 5;
+  CryptoEndpoint reader = 6;
+  string reader_home_station_peer_id = 7;
+  int64 last_read_sequence = 8;
+}
+
 message MessageDeliveryAggregate {
   string conversation_id = 1;
   string event_id = 2;

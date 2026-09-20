@@ -37,6 +37,7 @@ interface DetailPanelProps {
   onDeleteConversation: (conversationId: string) => void;
   onClearHistory: (conversationId: string) => void;
   onRestoreHistory: (conversationId: string) => void;
+  onSelectBackgroundImage: (conversationId: string, file: File) => void;
   onRemoveMember: (conversationId: string, userId: string) => void;
   onRenameGroup: (conversationId: string, name: string) => void;
   onSetMemberRole: (conversationId: string, userId: string, role: MockGroupRole) => void;
@@ -258,6 +259,7 @@ export function DetailPanel({
   onDeleteConversation,
   onClearHistory,
   onRestoreHistory,
+  onSelectBackgroundImage,
   onRemoveMember,
   onRenameGroup,
   onSetMemberRole,
@@ -483,8 +485,18 @@ export function DetailPanel({
               Local avatar selected: {avatarFileName}
             </span>
           )}
-          {!isGroup && conversation.online && (
-            <span style={{ fontSize: T.fontSm, color: T.success, marginTop: T.space1 }}>Online</span>
+          {!isGroup && (
+            <span
+              style={{
+                fontSize: T.fontSm,
+                color: conversation.online === true ? T.success : T.textTertiary,
+                marginTop: T.space1,
+              }}
+            >
+              {conversation.online === undefined
+                ? 'Presence unavailable'
+                : conversation.online ? 'Online' : 'Offline'}
+            </span>
           )}
         </div>
 
@@ -653,7 +665,11 @@ export function DetailPanel({
             type="file"
             accept="image/*"
             hidden
-            onChange={(e) => setBackgroundFileName(e.currentTarget.files?.[0]?.name ?? '')}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              setBackgroundFileName(file?.name ?? '');
+              if (file) onSelectBackgroundImage(conversation.id, file);
+            }}
           />
         </DetailSection>
 

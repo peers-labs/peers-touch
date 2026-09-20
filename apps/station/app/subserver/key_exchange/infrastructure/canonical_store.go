@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -116,39 +118,102 @@ func NewCanonicalStore(db *gorm.DB) (*CanonicalStore, error) {
 
 // Migrate installs the canonical Direct and MLS public-material schema.
 func (s *CanonicalStore) Migrate(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(
-		&IdentityKeyModel{},
-		&SignedPreKeyModel{},
-		&OneTimePreKeyModel{},
-		&MLSKeyPackageModel{},
-		&FederatedMLSKeyPackageClaimModel{},
-		&DirectFetchReceiptModel{},
-		&MLSFetchReceiptModel{},
-	); err != nil {
-		return domain.WrapError(
-			domain.ErrorCodeInternal,
-			"key_exchange.migrate",
-			err,
-		)
-	}
-	for _, statement := range []string{
-		"CREATE UNIQUE INDEX IF NOT EXISTS " +
-			"uidx_ke_signed_pre_key_owner ON " +
-			"key_exchange_signed_pre_keys(actor_ptid, device_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS " +
-			"uidx_mls_key_package_plan_target ON " +
-			"mls_key_packages(reserved_plan_id, ptid, device_id) " +
-			"WHERE reserved_plan_id <> '' AND consumed_at IS NULL",
-	} {
-		if err := s.db.WithContext(ctx).Exec(statement).Error; err != nil {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := migrateFederatedClaimIdentity(tx); err != nil {
 			return domain.WrapError(
 				domain.ErrorCodeInternal,
 				"key_exchange.migrate",
 				err,
 			)
 		}
+		if err := tx.AutoMigrate(
+			&IdentityKeyModel{},
+			&SignedPreKeyModel{},
+			&OneTimePreKeyModel{},
+			&MLSKeyPackageModel{},
+			&FederatedMLSKeyPackageClaimModel{},
+			&DirectFetchReceiptModel{},
+			&MLSFetchReceiptModel{},
+		); err != nil {
+			return domain.WrapError(
+				domain.ErrorCodeInternal,
+				"key_exchange.migrate",
+				err,
+			)
+		}
+		for _, statement := range []string{
+			"CREATE UNIQUE INDEX IF NOT EXISTS " +
+				"uidx_ke_signed_pre_key_owner ON " +
+				"key_exchange_signed_pre_keys(actor_ptid, device_id)",
+			"CREATE UNIQUE INDEX IF NOT EXISTS " +
+				"uidx_mls_key_package_plan_target ON " +
+				"mls_key_packages(reserved_plan_id, ptid, device_id) " +
+				"WHERE reserved_plan_id <> '' AND consumed_at IS NULL",
+		} {
+			if err := tx.Exec(statement).Error; err != nil {
+				return domain.WrapError(
+					domain.ErrorCodeInternal,
+					"key_exchange.migrate",
+					err,
+				)
+			}
+		}
+		return nil
+	})
+}
+
+func migrateFederatedClaimIdentity(db *gorm.DB) error {
+	const table = "federated_mls_key_package_claims"
+	if !db.Migrator().HasTable(table) {
+		return nil
 	}
-	return nil
+
+	columnTypes, err := db.Migrator().ColumnTypes(table)
+	if err != nil {
+		return fmt.Errorf("inspect %s primary key: %w", table, err)
+	}
+	primaryColumns := make([]string, 0, 4)
+	for _, columnType := range columnTypes {
+		primary, ok := columnType.PrimaryKey()
+		if ok && primary {
+			primaryColumns = append(primaryColumns, columnType.Name())
+		}
+	}
+	sort.Strings(primaryColumns)
+
+	canonical := []string{"authority_station_id", "request_id"}
+	legacy := []string{
+		"authority_plan_id",
+		"authority_station_id",
+		"target_device_id",
+		"target_ptid",
+	}
+	switch strings.Join(primaryColumns, ",") {
+	case strings.Join(canonical, ","):
+		return nil
+	case strings.Join(legacy, ","):
+		var rows int64
+		if err := db.Table(table).Count(&rows).Error; err != nil {
+			return fmt.Errorf("count legacy %s rows: %w", table, err)
+		}
+		if rows != 0 {
+			return fmt.Errorf(
+				"legacy %s contains %d rows; explicit reset is required",
+				table,
+				rows,
+			)
+		}
+		if err := db.Migrator().DropTable(table); err != nil {
+			return fmt.Errorf("drop empty legacy %s: %w", table, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf(
+			"%s has unsupported primary key (%s)",
+			table,
+			strings.Join(primaryColumns, ","),
+		)
+	}
 }
 
 func (s *CanonicalStore) UploadDirectBundle(

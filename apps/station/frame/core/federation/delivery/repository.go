@@ -42,6 +42,14 @@ type OutboxWriter interface {
 	Enqueue(ctx context.Context, frame *Frame, now time.Time) (EnqueueResult, error)
 }
 
+// AfterCommitFunc runs only after the shared inbox transaction commits.
+type AfterCommitFunc func(context.Context) error
+
+// AfterCommitRegistrar defers non-durable effects until durable state is visible.
+type AfterCommitRegistrar interface {
+	AfterCommit(AfterCommitFunc) error
+}
+
 // OutboxRepository owns durable claims and lease-fenced terminal transitions.
 type OutboxRepository interface {
 	OutboxWriter

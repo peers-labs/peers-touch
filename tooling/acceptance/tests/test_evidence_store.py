@@ -16,6 +16,7 @@ from tooling.acceptance.core.evidence_store import (
     ArtifactSession,
     ArtifactRef,
     EvidenceStore,
+    _atomic_write,
     canonical_workspace_path,
     current_artifact_ref,
     current_artifact_path,
@@ -192,7 +193,7 @@ class ArtifactRootResolverTests(unittest.TestCase):
 class EvidenceStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.base = Path(self.temporary.name)
+        self.base = Path(self.temporary.name).resolve()
         self.worktree = self.base / "repo"
         self.worktree.mkdir()
         self.root = self.base / "artifacts"
@@ -950,6 +951,28 @@ class EvidenceStoreTests(unittest.TestCase):
         ):
             full_run.write_bytes("evidence/value", b"value")
         full_run.close()
+
+    def test_atomic_write_uses_bounded_temporary_basename(self) -> None:
+        target = self.base / f"{'a' * 180}.json"
+        opened: list[Path] = []
+        real_open = Path.open
+
+        def record_open(path: Path, *args: object, **kwargs: object):
+            if path.name.startswith(".tmp-"):
+                opened.append(path)
+            return real_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", record_open), patch(
+            "tooling.acceptance.core.evidence_store.secrets.token_hex",
+            return_value="0123456789abcdef",
+        ):
+            _atomic_write(target, b"value", path_role="test-artifact")
+
+        self.assertEqual(
+            [path.name for path in opened],
+            [".tmp-0123456789abcdef"],
+        )
+        self.assertEqual(target.read_bytes(), b"value")
 
     def test_two_concurrent_runs_do_not_overwrite(self) -> None:
         run_ids: list[str] = []

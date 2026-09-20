@@ -245,6 +245,10 @@ type HomePinnedAgent struct {
 	DisplayName         string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	AvatarRef           string                 `protobuf:"bytes,3,opt,name=avatar_ref,json=avatarRef,proto3" json:"avatar_ref,omitempty"`
 	ReadinessSnapshotId string                 `protobuf:"bytes,4,opt,name=readiness_snapshot_id,json=readinessSnapshotId,proto3" json:"readiness_snapshot_id,omitempty"`
+	AgentName           string                 `protobuf:"bytes,5,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	AgentVersion        uint64                 `protobuf:"varint,6,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	ProviderId          string                 `protobuf:"bytes,7,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelId             string                 `protobuf:"bytes,8,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -303,6 +307,34 @@ func (x *HomePinnedAgent) GetAvatarRef() string {
 func (x *HomePinnedAgent) GetReadinessSnapshotId() string {
 	if x != nil {
 		return x.ReadinessSnapshotId
+	}
+	return ""
+}
+
+func (x *HomePinnedAgent) GetAgentName() string {
+	if x != nil {
+		return x.AgentName
+	}
+	return ""
+}
+
+func (x *HomePinnedAgent) GetAgentVersion() uint64 {
+	if x != nil {
+		return x.AgentVersion
+	}
+	return 0
+}
+
+func (x *HomePinnedAgent) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *HomePinnedAgent) GetModelId() string {
+	if x != nil {
+		return x.ModelId
 	}
 	return ""
 }
@@ -619,6 +651,7 @@ type HomeTaskProjection struct {
 	Status          HomeTaskStatus         `protobuf:"varint,4,opt,name=status,proto3,enum=peers_touch.model.agent.v1.HomeTaskStatus" json:"status,omitempty"`
 	ProgressPercent uint32                 `protobuf:"varint,5,opt,name=progress_percent,json=progressPercent,proto3" json:"progress_percent,omitempty"`
 	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	TopicRef        string                 `protobuf:"bytes,7,opt,name=topic_ref,json=topicRef,proto3" json:"topic_ref,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -693,6 +726,13 @@ func (x *HomeTaskProjection) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *HomeTaskProjection) GetTopicRef() string {
+	if x != nil {
+		return x.TopicRef
+	}
+	return ""
 }
 
 type HomeCapabilitySummary struct {
@@ -1066,6 +1106,9 @@ type SubmitHomeChatCommandRequest struct {
 	RuntimeProfileId     string                 `protobuf:"bytes,3,opt,name=runtime_profile_id,json=runtimeProfileId,proto3" json:"runtime_profile_id,omitempty"`
 	ClientIdempotencyKey string                 `protobuf:"bytes,4,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
 	ConversationId       *string                `protobuf:"bytes,5,opt,name=conversation_id,json=conversationId,proto3,oneof" json:"conversation_id,omitempty"`
+	ExpectedAgentVersion uint64                 `protobuf:"varint,6,opt,name=expected_agent_version,json=expectedAgentVersion,proto3" json:"expected_agent_version,omitempty"`
+	ReadinessSnapshotId  string                 `protobuf:"bytes,7,opt,name=readiness_snapshot_id,json=readinessSnapshotId,proto3" json:"readiness_snapshot_id,omitempty"`
+	Attachments          []*AgentAttachmentRef  `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1135,6 +1178,27 @@ func (x *SubmitHomeChatCommandRequest) GetConversationId() string {
 	return ""
 }
 
+func (x *SubmitHomeChatCommandRequest) GetExpectedAgentVersion() uint64 {
+	if x != nil {
+		return x.ExpectedAgentVersion
+	}
+	return 0
+}
+
+func (x *SubmitHomeChatCommandRequest) GetReadinessSnapshotId() string {
+	if x != nil {
+		return x.ReadinessSnapshotId
+	}
+	return ""
+}
+
+func (x *SubmitHomeChatCommandRequest) GetAttachments() []*AgentAttachmentRef {
+	if x != nil {
+		return x.Attachments
+	}
+	return nil
+}
+
 type SubmitHomeChatCommandResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId     string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
@@ -1201,6 +1265,9 @@ type SubmitHomeTaskCommandRequest struct {
 	Input                string                 `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
 	RuntimeProfileId     string                 `protobuf:"bytes,3,opt,name=runtime_profile_id,json=runtimeProfileId,proto3" json:"runtime_profile_id,omitempty"`
 	ClientIdempotencyKey string                 `protobuf:"bytes,4,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
+	ExpectedAgentVersion uint64                 `protobuf:"varint,5,opt,name=expected_agent_version,json=expectedAgentVersion,proto3" json:"expected_agent_version,omitempty"`
+	ReadinessSnapshotId  string                 `protobuf:"bytes,6,opt,name=readiness_snapshot_id,json=readinessSnapshotId,proto3" json:"readiness_snapshot_id,omitempty"`
+	TopicRef             *string                `protobuf:"bytes,7,opt,name=topic_ref,json=topicRef,proto3,oneof" json:"topic_ref,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -1263,6 +1330,27 @@ func (x *SubmitHomeTaskCommandRequest) GetClientIdempotencyKey() string {
 	return ""
 }
 
+func (x *SubmitHomeTaskCommandRequest) GetExpectedAgentVersion() uint64 {
+	if x != nil {
+		return x.ExpectedAgentVersion
+	}
+	return 0
+}
+
+func (x *SubmitHomeTaskCommandRequest) GetReadinessSnapshotId() string {
+	if x != nil {
+		return x.ReadinessSnapshotId
+	}
+	return ""
+}
+
+func (x *SubmitHomeTaskCommandRequest) GetTopicRef() string {
+	if x != nil && x.TopicRef != nil {
+		return *x.TopicRef
+	}
+	return ""
+}
+
 type SubmitHomeTaskCommandResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	TaskId             string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -1319,13 +1407,19 @@ var File_domain_agent_home_proto protoreflect.FileDescriptor
 
 const file_domain_agent_home_proto_rawDesc = "" +
 	"\n" +
-	"\x17domain/agent/home.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x01\n" +
+	"\x17domain/agent/home.proto\x12\x1apeers_touch.model.agent.v1\x1a\x18domain/agent/agent.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x02\n" +
 	"\x0fHomePinnedAgent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1d\n" +
 	"\n" +
 	"avatar_ref\x18\x03 \x01(\tR\tavatarRef\x122\n" +
-	"\x15readiness_snapshot_id\x18\x04 \x01(\tR\x13readinessSnapshotId\"\xd3\x01\n" +
+	"\x15readiness_snapshot_id\x18\x04 \x01(\tR\x13readinessSnapshotId\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x05 \x01(\tR\tagentName\x12#\n" +
+	"\ragent_version\x18\x06 \x01(\x04R\fagentVersion\x12\x1f\n" +
+	"\vprovider_id\x18\a \x01(\tR\n" +
+	"providerId\x12\x19\n" +
+	"\bmodel_id\x18\b \x01(\tR\amodelId\"\xd3\x01\n" +
 	"\x0eHomeRecentWork\x12\x17\n" +
 	"\awork_id\x18\x01 \x01(\tR\x06workId\x12<\n" +
 	"\x04kind\x18\x02 \x01(\x0e2(.peers_touch.model.agent.v1.HomeWorkKindR\x04kind\x12\x19\n" +
@@ -1355,7 +1449,7 @@ const file_domain_agent_home_proto_rawDesc = "" +
 	"\vaction_kind\x18\x04 \x01(\tR\n" +
 	"actionKind\x12\x1d\n" +
 	"\n" +
-	"action_ref\x18\x05 \x01(\tR\tactionRef\"\x88\x02\n" +
+	"action_ref\x18\x05 \x01(\tR\tactionRef\"\xa5\x02\n" +
 	"\x12HomeTaskProjection\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x14\n" +
@@ -1363,7 +1457,8 @@ const file_domain_agent_home_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\x0e2*.peers_touch.model.agent.v1.HomeTaskStatusR\x06status\x12)\n" +
 	"\x10progress_percent\x18\x05 \x01(\rR\x0fprogressPercent\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd8\x01\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1b\n" +
+	"\ttopic_ref\x18\a \x01(\tR\btopicRef\"\xd8\x01\n" +
 	"\x15HomeCapabilitySummary\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12-\n" +
 	"\x12capability_version\x18\x02 \x01(\tR\x11capabilityVersion\x12!\n" +
@@ -1397,23 +1492,31 @@ const file_domain_agent_home_proto_rawDesc = "" +
 	"\x1dGetHomeWorkProjectionResponse\x12N\n" +
 	"\n" +
 	"projection\x18\x01 \x01(\v2..peers_touch.model.agent.v1.HomeWorkProjectionR\n" +
-	"projection\"\xf5\x01\n" +
+	"projection\"\xb1\x03\n" +
 	"\x1cSubmitHomeChatCommandRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\tR\x05input\x12,\n" +
 	"\x12runtime_profile_id\x18\x03 \x01(\tR\x10runtimeProfileId\x124\n" +
 	"\x16client_idempotency_key\x18\x04 \x01(\tR\x14clientIdempotencyKey\x12,\n" +
-	"\x0fconversation_id\x18\x05 \x01(\tH\x00R\x0econversationId\x88\x01\x01B\x12\n" +
+	"\x0fconversation_id\x18\x05 \x01(\tH\x00R\x0econversationId\x88\x01\x01\x124\n" +
+	"\x16expected_agent_version\x18\x06 \x01(\x04R\x14expectedAgentVersion\x122\n" +
+	"\x15readiness_snapshot_id\x18\a \x01(\tR\x13readinessSnapshotId\x12P\n" +
+	"\vattachments\x18\b \x03(\v2..peers_touch.model.agent.v1.AgentAttachmentRefR\vattachmentsB\x12\n" +
 	"\x10_conversation_id\"\x92\x01\n" +
 	"\x1dSubmitHomeChatCommandResponse\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12/\n" +
-	"\x13projection_revision\x18\x03 \x01(\x04R\x12projectionRevision\"\xb3\x01\n" +
+	"\x13projection_revision\x18\x03 \x01(\x04R\x12projectionRevision\"\xcd\x02\n" +
 	"\x1cSubmitHomeTaskCommandRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05input\x18\x02 \x01(\tR\x05input\x12,\n" +
 	"\x12runtime_profile_id\x18\x03 \x01(\tR\x10runtimeProfileId\x124\n" +
-	"\x16client_idempotency_key\x18\x04 \x01(\tR\x14clientIdempotencyKey\"i\n" +
+	"\x16client_idempotency_key\x18\x04 \x01(\tR\x14clientIdempotencyKey\x124\n" +
+	"\x16expected_agent_version\x18\x05 \x01(\x04R\x14expectedAgentVersion\x122\n" +
+	"\x15readiness_snapshot_id\x18\x06 \x01(\tR\x13readinessSnapshotId\x12 \n" +
+	"\ttopic_ref\x18\a \x01(\tH\x00R\btopicRef\x88\x01\x01B\f\n" +
+	"\n" +
+	"_topic_ref\"i\n" +
 	"\x1dSubmitHomeTaskCommandResponse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12/\n" +
 	"\x13projection_revision\x18\x02 \x01(\x04R\x12projectionRevision*\xb5\x01\n" +
@@ -1476,6 +1579,7 @@ var file_domain_agent_home_proto_goTypes = []any{
 	(*SubmitHomeTaskCommandRequest)(nil),  // 17: peers_touch.model.agent.v1.SubmitHomeTaskCommandRequest
 	(*SubmitHomeTaskCommandResponse)(nil), // 18: peers_touch.model.agent.v1.SubmitHomeTaskCommandResponse
 	(*timestamppb.Timestamp)(nil),         // 19: google.protobuf.Timestamp
+	(*AgentAttachmentRef)(nil),            // 20: peers_touch.model.agent.v1.AgentAttachmentRef
 }
 var file_domain_agent_home_proto_depIdxs = []int32{
 	1,  // 0: peers_touch.model.agent.v1.HomeRecentWork.kind:type_name -> peers_touch.model.agent.v1.HomeWorkKind
@@ -1495,11 +1599,12 @@ var file_domain_agent_home_proto_depIdxs = []int32{
 	10, // 14: peers_touch.model.agent.v1.HomeWorkProjection.capability_summaries:type_name -> peers_touch.model.agent.v1.HomeCapabilitySummary
 	11, // 15: peers_touch.model.agent.v1.HomeWorkProjection.slice_errors:type_name -> peers_touch.model.agent.v1.HomeSliceError
 	12, // 16: peers_touch.model.agent.v1.GetHomeWorkProjectionResponse.projection:type_name -> peers_touch.model.agent.v1.HomeWorkProjection
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	20, // 17: peers_touch.model.agent.v1.SubmitHomeChatCommandRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_home_proto_init() }
@@ -1507,7 +1612,9 @@ func file_domain_agent_home_proto_init() {
 	if File_domain_agent_home_proto != nil {
 		return
 	}
+	file_domain_agent_agent_proto_init()
 	file_domain_agent_home_proto_msgTypes[11].OneofWrappers = []any{}
+	file_domain_agent_home_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

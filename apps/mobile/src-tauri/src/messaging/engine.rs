@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
 use messaging_core::attachment::{
-    AttachmentCryptoMaterial, AttachmentRetryPolicy, AttachmentTransferControl,
-    AttachmentTransferRecord, AttachmentTransferWorker, ATTACHMENT_MAX_PLAINTEXT_SIZE,
+    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
+    AttachmentTransferWorker,
 };
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
@@ -19,9 +20,9 @@ use messaging_core::identity::{
     DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use messaging_core::inbox::{
-    AcknowledgedItemObserver, ClaimedItemConsumer, ConversationStateProcessor,
-    DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress, MessagingItemConsumer,
-    MlsItemConsumer, PublicEventProcessor, QueueDrain,
+    AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
+    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
+    MessagingItemConsumer, MlsItemConsumer, PublicEventProcessor, QueueDrain,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -40,7 +41,6 @@ use messaging_core::outbox::{
     DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper, MetadataInteraction,
     MetadataInteractionPreparer,
 };
-use messaging_core::ports::AttachmentBlob;
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, Conversation,
@@ -59,6 +59,11 @@ use messaging_core::store::MessagingRepository;
 use prost::Message;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use secure_content_core::object::{
+    ObjectCryptoMaterial as AttachmentCryptoMaterial,
+    OBJECT_MAX_PLAINTEXT_SIZE as ATTACHMENT_MAX_PLAINTEXT_SIZE,
+};
+use secure_content_core::ports::ObjectBlob as AttachmentBlob;
 use sha2::{Digest, Sha256};
 use ulid::Ulid;
 use zeroize::Zeroizing;
@@ -183,28 +188,13 @@ pub(crate) fn validate_account_scope(
     {
         return Err("mobile messaging account scope is incomplete".to_string());
     }
-    let origin = reqwest::Url::parse(station_origin)
-        .map_err(|_| "mobile messaging Station origin is invalid".to_string())?;
-    let host = origin
-        .host_str()
-        .ok_or_else(|| "mobile messaging Station origin has no host".to_string())?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback());
-    if (origin.scheme() != "https" && !(cfg!(debug_assertions) && loopback))
-        || !origin.username().is_empty()
-        || origin.password().is_some()
-        || origin.query().is_some()
-        || origin.fragment().is_some()
-        || origin.path() != "/"
-    {
-        return Err("mobile messaging Station origin is not canonical".to_string());
-    }
+    normalize_station_origin(station_origin, StationOriginPolicy::current_build())
+        .map_err(|_| "mobile messaging Station origin is not canonical".to_string())?;
     Ok(())
 }
 
 struct MobileMlsItemConsumer {
+    manager: Arc<MlsGroupManager>,
     application: MlsApplicationProcessor<MobileMessagingStore>,
     transition: MlsTransitionProcessor<MobileMessagingStore>,
     retirement: MlsRetirementProcessor<MobileMessagingStore>,
@@ -242,6 +232,13 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
         consumer_epoch: u64,
     ) -> Result<(), String> {
         self.sender_transition.consume(item, consumer_epoch)
+    }
+}
+
+impl CommandResultLifecycle for MobileMlsItemConsumer {
+    fn discard_pending_transition(&self, conversation_id: &str, transition_id: &str) {
+        self.manager
+            .discard_pending_transition_if_matches(conversation_id, transition_id);
     }
 }
 
@@ -341,6 +338,7 @@ impl MobileMessagingEngine {
             now_unix_ms,
         )?;
         let mls = Arc::new(MobileMlsItemConsumer {
+            manager: mls_manager.clone(),
             application: MlsApplicationProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
@@ -366,11 +364,14 @@ impl MobileMessagingEngine {
                 now_unix_ms,
             )?,
         });
+        let command_result =
+            CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
         let consumer = Arc::new(MessagingItemConsumer::new(
             direct,
             mls,
             PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+            command_result,
             DeliveryReceiptProcessor::new(store.clone(), endpoint, now_unix_ms)?,
         ));
         let consumer_id = random_consumer_id();
@@ -1438,12 +1439,19 @@ impl MobileMessagingEngine {
             .lock()
             .map_err(|_| "mobile messaging dispatch lock poisoned".to_string())?;
         let token = self.access_token()?;
+        let (enrollment, signing_key) = self.store.active_device_signing_identity()?;
         let progress = CommandOutboxWorker::new(
             MobileOutboxStore(self.store.clone()),
             StationCommandTransport::new(
                 self.scope.station_origin.clone(),
                 token,
                 self.scope.device_id.clone(),
+            )?
+            .with_remote_command_identity(
+                self.scope.actor_ptid.clone(),
+                self.scope.station_peer_id.clone(),
+                enrollment.certificate.signing_key_id,
+                signing_key,
             )?,
             COMMAND_RETRY_POLICY,
         )?
@@ -1503,8 +1511,10 @@ impl MobileMessagingEngine {
         let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
             return Ok(false);
         };
-        self.attachment_transfer_worker()?
-            .run_upload_once(&attachment_id, now_unix_ms)?;
+        let progress = self
+            .attachment_transfer_worker()?
+            .run_upload_once(&attachment_id, now_unix_ms);
+        progress?;
         Ok(true)
     }
 
@@ -1532,13 +1542,14 @@ impl MobileMessagingEngine {
                 "mobile messaging attachment plaintext commitment is invalid".to_string()
             })?;
         let cache_ref = self.attachment_cache_ref(&attachment_id)?;
-        self.attachment_transfer_worker()?.run_download_once(
+        let progress = self.attachment_transfer_worker()?.run_download_once(
             &attachment_id,
             descriptor,
             &plaintext_sha256,
             &cache_ref,
             now_unix_ms,
-        )?;
+        );
+        progress?;
         Ok(true)
     }
 

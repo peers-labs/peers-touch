@@ -14,7 +14,12 @@ func TestRotateLocalKey_PromotesNewAndDemotesOld(t *testing.T) {
 		t.Fatalf("warm: %v", err)
 	}
 
-	res, err := RotateLocalKey(context.Background(), store, cache)
+	res, err := RotateLocalKey(
+		context.Background(),
+		testLocalStationPeerID,
+		store,
+		cache,
+	)
 	if err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
@@ -38,7 +43,12 @@ func TestRotateLocalKey_PromotesNewAndDemotesOld(t *testing.T) {
 
 func TestRotateLocalKey_FirstRotationOnEmptyStore(t *testing.T) {
 	store := NewInMemoryKeyStore()
-	res, err := RotateLocalKey(context.Background(), store, nil)
+	res, err := RotateLocalKey(
+		context.Background(),
+		testLocalStationPeerID,
+		store,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("rotate empty: %v", err)
 	}
@@ -51,8 +61,25 @@ func TestRotateLocalKey_FirstRotationOnEmptyStore(t *testing.T) {
 }
 
 func TestRotateLocalKey_NilStoreErrors(t *testing.T) {
-	if _, err := RotateLocalKey(context.Background(), nil, nil); err == nil {
+	if _, err := RotateLocalKey(
+		context.Background(),
+		testLocalStationPeerID,
+		nil,
+		nil,
+	); err == nil {
 		t.Fatalf("expected nil-store error")
+	}
+}
+
+func TestRotateLocalKey_RequiresStationPeerID(t *testing.T) {
+	store := NewInMemoryKeyStore()
+	if _, err := RotateLocalKey(
+		context.Background(),
+		"",
+		store,
+		nil,
+	); err == nil {
+		t.Fatal("expected empty station peer ID to fail closed")
 	}
 }
 
@@ -75,7 +102,11 @@ func TestFinalizePrevKey_PrevWithinGraceIsKept(t *testing.T) {
 	first, _ := MintLocalKey(time.Now())
 	_ = store.PutCurrent(context.Background(), first)
 	second, _ := MintLocalKey(time.Now())
-	if _, err := store.Rotate(context.Background(), second); err != nil {
+	if _, err := store.Rotate(
+		context.Background(),
+		testLocalStationPeerID,
+		second,
+	); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 
@@ -93,11 +124,18 @@ func TestFinalizePrevKey_PrevWithinGraceIsKept(t *testing.T) {
 }
 
 func TestFinalizePrevKey_PrevPastGraceIsCleared(t *testing.T) {
-	store := NewInMemoryKeyStore()
+	rotationTime := time.Now().Add(-2 * time.Hour)
+	store := NewInMemoryKeyStore(
+		WithMemoryClock(func() time.Time { return rotationTime }),
+	)
 	old, _ := MintLocalKey(time.Now().Add(-2 * time.Hour))
 	_ = store.PutCurrent(context.Background(), old)
 	current, _ := MintLocalKey(time.Now().Add(-2 * time.Hour))
-	if _, err := store.Rotate(context.Background(), current); err != nil {
+	if _, err := store.Rotate(
+		context.Background(),
+		testLocalStationPeerID,
+		current,
+	); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 

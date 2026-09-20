@@ -10,8 +10,13 @@
 > Related:
 >
 > - `docs/architecture/social/moments.md`
+> - `docs/architecture/secure-content/README.md`
 > - `docs/client/desktop/runtime-projections.md`
 > - `docs/architecture/runtime/desktop-runtime-architecture.md`
+>
+> Private payload/key/object mechanics are owned by Secure Content. This
+> document owns Social runtime projections and must not introduce a second
+> encryption, envelope, object-transfer, or recovery implementation.
 
 ## 1. 真实升级目标
 

@@ -1,10 +1,10 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.2
+> **Created**: 2026-09-13 | **Updated**: 2026-09-18
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
+> **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
 ---
 
@@ -16,7 +16,7 @@ The machine registry is stored at:
 ~/.peers-touch/dev/registry.json
 ```
 
-Current bootstrap state uses:
+Bootstrap audit state may use:
 
 ```json
 {
@@ -27,7 +27,24 @@ Current bootstrap state uses:
 ```
 
 `observed-snapshot` means the file is diagnostic only. Future implementation
-may promote it to runtime authority only through an accepted migration.
+does not read those registrations as authority. The first explicit
+`env-register` atomically promotes the document to:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "peers-touch-machine-dev-registry",
+  "authority": "machine-control-plane",
+  "updatedAt": "2026-09-13T00:00:00.000Z",
+  "registrations": []
+}
+```
+
+Bootstrap audit and D07 evidence-migration fields may remain as diagnostic
+fields during their owning migration. Runtime resolution consumes only the
+closed authoritative registration schema. Unknown authoritative fields,
+duplicate workspace IDs, duplicate slots, malformed timestamps, and identity
+mismatches fail closed.
 
 The root projection distinguishes target and legacy evidence locations:
 
@@ -52,19 +69,25 @@ lookup key because two worktrees may have the same basename.
 ```ts
 interface WorkspaceRecord {
   workspaceId: string;
-  canonicalRoot?: string;
+  canonicalRoot: string;
   name: string;
   branch: string;
   head: string;
-  profile: string | null;
-  slot: number | null;
-  stationUrl: string | null;
-  localState: 'global-managed' | 'private-directory' | 'missing';
+  profile: string;
+  slot: number;
+  allowedCapabilities: StationCapability[];
+  purpose: string;
+  owner: string;
+  registeredAt: string;
+  updatedAt: string;
+  updatedBy: string;
 }
 ```
 
-An `observed-snapshot` may omit `canonicalRoot` while retaining its derived
-`workspaceId`. An authoritative registry must persist and re-verify both.
+An `observed-snapshot` may contain additional diagnostic projections. An
+authoritative registration persists and re-verifies canonical root, workspace
+ID, branch, and HEAD before every resolved command. Source movement or Git
+identity drift makes the registration `stale` until `env-update` refreshes it.
 
 ## 3. Profile Definition
 
@@ -73,6 +96,7 @@ Profile definitions remain references to the sibling environment repository:
 ```ts
 interface ProfileDefinition {
   name: string;
+  agentControlMode: 'human-gated' | 'managed' | 'disposable';
   stationMode: 'local' | 'compose' | 'remote';
   stationUrl: string;
   stationDeployEnvironment?: string;
@@ -88,6 +112,23 @@ interface ProfileDefinition {
     | 'authorized-local';
 }
 ```
+
+`PT_AGENT_CONTROL_MODE` is required in every profile definition. Absence or an
+unknown value returns `PROFILE_AGENT_CONTROL_INVALID`; there is no permissive
+default.
+
+Operational meaning:
+
+- `human-gated`: Agent binding/deploy/reset requires an explicit human
+  authorization for that operation.
+- `managed`: Agent may register/bind/select/deploy/restart under the normal
+  declaration, capability and lease contracts; reset remains forbidden.
+- `disposable`: Agent may additionally execute exact-scope reset when
+  `station.reset` is present in both the work declaration and workspace
+  capability and the reset lease is held.
+
+The mode is projected into registry status but is not copied into
+`WorkspaceRecord`; the reviewed profile remains its only durable owner.
 
 Target state removes machine-local slot authority from profile definitions.
 During migration, an observed legacy `PT_DEV_SLOT` may be reported as
@@ -123,6 +164,19 @@ Rules:
 - `station.connect` does not imply deploy or reset.
 - `station.reset` requires explicit run-scoped authorization in addition to the
   durable allowed capability.
+
+### 4.1 Immutable Workspace Plan Binding
+
+Development Workflow owns a separate create-once record:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+```
+
+It contains the canonical root, `workspaceId`, `planId`, repository-relative
+`planPath`, and binding audit fields. It is not part of `WorkspaceRecord`:
+Profile, slot, capabilities, branch and HEAD may change under their existing
+guards, while Plan ownership cannot be rebound.
 
 Activity is derived and not manually asserted:
 
@@ -194,9 +248,21 @@ interface LeaseRecord {
 }
 ```
 
-The lock is enforced by an OS advisory lock. JSON metadata is diagnostic and
-cannot establish a held lease without the live lock and matching process
-identity.
+The lock is enforced by `flock(2)` through
+`tooling/scripts/local-dev/machine-dev-lease.py`. The holder owns the file
+descriptor while its child process group executes. It forwards termination
+signals, enforces the declared budget, terminates the process group on timeout,
+and clears metadata before unlocking on success, command failure, signal, or
+timeout. The mutation child inherits the locked descriptor, so supervisor
+`SIGKILL` cannot release exclusivity while the child continues. After acquiring
+the resource lock and before launching the mutation, the holder revalidates the
+registry, source identity, capability and Development intent under the registry
+lock; binding updates inspect leases under the same lock order.
+
+JSON metadata is diagnostic and cannot establish a held lease without the live
+OS lock and matching PID/process-start identity. Metadata left by `SIGKILL` or
+machine failure is stale: status reports it separately, and the next successful
+OS lock acquisition replaces it.
 
 ## 7. Runtime Observation
 
@@ -218,6 +284,144 @@ interface RuntimeObservation {
 Declared and observed state must remain separate. A declared slot with no
 listener is allocated but idle; a listener without a matching binding is an
 unowned runtime conflict.
+
+## 7.1 Dashboard Projection
+
+```ts
+interface DevelopmentDashboardSnapshot {
+  observedAt: string;
+  server: PeersDevServerIdentity;
+  profiles: Array<{
+    name: string;
+    agentControlMode:
+      | 'human-gated'
+      | 'managed'
+      | 'disposable'
+      | 'invalid';
+    stationMode: string | null;
+    stationUrl: string | null;
+    stationDeployEnvironment: string | null;
+    relayUrl: string | null;
+    relayDeployEnvironment: string | null;
+    sourceState: string;
+    status: 'available' | 'blocked';
+    error: null | { code: string; message: string };
+  }>;
+  registrations: WorkspaceRecord[];
+  declarations: DevelopmentResourceDeclaration[];
+  activeLeases: LeaseRecord[];
+  staleLeaseMetadata: unknown[];
+  worktrees: Array<{
+    workspaceId: string;
+    name: string | null;
+    branches: string[];
+    workState:
+      | 'in-progress'
+      | 'stale'
+      | 'reserved'
+      | 'blocked';
+    environmentHealth: {
+      state: 'ready' | 'warning' | 'blocked' | 'conflict' | 'unregistered';
+      issues: string[];
+    };
+    requirements: Array<{
+      workItemId: string;
+      journeyId: string | null;
+      purpose: string;
+      state: 'DECLARED' | 'ACTIVE' | 'RELEASING' | 'STALE';
+      plan: null | {
+        planId: string;
+        taskId: string;
+        status:
+          | 'available'
+          | 'untracked'
+          | 'missing'
+          | 'legacy'
+          | 'invalid'
+          | 'mismatch'
+          | 'unregistered';
+        progress: null | {
+          completed: number;
+          total: number;
+          percentage: number;
+        };
+      };
+    }>;
+    environment: {
+      profile: string | null;
+      slot: number | string | null;
+      agentControlMode: string | null;
+      sourceState: string | null;
+    };
+    resources: {
+      station: RuntimeResourceProjection;
+      relay: RuntimeResourceProjection;
+      databases: RuntimeClaimProjection[];
+      other: RuntimeClaimProjection[];
+    };
+    leases: LeaseRecord[];
+  }>;
+  occupancy: Array<{
+    profile: string;
+    workspaceIds: string[];
+    slots: number[];
+    workItemIds: string[];
+    leaseIds: string[];
+    state: 'free' | 'reserved' | 'active' | 'conflict' | 'blocked';
+  }>;
+}
+
+interface PeersDevServerIdentity {
+  schemaVersion: 1;
+  kind: 'peers-touch-dev-server';
+  protocolVersion: 2;
+  endpoint: 'http://127.0.0.1:4177';
+  startedAt: string;
+  source: {
+    workspaceId: string;
+    branch: string;
+    head: string;
+    dirty: boolean;
+  };
+}
+
+interface RuntimeClaimProjection {
+  kind: string;
+  resourceId: string;
+  mode: 'shared' | 'exclusive';
+  workItemIds: string[];
+}
+
+interface RuntimeResourceProjection {
+  url: string | null;
+  deployEnvironment: string | null;
+  claims: RuntimeClaimProjection[];
+}
+```
+
+This object is generated on request and never persisted as authority. Secret
+profile fields, canonical roots and raw profile documents are excluded by
+construction. `worktrees` is the primary operator projection; `occupancy`
+remains a secondary profile-capacity projection.
+
+## 7.2 Single-Instance State
+
+Peers Dev has no persisted owner record. Live ownership is exactly the process
+holding the `127.0.0.1:4177` TCP listener.
+
+```ts
+type PeersDevProbe =
+  | { state: 'absent' }
+  | { state: 'compatible'; server: PeersDevServerIdentity }
+  | { state: 'foreign'; status?: number };
+```
+
+Startup accepts only `kind=peers-touch-dev-server`,
+`schemaVersion=1`, and `protocolVersion=2`. An absent listener may be bound.
+A compatible listener is reused. A foreign, malformed, timed-out, or
+incompatible listener produces `DEV_SERVER_PORT_CONFLICT`.
+
+PID files and lock metadata are not part of this state model.
 
 ## 8. Conflict Model
 
@@ -277,6 +481,10 @@ Registry mutation must:
 7. Flush the containing directory where supported.
 
 Unknown schema versions or unknown mutation variants fail closed.
+
+Plan binding creation uses a complete owner-only temporary file and atomic
+no-replace publication. An existing different tuple returns
+`WORKSPACE_PLAN_REBIND_DENIED`; no mutation or deletion follows.
 
 ## 11. Acceptance Evidence Root
 

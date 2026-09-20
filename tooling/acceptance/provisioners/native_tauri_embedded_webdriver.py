@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import subprocess
+from collections.abc import Mapping
+from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -30,16 +33,75 @@ from .remote_source_identity import resolve_remote_source_identity
 
 
 _SERVICE_PROFILES = {
-    "station-four": ("chat-native-four", "chat-native-four"),
-    "station-five": ("chat-native-five", "chat-native-five"),
+    "station-four": "four",
+    "station-five": "fiveArm",
 }
+PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     environment_id = "native-tauri-embedded-webdriver"
 
-    def __init__(self, contract: EnvironmentContract) -> None:
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        station_profiles: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(contract)
+        self._station_profiles = dict(
+            _SERVICE_PROFILES
+            if station_profiles is None
+            else station_profiles
+        )
+
+    def _required_station_profiles(self) -> dict[str, str]:
+        expected = {
+            service_id
+            for service_id, service in self.contract.services.items()
+            if service.kind == "station"
+        }
+        provided = set(self._station_profiles)
+        missing = sorted(expected - provided)
+        unexpected = sorted(provided - expected)
+        if missing or unexpected:
+            detail = []
+            if missing:
+                detail.append(f"missing={','.join(missing)}")
+            if unexpected:
+                detail.append(f"unexpected={','.join(unexpected)}")
+            raise BlockedError(
+                reason=(
+                    "Native Chat Station profiles must be specified at run time "
+                    "with --station-profile SERVICE_ID=PROFILE "
+                    f"({'; '.join(detail)})"
+                ),
+                resource="station-profile-bindings",
+            )
+        invalid = sorted(
+            profile_name
+            for profile_name in self._station_profiles.values()
+            if not PROFILE_NAME_PATTERN.fullmatch(profile_name)
+        )
+        if invalid:
+            raise BlockedError(
+                reason=f"Invalid Station profile name: {invalid[0]!r}",
+                resource="station-profile-bindings",
+            )
+        duplicates = sorted(
+            profile_name
+            for profile_name in set(self._station_profiles.values())
+            if list(self._station_profiles.values()).count(profile_name) > 1
+        )
+        if duplicates:
+            raise BlockedError(
+                reason=(
+                    "Distinct Station services require distinct runtime profiles; "
+                    f"duplicate={duplicates[0]!r}"
+                ),
+                resource="station-profile-bindings",
+            )
+        return dict(self._station_profiles)
 
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         return self._remember_resolved_credentials(
@@ -81,9 +143,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     ) -> dict[str, ServiceAttestation]:
         services: dict[str, ServiceAttestation] = {}
         local_proto_digest = source_proto_digest(REPO_ROOT)
-        for service_id, (profile_name, deployment_environment) in (
-            _SERVICE_PROFILES.items()
-        ):
+        for service_id, profile_name in self._required_station_profiles().items():
             profile_path = (
                 REPO_ROOT
                 / ".local"
@@ -91,59 +151,153 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 / "profiles"
                 / f"{profile_name}.env"
             )
-            deployment_path = (
-                REPO_ROOT
-                / ".local"
-                / "deploy"
-                / "envs"
-                / f"{deployment_environment}.env"
-            )
-            if not profile_path.is_file() or not deployment_path.is_file():
+            if not profile_path.is_file():
                 raise BlockedError(
                     reason=(
-                        f"Native Chat service {service_id!r} requires profile "
-                        f"{profile_name!r} and deployment "
-                        f"{deployment_environment!r}"
+                        f"Native Chat service {service_id!r} requires runtime "
+                        f"profile {profile_name!r}"
                     ),
                     resource=f"service-profile:{service_id}",
                 )
             profile_env = load_env_file(profile_path)
-            deployment_env = load_env_file(deployment_path)
+            declared_profile = profile_env.get("PT_DEV_PROFILE", "").strip()
+            if declared_profile != profile_name:
+                raise BlockedError(
+                    reason=(
+                        f"Station profile {profile_name!r} declares "
+                        f"PT_DEV_PROFILE={declared_profile!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            mode = (
+                profile_env.get("PT_STATION_MODE", "local").strip() or "local"
+            )
+            deployment_environment = profile_env.get(
+                "PT_STATION_DEPLOY_ENV",
+                "",
+            ).strip() or profile_name
+            deployment_env: dict[str, str] = {}
+            if mode == "remote":
+                deployment_path = (
+                    REPO_ROOT
+                    / ".local"
+                    / "deploy"
+                    / "envs"
+                    / f"{deployment_environment}.env"
+                )
+                if not deployment_path.is_file():
+                    raise BlockedError(
+                        reason=(
+                            f"Station profile {profile_name!r} references "
+                            f"missing deployment environment "
+                            f"{deployment_environment!r}"
+                        ),
+                        resource=f"service-profile:{service_id}",
+                    )
+                deployment_env = load_env_file(deployment_path)
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
             health_url = (
                 profile_env.get("PT_STATION_HEALTH_URL", "").strip()
                 or deployment_env.get("PT_DEPLOY_HEALTH_URL", "").strip()
             )
-            if not station_url or not self._station_ready(
-                station_url,
-                health_url,
-            ):
+            if not station_url:
                 raise BlockedError(
-                    reason=(
-                        f"Native Chat service {service_id!r} is not healthy "
-                        f"at its declared profile endpoint"
-                    ),
-                    resource=f"service-health:{service_id}",
+                    reason=f"Station profile {profile_name!r} has no endpoint",
+                    resource=f"service-profile:{service_id}",
                 )
             owner = f"acceptance:{manifest.gate_id}:{manifest.run_id}"
             self.acquire_profile_lease(deployment_environment, owner)
-            self.acquire_remote_git_source_lease(
-                deployment_environment,
-                owner,
-            )
-            attestation_env = {
-                **profile_env,
-                "PT_STATION_MODE": "remote",
-                "PT_STATION_DEPLOY_ENV": deployment_environment,
-            }
+            if mode == "remote":
+                self.acquire_remote_git_source_lease(
+                    deployment_environment,
+                    owner,
+                )
+            if not self._station_ready(station_url, health_url):
+                if mode == "remote":
+                    raise BlockedError(
+                        reason=(
+                            f"Native Chat service {service_id!r} is not "
+                            "healthy at its declared profile endpoint"
+                        ),
+                        resource=f"service-health:{service_id}",
+                    )
+                station_environment = {
+                    **os.environ,
+                    "PT_DEV_PROFILE_FILE": str(profile_path),
+                }
+                station_script = (
+                    REPO_ROOT
+                    / "tooling"
+                    / "scripts"
+                    / "local-dev"
+                    / "station-dev.sh"
+                )
+                completed = subprocess.run(
+                    ["bash", str(station_script)],
+                    cwd=REPO_ROOT,
+                    env=station_environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
+                if completed.returncode != 0 or not self._station_ready(
+                    station_url,
+                    health_url,
+                ):
+                    detail = (
+                        completed.stderr.strip()
+                        or completed.stdout.strip()
+                        or "Station remained unavailable"
+                    )
+                    raise BlockedError(
+                        reason=f"Local Station provisioning failed: {detail}",
+                        resource=f"service-health:{service_id}",
+                    )
+
+                def stop_local_station(
+                    environment: dict[str, str] = station_environment,
+                ) -> None:
+                    stop_script = (
+                        REPO_ROOT
+                        / "tooling"
+                        / "scripts"
+                        / "local-dev"
+                        / "stop.sh"
+                    )
+                    stopped = subprocess.run(
+                        ["bash", str(stop_script), "station"],
+                        cwd=REPO_ROOT,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    if stopped.returncode != 0:
+                        detail = (
+                            stopped.stderr.strip()
+                            or stopped.stdout.strip()
+                            or "unknown station-stop failure"
+                        )
+                        raise RuntimeError(detail)
+
+                self.register_cleanup(
+                    f"local-station:{service_id}",
+                    stop_local_station,
+                )
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
                 service_id=service_id,
                 station_url=station_url,
-                profile_env=attestation_env,
+                profile_env=profile_env,
                 require_runtime_identity=True,
-                remote_source_identity_provider=resolve_remote_source_identity,
+                remote_source_identity_provider=(
+                    resolve_remote_source_identity
+                    if mode == "remote"
+                    else None
+                ),
             )
             if not commits_match(
                 attestation.live_commit,
@@ -217,7 +371,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
-            profile_name, _, slot, profile_env = self._resolve_active_profile()
+            profile_name, _, slot, _ = self._resolve_active_profile()
             manifest = self._preflighted(
                 self._manifest,
                 profile_name=profile_name,
@@ -232,22 +386,6 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             self._manifest = manifest
 
             credential_refs, _ = self._resolve_credentials()
-            fixture_station_url = profile_env.get(
-                "PT_STATION_URL",
-                "",
-            ).rstrip("/")
-            fixture_environment = profile_env.get(
-                "PT_STATION_DEPLOY_ENV",
-                "",
-            ).strip()
-            if not fixture_station_url or not fixture_environment:
-                raise BlockedError(
-                    reason=(
-                        "Active profile must identify the approved disposable "
-                        "Chat fixture Station"
-                    ),
-                    resource="fixture-profile",
-                )
             fixture = next(
                 (
                     item

@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-25
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -431,6 +431,22 @@ Cutover requirements:
    selected capability session is pinned in the readiness snapshot and
    ToolCall/operation. Low-risk work may auto-select only when exactly one
    compatible session exists and policy explicitly allows it.
+7. Package discovery consumes publisher-signed catalog snapshots. Desktop Rust
+   verifies and caches snapshots, while Agent/Skill installation reads back
+   Station truth and MCP installation reads back the actor-scoped Desktop Rust
+   MCP store. The legacy arbitrary URL JSON source path is retired.
+8. Catalog revocation blocks new install/update and remains visible for an
+   installed snapshot. Cleanup is an explicit uninstall through the target
+   authority; catalog synchronization never silently deletes user resources.
+9. MCA-D20A separates catalog trust from transport. The built-in source fetches
+   exact signed bytes from the authenticated Station catalog endpoint;
+   user-pinned sources use explicit public GitHub repository/branch/manifest
+   semantics. Station authentication and transport digest never become
+   publisher trust.
+10. `packages/agent-catalog` is the sole manually maintained official envelope.
+    Desktop bootstrap consumes it directly, and Station serves a generated
+    projection guarded by a drift check. The old Desktop-local envelope is
+    deleted in the same cut.
 
 ## 11. Measurement Protocol
 
@@ -485,6 +501,7 @@ product and architecture amendments.
 | MCA-A18 | Connector invocation | OAuth resource becomes a manifest, binding, ToolCall, result, and expiry recovery |
 | MCA-A19 | Governed Tool loop | Decision/execution/result are exactly once under duplicate delivery and replay |
 | MCA-A20 | Evaluation lifecycle | Dataset/run/cancel/retry/result/metrics survive restart and remain actor-isolated |
+| X3-P4-3 | Trusted package discovery | Default signed source, verified sync, cursor pagination, Agent/Skill/MCP browse/detail/install, target-authority readback, revocation, uninstall, and cleanup |
 
 Surface evidence must include the visible interaction, Station readback, and
 trace/runtime evidence. A screenshot alone is not a pass.
@@ -510,6 +527,7 @@ This is the authoritative starting point for the next planning job.
 | MCA-C13 Capability operation/MCP | D13, D16 | `CapabilityOperation`, client capability request/result | Station operation + Desktop capability manager | Desktop MCP CRUD/test/execute exists | Durable operation, leases, cancel/reconnect and cleanup | Client-only operation terminal state | A17, A19 |
 | MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
 | MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |
+| MCA-X3 Trusted package catalog | D20, D20A, P4-3 | `peers.package-catalog.v1` signed snapshot + proto Station distribution response | Publisher signature + Desktop Rust verifier; Station transports official bytes; target install authorities remain Station Agent/Skill and Desktop MCP | Signed verifier/cache and authority-specific install dispatch exist; private GitHub built-in transport is unreachable | Station-distributed official source, neutral canonical asset, derived policy, cursor pagination, authority readback, revocation and native Journey | Private-GitHub built-in source, arbitrary unsigned JSON source, duplicate envelope copies and ledger-only installed truth | X3-P4-3 |
 
 ### 13.1 V2 Deletion And Retention Closure
 

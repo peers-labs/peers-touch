@@ -316,7 +316,7 @@ type ToolReceiptAttempt struct {
 	Sequence            uint64    `gorm:"not null;uniqueIndex:idx_tool_receipt_sequence,priority:2"`
 	ToolCallID          string    `gorm:"not null;type:varchar(100);index"`
 	FencingToken        uint64    `gorm:"not null"`
-	Status              string    `gorm:"not null;type:varchar(32)"`
+	Status              string    `gorm:"not null;type:varchar(64)"`
 	PayloadHash         string    `gorm:"not null;type:varchar(64)"`
 	ReceiptHash         string    `gorm:"not null;type:varchar(64)"`
 	ResultID            string    `gorm:"not null;type:varchar(64);default:''"`

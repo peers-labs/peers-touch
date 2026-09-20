@@ -8,12 +8,19 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/age
 
 // Provider API contract — wire types for the agent provider management surface.
 
+message ModelCapabilityConfig {
+  // Canonical runtime capability IDs from RuntimeCapabilitySnapshot.
+  // Explicit false values override catalog capabilities.
+  map<string, bool> flags = 1;
+}
+
 message ProviderModelInfo {
   string id = 1;
   string display_name = 2;
   string type = 3;
   bool enabled = 4;
   int32 context_window = 5;
+  ModelCapabilityConfig capabilities = 6;
 }
 
 message AgentProviderInfo {
@@ -48,6 +55,8 @@ message AgentModelInfo {
   int64 version = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  int32 context_window = 10;
+  ModelCapabilityConfig capabilities = 11;
 }
 
 message CredentialStatusInfo {
@@ -96,6 +105,7 @@ message AvailableModelInfo {
   string type = 5;
   bool enabled = 6;
   int32 context_window = 7;
+  ModelCapabilityConfig capabilities = 8;
 }
 
 message CreateProviderRequest {
@@ -134,6 +144,7 @@ message CreateModelRequest {
   string display_name = 3;
   bool enabled = 4;
   int32 context_window = 5;
+  ModelCapabilityConfig capabilities = 6;
 }
 message CreateModelResponse { AgentModelInfo model = 1; }
 
@@ -143,6 +154,8 @@ message UpdateModelRequest {
   int64 version = 3;
   optional string display_name = 4;
   optional bool enabled = 5;
+  optional int32 context_window = 6;
+  ModelCapabilityConfig capabilities = 7;
 }
 message UpdateModelResponse { AgentModelInfo model = 1; }
 

@@ -136,9 +136,36 @@ func (r *followRepository) Unfollow(ctx context.Context, followerPTID, following
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).
-		Where("follower_id = ? AND following_id = ?", ids[0], ids[1]).
-		Delete(&db.Follow{}).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Where("follower_id = ? AND following_id = ?", ids[0], ids[1]).
+			Delete(&db.Follow{}).Error; err != nil {
+			return err
+		}
+		if err := tx.
+			Where(
+				"(owner_ptid = ? AND peer_ptid = ?) OR "+
+					"(owner_ptid = ? AND peer_ptid = ?)",
+				followerPTID,
+				followingPTID,
+				followingPTID,
+				followerPTID,
+			).
+			Delete(&federatedRelationshipProjectionModel{}).Error; err != nil {
+			return err
+		}
+		return tx.
+			Where(
+				"status = ? AND ((actor_ptid = ? AND peer_ptid = ?) OR "+
+					"(actor_ptid = ? AND peer_ptid = ?))",
+				friendRequestPolicyRelationshipAccepted,
+				followerPTID,
+				followingPTID,
+				followingPTID,
+				followerPTID,
+			).
+			Delete(&friendshipModel{}).Error
+	})
 }
 
 func (r *followRepository) GetRelationship(ctx context.Context, followerPTID, followingPTID string) (*db.Follow, error) {

@@ -6,6 +6,7 @@ import {
   failDirectConversationOpen,
   findContactConversation,
   friendContactSelection,
+  personContactSelection,
   type ContactSelection,
 } from './contactSelection';
 import type { ChatActorIdentityProjection } from '../../store/friendshipProjection';
@@ -135,6 +136,28 @@ describe('findContactConversation', () => {
       homeStationDomain: 'station.example',
       homeStationPeerId: 'station-peer',
     });
+  });
+
+  it('keeps terminal request history selectable without fabricating friendship', () => {
+    const selection = personContactSelection(
+      {
+        ...identity('ptid:bob', 'Bob'),
+        homeStationName: 'Aspen Station',
+      },
+      3,
+      'outgoing',
+      4,
+    );
+
+    expect(selection).toMatchObject({
+      kind: 'person',
+      peerPtid: 'ptid:bob',
+      homeStationName: 'Aspen Station',
+      requestState: 3,
+      requestDirection: 'outgoing',
+      requestAttemptCount: 4,
+    });
+    expect(findContactConversation(selection, conversations)).toBeUndefined();
   });
 
   it('keeps failed Direct-open intent bound to the selected peer', () => {

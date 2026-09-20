@@ -108,9 +108,29 @@ let persistence:
   | null = null;
 let persistenceChain: Promise<void> = Promise.resolve();
 const recoverySubscriptions = new Map<string, RecoverySubscription>();
+let teardownRecoveryActorId: string | null = null;
+let teardownFailedRecoveryRecords: Record<string, ActiveAgentTurnRecovery> = {};
 
 function activeRecords(): Record<string, ActiveAgentTurnRecovery> {
   return useAgentTurnRecoveryStore.getState().active;
+}
+
+function sameRecoveryRecord(
+  left: ActiveAgentTurnRecovery,
+  right: ActiveAgentTurnRecovery,
+): boolean {
+  return (
+    left.actorId === right.actorId
+    && left.conversationId === right.conversationId
+    && left.turnId === right.turnId
+    && left.streamId === right.streamId
+    && left.streamGeneration === right.streamGeneration
+    && left.cursor === right.cursor
+    && left.phase === right.phase
+    && left.updatedAt === right.updatedAt
+    && left.recoveryEpoch === right.recoveryEpoch
+    && left.failureKey === right.failureKey
+  );
 }
 
 export function parsePersistedAgentTurnRecoveries(
@@ -416,6 +436,16 @@ async function consumeRecoveryEvent(
     await useChatStore
       .getState()
       .reconcileRecoveredTurn(current.conversationId, current.turnId, null);
+    if (!currentRecord(
+      record.conversationId,
+      record.turnId,
+      record.streamGeneration,
+      recoveryEpoch,
+    )) {
+      stopRecoverySubscription(record.conversationId);
+      await persistActiveRecords();
+      return;
+    }
   }
 
   const payload: AgentTurnStreamEventPayload = {
@@ -790,6 +820,15 @@ export const chatRuntime: RuntimeDescriptor = {
     for (const conversationId of recoverySubscriptions.keys()) {
       stopRecoverySubscription(conversationId);
     }
+    teardownRecoveryActorId = actorId;
+    teardownFailedRecoveryRecords = Object.fromEntries(
+      Object.entries(activeRecords())
+        .filter(([, record]) => record.phase === 'RECOVERY_FAILED')
+        .map(([conversationId, record]) => [
+          conversationId,
+          { ...record },
+        ]),
+    );
     actorId = null;
     persistence = null;
     useAgentTurnRecoveryStore.getState().reset();
@@ -798,13 +837,16 @@ export const chatRuntime: RuntimeDescriptor = {
     if (!nextActorId) return;
     const bootstrapSequence = ++actorBootstrapSequence;
     const recoveryActorId = nextActorId;
+    const preservedFailedConversations = new Set<string>();
+    if (actorId === recoveryActorId) {
+      for (const record of Object.values(activeRecords())) {
+        if (record.phase === 'RECOVERY_FAILED') {
+          preservedFailedConversations.add(record.conversationId);
+        }
+      }
+    }
     actorId = recoveryActorId;
     useAgentTurnRecoveryStore.getState().beginActor(recoveryActorId);
-    const preservedFailedConversations = new Set(
-      Object.values(activeRecords())
-        .filter((record) => record.phase === 'RECOVERY_FAILED')
-        .map((record) => record.conversationId),
-    );
     const repository = createDesktopClientStorageRuntime({
       ptid: recoveryActorId,
     }).repositories.runtimeProjection;
@@ -818,11 +860,28 @@ export const chatRuntime: RuntimeDescriptor = {
     ) {
       return;
     }
+    const persistedRecoveries =
+      parsePersistedAgentTurnRecoveries(recoveryActorId, persisted);
+    if (teardownRecoveryActorId === recoveryActorId) {
+      for (const [conversationId, persistedRecord] of Object.entries(
+        persistedRecoveries,
+      )) {
+        const teardownRecord = teardownFailedRecoveryRecords[conversationId];
+        if (
+          teardownRecord
+          && sameRecoveryRecord(teardownRecord, persistedRecord)
+        ) {
+          preservedFailedConversations.add(conversationId);
+        }
+      }
+    }
+    teardownRecoveryActorId = null;
+    teardownFailedRecoveryRecords = {};
     useAgentTurnRecoveryStore
       .getState()
       .mergePersisted(
         recoveryActorId,
-        parsePersistedAgentTurnRecoveries(recoveryActorId, persisted),
+        persistedRecoveries,
       );
     reconcileActiveTurns('bootstrap', preservedFailedConversations);
   },

@@ -14,8 +14,8 @@ export function ContactIdentityRow({
   selected?: boolean;
 }) {
   const { token } = theme.useToken();
-  const federation = contact.federationName || contact.federationId || '';
-  const station = contact.homeStation || contact.federatedHandle || '';
+  const federation = contact.federationName || '';
+  const station = contact.homeStation || '';
 
   return (
     <Flexbox horizontal align="center" gap={10} flex={1} style={{ minWidth: 0 }}>

@@ -14,6 +14,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
+const historyRestoreWindow = 24 * time.Hour
+
 type MemberSettingsPatch struct {
 	Nickname            *string
 	Muted               *bool
@@ -75,15 +77,21 @@ func (s *Service) UpdateMemberSettings(
 			current.BackgroundImage = *patch.BackgroundImage
 		}
 		if patch.ClearedAtUnixMillis != nil {
-			if *patch.ClearedAtUnixMillis < current.ClearedAtUnixMillis {
+			requested := *patch.ClearedAtUnixMillis
+			restoreRequested := requested == 0 && current.ClearedAtUnixMillis > 0
+			restoreExpired := restoreRequested && !s.clock.Now().Before(
+				time.UnixMilli(current.ClearedAtUnixMillis).Add(historyRestoreWindow),
+			)
+			if requested < 0 || restoreExpired ||
+				(requested > 0 && requested < current.ClearedAtUnixMillis) {
 				return conversationdomain.NewError(
 					conversationdomain.ErrorCodeStaleAuthorityHead,
 					"application.update_member_settings",
 					"cleared_at_unix_ms",
-					"cannot move backwards",
+					"cannot move backwards outside the restore window",
 				)
 			}
-			current.ClearedAtUnixMillis = *patch.ClearedAtUnixMillis
+			current.ClearedAtUnixMillis = requested
 		}
 		current.UpdatedAt = s.clock.Now()
 		if err := transaction.Repositories.MemberSettings.Save(ctx, current); err != nil {
@@ -100,6 +108,50 @@ func (s *Service) AdvanceReadCursor(
 	conversationID valueobject.ConversationID,
 	reader valueobject.Endpoint,
 	sequence valueobject.Sequence,
+) (ReadCursorResult, error) {
+	return s.advanceReadCursor(ctx, conversationID, reader, sequence, nil)
+}
+
+// AdvanceReadCursorFromVerifiedHome applies an authenticated remote reader
+// using the current signed endpoint-manifest route snapshot.
+func (s *Service) AdvanceReadCursorFromVerifiedHome(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	readerHome valueobject.StationID,
+	sequence valueobject.Sequence,
+	verifiedRoutes []ports.EndpointRoute,
+) (ReadCursorResult, error) {
+	if readerHome == "" {
+		return ReadCursorResult{}, invalid(
+			"application.advance_read_cursor_from_verified_home",
+			"reader_home",
+			"is required",
+		)
+	}
+	return s.advanceReadCursor(
+		ctx,
+		conversationID,
+		reader,
+		sequence,
+		&readCursorRouteAuthorization{
+			readerHome:     readerHome,
+			verifiedRoutes: append([]ports.EndpointRoute(nil), verifiedRoutes...),
+		},
+	)
+}
+
+type readCursorRouteAuthorization struct {
+	readerHome     valueobject.StationID
+	verifiedRoutes []ports.EndpointRoute
+}
+
+func (s *Service) advanceReadCursor(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	sequence valueobject.Sequence,
+	routeAuthorization *readCursorRouteAuthorization,
 ) (ReadCursorResult, error) {
 	if sequence == 0 {
 		return ReadCursorResult{}, invalid(
@@ -119,21 +171,51 @@ func (s *Service) AdvanceReadCursor(
 		if err != nil {
 			return err
 		}
-		active, err := transaction.Identity.IsActive(ctx, reader)
-		if err != nil {
-			return err
-		}
-		routes, err := resolveActorRoutes(
-			ctx,
-			transaction.Identity,
-			conversation.ActiveMemberActors(),
-		)
-		if err != nil {
-			return err
+		var routes []ports.EndpointRoute
+		if routeAuthorization == nil {
+			active, err := transaction.Identity.IsActive(ctx, reader)
+			if err != nil {
+				return err
+			}
+			routes, err = resolveActorRoutes(
+				ctx,
+				transaction.Identity,
+				conversation.ActiveMemberActors(),
+			)
+			if err != nil {
+				return err
+			}
+			if !active {
+				return unauthorized(
+					"application.advance_read_cursor",
+					"reader is not an active member device",
+				)
+			}
+		} else {
+			routes, err = commandRouteSnapshot(
+				conversation,
+				routeAuthorization.verifiedRoutes,
+			)
+			if err != nil {
+				return err
+			}
+			if !routeSetContainsAtStation(
+				routes,
+				reader,
+				routeAuthorization.readerHome,
+			) {
+				return unauthorized(
+					"application.advance_read_cursor",
+					"reader endpoint does not belong to the authenticated Home Station",
+				)
+			}
 		}
 		routes = eligibleConversationRoutes(conversation, routes)
-		if !active || !routeSetContains(routes, reader) {
-			return unauthorized("application.advance_read_cursor", "reader is not an active member device")
+		if !routeSetContains(routes, reader) {
+			return unauthorized(
+				"application.advance_read_cursor",
+				"reader is not an active member device",
+			)
 		}
 		if sequence > conversation.AuthorityHead().Sequence {
 			return conversationdomain.NewError(
@@ -825,11 +907,26 @@ func deriveFollowerProjection(
 			return repository.FollowerProjection{}, err
 		}
 		if event.Fact.Kind == domainevent.KindMembershipCommitted {
-			if err := aggregate.ValidateCommittedMembershipProjection(
+			snapshot, err = aggregate.ReconcileCommittedMembershipProjection(
 				current.Conversation,
 				event.Fact.MembershipChanges,
 				snapshot,
-			); err != nil {
+			)
+			if err != nil {
+				return repository.FollowerProjection{}, err
+			}
+		} else if event.Fact.Kind == domainevent.KindMemberAuthority {
+			if event.Fact.MemberAuthority == nil {
+				return repository.FollowerProjection{}, followerStateShapeError(
+					"member authority event is missing its mutation",
+				)
+			}
+			snapshot, err = aggregate.ReconcileCommittedMemberAuthorityProjection(
+				current.Conversation,
+				*event.Fact.MemberAuthority,
+				snapshot,
+			)
+			if err != nil {
 				return repository.FollowerProjection{}, err
 			}
 		}
@@ -909,10 +1006,11 @@ func validateFollowerCreationProjection(
 
 func validateFollowerEventStateShape(event domainevent.Record) error {
 	switch event.Fact.Kind {
-	case domainevent.KindMembershipCommitted:
+	case domainevent.KindMembershipCommitted,
+		domainevent.KindMemberAuthority:
 		if event.Fact.PostState == nil {
 			return followerStateShapeError(
-				"membership event must contain the complete post-transition state",
+				"membership authority event must contain the complete post-transition state",
 			)
 		}
 	case domainevent.KindMessageCommitted,
@@ -952,9 +1050,19 @@ func validateFollowerEpochTransition(
 	}
 	if event.Fact.Kind == domainevent.KindMembershipCommitted {
 		if event.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
-			event.MLSEpoch != current.Head.MLSEpoch.Next() ||
-			event.MembershipEpoch != event.MLSEpoch {
-			return followerEpochError("membership events must advance both group epochs by exactly one")
+			event.MLSEpoch != current.Head.MLSEpoch.Next() {
+			return followerEpochError(
+				"membership events must advance both group epochs by exactly one",
+			)
+		}
+		return nil
+	}
+	if event.Fact.Kind == domainevent.KindMemberAuthority {
+		if event.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
+			event.MLSEpoch != current.Head.MLSEpoch {
+			return followerEpochError(
+				"member authority events must advance membership epoch only",
+			)
 		}
 		return nil
 	}

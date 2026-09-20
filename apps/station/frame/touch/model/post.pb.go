@@ -583,6 +583,7 @@ const (
 	Audience_SELF             Audience_Kind = 5
 	Audience_CUSTOM_ALLOW     Audience_Kind = 6
 	Audience_CUSTOM_DENY      Audience_Kind = 7
+	Audience_FRIENDS          Audience_Kind = 8
 )
 
 // Enum value maps for Audience_Kind.
@@ -596,6 +597,7 @@ var (
 		5: "SELF",
 		6: "CUSTOM_ALLOW",
 		7: "CUSTOM_DENY",
+		8: "FRIENDS",
 	}
 	Audience_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -606,6 +608,7 @@ var (
 		"SELF":             5,
 		"CUSTOM_ALLOW":     6,
 		"CUSTOM_DENY":      7,
+		"FRIENDS":          8,
 	}
 )
 
@@ -4622,6 +4625,8 @@ func (x *RepostResponse) GetRepost() *Post {
 //	PUBLIC         — visible to anyone (federated when ActivityPub lands).
 //	                 target_id / actor_ptids / base_kind: unused.
 //	FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
+//	FRIENDS        — visible to accepted Social relationship peers + author.
+//	                 target_id / actor_ptids / base_kind: unused.
 //	CIRCLE         — visible to members of `target_id` circle (publisher-owned).
 //	                 target_id required.
 //	GROUP          — visible to members of `target_id` chat.Group.
@@ -5605,14 +5610,14 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
 	"\b_comment\"K\n" +
 	"\x0eRepostResponse\x129\n" +
-	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xa5\x03\n" +
+	"\x06repost\x18\x01 \x01(\v2!.peers_touch.model.social.v1.PostR\x06repost\"\xb3\x03\n" +
 	"\bAudience\x12>\n" +
 	"\x04kind\x18\x01 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\x04kind\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\x04R\btargetId\x12\x1f\n" +
 	"\vactor_ptids\x18\x03 \x03(\tR\n" +
 	"actorPtids\x12G\n" +
 	"\tbase_kind\x18\x04 \x01(\x0e2*.peers_touch.model.social.v1.Audience.KindR\bbaseKind\x12U\n" +
-	"\rkey_envelopes\x18\x05 \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\fkeyEnvelopes\"{\n" +
+	"\rkey_envelopes\x18\x05 \x03(\v20.peers_touch.model.social.v1.AudienceKeyEnvelopeR\fkeyEnvelopes\"\x88\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
@@ -5623,7 +5628,8 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x05GROUP\x10\x04\x12\b\n" +
 	"\x04SELF\x10\x05\x12\x10\n" +
 	"\fCUSTOM_ALLOW\x10\x06\x12\x0f\n" +
-	"\vCUSTOM_DENY\x10\a\"\x92\x01\n" +
+	"\vCUSTOM_DENY\x10\a\x12\v\n" +
+	"\aFRIENDS\x10\b\"\x92\x01\n" +
 	"\x0fReactionSummary\x12=\n" +
 	"\x04kind\x18\x01 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\x12*\n" +

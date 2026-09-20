@@ -1,5 +1,11 @@
 import { createDesktopStore } from './createDesktopStore';
-import { api, type ProviderListItem, type ProviderDetail } from '../services/desktop_api';
+import {
+  api,
+  type ProviderDetail,
+  type ProviderListItem,
+  type ProviderModelConfigInput,
+  type ProviderModelCreateData,
+} from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { useAgentStore } from './agent';
 
@@ -37,8 +43,8 @@ interface ProviderState {
   checkProvider: (id: string, apiKey?: string, baseUrl?: string, model?: string) => Promise<{ ok: boolean; error?: string }>;
   createProvider: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
-  addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => Promise<void>;
-  updateModel: (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
+  addModel: (providerId: string, data: ProviderModelCreateData) => Promise<void>;
+  updateModel: (providerId: string, modelId: string, data: ProviderModelConfigInput) => Promise<void>;
   deleteModel: (providerId: string, modelId: string) => Promise<void>;
   fetchRemoteModels: (providerId: string, apiKey?: string, baseUrl?: string) => Promise<{ ok: boolean; models?: string[]; error?: string }>;
   toggleModel: (providerId: string, modelId: string, enabled: boolean) => Promise<void>;
@@ -208,12 +214,12 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     await useAgentStore.getState().loadModels();
   },
 
-  addModel: async (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => {
+  addModel: async (providerId: string, data: ProviderModelCreateData) => {
     await api.addModel(providerId, data);
     await get().refreshAfterMutation(providerId);
   },
 
-  updateModel: async (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => {
+  updateModel: async (providerId: string, modelId: string, data: ProviderModelConfigInput) => {
     await api.updateModel(providerId, modelId, data);
     await get().refreshAfterMutation(providerId);
   },

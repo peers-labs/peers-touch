@@ -31,6 +31,7 @@ import type {
   FederationSummary,
   CreateFederationResponse,
   DeleteFederationResponse,
+  FederationCatalogEntry,
   JoinFederationResponse,
   LeaveFederationResponse,
   MemberStationView,
@@ -41,6 +42,41 @@ export type FederationVisibilityLabel =
   | 'hidden'
   | 'by_handle'
   | 'indexed';
+
+export interface FederationActorStationCandidate {
+  actorPtid: string;
+  federationId: string;
+  username: string;
+}
+
+export function resolveFederationStationName(input: {
+  actorPtid?: string;
+  federationId?: string;
+  stationPeerId?: string;
+  actorStationEntries: Readonly<Record<string, FederationCatalogEntry>>;
+  memberStationsByFederation: Readonly<Record<string, readonly MemberStationView[]>>;
+}): string {
+  const stationPeerId = input.stationPeerId?.trim() || '';
+  const federationId = input.federationId?.trim() || '';
+  const actorEntry = input.actorPtid
+    ? input.actorStationEntries[input.actorPtid]
+    : undefined;
+  if (
+    actorEntry?.homeStationName.trim()
+    && (!stationPeerId || actorEntry.homeStationPeerId.trim() === stationPeerId)
+  ) {
+    return actorEntry.homeStationName.trim();
+  }
+
+  const scopedStations = federationId
+    ? input.memberStationsByFederation[federationId] ?? []
+    : Object.values(input.memberStationsByFederation).flat();
+  const memberStation = scopedStations.find(
+    (station) => station.stationPeerId.trim() === stationPeerId,
+  );
+  if (memberStation?.stationName.trim()) return memberStation.stationName.trim();
+  return '';
+}
 
 export interface FederationState {
   /** GET /actor/federation/me snapshot, null while logged out / not yet loaded. */
@@ -53,6 +89,10 @@ export interface FederationState {
   lastError: string | null;
   /** Detailed federation list from governance subserver. */
   federations: FederationSummary[];
+  /** Authoritative Station directory, scoped by Federation ID. */
+  memberStationsByFederation: Record<string, MemberStationView[]>;
+  /** Actor-resolved Station names retained from authoritative catalog rows. */
+  actorStationEntries: Record<string, FederationCatalogEntry>;
 
   refreshSelf: () => Promise<void>;
   refreshHealth: () => Promise<void>;
@@ -63,6 +103,10 @@ export interface FederationState {
   leaveFederation: (federationId: string, reason?: string) => Promise<LeaveFederationResponse>;
   deleteFederation: (federationId: string) => Promise<DeleteFederationResponse>;
   listMemberStations: (federationId: string) => Promise<MemberStationView[]>;
+  rememberCatalogEntries: (entries: readonly FederationCatalogEntry[]) => void;
+  resolveActorStations: (
+    candidates: readonly FederationActorStationCandidate[],
+  ) => Promise<void>;
   /** Drop session-bound state (called by FederationRuntime on logout). */
   clearSession: () => void;
 }
@@ -73,6 +117,8 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   loading: false,
   lastError: null,
   federations: [],
+  memberStationsByFederation: {},
+  actorStationEntries: {},
 
   refreshSelf: async () => {
     const wasLoaded = get().self != null;
@@ -104,7 +150,29 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   refreshFederations: async () => {
     try {
       const resp = await api.federationListFederations();
-      set({ federations: resp.federations ?? [] });
+      const federations = resp.federations ?? [];
+      const stationResults = await Promise.allSettled(
+        federations.map(async (federation) => ({
+          federationId: federation.federationId,
+          stations: (
+            await api.federationListMemberStations(federation.federationId)
+          ).stations ?? [],
+        })),
+      );
+      set((state) => {
+        const memberStationsByFederation: Record<string, MemberStationView[]> = {};
+        stationResults.forEach((result, index) => {
+          const federationId = federations[index]?.federationId ?? '';
+          if (!federationId) return;
+          memberStationsByFederation[federationId] = result.status === 'fulfilled'
+            ? result.value.stations
+            : state.memberStationsByFederation[federationId] ?? [];
+        });
+        return {
+          federations,
+          memberStationsByFederation,
+        };
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('federation', 'refreshFederations failed', { error: msg });
@@ -176,7 +244,59 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
 
   listMemberStations: async (federationId) => {
     const resp = await api.federationListMemberStations(federationId);
-    return resp.stations ?? [];
+    const stations = resp.stations ?? [];
+    set((state) => ({
+      memberStationsByFederation: {
+        ...state.memberStationsByFederation,
+        [federationId]: stations,
+      },
+    }));
+    return stations;
+  },
+
+  rememberCatalogEntries: (entries) => {
+    set((state) => {
+      const actorStationEntries = { ...state.actorStationEntries };
+      for (const entry of entries) {
+        if (
+          !entry.actorPtid.trim()
+          || !entry.homeStationPeerId.trim()
+          || !entry.homeStationName.trim()
+        ) {
+          continue;
+        }
+        actorStationEntries[entry.actorPtid] = entry;
+      }
+      return { actorStationEntries };
+    });
+  },
+
+  resolveActorStations: async (candidates) => {
+    const unresolved = candidates.filter((candidate) => (
+      candidate.actorPtid.trim()
+      && candidate.federationId.trim()
+      && candidate.username.trim()
+      && !get().actorStationEntries[candidate.actorPtid]?.homeStationName.trim()
+    ));
+    const results = await Promise.allSettled(
+      unresolved.map(async (candidate) => {
+        const response = await api.federationCatalogSearch({
+          federation_id: candidate.federationId,
+          prefix: candidate.username,
+          page_size: 20,
+        });
+        return (response.entries ?? []).find(
+          (entry) => entry.actorPtid === candidate.actorPtid,
+        );
+      }),
+    );
+    get().rememberCatalogEntries(
+      results.flatMap((result) => (
+        result.status === 'fulfilled' && result.value
+          ? [result.value]
+          : []
+      )),
+    );
   },
 
   clearSession: () =>
@@ -185,6 +305,8 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
       loading: false,
       lastError: null,
       federations: [],
+      memberStationsByFederation: {},
+      actorStationEntries: {},
     }),
 }));
 

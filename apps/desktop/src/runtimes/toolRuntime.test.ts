@@ -10,7 +10,10 @@ vi.mock('../services/desktop_api', () => ({
   },
 }));
 
-import { ToolCallStatus as AgentToolCallStatus } from '../gen/proto/domain/agent/agent_pb';
+import {
+  ToolCallStatus as AgentToolCallStatus,
+  ToolExecutionOwner,
+} from '../gen/proto/domain/agent/agent_pb';
 import {
   reconcileToolProjectionState,
   reduceToolProjection,
@@ -29,6 +32,7 @@ const approvalRequired = {
     arguments: '{"resource_ref":"opaque-1"}',
     approvalId: 'approval-1',
     decisionRevision: 0,
+    expiresAt: '2026-09-16T12:00:00Z',
   },
 };
 
@@ -69,6 +73,30 @@ describe('toolRuntime projection authority', () => {
       status: 'approval_required',
       approvalId: 'approval-1',
       decisionRevision: 0,
+      expiresAt: '2026-09-16T12:00:00Z',
+    });
+  });
+
+  it('does not infer ToolCall success from the terminal turn event', () => {
+    const pending = reduceToolProjection({}, {
+      event: 'tool_call',
+      data: {
+        turnId: 'turn-1',
+        toolCallId: 'tool-call-1',
+        toolName: 'filesystem.read',
+        arguments: '{}',
+      },
+    });
+
+    const afterDone = reduceToolProjection(pending, {
+      event: 'done',
+      data: { turnId: 'turn-1' },
+    });
+
+    expect(afterDone).toBe(pending);
+    expect(afterDone['tool-call-1']).toMatchObject({
+      status: 'pending',
+      pending: true,
     });
   });
 
@@ -85,6 +113,14 @@ describe('toolRuntime projection authority', () => {
           decisionId: '',
           decisionRevision: 0n,
           errorCode: '',
+          executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+          approvalPolicy: 'manual',
+          manifestId: 'filesystem.read',
+          manifestVersion: '1',
+          bindingId: 'binding-1',
+          bindingRevision: 3n,
+          readinessSnapshotId: 'readiness-1',
+          targetDeviceId: 'device-1',
         }],
       },
     });
@@ -110,7 +146,61 @@ describe('toolRuntime projection authority', () => {
       approvalId: 'approval-1',
       decisionRevision: 0,
       payloadHash: 'payload-1',
+      executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+      approvalPolicy: 'manual',
+      manifestId: 'filesystem.read',
+      manifestVersion: '1',
+      bindingId: 'binding-1',
+      bindingRevision: 3,
+      readinessSnapshotId: 'readiness-1',
+      targetDeviceId: 'device-1',
     });
+  });
+
+  it('hydrates a live approval proposal from authoritative Turn diagnostics', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{"resource_ref":"opaque-1"}',
+          status: AgentToolCallStatus.WAITING_APPROVAL,
+          approvalId: 'approval-1',
+          decisionId: '',
+          decisionRevision: 0n,
+          errorCode: '',
+          executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+          approvalPolicy: 'manual',
+          manifestId: 'filesystem.read',
+          manifestVersion: '1',
+          bindingId: 'binding-1',
+          bindingRevision: 3n,
+          readinessSnapshotId: 'readiness-1',
+          targetDeviceId: 'device-1',
+        }],
+      },
+    });
+
+    toolRuntime.consume(approvalRequired);
+
+    await vi.waitFor(() => {
+      expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+        status: 'approval_required',
+        pending: true,
+        approvalId: 'approval-1',
+        executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+        approvalPolicy: 'manual',
+        manifestId: 'filesystem.read',
+        manifestVersion: '1',
+        bindingId: 'binding-1',
+        bindingRevision: 3,
+        readinessSnapshotId: 'readiness-1',
+        targetDeviceId: 'device-1',
+      });
+    });
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledOnce();
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledWith('turn-1');
   });
 
   it('does not regress a newer event projection with stale Turn diagnostics', async () => {
@@ -337,6 +427,77 @@ describe('toolRuntime projection authority', () => {
       error: 'agent.errors.toolApprovalDenied',
       decisionErrorCode: 'TOOL_APPROVAL_DENIED',
       approvalId: 'approval-1',
+      decisionId: 'decision-1',
+      decisionRevision: 1,
+    });
+  });
+
+  it('projects Connector terminal errors to typed localized recovery', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-connector',
+        toolCalls: [{
+          toolCallId: 'tool-call-connector',
+          toolName: 'connector_resource_1234567890abcdef12345678',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.FAILED,
+          decisionRevision: 1n,
+          errorCode: 'CONNECTOR_REVOCATION_UNCONFIRMED',
+        }],
+      },
+    });
+
+    await expect(toolRuntime.reconcileMessages([{
+      turnId: 'turn-connector',
+      toolCalls: [{
+        id: 'tool-call-connector',
+        name: 'connector_resource_1234567890abcdef12345678',
+        pending: true,
+        status: 'pending',
+      }],
+    }])).resolves.toBe(true);
+
+    expect(toolRuntime.getProjection('tool-call-connector')).toMatchObject({
+      status: 'error',
+      pending: false,
+      error: 'agent.errors.connectorRevocationUnconfirmed',
+    });
+  });
+
+  it('reconciles an unknown side effect as a distinct fail-closed state', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{}',
+          status: AgentToolCallStatus.UNKNOWN_SIDE_EFFECT,
+          approvalId: 'approval-1',
+          decisionId: 'decision-1',
+          decisionRevision: 1n,
+          errorCode: 'TOOL_EXECUTION_UNKNOWN_SIDE_EFFECT',
+        }],
+      },
+    });
+    toolRuntime.consume({
+      event: 'tool_call',
+      data: {
+        turnId: 'turn-1',
+        toolCallId: 'tool-call-1',
+        toolName: 'filesystem.read',
+        arguments: '{}',
+      },
+    });
+
+    await toolRuntime.reconcile('periodic');
+
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledWith('turn-1');
+    expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+      status: 'unknown_side_effect',
+      pending: false,
+      error: 'agent.errors.toolUnknownSideEffect',
+      decisionErrorCode: 'TOOL_EXECUTION_UNKNOWN_SIDE_EFFECT',
       decisionId: 'decision-1',
       decisionRevision: 1,
     });

@@ -1,13 +1,14 @@
 # Modern Chat Agent V2 — 产品级迭代计划
 
 > **Status**: active
-> **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-09-09
+> **Version**: v0.3
+> **Created**: 2026-08-17 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
 > **Governing product**: `../modern-chat-agent/`
-> **Benchmark evidence**: `../lobehub-feature-topology.md`、`../lobehub-parity/`
+> **Benchmark evidence**: `../lobehub-feature-topology.md`、
+> `../modern-chat-agent/lobehub-v2-reference-analysis.md`
 
 ---
 
@@ -16,27 +17,27 @@
 | Field | Current value |
 |---|---|
 | Main task | 将 Peers-Touch 单 Agent Chat 从源码能力对齐推进到 LobeHub 级产品体验与运行可靠性 |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
+| Plan source | `docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md` |
 | Tracking source | this product-level overview、`docs/architecture/agent/modern-chat-agent/`、and `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `EXECUTE` |
-| Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | C08 `DONE / PROVEN`；G-F crossed all four AS-F06 tuples and is implementing the planned `BASE-EXECUTOR-UNAVAILABLE` vertical |
-| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 exact-source attachment journey `DONE / PROVEN`；G-F exact-source run crossed Browser/Desktop AS-F06 recovery tuples with cleanup proven |
-| Current action | Close the accepted G-FE1 typed-error backlog through non-overlapping Station、Desktop、Rust runtime control、and Acceptance lanes |
-| Next action | Reconcile the parallel lanes，run focused checks once，then let the integrator checkpoint、deploy exact source with `make station`、and rerun G-F |
-| Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
-| Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
-| Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
-| Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
-| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
+| Stage | `PLAN_PERSISTED` |
+| Current workstream | `MCA-J01 / V2-J01 Home Command Center` |
+| Current step | Activate the validated Plan Package and reprove J01 on exact source |
+| Progress | J01/J02 have prior development passes; J03 source fixes are complete; all current package Tasks and seven formal Gates remain uncredited until current-source workflow transitions |
+| Last completed | Validated the 2026-09-17 Plan Package with eight vertical Task Slices and exact worktree binding |
+| Current action | Select MCA-J01, run focused checks, then execute the deterministic native Home Journey |
+| Next action | Advance through J02/J03, implement J04-J06 and X3, then run aggregate Acceptance and update the mind map |
+| Autonomous execution window | Full accepted package through delivery; use one bounded vertical Task at a time and continue while any dependency-ready work remains |
+| Overnight slice result | Legacy foundation and W2-only scheduling are historical inputs, not current lifecycle owners |
+| Parallel policy | Plan lifecycle and shared contracts remain serial; only disjoint read-only investigation or verified source lanes may parallelize |
+| Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
+| Overnight non-scope | No G-F/BASE matrix expansion, Mobile UI, hosted commercial marketplace/Community, image/video generation, version bump, or unrelated Acceptance repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | No external blocker. G-F is source-blocked by the planned but incomplete `BASE-EXECUTOR-UNAVAILABLE` vertical；Foundation and downstream work remain `PARTIAL / UNPROVEN` until the exact-source Gate passes |
+| Blockers | none for Plan activation; runtime resources are acquired per current Task and released after each functional Journey |
 | Decisions required | none |
-| Evidence | C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN`。G-F run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples，then failed closed at `BASE-EXECUTOR-UNAVAILABLE` with Provisioner cleanup `DONE / PROVEN / passed` |
-| Last updated | 2026-09-09 |
+| Evidence | Accepted MCA-D14-D18/C11-C15/A15-A20 contracts, P4-3, the parity mind map, and the validated 2026-09-17 package; all formal product Gates remain `UNPROVEN` |
+| Last updated | 2026-09-17 |
 
 ---
 
@@ -422,7 +423,7 @@ Gate:
 | Execution F1 Agent/Conversation Authority | complete | 2026-08-18 | C01/C02 source closure、D11 guard、Desktop full check 与 old-path deletion evidence PASS |
 | Execution F2 Runtime/Stream/Capability/Portability | complete | 2026-09-09 | Q4 C06与Q5/C10 source closure完成；Station、Desktop、Rust、Mobile与C03/C05/C06/C10 zero-old-path checks通过；product proof仍由G-F负责 |
 | Execution F3 Context/Resource Intelligence | source complete / product proof unproven | — | C04 core与C08 production source、stable Gate、Home Station provisioning和old-path inventory闭合；`agent-attachment-e2e`未运行 |
-| Phase 2 Home | pending execution dependencies | — | confirmed prototype 仅证明产品意图；生产能力 `UNPROVEN` |
+| Phase 2 Home | current / executing | — | `MCA-V2-H01 / V2-J01` 是当前唯一产品 slice；W2 自己完成 C11 激活与旧路径删除，完整 G-F 不再是 entry dependency |
 | Phase 3 Capability Plane | pending | — | 现有 foundations 不等于 product closure |
 | Phase 4 MCP | pending | — | 需要真实 disposable MCP |
 | Phase 5 Connector | pending | — | C7 lifecycle proof 是基础，不含真实 connector invocation |

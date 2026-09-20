@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,6 +17,154 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func TestMapMemberAuthorityCommandBindsAuthorityAndExactIdentity(t *testing.T) {
+	now := time.Date(2026, time.September, 18, 10, 0, 0, 0, time.UTC)
+	operator := valueobject.Endpoint{Actor: "ptid:owner", Device: "owner-1"}
+	target := valueobject.PTID("ptid:member")
+	eventHash := valueobject.HashBytes([]byte("member-authority-head"))
+	preparation := aggregate.CommandPreparation{
+		Kind:             valueobject.ConversationKindGroup,
+		AuthorityStation: "station-a",
+		Head: valueobject.AuthorityHead{
+			Sequence:        9,
+			EventHash:       eventHash,
+			MembershipEpoch: 5,
+			MLSEpoch:        3,
+		},
+		RequiredEndpoints: []valueobject.Endpoint{
+			operator,
+			{Actor: target, Device: "member-1"},
+		},
+		DeliveryPlanHash: valueobject.HashBytes([]byte("member-authority-delivery-plan")),
+	}
+	role := chat.MemberRole_MEMBER_ROLE_ADMIN
+	muted := true
+	mutedUntil := now.Add(time.Hour)
+	wire := &chat.ConversationMemberAuthorityCommand{
+		Version:                 1,
+		CommandId:               "member-authority-1",
+		ConversationId:          "conversation-1",
+		Operator:                endpointProto(operator),
+		TargetPtid:              string(target),
+		Action:                  chat.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER,
+		Role:                    &role,
+		Muted:                   &muted,
+		MutedUntil:              timestamppb.New(mutedUntil),
+		FederationId:            "federation-1",
+		AuthorityStationPeerId:  "station-a",
+		AuthorityEpoch:          4,
+		AuthoritySequence:       9,
+		AuthorityHash:           eventHash.Bytes(),
+		ObservedMembershipEpoch: 5,
+		ObservedMlsEpoch:        3,
+		ClientTimestamp:         timestamppb.New(now),
+		Deadline:                timestamppb.New(now.Add(5 * time.Minute)),
+	}
+	mapped, err := conversationhttp.MapMemberAuthorityCommand(
+		conversationhttp.AuthenticatedActor{
+			PTID:     string(operator.Actor),
+			DeviceID: string(operator.Device),
+		},
+		wire,
+		preparation,
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapped.MemberAuthority == nil ||
+		mapped.Command.Sender != operator ||
+		mapped.MemberAuthority.Target != target ||
+		mapped.MemberAuthority.Action != domainevent.MemberAuthorityActionUpdateMember ||
+		mapped.MemberAuthority.Role == nil ||
+		*mapped.MemberAuthority.Role != valueobject.MemberRoleAdmin ||
+		mapped.MemberAuthority.Muted == nil ||
+		!*mapped.MemberAuthority.Muted ||
+		mapped.MemberAuthority.MutedUntil == nil ||
+		!mapped.MemberAuthority.MutedUntil.Equal(mutedUntil) ||
+		mapped.MemberAuthority.ObservedAuthorityHead != preparation.Head ||
+		mapped.MemberAuthority.ObservedFederationID != "federation-1" ||
+		mapped.MemberAuthority.ObservedAuthorityEpoch != 4 ||
+		len(mapped.Command.Deliveries) != len(preparation.RequiredEndpoints) {
+		t.Fatalf("mapped member authority command = %+v", mapped)
+	}
+	exactBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(mapped.ExactCommandBytes, exactBytes) ||
+		!bytes.Equal(mapped.Command.Payload, exactBytes) {
+		t.Fatal("member authority exact command identity was not retained")
+	}
+	for _, delivery := range mapped.Command.Deliveries {
+		if delivery.Kind != valueobject.DeliveryKindPublicEvent {
+			t.Fatalf("member authority delivery = %+v", delivery)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		code   conversationdomain.ErrorCode
+		mutate func(*chat.ConversationMemberAuthorityCommand)
+		auth   conversationhttp.AuthenticatedActor
+	}{
+		{
+			name: "authenticated operator mismatch",
+			code: conversationdomain.ErrorCodeUnauthorized,
+			auth: conversationhttp.AuthenticatedActor{
+				PTID:     "ptid:other",
+				DeviceID: "other-1",
+			},
+		},
+		{
+			name: "stale authority sequence",
+			code: conversationdomain.ErrorCodeStaleAuthorityHead,
+			mutate: func(command *chat.ConversationMemberAuthorityCommand) {
+				command.AuthoritySequence--
+			},
+		},
+		{
+			name: "expired command deadline",
+			code: conversationdomain.ErrorCodeCommandExpired,
+			mutate: func(command *chat.ConversationMemberAuthorityCommand) {
+				command.Deadline = timestamppb.New(now)
+			},
+		},
+		{
+			name: "mute deadline without mute patch",
+			code: conversationdomain.ErrorCodeInvalidArgument,
+			mutate: func(command *chat.ConversationMemberAuthorityCommand) {
+				command.Muted = nil
+			},
+		},
+	}
+	defaultAuth := conversationhttp.AuthenticatedActor{
+		PTID:     string(operator.Actor),
+		DeviceID: string(operator.Device),
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := proto.Clone(wire).(*chat.ConversationMemberAuthorityCommand)
+			if test.mutate != nil {
+				test.mutate(command)
+			}
+			auth := test.auth
+			if reflect.DeepEqual(auth, conversationhttp.AuthenticatedActor{}) {
+				auth = defaultAuth
+			}
+			_, err := conversationhttp.MapMemberAuthorityCommand(
+				auth,
+				command,
+				preparation,
+				now,
+			)
+			if !conversationdomain.IsCode(err, test.code) {
+				t.Fatalf("MapMemberAuthorityCommand() error = %v, want %s", err, test.code)
+			}
+		})
+	}
+}
 
 func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) {
 	now := time.Date(2026, time.September, 6, 13, 0, 0, 0, time.UTC)
@@ -650,7 +799,7 @@ func TestMapEventAndRejectCodes(t *testing.T) {
 		},
 		{
 			code: conversationdomain.ErrorCodeStaleAuthorityHead,
-			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN,
+			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_AUTHORITY_HEAD_STALE,
 		},
 		{
 			code: conversationdomain.ErrorCodeDeliverySetMismatch,
@@ -670,7 +819,19 @@ func TestMapEventAndRejectCodes(t *testing.T) {
 		},
 		{
 			code: conversationdomain.ErrorCodeOwnerProtected,
-			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_PERMISSION_DENIED,
+			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_OWNER_PROTECTED,
+		},
+		{
+			code: conversationdomain.ErrorCodeTargetNotMember,
+			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_TARGET_NOT_MEMBER,
+		},
+		{
+			code: conversationdomain.ErrorCodeCommandExpired,
+			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_MEMBER_COMMAND_EXPIRED,
+		},
+		{
+			code: conversationdomain.ErrorCodeMemberMuted,
+			want: chat.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_MEMBER_MUTED,
 		},
 		{
 			code: conversationdomain.ErrorCodeMembershipConflict,

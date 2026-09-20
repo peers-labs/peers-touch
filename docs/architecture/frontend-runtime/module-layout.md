@@ -115,4 +115,4 @@ architecture/frontend-runtime
 | SectionHost | `apps/desktop/src/kernel/SectionHost.tsx` | selected-only/lazy/first-visit-cache section 生命周期 |
 | Section registry | `apps/desktop/src/kernel/section.ts` | SectionDescriptor 定义与 registry |
 | AppletContainerShell | `apps/desktop/src/applet/AppletContainerShell.tsx` | embedded/immersive/standalone 容器 shell |
-| Surface budget checks | `tooling/scripts/check-frontend-runtime-registry.sh` | 检查 registry 预算/evidence 字段完整性 |
+| Surface budget checks | `tooling/scripts/check-frontend-runtime-registry.mjs` | 跨平台检查 registry 预算/evidence 字段完整性 |

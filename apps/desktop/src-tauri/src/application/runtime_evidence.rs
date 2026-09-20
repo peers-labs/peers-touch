@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const RUNTIME_ID_EXTERNAL_AGENT: &str = "external-agent";
 const RUNTIME_ID_TRAE_CLI: &str = "trae-cli";
 const AS_F10_NEGATIVE_CONTROL_ENV: &str = "PT_AGENT_AS_F10_NEGATIVE_CONTROL";
+const GFE1_EXECUTOR_CONTROL_ENV: &str = "PT_AGENT_GFE1_EXECUTOR_CONTROL";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -252,20 +253,22 @@ pub fn capability_negative_control(
             Some(json!({ "reason": "acceptanceEnvironmentDisabled" })),
         );
     }
-    let control = match input.control.as_str() {
-        "unsupported" => RequestedCapabilityNegativeControl::Unsupported,
-        "unauthorized" => RequestedCapabilityNegativeControl::Unauthorized,
-        "signatureTamper" => RequestedCapabilityNegativeControl::SignatureTamper,
-        "schemaMismatch" => RequestedCapabilityNegativeControl::SchemaMismatch,
-        "crossDevice" => RequestedCapabilityNegativeControl::CrossDevice,
-        _ => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "agent.capabilityNegativeControlInvalid",
-                None,
-            )
-        }
+    let Some(control) = requested_negative_control(&input.control) else {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.capabilityNegativeControlInvalid",
+            None,
+        );
     };
+    if control.requires_lease_lifecycle_control()
+        && std::env::var(GFE1_EXECUTOR_CONTROL_ENV).as_deref() != Ok("1")
+    {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "agent.capabilityNegativeControlUnavailable",
+            Some(json!({ "reason": "leaseControlEnvironmentDisabled" })),
+        );
+    }
     match supervisor.emit_negative_control(
         control,
         input.capability_session_id_hash,
@@ -284,6 +287,19 @@ pub fn capability_negative_control(
             "agent.capabilityNegativeControlFailed",
             Some(json!({ "cause": error })),
         ),
+    }
+}
+
+fn requested_negative_control(value: &str) -> Option<RequestedCapabilityNegativeControl> {
+    match value {
+        "unsupported" => Some(RequestedCapabilityNegativeControl::Unsupported),
+        "unauthorized" => Some(RequestedCapabilityNegativeControl::Unauthorized),
+        "signatureTamper" => Some(RequestedCapabilityNegativeControl::SignatureTamper),
+        "schemaMismatch" => Some(RequestedCapabilityNegativeControl::SchemaMismatch),
+        "crossDevice" => Some(RequestedCapabilityNegativeControl::CrossDevice),
+        "leasePause" => Some(RequestedCapabilityNegativeControl::LeasePause),
+        "leaseExpired" => Some(RequestedCapabilityNegativeControl::LeaseExpired),
+        _ => None,
     }
 }
 
@@ -341,6 +357,63 @@ pub fn close_browser_capability_session(
             Some(json!({ "cause": error })),
         ),
     }
+}
+
+pub fn set_client_executor_supervisor_available(
+    supervisor: &CapabilityWorkerSupervisor,
+    available: bool,
+) -> AppResult<StubPayload> {
+    if supervisor.is_browser_surface() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.clientExecutorSupervisorRequiresDesktopSurface",
+            None,
+        );
+    }
+    if !executor_control_feature_enabled() {
+        return AppResult::fail(
+            ErrorCode::NotImplemented,
+            "agent.capabilitySupervisorControlUnavailable",
+            Some(json!({ "reason": "acceptanceFeatureDisabled" })),
+        );
+    }
+    if std::env::var(GFE1_EXECUTOR_CONTROL_ENV).as_deref() != Ok("1") {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "agent.capabilitySupervisorControlUnavailable",
+            Some(json!({ "reason": "acceptanceEnvironmentDisabled" })),
+        );
+    }
+
+    let result = if available {
+        supervisor.start()
+    } else {
+        supervisor.shutdown()
+    };
+    match result {
+        Ok(()) => success_payload(
+            "agent_client_executor_supervisor_control",
+            json!({
+                "available": available,
+                "state": if available { "starting" } else { "stopped" },
+            }),
+        ),
+        Err(error) => AppResult::fail(
+            ErrorCode::InternalError,
+            "agent.capabilitySupervisorControlFailed",
+            Some(json!({ "cause": error })),
+        ),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn executor_control_feature_enabled() -> bool {
+    true
+}
+
+#[cfg(not(feature = "acceptance-webdriver"))]
+fn executor_control_feature_enabled() -> bool {
+    false
 }
 
 fn runtime_activity_request(
@@ -570,5 +643,18 @@ mod tests {
         assert!(status.contains("\"tool_call_side_effect_counts\":[]"));
         assert!(!status.contains("filesystem.read"));
         assert!(!status.contains("shell.execute"));
+    }
+
+    #[test]
+    fn capability_negative_control_names_include_lease_lifecycle_controls() {
+        assert_eq!(
+            requested_negative_control("leasePause"),
+            Some(RequestedCapabilityNegativeControl::LeasePause)
+        );
+        assert_eq!(
+            requested_negative_control("leaseExpired"),
+            Some(RequestedCapabilityNegativeControl::LeaseExpired)
+        );
+        assert_eq!(requested_negative_control("lease_expired"), None);
     }
 }

@@ -60,7 +60,7 @@ LEDGER_AUTHORITY_ID = hashlib.sha256(
     LEDGER_AUTHORITY_NAMESPACE.encode("utf-8")
 ).hexdigest()[:16]
 LEDGER_AUTHORITY_ROOT = (
-    Path("/var/tmp").resolve(strict=True)
+    Path("/var/tmp").resolve()
     / "peers-touch"
     / "acceptance"
     / "mobile-resource-leases"

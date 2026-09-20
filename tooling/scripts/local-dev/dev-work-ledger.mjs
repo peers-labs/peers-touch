@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
   existsSync,
   fsyncSync,
@@ -14,6 +15,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   developmentWorkLedgerPath,
@@ -30,14 +32,23 @@ import {
   digestDeclaration,
   fail,
   isObject,
+  normalizePlanPath,
   parseRuntimeClaims,
   parseSourceClaims,
   requiredIdentifier,
   requiredText,
   validateDeclaration,
+  validateSourcePathContainment,
 } from './dev-work-schema.mjs';
+import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
+const PLANCTL_SCRIPT = fileURLToPath(
+  new URL('../plan/planctl.mjs', import.meta.url),
+);
+const PLAN_BINDING_SCRIPT = fileURLToPath(
+  new URL('../plan/workspace-plan-binding.mjs', import.meta.url),
+);
 const LEDGER_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -45,6 +56,28 @@ const LEDGER_KEYS = new Set([
   'declarations',
 ]);
 const LOCK_KEYS = new Set(['pid', 'processStart', 'createdAt']);
+
+function exactKeys(value, keys) {
+  const actual = Object.keys(value);
+  return actual.length === keys.size && actual.every((key) => keys.has(key));
+}
+
+function toOperationDate(options = {}) {
+  const value =
+    typeof options.clock === 'function'
+      ? options.clock()
+      : options.now ?? new Date();
+  const now = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(now.getTime())) {
+    fail('INVALID_CLOCK', 'operation clock returned an invalid time');
+  }
+  return now;
+}
+
+function ensurePrivateDirectory(directory) {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
+}
 
 export function emptyLedger(now = new Date()) {
   return {
@@ -55,10 +88,37 @@ export function emptyLedger(now = new Date()) {
   };
 }
 
-export function readLedger(file, now = new Date()) {
-  if (!existsSync(file)) {
-    return emptyLedger(now);
+function migrateLegacyTerminalDeclaration(declaration) {
+  if (
+    !isObject(declaration) ||
+    !['RELEASED', 'STALE'].includes(declaration.state) ||
+    !Array.isArray(declaration.sourceClaims) ||
+    digestDeclaration(declaration) !== declaration.declarationDigest
+  ) {
+    return declaration;
   }
+  const sourceClaims = declaration.sourceClaims.filter(
+    (claim) =>
+      !(
+        isObject(claim) &&
+        exactKeys(claim, new Set(['pathPrefix', 'mode'])) &&
+        claim.mode === 'exclusive-write' &&
+        claim.pathPrefix === '.'
+      ),
+  );
+  if (sourceClaims.length === declaration.sourceClaims.length) {
+    return declaration;
+  }
+  const migrated = {
+    ...declaration,
+    sourceClaims,
+  };
+  migrated.declarationDigest = digestDeclaration(migrated);
+  return migrated;
+}
+
+export function readLedger(file, now = new Date()) {
+  if (!existsSync(file)) return emptyLedger(now);
   let ledger;
   try {
     ledger = JSON.parse(readFileSync(file, 'utf8'));
@@ -70,22 +130,24 @@ export function readLedger(file, now = new Date()) {
   const updatedAt = Date.parse(ledger?.updatedAt);
   if (
     !isObject(ledger) ||
+    !exactKeys(ledger, LEDGER_KEYS) ||
     ledger.schemaVersion !== SCHEMA_VERSION ||
     ledger.kind !== LEDGER_KIND ||
     !isObject(ledger.declarations) ||
-    Object.keys(ledger).some((key) => !LEDGER_KEYS.has(key)) ||
     !Number.isFinite(updatedAt) ||
     new Date(updatedAt).toISOString() !== ledger.updatedAt
   ) {
     fail('MACHINE_WORK_LEDGER_INVALID', 'work ledger schema is invalid');
   }
   for (const [id, declaration] of Object.entries(ledger.declarations)) {
-    validateDeclaration(declaration);
-    if (id !== declaration.declarationId) {
+    const migrated = migrateLegacyTerminalDeclaration(declaration);
+    ledger.declarations[id] = migrated;
+    validateDeclaration(migrated);
+    if (id !== migrated.declarationId) {
       fail(
         'MACHINE_WORK_LEDGER_INVALID',
         'declaration map key does not match declarationId',
-        { declarationId: declaration.declarationId, key: id },
+        { declarationId: migrated.declarationId, key: id },
       );
     }
   }
@@ -103,8 +165,22 @@ function processIsAlive(pid) {
 }
 
 export function processStartIdentity(pid = process.pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
-    const value = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    const command =
+      process.platform === 'win32'
+        ? [
+            'powershell.exe',
+            [
+              '-NoLogo',
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString("o")`,
+            ],
+          ]
+        : ['ps', ['-o', 'lstart=', '-p', String(pid)]];
+    const value = execFileSync(command[0], command[1], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
@@ -143,8 +219,7 @@ function readLockMetadata(lockFile) {
   const createdAt = Date.parse(metadata?.createdAt);
   if (
     !isObject(metadata) ||
-    Object.keys(metadata).length !== LOCK_KEYS.size ||
-    Object.keys(metadata).some((key) => !LOCK_KEYS.has(key)) ||
+    !exactKeys(metadata, LOCK_KEYS) ||
     !Number.isInteger(metadata.pid) ||
     metadata.pid <= 0 ||
     typeof metadata.processStart !== 'string' ||
@@ -159,6 +234,17 @@ function readLockMetadata(lockFile) {
     );
   }
   return metadata;
+}
+
+function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
+  let fd;
+  try {
+    fd = openSync(directory, 'r');
+    fsyncSync(fd);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 function publishLockAtomic(lockFile, metadata) {
@@ -182,8 +268,13 @@ function publishLockAtomic(lockFile, metadata) {
   }
 }
 
-function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
+function acquireLock(
+  lockFile,
+  timeoutMs = LOCK_TIMEOUT_MS,
+  lockTime = new Date(),
+) {
   const deadline = Date.now() + timeoutMs;
+  let ownedMetadata;
   while (true) {
     try {
       const processStart = processStartIdentity();
@@ -193,14 +284,26 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
           'cannot establish lock process identity',
         );
       }
-      publishLockAtomic(lockFile, {
+      ownedMetadata = {
         pid: process.pid,
         processStart,
-        createdAt: new Date().toISOString(),
-      });
+        createdAt: lockTime.toISOString(),
+      };
+      publishLockAtomic(lockFile, ownedMetadata);
       return () => {
+        const current = readLockMetadata(lockFile);
+        if (
+          current &&
+          JSON.stringify(current) !== JSON.stringify(ownedMetadata)
+        ) {
+          fail(
+            'MACHINE_WORK_LEDGER_LOCK_INVALID',
+            'work ledger lock ownership changed',
+          );
+        }
         try {
           unlinkSync(lockFile);
+          syncDirectory(path.dirname(lockFile));
         } catch (error) {
           if (error?.code !== 'ENOENT') throw error;
         }
@@ -209,19 +312,18 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
       if (error?.code !== 'EEXIST') throw error;
       const metadata = readLockMetadata(lockFile);
       if (metadata === null) continue;
-      const pid = metadata.pid;
-      const live = processIsAlive(pid);
-      const actualStart = processStartIdentity(pid);
+      const live = processIsAlive(metadata.pid);
+      const actualStart = processStartIdentity(metadata.pid);
       if (live && actualStart === null) {
         fail(
           'MACHINE_WORK_LEDGER_LOCK_INVALID',
           'live work ledger lock has no verifiable process identity',
         );
       }
-      const stale = !live || actualStart !== metadata.processStart;
-      if (stale) {
+      if (!live || actualStart !== metadata.processStart) {
         try {
           unlinkSync(lockFile);
+          syncDirectory(path.dirname(lockFile));
         } catch (unlinkError) {
           if (unlinkError?.code !== 'ENOENT') throw unlinkError;
         }
@@ -235,20 +337,11 @@ function acquireLock(lockFile, timeoutMs = LOCK_TIMEOUT_MS) {
   }
 }
 
-function syncDirectory(directory) {
-  let fd;
-  try {
-    fd = openSync(directory, 'r');
-    fsyncSync(fd);
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
 function writeLedgerAtomic(file, ledger) {
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const directory = path.dirname(file);
+  ensurePrivateDirectory(directory);
   const temp = path.join(
-    path.dirname(file),
+    directory,
     `.${path.basename(file)}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`,
   );
   let fd;
@@ -259,7 +352,8 @@ function writeLedgerAtomic(file, ledger) {
     closeSync(fd);
     fd = undefined;
     renameSync(temp, file);
-    syncDirectory(path.dirname(file));
+    chmodSync(file, 0o600);
+    syncDirectory(directory);
   } finally {
     if (fd !== undefined) closeSync(fd);
     if (existsSync(temp)) unlinkSync(temp);
@@ -267,7 +361,6 @@ function writeLedgerAtomic(file, ledger) {
 }
 
 function pathsOverlap(left, right) {
-  if (left === '.' || right === '.') return true;
   return (
     left === right ||
     left.startsWith(`${right}/`) ||
@@ -306,13 +399,15 @@ function conflictWith(candidate, current) {
   ) {
     return { kind: 'BRANCH_WRITE_CONFLICT', resource: candidate.branch };
   }
-  for (const left of candidate.sourceClaims) {
-    for (const right of current.sourceClaims) {
-      if (
-        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
-        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
-      ) {
-        return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
+  if (candidate.workspaceId === current.workspaceId) {
+    for (const left of candidate.sourceClaims) {
+      for (const right of current.sourceClaims) {
+        if (
+          pathsOverlap(left.pathPrefix, right.pathPrefix) &&
+          (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
+        ) {
+          return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
+        }
       }
     }
   }
@@ -326,6 +421,30 @@ function conflictWith(candidate, current) {
         return {
           kind: 'RUNTIME_RESOURCE_CONFLICT',
           resource: `${left.kind}:${left.resourceId}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function sourceOverlapWarning(candidate, current) {
+  if (
+    candidate.workspaceId === current.workspaceId ||
+    candidate.branch === current.branch
+  ) {
+    return null;
+  }
+  for (const left of candidate.sourceClaims) {
+    for (const right of current.sourceClaims) {
+      if (
+        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
+        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
+      ) {
+        return {
+          kind: 'SOURCE_OVERLAP_WARNING',
+          resource: left.pathPrefix,
+          otherPathPrefix: right.pathPrefix,
         };
       }
     }
@@ -361,6 +480,177 @@ function validateExpiry(value) {
   return expiresMinutes;
 }
 
+function parsePlanStatus(workspaceRoot, planPath, options) {
+  if (options.planStatus) return options.planStatus;
+  const absolutePlan = path.resolve(
+    workspaceRoot,
+    ...planPath.split('/'),
+  );
+  try {
+    return JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          PLANCTL_SCRIPT,
+          'status',
+          '--plan',
+          absolutePlan,
+          '--repo-root',
+          workspaceRoot,
+        ],
+        {
+          cwd: workspaceRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      ),
+    );
+  } catch (error) {
+    fail('PLAN_LOCATOR_INVALID', 'declared Plan Package is unavailable', {
+      cause:
+        error?.stderr?.toString().trim() ||
+        error?.stdout?.toString().trim() ||
+        String(error),
+    });
+  }
+}
+
+function parseWorkspacePlanBinding(workspaceRoot, options) {
+  if (options.planBinding) return options.planBinding;
+  const arguments_ = [
+    PLAN_BINDING_SCRIPT,
+    'resolve',
+    '--repo-root',
+    workspaceRoot,
+  ];
+  if (options.home) arguments_.push('--home', options.home);
+  try {
+    const payload = JSON.parse(
+      execFileSync(process.execPath, arguments_, {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    );
+    return payload.binding;
+  } catch (error) {
+    let payload;
+    try {
+      payload = JSON.parse(error?.stderr?.toString() ?? '');
+    } catch {
+      payload = null;
+    }
+    fail(
+      payload?.error?.code ?? 'WORKSPACE_PLAN_BINDING_REQUIRED',
+      payload?.error?.message ?? 'workspace Plan binding is unavailable',
+      payload?.error?.details,
+    );
+  }
+}
+
+function assertUntrackedWorkspace(options, identity) {
+  const bindingFile = workspacePlanBindingPath({
+    home: options.home,
+    repoRoot: identity.workspaceRoot,
+  });
+  if (existsSync(bindingFile)) {
+    fail(
+      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
+      'a Plan-bound workspace cannot publish untracked work',
+      { bindingFile },
+    );
+  }
+}
+
+function resolvePlanLocator(options, existing, identity) {
+  const supplied = [
+    options.planPath,
+    options.planId,
+    options.taskId,
+  ].some((value) => value !== undefined);
+  const existingHasLocator = Object.hasOwn(existing ?? {}, 'planPath');
+  if (!supplied && !existingHasLocator) {
+    assertUntrackedWorkspace(options, identity);
+    return null;
+  }
+
+  const planPath =
+    options.planPath === undefined ? existing?.planPath : options.planPath;
+  const planId =
+    options.planId === undefined ? existing?.planId : options.planId;
+  const taskId =
+    options.taskId === undefined ? existing?.taskId : options.taskId;
+  const values = [planPath, planId, taskId];
+  if (values.every((value) => value === null)) {
+    assertUntrackedWorkspace(options, identity);
+    return { planPath: null, planId: null, taskId: null };
+  }
+  if (
+    typeof planPath !== 'string' ||
+    planPath.trim() === '' ||
+    typeof taskId !== 'string' ||
+    taskId.trim() === '' ||
+    (planId !== undefined &&
+      planId !== null &&
+      (typeof planId !== 'string' || planId.trim() === ''))
+  ) {
+    fail(
+      'INVALID_PLAN_LOCATOR',
+      'planPath and taskId must be supplied together',
+    );
+  }
+
+  const normalizedPlanPath = normalizePlanPath(planPath);
+  validateSourcePathContainment(identity.workspaceRoot, normalizedPlanPath);
+  const normalizedTaskId = requiredIdentifier(taskId, 'taskId');
+  const status = parsePlanStatus(
+    identity.workspaceRoot,
+    normalizedPlanPath,
+    options,
+  );
+  const binding = parseWorkspacePlanBinding(
+    identity.workspaceRoot,
+    options,
+  );
+  const normalizedPlanId =
+    planId === undefined || planId === null
+      ? requiredIdentifier(status.planId, 'planId')
+      : requiredIdentifier(planId, 'planId');
+  const declaredTaskStatus = status.taskStatuses?.[normalizedTaskId];
+  const taskMatchesLifecycle =
+    status.currentTaskId === normalizedTaskId ||
+    (status.status === 'completed' && declaredTaskStatus === 'done') ||
+    (status.status === 'blocked' && declaredTaskStatus === 'blocked');
+  const mismatches = {};
+  for (const [field, expected, actual] of [
+    ['planId', normalizedPlanId, status.planId],
+    ['workspaceId', identity.workspaceId, status.workspaceId],
+    ['branch', identity.branch, status.branch],
+    ['boundPlanId', normalizedPlanId, binding.planId],
+    ['boundPlanPath', normalizedPlanPath, binding.planPath],
+  ]) {
+    if (expected !== actual) mismatches[field] = { expected, actual };
+  }
+  if (!taskMatchesLifecycle) {
+    mismatches.taskId = {
+      expected: normalizedTaskId,
+      actual: status.currentTaskId,
+      taskStatus: declaredTaskStatus ?? null,
+      planStatus: status.status ?? null,
+    };
+  }
+  if (Object.keys(mismatches).length > 0) {
+    fail('PLAN_LOCATOR_MISMATCH', 'declared Plan locator does not match', {
+      mismatches,
+    });
+  }
+  return {
+    planPath: normalizedPlanPath,
+    planId: normalizedPlanId,
+    taskId: normalizedTaskId,
+  };
+}
+
 function buildDeclaration(options, existing, now) {
   const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
   const workspaceId = workspaceIdForRoot(workspaceRoot);
@@ -381,30 +671,43 @@ function buildDeclaration(options, existing, now) {
   if (sourceClaims.length === 0) {
     fail('INVALID_DECLARATION', 'at least one source claim is required');
   }
+  for (const claim of sourceClaims) {
+    validateSourcePathContainment(workspaceRoot, claim.pathPrefix);
+  }
+  const branch =
+    options.branch ??
+    gitValue(workspaceRoot, ['branch', '--show-current'], 'branch');
+  const sourceHead =
+    options.sourceHead ??
+    gitValue(workspaceRoot, ['rev-parse', 'HEAD'], 'sourceHead');
+  const planLocator = resolvePlanLocator(options, existing, {
+    workspaceRoot,
+    workspaceId,
+    branch,
+    sourceHead,
+  });
   const declaration = {
     declarationId: declarationId(workItemId, workspaceId),
     workItemId,
     sessionId,
     workspaceId,
-    branch:
-      options.branch ??
-      gitValue(workspaceRoot, ['branch', '--show-current'], 'branch'),
-    sourceHead:
-      options.sourceHead ??
-      gitValue(workspaceRoot, ['rev-parse', 'HEAD'], 'sourceHead'),
+    branch,
+    sourceHead,
     owner: requiredText(options.owner ?? existing?.owner, 'owner', 256),
     purpose: requiredText(options.purpose ?? existing?.purpose, 'purpose', 1024),
     journeyId: options.journeyId
       ? requiredIdentifier(options.journeyId, 'journeyId')
       : existing?.journeyId ?? null,
-    state: options.state ?? existing?.state ?? 'DECLARED',
+    state: existing?.state ?? 'DECLARED',
     createdAt: existing?.createdAt ?? now.toISOString(),
     heartbeatAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + expiresMinutes * 60_000).toISOString(),
     sourceClaims,
     runtimeClaims,
   };
+  if (planLocator) Object.assign(declaration, planLocator);
   declaration.declarationDigest = digestDeclaration(declaration);
+  validateDeclaration(declaration);
   return declaration;
 }
 
@@ -412,9 +715,10 @@ function mutateLedger(options, mutation) {
   const home = options.home ?? homedir();
   const file = options.ledgerPath ?? developmentWorkLedgerPath(home);
   const lockFile = options.lockPath ?? developmentWorkLockPath(home);
-  const now = options.now ?? new Date();
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const release = acquireLock(lockFile, options.lockTimeoutMs);
+  const now = toOperationDate(options);
+  ensurePrivateDirectory(path.dirname(file));
+  ensurePrivateDirectory(path.dirname(lockFile));
+  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
   try {
     const ledger = readLedger(file, now);
     reconcileExpired(ledger, now);
@@ -430,9 +734,10 @@ function mutateLedger(options, mutation) {
 
 export function startOrUpdateDeclaration(
   options,
-  { requireExisting = false } = {},
+  { requireExisting = false, onWarning = () => {} } = {},
 ) {
-  return mutateLedger(options, (ledger, now) => {
+  const warnings = [];
+  const declaration = mutateLedger(options, (ledger, now) => {
     const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
     const workspaceId = workspaceIdForRoot(workspaceRoot);
     const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
@@ -484,10 +789,23 @@ export function startOrUpdateDeclaration(
           ...conflict,
         });
       }
+      const warning = sourceOverlapWarning(candidate, current);
+      if (warning) {
+        warnings.push({
+          declarationId: current.declarationId,
+          workspaceId: current.workspaceId,
+          branch: current.branch,
+          ...warning,
+        });
+      }
     }
     ledger.declarations[id] = candidate;
     return candidate;
   }).output;
+  for (const warning of warnings) {
+    onWarning(warning);
+  }
+  return declaration;
 }
 
 function ownedDeclaration(options, ledger) {
@@ -507,6 +825,19 @@ function ownedDeclaration(options, ledger) {
     });
   }
   return declaration;
+}
+
+export function requireActiveDeclaration(options) {
+  return mutateLedger(options, (ledger) => {
+    const declaration = ownedDeclaration(options, ledger);
+    if (declaration.state !== 'ACTIVE') {
+      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration is not ACTIVE', {
+        declarationId: declaration.declarationId,
+        state: declaration.state,
+      });
+    }
+    return declaration;
+  }).output;
 }
 
 export function heartbeatDeclaration(options) {
@@ -560,8 +891,8 @@ export function statusCurrent(options) {
 export function checkDeclaration(options) {
   return mutateLedger(options, (ledger, now) => {
     const declaration = ownedDeclaration(options, ledger);
-    if (!LIVE_STATES.has(declaration.state)) {
-      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration is not active', {
+    if (!['DECLARED', 'ACTIVE'].includes(declaration.state)) {
+      fail('WORK_DECLARATION_NOT_ACTIVE', 'declaration cannot become ACTIVE', {
         state: declaration.state,
       });
     }
@@ -588,6 +919,23 @@ export function checkDeclaration(options) {
         'WORKTREE_IDENTITY_MISMATCH',
         'declared source HEAD does not match worktree',
         { declared: declaration.sourceHead, actual: currentHead },
+      );
+    }
+    if (declaration.planPath !== null && declaration.planPath !== undefined) {
+      resolvePlanLocator(
+        {
+          ...options,
+          planPath: declaration.planPath,
+          planId: declaration.planId,
+          taskId: declaration.taskId,
+        },
+        declaration,
+        {
+          workspaceRoot,
+          workspaceId: declaration.workspaceId,
+          branch: currentBranch,
+          sourceHead: currentHead,
+        },
       );
     }
     declaration.state = 'ACTIVE';

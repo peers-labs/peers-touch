@@ -164,6 +164,7 @@ tooling/acceptance/
 | `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、framing与cleanup |
 | `core/bounded_http.py` | 以mandatory byte limit和monotonic deadline读取urllib response；无法控制底层socket deadline时fail closed |
 | `core/result_contracts.py` | 定义无I/O、无Evidence Store依赖的`CanonicalResultTuple`、`PlatformCellResult`、`PlatformMatrixResult`及唯一fold；供Runtime Cell与D-19共同使用 |
+| `core/execution_plan.py` | 解析正式Execution Plan的worktree绑定、current closure与Acceptance Execution合同；不持久化第二套计划状态 |
 | `core/finalization_contracts.py` | **D-19 accepted target / pure**：定义requirement/config、worker wire schemas、closed unions、canonical digest functions与merge truth table；不得import Evidence Store或执行I/O |
 | `core/evidence_finalization.py` | **D-19 accepted target**：协调preflight source capture、supervisor/worker lifecycle、one-shot invocation与abort maintenance；只通过Evidence Store public API请求allocation/seal/finalize，不拥有run allocation或merge/publish |
 | `core/authority_cli_bootstrap.py` | **D-19 accepted target**：以`-I -S -E -B`启动；仅用stdlib验证自身、clean HEAD、canonical approval与`ALL_TRACKED_ACCEPTANCE_CLAIM_SOURCES` import/process closure，再以source-only loader加载tracked authority modules；同时提供独立的two-phase public power-controller trust enrollment authority commands |
@@ -203,6 +204,7 @@ tooling/acceptance/
 | `fixtures/chat_native_actors.py` | 发现/准备测试账号并产出 role、account reference、canonical PTID，不写入凭据值 |
 | `gates/<domain>/*.py` | 各域验收场景实现，继承 AcceptanceGate，只包含业务编排逻辑 |
 | `tooling/scripts/acceptance-run.py` | **D-19 accepted target**：调用时序owner；验证required declaration、seal artifact、bounded启动detached finalizer并把typed outcome提交给Evidence Store，不自行merge或publish |
+| `tooling/scripts/execution-plan.py` | 校验当前worktree唯一active plan及merge前closure完成状态 |
 
 ## 依赖关系
 

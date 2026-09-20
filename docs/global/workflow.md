@@ -71,6 +71,22 @@ Rules:
 Architecture source:
 `docs/architecture/development-workflow/README.md`.
 
+### Development Skill responsibility chain
+
+```text
+pt-god-view routes
+  -> pt-dev-workflow owns one Development Run
+  -> pt-trae-goal-orchestrator schedules WHAT is ready
+  -> pt-execution-plan-guardian decides whether one proposed action MAY run
+  -> pt-dev-workflow executes and persists through owner commands
+  -> pt-context-anchor renders read-only status
+```
+
+`pt-architecture-execution-methodology` defines the vertical dependency model;
+`pt-plan-and-document` only persists the accepted model. Router, scheduler,
+policy guard, and status projection do not write Plan/Task/Session/
+`active_work` state.
+
 ---
 
 ## 4) Route Acceptance work by ownership
@@ -129,6 +145,10 @@ For every dependency-ready workstream:
    - `PASS` → record `FUNCTIONAL_PASS`.
 10. Only after `FUNCTIONAL_PASS`, promote the same Journey into formal
     Acceptance and run final exact-source proof.
+
+Acceptance scenarios are selected from product states, receiver outcomes,
+changed failure semantics, and concrete architecture risks. Do not impose a
+generic success/network/timeout/invalid/cancellation matrix on every closure.
 
 Before `FUNCTIONAL_PASS`, do not run coverage, Gap Detector, Completion Auditor,
 cross-platform matrices, submit pipeline, or unrelated broad Gate bundles.

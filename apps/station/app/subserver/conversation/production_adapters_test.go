@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentityapp "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
@@ -20,12 +21,14 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
+	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
@@ -123,6 +126,32 @@ type productionAdapterFixture struct {
 	bob         valueobject.Endpoint
 	bobPrivate  ed25519.PrivateKey
 	objectID    valueobject.ObjectID
+}
+
+type productionPostCommitTestRegistrar struct {
+	callbacks []federationdelivery.AfterCommitFunc
+}
+
+func (r *productionPostCommitTestRegistrar) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	r.callbacks = append(r.callbacks, callback)
+
+	return nil
+}
+
+type productionPostCommitTestPublisher struct {
+	deliveries []ports.CommittedDelivery
+	err        error
+}
+
+func (p *productionPostCommitTestPublisher) NotifyCommitted(
+	_ context.Context,
+	deliveries []ports.CommittedDelivery,
+) error {
+	p.deliveries = append(p.deliveries, deliveries...)
+
+	return p.err
 }
 
 func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
@@ -231,6 +260,495 @@ func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
 	)
 	if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalSignature) {
 		t.Fatalf("invalid signature error = %v", err)
+	}
+}
+
+// TestProductionMembershipEventWireRoundTripPreservesCanonicalHash verifies that
+// federation decoding retains every field covered by the authority event hash.
+func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing.T) {
+	owner := valueobject.Endpoint{
+		Actor:  "ptid:wire-owner",
+		Device: "owner-device",
+	}
+	member := valueobject.Endpoint{
+		Actor:  "ptid:wire-member",
+		Device: "member-device",
+	}
+	mlsCommitHash := valueobject.HashBytes([]byte("wire-mls-commit"))
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chatmodel.ChatCommand{
+			CommandId:      "wire-membership-remove",
+			ConversationId: "wire-membership-group",
+			Sender: &chatmodel.CryptoEndpoint{
+				Ptid:     string(owner.Actor),
+				DeviceId: string(owner.Device),
+			},
+			Payload: &chatmodel.ChatCommand_MembershipTransition{
+				MembershipTransition: &chatmodel.MembershipTransitionIntent{
+					TransitionId:        "wire-membership-transition",
+					FromMembershipEpoch: 1,
+					FromMlsEpoch:        1,
+					ToMlsEpoch:          2,
+					MlsCommitSha256:     mlsCommitHash.Bytes(),
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := (conversationhttp.ProtobufEventSealer{}).Seal(
+		domainevent.RecordInput{
+			ID:               "wire-membership-event",
+			ConversationID:   "wire-membership-group",
+			Sequence:         2,
+			CommandID:        "wire-membership-remove",
+			Actor:            owner,
+			PreviousHash:     valueobject.HashBytes([]byte("wire-previous-event")),
+			CommittedAt:      productionAdapterTestTime,
+			MembershipEpoch:  2,
+			MLSEpoch:         2,
+			AuthorityStation: "station-authority",
+			DeliveryCommitments: []valueobject.Hash{
+				valueobject.HashBytes([]byte("wire-delivery")),
+			},
+			Fact: domainevent.Fact{
+				Kind:    domainevent.KindMembershipCommitted,
+				Payload: commandBytes,
+				MembershipChanges: []entity.MembershipChange{{
+					Action: entity.MembershipActionRemoveActor,
+					Actor:  member.Actor,
+				}},
+				PostState: &domainevent.ConversationState{
+					Kind:           valueobject.ConversationKindGroup,
+					FederationID:   "wire-federation",
+					AuthorityEpoch: 1,
+					Owner:          owner.Actor,
+					Settings: valueobject.ConversationSettings{
+						Name: "Wire group",
+					},
+					ActiveMembers: []entity.Member{{
+						Actor:       owner.Actor,
+						Role:        valueobject.MemberRoleOwner,
+						Status:      valueobject.MemberStatusActive,
+						HomeStation: "station-authority",
+						JoinedAt:    1,
+					}},
+					ActiveEndpoints: []valueobject.Endpoint{owner},
+					ActiveDevices: []entity.MemberDevice{{
+						Endpoint:    owner,
+						HomeStation: "station-authority",
+						Active:      true,
+						JoinedAt:    1,
+					}},
+					MembershipEpoch: 2,
+					MLSEpoch:        2,
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := conversationhttp.MapEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := productionRecordFromWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := domainevent.Verify(
+		decoded,
+		conversationhttp.ProtobufEventSealer{},
+	); err != nil {
+		t.Fatalf("verify federated membership event round-trip: %v", err)
+	}
+	current := aggregate.Snapshot{
+		ID:               event.ConversationID,
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: event.AuthorityStation,
+		AuthorityEpoch:   1,
+		Owner:            owner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       event.PreviousHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire group"},
+		Members: []entity.Member{
+			{
+				Actor:       owner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       member.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{
+				Endpoint:    owner,
+				HomeStation: "station-authority",
+				Active:      true,
+				JoinedAt:    1,
+			},
+			{
+				Endpoint:    member,
+				HomeStation: "station-remote",
+				Active:      true,
+				JoinedAt:    1,
+			},
+		},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	decodedState := decoded.Fact.PostState
+	post := aggregate.Snapshot{
+		ID:               event.ConversationID,
+		Kind:             decodedState.Kind,
+		Status:           current.Status,
+		FederationID:     decodedState.FederationID,
+		AuthorityStation: event.AuthorityStation,
+		AuthorityEpoch:   decodedState.AuthorityEpoch,
+		Owner:            decodedState.Owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        event.Sequence,
+			EventHash:       event.Hash,
+			MembershipEpoch: event.MembershipEpoch,
+			MLSEpoch:        event.MLSEpoch,
+		},
+		Settings:  decodedState.Settings,
+		Members:   decodedState.ActiveMembers,
+		Devices:   decodedState.ActiveDevices,
+		CreatedAt: current.CreatedAt,
+		UpdatedAt: event.CommittedAt,
+	}
+	reconciled, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		decoded.Fact.MembershipChanges,
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile federated membership projection: %v", err)
+	}
+	if len(reconciled.Members) != 1 ||
+		reconciled.Members[0].Actor != owner.Actor ||
+		reconciled.Members[0].JoinedAt != 1 ||
+		len(reconciled.Devices) != 1 ||
+		reconciled.Devices[0].Endpoint != owner ||
+		reconciled.Devices[0].JoinedAt != 1 {
+		t.Fatalf("reconciled membership lifecycle = %+v", reconciled)
+	}
+}
+
+func TestProductionMemberAuthorityEventWireRoundTripPreservesAtomicOwnerState(
+	t *testing.T,
+) {
+	oldOwner := valueobject.Endpoint{
+		Actor:  "ptid:wire-old-owner",
+		Device: "old-owner-device",
+	}
+	newOwner := valueobject.Endpoint{
+		Actor:  "ptid:wire-new-owner",
+		Device: "new-owner-device",
+	}
+	previousHash := valueobject.HashBytes([]byte("wire-member-authority-previous"))
+	mutedUntil := productionAdapterTestTime.Add(time.Hour)
+	current := aggregate.Snapshot{
+		ID:               "wire-member-authority-group",
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: "station-authority",
+		AuthorityEpoch:   1,
+		Owner:            oldOwner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       previousHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire group"},
+		Members: []entity.Member{
+			{
+				Actor:       oldOwner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       newOwner.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+				Muted:       true,
+				MutedUntil:  &mutedUntil,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{
+				Endpoint:    oldOwner,
+				HomeStation: "station-authority",
+				Active:      true,
+				JoinedAt:    1,
+			},
+			{
+				Endpoint:    newOwner,
+				HomeStation: "station-remote",
+				Active:      true,
+				JoinedAt:    1,
+			},
+		},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	ownerRole := valueobject.MemberRoleOwner
+	unmuted := false
+	mutation := domainevent.MemberAuthorityMutation{
+		Action:              domainevent.MemberAuthorityActionTransferOwnership,
+		Target:              newOwner.Actor,
+		Role:                &ownerRole,
+		Muted:               &unmuted,
+		PreviousOwner:       oldOwner.Actor,
+		Owner:               newOwner.Actor,
+		FromMembershipEpoch: 1,
+		ToMembershipEpoch:   2,
+	}
+	postState := &domainevent.ConversationState{
+		Kind:           current.Kind,
+		FederationID:   current.FederationID,
+		AuthorityEpoch: current.AuthorityEpoch,
+		Owner:          newOwner.Actor,
+		Settings:       current.Settings,
+		ActiveMembers: []entity.Member{
+			{
+				Actor:       oldOwner.Actor,
+				Role:        valueobject.MemberRoleAdmin,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       newOwner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+			},
+		},
+		ActiveEndpoints: []valueobject.Endpoint{oldOwner, newOwner},
+		ActiveDevices:   current.Devices,
+		MembershipEpoch: 2,
+		MLSEpoch:        1,
+	}
+	fact := domainevent.NewMemberAuthorityFact(mutation, []byte("owner-transfer"))
+	fact.PostState = postState
+	event, err := (conversationhttp.ProtobufEventSealer{}).Seal(
+		domainevent.RecordInput{
+			ID:               "wire-member-authority-event",
+			ConversationID:   current.ID,
+			Sequence:         2,
+			CommandID:        "wire-owner-transfer",
+			Actor:            oldOwner,
+			PreviousHash:     previousHash,
+			CommittedAt:      productionAdapterTestTime,
+			MembershipEpoch:  2,
+			MLSEpoch:         1,
+			AuthorityStation: current.AuthorityStation,
+			DeliveryCommitments: []valueobject.Hash{
+				valueobject.HashBytes([]byte("wire-member-authority-delivery")),
+			},
+			Fact: fact,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := conversationhttp.MapEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := productionRecordFromWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := domainevent.Verify(
+		decoded,
+		conversationhttp.ProtobufEventSealer{},
+	); err != nil {
+		t.Fatalf("verify federated member authority event round-trip: %v", err)
+	}
+	if decoded.Fact.MemberAuthority == nil ||
+		decoded.Fact.MemberAuthority.Action != mutation.Action ||
+		decoded.Fact.MemberAuthority.PreviousOwner != oldOwner.Actor ||
+		decoded.Fact.MemberAuthority.Owner != newOwner.Actor ||
+		decoded.Fact.PostState == nil ||
+		decoded.Fact.PostState.Owner != newOwner.Actor ||
+		decoded.MembershipEpoch != 2 ||
+		decoded.MLSEpoch != 1 {
+		t.Fatalf("decoded member authority event = %+v", decoded)
+	}
+	post := aggregate.Snapshot{
+		ID:               current.ID,
+		Kind:             decoded.Fact.PostState.Kind,
+		Status:           current.Status,
+		FederationID:     decoded.Fact.PostState.FederationID,
+		AuthorityStation: decoded.AuthorityStation,
+		AuthorityEpoch:   decoded.Fact.PostState.AuthorityEpoch,
+		Owner:            decoded.Fact.PostState.Owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        decoded.Sequence,
+			EventHash:       decoded.Hash,
+			MembershipEpoch: decoded.MembershipEpoch,
+			MLSEpoch:        decoded.MLSEpoch,
+		},
+		Settings:  decoded.Fact.PostState.Settings,
+		Members:   decoded.Fact.PostState.ActiveMembers,
+		Devices:   decoded.Fact.PostState.ActiveDevices,
+		CreatedAt: current.CreatedAt,
+		UpdatedAt: decoded.CommittedAt,
+	}
+	reconciled, err := aggregate.ReconcileCommittedMemberAuthorityProjection(
+		current,
+		*decoded.Fact.MemberAuthority,
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile federated member authority projection: %v", err)
+	}
+	if reconciled.Owner != newOwner.Actor ||
+		reconciled.Head.MembershipEpoch != 2 ||
+		reconciled.Head.MLSEpoch != 1 {
+		t.Fatalf("reconciled member authority snapshot = %+v", reconciled)
+	}
+}
+
+// TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle verifies
+// that active-state wire snapshots cannot rewrite retained join history.
+func TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle(t *testing.T) {
+	owner := valueobject.Endpoint{
+		Actor:  "ptid:wire-add-owner",
+		Device: "owner-device",
+	}
+	member := valueobject.Endpoint{
+		Actor:  "ptid:wire-add-member",
+		Device: "member-device",
+	}
+	current := aggregate.Snapshot{
+		ID:               "wire-add-group",
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: "station-authority",
+		AuthorityEpoch:   1,
+		Owner:            owner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       valueobject.HashBytes([]byte("wire-add-previous")),
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire add group"},
+		Members: []entity.Member{{
+			Actor:       owner.Actor,
+			Role:        valueobject.MemberRoleOwner,
+			Status:      valueobject.MemberStatusActive,
+			HomeStation: "station-authority",
+			JoinedAt:    1,
+		}},
+		Devices: []entity.MemberDevice{{
+			Endpoint:    owner,
+			HomeStation: "station-authority",
+			Active:      true,
+			JoinedAt:    1,
+		}},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	post := current
+	post.Head = valueobject.AuthorityHead{
+		Sequence:        2,
+		EventHash:       valueobject.HashBytes([]byte("wire-add-event")),
+		MembershipEpoch: 2,
+		MLSEpoch:        2,
+	}
+	post.Members = []entity.Member{
+		{
+			Actor:       member.Actor,
+			Role:        valueobject.MemberRoleMember,
+			Status:      valueobject.MemberStatusActive,
+			HomeStation: "station-remote",
+			JoinedAt:    1,
+		},
+		current.Members[0],
+	}
+	post.Devices = []entity.MemberDevice{
+		{
+			Endpoint:    member,
+			HomeStation: "station-remote",
+			Active:      true,
+			JoinedAt:    2,
+		},
+		{
+			Endpoint:    owner,
+			HomeStation: "station-authority",
+			Active:      true,
+			JoinedAt:    2,
+		},
+	}
+	post.UpdatedAt = productionAdapterTestTime
+	change := entity.MembershipChange{
+		Action:      entity.MembershipActionAddActor,
+		Actor:       member.Actor,
+		Device:      member.Device,
+		HomeStation: "station-remote",
+		Role:        valueobject.MemberRoleMember,
+	}
+
+	reconciled, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		[]entity.MembershipChange{change},
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile added membership projection: %v", err)
+	}
+	memberJoinedAt := make(map[valueobject.PTID]valueobject.Sequence)
+	for _, projected := range reconciled.Members {
+		memberJoinedAt[projected.Actor] = projected.JoinedAt
+	}
+	deviceJoinedAt := make(map[string]valueobject.Sequence)
+	for _, projected := range reconciled.Devices {
+		deviceJoinedAt[projected.Endpoint.Key()] = projected.JoinedAt
+	}
+	if memberJoinedAt[owner.Actor] != 1 ||
+		memberJoinedAt[member.Actor] != 2 ||
+		deviceJoinedAt[owner.Key()] != 1 ||
+		deviceJoinedAt[member.Key()] != 2 {
+		t.Fatalf("reconciled added lifecycle = %+v", reconciled)
+	}
+
+	tampered := post
+	tampered.Members = append([]entity.Member(nil), post.Members...)
+	tampered.Members[1].HomeStation = "station-forged"
+	if _, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		[]entity.MembershipChange{change},
+		tampered,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
+		t.Fatalf("tampered authority-visible state error = %v", err)
 	}
 }
 
@@ -550,6 +1068,228 @@ func TestProductionDeliveryReceiptForwarderUsesSharedDurableFederation(
 	}
 	if created != 1 {
 		t.Fatalf("concurrent receipt creators = %d, want 1", created)
+	}
+}
+
+func TestProductionReadCursorForwarderUsesSharedDurableFederation(
+	t *testing.T,
+) {
+	fixture := newProductionAdapterFixture(t)
+	forwarder := &productionReadCursorForwarder{
+		database:     fixture.db,
+		sender:       fixture.factory.federationSender,
+		clock:        productionAdapterTestClock{now: productionAdapterTestTime},
+		localStation: "station-a",
+	}
+	request := interactionapp.ReadCursorRequest{
+		ConversationID: "conversation-1",
+		Reader:         fixture.alice,
+		Sequence:       7,
+	}
+	replay, err := forwarder.ForwardReadCursor(
+		context.Background(),
+		"station-b",
+		"federation-1",
+		3,
+		request,
+	)
+	if err != nil || replay {
+		t.Fatalf("forward read cursor: replay=%v error=%v", replay, err)
+	}
+	replay, err = forwarder.ForwardReadCursor(
+		context.Background(),
+		"station-b",
+		"federation-1",
+		3,
+		request,
+	)
+	if err != nil || !replay {
+		t.Fatalf("replay read cursor: replay=%v error=%v", replay, err)
+	}
+	sameSequenceVariants := []struct {
+		name      string
+		request   interactionapp.ReadCursorRequest
+		authority valueobject.AuthorityEpoch
+	}{
+		{
+			name: "second device",
+			request: interactionapp.ReadCursorRequest{
+				ConversationID: request.ConversationID,
+				Reader: valueobject.Endpoint{
+					Actor:  request.Reader.Actor,
+					Device: "alice-device-2",
+				},
+				Sequence: request.Sequence,
+			},
+			authority: 3,
+		},
+		{
+			name:      "new authority epoch",
+			request:   request,
+			authority: 4,
+		},
+	}
+	for _, variant := range sameSequenceVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			replay, err := forwarder.ForwardReadCursor(
+				context.Background(),
+				"station-b",
+				"federation-1",
+				variant.authority,
+				variant.request,
+			)
+			if err != nil || replay {
+				t.Fatalf(
+					"same-sequence variant: replay=%v error=%v",
+					replay,
+					err,
+				)
+			}
+		})
+	}
+	var sameSequenceRows []federationdelivery.OutboxRecord
+	if err := fixture.db.Where(
+		"payload_kind = ? AND ordering_sequence = ?",
+		int32(federationdelivery.PayloadKindConversationReadCursor),
+		int64(request.Sequence),
+	).Find(&sameSequenceRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	orderingKeys := make(map[string]struct{}, len(sameSequenceRows))
+	for _, row := range sameSequenceRows {
+		orderingKeys[row.OrderingKey] = struct{}{}
+	}
+	if len(sameSequenceRows) != 3 || len(orderingKeys) != 3 {
+		t.Fatalf(
+			"same-sequence rows=%d orderingKeys=%d, want 3 distinct lanes",
+			len(sameSequenceRows),
+			len(orderingKeys),
+		)
+	}
+
+	var record federationdelivery.OutboxRecord
+	originalWire, err := productionReadCursorToWire(
+		request,
+		"federation-1",
+		"station-b",
+		3,
+		"station-a",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPayloadID, err := conversationfederation.ReadCursorPayloadID(originalWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Where(
+		"payload_kind = ? AND payload_id = ?",
+		int32(federationdelivery.PayloadKindConversationReadCursor),
+		originalPayloadID,
+	).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(record.FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	var encoded chatmodel.FederatedConversationReadCursor
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if frame.GetSourceStationPeerId() != "station-a" ||
+		frame.GetTargetStationPeerId() != "station-b" ||
+		frame.GetOrderingSequence() != int64(request.Sequence) ||
+		encoded.GetFederationId() != "federation-1" ||
+		encoded.GetConversationId() != string(request.ConversationID) ||
+		encoded.GetAuthorityStationPeerId() != "station-b" ||
+		encoded.GetAuthorityEpoch() != 3 ||
+		encoded.GetReader().GetPtid() != string(request.Reader.Actor) ||
+		encoded.GetReader().GetDeviceId() != string(request.Reader.Device) ||
+		encoded.GetReaderHomeStationPeerId() != "station-a" ||
+		encoded.GetLastReadSequence() != int64(request.Sequence) {
+		t.Fatalf("read cursor frame=%+v payload=%+v", &frame, &encoded)
+	}
+
+	concurrent := request
+	concurrent.Sequence++
+	const workers = 8
+	var wait sync.WaitGroup
+	results := make(chan bool, workers)
+	errs := make(chan error, workers)
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			replay, err := forwarder.ForwardReadCursor(
+				context.Background(),
+				"station-b",
+				"federation-1",
+				3,
+				concurrent,
+			)
+			results <- replay
+			errs <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent read cursor replay: %v", err)
+		}
+	}
+	var created int
+	for replay := range results {
+		if !replay {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("concurrent read cursor creators = %d, want 1", created)
+	}
+}
+
+func TestProductionFederationPostCommitPublisherDefersWakeAndSurfacesFailure(
+	t *testing.T,
+) {
+	registrar := &productionPostCommitTestRegistrar{}
+	publishFailure := errors.New("injected realtime failure")
+	delegate := &productionPostCommitTestPublisher{err: publishFailure}
+	publisher := &productionFederationPostCommitPublisher{
+		registrar: registrar,
+		delegate:  delegate,
+	}
+	deliveries := []ports.CommittedDelivery{{
+		Recipient: valueobject.Endpoint{
+			Actor:  "ptid:reader",
+			Device: "reader-device",
+		},
+		EventID: "read-cursor-event",
+	}}
+
+	if err := publisher.NotifyCommitted(
+		context.Background(),
+		deliveries,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(delegate.deliveries) != 0 || len(registrar.callbacks) != 1 {
+		t.Fatalf(
+			"before commit deliveries=%+v callbacks=%d",
+			delegate.deliveries,
+			len(registrar.callbacks),
+		)
+	}
+	deliveries[0].EventID = "mutated-after-registration"
+	err := registrar.callbacks[0](context.Background())
+	if !errors.Is(err, publishFailure) {
+		t.Fatalf("post-commit publish error = %v", err)
+	}
+	if len(delegate.deliveries) != 1 ||
+		delegate.deliveries[0].EventID != "read-cursor-event" {
+		t.Fatalf("post-commit deliveries = %+v", delegate.deliveries)
 	}
 }
 
@@ -976,7 +1716,7 @@ func TestProductionAdaptersRollbackWithConversationTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if object.EventID != "" ||
-		object.State != string(attachmentapp.ObjectStateCompleteUnattached) {
+		object.State != string(securecontent.ObjectStateCompleteUnattached) {
 		t.Fatalf("rolled-back object = %+v", object)
 	}
 
@@ -1339,7 +2079,7 @@ func seedProductionAdapterGrantObject(
 		storageRef,
 		verificationToken,
 	)
-	ciphertextSize := uint64(attachmentapp.TagSize + 1)
+	ciphertextSize := uint64(securecontent.AES256GCMTagSize + 1)
 	if err := database.Create(&attachmentinfra.UploadModel{
 		UploadID:                   "upload-1",
 		Generation:                 1,
@@ -1351,15 +2091,15 @@ func seedProductionAdapterGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           ciphertextHash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      ciphertextHash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
 		IdempotencyKey:             "attachment-idempotency",
-		State:                      int32(attachmentapp.TransferStateComplete),
+		State:                      int32(securecontent.TransferStateComplete),
 		ReceivedChunkBitmap:        []byte{1},
 		ObjectID:                   string(objectID),
 		StorageRef:                 storageRef,
@@ -1386,14 +2126,14 @@ func seedProductionAdapterGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           ciphertextHash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      ciphertextHash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
-		State:                      string(attachmentapp.ObjectStateCompleteUnattached),
+		State:                      string(securecontent.ObjectStateCompleteUnattached),
 		ExpiresAt:                  expiresAt,
 		CleanupNextAttemptAt:       expiresAt,
 		CreatedAt:                  createdAt,

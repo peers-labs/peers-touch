@@ -1,3 +1,6 @@
+import { create, toBinary } from '@bufbuild/protobuf';
+import type { Message as ProtoMessage } from '@bufbuild/protobuf';
+import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus, eventDebugBuffer } from '../../kernel/events';
@@ -11,12 +14,18 @@ import {
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
   isAgentCapabilityReady,
+  projectAgentTurnOutcomeErrorPayload,
+  projectAgentTypedErrorPayload,
+  invokeRustProto,
   streamAgentTurn,
   streamAgentTurnReplay,
   submitAgentFeedback,
   type AgentAttachmentRefInput,
   type AgentCapabilityNegativeControlFact,
   type AgentRuntimeBudgetInput,
+  type OAuth2Connection,
+  type MCPServerItem,
+  type MarketSkillEntry,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
   type StreamEvent,
@@ -25,6 +34,9 @@ import {
   flushAgentTurnRecoveryPersistence,
   type AgentTurnSnapshotReloadResult,
 } from '../../runtimes/chatRuntime';
+import {
+  refreshEvaluationTargetProjection,
+} from '../../runtimes/evaluationRuntime';
 import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
@@ -33,17 +45,70 @@ import { terminalReasonFromStreamData } from '../../store/streaming/handler';
 import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
+import { evaluationRevisionMutationKey } from '../../store/evaluation/commands';
+import { useAgentCapabilityStore } from '../../store/agentCapabilities';
+import { useAgentConnectorStore } from '../../store/agentConnectors';
+import { useMCPStore } from '../../store/mcp';
+import { useOAuth2Store } from '../../store/oauth2';
 import {
   AgentTurnStatus,
+  FailoverReason,
   ToolCallStatus,
   ToolExecutionOwner,
 } from '../../gen/proto/domain/agent/agent_pb';
 import {
   CapabilityApprovalPolicy,
+  CapabilityOperationStatus,
   CapabilitySourceKind,
+  ConnectorResourceStatus,
+  CreateKnowledgeResourceDescriptorRequestSchema,
+  KnowledgeResourceKind,
+  TombstoneKnowledgeResourceDescriptorRequestSchema,
   type AgentCapabilityBinding,
+  type CapabilityOperation,
   type CapabilityManifest,
+  type ConnectorResourceManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
+import {
+  CancelEvaluationRunRequestSchema,
+  CancelEvaluationRunResponseSchema,
+  CreateEvaluationBenchmarkRequestSchema,
+  CreateEvaluationBenchmarkResponseSchema,
+  CreateEvaluationDatasetRequestSchema,
+  CreateEvaluationDatasetResponseSchema,
+  CreateEvaluationRunRequestSchema,
+  CreateEvaluationRunResponseSchema,
+  CreateEvaluationTestCaseRequestSchema,
+  CreateEvaluationTestCaseResponseSchema,
+  DeleteEvaluationBenchmarkRequestSchema,
+  DeleteEvaluationBenchmarkResponseSchema,
+  DeleteEvaluationDatasetRequestSchema,
+  DeleteEvaluationDatasetResponseSchema,
+  DeleteEvaluationRunRequestSchema,
+  DeleteEvaluationRunResponseSchema,
+  DeleteEvaluationTestCaseRequestSchema,
+  DeleteEvaluationTestCaseResponseSchema,
+  EvaluationAttemptStatus,
+  EvaluationRunStatus,
+  GetEvaluationRunRequestSchema,
+  GetEvaluationRunResponseSchema,
+  ListEvaluationBenchmarksRequestSchema,
+  ListEvaluationBenchmarksResponseSchema,
+  ListEvaluationDatasetsRequestSchema,
+  ListEvaluationDatasetsResponseSchema,
+  ListEvaluationRunEventsRequestSchema,
+  ListEvaluationRunEventsResponseSchema,
+  ListEvaluationRunsRequestSchema,
+  ListEvaluationRunsResponseSchema,
+  ListEvaluationTestCasesRequestSchema,
+  ListEvaluationTestCasesResponseSchema,
+  RetryEvaluationCasesRequestSchema,
+  RetryEvaluationCasesResponseSchema,
+  StartEvaluationRunRequestSchema,
+  StartEvaluationRunResponseSchema,
+  type EvaluationCaseAttempt,
+  type EvaluationRun,
+} from '../../gen/proto/domain/agent/evaluation_pb';
 import { registerAcceptanceHarness } from '../registry';
 import {
   assertFoundationCapabilityFixtureCleanupState,
@@ -235,7 +300,9 @@ type FoundationTurnReplayLocator = Pick<
   | 'streamGeneration'
   | 'actorPtid'
   | 'acknowledgedCursor'
->;
+> & {
+  attemptId?: string;
+};
 
 interface FoundationF06FaultBoundary {
   handoff: FoundationF06Handoff;
@@ -319,6 +386,17 @@ const foundationF06PendingHandoffs = new Map<string, FoundationF06Handoff>();
 const foundationF06FaultBoundaries =
   new Map<string, FoundationF06FaultBoundary>();
 const foundationF06ReplayingScenarios = new Set<string>();
+let foundationF12MessageListDebugScope: {
+  locale: string;
+  platform: string;
+  readbackSequence: number;
+  sampleId: string;
+  scenarioKey: string;
+} | null = null;
+let foundationApprovalExpiryCleanupDebugScope: {
+  platform: string;
+  sampleId: string;
+} | null = null;
 
 function observedFoundationF06Handoffs(): FoundationF06Handoff[] {
   const byScenario = new Map(
@@ -410,6 +488,75 @@ function readFoundationF06Handoff(scenarioKey: string): FoundationF06Handoff | n
   return readFoundationF06Handoffs()[scenarioKey] ?? null;
 }
 
+function foundationF06HandoffStorageSnapshot(
+  scenarioKey: string,
+): Record<string, unknown> {
+  const raw = window.localStorage.getItem(FOUNDATION_F06_STORAGE_KEY);
+  if (!raw) {
+    return {
+      storagePresent: false,
+      serializedLength: 0,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const containerValid = Boolean(
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed),
+    );
+    const entries = containerValid
+      ? parsed as Record<string, unknown>
+      : {};
+    const candidate = entries[scenarioKey];
+    const candidateValid = Boolean(
+      candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+    );
+    const candidateRecord = candidateValid
+      ? candidate as Record<string, unknown>
+      : {};
+    const toolIsolation = candidateRecord.toolIsolation;
+    const toolIsolationValid = Boolean(
+      toolIsolation
+      && typeof toolIsolation === 'object'
+      && !Array.isArray(toolIsolation),
+    );
+    const toolIsolationRecord = toolIsolationValid
+      ? toolIsolation as Record<string, unknown>
+      : {};
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid,
+      entryCount: Object.keys(entries).length,
+      scenarioPresent: candidateValid,
+      topLevelNullFields: Object.entries(candidateRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+      toolIsolationPresent: toolIsolationValid,
+      toolIsolationNullFields: Object.entries(toolIsolationRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+    };
+  } catch (error) {
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      parseErrorType: error instanceof Error ? error.name : typeof error,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+}
+
 function readFoundationF06CleanupLocators(): Record<
   string,
   FoundationF06CleanupLocator
@@ -469,6 +616,35 @@ function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
   const handoffs = readFoundationF06Handoffs();
   handoffs[value.scenarioKey] = value;
   window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function importFoundationF06RestartHandoff(
+  scenarioKey: string,
+  platform: string,
+  value: unknown,
+): FoundationF06Handoff {
+  if (
+    platform !== 'desktop_app'
+    || !value
+    || typeof value !== 'object'
+    || Array.isArray(value)
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  const candidate = value as Partial<FoundationF06Handoff>;
+  if (
+    candidate.scenarioKey !== scenarioKey
+    || candidate.platform !== platform
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  writeFoundationF06Handoff(candidate as FoundationF06Handoff);
+  const imported = readFoundationF06Handoff(scenarioKey);
+  if (!imported) {
+    removeFoundationF06Handoff(scenarioKey);
+    throw new Error('agent.acceptance.foundationRecoveryHandoffInvalid');
+  }
+  return imported;
 }
 
 async function updateFoundationF06RecoveryFailure(
@@ -717,6 +893,7 @@ async function foundationStationReplayReadback(
       conversation_id: handoff.conversationId,
       turn_id: handoff.turnId,
       after_seq: handoff.acknowledgedCursor,
+      attempt_id: handoff.attemptId,
     }, (event) => {
       const sourceDelivery = event.sourceDelivery;
       if (
@@ -909,11 +1086,18 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('ACTIVE_DEPENDENCY')) {
       return 'ACTIVE_DEPENDENCY';
     }
+    if (serializedDetails.includes('RETENTION_CONFLICT')) {
+      return 'RETENTION_CONFLICT';
+    }
     if (
       serializedDetails.includes('AGENT_4009')
       || (error as { code?: string }).code === 'CONFLICT'
     ) {
       return 'VERSION_CONFLICT';
+    }
+    const structuredCode = (error as { code?: string }).code;
+    if (typeof structuredCode === 'string' && structuredCode) {
+      return structuredCode;
     }
     if (serializedDetails.includes('AGENT_4001')) {
       return 'INVALID_REQUEST';
@@ -940,6 +1124,17 @@ function observedErrorCode(error: unknown): string {
     return 'CONTEXT_ATTACHMENT_REJECTED';
   }
   return message;
+}
+
+function isFoundationResourceNotFound(error: unknown): boolean {
+  return (
+    (
+      error !== null
+      && typeof error === 'object'
+      && (error as { code?: unknown }).code === 'NOT_FOUND'
+    )
+    || observedErrorCode(error).includes('AGENT_4004')
+  );
 }
 
 function redactedAuthError(error: unknown): Record<string, string | null> {
@@ -991,9 +1186,30 @@ async function observeFoundationActiveDependency(
 async function deleteFoundationConversation(
   conversationId: string,
 ): Promise<string> {
+  // #region debug-point B-D:approval-expiry-delete
+  const debugScope = foundationApprovalExpiryCleanupDebugScope;
+  const conversationIdHash = debugScope
+    ? sha256Hex(conversationId)
+    : Promise.resolve('');
+  // #endregion
   for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const conversation = await api.getAgentConversation(conversationId);
+      // #region debug-point B-C:approval-expiry-delete-read
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C',
+            'delete-read',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+              conversationStatus: conversation.status,
+              conversationVersion: conversation.version,
+            },
+          ));
+      }
+      // #endregion
       if (conversation.status === 'deleted') {
         return 'CONVERSATION_DELETED';
       }
@@ -1002,10 +1218,37 @@ async function deleteFoundationConversation(
         conversation.version,
         true,
       );
+      // #region debug-point B-C:approval-expiry-delete-complete
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C',
+            'delete-complete',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+            },
+          ));
+      }
+      // #endregion
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
-      if (code.includes('AGENT_4004')) return code;
+      // #region debug-point B-C-D:approval-expiry-delete-error
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C-D',
+            'delete-attempt-error',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationApprovalExpiryCleanupErrorDebug(error),
+            },
+          ));
+      }
+      // #endregion
+      if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
           await api.getAgentConversation(conversationId);
@@ -1016,6 +1259,14 @@ async function deleteFoundationConversation(
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
   }
+  // #region debug-point C:approval-expiry-delete-exhausted
+  if (debugScope) {
+    void conversationIdHash.then((resolvedConversationIdHash) =>
+      reportFoundationApprovalExpiryCleanupDebug('C', 'delete-exhausted', {
+        conversationIdHash: resolvedConversationIdHash,
+      }));
+  }
+  // #endregion
   throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
 }
 
@@ -1023,12 +1274,58 @@ async function cleanupFoundationToolConversation(
   conversationId: string,
   turnId: string,
 ): Promise<void> {
+  // #region debug-point B-D:approval-expiry-cleanup-start
+  const debugScope = foundationApprovalExpiryCleanupDebugScope;
+  const identityHashes = debugScope
+    ? Promise.all([
+        sha256Hex(conversationId),
+        turnId ? sha256Hex(turnId) : Promise.resolve(''),
+      ])
+    : Promise.resolve(['', '']);
+  if (debugScope) {
+    void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+      reportFoundationApprovalExpiryCleanupDebug('B-D', 'cleanup-start', {
+        conversationIdHash,
+        platform: debugScope.platform,
+        sampleId: debugScope.sampleId,
+        turnIdHash,
+      }));
+  }
+  // #endregion
   let cancellationError: unknown = null;
   if (turnId) {
     try {
-      await api.cancelAgentTurn(turnId);
+      const cancellation = await api.cancelAgentTurn(turnId);
+      // #region debug-point B:approval-expiry-cancel-complete
+      if (debugScope) {
+        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B',
+            'cancel-complete',
+            {
+              cancellationStatus: String(cancellation.status ?? ''),
+              conversationIdHash,
+              turnIdHash,
+            },
+          ));
+      }
+      // #endregion
     } catch (error) {
       cancellationError = error;
+      // #region debug-point B-D:approval-expiry-cancel-error
+      if (debugScope) {
+        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-D',
+            'cancel-error',
+            {
+              conversationIdHash,
+              error: foundationApprovalExpiryCleanupErrorDebug(error),
+              turnIdHash,
+            },
+          ));
+      }
+      // #endregion
     }
   }
 
@@ -1049,7 +1346,40 @@ async function cleanupFoundationToolConversation(
         'agent.acceptance.foundationCleanupConversationNotDeleted',
       );
     }
+    // #region debug-point B-C:approval-expiry-cleanup-complete
+    if (debugScope) {
+      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+        reportFoundationApprovalExpiryCleanupDebug(
+          'B-C',
+          'cleanup-complete',
+          {
+            cancellationError:
+              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
+            conversationIdHash,
+            deletionErrorCode,
+            turnIdHash,
+          },
+        ));
+    }
+    // #endregion
   } catch (cleanupError) {
+    // #region debug-point B-C-D:approval-expiry-cleanup-error
+    if (debugScope) {
+      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+        reportFoundationApprovalExpiryCleanupDebug(
+          'B-C-D',
+          'cleanup-error',
+          {
+            cancellationError:
+              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
+            cleanupError:
+              foundationApprovalExpiryCleanupErrorDebug(cleanupError),
+            conversationIdHash,
+            turnIdHash,
+          },
+        ));
+    }
+    // #endregion
     throw Object.assign(
       new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
       {
@@ -1070,15 +1400,52 @@ function clearFoundationLocalConversationProjection(
     const sessionBuffers = { ...state.sessionBuffers };
     delete sessionBuffers[conversationId];
     const isCurrent = state.currentSessionKey === conversationId;
+    const sessions = state.sessions.filter(
+      (session) =>
+        session.id !== conversationId && session.key !== conversationId,
+    );
     return {
       operations,
       sessionBuffers,
+      sessions,
+      currentSessionKey:
+        isCurrent ? sessions[0]?.key || 'main' : state.currentSessionKey,
       messages: isCurrent ? [] : state.messages,
       isStreaming: isCurrent ? false : state.isStreaming,
       streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
       abortController: isCurrent ? null : state.abortController,
+      revisionCommandFailure:
+        state.revisionCommandFailure?.conversationId === conversationId
+          ? null
+          : state.revisionCommandFailure,
+      revisionReloadingConversationId:
+        state.revisionReloadingConversationId === conversationId
+          ? null
+          : state.revisionReloadingConversationId,
     };
   });
+}
+
+async function setFoundationComposerDraft(
+  value: string,
+  label: string,
+): Promise<HTMLTextAreaElement> {
+  const textarea = document.querySelector<HTMLTextAreaElement>(
+    '[data-pt-agent-composer-input]',
+  );
+  if (!textarea) {
+    throw new Error('agent.acceptance.foundationComposerInputMissing');
+  }
+  useChatStore.getState().fillComposer(value);
+  await waitFor(
+    () => (
+      useChatStore.getState().composerFill === null
+      && textarea.value === value
+    ),
+    label,
+    10_000,
+  );
+  return textarea;
 }
 
 async function cancelFoundationQueuedTurns(
@@ -1185,6 +1552,13 @@ function normalizeProjectedStationPayload(
     ...(evidenceValue(value) as Record<string, unknown>),
   };
   delete normalized.streamGeneration;
+  if (typeof normalized.text === 'string' || typeof normalized.result === 'string') {
+    delete normalized.content;
+  }
+  if (typeof normalized.toolCallId === 'string') delete normalized.id;
+  if (typeof normalized.toolName === 'string') delete normalized.name;
+  if (typeof normalized.arguments === 'string') delete normalized.args;
+  if (typeof normalized.stage === 'string') delete normalized.message;
   return normalized;
 }
 
@@ -1371,13 +1745,91 @@ function foundationDomSnapshot() {
 }
 
 async function foundationConversationReadback(conversationId: string) {
+  // #region debug-point A-E:f12-message-list-boundary
+  const debugScope = foundationF12MessageListDebugScope;
+  const readbackSequence = debugScope
+    ? ++debugScope.readbackSequence
+    : 0;
+  const conversationIdHash = debugScope
+    ? sha256Hex(conversationId)
+    : Promise.resolve('');
+  if (debugScope) {
+    const sessionState = useSessionStore.getState();
+    const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+    void Promise.all([
+      conversationIdHash,
+      actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+    ]).then(([resolvedConversationIdHash, actorPtidHash]) =>
+      reportFoundationF12MessageListDebug('A-B-E', 'readback-start', {
+        actorPtidHash,
+        authenticated: sessionState.authenticated,
+        conversationIdHash: resolvedConversationIdHash,
+        currentSessionMatches:
+          useChatStore.getState().currentSessionKey === conversationId,
+        locale: debugScope.locale,
+        platform: debugScope.platform,
+        readbackSequence,
+        sampleId: debugScope.sampleId,
+      }));
+  }
+  const conversationRequest = api.getAgentConversation(conversationId);
+  const messagesRequest = api.listAgentConversationMessages({
+    conversation_id: conversationId,
+    limit: 200,
+  });
+  const observedConversationRequest = debugScope
+    ? conversationRequest.then(
+        (conversation) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('B-E', 'conversation-ok', {
+              conversationIdHash: resolvedConversationIdHash,
+              conversationStatus: conversation.status,
+              conversationVersion: conversation.version,
+              readbackSequence,
+            }));
+          return conversation;
+        },
+        (error: unknown) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('A-B-C-D-E', 'conversation-error', {
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationF12MessageListErrorDebug(error),
+              readbackSequence,
+            }));
+          throw error;
+        },
+      )
+    : conversationRequest;
+  const observedMessagesRequest = debugScope
+    ? messagesRequest.then(
+        (result) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('B-C-D-E', 'messages-ok', {
+              conversationIdHash: resolvedConversationIdHash,
+              firstSequence: result.messages[0]?.seq ?? null,
+              hasMore: result.has_more,
+              lastSequence: result.messages[result.messages.length - 1]?.seq ?? null,
+              messageCount: result.messages.length,
+              readbackSequence,
+            }));
+          return result;
+        },
+        (error: unknown) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('A-B-C-D-E', 'messages-error', {
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationF12MessageListErrorDebug(error),
+              readbackSequence,
+            }));
+          throw error;
+        },
+      )
+    : messagesRequest;
   const [conversation, result] = await Promise.all([
-    api.getAgentConversation(conversationId),
-    api.listAgentConversationMessages({
-      conversation_id: conversationId,
-      limit: 200,
-    }),
+    observedConversationRequest,
+    observedMessagesRequest,
   ]);
+  // #endregion
   return {
     conversation,
     messages: result.messages.map((message) => ({
@@ -1387,6 +1839,7 @@ async function foundationConversationReadback(conversationId: string) {
       role: message.role,
       status: message.status,
       content: message.content,
+      toolCallsJson: message.tool_calls_json ?? '',
       errorJson: message.error_json ?? '',
       attachments: message.attachments ?? [],
       seq: message.seq,
@@ -1540,15 +1993,134 @@ interface FoundationToolFixture {
   arguments: Record<string, unknown>;
 }
 
+interface FoundationToolFixtureOptions {
+  toolName?: string;
+  arguments?: Record<string, unknown>;
+}
+
 interface FoundationToolTurn {
   conversationId: string;
   turnId: string;
+  streamId: string;
   observed: ObservedFoundationTurn;
 }
+
+interface FoundationExecutorUnavailableScenario {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+  originalBinding: AgentCapabilityBinding | null;
+  currentBinding: AgentCapabilityBinding;
+  turn: FoundationToolTurn;
+  approvalId: string;
+  toolCallId: string;
+  expectedRevision: number;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+  startedAt: number;
+  bindingRestored: boolean;
+}
+
+const foundationExecutorUnavailableScenarios =
+  new Map<string, FoundationExecutorUnavailableScenario>();
+const foundationLeaseExpiredScenarios =
+  new Map<string, FoundationExecutorUnavailableScenario>();
+const foundationInvalidResourceReferenceScenarios =
+  new Map<string, { conversationId: string; turnId: string }>();
+
+interface FoundationForbiddenActorOwnerScenario {
+  scenarioKey: string;
+  agentId: string;
+  conversationId: string;
+  priorSelection: string;
+  ownerActorHash: string;
+  beforeHash: string;
+  beforeVersion: number;
+  beforeMessageCount: number;
+  beforeQueueCount: number;
+  beforeTurnCount: number;
+  beforeProviderCallCount: number;
+}
+
+const foundationForbiddenActorOwnerScenarios =
+  new Map<string, FoundationForbiddenActorOwnerScenario>();
+const foundationForbiddenActorReceiverResources = new Map<string, string>();
 
 interface FoundationToolTurnSession {
   capabilitySessionId: string;
   facts: Record<string, unknown>;
+}
+
+type McpLifecycleDevelopmentPhase = 'prepare' | 'recover' | 'cleanup';
+
+interface McpLifecycleDevelopmentState {
+  agentId: string;
+  agentName: string;
+  providerId: string;
+  modelId: string;
+  serverName: string;
+  conversationId: string;
+  turnId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+  operationIds: Record<string, string>;
+}
+
+interface McpLifecycleDevelopmentInput {
+  phase: McpLifecycleDevelopmentPhase;
+  sampleId: string;
+  serverName: string;
+  providerBaseUrl?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  toolName?: string;
+  expectedResult?: string;
+  state?: McpLifecycleDevelopmentState;
+}
+
+interface ConnectorInvocationDevelopmentInput {
+  sampleId: string;
+  providerBaseUrl: string;
+  connectorId: string;
+}
+
+type EvaluationDevelopmentPhase =
+  | 'prepare'
+  | 'recover'
+  | 'isolate'
+  | 'cleanup';
+
+interface EvaluationDevelopmentState {
+  ownerActorId: string;
+  agentId: string;
+  agentName: string;
+  agentRevision: number;
+  providerId: string;
+  modelId: string;
+  benchmarkId: string;
+  benchmarkRevision: string;
+  datasetId: string;
+  datasetRevision: string;
+  cases: Array<{
+    caseId: string;
+    revision: string;
+  }>;
+  primaryRunId: string;
+  cancelledRunId: string;
+  childRunId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}
+
+interface EvaluationDevelopmentInput {
+  phase: EvaluationDevelopmentPhase;
+  sampleId: string;
+  providerBaseUrl?: string;
+  state?: EvaluationDevelopmentState;
 }
 
 function toolStatusName(value: unknown): string {
@@ -1578,6 +2150,23 @@ function toolStatusName(value: unknown): string {
     default:
       throw new Error('agent.acceptance.toolStatusMissing');
   }
+}
+
+function diagnosticToolPersistenceStatus(
+  fact: Record<string, unknown>,
+): string {
+  const status = toolStatusName(evidenceField(fact, 'status', 'status'));
+  if (
+    status === 'claimed'
+    && evidenceField(
+      fact,
+      'dispatchCommittedAt',
+      'dispatch_committed_at',
+    )
+  ) {
+    return 'dispatch_committed';
+  }
+  return status;
 }
 
 function toolExecutionOwnerName(value: unknown): string {
@@ -1657,23 +2246,51 @@ async function waitForFoundationToolFacts(
   throw new Error(`timed out waiting for: ${description}`);
 }
 
+function governedToolSettlementSucceeded(
+  facts: Record<string, unknown>[],
+  replay: Record<string, unknown>,
+): boolean {
+  if (facts.length !== 1) return false;
+  const status = Number(facts[0].status) as ToolCallStatus;
+  if (status === ToolCallStatus.SUCCEEDED) {
+    return diagnosticReplayTerminal(replay);
+  }
+  if ([
+    ToolCallStatus.FAILED,
+    ToolCallStatus.CANCELLED,
+    ToolCallStatus.EXPIRED,
+    ToolCallStatus.UNKNOWN_SIDE_EFFECT,
+    ToolCallStatus.DENIED,
+  ].includes(status)) {
+    throw new Error(
+      `agent.acceptance.governedToolTerminalFailure:${toolStatusName(status)}`,
+    );
+  }
+  return false;
+}
+
 async function foundationToolFixture(
   agentId: string,
   platform: string,
+  options: FoundationToolFixtureOptions = {},
 ): Promise<FoundationToolFixture> {
   const sourceKind = platform === 'browser'
     ? CapabilitySourceKind.BUILTIN_TOOL
     : CapabilitySourceKind.CLIENT_NATIVE;
-  const toolName = platform === 'browser'
+  const toolName = options.toolName ?? (platform === 'browser'
     ? 'skills_list'
-    : 'local_clipboard_read';
+    : 'local_clipboard_read');
   const [manifests, bindings] = await Promise.all([
     api.listCapabilityManifests([sourceKind]),
     api.listAgentCapabilityBindings(agentId),
   ]);
   const manifest = manifests.find((candidate) =>
     candidate.sourceKind === sourceKind
-    && candidate.sourceInstanceId === toolName);
+    && candidate.sourceInstanceId === toolName
+    && (
+      sourceKind !== CapabilitySourceKind.BUILTIN_TOOL
+      || candidate.requiredRuntimeCapabilities.includes('native-tools')
+    ));
   if (!manifest) {
     throw new Error('agent.acceptance.foundationToolManifestMissing');
   }
@@ -1685,9 +2302,7 @@ async function foundationToolFixture(
     manifest,
     binding,
     toolName,
-    arguments: platform === 'browser'
-      ? {}
-      : {},
+    arguments: options.arguments ?? {},
   };
 }
 
@@ -1739,6 +2354,60 @@ async function foundationReadyCapabilityHash(
       `${left.capabilityId}:${left.capabilityVersion}`
         .localeCompare(`${right.capabilityId}:${right.capabilityVersion}`));
   return sha256Hex(stableJson(ready));
+}
+
+async function prepareFoundationSelectiveCapabilityIsolation(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  binding: AgentCapabilityBinding,
+  capabilitySessionId: string,
+): Promise<FoundationCapabilityIsolationJournal> {
+  await restorePersistedFoundationCapabilityIsolation();
+  if (!binding.enabled || binding.tombstonedAt) {
+    throw new Error(
+      'agent.acceptance.foundationSelectiveCapabilityBindingUnavailable',
+    );
+  }
+  const agentId = agent.id || agent.name;
+  const readiness = await api.getAgentCapabilityReadiness({
+    agent_id: agentId,
+    client_capability_session_id: capabilitySessionId,
+  });
+  const readyCapabilities = readiness.capabilities.filter(
+    isAgentCapabilityReady,
+  );
+  if (!readyCapabilities.some((capability) => (
+    capability.capability_id === binding.capabilityId
+    && capability.capability_version === binding.capabilityVersion
+  ))) {
+    throw new Error(
+      'agent.acceptance.foundationSelectiveCapabilityReadinessUnavailable',
+    );
+  }
+  const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
+    readiness,
+  );
+  const journal: FoundationCapabilityIsolationJournal = {
+    agentId,
+    agentVersion: agent.version,
+    originalReadyCapabilityCount: readyCapabilities.length,
+    originalReadyCapabilityHash,
+    bindings: [{
+      bindingId: binding.bindingId,
+      capabilityId: binding.capabilityId,
+      capabilityVersion: binding.capabilityVersion,
+      approvalPolicy: binding.approvalPolicy,
+      originalRevision: binding.revision.toString(),
+      isolatedRevision: (binding.revision + 1n).toString(),
+      restoredRevision: (binding.revision + 2n).toString(),
+    }],
+  };
+  const serializedJournal = JSON.stringify(journal);
+  parseFoundationCapabilityIsolationJournal(serializedJournal);
+  window.localStorage.setItem(
+    FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY,
+    serializedJournal,
+  );
+  return journal;
 }
 
 function readFoundationCapabilityIsolationJournal(
@@ -2198,6 +2867,11 @@ async function startFoundationToolTurn(input: {
   label: string;
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
+  streamId?: string;
+  onConversationCreated?: (
+    conversationId: string,
+    streamId: string,
+  ) => void;
 }): Promise<FoundationToolTurn> {
   const agentId = input.agent.id || input.agent.name;
   const conversation = await api.createAgentConversation({
@@ -2206,10 +2880,10 @@ async function startFoundationToolTurn(input: {
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
-  const argumentsJSON = JSON.stringify(input.fixture.arguments);
-  const content = input.repeatUntilStopped
-    ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
-    : `Call ${input.fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
+  const content = foundationToolTurnContent(
+    input.fixture,
+    input.repeatUntilStopped === true,
+  );
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -2219,10 +2893,13 @@ async function startFoundationToolTurn(input: {
     model: input.agent.model || undefined,
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
+    streamId: input.streamId,
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
   });
+  const streamId = observed.controller.streamId;
+  input.onConversationCreated?.(conversation.conversation_id, streamId);
   const startedAt = Date.now();
   let turnId = '';
   while (!turnId && Date.now() - startedAt < 30_000) {
@@ -2238,7 +2915,621 @@ async function startFoundationToolTurn(input: {
   return {
     conversationId: conversation.conversation_id,
     turnId,
+    streamId,
     observed,
+  };
+}
+
+function foundationToolTurnContent(
+  fixture: FoundationToolFixture,
+  repeatUntilStopped: boolean,
+): string {
+  const argumentsJSON = JSON.stringify(fixture.arguments);
+  return repeatUntilStopped
+    ? `Call ${fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
+    : `Call ${fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
+}
+
+async function runDevelopmentInvalidResourceReferenceScenario(input: {
+  sampleId: string;
+  capabilitySessionId?: string;
+  deferConversationCleanup?: boolean;
+  externalExecutorEvidence?: boolean;
+  scenarioKey?: string;
+}): Promise<Record<string, unknown>> {
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  if (
+    input.deferConversationCleanup
+    && (!input.scenarioKey || !input.externalExecutorEvidence)
+  ) {
+    throw new Error(
+      'agent.acceptance.invalidResourceDeferredCleanupContractMissing',
+    );
+  }
+  if (input.externalExecutorEvidence && !input.capabilitySessionId) {
+    throw new Error(
+      'agent.acceptance.invalidResourceExecutorTargetMissing',
+    );
+  }
+  const agentId = agent.id || agent.name;
+  const fixture = await foundationToolFixture(agentId, 'desktop_app', {
+    toolName: 'local_file_read',
+    arguments: {
+      path: `missing-${input.sampleId.replace(/[^a-z0-9]/gi, '-')}.txt`,
+    },
+  });
+  if (
+    fixture.manifest.capabilityId !== 'filesystem.read'
+    || fixture.manifest.version !== '1'
+  ) {
+    throw new Error('agent.acceptance.invalidResourceManifestMismatch');
+  }
+
+  const capabilitySession = input.capabilitySessionId
+    ? {
+        capabilitySessionId: input.capabilitySessionId,
+        facts: {},
+      }
+    : await resolveFoundationToolTurnSession();
+  const selectedTarget = (
+    await api.listAgentCapabilitySessions()
+  ).sessions.find((session) =>
+    session.session_id === capabilitySession.capabilitySessionId
+    && session.typed_capabilities.some(
+      (capability) =>
+        capability.capability_id === fixture.manifest.capabilityId,
+    ));
+  if (
+    !selectedTarget
+  ) {
+    throw new Error('agent.acceptance.invalidResourceExecutorUnavailable');
+  }
+
+  const originalBinding = fixture.binding;
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  let result: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  const cleanupFailures: unknown[] = [];
+  const startedAt = performance.now();
+
+  try {
+    const invalidResourceStreamId = crypto.randomUUID();
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'invalid-resource-reference',
+      streamId: invalidResourceStreamId,
+      onConversationCreated: input.scenarioKey
+        ? (conversationId) => {
+            foundationInvalidResourceReferenceScenarios.set(
+              input.scenarioKey!,
+              { conversationId, turnId: '' },
+            );
+          }
+        : undefined,
+    });
+    if (input.scenarioKey) {
+      foundationInvalidResourceReferenceScenarios.set(
+        input.scenarioKey,
+        {
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+        },
+      );
+    }
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'invalid-resource ToolCall receiver',
+      30_000,
+    );
+    const toolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'invalid-resource approve action',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve) {
+      throw new Error('agent.acceptance.foundationToolApproveMissing');
+    }
+
+    const beforeCapability = await capabilitySessionEvidence();
+    const targetSessionHash = await sha256Hex(
+      capabilitySession.capabilitySessionId,
+    );
+    const beforeLocal =
+      beforeCapability.selectedLocalSession?.capability_session_id_hash
+        === targetSessionHash
+        ? beforeCapability.selectedLocalSession
+        : null;
+    if (!beforeLocal && !input.externalExecutorEvidence) {
+      throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
+    }
+    const beforeExecutionCount =
+      beforeLocal?.local_execution_attempt_count ?? null;
+    const beforeSideEffectCount =
+      beforeLocal?.local_side_effect_count ?? null;
+
+    approve.click();
+    const errorSurfaceSelector =
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="CLIENT_INVALID_RESOURCE_REFERENCE"]';
+    await waitFor(
+      () => Boolean(document.querySelector(errorSurfaceSelector)),
+      'invalid-resource typed receiver outcome',
+      FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+    );
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.FAILED
+        && String(
+          evidenceField(facts[0], 'errorCode', 'error_code') ?? '',
+        ) === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      ),
+      'invalid-resource Station source readback',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.FAILED
+        && String(
+          evidenceField(facts[0], 'errorCode', 'error_code') ?? '',
+        ) === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      ),
+      'invalid-resource Station replay readback',
+    );
+    const readback = await foundationConversationReadback(turn.conversationId);
+    const assistant = [...readback.messages].reverse().find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === turn?.turnId
+        && Boolean(message.errorJson)
+      ),
+    );
+    if (!assistant) {
+      throw new Error('agent.acceptance.invalidResourceMessageMissing');
+    }
+    const persistedOutcome = evidenceRecord(
+      JSON.parse(String(assistant.errorJson || '{}')),
+      'invalidResourcePersistedOutcome',
+    );
+    const persistedDetails = evidenceRecord(
+      persistedOutcome.details,
+      'invalidResourcePersistedDetails',
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(errorSurfaceSelector),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorTextSelector =
+      '[data-pt-agent-message-error-text='
+      + '"agent.errors.invalidResourceReference"]';
+    if (!errorSurface?.querySelector(errorTextSelector)) {
+      errorSurface?.querySelector<HTMLElement>(
+        '[data-pt-agent-message-error-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorTextSelector)),
+        'localized invalid-resource text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(
+      errorTextSelector,
+    );
+    const recoveryAction = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="choose-resource-again"]',
+    );
+    const resourcePicker = document.querySelector<HTMLInputElement>(
+      '[data-pt-agent-resource-picker]',
+    );
+    if (!errorSurface || !errorText || !recoveryAction || !resourcePicker) {
+      throw new Error('agent.acceptance.invalidResourceRecoverySurfaceMissing');
+    }
+
+    const afterCapability = await capabilitySessionEvidence();
+    const afterLocal =
+      afterCapability.selectedLocalSession?.capability_session_id_hash
+        === targetSessionHash
+        ? afterCapability.selectedLocalSession
+        : null;
+    if (!afterLocal && !input.externalExecutorEvidence) {
+      throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
+    }
+    const sourceReplayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const diagnosticReplayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const sourceFact = source.facts[0];
+    const terminalEvent = [...turn.observed.events].reverse().find((event) => {
+      const nested = event.data.outcome_error;
+      const outcome = (
+        nested && typeof nested === 'object' && !Array.isArray(nested)
+          ? nested
+          : event.data
+      ) as Record<string, unknown>;
+      return (
+        event.event === 'error'
+        && outcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      );
+    });
+    const sourceDelivery = terminalEvent?.sourceDelivery;
+    const streamId = turn.streamId;
+    const terminalOutcome = terminalEvent
+      ? evidenceRecord(
+          terminalEvent.data.outcome_error ?? terminalEvent.data,
+          'invalidResourceRuntimeOutcome',
+        )
+      : null;
+    if (
+      !terminalEvent
+      || !sourceDelivery
+      || !streamId
+      || !terminalOutcome
+      || stableJson(terminalOutcome) !== stableJson(persistedOutcome)
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(terminalEvent.data),
+      )
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+      || sourceDelivery.conversationId !== turn.conversationId
+      || sourceDelivery.turnId !== turn.turnId
+      || sourceDelivery.sequence <= 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+    ) {
+      throw new Error(
+        'agent.acceptance.invalidResourceRuntimeIdentityMismatch',
+      );
+    }
+    const payloadHash = await sha256Hex(
+      stableJson(sourceDelivery.rawPayload),
+    );
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId,
+        streamGeneration: turn.observed.controller.streamGeneration,
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        sequence: sourceDelivery.sequence,
+        payloadHash,
+      })),
+      eventType: terminalEvent.event,
+      sequence: sourceDelivery.sequence,
+      observedAt: terminalEvent.observedAt,
+      streamGeneration: turn.observed.controller.streamGeneration,
+      streamIdHash: await sha256Hex(streamId),
+      conversationIdHash: await sha256Hex(turn.conversationId),
+      payloadHash,
+      errorType: String(persistedOutcome.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+    const resourceRefHash = String(
+      persistedDetails.resource_ref_hash ?? '',
+    );
+    const beforeRecovery = await foundationExecutionSnapshot(
+      agentId,
+      turn.conversationId,
+    );
+    const beforeRecoveryMessageCount = readback.messages.length;
+    let pickerActivationCount = 0;
+    const observePickerActivation = (event: Event) => {
+      pickerActivationCount += 1;
+      event.preventDefault();
+    };
+    resourcePicker.addEventListener(
+      'click',
+      observePickerActivation,
+      { once: true },
+    );
+    try {
+      recoveryAction.click();
+      await waitFor(
+        () => (
+          pickerActivationCount === 1
+          && useChatStore.getState().composerResourceSelection === null
+        ),
+        'invalid-resource composer picker activation',
+        10_000,
+      );
+    } finally {
+      resourcePicker.removeEventListener('click', observePickerActivation);
+    }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    const afterRecovery = await foundationExecutionSnapshot(
+      agentId,
+      turn.conversationId,
+    );
+    const afterRecoveryReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+
+    const assertions = {
+      approvedThroughReceiver: approve.disabled,
+      typedInvalidResourceReference:
+        persistedOutcome.error === 'agent.errors.invalidResourceReference'
+        && persistedOutcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+        && persistedOutcome.locale_key
+          === 'agent.errors.invalidResourceReference'
+        && persistedOutcome.retryable === false
+        && persistedOutcome.terminal === true,
+      boundedDetails:
+        Object.keys(persistedDetails).sort().join(',')
+          === 'resource_kind,resource_ref_hash'
+        && persistedDetails.resource_kind === 'file'
+        && /^[0-9a-f]{64}$/.test(resourceRefHash),
+      localizedRecoveryVisible:
+        errorText.getClientRects().length > 0
+        && errorText.textContent?.trim() === i18n.t(
+          'agent.errors.invalidResourceReference',
+          { ns: 'agent' },
+        )
+        && recoveryAction.getClientRects().length > 0
+        && recoveryAction.textContent?.trim() === i18n.t(
+          'agent.recovery.chooseResourceAgain',
+          { ns: 'agent' },
+        ),
+      pickerActivated: pickerActivationCount === 1,
+      zeroResourceRead: beforeLocal && afterLocal
+        ? afterLocal.local_execution_attempt_count === beforeExecutionCount
+        : null,
+      zeroLocalSideEffect: beforeLocal && afterLocal
+        ? afterLocal.local_side_effect_count === beforeSideEffectCount
+        : null,
+      zeroProviderContinuation:
+        !String(
+          evidenceField(sourceFact, 'continuationId', 'continuation_id') ?? '',
+        )
+        && afterRecovery.providerCallCount === beforeRecovery.providerCallCount,
+      oneTerminalResult:
+        source.facts.length === 1
+        && Boolean(
+          evidenceField(sourceFact, 'resultId', 'result_id'),
+        ),
+      replayEqual: sourceReplayHash === diagnosticReplayHash,
+      noAutomaticResend:
+        afterRecovery.turnCount === beforeRecovery.turnCount
+        && afterRecoveryReadback.messages.length === beforeRecoveryMessageCount,
+    };
+    const failedAssertions = Object.entries(assertions)
+      .filter(([, passed]) => passed === false)
+      .map(([name]) => name);
+    if (failedAssertions.length > 0) {
+      throw new Error(
+        'agent.acceptance.invalidResourceAssertionsFailed: '
+        + failedAssertions.join(','),
+      );
+    }
+    result = {
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      assertions,
+      receiver: {
+        errorText: errorText.textContent?.trim() ?? '',
+        recoveryText: recoveryAction.textContent?.trim() ?? '',
+        resourceKind: errorSurface.dataset.ptAgentErrorResourceKind ?? '',
+        resourceRefHash:
+          errorSurface.dataset.ptAgentErrorResourceRefHash ?? '',
+      },
+      station: {
+        persistedOutcome,
+        sourceFact,
+        replayEqual: sourceReplayHash === diagnosticReplayHash,
+      },
+      local: {
+        executionAttemptCountBefore: beforeExecutionCount,
+        executionAttemptCountAfter:
+          afterLocal?.local_execution_attempt_count ?? null,
+        sideEffectCountBefore: beforeSideEffectCount,
+        sideEffectCountAfter: afterLocal?.local_side_effect_count ?? null,
+      },
+      recovery: {
+        pickerActivationCount,
+        explicitResendRequired: true,
+        turnCountBefore: beforeRecovery.turnCount,
+        turnCountAfter: afterRecovery.turnCount,
+        messageCountBefore: beforeRecoveryMessageCount,
+        messageCountAfter: afterRecoveryReadback.messages.length,
+        providerCallCountBefore: beforeRecovery.providerCallCount,
+        providerCallCountAfter: afterRecovery.providerCallCount,
+      },
+      facts: {
+        outcome: persistedOutcome,
+        runtimeEvent,
+        receiver: {
+          approvedThroughReceiver: approve.disabled,
+          errorVisible: errorText.getClientRects().length > 0,
+          errorText: errorText.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.invalidResourceReference',
+            { ns: 'agent' },
+          ),
+          recoveryVisible: recoveryAction.getClientRects().length > 0,
+          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          expectedRecoveryText: i18n.t(
+            'agent.recovery.chooseResourceAgain',
+            { ns: 'agent' },
+          ),
+          resourceKind: errorSurface.dataset.ptAgentErrorResourceKind ?? '',
+          resourceRefHash:
+            errorSurface.dataset.ptAgentErrorResourceRefHash ?? '',
+          pickerActivationCount,
+        },
+        station: {
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+          toolCallId,
+          factCount: source.facts.length,
+          status: toolStatusName(sourceFact.status),
+          errorCode: String(
+            evidenceField(sourceFact, 'errorCode', 'error_code') ?? '',
+          ),
+          resultId: String(
+            evidenceField(sourceFact, 'resultId', 'result_id') ?? '',
+          ),
+          continuationId: String(
+            evidenceField(
+              sourceFact,
+              'continuationId',
+              'continuation_id',
+            ) ?? '',
+          ),
+          resourceKind: String(persistedDetails.resource_kind ?? ''),
+          resourceRefHash,
+          streamId,
+          streamGeneration: turn.observed.controller.streamGeneration,
+          payloadHash,
+          sourceSequence: sourceDelivery.sequence,
+          runtimePayload: evidenceValue(sourceDelivery.rawPayload),
+        },
+        executor: {
+          evidenceSource: beforeLocal && afterLocal
+            ? 'receiver-local-session'
+            : 'external-coordinator',
+          executionAttemptCountBefore: beforeExecutionCount,
+          executionAttemptCountAfter:
+            afterLocal?.local_execution_attempt_count ?? null,
+          sideEffectCountBefore: beforeSideEffectCount,
+          sideEffectCountAfter: afterLocal?.local_side_effect_count ?? null,
+        },
+        recovery: {
+          pickerActivationCount,
+          explicitResendRequired: true,
+          turnCountBefore: beforeRecovery.turnCount,
+          turnCountAfter: afterRecovery.turnCount,
+          messageCountBefore: beforeRecoveryMessageCount,
+          messageCountAfter: afterRecoveryReadback.messages.length,
+          providerCallCountBefore: beforeRecovery.providerCallCount,
+          providerCallCountAfter: afterRecovery.providerCallCount,
+        },
+        replay: {
+          sourceHash: sourceReplayHash,
+          replayHash: diagnosticReplayHash,
+          equal: sourceReplayHash === diagnosticReplayHash,
+        },
+        cleanup: {
+          bindingRestored: false,
+          localProjectionCleared: false,
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    if (currentBinding) {
+      try {
+        if (originalBinding) {
+          await updateFoundationToolPolicy(
+            agent,
+            fixture,
+            currentBinding,
+            originalBinding.approvalPolicy,
+            originalBinding.enabled,
+          );
+        } else {
+          await api.deleteAgentCapabilityBinding(
+            currentBinding.bindingId,
+            currentBinding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (turn && (!input.deferConversationCleanup || primaryError)) {
+      try {
+        await cleanupFoundationToolConversation(
+          turn.conversationId,
+          turn.turnId,
+        );
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+      if (input.scenarioKey) {
+        foundationInvalidResourceReferenceScenarios.delete(input.scenarioKey);
+      }
+    }
+  }
+
+  if (cleanupFailures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.invalidResourceCleanupFailed'),
+      { primaryError, cleanupFailures },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!result) {
+    throw new Error('agent.acceptance.invalidResourceResultMissing');
+  }
+  return {
+    ...result,
+    cleanup: {
+      bindingRestored: true,
+      localProjectionCleared: !input.deferConversationCleanup,
+      conversationDeleted: !input.deferConversationCleanup,
+    },
+    facts: {
+      ...evidenceRecord(result.facts, 'invalidResourceFacts'),
+      cleanup: {
+        bindingRestored: true,
+        localProjectionCleared: !input.deferConversationCleanup,
+        conversationDeleted: !input.deferConversationCleanup,
+      },
+    },
   };
 }
 
@@ -2436,6 +3727,198 @@ function diagnosticReplayTerminal(replay: Record<string, unknown>): boolean {
     AgentTurnStatus.INTERRUPTED,
     AgentTurnStatus.REJECTED,
   ].includes(Number(replay.status) as AgentTurnStatus);
+}
+
+async function runFoundationToolLoopBudget(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+  sampleId: string;
+  selectConversation?: boolean;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  events: ObservedFoundationTurnResult['events'];
+  sourceReplay: Record<string, unknown>;
+  replay: Record<string, unknown>;
+  facts: Record<string, unknown>;
+}> {
+  const capabilitySession = await resolveFoundationToolTurnSession();
+  let conversationId = '';
+  let turnId = '';
+  let events: ObservedFoundationTurnResult['events'] = [];
+  let unsubscribe: (() => void) | null = null;
+  if (input.selectConversation) {
+    const agentId = input.agent.id || input.agent.name;
+    const conversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `Foundation loop-budget ${input.sampleId}`,
+      provider_id: input.agent.provider,
+      model_name: input.agent.model,
+    });
+    conversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(conversationId);
+    unsubscribe = eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => {
+      if (payload.conversationId !== conversationId) return;
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      events.push({
+        event: payload.event,
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        observedAt: new Date().toISOString(),
+        sourceDelivery,
+      });
+    });
+    const sent = useChatStore.getState().sendMessage(
+      foundationToolTurnContent(input.fixture, true),
+      [],
+      {
+        clientIdempotencyKey: crypto.randomUUID(),
+        requestedBudget: {
+          max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        },
+      },
+    );
+    if (!sent) {
+      unsubscribe();
+      throw new Error('agent.acceptance.loopBudgetSendRejected');
+    }
+    await waitFor(
+      () => {
+        turnId = useChatStore.getState().operations[conversationId]?.turnId
+          ?? observedTurnId(events);
+        return turnId.length > 0;
+      },
+      'loop-budget Turn identity',
+      30_000,
+    );
+  } else {
+    const turn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: input.fixture,
+      sampleId: input.sampleId,
+      label: 'loop-budget',
+      repeatUntilStopped: true,
+      requestedBudget: {
+        max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+      },
+    });
+    conversationId = turn.conversationId;
+    turnId = turn.turnId;
+    events = turn.observed.events;
+  }
+  try {
+    const source = await waitForFoundationToolFacts(
+      turnId,
+      (facts, replay) =>
+        facts.length > 0
+        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
+        && Number(replay.status) === AgentTurnStatus.FAILED
+        && String(
+          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+        ) === 'max_tool_calls_exhausted',
+      'Foundation ToolCall loop budget',
+      600_000,
+    );
+    const observedIterations = Number(
+      evidenceField(source.replay, 'toolIterations', 'tool_iterations') ?? 0,
+    );
+    const maximumIterations = Number(
+      evidenceField(
+        source.replay,
+        'toolIterationLimit',
+        'tool_iteration_limit',
+      ) ?? 0,
+    );
+    const attempts = evidenceArray(
+      evidenceField(source.replay, 'attempts', 'attempts'),
+      'foundationF04LoopAttempts',
+    );
+    const latestAttempt = evidenceRecord(
+      attempts[attempts.length - 1],
+      'foundationF04LoopAttempt',
+    );
+    const runtimeSnapshot = evidenceRecord(
+      evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
+      'foundationF04LoopRuntimeSnapshot',
+    );
+    const effectiveBudget = evidenceRecord(
+      evidenceField(runtimeSnapshot, 'budget', 'budget'),
+      'foundationF04LoopEffectiveBudget',
+    );
+    const effectiveLimit = Number(
+      evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
+    );
+    const terminalReason = String(
+      evidenceField(source.replay, 'terminalReason', 'terminal_reason') ?? '',
+    );
+    if (
+      observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || terminalReason !== 'max_tool_calls_exhausted'
+      || source.facts.length !== observedIterations
+    ) {
+      throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const replay = await foundationDiagnosticReplay(turnId);
+    const executionAfterLimit =
+      foundationDiagnosticToolFacts(replay)
+        .reduce(
+          (total, fact) =>
+            total
+            + Number(
+              evidenceField(
+                fact,
+                'executionAttemptCount',
+                'execution_attempt_count',
+              ) ?? 0,
+            ),
+          0,
+        )
+      - source.facts.reduce(
+        (total, fact) =>
+          total
+          + Number(
+            evidenceField(
+              fact,
+              'executionAttemptCount',
+              'execution_attempt_count',
+            ) ?? 0,
+          ),
+        0,
+      );
+    return {
+      conversationId,
+      turnId,
+      events,
+      sourceReplay: source.replay,
+      replay,
+      facts: {
+        stopped:
+          terminalReason === 'max_tool_calls_exhausted'
+          && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
+          && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
+          && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        terminalReason,
+        requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        effectiveLimit,
+        observedIterations,
+        maximumIterations,
+        capabilitySession: {
+          ...capabilitySession.facts,
+          turnId,
+        },
+        executionAfterLimit,
+      },
+    };
+  } finally {
+    unsubscribe?.();
+  }
 }
 
 async function runFoundationF04Scenario(input: {
@@ -2683,74 +4166,15 @@ async function runFoundationF04Scenario(input: {
     );
 
     await applyPolicy(CapabilityApprovalPolicy.AUTO);
-    const loopCapabilitySession = await resolveFoundationToolTurnSession();
-    const loopTurn = await startFoundationToolTurn({
+    const loop = await runFoundationToolLoopBudget({
       agent: input.agent,
-      capabilitySessionId: loopCapabilitySession.capabilitySessionId,
       fixture,
       sampleId: input.sampleId,
-      label: 'loop-budget',
-      repeatUntilStopped: true,
-      requestedBudget: {
-        max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-      },
     });
-    const loop = await waitForFoundationToolFacts(
-      loopTurn.turnId,
-      (facts, replay) =>
-        facts.length > 0
-        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
-        && Number(replay.status) === AgentTurnStatus.FAILED
-        && String(
-          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
-        ) === 'max_tool_calls_exhausted',
-      'Foundation ToolCall loop budget',
-      600_000,
-    );
-    const observedIterations = Number(
-      evidenceField(loop.replay, 'toolIterations', 'tool_iterations') ?? 0,
-    );
-    const maximumIterations = Number(
-      evidenceField(
-        loop.replay,
-        'toolIterationLimit',
-        'tool_iteration_limit',
-      ) ?? 0,
-    );
-    const attempts = evidenceArray(
-      evidenceField(loop.replay, 'attempts', 'attempts'),
-      'foundationF04LoopAttempts',
-    );
-    const latestAttempt = evidenceRecord(
-      attempts[attempts.length - 1],
-      'foundationF04LoopAttempt',
-    );
-    const runtimeSnapshot = evidenceRecord(
-      evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
-      'foundationF04LoopRuntimeSnapshot',
-    );
-    const effectiveBudget = evidenceRecord(
-      evidenceField(runtimeSnapshot, 'budget', 'budget'),
-      'foundationF04LoopEffectiveBudget',
-    );
-    const effectiveLimit = Number(
-      evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
-    );
-    const terminalReason = String(
-      evidenceField(loop.replay, 'terminalReason', 'terminal_reason') ?? '',
-    );
-    if (
-      observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || terminalReason !== 'max_tool_calls_exhausted'
-      || loop.facts.length !== observedIterations
-    ) {
-      throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const loopReplay = await foundationDiagnosticReplay(loopTurn.turnId);
-    diagnosticPairs.push({ source: loop.replay, replay: loopReplay });
+    diagnosticPairs.push({
+      source: loop.sourceReplay,
+      replay: loop.replay,
+    });
 
     primaryConversationId = manual.turn.conversationId;
     primaryTurnId = manual.turn.turnId;
@@ -2814,48 +4238,7 @@ async function runFoundationF04Scenario(input: {
           originalContinuationId,
           replayedContinuationId,
         },
-        loopBudget: {
-          stopped:
-            terminalReason === 'max_tool_calls_exhausted'
-            && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
-            && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
-            && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
-          terminalReason,
-          requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-          effectiveLimit,
-          observedIterations,
-          maximumIterations,
-          capabilitySession: {
-            ...loopCapabilitySession.facts,
-            turnId: loopTurn.turnId,
-          },
-          executionAfterLimit:
-            foundationDiagnosticToolFacts(loopReplay)
-              .reduce(
-                (total, fact) =>
-                  total
-                  + Number(
-                    evidenceField(
-                      fact,
-                      'executionAttemptCount',
-                      'execution_attempt_count',
-                    ) ?? 0,
-                  ),
-                0,
-              )
-            - loop.facts.reduce(
-              (total, fact) =>
-                total
-                + Number(
-                  evidenceField(
-                    fact,
-                    'executionAttemptCount',
-                    'execution_attempt_count',
-                  ) ?? 0,
-                ),
-              0,
-            ),
-        },
+        loopBudget: loop.facts,
         replay: {
           sourceHash,
           replayHash,
@@ -2881,6 +4264,1354 @@ async function runFoundationF04Scenario(input: {
       );
     }
   }
+}
+
+async function restoreFoundationExecutorUnavailableBinding(
+  scenario: FoundationExecutorUnavailableScenario,
+): Promise<boolean> {
+  if (scenario.originalBinding) {
+    await updateFoundationToolPolicy(
+      scenario.agent,
+      scenario.fixture,
+      scenario.currentBinding,
+      scenario.originalBinding.approvalPolicy,
+      scenario.originalBinding.enabled,
+    );
+  } else {
+    await api.deleteAgentCapabilityBinding(
+      scenario.currentBinding.bindingId,
+      scenario.currentBinding.revision,
+      crypto.randomUUID(),
+      'acceptance_fixture_cleanup',
+    );
+  }
+  const bindings = await api.listAgentCapabilityBindings(
+    scenario.agent.id || scenario.agent.name,
+  );
+  const restored = bindings.find((candidate) =>
+    candidate.capabilityId === scenario.fixture.manifest.capabilityId
+    && candidate.capabilityVersion === scenario.fixture.manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return scenario.originalBinding
+    ? (
+        restored?.approvalPolicy === scenario.originalBinding.approvalPolicy
+        && restored.enabled === scenario.originalBinding.enabled
+      )
+    : restored === null;
+}
+
+async function cleanupFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+): Promise<void> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) return;
+  foundationExecutorUnavailableScenarios.delete(scenarioKey);
+  const failures: unknown[] = [];
+  if (!scenario.bindingRestored) {
+    try {
+      await restoreFoundationExecutorUnavailableBinding(scenario);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await cleanupFoundationToolConversation(
+      scenario.turn.conversationId,
+      scenario.turn.turnId,
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationExecutorUnavailableCleanupFailed'),
+      { failures },
+    );
+  }
+}
+
+async function prepareFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationExecutorUnavailableScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioConflict');
+  }
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const targetSession = (
+    await api.listAgentCapabilitySessions()
+  ).sessions.find((session) =>
+    session.session_id === input.targetCapabilitySessionId
+    && session.device_id === input.targetDeviceId
+    && session.typed_capabilities.some(
+      (capability) => capability.capability_id === input.targetCapabilityId,
+    ));
+  if (!targetSession) {
+    throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+  }
+
+  const fixture = await foundationToolFixture(agentId, 'desktop_app');
+  if (fixture.manifest.capabilityId !== input.targetCapabilityId) {
+    throw new Error('agent.acceptance.foundationExecutorCapabilityMismatch');
+  }
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: input.targetCapabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'executor-unavailable',
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+    );
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    const expectedRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-pt-agent-tool-call="${toolCallId}"]`,
+      )),
+      'executor-unavailable ToolCall receiver',
+      30_000,
+    );
+    foundationExecutorUnavailableScenarios.set(input.scenarioKey, {
+      scenarioKey: input.scenarioKey,
+      platform: input.platform,
+      sampleId: input.sampleId,
+      agent,
+      fixture,
+      originalBinding: fixture.binding,
+      currentBinding,
+      turn,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+      startedAt: performance.now(),
+      bindingRestored: false,
+    });
+    return {
+      scenarioKey: input.scenarioKey,
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+    };
+  } catch (error) {
+    if (turn) {
+      await cleanupFoundationToolConversation(
+        turn.conversationId,
+        turn.turnId,
+      ).catch(() => undefined);
+    }
+    if (currentBinding) {
+      if (fixture.binding) {
+        await updateFoundationToolPolicy(
+          agent,
+          fixture,
+          currentBinding,
+          fixture.binding.approvalPolicy,
+          fixture.binding.enabled,
+        ).catch(() => undefined);
+      } else {
+        await api.deleteAgentCapabilityBinding(
+          currentBinding.bindingId,
+          currentBinding.revision,
+          crypto.randomUUID(),
+          'acceptance_fixture_cleanup',
+        ).catch(() => undefined);
+      }
+    }
+    throw error;
+  }
+}
+
+function executorUnavailableStationFact(
+  fact: Record<string, unknown>,
+): Record<string, unknown> {
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+  return {
+    policy: String(
+      evidenceField(fact, 'approvalPolicy', 'approval_policy') ?? '',
+    ),
+    states: ['policy_check', 'awaiting_user'],
+    errorCode: stringField('errorCode', 'error_code'),
+    executionOwner: toolExecutionOwnerName(
+      evidenceField(fact, 'executionOwner', 'execution_owner'),
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    sideEffectCount: stringField(
+      'sideEffectReceiptId',
+      'side_effect_receipt_id',
+    ) ? 1 : 0,
+    resultCount: stringField('resultId', 'result_id') ? 1 : 0,
+    continuationCount: stringField('continuationId', 'continuation_id') ? 1 : 0,
+    lineage: {
+      toolCallId: stringField('toolCallId', 'tool_call_id'),
+      approvalId: stringField('approvalId', 'approval_id'),
+      decisionId: stringField('decisionId', 'decision_id'),
+      decisionRevision: numberField(
+        'decisionRevision',
+        'decision_revision',
+      ),
+      executionClaimId: stringField(
+        'executionClaimId',
+        'execution_claim_id',
+      ),
+      fencingToken: numberField('fencingToken', 'fencing_token'),
+      sideEffectReceiptId: stringField(
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ),
+      resultId: stringField('resultId', 'result_id'),
+      continuationId: stringField('continuationId', 'continuation_id'),
+      dispatchCommittedAt: evidenceField(
+        fact,
+        'dispatchCommittedAt',
+        'dispatch_committed_at',
+      ) ?? null,
+    },
+  };
+}
+
+async function rejectFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+  executorStop: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  if (!toolCallElement) {
+    throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+  }
+  let approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  if (!approve) {
+    toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-call-toggle]',
+    )?.click();
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-decision="approve"]',
+      )),
+      'executor-unavailable approve action',
+      10_000,
+    );
+    approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+  }
+  if (!approve) {
+    throw new Error('agent.acceptance.foundationToolApproveMissing');
+  }
+  approve.click();
+  await waitFor(
+    () => (
+      toolRuntime.getProjection(scenario.toolCallId)
+        ?.decisionOutcome?.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+    ),
+    'executor-unavailable typed outcome',
+    30_000,
+  );
+  const projection = toolRuntime.getProjection(scenario.toolCallId);
+  const attempt = toolRuntime.getDecisionAttempt(scenario.toolCallId);
+  if (!projection?.decisionOutcome || !attempt) {
+    throw new Error('agent.acceptance.foundationExecutorOutcomeMissing');
+  }
+  const replayedAcknowledgement = await api.submitAgentToolDecision(
+    attempt.input,
+  );
+  let repeatedApprovalBlocked = false;
+  try {
+    await toolRuntime.submitDecision(scenario.toolCallId, true);
+  } catch (error) {
+    repeatedApprovalBlocked =
+      observedErrorCode(error).includes('agent.errors.executorUnavailable');
+  }
+  const source = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station source readback',
+  );
+  const replayed = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station replay readback',
+  );
+  const station = executorUnavailableStationFact(replayed.facts[0]);
+  const errorSelector =
+    '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+  const recoverySelector =
+    '[data-pt-agent-tool-recovery="reconnect-executor"]';
+  await waitFor(
+    () => Boolean(toolCallElement.querySelector(errorSelector))
+      && Boolean(toolCallElement.querySelector(recoverySelector)),
+    'executor-unavailable recovery surface',
+    10_000,
+  );
+  const errorElement = toolCallElement.querySelector<HTMLElement>(errorSelector);
+  const recovery = toolCallElement.querySelector<HTMLButtonElement>(
+    recoverySelector,
+  );
+  const firstAcknowledgementHash = await sha256Hex(
+    stableJson(attempt.response),
+  );
+  const replayedAcknowledgementHash = await sha256Hex(
+    stableJson(replayedAcknowledgement),
+  );
+  const sourceReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(source.replay),
+  ));
+  const diagnosticReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(replayed.replay),
+  ));
+  const runtimeEvent = [...scenario.turn.observed.events]
+    .reverse()
+    .map((event) => ({
+      eventType: event.event,
+      sequence: Number(event.data.seq ?? 0),
+      observedAt: event.observedAt,
+    }))
+    .find((event) => event.sequence > 0);
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+  }
+
+  return {
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    durationMs: performance.now() - scenario.startedAt,
+    runtimeEvent,
+    facts: {
+      outcome: projection.decisionOutcome,
+      receiver: {
+        errorVisible: Boolean(
+          errorElement && errorElement.getClientRects().length > 0,
+        ),
+        errorText: errorElement?.textContent?.trim() ?? '',
+        expectedErrorText: i18n.t(
+          'agent.errors.executorUnavailable',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: Boolean(
+          recovery && recovery.getClientRects().length > 0,
+        ),
+        recoveryText: recovery?.textContent?.trim() ?? '',
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.reconnectExecutor',
+          { ns: 'agent' },
+        ),
+        approveDisabled: approve.disabled,
+        repeatedApprovalBlocked,
+        recoveryExecuted: false,
+      },
+      decision: {
+        accepted: attempt.response.accepted,
+        approved: attempt.response.approved,
+        errorCode: attempt.response.error_code,
+        approvalId: attempt.response.approval_id,
+        toolCallId: attempt.response.tool_call_id,
+        decisionId: attempt.response.decision_id,
+        decisionRevision: attempt.response.decision_revision,
+      },
+      station,
+      executor: {
+        ...executorStop,
+        targetCapabilitySessionId: scenario.targetCapabilitySessionId,
+        targetDeviceId: scenario.targetDeviceId,
+        targetCapabilityId: scenario.targetCapabilityId,
+      },
+      replay: {
+        acknowledgementSourceHash: firstAcknowledgementHash,
+        acknowledgementReplayHash: replayedAcknowledgementHash,
+        diagnosticSourceHash: sourceReplayHash,
+        diagnosticReplayHash,
+        equal:
+          firstAcknowledgementHash === replayedAcknowledgementHash
+          && sourceReplayHash === diagnosticReplayHash,
+      },
+      cleanup: {
+        bindingRestored: false,
+        conversationDeleted: false,
+        executorRestored: false,
+      },
+    },
+  };
+}
+
+async function recoverFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  executorStart: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(input.scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  const recovery = toolCallElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-recovery="reconnect-executor"]',
+  );
+  if (!toolCallElement || !recovery) {
+    throw new Error('agent.acceptance.foundationToolRecoveryMissing');
+  }
+  recovery.click();
+  await waitFor(
+    () => {
+      const projection = toolRuntime.getProjection(scenario.toolCallId);
+      return projection?.status === 'approval_required'
+        && projection.error === undefined
+        && projection.decisionOutcome === undefined;
+    },
+    'executor-unavailable reconnect reconciliation',
+    30_000,
+  );
+  const approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  const postRecovery = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (toolFacts) => (
+      toolFacts.length === 1
+      && Number(toolFacts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable post-recovery readback',
+  );
+  const stationAfterRecovery = executorUnavailableStationFact(
+    postRecovery.facts[0],
+  );
+  const cancellation = await api.cancelAgentTurn(scenario.turn.turnId);
+  const turnCancelled =
+    String(cancellation.status ?? '').toLowerCase() === 'cancelled';
+  if (!turnCancelled) {
+    throw new Error('agent.acceptance.foundationExecutorTurnCleanupFailed');
+  }
+  const bindingRestored =
+    await restoreFoundationExecutorUnavailableBinding(scenario);
+  scenario.bindingRestored = bindingRestored;
+
+  return {
+    ...input.rejectedScenario,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: true,
+        approvalEnabledAfterRecovery: approve?.disabled === false,
+      },
+      stationAfterRecovery,
+      executor: {
+        ...evidenceRecord(
+          facts.executor,
+          'foundationExecutorUnavailableExecutor',
+        ),
+        ...input.executorStart,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationExecutorUnavailableCleanup',
+        ),
+        bindingRestored,
+        executorRestored: true,
+        turnCancelled,
+      },
+    },
+  };
+}
+
+async function prepareFoundationLeaseExpiredScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+}): Promise<Record<string, unknown>> {
+  const prepared = await prepareFoundationExecutorUnavailableScenario(input);
+  const scenario = foundationExecutorUnavailableScenarios.get(
+    input.scenarioKey,
+  );
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  foundationExecutorUnavailableScenarios.delete(input.scenarioKey);
+  foundationLeaseExpiredScenarios.set(input.scenarioKey, scenario);
+  return prepared;
+}
+
+// #region debug-point A-E:lease-approval-stall
+async function reportFoundationLeaseApprovalStallDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  const report = (
+    reportStage: string,
+    reportData: Record<string, unknown>,
+  ) => fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'lease-approval-stall',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:dispatchFoundationLeaseExpiredScenario',
+      msg: `[DEBUG] ${reportStage}`,
+      data: reportData,
+      ts: Date.now(),
+    }),
+  });
+  try {
+    const response = await report(stage, data);
+    if (!response.ok) {
+      await report('report-rejected', {
+        rejectedStage: stage,
+        status: response.status,
+      }).catch(() => undefined);
+    }
+  } catch (error) {
+    await report('report-failed', {
+      failedStage: stage,
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+  }
+}
+// #endregion
+
+function foundationLeaseObservedEventSummary(
+  scenario: FoundationExecutorUnavailableScenario,
+): Record<string, unknown>[] {
+  return scenario.turn.observed.events.slice(-8).map((event) => ({
+    eventType: event.event,
+    sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+    stage: String(event.data.stage ?? ''),
+    errorType: String(
+      event.data.error_type ?? event.data.errorType ?? '',
+    ),
+    hasSourceDelivery: Boolean(event.sourceDelivery),
+  }));
+}
+
+function foundationLeaseDiagnosticReplaySummary(
+  replay: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!replay) return null;
+  const events = optionalEvidenceArray(
+    replay.events,
+    'foundationLeaseDebugReplayEvents',
+  ).map((value) => {
+    const event = evidenceRecord(value, 'foundationLeaseDebugReplayEvent');
+    const data = event.data && typeof event.data === 'object'
+      && !Array.isArray(event.data)
+      ? event.data as Record<string, unknown>
+      : {};
+    return {
+      eventType: String(
+        evidenceField(event, 'eventType', 'event_type')
+        ?? event.event
+        ?? event.type
+        ?? '',
+      ),
+      sequence: Number(event.sequence ?? event.seq ?? data.seq ?? 0),
+      stage: String(data.stage ?? event.stage ?? ''),
+      errorType: String(
+        data.error_type
+        ?? data.errorType
+        ?? event.error_type
+        ?? event.errorType
+        ?? '',
+      ),
+    };
+  });
+  return {
+    status: replay.status ?? null,
+    eventCount: events.length,
+    events: events.slice(-8),
+    toolCallCount: optionalEvidenceArray(
+      evidenceField(replay, 'toolCalls', 'tool_calls'),
+      'foundationLeaseDebugToolCalls',
+    ).length,
+  };
+}
+
+function foundationLeaseMessageDebugSummary(
+  turnId: string,
+): Record<string, unknown>[] {
+  return useChatStore.getState().messages
+    .filter((message) => message.turnId === turnId)
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      loading: message.loading === true,
+      terminalStatus: message.terminalStatus ?? null,
+      errorType: message.typedError?.error_type ?? null,
+      resolution: message.resolution?.type ?? null,
+      toolCallPending: message.toolCalls?.some(
+        (toolCall) => toolCall.pending,
+      ) === true,
+    }));
+}
+
+function foundationLeaseDispatchSnapshot(
+  fact: Record<string, unknown>,
+): Record<string, unknown> {
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+
+  return {
+    toolCallId: stringField('toolCallId', 'tool_call_id'),
+    status: diagnosticToolPersistenceStatus(fact),
+    executionClaimId: stringField(
+      'executionClaimId',
+      'execution_claim_id',
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    dispatchSequence: numberField(
+      'dispatchSequence',
+      'dispatch_sequence',
+    ),
+    sideEffectReceiptId: stringField(
+      'sideEffectReceiptId',
+      'side_effect_receipt_id',
+    ),
+    resultId: stringField('resultId', 'result_id'),
+    continuationId: stringField('continuationId', 'continuation_id'),
+  };
+}
+
+async function dispatchFoundationLeaseExpiredScenario(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationLeaseExpiredScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  if (!toolCallElement) {
+    throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+  }
+  let approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  if (!approve) {
+    toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-call-toggle]',
+    )?.click();
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-decision="approve"]',
+      )),
+      'lease-expired approve action',
+      10_000,
+    );
+    approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+  }
+  if (!approve || approve.disabled) {
+    throw new Error('agent.acceptance.foundationToolApproveMissing');
+  }
+  // #region debug-point A-C-E:lease-approval-before-click
+  await reportFoundationLeaseApprovalStallDebug('A-C-E', 'before-click', {
+    scenarioKey,
+    turnId: scenario.turn.turnId,
+    toolCallId: scenario.toolCallId,
+    approvalId: scenario.approvalId,
+    expectedRevision: scenario.expectedRevision,
+    targetCapabilitySessionId: scenario.targetCapabilitySessionId,
+    buttonDisabled: approve.disabled,
+    projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
+  });
+  // #endregion
+  approve.click();
+  // #region debug-point A-B:lease-approval-after-click
+  void reportFoundationLeaseApprovalStallDebug('A-B', 'after-click', {
+    buttonDisabled: approve.disabled,
+    projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
+  });
+  // #endregion
+  let previousFactSnapshot = '';
+  try {
+    const dispatched = await waitForFoundationToolFacts(
+      scenario.turn.turnId,
+      (facts) => {
+        const fact = facts[0];
+        const snapshot = {
+          factCount: facts.length,
+          status: fact
+            ? Number(evidenceField(fact, 'status', 'status'))
+            : null,
+          statusName: fact
+            ? toolStatusName(evidenceField(fact, 'status', 'status'))
+            : null,
+          dispatchCommittedAt: fact
+            ? evidenceField(
+              fact,
+              'dispatchCommittedAt',
+              'dispatch_committed_at',
+            ) ?? null
+            : null,
+          approvalId: fact
+            ? evidenceField(fact, 'approvalId', 'approval_id') ?? null
+            : null,
+          decisionId: fact
+            ? evidenceField(fact, 'decisionId', 'decision_id') ?? null
+            : null,
+          decisionRevision: fact
+            ? evidenceField(
+              fact,
+              'decisionRevision',
+              'decision_revision',
+            ) ?? null
+            : null,
+          capabilitySessionId: fact
+            ? evidenceField(
+              fact,
+              'capabilitySessionId',
+              'capability_session_id',
+            ) ?? null
+            : null,
+        };
+        const serialized = stableJson(snapshot);
+        if (serialized !== previousFactSnapshot) {
+          previousFactSnapshot = serialized;
+          // #region debug-point B-D-E:lease-approval-fact-change
+          void reportFoundationLeaseApprovalStallDebug(
+            'B-D-E',
+            'fact-change',
+            snapshot,
+          );
+          // #endregion
+        }
+        return (
+          facts.length === 1
+          && diagnosticToolPersistenceStatus(facts[0])
+          === 'dispatch_committed'
+        );
+      },
+      'lease-expired Station dispatch',
+    );
+    // #region debug-point D:lease-approval-dispatch-observed
+    await reportFoundationLeaseApprovalStallDebug(
+      'D',
+      'dispatch-observed',
+      { facts: dispatched.facts },
+    );
+    // #endregion
+    return {
+      scenarioKey,
+      conversationId: scenario.turn.conversationId,
+      turnId: scenario.turn.turnId,
+      toolCallId: scenario.toolCallId,
+      source: dispatched,
+      dispatchBaseline: foundationLeaseDispatchSnapshot(dispatched.facts[0]),
+    };
+  } catch (error) {
+    const projection = toolRuntime.getProjection(scenario.toolCallId);
+    const attempt = toolRuntime.getDecisionAttempt(scenario.toolCallId);
+    let replay: Record<string, unknown> | null = null;
+    let facts: Record<string, unknown>[] = [];
+    try {
+      replay = await foundationDiagnosticReplay(scenario.turn.turnId);
+      facts = foundationDiagnosticToolFacts(replay);
+    } catch {
+      // Preserve the primary timeout; the missing final readback is diagnostic.
+    }
+    // #region debug-point A-E:lease-approval-timeout
+    await reportFoundationLeaseApprovalStallDebug('A-B-C-D-E', 'timeout', {
+      error: error instanceof Error ? error.message : String(error),
+      projection: projection ?? null,
+      decisionAttempt: attempt ?? null,
+      replay,
+      facts,
+    });
+    // #endregion
+    throw error;
+  }
+}
+
+async function foundationSessionByHash(
+  sessionHash: string,
+): Promise<Awaited<
+  ReturnType<typeof api.listAgentCapabilitySessions>
+>['sessions'][number] | null> {
+  const sessions = (await api.listAgentCapabilitySessions()).sessions;
+  const matches = (
+    await Promise.all(sessions.map(async (session) => ({
+      session,
+      hash: await sha256Hex(session.session_id),
+    })))
+  ).filter(({ hash }) => hash === sessionHash);
+  if (matches.length > 1) {
+    throw new Error('agent.acceptance.capabilitySessionAmbiguous');
+  }
+  return matches[0]?.session ?? null;
+}
+
+async function completeFoundationLeaseExpiredScenario(input: {
+  scenarioKey: string;
+  leaseControl: Record<string, unknown>;
+  dispatchBaseline: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const scenario = foundationLeaseExpiredScenarios.get(input.scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  const sourceStation = evidenceRecord(
+    evidenceField(input.leaseControl, 'sourceStation', 'source_station'),
+    'foundationLeaseExpiredSourceStation',
+  );
+  const replayStation = evidenceRecord(
+    evidenceField(input.leaseControl, 'replayStation', 'replay_station'),
+    'foundationLeaseExpiredReplayStation',
+  );
+  const leaseTransition = evidenceRecord(
+    evidenceField(input.leaseControl, 'leaseTransition', 'lease_transition'),
+    'foundationLeaseExpiredTransition',
+  );
+  const stationError = evidenceRecord(
+    evidenceField(
+      sourceStation,
+      'stationErrorDetails',
+      'station_error_details',
+    ),
+    'foundationLeaseExpiredStationError',
+  );
+  const dispatchBaseline = evidenceRecord(
+    input.dispatchBaseline,
+    'foundationLeaseExpiredDispatchBaseline',
+  );
+  const outcome = projectAgentTypedErrorPayload({
+    error: stationError.locale_key,
+    error_type: stationError.error_code,
+    locale_key: stationError.locale_key,
+    retryable: stationError.retryable,
+    terminal: stationError.terminal,
+    session_id: stationError.session_id,
+    lease_id: stationError.lease_id,
+    expired_at: stationError.expired_at,
+  });
+  if (!outcome) {
+    throw new Error('agent.acceptance.foundationLeaseOutcomeMissing');
+  }
+
+  // #region debug-point F-I:lease-expired-complete-entry
+  await reportFoundationLeaseApprovalStallDebug('F-G-H-I', 'complete-entry', {
+    sourceHttpStatus:
+      evidenceField(sourceStation, 'httpStatus', 'http_status') ?? null,
+    replayHttpStatus:
+      evidenceField(replayStation, 'httpStatus', 'http_status') ?? null,
+    sourceErrorCode:
+      evidenceField(stationError, 'errorCode', 'error_code') ?? null,
+    observedEventCount: scenario.turn.observed.events.length,
+    observedEvents: foundationLeaseObservedEventSummary(scenario),
+    messages: foundationLeaseMessageDebugSummary(scenario.turn.turnId),
+  });
+  // #endregion
+  try {
+    await waitFor(
+      () => useChatStore.getState().messages.some((message) => (
+        message.turnId === scenario.turn.turnId
+        && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+        && message.resolution?.type === 'reconcile'
+        && message.loading === true
+        && message.terminalStatus === undefined
+      )),
+      'lease-expired non-terminal receiver projection',
+      30_000,
+    );
+  } catch (error) {
+    let replay: Record<string, unknown> | null = null;
+    let facts: Record<string, unknown>[] = [];
+    try {
+      replay = await foundationDiagnosticReplay(scenario.turn.turnId);
+      facts = foundationDiagnosticToolFacts(replay);
+    } catch {
+      // Preserve the projection timeout as the primary failure.
+    }
+    // #region debug-point F-I:lease-expired-receiver-timeout
+    await reportFoundationLeaseApprovalStallDebug(
+      'F-G-H-I',
+      'receiver-timeout',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        observedEventCount: scenario.turn.observed.events.length,
+        observedEvents: foundationLeaseObservedEventSummary(scenario),
+        messages: foundationLeaseMessageDebugSummary(scenario.turn.turnId),
+        replay: foundationLeaseDiagnosticReplaySummary(replay),
+        factCount: facts.length,
+        factStatuses: facts.map(diagnosticToolPersistenceStatus),
+      },
+    );
+    // #endregion
+    throw error;
+  }
+  const receiverMessage = useChatStore.getState().messages.find(
+    (message) => (
+      message.turnId === scenario.turn.turnId
+      && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+    ),
+  );
+  if (!receiverMessage) {
+    throw new Error('agent.acceptance.foundationLeaseReceiverMissing');
+  }
+  const messageSelector =
+    `[data-pt-agent-message-id="${receiverMessage.id}"]`;
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.clientLeaseExpired"]';
+  const recoverySelector =
+    '[data-pt-agent-message-error-recovery="reconcile"]';
+  const readRecoverySurface = () => {
+    const messageElement = document.querySelector<HTMLElement>(messageSelector);
+    return {
+      messageElement,
+      errorElement: messageElement?.querySelector<HTMLElement>(errorSelector)
+        ?? null,
+      recovery: messageElement?.querySelector<HTMLButtonElement>(
+        recoverySelector,
+      ) ?? null,
+    };
+  };
+  let surface = readRecoverySurface();
+  // #region debug-point N-Q:lease-expired-recovery-surface
+  await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-probe', {
+    currentSessionMatches:
+      useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
+    messageId: receiverMessage.id,
+    messageElementPresent: Boolean(surface.messageElement),
+    errorElementPresent: Boolean(surface.errorElement),
+    recoveryPresent: Boolean(surface.recovery),
+    errorTogglePresent: Boolean(surface.messageElement?.querySelector(
+      '[data-pt-agent-message-error-toggle]',
+    )),
+    renderedAssistantMessageCount: document.querySelectorAll(
+      '[data-pt-agent-message="assistant"]',
+    ).length,
+    renderedLeaseErrorCount: document.querySelectorAll(
+      '[data-pt-agent-error-type="CLIENT_LEASE_EXPIRED"]',
+    ).length,
+    renderedReconcileCount: document.querySelectorAll(
+      '[data-pt-agent-message-error-recovery="reconcile"]',
+    ).length,
+  });
+  // #endregion
+  try {
+    await waitFor(
+      () => {
+        surface = readRecoverySurface();
+        return Boolean(
+          surface.messageElement
+          && surface.errorElement
+          && surface.recovery,
+        );
+      },
+      'lease-expired recovery surface',
+      10_000,
+    );
+  } catch (error) {
+    const currentState = useChatStore.getState();
+    const currentMessage = currentState.messages.find(
+      (message) => message.id === receiverMessage.id,
+    );
+    const bufferedMessage = (
+      currentState.sessionBuffers[scenario.turn.conversationId] ?? []
+    ).find((message) => message.id === receiverMessage.id);
+    const rendered = Array.from(
+      document.querySelectorAll<HTMLElement>(messageSelector),
+    );
+    // #region debug-point R-U:lease-expired-recovery-surface-timeout
+    await reportFoundationLeaseApprovalStallDebug(
+      'R-S-T-U',
+      'surface-timeout',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        currentSessionMatches:
+          currentState.currentSessionKey === scenario.turn.conversationId,
+        currentMessage: currentMessage
+          ? {
+              id: currentMessage.id,
+              role: currentMessage.role,
+              turnId: currentMessage.turnId ?? null,
+              error: currentMessage.error ?? null,
+              errorType: currentMessage.typedError?.error_type ?? null,
+              resolution: currentMessage.resolution?.type ?? null,
+              loading: currentMessage.loading === true,
+              terminalStatus: currentMessage.terminalStatus ?? null,
+            }
+          : null,
+        bufferedMessage: bufferedMessage
+          ? {
+              id: bufferedMessage.id,
+              role: bufferedMessage.role,
+              turnId: bufferedMessage.turnId ?? null,
+              error: bufferedMessage.error ?? null,
+              errorType: bufferedMessage.typedError?.error_type ?? null,
+              resolution: bufferedMessage.resolution?.type ?? null,
+              loading: bufferedMessage.loading === true,
+              terminalStatus: bufferedMessage.terminalStatus ?? null,
+            }
+          : null,
+        renderedCount: rendered.length,
+        rendered: rendered.map((element) => ({
+          role: element.getAttribute('data-pt-agent-message'),
+          errorType: element.getAttribute('data-pt-agent-error-type'),
+          terminalStatus: element.getAttribute('data-pt-agent-terminal-status'),
+          text: element.textContent?.trim() ?? '',
+          visible: element.getClientRects().length > 0,
+        })),
+      },
+    );
+    // #endregion
+    throw error;
+  }
+  const { messageElement, errorElement, recovery } = surface;
+  if (!messageElement || !errorElement || !recovery) {
+    throw new Error('agent.acceptance.foundationLeaseRecoverySurfaceMissing');
+  }
+  // #region debug-point N-Q:lease-expired-recovery-surface-ready
+  await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-ready', {
+    currentSessionMatches:
+      useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
+    messageElementPresent: true,
+    errorElementPresent: true,
+    recoveryPresent: true,
+  });
+  // #endregion
+
+  const currentSessionHash = String(
+    evidenceField(
+      leaseTransition,
+      'currentCapabilitySessionIdHash',
+      'current_capability_session_id_hash',
+    ) ?? '',
+  );
+  const currentBefore = await foundationSessionByHash(currentSessionHash);
+  if (!currentBefore) {
+    throw new Error('agent.acceptance.foundationLeaseReplacementMissing');
+  }
+  const receiverBeforeReconcile = {
+    errorVisible: errorElement.getClientRects().length > 0,
+    errorText: errorElement.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.clientLeaseExpired',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.reconcile',
+      { ns: 'agent' },
+    ),
+    messageLoading: receiverMessage.loading === true,
+    terminalStatus: receiverMessage.terminalStatus ?? '',
+    toolCallPending: receiverMessage.toolCalls?.some(
+      (toolCall) => toolCall.id === scenario.toolCallId && toolCall.pending,
+    ) === true,
+  };
+  recovery.click();
+  await waitFor(
+    () => {
+      const message = useChatStore.getState().messages.find(
+        (candidate) => candidate.id === receiverMessage.id,
+      );
+      return Boolean(
+        message
+        && message.typedError === undefined
+        && message.resolution === undefined
+        && message.loading === true
+        && message.terminalStatus === undefined,
+      );
+    },
+    'lease-expired reconciliation',
+    30_000,
+  );
+  const currentAfter = await foundationSessionByHash(currentSessionHash);
+  if (!currentAfter) {
+    throw new Error('agent.acceptance.foundationLeaseReplacementMissing');
+  }
+
+  const source = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && diagnosticToolPersistenceStatus(facts[0])
+      === 'dispatch_committed'
+    ),
+    'lease-expired Station source readback',
+  );
+  const replayed = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && diagnosticToolPersistenceStatus(facts[0])
+      === 'dispatch_committed'
+    ),
+    'lease-expired Station replay readback',
+  );
+  const sourceFact = source.facts[0];
+  const replayedFact = replayed.facts[0];
+  const dispatchAfter = foundationLeaseDispatchSnapshot(sourceFact);
+  const sourceErrorHash = await sha256Hex(stableJson(stationError));
+  const replayErrorHash = await sha256Hex(stableJson(
+    evidenceRecord(
+      evidenceField(
+        replayStation,
+        'stationErrorDetails',
+        'station_error_details',
+      ),
+      'foundationLeaseExpiredReplayError',
+    ),
+  ));
+  const sourceRequestHash = String(
+    evidenceField(sourceStation, 'requestHash', 'request_hash') ?? '',
+  );
+  const replayRequestHash = String(
+    evidenceField(replayStation, 'requestHash', 'request_hash') ?? '',
+  );
+  const runtimeEvent = [...scenario.turn.observed.events]
+    .reverse()
+    .find((event) => {
+      const projected = projectAgentTurnOutcomeErrorPayload(event.data);
+      return projected?.error_type === 'CLIENT_LEASE_EXPIRED';
+    });
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationLeaseRuntimeEventMissing');
+  }
+
+  const cancellation = await api.cancelAgentTurn(scenario.turn.turnId);
+  const turnCancelled =
+    String(cancellation.status ?? '').toLowerCase() === 'cancelled';
+  if (!turnCancelled) {
+    throw new Error('agent.acceptance.foundationLeaseTurnCleanupFailed');
+  }
+  const bindingRestored =
+    await restoreFoundationExecutorUnavailableBinding(scenario);
+  scenario.bindingRestored = bindingRestored;
+  const sourceDelivery = runtimeEvent.sourceDelivery;
+  const streamId = scenario.turn.streamId;
+  // #region debug-point Z:lease-runtime-identity
+  const sourcePayload = sourceDelivery
+    ? normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)
+    : null;
+  const runtimePayload = normalizeProjectedStationPayload(runtimeEvent.data);
+  await reportFoundationLeaseApprovalStallDebug('Z', 'runtime-identity-check', {
+    sourceDeliveryPresent: Boolean(sourceDelivery),
+    streamIdPresent: Boolean(streamId),
+    transportMatches: sourceDelivery?.transport === 'station-sse',
+    actorMatches:
+      sourceDelivery?.ptid === authenticatedFoundationActorPtid(),
+    conversationMatches:
+      sourceDelivery?.conversationId === scenario.turn.conversationId,
+    turnMatches: sourceDelivery?.turnId === scenario.turn.turnId,
+    sequencePositive: Number(sourceDelivery?.sequence ?? 0) > 0,
+    eventTypeMatches: sourceDelivery?.rawPayload.eventType === 'progress',
+    payloadMatches:
+      sourcePayload !== null
+      && stableJson(sourcePayload) === stableJson(runtimePayload),
+    sourcePayloadHash:
+      sourcePayload === null ? null : await sha256Hex(stableJson(sourcePayload)),
+    runtimePayloadHash: await sha256Hex(stableJson(runtimePayload)),
+  });
+  // #endregion
+  if (
+    !sourceDelivery
+    || !streamId
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+    || sourceDelivery.conversationId !== scenario.turn.conversationId
+    || sourceDelivery.turnId !== scenario.turn.turnId
+    || sourceDelivery.sequence <= 0
+    || sourceDelivery.rawPayload.eventType !== 'progress'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(runtimeEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationLeaseRuntimeIdentityMismatch',
+    );
+  }
+  const payloadHash = await sha256Hex(
+    stableJson(sourceDelivery.rawPayload),
+  );
+  const streamGeneration = scenario.turn.observed.controller.streamGeneration;
+
+  return {
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    durationMs: performance.now() - scenario.startedAt,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId,
+        streamGeneration,
+        conversationId: scenario.turn.conversationId,
+        turnId: scenario.turn.turnId,
+        sequence: sourceDelivery.sequence,
+        payloadHash,
+      })),
+      eventType: runtimeEvent.event,
+      sequence: sourceDelivery.sequence,
+      observedAt: runtimeEvent.observedAt,
+      streamGeneration,
+      streamIdHash: await sha256Hex(streamId),
+      conversationIdHash: await sha256Hex(sourceDelivery.conversationId),
+      payloadHash,
+      errorType: outcome.error_type,
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    facts: {
+      outcome,
+      receiver: {
+        ...receiverBeforeReconcile,
+        recoveryExecuted: true,
+        errorClearedAfterReconcile: true,
+      },
+      station: {
+        toolCallId: dispatchAfter.toolCallId,
+        toolCallIdBefore: dispatchBaseline.toolCallId,
+        status: dispatchAfter.status,
+        statusBefore: dispatchBaseline.status,
+        resultId: dispatchAfter.resultId,
+        continuationId: dispatchAfter.continuationId,
+        executionClaimIdBefore: dispatchBaseline.executionClaimId,
+        executionClaimIdAfter: dispatchAfter.executionClaimId,
+        executionAttemptCountBefore:
+          dispatchBaseline.executionAttemptCount,
+        executionAttemptCountAfter: dispatchAfter.executionAttemptCount,
+        dispatchSequenceBefore: dispatchBaseline.dispatchSequence,
+        dispatchSequenceAfter: dispatchAfter.dispatchSequence,
+        sideEffectReceiptIdBefore:
+          dispatchBaseline.sideEffectReceiptId,
+        sideEffectReceiptIdAfter: dispatchAfter.sideEffectReceiptId,
+        resultIdBefore: dispatchBaseline.resultId,
+        continuationIdBefore: dispatchBaseline.continuationId,
+        sourceHash: await sha256Hex(stableJson(sourceFact)),
+        replayHash: await sha256Hex(stableJson(replayedFact)),
+      },
+      lease: {
+        ...leaseTransition,
+        currentSessionIdBefore: currentBefore.session_id,
+        currentLeaseIdBefore: currentBefore.lease_id,
+        currentLeaseRevisionBefore: currentBefore.lease_revision,
+        currentExpiresAtBefore: timestampIso(currentBefore.expires_at),
+        currentSessionIdAfter: currentAfter.session_id,
+        currentLeaseIdAfter: currentAfter.lease_id,
+        currentLeaseRevisionAfter: currentAfter.lease_revision,
+        currentExpiresAtAfter: timestampIso(currentAfter.expires_at),
+      },
+      audit: {
+        source: sourceStation,
+        replay: replayStation,
+        sourceRequestHash,
+        replayRequestHash,
+        sourceErrorHash,
+        replayErrorHash,
+      },
+      executor: {
+        before: input.leaseControl.before,
+        after: input.leaseControl.after,
+      },
+      replay: {
+        sourceHash: sourceErrorHash,
+        replayHash: replayErrorHash,
+        equal:
+          sourceRequestHash.length === 64
+          && sourceRequestHash === replayRequestHash
+          && sourceErrorHash === replayErrorHash
+          && String(sourceFact.toolCallId ?? sourceFact.tool_call_id ?? '')
+            === String(
+              replayedFact.toolCallId
+              ?? replayedFact.tool_call_id
+              ?? '',
+            ),
+      },
+      cleanup: {
+        bindingRestored,
+        turnCancelled,
+        conversationDeleted: false,
+      },
+    },
+  };
+}
+
+async function cleanupFoundationLeaseExpiredScenario(
+  scenarioKey: string,
+): Promise<void> {
+  const scenario = foundationLeaseExpiredScenarios.get(scenarioKey);
+  if (!scenario) return;
+  foundationLeaseExpiredScenarios.delete(scenarioKey);
+  foundationExecutorUnavailableScenarios.set(scenarioKey, scenario);
+  await cleanupFoundationExecutorUnavailableScenario(scenarioKey);
 }
 
 async function runFoundationApprovalDeniedScenario(input: {
@@ -3284,6 +6015,25 @@ async function runFoundationApprovalExpiredScenario(input: {
   };
   facts: Record<string, unknown>;
 }> {
+  // #region debug-point A-E:approval-expiry-scenario-entry
+  foundationApprovalExpiryCleanupDebugScope = {
+    platform: input.platform,
+    sampleId: input.sampleId,
+  };
+  const sessionState = useSessionStore.getState();
+  const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+  void Promise.all([
+    sha256Hex(input.agent.id || input.agent.name),
+    actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+  ]).then(([agentIdHash, actorPtidHash]) =>
+    reportFoundationApprovalExpiryCleanupDebug('A-E', 'scenario-entry', {
+      actorPtidHash,
+      agentIdHash,
+      authenticated: sessionState.authenticated,
+      platform: input.platform,
+      sampleId: input.sampleId,
+    }));
+  // #endregion
   const fixture = await foundationToolFixture(
     input.agent.id || input.agent.name,
     input.platform,
@@ -3679,9 +6429,32 @@ async function runFoundationApprovalExpiredScenario(input: {
     };
   } catch (error) {
     operationError = error;
+    // #region debug-point E:approval-expiry-primary-error
+    void reportFoundationApprovalExpiryCleanupDebug(
+      'E',
+      'operation-error',
+      {
+        error: foundationApprovalExpiryCleanupErrorDebug(error),
+      },
+    );
+    // #endregion
   } finally {
     const cleanupErrors: unknown[] = [];
     try {
+      // #region debug-point A:approval-expiry-binding-restore
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A',
+        'binding-restore-start',
+        {
+          currentBindingPresent: Boolean(currentBinding),
+          currentBindingRevision:
+            currentBinding?.revision?.toString() ?? null,
+          originalBindingPresent: Boolean(originalBinding),
+          originalBindingRevision:
+            originalBinding?.revision?.toString() ?? null,
+        },
+      );
+      // #endregion
       if (originalBinding) {
         await updateFoundationToolPolicy(
           input.agent,
@@ -3698,8 +6471,23 @@ async function runFoundationApprovalExpiredScenario(input: {
           'acceptance_fixture_cleanup',
         );
       }
+      // #region debug-point A:approval-expiry-binding-restored
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A',
+        'binding-restore-complete',
+      );
+      // #endregion
     } catch (error) {
       cleanupErrors.push(error);
+      // #region debug-point A-D:approval-expiry-binding-error
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A-D',
+        'binding-restore-error',
+        {
+          error: foundationApprovalExpiryCleanupErrorDebug(error),
+        },
+      );
+      // #endregion
     }
     if ((operationError || cleanupErrors.length > 0) && conversationId) {
       try {
@@ -3709,9 +6497,31 @@ async function runFoundationApprovalExpiredScenario(input: {
         );
       } catch (error) {
         cleanupErrors.push(error);
+        // #region debug-point B-D:approval-expiry-conversation-cleanup-error
+        void reportFoundationApprovalExpiryCleanupDebug(
+          'B-D',
+          'conversation-cleanup-error',
+          {
+            error: foundationApprovalExpiryCleanupErrorDebug(error),
+          },
+        );
+        // #endregion
       }
     }
     if (cleanupErrors.length > 0) {
+      // #region debug-point A-E:approval-expiry-cleanup-failed
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A-E',
+        'scenario-cleanup-failed',
+        {
+          cleanupErrors: cleanupErrors.map(
+            foundationApprovalExpiryCleanupErrorDebug,
+          ),
+          primaryError:
+            foundationApprovalExpiryCleanupErrorDebug(operationError),
+        },
+      );
+      // #endregion
       throw Object.assign(
         new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
         {
@@ -3741,6 +6551,7 @@ async function runFoundationApprovalExpiredScenario(input: {
       : restoredBinding === null,
     conversationDeleted: false,
   };
+  foundationApprovalExpiryCleanupDebugScope = null;
   return result;
 }
 
@@ -3819,6 +6630,77 @@ async function foundationExecutionSnapshot(
   };
 }
 
+async function foundationIncompatibleExecutionSnapshot(
+  agentId: string,
+  conversationId: string,
+): Promise<{
+  turnCount: number;
+  providerCallCount: number;
+  toolCallCount: number;
+  toolExecutionCount: number;
+  sideEffectCount: number;
+}> {
+  const traces = await api.listAgentTurnTraces(agentId, {
+    conversationId,
+    page: 1,
+    pageSize: 200,
+  });
+  const toolFacts = (
+    await Promise.all(traces.entries.map(async (entry) => {
+      const turnId = entry.turn?.turnId ?? '';
+      if (!turnId) return [];
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(turnId)),
+        'foundationIncompatibleDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleReplay',
+      );
+      return optionalEvidenceArray(
+        evidenceField(replay, 'toolCalls', 'tool_calls'),
+        'foundationIncompatibleToolCalls',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleToolCall'));
+    }))
+  ).flat();
+  return {
+    turnCount: Number(traces.total ?? traces.entries.length),
+    providerCallCount: traces.entries.reduce(
+      (total, entry) => {
+        if (!entry.trace) return total;
+        const trace = evidenceRecord(
+          evidenceValue(entry.trace),
+          'foundationIncompatibleExecutionTrace',
+        );
+        return total + optionalEvidenceArray(
+          evidenceField(trace, 'providerCalls', 'provider_calls'),
+          'foundationIncompatibleProviderCalls',
+        ).length;
+      },
+      0,
+    ),
+    toolCallCount: toolFacts.length,
+    toolExecutionCount: toolFacts.reduce(
+      (total, fact) =>
+        total + Number(
+          evidenceField(
+            fact,
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0,
+        ),
+      0,
+    ),
+    sideEffectCount: toolFacts.filter((fact) =>
+      Boolean(evidenceField(
+        fact,
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ))).length,
+  };
+}
+
 async function runFoundationAttachmentTurn(input: {
   agentId: string;
   conversationId: string;
@@ -3831,6 +6713,15 @@ async function runFoundationAttachmentTurn(input: {
   result: ObservedFoundationTurnResult;
   turnId: string;
 }> {
+  const startedAt = performance.now();
+  // #region debug-point I-L:foundation-f05-turn
+  void reportFoundationAttachmentTimeoutDebug('I-L', 'turn-submission-started', {
+    attachmentCount: input.attachments.length,
+    capabilitySessionPresent: Boolean(input.capabilitySessionId),
+    providerPresent: Boolean(input.provider),
+    modelPresent: Boolean(input.model),
+  });
+  // #endregion
   const observed = startObservedFoundationTurn({
     conversationId: input.conversationId,
     agentId: input.agentId,
@@ -3838,10 +6729,32 @@ async function runFoundationAttachmentTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.provider,
     model: input.model,
+    thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     attachments: input.attachments,
+    // #region debug-point J-K:foundation-f05-events
+    onEvent: (event, events) => {
+      void reportFoundationAttachmentTimeoutDebug('J-K', 'turn-event-observed', {
+        eventCount: events.length,
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+        terminal: classifyAgentTurnTerminalEvent(event),
+      });
+    },
+    // #endregion
   });
   const result = await observed.result;
+  // #region debug-point J-K:foundation-f05-settled
+  await reportFoundationAttachmentTimeoutDebug('J-K', 'turn-submission-settled', {
+    elapsedMs: Math.round(performance.now() - startedAt),
+    errorCode: result.error
+      ? observedErrorCode(new Error(result.error))
+      : '',
+    eventCount: result.events.length,
+    lastEventType: result.events[result.events.length - 1]?.event ?? '',
+    ok: result.ok,
+  });
+  // #endregion
   return {
     result,
     turnId: observedTurnId(result.events),
@@ -3958,22 +6871,10 @@ async function runFoundationF05Scenario(input: {
     model_name: input.agent.model,
   });
   const uploaded: AgentAttachmentRefInput[] = [];
-  const toolFixture = await foundationToolFixture(agentId, input.platform);
-  const originalToolBinding = toolFixture.binding;
-  let currentToolBinding = originalToolBinding;
   const startedAt = performance.now();
   let scenarioError: unknown = null;
 
   try {
-    if (currentToolBinding?.enabled) {
-      currentToolBinding = await updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        currentToolBinding.approvalPolicy,
-        false,
-      );
-    }
     const png = await api.ossUploadAgentAttachmentBytes({
       filename: 'foundation.png',
       mime_type: 'image/png',
@@ -4025,15 +6926,34 @@ async function runFoundationF05Scenario(input: {
         `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
     );
 
-    const valid = await runFoundationAttachmentTurn({
-      agentId,
-      conversationId: conversation.conversation_id,
-      provider: input.agent.provider || undefined,
-      model: input.agent.model || undefined,
-      capabilitySessionId: input.capabilitySessionId,
-      attachments: [png, pdf],
-      content: 'Acknowledge the attached files in one short sentence.',
+    // #region debug-point I-L:foundation-f05-positive-turn
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-started', {
+      capabilitySessionPresent: Boolean(input.capabilitySessionId),
+      platform: input.platform,
+      uploadedAttachmentCount: 2,
     });
+    // #endregion
+    const valid = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      () => runFoundationAttachmentTurn({
+        agentId,
+        conversationId: conversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [png, pdf],
+        content: 'Acknowledge the attached files in one short sentence.',
+      }),
+    );
+    // #region debug-point I-L:foundation-f05-positive-turn-result
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-finished', {
+      eventCount: valid.result.events.length,
+      ok: valid.result.ok,
+      platform: input.platform,
+      turnIdPresent: Boolean(valid.turnId),
+    });
+    // #endregion
     if (!valid.result.ok || !valid.turnId) {
       throw new Error(
         valid.result.error || 'agent.acceptance.foundationAttachmentTurnFailed',
@@ -4284,22 +7204,6 @@ async function runFoundationF05Scenario(input: {
         }
         throw new Error('agent.acceptance.foundationAttachmentCleanupFailed');
       });
-    if (
-      originalToolBinding
-      && currentToolBinding
-      && (
-        currentToolBinding.enabled !== originalToolBinding.enabled
-        || currentToolBinding.approvalPolicy !== originalToolBinding.approvalPolicy
-      )
-    ) {
-      cleanupTasks.push(updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        originalToolBinding.approvalPolicy,
-        originalToolBinding.enabled,
-      ));
-    }
     const cleanup = await Promise.allSettled(cleanupTasks);
     const failed = cleanup.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected' && scenarioError === null) {
@@ -4572,13 +7476,53 @@ async function runFoundationAttachmentRejectedScenario(input: {
         'rejected attachment draft',
         10_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
-        )),
-        'attachment rejection receiver',
-        10_000,
-      );
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+          )),
+          'attachment rejection receiver',
+          10_000,
+        );
+      } catch (error) {
+        const chatState = useChatStore.getState();
+        const projectMessage = (message: {
+          id: string;
+          role: string;
+          loading?: boolean;
+          error?: string;
+          typedError?: { error_type?: string };
+        }) => ({
+          optimistic: message.id.startsWith('temp-'),
+          role: message.role,
+          loading: message.loading === true,
+          errorPresent: Boolean(message.error),
+          typedError: message.typedError?.error_type ?? null,
+        });
+        await reportFoundationAttachmentTimeoutDebug(
+          'N-Q',
+          'rejection-receiver-timeout',
+          {
+            currentSessionMatches:
+              chatState.currentSessionKey === conversation.conversation_id,
+            isStreaming: chatState.isStreaming,
+            operationRunState:
+              chatState.operations[conversation.conversation_id]?.runState
+              ?? null,
+            currentMessages: chatState.messages.map(projectMessage),
+            bufferedMessages: (
+              chatState.sessionBuffers[conversation.conversation_id] ?? []
+            ).map(projectMessage),
+            assistantDomCount: document.querySelectorAll(
+              '[data-pt-agent-message="assistant"]',
+            ).length,
+            attachmentErrorDomCount: document.querySelectorAll(
+              '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+            ).length,
+          },
+        );
+        throw error;
+      }
     } finally {
       unsubscribe();
     }
@@ -4652,12 +7596,71 @@ async function runFoundationAttachmentRejectedScenario(input: {
 
     const attachmentVisibleAfterReject =
       rejectedDraft.getClientRects().length > 0;
+    const errorVisible = errorText.getClientRects().length > 0;
+    const errorTextValue = errorText.textContent?.trim() ?? '';
+    const expectedErrorText = i18n.t(
+      'agent.errors.attachmentRejected',
+      { ns: 'agent' },
+    );
     const removalVisible = removeAction.getClientRects().length > 0;
     const removalText =
       removeAction.getAttribute('aria-label')
       ?? removeAction.getAttribute('title')
       ?? '';
     const draftTextAfterRejection = textarea.value;
+    // #region debug-point I-L:attachment-removal-visibility
+    const rejectedDraftRect = rejectedDraft.getBoundingClientRect();
+    const removeActionRect = removeAction.getBoundingClientRect();
+    const rejectedDraftStyle = window.getComputedStyle(rejectedDraft);
+    const removeActionStyle = window.getComputedStyle(removeAction);
+    const errorTextRect = errorText.getBoundingClientRect();
+    const errorTextStyle = window.getComputedStyle(errorText);
+    const expectedRemovalText = i18n.t(
+      'chat.input.attachmentRemove',
+      { ns: 'chat' },
+    );
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-snapshot',
+      {
+        locale: i18n.language,
+        attachmentDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment]',
+        ).length,
+        rejectedDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-status="rejected"]',
+        ).length,
+        removeActionCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-remove]',
+        ).length,
+        rejectedDraftConnected: rejectedDraft.isConnected,
+        rejectedDraftRectCount: rejectedDraft.getClientRects().length,
+        rejectedDraftWidth: Math.round(rejectedDraftRect.width),
+        rejectedDraftHeight: Math.round(rejectedDraftRect.height),
+        rejectedDraftDisplay: rejectedDraftStyle.display,
+        rejectedDraftVisibility: rejectedDraftStyle.visibility,
+        errorTextConnected: errorText.isConnected,
+        errorTextRectCount: errorText.getClientRects().length,
+        errorTextWidth: Math.round(errorTextRect.width),
+        errorTextHeight: Math.round(errorTextRect.height),
+        errorTextDisplay: errorTextStyle.display,
+        errorTextVisibility: errorTextStyle.visibility,
+        errorTextPresent: errorTextValue.length > 0,
+        errorTextMatches: errorTextValue === expectedErrorText,
+        removeActionConnected: removeAction.isConnected,
+        removeActionRectCount: removeAction.getClientRects().length,
+        removeActionWidth: Math.round(removeActionRect.width),
+        removeActionHeight: Math.round(removeActionRect.height),
+        removeActionDisplay: removeActionStyle.display,
+        removeActionVisibility: removeActionStyle.visibility,
+        removeActionOpacity: removeActionStyle.opacity,
+        removalTextPresent: removalText.length > 0,
+        removalTextMatches: removalText === expectedRemovalText,
+        selectedAttachmentMatches:
+          rejectedDraft.dataset.ptAgentComposerAttachment === attachmentId,
+      },
+    );
+    // #endregion
     removeAction.click();
     await waitFor(
       () => !Array.from(
@@ -4669,6 +7672,22 @@ async function runFoundationAttachmentRejectedScenario(input: {
       'attachment removal',
       10_000,
     );
+    // #region debug-point I-L:attachment-removal-completed
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-completed',
+      {
+        selectedDraftConnected: rejectedDraft.isConnected,
+        selectedRemoveActionConnected: removeAction.isConnected,
+        attachmentPresentAfterRemoval: Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-composer-attachment]',
+          ),
+        ).some((element) =>
+          element.dataset.ptAgentComposerAttachment === attachmentId),
+      },
+    );
+    // #endregion
 
     const deletionReadback =
       await foundationAttachmentDeletionReadback(objectRef);
@@ -4706,12 +7725,9 @@ async function runFoundationAttachmentRejectedScenario(input: {
         runtimeEvent: rejectionRuntimeEvent,
         outcome: typedOutcome,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
-          expectedErrorText: i18n.t(
-            'agent.errors.attachmentRejected',
-            { ns: 'agent' },
-          ),
+          errorVisible,
+          errorText: errorTextValue,
+          expectedErrorText,
           attachmentVisibleAfterReject,
           attachmentStatusAfterReject:
             rejectedDraft.dataset.ptAgentComposerAttachmentStatus,
@@ -4719,10 +7735,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
           draftTextAfterRejection,
           removalVisible,
           removalText,
-          expectedRemovalText: i18n.t(
-            'chat.input.attachmentRemove',
-            { ns: 'chat' },
-          ),
+          expectedRemovalText,
           removalExecuted: true,
           attachmentPresentAfterRemoval: false,
         },
@@ -4794,22 +7807,6 @@ async function runFoundationContextOverflowScenario(input: {
     + 'bounded-input '.repeat(32);
   const reducedDraft = `Reduced context ${input.sampleId}`;
   let baselineTurnId = '';
-
-  const setComposerDraft = (value: string) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      '[data-pt-agent-composer-input]',
-    );
-    const setTextareaValue = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      'value',
-    )?.set;
-    if (!textarea || !setTextareaValue) {
-      throw new Error('agent.acceptance.foundationComposerInputMissing');
-    }
-    setTextareaValue.call(textarea, value);
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    return textarea;
-  };
 
   try {
     await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -4955,6 +7952,44 @@ async function runFoundationContextOverflowScenario(input: {
         'agent.acceptance.foundationContextOverflowSurfaceMissing',
       );
     }
+    const expectedErrorText = i18n.t(
+      'agent.errors.contextOverflow',
+      { ns: 'agent' },
+    );
+    const expectedRecoveryText = i18n.t(
+      'agent.recovery.reduceContext',
+      { ns: 'agent' },
+    );
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRecoveryVisible =
+      recoveryAction.getClientRects().length > 0;
+    const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
+    // #region debug-point A-D:context-overflow-pre-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'pre-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorVisible: errorText.getClientRects().length > 0,
+        errorTextMatches:
+          (errorText.textContent?.trim() ?? '') === expectedErrorText,
+        errorTextHash: await sha256Hex(errorText.textContent?.trim() ?? ''),
+        expectedErrorTextHash: await sha256Hex(expectedErrorText),
+        recoveryPresent: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryTextMatches:
+          (recoveryAction.textContent?.trim() ?? '') === expectedRecoveryText,
+        recoveryTextHash:
+          await sha256Hex(recoveryAction.textContent?.trim() ?? ''),
+        expectedRecoveryTextHash: await sha256Hex(expectedRecoveryText),
+      },
+    );
+    // #endregion
     if (
       !errorEvent.streamId
       || errorEvent.streamGeneration <= 0
@@ -4994,12 +8029,29 @@ async function runFoundationContextOverflowScenario(input: {
       10_000,
     );
     const composerFocusedAfterRecovery = document.activeElement === textarea;
-    setComposerDraft(reducedDraft);
-    await waitFor(
-      () => textarea.value === reducedDraft,
+    await setFoundationComposerDraft(
+      reducedDraft,
       'context overflow reduced draft',
-      10_000,
     );
+    // #region debug-point A-D:context-overflow-post-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'post-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorConnected: errorText.isConnected,
+        errorVisible: errorText.getClientRects().length > 0,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        composerFocused: document.activeElement === textarea,
+        reducedDraftApplied: textarea.value === reducedDraft,
+      },
+    );
+    // #endregion
 
     const after = await foundationExecutionSnapshot(
       agentId,
@@ -5042,10 +8094,36 @@ async function runFoundationContextOverflowScenario(input: {
       sourceSequence: sourceDelivery.sequence,
       sourceEventType: sourceDelivery.rawPayload.eventType,
     };
-    setComposerDraft('');
     clearFoundationLocalConversationProjection(
       conversation.conversation_id,
     );
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'context overflow composer cleanup',
+    );
+    // #region debug-point E-H:context-overflow-scenario-cleanup
+    await reportFoundationContextOverflowRecoveryDebug(
+      'E-H',
+      'scenario-cleanup-sampled',
+      {
+        composerConnected: cleanupTextarea.isConnected,
+        composerMatchesCurrent:
+          document.querySelector('[data-pt-agent-composer-input]')
+          === cleanupTextarea,
+        composerLength: cleanupTextarea.value.length,
+        composerFillPresent:
+          useChatStore.getState().composerFill !== null,
+        draftCleared: cleanupTextarea.value === '',
+        localProjectionCleared:
+          !useChatStore.getState().sessionBuffers[
+            conversation.conversation_id
+          ]
+          && !useChatStore.getState().operations[
+            conversation.conversation_id
+          ],
+      },
+    );
+    // #endregion
 
     return {
       conversationId: conversation.conversation_id,
@@ -5056,14 +8134,14 @@ async function runFoundationContextOverflowScenario(input: {
         outcome: typedOutcome,
         runtimeEvent,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
           expectedErrorText: i18n.t(
             'agent.errors.contextOverflow',
             { ns: 'agent' },
           ),
-          recoveryVisible: recoveryAction.getClientRects().length > 0,
-          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          recoveryVisible: receiverRecoveryVisible,
+          recoveryText: receiverRecoveryText,
           expectedRecoveryText: i18n.t(
             'agent.recovery.reduceContext',
             { ns: 'agent' },
@@ -5096,7 +8174,7 @@ async function runFoundationContextOverflowScenario(input: {
           equal: beforeHash === afterHash,
         },
         cleanup: {
-          draftCleared: textarea.value === '',
+          draftCleared: cleanupTextarea.value === '',
           localProjectionCleared:
             !useChatStore.getState().sessionBuffers[
               conversation.conversation_id
@@ -5110,13 +8188,18 @@ async function runFoundationContextOverflowScenario(input: {
     };
   } catch (error) {
     try {
-      const textarea = document.querySelector<HTMLTextAreaElement>(
-        '[data-pt-agent-composer-input]',
-      );
-      if (textarea) setComposerDraft('');
       clearFoundationLocalConversationProjection(
         conversation.conversation_id,
       );
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'context overflow failed-scenario composer cleanup',
+        );
+      }
       await deleteFoundationConversation(conversation.conversation_id);
     } catch (cleanupError) {
       throw Object.assign(
@@ -5127,6 +8210,684 @@ async function runFoundationContextOverflowScenario(input: {
           primaryError: error,
           cleanupError,
         },
+      );
+    }
+    throw error;
+  }
+}
+
+async function runFoundationInvalidReferenceScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation invalid reference ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const conversationId = conversation.conversation_id;
+  const referenceToken = `@file:/missing/${input.sampleId}`;
+  const responseMarker =
+    `INVALID_REFERENCE_RECOVERED_${input.sampleId.replace(/[^a-z0-9]/gi, '_')}`;
+  const correctedDraft = `Reply with exactly ${responseMarker}.`;
+  const rejectedDraft = `${correctedDraft} ${referenceToken}`;
+  let successfulTurnId = '';
+  const startedAt = performance.now();
+
+  try {
+    await useChatStore.getState().selectSession(conversationId);
+    await useChatStore.getState().syncMessages();
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const rejectionHashBefore = await sha256Hex(stableJson(beforeReadback));
+    const textarea = await setFoundationComposerDraft(
+      rejectedDraft,
+      'invalid reference composer draft',
+    );
+
+    let observationSequence = 0;
+    const rejectedOutcomeRef: {
+      current: Record<string, unknown> | null;
+    } = { current: null };
+    const rejectionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeRejection = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== conversationId) return;
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'CONTEXT_INVALID_REFERENCE'
+        ) return;
+        rejectionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    try {
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      if (!send) {
+        throw new Error('agent.acceptance.foundationComposerSendMissing');
+      }
+      send.click();
+      await waitFor(
+        () => rejectionEventRef.current !== null,
+        'typed invalid reference rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+        )),
+        'invalid reference receiver',
+        10_000,
+      );
+      const operation = useChatStore.getState().operations[conversationId];
+      const rejectedMessage = useChatStore.getState().messages.find(
+        (message) => (
+          message.role === 'assistant'
+          && message.typedError?.error_type === 'CONTEXT_INVALID_REFERENCE'
+        ),
+      );
+      rejectedOutcomeRef.current = rejectedMessage?.typedError
+        ? evidenceValue(rejectedMessage.typedError) as Record<string, unknown>
+        : null;
+      if (!operation || !rejectedOutcomeRef.current) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidReferenceProjectionMissing',
+        );
+      }
+    } finally {
+      unsubscribeRejection();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized invalid reference text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const removalAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="remove-reference"]',
+    );
+    const rejectionEvent =
+      rejectionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (
+      !errorSurface
+      || !errorText
+      || !removalAction
+      || !rejectionEvent
+      || !rejectedOutcomeRef.current
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSurfaceMissing',
+      );
+    }
+    const sourceDelivery = rejectionEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== conversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(rejectionEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSourceIdentityMismatch',
+      );
+    }
+
+    const draftAfterRejection = textarea.value;
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRemovalVisible =
+      removalAction.getClientRects().length > 0;
+    const receiverRemovalText = removalAction.textContent?.trim() ?? '';
+    removalAction.click();
+    await waitFor(
+      () => (
+        textarea.value === correctedDraft
+        && document.activeElement === textarea
+      ),
+      'invalid reference removal',
+      10_000,
+    );
+    const draftAfterRemoval = textarea.value;
+
+    const [afterRejectedExecution, afterRejectedReadback, afterRejectedQueue] =
+      await Promise.all([
+        foundationExecutionSnapshot(agentId, conversationId),
+        foundationConversationReadback(conversationId),
+        api.listAgentTurnQueue(conversationId),
+      ]);
+    const rejectionHashAfter = await sha256Hex(
+      stableJson(afterRejectedReadback),
+    );
+
+    // #region debug-point A-E:invalid-reference-resend-snapshot
+    const invalidReferenceResendSnapshot = () => {
+      const state = useChatStore.getState();
+      const operation = state.operations[conversationId];
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      const assistantMessages = state.messages.filter(
+        (message) => message.role === 'assistant',
+      );
+      return {
+        assistantCount: assistantMessages.length,
+        assistantLoadingCount: assistantMessages.filter(
+          (message) => message.loading === true,
+        ).length,
+        assistantSuccessfulMarkerCount: assistantMessages.filter(
+          (message) => message.content.includes(responseMarker),
+        ).length,
+        assistantTurnIdentityCount: assistantMessages.filter(
+          (message) => Boolean(message.turnId),
+        ).length,
+        composerLength: textarea.value.length,
+        composerMatchesCorrectedDraft: textarea.value === correctedDraft,
+        currentSessionMatches: state.currentSessionKey === conversationId,
+        isStreaming: state.isStreaming,
+        operationErrorPresent: Boolean(operation?.error),
+        operationLastEventSeq: operation?.lastEventSeq ?? null,
+        operationPresent: Boolean(operation),
+        operationRunState: operation?.runState ?? null,
+        operationStatus: operation?.status ?? null,
+        operationStreamGeneration: operation?.streamGeneration ?? null,
+        operationTurnIdPresent: Boolean(operation?.turnId),
+        sendAriaDisabled: send?.getAttribute('aria-disabled') ?? null,
+        sendDisabled: send instanceof HTMLButtonElement
+          ? send.disabled
+          : null,
+        sendPresent: Boolean(send),
+      };
+    };
+    // #endregion
+
+    let completionObservationSequence = 0;
+    const completionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeCompletion = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const payloadTurnId = String(
+          payload.data.turnId
+          ?? payload.data.turn_id
+          ?? '',
+        );
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        // #region debug-point C-E:invalid-reference-resend-event
+        void Promise.all([
+          sha256Hex(payload.conversationId),
+          payloadTurnId ? sha256Hex(payloadTurnId) : Promise.resolve(''),
+        ]).then(([payloadConversationIdHash, payloadTurnIdHash]) =>
+          reportFoundationInvalidReferenceResendDebug(
+            'C-D-E',
+            'stream-event-observed',
+            {
+              ...invalidReferenceResendSnapshot(),
+              conversationMatches:
+                payload.conversationId === conversationId,
+              eventType: payload.event,
+              payloadConversationIdHash,
+              payloadTurnIdHash,
+              sequence: Number(
+                payload.data.seq
+                ?? payload.data.sequence
+                ?? 0,
+              ),
+              sourceConversationMatches:
+                sourceDelivery?.conversationId === conversationId,
+              sourceSequence: sourceDelivery?.sequence ?? null,
+              sourceTransport: sourceDelivery?.transport ?? null,
+              sourceTurnIdMatches:
+                Boolean(payloadTurnId)
+                && sourceDelivery?.turnId === payloadTurnId,
+              streamGeneration: payload.streamGeneration,
+              terminalClass: classifyAgentTurnTerminalEvent({
+                event: payload.event,
+                data: payload.data,
+              }),
+            },
+          ));
+        // #endregion
+        if (payload.conversationId !== conversationId) return;
+        completionObservationSequence += 1;
+        const event = {
+          event: payload.event,
+          data: payload.data,
+        };
+        if (classifyAgentTurnTerminalEvent(event) !== 'completed') return;
+        completionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence: completionObservationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    const countVisibleSuccessfulAssistants = () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    ).filter((element) => (
+      element.getClientRects().length > 0
+      && element.textContent?.includes(responseMarker)
+    )).length;
+    let successfulAssistantPeakCount = countVisibleSuccessfulAssistants();
+    const assistantObserver = new MutationObserver(() => {
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    });
+    assistantObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+    try {
+      await withFoundationCapabilitiesDisabled(
+        input.agent,
+        input.capabilitySessionId,
+        async () => {
+          const send = document.querySelector<HTMLElement>(
+            '[data-pt-agent-composer-send]',
+          );
+          if (!send) {
+            throw new Error('agent.acceptance.foundationComposerSendMissing');
+          }
+          // #region debug-point A-B:invalid-reference-resend-before-click
+          await reportFoundationInvalidReferenceResendDebug(
+            'A-B',
+            'before-corrected-send-click',
+            invalidReferenceResendSnapshot(),
+          );
+          // #endregion
+          send.click();
+          // #region debug-point A-B:invalid-reference-resend-after-click
+          await reportFoundationInvalidReferenceResendDebug(
+            'A-B',
+            'after-corrected-send-click',
+            invalidReferenceResendSnapshot(),
+          );
+          // #endregion
+          try {
+            await waitFor(
+              () => completionEventRef.current !== null,
+              'invalid reference corrected resend',
+              FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+            );
+            // #region debug-point C-E:invalid-reference-resend-completed
+            await reportFoundationInvalidReferenceResendDebug(
+              'C-D-E',
+              'corrected-resend-completed',
+              invalidReferenceResendSnapshot(),
+            );
+            // #endregion
+          } catch (error) {
+            const [readbackResult, queueResult, executionResult] =
+              await Promise.allSettled([
+                foundationConversationReadback(conversationId),
+                api.listAgentTurnQueue(conversationId),
+                foundationExecutionSnapshot(agentId, conversationId),
+              ]);
+            // #region debug-point A-E:invalid-reference-resend-timeout
+            await reportFoundationInvalidReferenceResendDebug(
+              'A-B-C-D-E',
+              'corrected-resend-timeout',
+              {
+                ...invalidReferenceResendSnapshot(),
+                error:
+                  error instanceof Error ? error.message : String(error),
+                execution: executionResult.status === 'fulfilled'
+                  ? executionResult.value
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        executionResult.reason,
+                      ),
+                    },
+                queue: queueResult.status === 'fulfilled'
+                  ? {
+                      entryCount: queueResult.value.entries.length,
+                      entryStatuses: queueResult.value.entries.map(
+                        (entry) => String(entry.status ?? ''),
+                      ),
+                    }
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        queueResult.reason,
+                      ),
+                    },
+                readback: readbackResult.status === 'fulfilled'
+                  ? {
+                      conversationStatus:
+                        readbackResult.value.conversation.status,
+                      conversationVersion:
+                        readbackResult.value.conversation.version,
+                      messageCount: readbackResult.value.messages.length,
+                      messages: readbackResult.value.messages.map(
+                        (message) => ({
+                          role: message.role,
+                          status: message.status,
+                          turnIdPresent: Boolean(message.turnId),
+                          typedErrorPresent: Boolean(message.errorJson),
+                        }),
+                      ),
+                    }
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        readbackResult.reason,
+                      ),
+                    },
+              },
+            );
+            // #endregion
+            throw error;
+          }
+        },
+      );
+    } finally {
+      unsubscribeCompletion();
+      assistantObserver.disconnect();
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    }
+
+    const completionEvent =
+      completionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    successfulTurnId = String(
+      completionEvent?.data.turnId
+      ?? completionEvent?.data.turn_id
+      ?? '',
+    );
+    if (!completionEvent || !successfulTurnId) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionMissing',
+      );
+    }
+    const completionSourceDelivery = completionEvent.sourceDelivery;
+    if (
+      !completionSourceDelivery
+      || completionSourceDelivery.transport !== 'station-sse'
+      || completionSourceDelivery.ptid !== actorPtid
+      || completionSourceDelivery.conversationId !== conversationId
+      || completionSourceDelivery.turnId !== successfulTurnId
+      || completionSourceDelivery.sequence <= 0
+      || completionSourceDelivery.rawPayload.eventType !== 'done'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionIdentityMismatch',
+      );
+    }
+    await useChatStore.getState().syncMessages();
+    await waitFor(
+      () => {
+        const matching = useChatStore.getState().messages.filter(
+          (message) => (
+            message.role === 'assistant'
+            && message.turnId === successfulTurnId
+            && message.loading !== true
+            && message.content.trim() === responseMarker
+          ),
+        );
+        return matching.length === 1 && !matching[0].id.startsWith('temp-');
+      },
+      'invalid reference canonical assistant response',
+      30_000,
+    );
+
+    const successfulAssistants = useChatStore.getState().messages.filter(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    const successfulAssistant = successfulAssistants[0];
+    const visibleAssistantCount = countVisibleSuccessfulAssistants();
+    const [finalExecution, finalReadback, finalQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const replayReadback = await foundationConversationReadback(conversationId);
+    const finalReadbackHash = await sha256Hex(stableJson(finalReadback));
+    const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+    const authoritativeAssistant = finalReadback.messages.find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    if (!successfulAssistant || !authoritativeAssistant) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceAssistantMissing',
+      );
+    }
+    const typedOutcome = evidenceRecord(
+      rejectedOutcomeRef.current,
+      'foundationInvalidReferenceOutcome',
+    );
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: rejectionEvent.streamId,
+        streamGeneration: rejectionEvent.streamGeneration,
+        conversationId: rejectionEvent.conversationId,
+        observationSequence: rejectionEvent.observationSequence,
+        eventType: rejectionEvent.eventType,
+        timestampMs: rejectionEvent.timestampMs,
+        data: rejectionEvent.data,
+      })),
+      eventType: rejectionEvent.eventType,
+      sequence: rejectionEvent.observationSequence,
+      observedAt: rejectionEvent.observedAt,
+      streamGeneration: rejectionEvent.streamGeneration,
+      streamIdHash: await sha256Hex(rejectionEvent.streamId),
+      conversationIdHash: await sha256Hex(rejectionEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(rejectionEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+
+    clearFoundationLocalConversationProjection(conversationId);
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'invalid reference composer cleanup',
+    );
+    return {
+      conversationId,
+      turnId: successfulTurnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: typedOutcome,
+        runtimeEvent,
+        receiver: {
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
+          expectedErrorText: i18n.t(
+            'agent.errors.contextInvalidReference',
+            { ns: 'agent' },
+          ),
+          removalVisible: receiverRemovalVisible,
+          removalText: receiverRemovalText,
+          expectedRemovalText: i18n.t(
+            'agent.recovery.removeReference',
+            { ns: 'agent' },
+          ),
+          draftLengthBefore: rejectedDraft.length,
+          draftLengthAfterRejection: draftAfterRejection.length,
+          draftHashBefore: await sha256Hex(rejectedDraft),
+          draftHashAfterRejection: await sha256Hex(draftAfterRejection),
+          draftHashAfterRemoval: await sha256Hex(draftAfterRemoval),
+          correctedDraftHash: await sha256Hex(correctedDraft),
+          referencePresentAfterRemoval:
+            draftAfterRemoval.includes(referenceToken),
+          composerFocusedAfterRemoval:
+            document.activeElement === textarea,
+          removalExecuted: true,
+          successfulAssistantVisible: visibleAssistantCount === 1,
+          successfulAssistantCount: successfulAssistants.length,
+          successfulAssistantPeakCount,
+          successfulAssistantId: successfulAssistant.id,
+          successfulAssistantTurnId: successfulAssistant.turnId ?? '',
+          successfulAssistantOptimistic:
+            successfulAssistant.id.startsWith('temp-'),
+        },
+        station: {
+          conversationId,
+          referenceKind: 'file',
+          referenceHash: await sha256Hex(referenceToken),
+          rejectionVersionBefore: beforeReadback.conversation.version,
+          rejectionVersionAfter: afterRejectedReadback.conversation.version,
+          rejectionHashBefore,
+          rejectionHashAfter,
+          rejectedTurnDelta:
+            afterRejectedExecution.turnCount - beforeExecution.turnCount,
+          rejectedMessageDelta:
+            afterRejectedReadback.messages.length
+            - beforeReadback.messages.length,
+          rejectedQueueDelta:
+            afterRejectedQueue.entries.length - beforeQueue.entries.length,
+          rejectedProviderExecutionDelta:
+            afterRejectedExecution.providerCallCount
+            - beforeExecution.providerCallCount,
+          successfulTurnId,
+          successfulAssistantMessageId:
+            authoritativeAssistant.messageId,
+          successfulTurnDelta:
+            finalExecution.turnCount - afterRejectedExecution.turnCount,
+          successfulMessageDelta:
+            finalReadback.messages.length
+            - afterRejectedReadback.messages.length,
+          successfulQueueDelta:
+            finalQueue.entries.length - afterRejectedQueue.entries.length,
+          successfulProviderExecutionDelta:
+            finalExecution.providerCallCount
+            - afterRejectedExecution.providerCallCount,
+          successfulConversationVersion:
+            finalReadback.conversation.version,
+          successfulReadbackHash: finalReadbackHash,
+        },
+        completion: {
+          status: 'completed',
+          turnId: successfulTurnId,
+          assistantMessageId: authoritativeAssistant.messageId,
+          sourceTransport: completionSourceDelivery.transport,
+          sourceConversationId: completionSourceDelivery.conversationId,
+          sourceTurnId: completionSourceDelivery.turnId,
+          sourceSequence: completionSourceDelivery.sequence,
+          sourceEventType: completionSourceDelivery.rawPayload.eventType,
+          responseHash: await sha256Hex(
+            authoritativeAssistant.content.trim(),
+          ),
+          expectedResponseHash: await sha256Hex(responseMarker),
+        },
+        replay: {
+          sourceHash: finalReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: finalReadbackHash === replayReadbackHash,
+        },
+        cleanup: {
+          draftCleared: cleanupTextarea.value === '',
+          localProjectionCleared: (
+            useChatStore.getState().sessionBuffers[conversationId] === undefined
+            && useChatStore.getState().operations[conversationId] === undefined
+          ),
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    try {
+      clearFoundationLocalConversationProjection(conversationId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'invalid reference failed-scenario composer cleanup',
+        );
+      }
+      await cleanupFoundationToolConversation(
+        conversationId,
+        successfulTurnId,
+      );
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationInvalidReferenceCleanupFailed',
+        ),
+        { primaryError: error, cleanupError },
       );
     }
     throw error;
@@ -5212,6 +8973,60 @@ async function runFoundationDuplicateConflictScenario(input: {
       .map((message) => message.messageId)
       .sort();
 
+    // #region debug-point F-I:duplicate-conflict-receiver
+    const duplicateConflictReceiverSnapshot = (): Record<string, unknown> => {
+      const chatState = useChatStore.getState();
+      const currentMessages = chatState.messages;
+      const bufferedMessages =
+        chatState.sessionBuffers[conversationId] ?? [];
+      const domAssistants = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      );
+      return {
+        locale: i18n.language,
+        currentSessionMatches:
+          chatState.currentSessionKey === conversationId,
+        currentMessageCount: currentMessages.length,
+        currentAssistantCount: currentMessages.filter(
+          (message) => message.role === 'assistant',
+        ).length,
+        currentAssistantLoadingCount: currentMessages.filter(
+          (message) => (
+            message.role === 'assistant' && message.loading === true
+          ),
+        ).length,
+        currentAssistantTypedErrorTypes: currentMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        bufferedMessageCount: bufferedMessages.length,
+        bufferedAssistantTypedErrorTypes: bufferedMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        operationPresent:
+          chatState.operations[conversationId] !== undefined,
+        operationStatus:
+          chatState.operations[conversationId]?.status ?? 'absent',
+        isStreaming: chatState.isStreaming,
+        domAssistantCount: domAssistants.length,
+        domAssistantErrorTypes: domAssistants
+          .map((element) => (
+            element.getAttribute('data-pt-agent-error-type') ?? ''
+          ))
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        domConflictCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+        ).length,
+      };
+    };
+    // #endregion
     const rejectedOutcomeRef: {
       current: Record<string, unknown> | null;
     } = { current: null };
@@ -5219,6 +9034,33 @@ async function runFoundationDuplicateConflictScenario(input: {
     const errorEventRef: {
       current: FoundationPreAdmissionErrorEvent | null;
     } = { current: null };
+    let receiverDomConflictCount = Number(
+      duplicateConflictReceiverSnapshot().domConflictCount,
+    );
+    let receiverDomConflictPeak = receiverDomConflictCount;
+    const receiverObserver = new MutationObserver(() => {
+      const snapshot = duplicateConflictReceiverSnapshot();
+      const nextCount = Number(snapshot.domConflictCount);
+      if (nextCount === receiverDomConflictCount) return;
+      receiverDomConflictCount = nextCount;
+      receiverDomConflictPeak = Math.max(receiverDomConflictPeak, nextCount);
+      // #region debug-point I:duplicate-conflict-receiver-dom-transition
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'I',
+        'receiver-dom-transition',
+        {
+          ...snapshot,
+          receiverDomConflictPeak,
+        },
+      );
+      // #endregion
+    });
+    receiverObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-pt-agent-error-type'],
+      childList: true,
+      subtree: true,
+    });
     const unsubscribe = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
       (payload) => {
@@ -5244,9 +9086,23 @@ async function runFoundationDuplicateConflictScenario(input: {
           timestampMs: payload.timestampMs,
           sourceDelivery,
         };
+        // #region debug-point F-I:duplicate-conflict-event
+        void reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'typed-rejection-event-observed',
+          duplicateConflictReceiverSnapshot(),
+        );
+        // #endregion
       },
     );
     try {
+      // #region debug-point F-I:duplicate-conflict-before-send
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'before-conflicting-send',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
       const sent = useChatStore.getState().sendMessage(
         conflictingContent,
         [],
@@ -5256,6 +9112,13 @@ async function runFoundationDuplicateConflictScenario(input: {
             if (error) {
               rejectedOutcomeRef.current =
                 evidenceValue(error) as Record<string, unknown>;
+              // #region debug-point F-I:duplicate-conflict-rejection-callback
+              void reportFoundationDuplicateConflictOriginalDetailsDebug(
+                'F-I',
+                'rejection-callback-observed',
+                duplicateConflictReceiverSnapshot(),
+              );
+              // #endregion
             }
           },
         },
@@ -5273,15 +9136,46 @@ async function runFoundationDuplicateConflictScenario(input: {
         'typed duplicate conflict rejection',
         60_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message="assistant"]'
-          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
-        )),
-        'duplicate conflict receiver',
-        10_000,
+      // #region debug-point F-I:duplicate-conflict-typed-ready
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'typed-rejection-ready',
+        duplicateConflictReceiverSnapshot(),
       );
+      // #endregion
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message="assistant"]'
+            + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+          )),
+          'duplicate conflict receiver',
+          10_000,
+        );
+      } catch (error) {
+        // #region debug-point F-I:duplicate-conflict-receiver-timeout
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'receiver-timeout',
+          {
+            ...duplicateConflictReceiverSnapshot(),
+            errorEventPresent: errorEventRef.current !== null,
+            rejectedOutcomePresent: rejectedOutcomeRef.current !== null,
+            receiverDomConflictPeak,
+          },
+        );
+        // #endregion
+        throw error;
+      }
+      // #region debug-point F-I:duplicate-conflict-receiver-observed
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'receiver-observed',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
     } finally {
+      receiverObserver.disconnect();
       unsubscribe();
     }
 
@@ -5355,15 +9249,131 @@ async function runFoundationDuplicateConflictScenario(input: {
     const receiverRecoveryVisible =
       recoveryAction.getClientRects().length > 0;
     const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
-    recoveryAction.click();
-    await waitFor(
-      () => {
-        const view = usePortalStore.getState().activeView;
-        return view?.type === 'turnDetails' && view.turnId === originalTurnId;
-      },
-      'duplicate conflict original turn details',
-      30_000,
+    const recoverySelector =
+      '[data-pt-agent-message-error-recovery="open-original"]';
+    const liveRecoveryAction =
+      errorSurface.querySelector<HTMLElement>(recoverySelector);
+    const projectedOriginalMessages = useChatStore.getState().messages.filter(
+      (candidate) => candidate.turnId === originalTurnId,
     );
+    // #region debug-point A-E:duplicate-conflict-recovery-click
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'A-E',
+      'pre-click-snapshot',
+      {
+        locale: i18n.language,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryNodeIsLive:
+          Boolean(liveRecoveryAction)
+          && recoveryAction.isSameNode(liveRecoveryAction),
+        recoveryTargetMatchesOriginal:
+          String(rejectedDetails.existing_command_id ?? '') === originalTurnId,
+        projectedOriginalMessageCount: projectedOriginalMessages.length,
+        projectedOriginalAssistantCount: projectedOriginalMessages.filter(
+          (candidate) => candidate.role === 'assistant',
+        ).length,
+        activeViewType: usePortalStore.getState().activeView?.type ?? 'none',
+        portalExpanded: usePortalStore.getState().expanded,
+      },
+    );
+    let clickObserved = false;
+    let portalTransitionCount = 0;
+    const observeRecoveryClick = () => {
+      clickObserved = true;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'A-C',
+        'recovery-click-observed',
+        {
+          recoveryConnected: recoveryAction.isConnected,
+          recoveryNodeIsLive:
+            Boolean(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            )
+            && recoveryAction.isSameNode(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            ),
+        },
+      );
+    };
+    recoveryAction.addEventListener('click', observeRecoveryClick, {
+      once: true,
+    });
+    const unsubscribePortalDebug = usePortalStore.subscribe((state) => {
+      portalTransitionCount += 1;
+      const view = state.activeView;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-D',
+        'portal-transition',
+        {
+          transitionCount: portalTransitionCount,
+          activeViewType: view?.type ?? 'none',
+          turnMatchesOriginal:
+            view?.type === 'turnDetails' && view.turnId === originalTurnId,
+          expanded: state.expanded,
+        },
+      );
+    });
+    try {
+      recoveryAction.click();
+      try {
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return (
+              view?.type === 'turnDetails'
+              && view.turnId === originalTurnId
+            );
+          },
+          'duplicate conflict original turn details',
+          30_000,
+        );
+      } catch (error) {
+        const failedView = usePortalStore.getState().activeView;
+        const failedOriginalMessages =
+          useChatStore.getState().messages.filter(
+            (candidate) => candidate.turnId === originalTurnId,
+          );
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'A-E',
+          'original-details-timeout',
+          {
+            clickObserved,
+            portalTransitionCount,
+            activeViewType: failedView?.type ?? 'none',
+            turnMatchesOriginal:
+              failedView?.type === 'turnDetails'
+              && failedView.turnId === originalTurnId,
+            projectedOriginalMessageCount: failedOriginalMessages.length,
+            projectedOriginalAssistantCount: failedOriginalMessages.filter(
+              (candidate) => candidate.role === 'assistant',
+            ).length,
+            turnDetailsState:
+              document.querySelector<HTMLElement>(
+                '[data-agent-turn-details] [data-turn-details-state]',
+              )?.dataset.turnDetailsState ?? 'absent',
+          },
+        );
+        throw error;
+      }
+      const observedView = usePortalStore.getState().activeView;
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-E',
+        'original-details-observed',
+        {
+          clickObserved,
+          portalTransitionCount,
+          activeViewType: observedView?.type ?? 'none',
+          turnMatchesOriginal:
+            observedView?.type === 'turnDetails'
+            && observedView.turnId === originalTurnId,
+        },
+      );
+    } finally {
+      recoveryAction.removeEventListener('click', observeRecoveryClick);
+      unsubscribePortalDebug();
+    }
+    // #endregion
     await waitFor(
       () => Boolean(document.querySelector(
         `[data-agent-turn-details="${originalTurnId}"]`
@@ -5913,6 +9923,7 @@ async function runFoundationF06Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   faultControlUrl: string;
+  faultBoundary?: 'text-prefix' | 'provider-started';
   scenarioKey: string;
   platform: string;
   locale: string;
@@ -5981,38 +9992,9 @@ async function runFoundationF06Prepare(input: {
       },
     );
     // #endregion
-    try {
-      await cleanupFoundationF06Scenario({
-        scenarioKey: input.scenarioKey,
-        conversationId: conversation.conversation_id,
-        turnId: activeTurnId,
-      });
-    } catch (cleanupError) {
-      const cleanup = cleanupError instanceof Error
-        ? cleanupError.message
-        : String(cleanupError);
-      // #region debug-point D:f06-terminal-race-cleanup-error
-      void reportFoundationF06TerminalRaceDebug(
-        'D',
-        'preparation-cleanup-failed',
-        {
-          platform: input.platform,
-          locale: input.locale,
-          scenarioKey: input.scenarioKey,
-          terminalRace:
-            primary.includes('foundationRecoveryTurnAlreadyTerminal'),
-          cleanupErrorType:
-            cleanupError instanceof Error
-              ? cleanupError.constructor.name
-              : typeof cleanupError,
-          cleanupTurnPresent: activeTurnId.length > 0,
-        },
-      );
-      // #endregion
-      throw new Error(
-        `CLEANUP_FAILED:${primary}; auth=${JSON.stringify(authDiagnostic)}; cleanup=${cleanup}`,
-      );
-    }
+    // The coordinator restores the cut proxy before invoking the registered
+    // cleanup locator. Cleanup through the intentionally severed transport
+    // would hide the primary failure and can lose the locator on client restart.
     throw new Error(`${primary}; auth=${JSON.stringify(authDiagnostic)}`);
   }
 }
@@ -6022,6 +10004,7 @@ async function prepareFoundationF06Conversation(
     agent: NonNullable<ReturnType<typeof selectedAgent>>;
     capabilitySessionId: string;
     faultControlUrl: string;
+    faultBoundary?: 'text-prefix' | 'provider-started';
     scenarioKey: string;
     platform: string;
     locale: string;
@@ -6037,6 +10020,7 @@ async function prepareFoundationF06Conversation(
   const streamId = `foundation-f06-${crypto.randomUUID()}`;
   const idempotencyKey = crypto.randomUUID();
   const actorId = authenticatedFoundationActorPtid();
+  const faultBoundaryMode = input.faultBoundary ?? 'text-prefix';
   let boundarySettled = false;
   let boundaryRequested = false;
   let cleanupTurnId = '';
@@ -6114,11 +10098,24 @@ async function prepareFoundationF06Conversation(
       const hasText = observedDurableEvents.some(
         (candidate) => candidate.event === 'text',
       );
+      const providerStarted = observedDurableEvents.some(
+        (candidate) => (
+          candidate.event === 'progress'
+          && candidate.data.stage === 'provider_call_started'
+        ),
+      );
       const uniqueSequences = new Set(
         observedDurableEvents.map((candidate) =>
           Number(candidate.data.seq ?? 0)),
       );
-      if (!hasText || uniqueSequences.size < 2) return;
+      if (
+        uniqueSequences.size < 2
+        || (
+          faultBoundaryMode === 'provider-started'
+            ? !providerStarted
+            : !hasText
+        )
+      ) return;
 
       const turnId = observedTurnId(events);
       if (!turnId) {
@@ -6201,6 +10198,8 @@ async function prepareFoundationF06Conversation(
         textEventCount: observedDurableEvents.filter(
           (candidate) => candidate.event === 'text',
         ).length,
+        faultBoundaryMode,
+        providerStarted,
         requestedCursor,
         activePhase: active.phase,
       });
@@ -6216,6 +10215,8 @@ async function prepareFoundationF06Conversation(
       );
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
+          // The proxy owns the fault; abort only discards post-cut buffered frames.
+          await controller.disconnectTransport();
           const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
             .active[conversation.conversation_id];
           // #region debug-point C:f06-fault-ack
@@ -6271,23 +10272,44 @@ async function prepareFoundationF06Conversation(
             );
           }
           const acknowledgedCursor = activeAtCut.cursor;
-          const durableEvents = events
+          const sequencedEvents = events
             .filter((candidate) =>
               Number(candidate.data.seq ?? 0) > 0
-              && !FOUNDATION_F06_PHASE_BY_EVENT[candidate.event]
               && candidate.event !== 'catchup_done'
               && candidate.event !== 'snapshot')
             .sort((left, right) =>
               Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
-          const duplicateSource = [...durableEvents]
+          const durableEvents = sequencedEvents.filter(
+            (candidate) => !FOUNDATION_F06_PHASE_BY_EVENT[candidate.event],
+          );
+          const duplicateSource = [...sequencedEvents]
             .reverse()
             .find((candidate) =>
               Number(candidate.data.seq ?? 0) === acknowledgedCursor);
-          const outOfOrderSource = [...durableEvents]
+          const outOfOrderSource = [...sequencedEvents]
             .reverse()
             .find((candidate) =>
               Number(candidate.data.seq ?? 0) < acknowledgedCursor);
           if (!duplicateSource || !outOfOrderSource) {
+            void reportFoundationF06TerminalRaceDebug(
+              'E',
+              'fault-boundary-events-missing',
+              {
+                platform: input.platform,
+                locale: input.locale,
+                scenarioKey: input.scenarioKey,
+                requestedCursor,
+                acknowledgedCursor,
+                sequencedEvents: sequencedEvents.map((candidate) => ({
+                  event: candidate.event,
+                  sequence: Number(candidate.data.seq ?? 0),
+                })),
+                durableEvents: durableEvents.map((candidate) => ({
+                  event: candidate.event,
+                  sequence: Number(candidate.data.seq ?? 0),
+                })),
+              },
+            );
             throw new Error(
               'agent.acceptance.foundationRecoveryFaultBoundaryEventsMissing',
             );
@@ -6337,13 +10359,15 @@ async function prepareFoundationF06Conversation(
             prefixLength: prefix.length,
           });
           if (!prefix) {
-            void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
-              acknowledgedCursor,
-              textEventFacts,
-            });
-            throw new Error(
-              'agent.acceptance.foundationRecoveryPrefixMissing',
-            );
+            if (faultBoundaryMode === 'text-prefix') {
+              void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
+                acknowledgedCursor,
+                textEventFacts,
+              });
+              throw new Error(
+                'agent.acceptance.foundationRecoveryPrefixMissing',
+              );
+            }
           }
           void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
             acknowledgedCursor,
@@ -6542,8 +10566,10 @@ async function requestFoundationF06TransportCut(
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
     throw new Error('agent.acceptance.foundationFaultControlInvalid');
   }
-  const response = await fetch(url, { method: 'POST' });
-  if (!response.ok) {
+  const request = new XMLHttpRequest();
+  request.open('POST', url, false);
+  request.send();
+  if (request.status < 200 || request.status >= 300) {
     throw new Error('agent.acceptance.foundationFaultControlRejected');
   }
 }
@@ -6586,6 +10612,13 @@ async function finalizeFoundationF06Preparation(
   foundationF06PendingHandoffs.delete(scenarioKey);
   foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-persisted-before-navigation',
+    foundationF06HandoffStorageSnapshot(scenarioKey),
+  );
+  // #endregion
 
   void reportFoundationF06PageSwitchDebug(
     'A-D',
@@ -6628,6 +10661,16 @@ async function restoreFoundationF06CapabilityIsolation(
   scenarioKey: string,
 ): Promise<FoundationF06Handoff> {
   const handoff = readFoundationF06Handoff(scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-station-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -7023,24 +11066,47 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
   }
   if (cleanupLocator?.state === 'deleted') {
+    clearFoundationLocalConversationProjection(cleanupLocator.conversationId);
     useAgentTurnRecoveryStore.getState().clear(
       cleanupLocator.conversationId,
       cleanupLocator.turnId,
     );
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    removeFoundationF06Handoff(input.scenarioKey);
     const handoffCleared =
       readFoundationF06Handoff(input.scenarioKey) === null;
     const recoveryRecordCleared =
       useAgentTurnRecoveryStore.getState()
         .active[cleanupLocator.conversationId] === undefined;
-    if (!handoffCleared || !recoveryRecordCleared) {
+    const cleanupLocatorCleared =
+      readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
+    const cleanedChatState = useChatStore.getState();
+    const localProjectionCleared = (
+      !cleanedChatState.sessions.some(
+        (session) =>
+          session.id === cleanupLocator.conversationId
+          || session.key === cleanupLocator.conversationId,
+      )
+      && !cleanedChatState.messages.some(
+        (message) => message.turnId === cleanupLocator.turnId,
+      )
+      && cleanedChatState.operations[cleanupLocator.conversationId] === undefined
+      && cleanedChatState.sessionBuffers[cleanupLocator.conversationId] === undefined
+    );
+    if (
+      !handoffCleared
+      || !cleanupLocatorCleared
+      || !recoveryRecordCleared
+      || !localProjectionCleared
+    ) {
       throw new Error('CLEANUP_FAILED:foundationCleanupVerificationFailed');
     }
     return {
       cleanupComplete: true,
       handoffCleared,
+      cleanupLocatorCleared,
       conversationDeleted: true,
       recoveryRecordCleared,
+      localProjectionCleared,
     };
   }
   const conversationId = input.conversationId
@@ -7055,14 +11121,24 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('CLEANUP_FAILED:foundationCleanupLocatorMissing');
   }
   let cleanupError: unknown = null;
+  let turnCancellationErrorCode = '';
+  let queueCancellationErrorCode = '';
   let deletionErrorCode = '';
   let cleanupStage = 'turn-cancel';
-  try {
-    if (turnId) {
+  if (turnId) {
+    try {
       await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      turnCancellationErrorCode = observedErrorCode(error);
     }
-    cleanupStage = 'queue-cancel';
+  }
+  cleanupStage = 'queue-cancel';
+  try {
     await cancelFoundationQueuedTurns(conversationId);
+  } catch (error) {
+    queueCancellationErrorCode = observedErrorCode(error);
+  }
+  try {
     cleanupStage = 'conversation-delete';
     deletionErrorCode = await deleteFoundationConversation(conversationId);
     // #region debug-point D:f06-cleanup-actions
@@ -7072,6 +11148,10 @@ async function cleanupFoundationF06Scenario(input: {
       {
         scenarioKey: input.scenarioKey,
         inputTurnPresent: turnId.length > 0,
+        turnCancellationErrorCodePresent:
+          turnCancellationErrorCode.length > 0,
+        queueCancellationErrorCodePresent:
+          queueCancellationErrorCode.length > 0,
         deletionErrorCodePresent: deletionErrorCode.length > 0,
       },
     );
@@ -7119,19 +11199,33 @@ async function cleanupFoundationF06Scenario(input: {
     if (!conversationDeleted && cleanupError === null) cleanupError = error;
   }
   if (conversationDeleted) {
-    writeFoundationF06CleanupLocator({
-      scenarioKey: input.scenarioKey,
-      conversationId,
-      turnId,
-      state: 'deleted',
-    });
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    cleanupError = null;
+    clearFoundationLocalConversationProjection(conversationId);
+    removeFoundationF06Handoff(input.scenarioKey);
   }
   const handoffCleared = readFoundationF06Handoff(input.scenarioKey) === null;
+  const cleanupLocatorCleared =
+    readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
   const recoveryRecordCleared =
     useAgentTurnRecoveryStore.getState().active[conversationId] === undefined;
+  const cleanedChatState = useChatStore.getState();
+  const localProjectionCleared = (
+    !cleanedChatState.sessions.some(
+      (session) =>
+        session.id === conversationId || session.key === conversationId,
+    )
+    && !cleanedChatState.messages.some(
+      (message) => message.turnId === turnId,
+    )
+    && cleanedChatState.operations[conversationId] === undefined
+    && cleanedChatState.sessionBuffers[conversationId] === undefined
+  );
   const cleanupComplete =
-    conversationDeleted && handoffCleared && recoveryRecordCleared;
+    conversationDeleted
+    && handoffCleared
+    && cleanupLocatorCleared
+    && recoveryRecordCleared
+    && localProjectionCleared;
   // #region debug-point D:f06-cleanup-result
   void reportFoundationF06TerminalRaceDebug('D', 'cleanup-result-sampled', {
     scenarioKey: input.scenarioKey,
@@ -7139,7 +11233,9 @@ async function cleanupFoundationF06Scenario(input: {
     cleanupErrorPresent: cleanupError !== null,
     conversationDeleted,
     handoffCleared,
+    cleanupLocatorCleared,
     recoveryRecordCleared,
+    localProjectionCleared,
     cleanupComplete,
   });
   // #endregion
@@ -7152,8 +11248,10 @@ async function cleanupFoundationF06Scenario(input: {
   return {
     cleanupComplete,
     handoffCleared,
+    cleanupLocatorCleared,
     conversationDeleted,
     recoveryRecordCleared,
+    localProjectionCleared,
     deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
   };
 }
@@ -7179,6 +11277,16 @@ async function runFoundationF06Complete(
   facts: Record<string, unknown>;
 }> {
   const handoff = readFoundationF06Handoff(input.scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-client-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(input.scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -8016,6 +12124,29 @@ async function runFoundationF12Prepare(input: {
   locale: string;
   sampleId: string;
 }): Promise<FoundationF12Handoff> {
+  // #region debug-point A-B-E:f12-prepare-entry
+  foundationF12MessageListDebugScope = {
+    locale: input.locale,
+    platform: input.platform,
+    readbackSequence: 0,
+    sampleId: input.sampleId,
+    scenarioKey: input.scenarioKey,
+  };
+  const sessionState = useSessionStore.getState();
+  const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+  void Promise.all([
+    sha256Hex(input.agent.id || input.agent.name),
+    actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+  ]).then(([agentIdHash, actorPtidHash]) =>
+    reportFoundationF12MessageListDebug('A-B-E', 'prepare-entry', {
+      actorPtidHash,
+      agentIdHash,
+      authenticated: sessionState.authenticated,
+      locale: input.locale,
+      platform: input.platform,
+      sampleId: input.sampleId,
+    }));
+  // #endregion
   const existing = readFoundationF12Handoff(input.scenarioKey);
   if (existing) {
     await cleanupFoundationF12Scenario({
@@ -8049,6 +12180,17 @@ async function runFoundationF12Prepare(input: {
           model_name: input.agent.model,
         });
         createdConversationIds.push(beta.conversation_id);
+        // #region debug-point B-E:f12-conversations-created
+        void Promise.all([
+          sha256Hex(alpha.conversation_id),
+          sha256Hex(beta.conversation_id),
+        ]).then(([alphaConversationIdHash, betaConversationIdHash]) =>
+          reportFoundationF12MessageListDebug('B-E', 'conversations-created', {
+            alphaConversationIdHash,
+            betaConversationIdHash,
+            createdConversationCount: createdConversationIds.length,
+          }));
+        // #endregion
 
         const runtimeEvents: FoundationF12RuntimeEvent[] = [];
         const alphaFirst = await runFoundationF12Turn({
@@ -8330,6 +12472,17 @@ async function runFoundationF12Prepare(input: {
     writeFoundationF12Handoff(handoff);
     return handoff;
   } catch (error) {
+    // #region debug-point A-E:f12-prepare-failure
+    void Promise.all(createdConversationIds.map((conversationId) =>
+      sha256Hex(conversationId))).then((createdConversationIdHashes) =>
+      reportFoundationF12MessageListDebug('A-B-C-D-E', 'prepare-error', {
+        createdConversationCount: createdConversationIds.length,
+        createdConversationIdHashes,
+        error: foundationF12MessageListErrorDebug(error),
+        readbackSequence:
+          foundationF12MessageListDebugScope?.readbackSequence ?? 0,
+      }));
+    // #endregion
     try {
       await cleanupFoundationF12Scenario({
         scenarioKey: input.scenarioKey,
@@ -8343,6 +12496,8 @@ async function runFoundationF12Prepare(input: {
       throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
     }
     throw error;
+  } finally {
+    foundationF12MessageListDebugScope = null;
   }
 }
 
@@ -8652,6 +12807,27 @@ function reportFoundationQueueCapacityDebug(
 }
 // #endregion
 
+// #region debug-point A-D:foundation-queue-projection
+function reportFoundationQueueProjectionDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  return fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-queue-projection',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F02',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-D:foundation-attachment-timeout
 function reportFoundationAttachmentTimeoutDebug(
   hypothesisId: string,
@@ -8682,7 +12858,7 @@ function reportFoundationF07Debug(
   return fetch('http://127.0.0.1:7783/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'as-f07-revision-flow',
+      sessionId: 'revision-retry-cancellation',
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF07Scenario',
@@ -8745,8 +12921,8 @@ function reportFoundationF06TerminalRaceDebug(
   return fetch('http://127.0.0.1:7780/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'foundation-f06-terminal-race',
-      runId: 'pre-fix',
+      sessionId: 'foundation-f06-terminal-race-v2',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06-terminal-race',
       msg: `[DEBUG] ${stage}`,
@@ -8892,6 +13068,149 @@ function reportFoundationApprovalRetryCancellationDebug(
 }
 // #endregion
 
+// #region debug-point A-E:foundation-readiness-timeout
+function reportFoundationF01Debug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7790/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-readiness-timeout',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F01',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+
+async function reportFoundationF01FailureReadback(
+  conversationId: string,
+  turnId: string,
+): Promise<void> {
+  try {
+    const conversationReadback =
+      await foundationConversationReadback(conversationId);
+    if (!turnId) {
+      await reportFoundationF01Debug('C-E', 'failure-readback', {
+        turnIdPresent: false,
+        conversationStatus: conversationReadback.conversation.status,
+        messages: conversationReadback.messages.map((message) => ({
+          role: message.role,
+          status: message.status,
+          turnIdPresent: Boolean(message.turnId),
+          errorPresent: message.errorJson.length > 0,
+        })),
+      });
+      return;
+    }
+
+    const turnEvidence = await foundationTurnEvidence(conversationId, turnId);
+    const evidence = evidenceRecord(turnEvidence, 'foundationF01TurnEvidence');
+    const diagnostics = evidenceRecord(
+      evidence.diagnostics,
+      'foundationF01Diagnostics',
+    );
+    const replay = evidenceRecord(
+      diagnostics.replay,
+      'foundationF01DiagnosticReplay',
+    );
+    const attempts = foundationTurnAttemptFacts(turnEvidence);
+    const latestAttempt = attempts[attempts.length - 1];
+    const latestAttemptRecord = latestAttempt
+      ? evidenceRecord(latestAttempt.record, 'foundationF01Attempt')
+      : null;
+    const runtimeSnapshotValue = latestAttemptRecord
+      ? evidenceField(
+        latestAttemptRecord,
+        'runtimeSnapshot',
+        'runtime_snapshot',
+      )
+      : null;
+    const runtimeSnapshot = runtimeSnapshotValue
+      ? evidenceRecord(runtimeSnapshotValue, 'foundationF01RuntimeSnapshot')
+      : null;
+    const replayEvents = optionalEvidenceArray(
+      replay.events,
+      'foundationF01ReplayEvents',
+    ).map((value) => {
+      const event = evidenceRecord(value, 'foundationF01ReplayEvent');
+      const dataValue = event.data;
+      const data = dataValue && typeof dataValue === 'object'
+        && !Array.isArray(dataValue)
+        ? dataValue as Record<string, unknown>
+        : {};
+      return {
+        eventType: String(
+          evidenceField(event, 'eventType', 'event_type')
+          ?? event.event
+          ?? event.type
+          ?? '',
+        ),
+        sequence: Number(event.sequence ?? event.seq ?? 0),
+        stage: String(data.stage ?? event.stage ?? ''),
+      };
+    });
+    const toolCalls = optionalEvidenceArray(
+      evidenceField(replay, 'toolCalls', 'tool_calls'),
+      'foundationF01ToolCalls',
+    );
+    await reportFoundationF01Debug('A-E', 'failure-readback', {
+      turnIdPresent: true,
+      conversationStatus: conversationReadback.conversation.status,
+      replayStatus: foundationTurnStatusName(replay.status),
+      replayKeys: Object.keys(replay).sort(),
+      attemptCount: attempts.length,
+      attemptStatuses: attempts.map((attempt) =>
+        foundationTurnStatusName(attempt.status)),
+      attemptErrorCodes: attempts.map((attempt) => attempt.errorCode),
+      runtime: runtimeSnapshot
+        ? {
+            providerId: evidenceField(
+              runtimeSnapshot,
+              'providerId',
+              'provider_id',
+            ),
+            modelId: evidenceField(
+              runtimeSnapshot,
+              'modelId',
+              'model_id',
+            ),
+            thinkingMode: evidenceField(
+              runtimeSnapshot,
+              'thinkingMode',
+              'thinking_mode',
+            ),
+          }
+        : null,
+      diagnosticEventCount: replayEvents.length,
+      diagnosticEvents: replayEvents,
+      providerStarted: replayEvents.some(
+        (event) => event.stage === 'provider_call_started',
+      ),
+      toolCallCount: toolCalls.length,
+      recoveryKeys: Object.keys(replay)
+        .filter((key) => key.toLowerCase().includes('recovery'))
+        .sort(),
+      messages: conversationReadback.messages.map((message) => ({
+        role: message.role,
+        status: message.status,
+        turnIdMatches: message.turnId === turnId,
+        errorPresent: message.errorJson.length > 0,
+      })),
+    });
+  } catch (error) {
+    await reportFoundationF01Debug('C-E', 'failure-readback-error', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+}
+// #endregion
+
 // #region debug-point A-D:as-f03-cancel-race
 function reportFoundationF03CancelDebug(
   hypothesisId: string,
@@ -8905,6 +13224,132 @@ function reportFoundationF03CancelDebug(
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F03',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:base-cancelled-race
+function reportFoundationBaseCancelledDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7781/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-cancel-race',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationCancelledScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:forbidden-actor-account-gate
+function reportFoundationForbiddenActorAccountGateDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:rejectFoundationForbiddenActor',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:incompatible-capability-cleanup
+function reportFoundationIncompatibleCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-cleanup',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:incompatible-capability-turn-count
+function reportFoundationIncompatibleTurnCountDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7791/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-turn-count',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:context-overflow-recovery-locale
+function reportFoundationContextOverflowRecoveryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationContextOverflowScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:duplicate-conflict-original-details
+function reportFoundationDuplicateConflictOriginalDetailsDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7793/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'duplicate-conflict-original-details',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationDuplicateConflictScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
@@ -8928,6 +13373,139 @@ function reportFoundationF12ProjectionDebug(
       location: 'harness.ts:foundationF12ReceiverSnapshot',
       msg: `[DEBUG] ${stage}`,
       data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-f12-message-list
+function foundationF12MessageListErrorDebug(
+  error: unknown,
+): Record<string, unknown> {
+  const candidate = error && typeof error === 'object'
+    ? error as {
+        code?: unknown;
+        details?: Record<string, unknown>;
+        name?: unknown;
+      }
+    : null;
+  const details = candidate?.details;
+  const rawBody = details?.body;
+  let bodyCode: string | number | null = null;
+  if (typeof rawBody === 'string') {
+    try {
+      const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+      const candidateCode = parsed.error_code ?? parsed.code;
+      if (typeof candidateCode === 'string' || typeof candidateCode === 'number') {
+        bodyCode = candidateCode;
+      }
+    } catch {
+      bodyCode = null;
+    }
+  } else if (rawBody && typeof rawBody === 'object') {
+    const body = rawBody as Record<string, unknown>;
+    const candidateCode = body.error_code ?? body.code;
+    if (typeof candidateCode === 'string' || typeof candidateCode === 'number') {
+      bodyCode = candidateCode;
+    }
+  }
+  return {
+    bodyCode,
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    detailCode:
+      typeof details?.error_code === 'string' ? details.error_code : null,
+    name: typeof candidate?.name === 'string' ? candidate.name : typeof error,
+    observedCode: observedErrorCode(error),
+    stationStatus:
+      typeof details?.status === 'number' ? details.status : null,
+  };
+}
+
+function reportFoundationF12MessageListDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7810/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-f12-message-list',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationConversationReadback',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-approval-expiry-cleanup
+function foundationApprovalExpiryCleanupErrorDebug(
+  error: unknown,
+): Record<string, unknown> | null {
+  if (error === null || error === undefined) return null;
+  const candidate = error && typeof error === 'object'
+    ? error as {
+        code?: unknown;
+        details?: Record<string, unknown>;
+        message?: unknown;
+        name?: unknown;
+      }
+    : null;
+  const details = candidate?.details;
+  return {
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    detailCode:
+      typeof details?.error_code === 'string' ? details.error_code : null,
+    message:
+      typeof candidate?.message === 'string'
+        ? candidate.message
+        : String(error),
+    name: typeof candidate?.name === 'string' ? candidate.name : typeof error,
+    observedCode: observedErrorCode(error),
+    stationStatus:
+      typeof details?.status === 'number' ? details.status : null,
+  };
+}
+
+function reportFoundationApprovalExpiryCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7811/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-approval-expiry-cleanup',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationApprovalExpiredScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-invalid-reference-resend
+function reportFoundationInvalidReferenceResendDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7812/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-invalid-reference-resend',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationInvalidReferenceScenario',
+      msg: `[DEBUG] ${stage}`,
+      data: evidenceValue(data),
       ts: Date.now(),
     }),
   }).then(() => undefined).catch(() => undefined);
@@ -8994,9 +13572,25 @@ function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
       turnId: String(evidenceField(attempt, 'turnId', 'turn_id') ?? ''),
       index: Number(attempt.index ?? 0),
       status: Number(attempt.status ?? 0),
+      errorCode: String(
+        evidenceField(attempt, 'errorCode', 'error_code') ?? '',
+      ),
       usage: evidenceValue(attempt.usage ?? null),
+      record: evidenceValue(attempt),
     };
   });
+}
+
+function foundationTurnStatusName(value: unknown): string {
+  return ({
+    [AgentTurnStatus.RUNNING]: 'running',
+    [AgentTurnStatus.WAITING_LOCAL_TOOL]: 'waiting_local_tool',
+    [AgentTurnStatus.COMPLETED]: 'completed',
+    [AgentTurnStatus.FAILED]: 'failed',
+    [AgentTurnStatus.CANCELLED]: 'cancelled',
+    [AgentTurnStatus.INTERRUPTED]: 'interrupted',
+    [AgentTurnStatus.REJECTED]: 'rejected',
+  } as Record<number, string>)[Number(value)] ?? 'unknown';
 }
 
 async function runFoundationF07Scenario(input: {
@@ -9090,6 +13684,9 @@ async function runFoundationF07Scenario(input: {
     elapsedMs: performance.now() - scenarioStartedAt,
     sourceCancellationStatus,
     sourceCancellationStatusType: typeof cancellationResponse?.status,
+    responseTurnPresent: Boolean(cancellationResponse?.turn_id),
+    responseTurnMatchesTarget:
+      cancellationResponse?.turn_id === cancellationAttempt.turnId,
     responseFields: Object.keys(cancellationResponse ?? {}).sort(),
   });
   if (sourceCancellationStatus !== 'cancelled') {
@@ -9245,13 +13842,82 @@ async function runFoundationF07Scenario(input: {
     'foundationF07OriginalEvidenceBefore',
   );
 
-  const firstRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  // #region debug-point Y-AB:as-f07-regenerate-failure
+  const reportRegenerateFailure = async (
+    operation: 'first' | 'second',
+    expectedConversationVersion: number,
+    operationStartedAt: number,
+    error: unknown,
+  ) => {
+    const codedError = error as {
+      code?: unknown;
+      details?: {
+        body?: unknown;
+        reason?: unknown;
+        status?: unknown;
+      };
+    };
+    const responseBody = typeof codedError.details?.body === 'string'
+      ? codedError.details.body
+      : '';
+    let stationError: Record<string, unknown> = {};
+    try {
+      stationError = responseBody
+        ? evidenceRecord(
+            JSON.parse(responseBody),
+            'foundationF07RegenerateErrorBody',
+          )
+        : {};
+    } catch {
+      stationError = {};
+    }
+    await reportFoundationF07Debug('Y-AB', 'regenerate-failed', {
+      operation,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      operationElapsedMs: performance.now() - operationStartedAt,
+      expectedConversationVersion,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      httpStatus: Number(codedError.details?.status ?? 0),
+      stationErrorCode: String(
+        evidenceField(stationError, 'errorCode', 'error_code') ?? '',
+      ),
+      stationErrorMessage: String(stationError.message ?? ''),
+      errorReason: typeof codedError.details?.reason === 'string'
+        ? codedError.details.reason
+        : '',
+    });
+  };
+  // #endregion
+
+  const firstRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'first',
+    elapsedMs: firstRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: sourceReadback.conversation.version,
+  });
+  let firstRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    firstRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: sourceReadback.conversation.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'first',
+      sourceReadback.conversation.version,
+      firstRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const firstRegenerate = evidenceRecord(
+    firstRegenerateValue,
     'foundationF07FirstRegenerate',
   );
   const firstRegenerateMessage = await foundationRevisionMessageFact(
@@ -9261,14 +13927,41 @@ async function runFoundationF07Scenario(input: {
   const afterFirstRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'first',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - firstRegenerateStartedAt,
+    conversationVersion: afterFirstRegenerate.version,
+    messagePresent: Boolean(firstRegenerateMessage.messageId),
+  });
 
-  const secondRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  const secondRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'second',
+    elapsedMs: secondRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: afterFirstRegenerate.version,
+  });
+  let secondRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    secondRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: afterFirstRegenerate.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'second',
+      afterFirstRegenerate.version,
+      secondRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const secondRegenerate = evidenceRecord(
+    secondRegenerateValue,
     'foundationF07SecondRegenerate',
   );
   const secondRegenerateMessage = await foundationRevisionMessageFact(
@@ -9278,6 +13971,13 @@ async function runFoundationF07Scenario(input: {
   const afterSecondRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'second',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - secondRegenerateStartedAt,
+    conversationVersion: afterSecondRegenerate.version,
+    messagePresent: Boolean(secondRegenerateMessage.messageId),
+  });
   reportFoundationF07Debug('D', 'regenerations-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
     firstMessagePresent: Boolean(firstRegenerateMessage.messageId),
@@ -9372,6 +14072,7 @@ async function runFoundationF07Scenario(input: {
       'version',
     ) ?? 0,
   );
+  const branchStoreBefore = useChatStore.getState();
   await reportFoundationF07Debug('V-X', 'selected-branch-started', {
     expectedVersion: selectedExpectedVersion,
     activeBranchIsOriginal:
@@ -9380,7 +14081,18 @@ async function runFoundationF07Scenario(input: {
     activeBranchIsTarget:
       originalBranchConversation.active_branch_message_id
       === firstRegenerateMessage.messageId,
+    currentSessionMatchesScenario:
+      branchStoreBefore.currentSessionKey === conversation.conversation_id,
+    targetInStore: branchStoreBefore.messages.some(
+      (message) => message.id === firstRegenerateMessage.messageId,
+    ),
+    targetInOriginalReadback: originalReadbackAfter.messages.some(
+      (message) => message.messageId === firstRegenerateMessage.messageId,
+    ),
   });
+  if (branchStoreBefore.currentSessionKey !== conversation.conversation_id) {
+    await branchStoreBefore.selectSession(conversation.conversation_id);
+  }
   try {
     await useChatStore.getState().branchFromMessage(
       String(firstRegenerateMessage.messageId),
@@ -9424,6 +14136,15 @@ async function runFoundationF07Scenario(input: {
       activeBranchIsTarget:
         failedConversation?.active_branch_message_id
         === firstRegenerateMessage.messageId,
+      currentSessionMatchesScenario:
+        useChatStore.getState().currentSessionKey
+        === conversation.conversation_id,
+      targetInStore: useChatStore.getState().messages.some(
+        (message) => message.id === firstRegenerateMessage.messageId,
+      ),
+      targetInOriginalReadback: originalReadbackAfter.messages.some(
+        (message) => message.messageId === firstRegenerateMessage.messageId,
+      ),
       errorCode: typeof codedError.code === 'string' ? codedError.code : '',
       httpStatus: Number(codedError.details?.status ?? 0),
       stationErrorCode:
@@ -9705,7 +14426,9 @@ async function runFoundationF10Scenario(input: {
     throw new Error('agent.acceptance.capabilitySessionUnavailable');
   }
   const crossDeviceSession = input.capabilitySessions.station.sessions.find(
-    (session) => session.session_id !== stationSession.session_id,
+    (session) =>
+      session.session_id !== stationSession.session_id
+      && session.device_id !== stationSession.device_id,
   );
   if (!crossDeviceSession) {
     throw new Error('agent.acceptance.crossDeviceSessionUnavailable');
@@ -9915,6 +14638,14 @@ interface FoundationCancelledResult {
   facts: Record<string, unknown>;
 }
 
+interface FoundationInterruptedResult {
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}
+
 interface FoundationCancelledReceiverSnapshot {
   messageId: string | null;
   visible: boolean;
@@ -10026,6 +14757,120 @@ async function foundationCancelledReceiverSnapshot(
   return snapshot;
 }
 
+async function foundationInterruptedReceiverSnapshot(
+  messageId: string,
+  description: string,
+  debugContext: {
+    platform: string;
+    locale: string;
+    scenarioKey: string;
+  },
+): Promise<{
+  messageId: string;
+  turnId: string;
+  visible: boolean;
+  terminalStatus: string;
+  errorType: string;
+  reasonCode: string;
+  errorText: string;
+  expectedErrorText: string;
+  recoveryVisible: boolean;
+  recoveryText: string;
+  expectedRecoveryText: string;
+  recoveryExecuted: boolean;
+}> {
+  const selector =
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${messageId}"]`;
+  const recoverySelector =
+    '[data-pt-agent-message-error-recovery="recover"]';
+  let waitReadyObserved = false;
+  await waitFor(
+    () => {
+      const element = document.querySelector<HTMLElement>(selector);
+      const recovery = element?.querySelector<HTMLElement>(recoverySelector);
+      waitReadyObserved = Boolean(
+        element
+        && element.getAttribute('data-pt-agent-terminal-status')
+          === 'interrupted'
+        && element.getAttribute('data-pt-agent-error-type')
+          === 'LIFECYCLE_INTERRUPTED'
+        && recovery
+        && recovery.getClientRects().length > 0,
+      );
+      return waitReadyObserved;
+    },
+    description,
+    30_000,
+  );
+  const messageElement = document.querySelector<HTMLElement>(selector);
+  const recovery = messageElement?.querySelector<HTMLElement>(
+    recoverySelector,
+  );
+  const error = messageElement?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.lifecycleInterrupted"]',
+  );
+  const projected = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) => message.id === messageId);
+  // #region debug-point AA-AD:interrupted-receiver-snapshot
+  await reportFoundationF06TerminalRaceDebug(
+    'AA-AD',
+    'interrupted-receiver-post-wait',
+    {
+      ...debugContext,
+      waitReadyObserved,
+      messageElementPresent: messageElement !== null,
+      messageVisible:
+        Boolean(messageElement && messageElement.getClientRects().length > 0),
+      terminalStatus:
+        messageElement?.getAttribute('data-pt-agent-terminal-status') ?? null,
+      errorType:
+        messageElement?.getAttribute('data-pt-agent-error-type') ?? null,
+      recoveryPresent: recovery !== null && recovery !== undefined,
+      recoveryVisible:
+        Boolean(recovery && recovery.getClientRects().length > 0),
+      errorElementPresent: error !== null && error !== undefined,
+      errorElementVisible:
+        Boolean(error && error.getClientRects().length > 0),
+      projectedPresent: projected !== undefined,
+      projectedTurnPresent: Boolean(projected?.turnId),
+      currentSessionPresent:
+        useChatStore.getState().currentSessionKey.length > 0,
+      projectedMessageCount: useChatStore.getState().messages.length,
+    },
+  );
+  // #endregion
+  if (!messageElement || !recovery || !error || !projected?.turnId) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedReceiverMissing',
+    );
+  }
+  return {
+    messageId,
+    turnId: projected.turnId,
+    visible: messageElement.getClientRects().length > 0,
+    terminalStatus:
+      messageElement.getAttribute('data-pt-agent-terminal-status') ?? '',
+    errorType:
+      messageElement.getAttribute('data-pt-agent-error-type') ?? '',
+    reasonCode:
+      messageElement.getAttribute('data-pt-agent-error-reason-code') ?? '',
+    errorText: error.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.lifecycleInterrupted',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.recover',
+      { ns: 'agent' },
+    ),
+    recoveryExecuted: false,
+  };
+}
+
 function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
   const record = evidenceRecord(error, 'activeMutationConflictError');
   const details = evidenceRecord(record.details, 'activeMutationConflictDetails');
@@ -10047,20 +14892,1574 @@ async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>
   return sha256Hex(stableJson(agent));
 }
 
+async function prepareFoundationForbiddenActorOwner(input: {
+  scenarioKey: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationForbiddenActorOwnerScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioConflict');
+  }
+  const ownerActor = authenticatedFoundationActorPtid();
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const agent = await store.createAgent({
+    name: `foundation-owner-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Foundation owner ${input.sampleId}`,
+    description: 'Foundation forbidden actor private fixture',
+    visibility: 'private',
+  });
+  let conversationId = '';
+  try {
+    const conversation = await api.createAgentConversation({
+      agent_id: agent.id,
+      title: `Foundation forbidden actor ${input.sampleId}`,
+      provider_id: agent.provider,
+      model_name: agent.model,
+    });
+    conversationId = conversation.conversation_id;
+    const [readback, execution, queue] = await Promise.all([
+      foundationConversationReadback(conversationId),
+      foundationExecutionSnapshot(agent.id, conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const scenario: FoundationForbiddenActorOwnerScenario = {
+      scenarioKey: input.scenarioKey,
+      agentId: agent.id,
+      conversationId,
+      priorSelection,
+      ownerActorHash: await sha256Hex(ownerActor),
+      beforeHash: await sha256Hex(stableJson(readback)),
+      beforeVersion: readback.conversation.version,
+      beforeMessageCount: readback.messages.length,
+      beforeQueueCount: queue.entries.length,
+      beforeTurnCount: execution.turnCount,
+      beforeProviderCallCount: execution.providerCallCount,
+    };
+    foundationForbiddenActorOwnerScenarios.set(input.scenarioKey, scenario);
+    return {
+      scenarioKey: input.scenarioKey,
+      resourceKind: 'conversation',
+      conversationId,
+      agentId: agent.id,
+      ownerActorHash: scenario.ownerActorHash,
+      beforeHash: scenario.beforeHash,
+      beforeVersion: scenario.beforeVersion,
+    };
+  } catch (error) {
+    if (conversationId) {
+      await deleteFoundationConversation(conversationId).catch(() => undefined);
+    }
+    await api.deleteAgent(agent.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioMissing');
+  }
+  const [readback, execution, queue] = await Promise.all([
+    foundationConversationReadback(scenario.conversationId),
+    foundationExecutionSnapshot(scenario.agentId, scenario.conversationId),
+    api.listAgentTurnQueue(scenario.conversationId),
+  ]);
+  return {
+    resourceKind: 'conversation',
+    resourceId: scenario.conversationId,
+    ownerActorHash: scenario.ownerActorHash,
+    beforeHash: scenario.beforeHash,
+    afterHash: await sha256Hex(stableJson(readback)),
+    versionBefore: scenario.beforeVersion,
+    versionAfter: readback.conversation.version,
+    messageDelta: readback.messages.length - scenario.beforeMessageCount,
+    queueDelta: queue.entries.length - scenario.beforeQueueCount,
+    turnDelta: execution.turnCount - scenario.beforeTurnCount,
+    providerExecutionDelta:
+      execution.providerCallCount - scenario.beforeProviderCallCount,
+  };
+}
+
+// #region debug-point A-E:forbidden-actor-cleanup
+function reportForbiddenActorCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7784/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'forbidden-actor-cleanup',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:cleanupFoundationForbiddenActorOwner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+async function cleanupFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-started', {
+    scenarioPresent: scenario !== undefined,
+    priorSelectionPresent: Boolean(scenario?.priorSelection),
+    currentSelectionMatchesPrior:
+      scenario !== undefined
+      && useAgentStore.getState().selectedAgent === scenario.priorSelection,
+  });
+  if (!scenario) {
+    return {
+      scenarioKey,
+      resourceDeleted: true,
+      agentDeleted: true,
+      priorSelectionRestored: true,
+    };
+  }
+  const failures: unknown[] = [];
+  let resourceDeleted = false;
+  let agentDeleted = false;
+  try {
+    const deletionCode = await deleteFoundationConversation(
+      scenario.conversationId,
+    );
+    resourceDeleted = deletionCode === ''
+      || deletionCode === 'CONVERSATION_DELETED'
+      || deletionCode.includes('AGENT_4004');
+    await reportForbiddenActorCleanupDebug('A', 'conversation-delete-finished', {
+      deletionCode,
+      resourceDeleted,
+    });
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('A-D', 'conversation-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  try {
+    await api.deleteAgent(scenario.agentId).catch((error: unknown) => {
+      if (!isFoundationResourceNotFound(error)) throw error;
+    });
+    agentDeleted = await api.getAgent(scenario.agentId).then(
+      () => false,
+      (error: unknown) => isFoundationResourceNotFound(error),
+    );
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-finished', {
+      agentDeleted,
+    });
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  try {
+    await useAgentStore.getState().loadAgents();
+    if (scenario.priorSelection) {
+      useAgentStore.getState().setSelectedAgent(scenario.priorSelection);
+      await api.setSelectedAgent(scenario.priorSelection);
+    }
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('C', 'selection-restore-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  const priorSelectionRestored =
+    useAgentStore.getState().selectedAgent === scenario.priorSelection;
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-evaluated', {
+    failureCount: failures.length,
+    failureCodes: failures.map(observedErrorCode),
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  });
+  if (
+    failures.length > 0
+    || !resourceDeleted
+    || !agentDeleted
+    || !priorSelectionRestored
+  ) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationForbiddenActorOwnerCleanupFailed'),
+      {
+        failures,
+        resourceDeleted,
+        agentDeleted,
+        priorSelectionRestored,
+      },
+    );
+  }
+  foundationForbiddenActorOwnerScenarios.delete(scenarioKey);
+  return {
+    scenarioKey,
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  };
+}
+
+async function runFoundationForbiddenActorAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+  foreignContentFieldCount: number;
+}> {
+  const rejectedRef: { current: Record<string, unknown> | null } = {
+    current: null,
+  };
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
+      ) return;
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      {
+        clientIdempotencyKey: input.idempotencyKey,
+        onRejected: (error) => {
+          if (error) {
+            rejectedRef.current = evidenceValue(error) as Record<string, unknown>;
+          }
+        },
+      },
+    );
+    if (!sent) {
+      throw new Error('agent.acceptance.foundationForbiddenActorSendRejected');
+    }
+    await waitFor(
+      () => (
+        rejectedRef.current !== null
+        && errorEventRef.current !== null
+      ),
+      'typed forbidden actor rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const outcome = rejectedRef.current;
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  if (
+    !outcome
+    || !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || sourceDelivery.turnId !== ''
+    || sourceDelivery.sequence !== 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationForbiddenActorSourceIdentityMismatch',
+    );
+  }
+  const foreignContentFields = new Set([
+    'title',
+    'description',
+    'messages',
+    'runtime_binding',
+    'runtimeBinding',
+    'provider_id',
+    'providerId',
+    'model_name',
+    'modelName',
+  ]);
+  return {
+    outcome,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+    foreignContentFieldCount: Object.keys(errorEvent.data)
+      .filter((key) => foreignContentFields.has(key)).length,
+  };
+}
+
+async function rejectFoundationForbiddenActor(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  ownerFixture: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const resourceKind = String(input.ownerFixture.resourceKind ?? '');
+  const resourceId = String(input.ownerFixture.conversationId ?? '');
+  const ownerActorHash = String(input.ownerFixture.ownerActorHash ?? '');
+  if (
+    resourceKind !== 'conversation'
+    || !resourceId
+    || !String(input.ownerFixture.agentId ?? '')
+    || !ownerActorHash
+  ) {
+    throw new Error('agent.acceptance.foundationForbiddenActorOwnerInvalid');
+  }
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  if (receiverActorHash === ownerActorHash) {
+    throw new Error('agent.acceptance.foundationForbiddenActorActorsCollapsed');
+  }
+
+  clearFoundationLocalConversationProjection(resourceId);
+  foundationForbiddenActorReceiverResources.set(input.scenarioKey, resourceId);
+  useChatStore.setState({
+    currentSessionKey: resourceId,
+    messages: [],
+    isStreaming: false,
+    streamingStartedAt: null,
+    abortController: null,
+  });
+  const idempotencyKey = crypto.randomUUID();
+  const content = `Forbidden actor ${input.sampleId}`;
+  const startedAt = performance.now();
+  const first = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+  const replayed = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+
+  await waitFor(
+    () => Boolean(document.querySelector(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    )),
+    'forbidden actor receiver',
+    10_000,
+  );
+  const errorSurface = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    ),
+  ).reverse().find((element) => element.getClientRects().length > 0);
+  const errorToggle = errorSurface?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-toggle]',
+  );
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+  if (!errorSurface?.querySelector(errorSelector)) {
+    errorToggle?.click();
+    await waitFor(
+      () => Boolean(errorSurface?.querySelector(errorSelector)),
+      'localized forbidden actor text',
+      10_000,
+    );
+  }
+  const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+  const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="switch-account"]',
+  );
+  if (!errorSurface || !errorText || !recovery) {
+    throw new Error('agent.acceptance.foundationForbiddenActorSurfaceMissing');
+  }
+  const receiver = {
+    errorVisible: errorText.getClientRects().length > 0,
+    errorText: errorText.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.forbiddenActor',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.switchAccount',
+      { ns: 'agent' },
+    ),
+    accountGateObserved: false,
+    recoveryExecuted: false,
+    receiverActorHash,
+  };
+  const identityBeforeRecovery = identityRuntime.getSnapshot();
+  // #region debug-point A-E:forbidden-actor-recovery-click
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'A-E',
+    'before-recovery-click',
+    {
+      phaseKind: identityBeforeRecovery.phase.kind,
+      lifecycleState: identityBeforeRecovery.lifecycle.state,
+      dataReady: identityBeforeRecovery.lifecycle.dataReady,
+      authenticated: useSessionStore.getState().authenticated,
+      currentActorPresent:
+        Boolean(useSessionStore.getState().currentUser?.actorPtid),
+      knownAccountCount: identityBeforeRecovery.lifecycle.knownAccounts.length,
+      recoveryConnected: recovery.isConnected,
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryDisabled: recovery.disabled,
+    },
+  );
+  const observeRecoveryClick = () => {
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'recovery-click-observed',
+      {
+        recoveryConnected: recovery.isConnected,
+        recoveryDisabled: recovery.disabled,
+      },
+    );
+  };
+  recovery.addEventListener('click', observeRecoveryClick, { once: true });
+  try {
+    recovery.click();
+    const identityAfterRecovery = identityRuntime.getSnapshot();
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'after-recovery-click',
+      {
+        phaseKind: identityAfterRecovery.phase.kind,
+        lifecycleState: identityAfterRecovery.lifecycle.state,
+        dataReady: identityAfterRecovery.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+      },
+    );
+    try {
+      await waitFor(
+        () => (
+          identityRuntime.getSnapshot().phase.kind === 'accountGate'
+          && !useSessionStore.getState().authenticated
+        ),
+        'forbidden actor account gate',
+        30_000,
+      );
+    } catch (error) {
+      const identityAtTimeout = identityRuntime.getSnapshot();
+      await reportFoundationForbiddenActorAccountGateDebug(
+        'A-E',
+        'account-gate-timeout',
+        {
+          phaseKind: identityAtTimeout.phase.kind,
+          lifecycleState: identityAtTimeout.lifecycle.state,
+          dataReady: identityAtTimeout.lifecycle.dataReady,
+          authenticated: useSessionStore.getState().authenticated,
+          currentActorPresent:
+            Boolean(useSessionStore.getState().currentUser?.actorPtid),
+          knownAccountCount: identityAtTimeout.lifecycle.knownAccounts.length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      throw error;
+    }
+    const identityAtGate = identityRuntime.getSnapshot();
+    await reportFoundationForbiddenActorAccountGateDebug(
+      'A-E',
+      'account-gate-observed',
+      {
+        phaseKind: identityAtGate.phase.kind,
+        lifecycleState: identityAtGate.lifecycle.state,
+        dataReady: identityAtGate.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+        knownAccountCount: identityAtGate.lifecycle.knownAccounts.length,
+      },
+    );
+  } finally {
+    recovery.removeEventListener('click', observeRecoveryClick);
+  }
+  // #endregion
+  receiver.accountGateObserved = true;
+  receiver.recoveryExecuted = true;
+
+  return {
+    scenarioKey: input.scenarioKey,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: first.runtimeEvent,
+    facts: {
+      runtimeEvent: first.runtimeEvent,
+      outcome: first.outcome,
+      receiver,
+      foreignAccess: {
+        resourceKind,
+        resourceId,
+        ownerActorHash,
+        receiverActorHash,
+        requestCount: 2,
+        foreignPayloadCount:
+          first.foreignContentFieldCount + replayed.foreignContentFieldCount,
+      },
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.rawPayloadHash,
+        equal: first.rawPayloadHash === replayed.rawPayloadHash,
+      },
+      cleanup: {
+        localProjectionCleared:
+          useChatStore.getState().currentSessionKey !== resourceId,
+        conversationDeleted: false,
+      },
+    },
+  };
+}
+
+async function completeFoundationForbiddenActorRecovery(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  ownerReadback: Record<string, unknown>;
+  ownerCleanup: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationForbiddenActorFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  foundationForbiddenActorReceiverResources.delete(input.scenarioKey);
+  return {
+    ...input.rejectedScenario,
+    scenarioKey: input.scenarioKey,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash
+          && identityRuntime.getSnapshot().lifecycle.state === 'ready',
+      },
+      owner: input.ownerReadback,
+      station: {
+        conversationDelta: 0,
+        turnDelta: input.ownerReadback.turnDelta,
+        messageDelta: input.ownerReadback.messageDelta,
+        queueDelta: input.ownerReadback.queueDelta,
+        providerExecutionDelta: input.ownerReadback.providerExecutionDelta,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationForbiddenActorCleanup',
+        ),
+        foreignResourceDeleted: input.ownerCleanup.resourceDeleted,
+        foreignAgentDeleted: input.ownerCleanup.agentDeleted,
+        ownerSelectionRestored: input.ownerCleanup.priorSelectionRestored,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash,
+      },
+    },
+  };
+}
+
+async function runFoundationIncompatibleCapabilityAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+}> {
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      ) {
+        return;
+      }
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      { clientIdempotencyKey: input.idempotencyKey },
+    );
+    if (!sent) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySendRejected',
+      );
+    }
+    await waitFor(
+      () => errorEventRef.current !== null,
+      'typed incompatible capability rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  const sourcePayloadMatches = Boolean(
+    errorEvent
+    && sourceDelivery
+    && stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) === stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    ),
+  );
+  if (
+    !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || !sourceDelivery.turnId
+    || sourceDelivery.sequence <= 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || !sourcePayloadMatches
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilitySourceIdentityMismatch:'
+      + stableJson({
+        sourceDeliveryPresent: Boolean(sourceDelivery),
+        transport: sourceDelivery?.transport ?? '',
+        actorMatches: sourceDelivery?.ptid === actorPtid,
+        conversationMatches:
+          sourceDelivery?.conversationId === input.conversationId,
+        turnIdPresent: Boolean(sourceDelivery?.turnId),
+        sequence: sourceDelivery?.sequence ?? 0,
+        eventType: sourceDelivery?.rawPayload.eventType ?? '',
+        sourcePayloadMatches,
+      }),
+    );
+  }
+  return {
+    outcome: errorEvent.data,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+  };
+}
+
+interface FoundationDisposableRuntimeFixture {
+  providerId: string;
+  modelId: string;
+}
+
+async function createGovernedToolRuntimeFixture(
+  purpose: string,
+  baseUrl: string,
+): Promise<FoundationDisposableRuntimeFixture> {
+  const suffix = crypto.randomUUID();
+  const purposeKey = purpose.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+  const requestedProviderId = `mca-${purposeKey}-${suffix}`;
+  const modelId = `model-${suffix}`;
+  const created = await api.createProvider({
+    id: requestedProviderId,
+    name: requestedProviderId,
+    description: `Development ${purpose}`,
+    base_url: baseUrl,
+    api_key: crypto.randomUUID(),
+  });
+  const providerId = String(created.provider?.id || '');
+  if (providerId !== requestedProviderId) {
+    throw new Error('agent.acceptance.governedToolProviderIdentityMismatch');
+  }
+  try {
+    await api.addModel(providerId, {
+      id: modelId,
+      display_name: `Governed Tool ${purpose}`,
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: true,
+    });
+    const availableModel = (await api.listAvailableModels()).models.find(
+      (model) => (
+        model.provider_id === providerId
+        && model.id === modelId
+        && model.enabled
+      ),
+    );
+    if (
+      !availableModel
+      || availableModel.streaming !== true
+      || availableModel.function_call !== true
+    ) {
+      throw new Error(
+        'agent.acceptance.governedToolRuntimeModelUnavailable',
+      );
+    }
+    return { providerId, modelId };
+  } catch (error) {
+    await api.deleteProvider(providerId).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function createFoundationDisposableRuntimeFixture(
+  purpose: string,
+): Promise<FoundationDisposableRuntimeFixture> {
+  const suffix = crypto.randomUUID();
+  const providerId = 'ollama';
+  const modelId = `model-${suffix}`;
+  const catalogProvider = await api.getProvider(providerId);
+  if (
+    catalogProvider.version !== 0
+    || catalogProvider.has_api_key
+    || catalogProvider.show_api_key !== false
+  ) {
+    throw new Error(
+      'agent.acceptance.disposableRuntimeProviderUnavailable',
+    );
+  }
+  try {
+    await api.addModel(providerId, {
+      id: modelId,
+      display_name: `Disposable ${purpose} model`,
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: false,
+    });
+    const availableModel = (await api.listAvailableModels()).models.find(
+      (model) => (
+        model.provider_id === providerId
+        && model.id === modelId
+        && model.enabled
+      ),
+    );
+    if (
+      !availableModel
+      || availableModel.type !== 'chat'
+      || availableModel.context_window !== 8_192
+      || availableModel.function_call !== false
+    ) {
+      throw new Error(
+        'agent.acceptance.disposableRuntimeModelUnavailable',
+      );
+    }
+    return { providerId, modelId };
+  } catch (error) {
+    try {
+      const configuredProvider = (await api.listProviders()).find(
+        (provider) => provider.id === providerId && provider.version > 0,
+      );
+      if (configuredProvider) {
+        await api.deleteProvider(providerId);
+      }
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error('agent.acceptance.disposableRuntimeFixtureCleanupFailed'),
+        { primaryError: error, cleanupError },
+      );
+    }
+    throw error;
+  }
+}
+
+async function deleteFoundationDisposableRuntimeFixture(
+  fixture: FoundationDisposableRuntimeFixture,
+): Promise<{
+  providerRestored: boolean;
+  modelDeleted: boolean;
+}> {
+  const configuredProvider = (await api.listProviders()).find(
+    (provider) => provider.id === fixture.providerId && provider.version > 0,
+  );
+  if (configuredProvider) {
+    await api.deleteProvider(fixture.providerId);
+  }
+  const restoredProvider = await api.getProvider(fixture.providerId);
+  return {
+    providerRestored:
+      restoredProvider.version === 0
+      && restoredProvider.has_api_key === false,
+    modelDeleted: !restoredProvider.models.some(
+      (model) => model.id === fixture.modelId,
+    ),
+  };
+}
+
+async function runFoundationIncompatibleCapabilityScenario(input: {
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const priorSurface = store.getAgentSurface(priorSelection);
+
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let providerSetupAttempted = false;
+  let disposableAgentId = '';
+  let rejectedConversationId = '';
+  let capabilityBindingId = '';
+  let scenarioError: unknown = null;
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+  const startedAt = performance.now();
+
+  try {
+    providerSetupAttempted = true;
+    runtimeFixture = await createFoundationDisposableRuntimeFixture(
+      'incompatible-capability',
+    );
+    const fixtureProviderId = runtimeFixture.providerId;
+    const fixtureModelId = runtimeFixture.modelId;
+    const configuredCandidateModel = (
+      await api.listAvailableModels()
+    ).models.find(
+      (model) => (
+        model.provider_id === fixtureProviderId
+        && model.id === fixtureModelId
+        && model.enabled
+      ),
+    );
+    if (
+      !configuredCandidateModel
+      || configuredCandidateModel.function_call !== false
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityModelFixtureMissing',
+      );
+    }
+
+    const disposable = await store.createAgent({
+      name: `foundation-incompatible-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Foundation incompatible ${input.sampleId}`,
+      description: 'Foundation runtime capability mismatch fixture',
+      provider: fixtureProviderId,
+      model: fixtureModelId,
+    });
+    disposableAgentId = disposable.id || disposable.name;
+    const toolFixture = await foundationToolFixture(disposableAgentId, 'browser');
+    if (
+      !toolFixture.manifest.requiredRuntimeCapabilities.includes(
+        'native-tools',
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityManifestInvalid',
+      );
+    }
+    const binding = await updateFoundationToolPolicy(
+      disposable,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    capabilityBindingId = binding.bindingId;
+
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      ),
+      'incompatible capability composer',
+      30_000,
+    );
+
+    const conversation = await api.createAgentConversation({
+      agent_id: disposableAgentId,
+      title: `Foundation incompatible capability ${input.sampleId}`,
+      provider_id: fixtureProviderId,
+      model_name: fixtureModelId,
+    });
+    rejectedConversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(rejectedConversationId);
+    await useChatStore.getState().syncMessages();
+
+    const readinessBefore = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryBefore = readinessBefore.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryBefore
+      || readinessEntryBefore.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryBefore.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessMissing',
+      );
+    }
+
+    const beforeExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const beforeQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const idempotencyKey = crypto.randomUUID();
+    const content = `Incompatible capability ${input.sampleId}`;
+    const first = await runFoundationIncompatibleCapabilityAttempt({
+      conversationId: rejectedConversationId,
+      idempotencyKey,
+      content,
+    });
+    const replayDeliveries = await foundationStationReplayReadback({
+      conversationId: rejectedConversationId,
+      turnId: first.runtimeEvent.sourceTurnId ?? '',
+      streamId: `foundation-incompatible-${idempotencyKey}`,
+      streamGeneration: first.runtimeEvent.streamGeneration ?? 1,
+      actorPtid: authenticatedFoundationActorPtid(),
+      acknowledgedCursor: 0,
+    });
+    const replayed = replayDeliveries.find((delivery) => (
+      delivery.eventType === 'error'
+      && delivery.sourceTurnId === first.runtimeEvent.sourceTurnId
+      && delivery.sourceSequence === first.runtimeEvent.sourceSequence
+    ));
+    if (!replayed) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReplayMissing',
+      );
+    }
+
+    await waitFor(
+      () => Boolean(document.querySelector(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      )),
+      'incompatible capability receiver',
+      10_000,
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized incompatible capability text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+    );
+    if (!errorSurface || !errorText || !recovery) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySurfaceMissing',
+      );
+    }
+    const receiver = {
+      errorVisible: errorText.getClientRects().length > 0,
+      errorText: errorText.textContent?.trim() ?? '',
+      expectedErrorText: i18n.t(
+        'agent.errors.incompatibleCapability',
+        { ns: 'agent' },
+      ),
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryLocaleKey: 'agent.recovery.chooseCompatibleModel',
+      recoveryText: recovery.textContent?.trim() ?? '',
+      expectedRecoveryText: i18n.t(
+        'agent.recovery.chooseCompatibleModel',
+        { ns: 'agent' },
+      ),
+      recoveryExecuted: false,
+      profileVisible: false,
+      profileAgentId: '',
+      modelSelectionVisible: false,
+      selectedModelId: '',
+    };
+    recovery.click();
+    await waitFor(
+      () => Boolean(
+        document.querySelector(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length
+        && document.querySelector(
+          `[data-pt-agent-profile-model="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'incompatible capability model configuration',
+      30_000,
+    );
+    const agentAfterRecovery = await api.getAgent(disposableAgentId);
+    receiver.recoveryExecuted = true;
+    receiver.profileVisible = true;
+    receiver.profileAgentId = disposableAgentId;
+    receiver.modelSelectionVisible = true;
+    receiver.selectedModelId = agentAfterRecovery.model;
+
+    const readinessAfter = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryAfter = readinessAfter.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryAfter
+      || readinessEntryAfter.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryAfter.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessChanged',
+      );
+    }
+
+    const afterExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    let directTraceAvailable = false;
+    let directTraceTurnPresent = false;
+    let directTracePayloadPresent = false;
+    let directTraceErrorCode = '';
+    let diagnosticReplayAvailable = false;
+    let diagnosticReplayStatus = 0;
+    let diagnosticAttemptCount = 0;
+    let diagnosticRuntimeSnapshotPresent = false;
+    let diagnosticErrorCode = '';
+    try {
+      const traceResponse = evidenceRecord(
+        evidenceValue(await api.getAgentTurnTrace({
+          turnId: first.runtimeEvent.sourceTurnId ?? '',
+        })),
+        'foundationIncompatibleDirectTraceResponse',
+      );
+      const traceEntry = evidenceRecord(
+        traceResponse.entry,
+        'foundationIncompatibleDirectTraceEntry',
+      );
+      directTraceAvailable = true;
+      directTraceTurnPresent = Boolean(traceEntry.turn);
+      directTracePayloadPresent = Boolean(traceEntry.trace);
+    } catch (error) {
+      directTraceErrorCode = observedErrorCode(error);
+    }
+    try {
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(
+          first.runtimeEvent.sourceTurnId ?? '',
+        )),
+        'foundationIncompatibleDirectDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleDirectReplay',
+      );
+      const attempts = optionalEvidenceArray(
+        evidenceField(replay, 'attempts', 'attempts'),
+        'foundationIncompatibleDirectAttempts',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleDirectAttempt'));
+      diagnosticReplayAvailable = true;
+      diagnosticReplayStatus = Number(replay.status ?? 0);
+      diagnosticAttemptCount = attempts.length;
+      diagnosticRuntimeSnapshotPresent = attempts.some((attempt) =>
+        Boolean(evidenceField(
+          attempt,
+          'runtimeSnapshot',
+          'runtime_snapshot',
+        )));
+    } catch (error) {
+      diagnosticErrorCode = observedErrorCode(error);
+    }
+    const tracedTurnDelta =
+      afterExecution.turnCount - beforeExecution.turnCount;
+    const diagnosticRejectedTurnCount = (
+      diagnosticReplayAvailable
+      && diagnosticReplayStatus === AgentTurnStatus.FAILED
+      && diagnosticAttemptCount === 1
+      && diagnosticRuntimeSnapshotPresent
+    )
+      ? 1
+      : 0;
+    const turnDelta = Math.max(
+      tracedTurnDelta,
+      diagnosticRejectedTurnCount,
+    );
+    // #region debug-point A-D:incompatible-capability-turn-count-boundary
+    await reportFoundationIncompatibleTurnCountDebug(
+      'A-D',
+      'turn-count-boundary',
+      {
+        beforeTurnCount: beforeExecution.turnCount,
+        afterTurnCount: afterExecution.turnCount,
+        tracedTurnDelta,
+        diagnosticRejectedTurnCount,
+        projectedTurnDelta: turnDelta,
+        directTraceAvailable,
+        directTraceTurnPresent,
+        directTracePayloadPresent,
+        directTraceErrorCode,
+        diagnosticReplayAvailable,
+        diagnosticReplayStatus,
+        diagnosticAttemptCount,
+        diagnosticRuntimeSnapshotPresent,
+        diagnosticErrorCode,
+      },
+    );
+    // #endregion
+    const afterReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const afterQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const beforeHash = await sha256Hex(stableJson(beforeReadback.messages));
+    const afterHash = await sha256Hex(stableJson(afterReadback.messages));
+    const providerCallDelta =
+      afterExecution.providerCallCount - beforeExecution.providerCallCount;
+    // #region debug-point E-H:incompatible-capability-readiness
+    await reportFoundationIncompatibleCleanupDebug(
+      'E-H',
+      'readiness-readback-boundary',
+      {
+        snapshotBeforePresent: Boolean(readinessBefore.snapshot_id),
+        snapshotAfterPresent: Boolean(readinessAfter.snapshot_id),
+        runtimeSnapshotStable:
+          readinessBefore.runtime_snapshot_id
+          === readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        selectedModelStable: agentAfterRecovery.model === fixtureModelId,
+        conversationVersionDelta:
+          afterReadback.conversation.version
+          - beforeReadback.conversation.version,
+        messageHashStable: beforeHash === afterHash,
+      },
+    );
+    // #endregion
+
+    facts = {
+      outcome: first.outcome,
+      receiver,
+      readiness: {
+        source: 'station-capability-readiness',
+        capabilityId: binding.capabilityId,
+        reasonCode: readinessEntryBefore.reason_code,
+        incompatibleModelId: fixtureModelId,
+        snapshotIdBefore: readinessBefore.snapshot_id,
+        snapshotIdAfter: readinessAfter.snapshot_id,
+        runtimeSnapshotIdBefore: readinessBefore.runtime_snapshot_id,
+        runtimeSnapshotIdAfter: readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        stateBefore: 'unavailable',
+        stateAfter: 'unavailable',
+      },
+      station: {
+        agentId: disposableAgentId,
+        conversationId: rejectedConversationId,
+        turnId: first.runtimeEvent.sourceTurnId,
+        selectedModelIdBefore: fixtureModelId,
+        selectedModelIdAfter: agentAfterRecovery.model,
+        conversationVersionBefore: beforeReadback.conversation.version,
+        conversationVersionAfter: afterReadback.conversation.version,
+        beforeHash,
+        afterHash,
+        turnDelta,
+        messageDelta:
+          afterReadback.messages.length - beforeReadback.messages.length,
+        queueDelta: afterQueue.entries.length - beforeQueue.entries.length,
+      },
+      execution: {
+        runtimeExecutionDelta: providerCallDelta,
+        providerCallDelta,
+        toolCallDelta:
+          afterExecution.toolCallCount - beforeExecution.toolCallCount,
+        toolExecutionDelta:
+          afterExecution.toolExecutionCount
+          - beforeExecution.toolExecutionCount,
+        sideEffectDelta:
+          afterExecution.sideEffectCount - beforeExecution.sideEffectCount,
+      },
+      runtimeEvent: first.runtimeEvent,
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.payloadHash,
+        equal: first.rawPayloadHash === replayed.payloadHash,
+      },
+      cleanup: {
+        localProjectionCleared: false,
+        conversationDeleted: false,
+        disposableAgentDeleted: false,
+        capabilityBindingRemoved: false,
+        fixtureProviderRestored: false,
+        fixtureModelDeleted: false,
+        modelConfigurationUnchanged:
+          agentAfterRecovery.model === fixtureModelId,
+        priorSelection,
+        restoredSelection: '',
+      },
+    };
+  } catch (error) {
+    scenarioError = error;
+  } finally {
+    let cleanupStage = 'start';
+    let activeBindingCount = 0;
+    let capabilityBindingRemoved = capabilityBindingId.length === 0;
+    try {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-started',
+        {
+          scenarioErrorPresent: scenarioError !== null,
+          factsPresent: facts !== null,
+          conversationPresent: rejectedConversationId.length > 0,
+          agentPresent: disposableAgentId.length > 0,
+          bindingPresent: capabilityBindingId.length > 0,
+          providerSetupAttempted,
+          priorSelectionPresent: priorSelection.length > 0,
+        },
+      );
+      if (rejectedConversationId) {
+        cleanupStage = 'conversation-delete';
+        clearFoundationLocalConversationProjection(rejectedConversationId);
+        await deleteFoundationConversation(rejectedConversationId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A',
+          'conversation-delete-completed',
+        );
+      }
+      if (disposableAgentId) {
+        if (capabilityBindingId) {
+          cleanupStage = 'binding-readback';
+          const currentBinding = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).find((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          ));
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-readback-completed',
+            { activeBindingPresent: Boolean(currentBinding) },
+          );
+          if (currentBinding) {
+            cleanupStage = 'binding-delete';
+            await api.deleteAgentCapabilityBinding(
+              currentBinding.bindingId,
+              currentBinding.revision,
+              crypto.randomUUID(),
+              'acceptance_fixture_cleanup',
+            );
+            await reportFoundationIncompatibleCleanupDebug(
+              'B',
+              'binding-delete-completed',
+            );
+          }
+          cleanupStage = 'binding-delete-readback';
+          activeBindingCount = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).filter((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          )).length;
+          capabilityBindingRemoved = activeBindingCount === 0;
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-delete-readback-completed',
+            { activeBindingCount },
+          );
+        }
+        cleanupStage = 'agent-delete';
+        await api.deleteAgent(disposableAgentId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'agent-delete-completed',
+        );
+      }
+      let fixtureProviderRestored = !providerSetupAttempted;
+      let fixtureModelDeleted = !providerSetupAttempted;
+      if (runtimeFixture) {
+        cleanupStage = 'provider-readback';
+        const configuredFixture = (await api.listProviders()).find(
+          (provider) => provider.id === runtimeFixture?.providerId,
+        );
+        await reportFoundationIncompatibleCleanupDebug(
+          'C',
+          'provider-readback-completed',
+          { configuredFixturePresent: Boolean(configuredFixture) },
+        );
+        cleanupStage = 'provider-delete';
+        const fixtureCleanup =
+          await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+        fixtureProviderRestored = fixtureCleanup.providerRestored;
+        fixtureModelDeleted = fixtureCleanup.modelDeleted;
+        await reportFoundationIncompatibleCleanupDebug(
+          'C',
+          'provider-delete-completed',
+          fixtureCleanup,
+        );
+      }
+      cleanupStage = 'agent-store-reload';
+      await useAgentStore.getState().loadAgents();
+      if (priorSelection) {
+        cleanupStage = 'selection-restore';
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
+        await api.setSelectedAgent(priorSelection);
+        await reportFoundationIncompatibleCleanupDebug(
+          'D',
+          'selection-restore-completed',
+          {
+            selectedAgentMatches:
+              useAgentStore.getState().selectedAgent === priorSelection,
+          },
+        );
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      if (facts) {
+        cleanupStage = 'cleanup-proof';
+        const cleanup = evidenceRecord(
+          facts.cleanup,
+          'foundationIncompatibleCapabilityCleanup',
+        );
+        const cleanedChatState = useChatStore.getState();
+        cleanup.localProjectionCleared = rejectedConversationId
+          ? (
+              cleanedChatState.operations[rejectedConversationId] === undefined
+              && cleanedChatState.sessionBuffers[rejectedConversationId]
+                === undefined
+              && (
+                cleanedChatState.currentSessionKey !== rejectedConversationId
+                || (
+                  cleanedChatState.messages.length === 0
+                  && cleanedChatState.isStreaming === false
+                )
+              )
+            )
+          : true;
+        let conversationReadbackStatus = '';
+        let conversationReadbackErrorCode = '';
+        cleanup.conversationDeleted = rejectedConversationId
+          ? await api.getAgentConversation(rejectedConversationId).then(
+              (conversation) => {
+                conversationReadbackStatus = conversation.status;
+                return conversation.status === 'deleted';
+              },
+              (error: unknown) => {
+                conversationReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
+            )
+          : true;
+        let agentReadbackErrorCode = '';
+        cleanup.disposableAgentDeleted = disposableAgentId
+          ? await api.getAgent(disposableAgentId).then(
+              () => false,
+              (error: unknown) => {
+                agentReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
+            )
+          : true;
+        cleanup.capabilityBindingRemoved = capabilityBindingRemoved;
+        cleanup.fixtureProviderRestored = fixtureProviderRestored;
+        cleanup.fixtureModelDeleted = fixtureModelDeleted;
+        cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'cleanup-proof-completed',
+          {
+            localProjectionCleared: cleanup.localProjectionCleared,
+            conversationDeleted: cleanup.conversationDeleted,
+            disposableAgentDeleted: cleanup.disposableAgentDeleted,
+            capabilityBindingRemoved: cleanup.capabilityBindingRemoved,
+            fixtureProviderRestored: cleanup.fixtureProviderRestored,
+            fixtureModelDeleted: cleanup.fixtureModelDeleted,
+            restoredSelectionMatches:
+              cleanup.restoredSelection === priorSelection,
+            conversationReadbackStatus,
+            conversationReadbackErrorCode,
+            agentReadbackErrorCode,
+            activeBindingCount,
+          },
+        );
+      }
+    } catch (error) {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-failed',
+        {
+          cleanupStage,
+          errorCode: observedErrorCode(error),
+        },
+      );
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityCleanupFailed',
+      ),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
+  if (!facts) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityFactsMissing',
+    );
+  }
+  return {
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: evidenceRecord(
+      facts.runtimeEvent,
+      'foundationIncompatibleCapabilityRuntimeEvent',
+    ) as unknown as FoundationRuntimeEventObservation,
+    facts,
+  };
+}
+
 async function runFoundationCancelledScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   sampleId: string;
+  attemptIndex?: number;
+  terminalRaceStatuses?: string[];
 }): Promise<FoundationCancelledResult> {
   const agentId = input.agent.id || input.agent.name;
   const actorPtid = authenticatedFoundationActorPtid();
+  const maxCancellationAttempts = 2;
+  const attemptIndex = input.attemptIndex ?? 1;
+  const terminalRaceStatuses = input.terminalRaceStatuses ?? [];
   const conversation = await api.createAgentConversation({
     agent_id: agentId,
-    title: `Foundation cancelled ${input.sampleId}`,
+    title: `Foundation cancelled ${input.sampleId} attempt ${attemptIndex}`,
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
   let turnId = '';
+  let conversationCleaned = false;
 
   try {
       await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -10068,6 +16467,17 @@ async function runFoundationCancelledScenario(input: {
       let cancellationRequestedAt = 0;
       let cancellationRequestCount = 0;
       const streamId = crypto.randomUUID();
+
+      // #region debug-point D:base-cancelled-start
+      void reportFoundationBaseCancelledDebug('D', 'scenario-started', {
+        attemptIndex,
+        sampleId: input.sampleId,
+        documentLocale: document.documentElement.lang,
+        selectedSessionMatches:
+          useChatStore.getState().currentSessionKey
+          === conversation.conversation_id,
+      });
+      // #endregion
 
       const result = await withFoundationCapabilitiesDisabled(
         input.agent,
@@ -10108,6 +16518,30 @@ async function runFoundationCancelledScenario(input: {
               turnId = observedTurn;
               cancellationRequestCount += 1;
               cancellationRequestedAt = performance.now();
+              // #region debug-point B-D:base-cancelled-request
+              void reportFoundationBaseCancelledDebug(
+                'B-D',
+                'cancel-requested',
+                {
+                  attemptIndex,
+                  elapsedMs: cancellationRequestedAt - startedAt,
+                  eventSequence: Number(event.data.seq ?? 0),
+                  eventTurnIdPresent: Boolean(
+                    event.data.turn_id ?? event.data.turnId,
+                  ),
+                  selectedTurnIdPresent: turnId.length > 0,
+                  eventTurnMatchesSelected:
+                    String(event.data.turn_id ?? event.data.turnId ?? '')
+                    === turnId,
+                  selectedSessionMatches:
+                    useChatStore.getState().currentSessionKey
+                    === conversation.conversation_id,
+                  observedEventTypes: events.map(
+                    (candidate) => candidate.event,
+                  ),
+                },
+              );
+              // #endregion
               resolveCancellation({
                 turnId,
                 result: api.cancelAgentTurn(turnId),
@@ -10136,10 +16570,40 @@ async function runFoundationCancelledScenario(input: {
             ['done', 'error', 'cancelled'].includes(event.event));
           const terminalEvent = terminalEvents[terminalEvents.length - 1];
 
+          // #region debug-point A-D:base-cancelled-result
+          await reportFoundationBaseCancelledDebug(
+            'A-D',
+            'cancel-and-terminal-observed',
+            {
+              attemptIndex,
+              elapsedMs: performance.now() - startedAt,
+              cancelLatencyMs: performance.now() - cancellationRequestedAt,
+              cancellationStatus,
+              cancellationRequestCount,
+              terminalEventType: terminalEvent?.event ?? null,
+              terminalSequence: terminalEvent?.sourceDelivery?.sequence ?? null,
+              selectedSessionMatches:
+                useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+              observedEvents: turnResult.events.map((event) => ({
+                eventType: event.event,
+                sequence: Number(event.data.seq ?? 0),
+                sourceDelivered: Boolean(event.sourceDelivery),
+              })),
+            },
+          );
+          // #endregion
+
           if (
             cancellationStatus === 'completed'
-            || terminalEvent?.event === 'done'
+            && terminalEvent?.event === 'done'
           ) {
+            return {
+              result: null,
+              terminalRaceStatus: cancellationStatus,
+            };
+          }
+          if (terminalEvent?.event === 'done') {
             throw new Error('agent.acceptance.foundationCancellationLostRace');
           }
           if (
@@ -10512,20 +16976,51 @@ async function runFoundationCancelledScenario(input: {
                 cancellation: {
                   status: cancellationStatus,
                   latencyMs: performance.now() - cancellationRequestedAt,
+                  attemptCount: attemptIndex,
+                  terminalRaceCount: terminalRaceStatuses.length,
                 },
                 runtimeEvent,
               },
             } satisfies FoundationCancelledResult,
+            terminalRaceStatus: '',
           };
         },
       );
+    if (result.terminalRaceStatus) {
+      terminalRaceStatuses.push(result.terminalRaceStatus);
+      await deleteFoundationConversation(conversation.conversation_id);
+      conversationCleaned = true;
+      await reportFoundationBaseCancelledDebug(
+        'A-B',
+        'cancel-window-retry',
+        {
+          attemptIndex,
+          terminalRaceCount: terminalRaceStatuses.length,
+        },
+      );
+      if (attemptIndex >= maxCancellationAttempts) {
+        throw new Error(
+          'agent.acceptance.foundationCancellationWindowUnavailable',
+        );
+      }
+      return runFoundationCancelledScenario({
+        ...input,
+        attemptIndex: attemptIndex + 1,
+        terminalRaceStatuses,
+      });
+    }
+    if (!result.result) {
+      throw new Error('agent.acceptance.foundationCancellationFactsMissing');
+    }
     return result.result;
   } catch (error) {
     try {
-      await cleanupFoundationToolConversation(
-        conversation.conversation_id,
-        turnId,
-      );
+      if (!conversationCleaned) {
+        await cleanupFoundationToolConversation(
+          conversation.conversation_id,
+          turnId,
+        );
+      }
     } catch (cleanupError) {
       throw Object.assign(
         new Error('agent.acceptance.foundationCancellationCleanupFailed'),
@@ -10534,6 +17029,517 @@ async function runFoundationCancelledScenario(input: {
     }
     throw error;
   }
+}
+
+async function runFoundationInterruptedScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+  stationRestart: Record<string, unknown>;
+}): Promise<FoundationInterruptedResult> {
+  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationInterruptedHandoffMissing');
+  }
+  if (
+    handoff.platform !== input.platform
+    || handoff.locale !== input.locale
+    || handoff.sampleId !== input.sampleId
+  ) {
+    throw new Error('agent.acceptance.foundationInterruptedScopeMismatch');
+  }
+
+  await foundationF06ReplayRecording;
+  await useChatStore.getState().selectSession(handoff.conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const sourceReadback = await foundationConversationReadback(
+    handoff.conversationId,
+  );
+  const sourceAssistants = sourceReadback.messages.filter(
+    (message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId,
+  );
+  const sourceAssistant = sourceAssistants[sourceAssistants.length - 1];
+  // #region debug-point V-W:interrupted-message-readback
+  await reportFoundationF06TerminalRaceDebug(
+    'V-W',
+    'interrupted-message-readback',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      conversationStatus: String(sourceReadback.conversation.status ?? ''),
+      messageCount: sourceReadback.messages.length,
+      matchingAssistantCount: sourceAssistants.length,
+      selectedAssistantPresent: sourceAssistant !== undefined,
+      selectedAssistantStatus: sourceAssistant?.status ?? null,
+      selectedAssistantErrorJsonPresent:
+        Boolean(String(sourceAssistant?.errorJson ?? '').trim()),
+      selectedAssistantErrorJsonLength:
+        String(sourceAssistant?.errorJson ?? '').length,
+      matchingAssistantShapes: sourceAssistants.map((message) => ({
+        status: message.status,
+        seq: message.seq,
+        errorJsonPresent: Boolean(String(message.errorJson ?? '').trim()),
+        errorJsonLength: String(message.errorJson ?? '').length,
+      })),
+    },
+  );
+  // #endregion
+  if (!sourceAssistant) {
+    throw new Error('agent.acceptance.foundationInterruptedMessageMissing');
+  }
+  const persistedOutcomeCandidate = JSON.parse(
+    String(sourceAssistant.errorJson || '{}'),
+  );
+  const persistedOutcome = projectAgentTypedErrorPayload(
+    persistedOutcomeCandidate,
+  );
+  const persistedOutcomeRecord = (
+    persistedOutcomeCandidate
+    && typeof persistedOutcomeCandidate === 'object'
+    && !Array.isArray(persistedOutcomeCandidate)
+  )
+    ? persistedOutcomeCandidate as Record<string, unknown>
+    : {};
+  const persistedOutcomeDetails = (
+    persistedOutcomeRecord.details
+    && typeof persistedOutcomeRecord.details === 'object'
+    && !Array.isArray(persistedOutcomeRecord.details)
+  )
+    ? persistedOutcomeRecord.details as Record<string, unknown>
+    : {};
+  // #region debug-point X-Y:interrupted-outcome-projection
+  await reportFoundationF06TerminalRaceDebug(
+    'X-Y',
+    'interrupted-outcome-projection',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      candidateType: Array.isArray(persistedOutcomeCandidate)
+        ? 'array'
+        : typeof persistedOutcomeCandidate,
+      candidateKeys: Object.keys(persistedOutcomeRecord).sort(),
+      detailsKeys: Object.keys(persistedOutcomeDetails).sort(),
+      errorTypeType: typeof (
+        persistedOutcomeRecord.error_type
+        ?? persistedOutcomeRecord.errorType
+        ?? persistedOutcomeRecord.error_code
+      ),
+      localeKeyType: typeof (
+        persistedOutcomeRecord.locale_key
+        ?? persistedOutcomeRecord.localeKey
+      ),
+      retryableType: typeof persistedOutcomeRecord.retryable,
+      terminalType: typeof persistedOutcomeRecord.terminal,
+      persistedOutcomePresent: persistedOutcome !== undefined,
+    },
+  );
+  // #endregion
+  if (!persistedOutcome) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedPersistedOutcomeMissing',
+    );
+  }
+  const sourceEvidence = evidenceRecord(
+    await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    ),
+    'foundationInterruptedTurnEvidence',
+  );
+  const sourceDiagnostics = evidenceRecord(
+    sourceEvidence.diagnostics,
+    'foundationInterruptedDiagnostics',
+  );
+  const sourceDiagnosticReplay = evidenceRecord(
+    sourceDiagnostics.replay,
+    'foundationInterruptedDiagnosticReplay',
+  );
+  const sourceAttempts = foundationTurnAttemptFacts(sourceEvidence);
+  const sourceAttempt = sourceAttempts[sourceAttempts.length - 1];
+  if (!sourceAttempt) {
+    throw new Error('agent.acceptance.foundationInterruptedAttemptMissing');
+  }
+
+  const replayDeliveries = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const terminalDeliveries = replayDeliveries.filter((delivery) =>
+    ['done', 'error', 'cancelled'].includes(delivery.eventType));
+  const interruptedDelivery = terminalDeliveries.find(
+    (delivery) => delivery.eventType === 'error',
+  );
+  if (!interruptedDelivery) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedTerminalEventMissing',
+    );
+  }
+  const interruptedEventData = evidenceRecord(
+    interruptedDelivery.rawPayload.data,
+    'foundationInterruptedEventData',
+  );
+  const outcome = projectAgentTypedErrorPayload(evidenceRecord(
+    evidenceField(
+      interruptedEventData,
+      'outcomeError',
+      'outcome_error',
+    ),
+    'foundationInterruptedOutcomeCandidate',
+  ));
+  if (!outcome) {
+    throw new Error('agent.acceptance.foundationInterruptedOutcomeMissing');
+  }
+  const sourceTerminalHash = await sha256Hex(
+    stableJson(interruptedDelivery.rawPayload),
+  );
+  const sourceState = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+    attemptErrorCode: String(sourceAttempt.errorCode),
+    attemptRecordHash: await sha256Hex(stableJson(sourceAttempt.record)),
+    terminalEventSequence: interruptedDelivery.sequence,
+    terminalEventHash: sourceTerminalHash,
+  };
+  const sourceStateHash = await sha256Hex(stableJson(sourceState));
+  const receiver = await foundationInterruptedReceiverSnapshot(
+    sourceAssistant.messageId,
+    'Foundation interrupted receiver',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+    },
+  );
+  const recoveryAction = document.querySelector<HTMLElement>(
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${sourceAssistant.messageId}"] `
+    + '[data-pt-agent-message-error-recovery="recover"]',
+  );
+  if (!recoveryAction) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryActionMissing',
+    );
+  }
+
+  let recoveryClickCount = 0;
+  const observeRecovery = () => {
+    recoveryClickCount += 1;
+  };
+  const recoveryChatBefore = useChatStore.getState();
+  const recoveryOperationBefore =
+    recoveryChatBefore.operations[handoff.conversationId];
+  const recoveryRecordBefore =
+    useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  // #region debug-point AE-AI:interrupted-recovery-click
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-started',
+    {
+      ...input,
+      currentSessionMatches:
+        recoveryChatBefore.currentSessionKey === handoff.conversationId,
+      sourceMessagePresent: recoveryChatBefore.messages.some(
+        (message) => message.id === sourceAssistant.messageId,
+      ),
+      sourceTurnMatches: recoveryChatBefore.messages.some(
+        (message) =>
+          message.id === sourceAssistant.messageId
+          && message.turnId === handoff.turnId,
+      ),
+      isStreaming: recoveryChatBefore.isStreaming,
+      operationPresent: recoveryOperationBefore !== undefined,
+      operationRunState: recoveryOperationBefore?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationBefore?.turnId === handoff.turnId,
+      recoveryRecordPresent: recoveryRecordBefore !== undefined,
+      recoveryPhase: recoveryRecordBefore?.phase ?? 'MISSING',
+    },
+  );
+  // #endregion
+  recoveryAction.addEventListener('click', observeRecovery);
+  recoveryAction.click();
+  recoveryAction.removeEventListener('click', observeRecovery);
+  await Promise.resolve();
+  // #region debug-point AE-AI:interrupted-recovery-click
+  const recoveryChatAfter = useChatStore.getState();
+  const recoveryOperationAfter =
+    recoveryChatAfter.operations[handoff.conversationId];
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-dispatched',
+    {
+      ...input,
+      recoveryClickCount,
+      currentSessionMatches:
+        recoveryChatAfter.currentSessionKey === handoff.conversationId,
+      isStreaming: recoveryChatAfter.isStreaming,
+      operationPresent: recoveryOperationAfter !== undefined,
+      operationRunState: recoveryOperationAfter?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationAfter?.turnId === handoff.turnId,
+    },
+  );
+  // #endregion
+
+  const recoveryDeadline = Date.now() + 30_000;
+  let recoveryEvidence = await foundationTurnEvidence(
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  let recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  while (
+    recoveryAttempts.length !== sourceAttempts.length + 1
+    && Date.now() < recoveryDeadline
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  }
+  const recoveryAttempt = recoveryAttempts[recoveryAttempts.length - 1];
+  if (
+    !recoveryAttempt
+    || recoveryAttempts.length !== sourceAttempts.length + 1
+    || recoveryAttempt.attemptId === sourceAttempt.attemptId
+  ) {
+    const recoveryChatAtDeadline = useChatStore.getState();
+    const recoveryOperationAtDeadline =
+      recoveryChatAtDeadline.operations[handoff.conversationId];
+    // #region debug-point AE-AI:interrupted-recovery-attempt
+    await reportFoundationF06TerminalRaceDebug(
+      'AE-AI',
+      'interrupted-recovery-attempt-missing',
+      {
+        ...input,
+        recoveryClickCount,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceAttemptStillLatest:
+          recoveryAttempt?.attemptId === sourceAttempt.attemptId,
+        currentSessionMatches:
+          recoveryChatAtDeadline.currentSessionKey === handoff.conversationId,
+        isStreaming: recoveryChatAtDeadline.isStreaming,
+        operationPresent: recoveryOperationAtDeadline !== undefined,
+        operationRunState:
+          recoveryOperationAtDeadline?.runState ?? 'MISSING',
+        operationTurnMatches:
+          recoveryOperationAtDeadline?.turnId === handoff.turnId,
+      },
+    );
+    // #endregion
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryAttemptMissing',
+    );
+  }
+
+  const cancellation = await api.cancelAgentTurn(handoff.turnId);
+  const settlementDeadline = Date.now() + 30_000;
+  while (Date.now() < settlementDeadline) {
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+    const latest = recoveryAttempts[recoveryAttempts.length - 1];
+    if (
+      latest
+      && [
+        AgentTurnStatus.CANCELLED,
+        AgentTurnStatus.FAILED,
+        AgentTurnStatus.INTERRUPTED,
+        AgentTurnStatus.COMPLETED,
+      ].includes(Number(latest.status))
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const settledRecoveryAttempt = recoveryAttempts[
+    recoveryAttempts.length - 1
+  ];
+  if (!settledRecoveryAttempt) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoverySettlementMissing',
+    );
+  }
+  const sourceAttemptAfter = recoveryAttempts.find(
+    (attempt) => attempt.attemptId === sourceAttempt.attemptId,
+  );
+  if (!sourceAttemptAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceAttemptMissing',
+    );
+  }
+  const replayAfterRecovery = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const sourceDeliveryAfter = replayAfterRecovery.find(
+    (delivery) =>
+      delivery.eventType === interruptedDelivery.eventType
+      && delivery.sequence === interruptedDelivery.sequence,
+  );
+  if (!sourceDeliveryAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceEventMissingAfterRecovery',
+    );
+  }
+  const sourceStateAfter = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttemptAfter.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttemptAfter.status),
+    attemptErrorCode: String(sourceAttemptAfter.errorCode),
+    attemptRecordHash: await sha256Hex(
+      stableJson(sourceAttemptAfter.record),
+    ),
+    terminalEventSequence: sourceDeliveryAfter.sequence,
+    terminalEventHash: await sha256Hex(
+      stableJson(sourceDeliveryAfter.rawPayload),
+    ),
+  };
+  const runtimeEvent: FoundationRuntimeEventObservation = {
+    eventId: await sha256Hex(stableJson({
+      turnId: handoff.turnId,
+      sequence: interruptedDelivery.sequence,
+      payloadHash: interruptedDelivery.payloadHash,
+    })),
+    eventType: interruptedDelivery.eventType,
+    sequence: interruptedDelivery.sequence,
+    observedAt: interruptedDelivery.observedAt,
+    streamGeneration: interruptedDelivery.streamGeneration,
+    streamIdHash: await sha256Hex(interruptedDelivery.streamId),
+    conversationIdHash: await sha256Hex(handoff.conversationId),
+    payloadHash: interruptedDelivery.payloadHash,
+    errorType: String(outcome.error_type ?? ''),
+    sourceTransport: interruptedDelivery.sourceTransport,
+    sourcePtidHash: interruptedDelivery.sourcePtidHash,
+    sourceConversationId: interruptedDelivery.sourceConversationId,
+    sourceTurnId: interruptedDelivery.sourceTurnId,
+    sourceSequence: interruptedDelivery.sourceSequence,
+    sourceEventType: interruptedDelivery.sourceEventType,
+  };
+  const recoveryStatus = foundationTurnStatusName(
+    settledRecoveryAttempt.status,
+  );
+
+  return {
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    durationMs: Date.now() - Date.parse(handoff.preparedAt),
+    runtimeEvent,
+    facts: {
+      outcome,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: recoveryClickCount === 1,
+      },
+      recovery: {
+        action: 'recover',
+        executed: recoveryClickCount === 1,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceTurnId: handoff.turnId,
+        sourceAttemptId: String(sourceAttempt.attemptId),
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        recoveryAttemptStatus: recoveryStatus,
+        cancellationStatus: String(cancellation.status ?? '').toLowerCase(),
+        sourceAttemptStatusAfter: foundationTurnStatusName(
+          sourceAttemptAfter.status,
+        ),
+        sourceTerminalHashBefore: sourceTerminalHash,
+        sourceTerminalHashAfter: sourceStateAfter.terminalEventHash,
+        completedInferenceCount:
+          recoveryStatus === 'completed' ? 1 : 0,
+      },
+      station: {
+        conversationId: handoff.conversationId,
+        turnId: handoff.turnId,
+        attemptId: String(sourceAttempt.attemptId),
+        messageId: sourceAssistant.messageId,
+        turnStatus: foundationTurnStatusName(sourceDiagnosticReplay.status),
+        attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+        attemptErrorCode: String(sourceAttempt.errorCode),
+        messageStatus: String(sourceAssistant.status).toLowerCase(),
+        terminalReason: String(
+          evidenceField(
+            sourceDiagnosticReplay,
+            'terminalReason',
+            'terminal_reason',
+          ) ?? '',
+        ),
+        persistedOutcome,
+        terminalEventCount: terminalDeliveries.length,
+        errorEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'error',
+        ).length,
+        doneEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        liveDoneEventCount: handoff.replayDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        recoveryAttemptCount: recoveryAttempts.length - sourceAttempts.length,
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        sourceBeforeRecovery: {
+          ...sourceState,
+          stateHash: sourceStateHash,
+        },
+        sourceAfterRecovery: {
+          ...sourceStateAfter,
+          stateHash: await sha256Hex(stableJson(sourceStateAfter)),
+        },
+      },
+      replay: {
+        sourceHash: await sha256Hex(stableJson(outcome)),
+        replayHash: await sha256Hex(stableJson(persistedOutcome)),
+        equal: stableJson(outcome) === stableJson(persistedOutcome),
+        snapshot: {
+          sourceTransport: interruptedDelivery.sourceTransport,
+          sourcePtidHash: interruptedDelivery.sourcePtidHash,
+          sourceConversationId: interruptedDelivery.sourceConversationId,
+          sourceTurnId: interruptedDelivery.sourceTurnId,
+          sourceSequence: interruptedDelivery.sourceSequence,
+          sourceEventType: interruptedDelivery.sourceEventType,
+          status: foundationTurnStatusName(sourceDiagnosticReplay.status),
+          reasonCode: String(
+            evidenceField(
+              sourceDiagnosticReplay,
+              'terminalReason',
+              'terminal_reason',
+            ) ?? '',
+          ),
+          attemptId: String(sourceAttempt.attemptId),
+          messageId: sourceAssistant.messageId,
+        },
+      },
+      restart: input.stationRestart,
+      cleanup: {
+        recoveryAttemptSettled: [
+          'cancelled',
+          'failed',
+          'interrupted',
+        ].includes(recoveryStatus),
+      },
+      runtimeEvent,
+    },
+  };
 }
 
 async function runFoundationDirectAttestationTurn(input: {
@@ -11112,14 +18118,28 @@ async function evaluateDirectCellAssertions(
       return evaluateF12(ctx);
     case 'BASE-ACTIVE_MUTATION_CONFLICT':
       return evaluateBaseActiveMutationConflict(ctx);
+    case 'BASE-FORBIDDEN_ACTOR':
+      return evaluateBaseForbiddenActor(ctx);
+    case 'BASE-INCOMPATIBLE_CAPABILITY':
+      return evaluateBaseIncompatibleCapability(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
+    case 'BASE-INTERRUPTED':
+      return evaluateBaseInterrupted(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
+    case 'BASE-INVALID_REFERENCE':
+      return evaluateBaseInvalidReference(ctx);
+    case 'BASE-INVALID_RESOURCE_REF':
+      return evaluateBaseInvalidResourceReference(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
+    case 'BASE-EXECUTOR_UNAVAILABLE':
+      return evaluateBaseExecutorUnavailable(ctx);
+    case 'BASE-LEASE_EXPIRED':
+      return evaluateBaseLeaseExpired(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -11129,6 +18149,500 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseForbiddenActor(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationForbiddenActorFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationForbiddenActorOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationForbiddenActorDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const owner = evidenceRecord(
+    facts.owner,
+    'foundationForbiddenActorOwner',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationForbiddenActorStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationForbiddenActorReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationForbiddenActorCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  return {
+    typedForbiddenActorRejected: (
+      outcome.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR'
+      && outcome.locale_key === 'agent.errors.forbiddenActor'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['resource_id', 'resource_kind'])
+      && details.resource_kind === 'conversation'
+      && details.resource_id === owner.resourceId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    switchAccountExecuted: (
+      receiver.recoveryExecuted === true
+      && receiver.accountGateObserved === true
+      && receiver.receiverRestored === true
+    ),
+    foreignReadRejected: (
+      Number(foreignAccess.requestCount) === 2
+      && Number(foreignAccess.foreignPayloadCount) === 0
+      && foreignAccess.resourceKind === 'conversation'
+      && foreignAccess.resourceId === owner.resourceId
+      && foreignAccess.ownerActorHash === owner.ownerActorHash
+      && foreignAccess.receiverActorHash !== owner.ownerActorHash
+    ),
+    ownerStatePreserved: (
+      owner.beforeHash === owner.afterHash
+      && Number(owner.versionBefore) === Number(owner.versionAfter)
+    ),
+    zeroCrossMutation: (
+      Number(station.conversationDelta) === 0
+      && Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.foreignResourceDeleted === true
+      && cleanup.foreignAgentDeleted === true
+      && cleanup.ownerSelectionRestored === true
+      && cleanup.receiverRestored === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseIncompatibleCapability(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  return evaluateFoundationIncompatibleCapabilityFacts(ctx.scenarioFacts);
+}
+
+function evaluateFoundationIncompatibleCapabilityFacts(
+  scenarioFacts: Record<string, unknown> | null,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    scenarioFacts,
+    'foundationIncompatibleCapabilityFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationIncompatibleCapabilityOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationIncompatibleCapabilityDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationIncompatibleCapabilityReceiver',
+  );
+  const readiness = evidenceRecord(
+    facts.readiness,
+    'foundationIncompatibleCapabilityReadiness',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationIncompatibleCapabilityStation',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationIncompatibleCapabilityExecution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationIncompatibleCapabilityReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationIncompatibleCapabilityCleanup',
+  );
+  return {
+    typedIncompatibleCapabilityRejected: (
+      outcome.error === 'agent.errors.incompatibleCapability'
+      && outcome.error_type === 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      && outcome.locale_key === 'agent.errors.incompatibleCapability'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['capability_id', 'reason_code'])
+      && details.capability_id === readiness.capabilityId
+      && details.reason_code === readiness.reasonCode
+    ),
+    localizedChooseCompatibleModelRecovery: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryLocaleKey
+        === 'agent.recovery.chooseCompatibleModel'
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.recoveryExecuted === true
+      && receiver.profileVisible === true
+      && receiver.profileAgentId === station.agentId
+      && receiver.modelSelectionVisible === true
+      && receiver.selectedModelId === readiness.incompatibleModelId
+    ),
+    stationReadinessReadback: (
+      readiness.source === 'station-capability-readiness'
+      && readiness.stateBefore === 'unavailable'
+      && readiness.stateAfter === 'unavailable'
+      && readiness.reasonCode === 'runtime_capability_unavailable'
+      && Boolean(readiness.snapshotIdBefore)
+      && Boolean(readiness.snapshotIdAfter)
+      && readiness.runtimeSnapshotIdBefore
+        === readiness.runtimeSnapshotIdAfter
+      && Number(readiness.bindingRevisionBefore)
+        === Number(readiness.bindingRevisionAfter)
+      && station.selectedModelIdBefore === readiness.incompatibleModelId
+      && station.selectedModelIdAfter === readiness.incompatibleModelId
+      && Number(station.conversationVersionAfter)
+        === Number(station.conversationVersionBefore) + 1
+      && station.beforeHash === station.afterHash
+    ),
+    zeroRejectedPathSideEffects: (
+      Number(station.turnDelta) === 1
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(execution.runtimeExecutionDelta) === 0
+      && Number(execution.providerCallDelta) === 0
+      && Number(execution.toolCallDelta) === 0
+      && Number(execution.toolExecutionDelta) === 0
+      && Number(execution.sideEffectDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.capabilityBindingRemoved === true
+      && cleanup.fixtureProviderRestored === true
+      && cleanup.fixtureModelDeleted === true
+      && cleanup.modelConfigurationUnchanged === true
+      && cleanup.restoredSelection === cleanup.priorSelection
+    ),
+  };
+}
+
+function evaluateBaseExecutorUnavailable(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationExecutorUnavailableOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationExecutorUnavailableDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const decision = evidenceRecord(
+    facts.decision,
+    'foundationExecutorUnavailableDecision',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationExecutorUnavailableStation',
+  );
+  const stationAfterRecovery = evidenceRecord(
+    facts.stationAfterRecovery,
+    'foundationExecutorUnavailableStationAfterRecovery',
+  );
+  const lineage = evidenceRecord(
+    station.lineage,
+    'foundationExecutorUnavailableLineage',
+  );
+  const recoveryLineage = evidenceRecord(
+    stationAfterRecovery.lineage,
+    'foundationExecutorUnavailableRecoveryLineage',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationExecutorUnavailableExecutor',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationExecutorUnavailableReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationExecutorUnavailableCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  const zeroStationOutcome = (value: Record<string, unknown>) => (
+    Number(value.executionAttemptCount) === 0
+    && Number(value.sideEffectCount) === 0
+    && Number(value.resultCount) === 0
+    && Number(value.continuationCount) === 0
+  );
+  return {
+    typedExecutorUnavailable: (
+      outcome.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+      && outcome.locale_key === 'agent.errors.executorUnavailable'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'capability_id'
+      && safeDetailKeys[1] === 'target_device_id'
+      && details.target_device_id === executor.targetDeviceId
+      && details.capability_id === executor.targetCapabilityId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    singleRejectedApproval: (
+      decision.accepted === false
+      && decision.approved === true
+      && decision.errorCode
+        === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE'
+      && receiver.approveDisabled === true
+      && receiver.repeatedApprovalBlocked === true
+    ),
+    waitingApprovalPreserved: (
+      station.policy === 'manual'
+      && stableJson(station.states)
+        === stableJson(['policy_check', 'awaiting_user'])
+      && station.executionOwner === 'client_capability'
+      && lineage.toolCallId === decision.toolCallId
+      && lineage.approvalId === decision.approvalId
+      && lineage.decisionId === ''
+      && Number(lineage.decisionRevision) === decision.decisionRevision
+    ),
+    zeroExecutionClaim: (
+      lineage.executionClaimId === ''
+      && Number(lineage.fencingToken) === 0
+      && lineage.sideEffectReceiptId === ''
+      && lineage.dispatchCommittedAt === null
+      && recoveryLineage.executionClaimId === ''
+      && Number(recoveryLineage.fencingToken) === 0
+      && recoveryLineage.sideEffectReceiptId === ''
+      && recoveryLineage.dispatchCommittedAt === null
+    ),
+    zeroSideEffect: (
+      zeroStationOutcome(station)
+      && zeroStationOutcome(stationAfterRecovery)
+      && Number(executor.withdrawnExecutionAttemptCount) >= 0
+      && Number(executor.withdrawnSideEffectCount) >= 0
+      && Number(executor.restoredExecutionAttemptCount)
+        === Number(executor.withdrawnExecutionAttemptCount)
+      && Number(executor.restoredSideEffectCount)
+        === Number(executor.withdrawnSideEffectCount)
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.acknowledgementSourceHash
+        === replay.acknowledgementReplayHash
+      && replay.diagnosticSourceHash === replay.diagnosticReplayHash
+    ),
+    executorReconnected: (
+      executor.sessionRemoved === true
+      && executor.localSessionRemoved === true
+      && executor.sessionRestored === true
+      && executor.restoredDeviceId === executor.targetDeviceId
+      && executor.restoredCapabilityId === executor.targetCapabilityId
+      && receiver.recoveryExecuted === true
+      && receiver.approvalEnabledAfterRecovery === true
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
+      && cleanup.executorRestored === true
+      && cleanup.turnCancelled === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseLeaseExpired(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationLeaseExpiredFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationLeaseExpiredOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationLeaseExpiredDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationLeaseExpiredReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationLeaseExpiredStation',
+  );
+  const lease = evidenceRecord(
+    facts.lease,
+    'foundationLeaseExpiredLease',
+  );
+  const audit = evidenceRecord(
+    facts.audit,
+    'foundationLeaseExpiredAudit',
+  );
+  const sourceAudit = evidenceRecord(
+    audit.source,
+    'foundationLeaseExpiredAuditSource',
+  );
+  const replayAudit = evidenceRecord(
+    audit.replay,
+    'foundationLeaseExpiredAuditReplay',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationLeaseExpiredExecutor',
+  );
+  const before = evidenceRecord(
+    executor.before,
+    'foundationLeaseExpiredExecutorBefore',
+  );
+  const after = evidenceRecord(
+    executor.after,
+    'foundationLeaseExpiredExecutorAfter',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationLeaseExpiredReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationLeaseExpiredCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  return {
+    typedLeaseExpired: (
+      outcome.error === 'agent.errors.clientLeaseExpired'
+      && outcome.error_type === 'CLIENT_LEASE_EXPIRED'
+      && outcome.locale_key === 'agent.errors.clientLeaseExpired'
+      && outcome.retryable === true
+      && outcome.terminal === false
+    ),
+    boundedDetails: (
+      safeDetailKeys.length === 3
+      && safeDetailKeys[0] === 'expired_at'
+      && safeDetailKeys[1] === 'lease_id'
+      && safeDetailKeys[2] === 'session_id'
+      && String(details.session_id).length > 0
+      && String(details.lease_id).length > 0
+      && Number.isFinite(Date.parse(String(details.expired_at)))
+    ),
+    localizedReconcileVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.recoveryExecuted === true
+      && receiver.errorClearedAfterReconcile === true
+    ),
+    nonTerminalTurnPreserved: (
+      receiver.messageLoading === true
+      && receiver.terminalStatus === ''
+      && receiver.toolCallPending === true
+      && station.status === 'dispatch_committed'
+    ),
+    oldCommandAuditOnly: (
+      Number(sourceAudit.httpStatus) === 409
+      && sourceAudit.transportErrorKind === 'httpStatus'
+      && Number(replayAudit.httpStatus) === 409
+      && replayAudit.transportErrorKind === 'httpStatus'
+      && station.resultId === ''
+      && station.continuationId === ''
+      && station.sourceHash === station.replayHash
+    ),
+    currentLeaseUnchanged: (
+      String(lease.currentSessionIdBefore).length > 0
+      && lease.currentSessionIdBefore === lease.currentSessionIdAfter
+      && String(lease.currentLeaseIdBefore).length > 0
+      && lease.currentLeaseIdBefore === lease.currentLeaseIdAfter
+      && Number(lease.currentLeaseRevisionBefore)
+        === Number(lease.currentLeaseRevisionAfter)
+      && lease.currentExpiresAtBefore === lease.currentExpiresAtAfter
+    ),
+    zeroExecutionAndSideEffect: (
+      Number(before.localExecutionAttemptCount)
+        === Number(after.localExecutionAttemptCount)
+      && Number(before.localSideEffectCount)
+        === Number(after.localSideEffectCount)
+      && String(station.toolCallIdBefore).length > 0
+      && station.toolCallIdBefore === station.toolCallId
+      && station.statusBefore === 'dispatch_committed'
+      && String(station.executionClaimIdBefore).length > 0
+      && station.executionClaimIdBefore === station.executionClaimIdAfter
+      && Number(station.executionAttemptCountBefore) > 0
+      && Number(station.executionAttemptCountBefore)
+        === Number(station.executionAttemptCountAfter)
+      && Number(station.dispatchSequenceBefore) > 0
+      && Number(station.dispatchSequenceBefore)
+        === Number(station.dispatchSequenceAfter)
+      && station.sideEffectReceiptIdBefore === ''
+      && station.sideEffectReceiptIdAfter === ''
+      && station.resultIdBefore === ''
+      && station.resultId === ''
+      && station.continuationIdBefore === ''
+      && station.continuationId === ''
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === audit.sourceErrorHash
+      && audit.sourceRequestHash === audit.replayRequestHash
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
+      && cleanup.turnCancelled === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseCancelled(
@@ -11298,6 +18812,195 @@ function evaluateBaseCancelled(
   };
 }
 
+function evaluateBaseInterrupted(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInterruptedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInterruptedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInterruptedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInterruptedReceiver',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationInterruptedRecovery',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInterruptedStation',
+  );
+  const persistedOutcome = evidenceRecord(
+    station.persistedOutcome,
+    'foundationInterruptedPersistedOutcome',
+  );
+  const persistedDetails = evidenceRecord(
+    persistedOutcome.details,
+    'foundationInterruptedPersistedDetails',
+  );
+  const sourceBefore = evidenceRecord(
+    station.sourceBeforeRecovery,
+    'foundationInterruptedSourceBefore',
+  );
+  const sourceAfter = evidenceRecord(
+    station.sourceAfterRecovery,
+    'foundationInterruptedSourceAfter',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInterruptedReplay',
+  );
+  const replaySnapshot = evidenceRecord(
+    replay.snapshot,
+    'foundationInterruptedReplaySnapshot',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInterruptedCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInterruptedRuntimeEvent',
+  );
+  const restart = evidenceRecord(
+    facts.restart,
+    'foundationInterruptedRestart',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedInterruptionProjected: (
+      outcome.error === 'agent.errors.lifecycleInterrupted'
+      && outcome.error_type === 'LIFECYCLE_INTERRUPTED'
+      && outcome.locale_key === 'agent.errors.lifecycleInterrupted'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['reason_code', 'turn_id'])
+      && details.turn_id === station.turnId
+      && details.reason_code === 'station_restart_interrupted'
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'LIFECYCLE_INTERRUPTED'
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && runtimeEvent.sourceSequence === runtimeEvent.sequence
+      && runtimeEvent.sourceEventType === 'error'
+      && Number(runtimeEvent.sequence) > 0
+    ),
+    localizedRecoveryVisible: (
+      receiver.visible === true
+      && receiver.terminalStatus === 'interrupted'
+      && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+      && receiver.turnId === station.turnId
+      && receiver.messageId === station.messageId
+      && receiver.reasonCode === 'station_restart_interrupted'
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    recoverExecuted: (
+      receiver.recoveryExecuted === true
+      && recovery.action === 'recover'
+      && recovery.executed === true
+      && Number(recovery.attemptCountAfter)
+        === Number(recovery.attemptCountBefore) + 1
+      && Number(station.recoveryAttemptCount) === 1
+      && recovery.sourceTurnId === station.turnId
+      && recovery.sourceAttemptId === station.attemptId
+      && String(recovery.recoveryAttemptId).length > 0
+      && recovery.recoveryAttemptId !== station.attemptId
+      && recovery.recoveryAttemptId === station.recoveryAttemptId
+      && recovery.recoveryAttemptStatus === 'cancelled'
+      && recovery.cancellationStatus === 'cancelled'
+      && recovery.sourceAttemptStatusAfter === 'interrupted'
+      && recovery.sourceTerminalHashBefore
+        === recovery.sourceTerminalHashAfter
+      && String(sourceBefore.attemptRecordHash).length === 64
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+    ),
+    interruptedPersisted: (
+      station.turnStatus === 'interrupted'
+      && station.attemptStatus === 'interrupted'
+      && station.attemptErrorCode === 'station_restart_interrupted'
+      && station.messageStatus === 'interrupted'
+      && station.terminalReason === 'station_restart_interrupted'
+      && persistedOutcome.error === outcome.error
+      && persistedOutcome.error_type === outcome.error_type
+      && persistedOutcome.locale_key === outcome.locale_key
+      && persistedOutcome.retryable === outcome.retryable
+      && persistedOutcome.terminal === outcome.terminal
+      && stableJson(Object.keys(persistedDetails).sort())
+        === stableJson(safeDetailKeys)
+      && persistedDetails.turn_id === details.turn_id
+      && persistedDetails.reason_code === details.reason_code
+      && restart.outageObserved === true
+      && restart.beforeStartedAt !== restart.afterStartedAt
+      && restart.beforeCommit === restart.afterCommit
+      && (
+        String(restart.sourceCommit).startsWith(
+          String(restart.beforeCommit),
+        )
+        || String(restart.beforeCommit).startsWith(
+          String(restart.sourceCommit),
+        )
+      )
+    ),
+    exactlyOneAuthoritativeTerminal: (
+      Number(station.terminalEventCount) === 1
+      && Number(station.errorEventCount) === 1
+    ),
+    zeroCompletedInference: (
+      Number(station.doneEventCount) === 0
+      && Number(station.liveDoneEventCount) === 0
+      && Number(recovery.completedInferenceCount) === 0
+      && recovery.recoveryAttemptStatus !== 'completed'
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replaySnapshot.sourceTransport === 'station-sse'
+      && replaySnapshot.sourcePtidHash === runtimeEvent.sourcePtidHash
+      && replaySnapshot.sourceConversationId === station.conversationId
+      && replaySnapshot.sourceTurnId === station.turnId
+      && replaySnapshot.sourceSequence === runtimeEvent.sourceSequence
+      && replaySnapshot.sourceEventType === 'error'
+      && replaySnapshot.status === 'interrupted'
+      && replaySnapshot.reasonCode === 'station_restart_interrupted'
+      && replaySnapshot.attemptId === station.attemptId
+      && replaySnapshot.messageId === station.messageId
+      && sourceBefore.turnId === sourceAfter.turnId
+      && sourceBefore.attemptId === sourceAfter.attemptId
+      && sourceBefore.attemptStatus === 'interrupted'
+      && sourceAfter.attemptStatus === 'interrupted'
+      && sourceBefore.attemptErrorCode === 'station_restart_interrupted'
+      && sourceAfter.attemptErrorCode === 'station_restart_interrupted'
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+      && sourceBefore.terminalEventSequence
+        === sourceAfter.terminalEventSequence
+      && sourceBefore.terminalEventHash === sourceAfter.terminalEventHash
+    ),
+    cleanupComplete: (
+      cleanup.recoveryAttemptSettled === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.cleanupComplete === true
+      && cleanup.handoffCleared === true
+      && cleanup.recoveryRecordCleared === true
+    ),
+  };
+}
+
 function evaluateBaseContextOverflow(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {
@@ -11397,6 +19100,269 @@ function evaluateBaseContextOverflow(
     ),
     cleanupComplete: (
       cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInvalidReference(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInvalidReferenceFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInvalidReferenceOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInvalidReferenceDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInvalidReferenceReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInvalidReferenceStation',
+  );
+  const completion = evidenceRecord(
+    facts.completion,
+    'foundationInvalidReferenceCompletion',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInvalidReferenceReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInvalidReferenceCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInvalidReferenceRuntimeEvent',
+  );
+  const detailKeys = Object.keys(details).sort();
+  const referenceHash = String(station.referenceHash ?? '');
+
+  return {
+    typedInvalidReferenceRejected: (
+      outcome.error === 'agent.errors.contextInvalidReference'
+      && outcome.error_type === 'CONTEXT_INVALID_REFERENCE'
+      && outcome.locale_key === 'agent.errors.contextInvalidReference'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && detailKeys.length === 2
+      && detailKeys[0] === 'reference_hash'
+      && detailKeys[1] === 'reference_kind'
+      && details.reference_kind === station.referenceKind
+      && details.reference_hash === referenceHash
+      && station.referenceKind === 'file'
+      && /^[0-9a-f]{64}$/.test(referenceHash)
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CONTEXT_INVALID_REFERENCE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRemovalVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.removalVisible === true
+      && receiver.removalText === receiver.expectedRemovalText
+    ),
+    rejectedDraftPreserved: (
+      receiver.draftHashAfterRejection === receiver.draftHashBefore
+      && Number(receiver.draftLengthAfterRejection)
+        === Number(receiver.draftLengthBefore)
+    ),
+    onlyRejectedReferenceRemoved: (
+      receiver.removalExecuted === true
+      && receiver.referencePresentAfterRemoval === false
+      && receiver.composerFocusedAfterRemoval === true
+      && receiver.draftHashAfterRemoval === receiver.correctedDraftHash
+    ),
+    correctedResendCompleted: (
+      completion.status === 'completed'
+      && completion.turnId === station.successfulTurnId
+      && completion.assistantMessageId === station.successfulAssistantMessageId
+      && completion.responseHash === completion.expectedResponseHash
+      && Number(station.successfulTurnDelta) === 1
+      && Number(station.successfulMessageDelta) === 2
+      && Number(station.successfulQueueDelta) === 0
+      && Number(station.successfulProviderExecutionDelta) === 1
+      && completion.sourceTransport === 'station-sse'
+      && completion.sourceConversationId === station.conversationId
+      && completion.sourceTurnId === station.successfulTurnId
+      && Number(completion.sourceSequence) > 0
+      && completion.sourceEventType === 'done'
+    ),
+    exactlyOneAuthoritativeAssistant: (
+      receiver.successfulAssistantVisible === true
+      && Number(receiver.successfulAssistantCount) === 1
+      && Number(receiver.successfulAssistantPeakCount) === 1
+      && receiver.successfulAssistantId
+        === station.successfulAssistantMessageId
+      && receiver.successfulAssistantTurnId === station.successfulTurnId
+      && receiver.successfulAssistantOptimistic === false
+    ),
+    zeroRejectedPathSideEffects: (
+      station.rejectionVersionAfter === station.rejectionVersionBefore
+      && station.rejectionHashAfter === station.rejectionHashBefore
+      && Number(station.rejectedTurnDelta) === 0
+      && Number(station.rejectedMessageDelta) === 0
+      && Number(station.rejectedQueueDelta) === 0
+      && Number(station.rejectedProviderExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInvalidResourceReference(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInvalidResourceReferenceFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInvalidResourceReferenceOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInvalidResourceReferenceDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInvalidResourceReferenceReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInvalidResourceReferenceStation',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationInvalidResourceReferenceExecutor',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationInvalidResourceReferenceRecovery',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInvalidResourceReferenceReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInvalidResourceReferenceCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInvalidResourceReferenceRuntimeEvent',
+  );
+  const resourceRefHash = String(station.resourceRefHash ?? '');
+
+  return {
+    approvedThroughReceiver: receiver.approvedThroughReceiver === true,
+    typedInvalidResourceReference: (
+      outcome.error === 'agent.errors.invalidResourceReference'
+      && outcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && outcome.locale_key === 'agent.errors.invalidResourceReference'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.sequence) === Number(station.sourceSequence)
+      && Number(runtimeEvent.streamGeneration)
+        === Number(station.streamGeneration)
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.eventId))
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.streamIdHash))
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.conversationIdHash))
+      && runtimeEvent.payloadHash === station.payloadHash
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && Number(runtimeEvent.sourceSequence) > 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    boundedDetails: (
+      Object.keys(details).sort().join(',')
+        === 'resource_kind,resource_ref_hash'
+      && details.resource_kind === 'file'
+      && details.resource_kind === station.resourceKind
+      && details.resource_ref_hash === resourceRefHash
+      && /^[0-9a-f]{64}$/.test(resourceRefHash)
+      && receiver.resourceKind === station.resourceKind
+      && receiver.resourceRefHash === resourceRefHash
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    pickerActivated: Number(receiver.pickerActivationCount) === 1,
+    zeroResourceRead: (
+      executor.evidenceSource === 'native-executor-coordinator'
+      && executor.targetPlatform === 'desktop'
+      && executor.targetCapabilityId === 'filesystem.read'
+      && /^[0-9a-f]{64}$/.test(
+        String(executor.capabilitySessionIdHash),
+      )
+      && /^[0-9a-f]{64}$/.test(String(executor.targetDeviceIdHash))
+      && Number(executor.executionAttemptCountAfter)
+        === Number(executor.executionAttemptCountBefore)
+    ),
+    zeroLocalSideEffect: (
+      Number(executor.sideEffectCountAfter)
+        === Number(executor.sideEffectCountBefore)
+    ),
+    zeroProviderContinuation: (
+      station.continuationId === ''
+      && Number(recovery.providerCallCountAfter)
+        === Number(recovery.providerCallCountBefore)
+    ),
+    oneTerminalResult: (
+      Number(station.factCount) === 1
+      && station.status === 'failed'
+      && station.errorCode === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && typeof station.resultId === 'string'
+      && station.resultId.length > 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && typeof replay.sourceHash === 'string'
+      && replay.sourceHash.length === 64
+    ),
+    noAutomaticResend: (
+      recovery.explicitResendRequired === true
+      && Number(recovery.turnCountAfter)
+        === Number(recovery.turnCountBefore)
+      && Number(recovery.messageCountAfter)
+        === Number(recovery.messageCountBefore)
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
       && cleanup.localProjectionCleared === true
       && cleanup.conversationDeleted === true
     ),
@@ -12610,6 +20576,22 @@ function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | 
   const deletion = evidenceRecord(facts.deletion, 'foundationF02Deletion');
   const entries = evidenceArray(queue.entries, 'foundationF02QueueEntries');
   const overflow = evidenceRecord(queue.overflow, 'foundationF02Overflow');
+  const typedOverflow = evidenceRecord(
+    overflow.typedError,
+    'foundationF02OverflowTypedError',
+  );
+  const overflowDetails = evidenceRecord(
+    typedOverflow.details,
+    'foundationF02OverflowDetails',
+  );
+  const overflowResolution = evidenceRecord(
+    overflow.resolution,
+    'foundationF02OverflowResolution',
+  );
+  const overflowRecovery = evidenceRecord(
+    overflow.recovery,
+    'foundationF02OverflowRecovery',
+  );
   const cancellation = evidenceRecord(queue.cancellation, 'foundationF02Cancellation');
   const receiver = evidenceRecord(queue.receiverDom, 'foundationF02QueueReceiver');
 
@@ -12630,7 +20612,24 @@ function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | 
       && cancellation.status === 'cancelled',
     overflowVisible:
       overflow.errorCode === 'ADMISSION_QUEUE_FULL'
-      && Number(overflow.queueSize) === Number(queue.queueCapacity),
+      && Number(overflow.queueSize) === Number(queue.queueCapacity)
+      && typedOverflow.errorType === 'ADMISSION_QUEUE_FULL'
+      && typedOverflow.localeKey === 'agent.errors.queueFull'
+      && typedOverflow.retryable === true
+      && typedOverflow.terminal === true
+      && stableJson(Object.keys(overflowDetails).sort())
+        === stableJson(['capacity', 'conversation_id'])
+      && overflowDetails.conversation_id
+        === overflowResolution.conversationId
+      && Number(overflowDetails.capacity) === Number(queue.queueCapacity)
+      && overflowResolution.type === 'editQueue'
+      && Number(overflowResolution.capacity) === Number(queue.queueCapacity)
+      && overflowRecovery.visible === true
+      && overflowRecovery.queueFocused === true
+      && Number(overflow.queueSizeAfterAction) === Number(queue.queueCapacity)
+      && Number(overflow.conversationVersionBeforeAction)
+        === Number(overflow.conversationVersionAfterAction)
+      && Number(overflow.stationMessageDelta) === 0,
     rejectedDraftRestored:
       draft.beforeHash === draft.afterHash
       && draft.editable === true,
@@ -13078,6 +21077,52 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     facts.toolIsolation,
     'foundationF12ToolIsolation',
   );
+  const referenceDiagnostics = (
+    messages: Record<string, unknown>[],
+    messageIds: Set<string>,
+    conversationId: string,
+  ) => ({
+    wrongConversationCount: messages.filter((message) =>
+      message.conversationId !== conversationId).length,
+    missingParentCount: messages.filter((message) =>
+      Boolean(message.parentMessageId)
+      && !messageIds.has(String(message.parentMessageId))).length,
+    missingReplacementCount: messages.filter((message) =>
+      Boolean(message.replacesMessageId)
+      && !messageIds.has(String(message.replacesMessageId))).length,
+  });
+  const alphaReferenceDiagnostics = referenceDiagnostics(
+    alphaMessages,
+    alphaMessageIds,
+    String(alphaConversation.conversationId),
+  );
+  const betaReferenceDiagnostics = referenceDiagnostics(
+    betaMessages,
+    betaMessageIds,
+    String(betaConversation.conversationId),
+  );
+  // #region debug-point F-K:as-f12-cross-topic
+  void reportFoundationF12ProjectionDebug('F-K', 'cross-topic-checks', {
+    alphaForeignFactHidden: alphaReceiver.foreignFactVisible === false,
+    alphaOwnFactVisible: alphaReceiver.ownFactVisible === true,
+    alphaReferencesOwned: referencesStayWithin(
+      alphaMessages,
+      alphaMessageIds,
+      String(alphaConversation.conversationId),
+    ),
+    alphaRuntimeMatches: runtimeMatches(alpha),
+    alphaReferenceDiagnostics,
+    betaForeignFactHidden: betaReceiver.foreignFactVisible === false,
+    betaOwnFactVisible: betaReceiver.ownFactVisible === true,
+    betaReferencesOwned: referencesStayWithin(
+      betaMessages,
+      betaMessageIds,
+      String(betaConversation.conversationId),
+    ),
+    betaRuntimeMatches: runtimeMatches(beta),
+    betaReferenceDiagnostics,
+  });
+  // #endregion
 
   return {
     twoTopicsDistinct:
@@ -13135,6 +21180,4366 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
   };
 }
 
+function capabilityDevelopmentComposerSnapshot(): Record<string, unknown> {
+  const element = document.querySelector<HTMLElement>(
+    '[data-pt-agent-composer] [data-pt-agent-readiness-snapshot]',
+  );
+  if (!element || element.getClientRects().length === 0) {
+    throw new Error('agent.acceptance.capabilityComposerMissing');
+  }
+  return {
+    visible: true,
+    providerId: element.dataset.ptAgentSelectedProvider ?? '',
+    modelId: element.dataset.ptAgentSelectedModel ?? '',
+    runtimeSnapshotId: element.dataset.ptAgentRuntimeSnapshot ?? '',
+    readinessSnapshotId: element.dataset.ptAgentReadinessSnapshot ?? '',
+    readinessState: element.dataset.ptAgentReadinessState ?? '',
+    compatibility: element.dataset.ptAgentModelCompatibility ?? '',
+    authority: element.dataset.ptAgentReadinessAuthority ?? '',
+    reasonCode: element.dataset.ptAgentReadinessReason ?? '',
+  };
+}
+
+function capabilityDevelopmentInventorySnapshot(
+  capabilityKey: string,
+): Record<string, unknown> {
+  const inventory = document.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-inventory]',
+  );
+  const detail = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-capability-detail]',
+    ),
+  ).find((element) =>
+    element.dataset.ptAgentCapabilityDetail === capabilityKey);
+  const readiness = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-readiness]',
+  );
+  const compatibility = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-compatibility]',
+  );
+  const policy = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-policy]',
+  );
+  return {
+    visible: Boolean(
+      inventory?.getClientRects().length
+      && detail?.getClientRects().length
+    ),
+    source: detail?.dataset.ptAgentCapabilitySource ?? '',
+    version: detail?.dataset.ptAgentCapabilityVersion ?? '',
+    risk: detail?.dataset.ptAgentCapabilityRisk ?? '',
+    bindingState: detail?.dataset.ptAgentCapabilityBindingState ?? '',
+    readinessState: readiness?.dataset.ptAgentCapabilityReadiness ?? '',
+    compatibility:
+      compatibility?.dataset.ptAgentCapabilityCompatibility ?? '',
+    policy: policy?.dataset.ptAgentCapabilityPolicyValue ?? '',
+    knowledgeIconVisible: Boolean(
+      detail?.querySelector<HTMLElement>(
+        '[data-capability-source-icon="knowledge"]',
+      )?.getClientRects().length,
+    ),
+  };
+}
+
+async function runCapabilityAdmissionRejection(input: {
+  agentId: string;
+  providerId: string;
+  modelId: string;
+  capabilityId: string;
+  expectedReasonCode: string;
+  capabilitySessionId?: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  const conversation = await api.createAgentConversation({
+    agent_id: input.agentId,
+    title: `Capability rejection ${input.expectedReasonCode} ${input.sampleId}`,
+    provider_id: input.providerId,
+    model_name: input.modelId,
+  });
+  const conversationId = conversation.conversation_id;
+  try {
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: input.agentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const capability = readiness.capabilities.find(
+      (item) => item.capability_id === input.capabilityId,
+    );
+    if (capability?.reason_code !== input.expectedReasonCode) {
+      throw new Error(
+        `agent.acceptance.capabilityReasonMismatch:${input.expectedReasonCode}`,
+      );
+    }
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationIncompatibleExecutionSnapshot(input.agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const result = await startObservedFoundationTurn({
+      conversationId,
+      agentId: input.agentId,
+      content: `Capability rejection ${input.expectedReasonCode}`,
+      idempotencyKey: crypto.randomUUID(),
+      provider: input.providerId,
+      model: input.modelId,
+      thinkingMode: 'disabled',
+      clientCapabilitySessionId: input.capabilitySessionId,
+    }).result;
+    const errorEvent = [...result.events].reverse().find(
+      (event) => event.event === 'error',
+    );
+    const outcome = errorEvent?.data ?? {};
+    const details = evidenceRecord(
+      outcome.details,
+      'capabilityAdmissionRejectionDetails',
+    );
+    const [afterExecution, afterReadback, afterQueue] = await Promise.all([
+      foundationIncompatibleExecutionSnapshot(input.agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    return {
+      reasonCode: input.expectedReasonCode,
+      readinessSnapshotId: readiness.snapshot_id,
+      runtimeSnapshotId: readiness.runtime_snapshot_id,
+      bindingRevision: Number(capability.binding_revision),
+      outcome,
+      assertions: {
+        stationReadinessMatches:
+          Boolean(readiness.snapshot_id)
+          && Boolean(readiness.runtime_snapshot_id)
+          && details.capability_id === input.capabilityId
+          && details.reason_code === input.expectedReasonCode,
+        typedRejection:
+          outcome.error_type === 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+          && outcome.locale_key === 'agent.errors.incompatibleCapability'
+          && outcome.terminal === true,
+        zeroProviderExecution:
+          afterExecution.providerCallCount
+            === beforeExecution.providerCallCount,
+        zeroToolExecution:
+          afterExecution.toolCallCount === beforeExecution.toolCallCount
+          && afterExecution.toolExecutionCount
+            === beforeExecution.toolExecutionCount
+          && afterExecution.sideEffectCount
+            === beforeExecution.sideEffectCount,
+        zeroMessagePersistence:
+          afterReadback.messages.length === beforeReadback.messages.length,
+        queueUnchanged:
+          afterQueue.entries.length === beforeQueue.entries.length,
+      },
+    };
+  } finally {
+    clearFoundationLocalConversationProjection(conversationId);
+    await deleteFoundationConversation(conversationId);
+  }
+}
+
+const MCP_TERMINAL_OPERATION_STATUSES = new Set<CapabilityOperationStatus>([
+  CapabilityOperationStatus.SUCCEEDED,
+  CapabilityOperationStatus.CANCELLED,
+  CapabilityOperationStatus.TIMED_OUT,
+  CapabilityOperationStatus.FAILED,
+  CapabilityOperationStatus.CLEANUP_FAILED,
+  CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT,
+]);
+
+function mcpOperationStatusName(status: CapabilityOperationStatus): string {
+  switch (status) {
+    case CapabilityOperationStatus.PENDING:
+      return 'pending';
+    case CapabilityOperationStatus.DISPATCHED:
+      return 'dispatched';
+    case CapabilityOperationStatus.RUNNING:
+      return 'running';
+    case CapabilityOperationStatus.DISCONNECTED:
+      return 'disconnected';
+    case CapabilityOperationStatus.RECONNECTING:
+      return 'reconnecting';
+    case CapabilityOperationStatus.CANCELLING:
+      return 'cancelling';
+    case CapabilityOperationStatus.SETTLING_CLEANUP:
+      return 'settling_cleanup';
+    case CapabilityOperationStatus.SUCCEEDED:
+      return 'succeeded';
+    case CapabilityOperationStatus.CANCELLED:
+      return 'cancelled';
+    case CapabilityOperationStatus.TIMED_OUT:
+      return 'timed_out';
+    case CapabilityOperationStatus.FAILED:
+      return 'failed';
+    case CapabilityOperationStatus.CLEANUP_FAILED:
+      return 'cleanup_failed';
+    case CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT:
+      return 'unknown_side_effect';
+    default:
+      return 'unspecified';
+  }
+}
+
+function mcpOperationEvidence(
+  operation: CapabilityOperation,
+): Record<string, unknown> {
+  return evidenceValue({
+    operationId: operation.operationId,
+    idempotencyKey: operation.idempotencyKey,
+    payloadHash: operation.payloadHash,
+    capabilityId: operation.capabilityId,
+    capabilityVersion: operation.capabilityVersion,
+    targetDeviceId: operation.targetDeviceId,
+    capabilitySessionId: operation.capabilitySessionId,
+    executorLeaseId: operation.executorLeaseId,
+    operationKind: operation.operationKind,
+    status: mcpOperationStatusName(operation.status),
+    attempt: operation.attempt,
+    attemptEpoch: operation.attemptEpoch,
+    fencingToken: operation.fencingToken,
+    revision: operation.revision,
+    lastEventSequence: operation.lastEventSequence,
+    desiredTerminalOutcome: mcpOperationStatusName(
+      operation.desiredTerminalOutcome,
+    ),
+    cleanupLeaseId: operation.cleanupLeaseId,
+    cleanupEpoch: operation.cleanupEpoch,
+    cleanupFencingToken: operation.cleanupFencingToken,
+    progressPercent: operation.progressPercent,
+    resultRef: operation.resultRef,
+    error: operation.error
+      ? {
+          code: operation.error.code,
+          retryable: operation.error.retryable,
+          recoveryAction: operation.error.recoveryAction,
+        }
+      : null,
+    cleanupOutcome: operation.cleanupOutcome,
+    dispatchSequence: operation.dispatchSequence,
+  }) as Record<string, unknown>;
+}
+
+function currentMcpOperation(
+  serverName: string,
+  description: string,
+): CapabilityOperation {
+  const operation = useMCPStore.getState().operationsByServer[serverName];
+  if (!operation?.operationId) {
+    throw new Error(
+      `agent.acceptance.mcpOperationMissing:${description}`,
+    );
+  }
+  return operation;
+}
+
+async function waitForMcpOperation(
+  serverName: string,
+  operationId: string,
+  expected: ReadonlySet<CapabilityOperationStatus>,
+  description: string,
+  timeoutMs = 60_000,
+): Promise<CapabilityOperation> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const operation = await api.getCapabilityOperation(operationId);
+    useMCPStore.setState((state) => ({
+      operationsByServer: {
+        ...state.operationsByServer,
+        [serverName]: operation,
+      },
+    }));
+    if (expected.has(operation.status)) return operation;
+    if (MCP_TERMINAL_OPERATION_STATUSES.has(operation.status)) {
+      throw new Error(
+        `agent.acceptance.mcpOperationUnexpectedTerminal:${description}:`
+        + mcpOperationStatusName(operation.status),
+      );
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function waitForMcpServer(
+  serverName: string,
+  predicate: (server: MCPServerItem) => boolean,
+  description: string,
+  timeoutMs = 60_000,
+): Promise<MCPServerItem> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    await useMCPStore.getState().loadServers();
+    const server = useMCPStore.getState().servers.find(
+      (candidate) => candidate.name === serverName,
+    );
+    if (server && predicate(server)) return server;
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function mcpOperationReplayEvidence(
+  operationId: string,
+): Promise<Record<string, unknown>> {
+  const source = await api.reconcileCapabilityOperation(operationId, 0n);
+  const replay = await api.reconcileCapabilityOperation(operationId, 0n);
+  if (!source.operation || !replay.operation) {
+    throw new Error('agent.acceptance.mcpOperationReadbackMissing');
+  }
+  const project = (
+    value: typeof source,
+  ): Record<string, unknown> => ({
+    operation: mcpOperationEvidence(value.operation!),
+    events: evidenceValue(value.events),
+  });
+  const sourceProjection = project(source);
+  const replayProjection = project(replay);
+  const sourceHash = await sha256Hex(stableJson(sourceProjection));
+  const replayHash = await sha256Hex(stableJson(replayProjection));
+  if (sourceHash !== replayHash) {
+    throw new Error('agent.acceptance.mcpOperationReplayMismatch');
+  }
+  return {
+    sourceHash,
+    replayHash,
+    operation: sourceProjection.operation,
+    events: sourceProjection.events,
+  };
+}
+
+async function mcpToolFixture(
+  agentId: string,
+  serverName: string,
+  toolName: string,
+): Promise<FoundationToolFixture> {
+  const [manifests, bindings] = await Promise.all([
+    api.listCapabilityManifests([CapabilitySourceKind.MCP]),
+    api.listAgentCapabilityBindings(agentId),
+  ]);
+  const manifest = manifests.find((candidate) =>
+    candidate.sourceKind === CapabilitySourceKind.MCP
+    && candidate.sourceInstanceId === 'local_mcp'
+    && candidate.capabilityId === 'mcp.invoke'
+    && candidate.version === '2');
+  if (!manifest) {
+    throw new Error('agent.acceptance.mcpCapabilityManifestMissing');
+  }
+  const binding = bindings.find((candidate) =>
+    candidate.capabilityId === manifest.capabilityId
+    && candidate.capabilityVersion === manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return {
+    manifest,
+    binding,
+    toolName: 'local_mcp',
+    arguments: {
+      server_name: serverName,
+      tool_name: toolName,
+      arguments: { sample: 'mca-v2-j04' },
+    },
+  };
+}
+
+async function navigateToMcpSettings(serverName: string): Promise<void> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+    resource: 'settings',
+    id: 'mcp',
+  });
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-mcp-server]'),
+    ).some((element) =>
+      element.dataset.ptMcpServer === serverName
+      && element.getClientRects().length > 0),
+    `MCP server ${serverName} to be visible`,
+    30_000,
+  );
+}
+
+function mcpReceiverSnapshot(
+  serverName: string,
+): Record<string, unknown> {
+  const card = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-mcp-server]'),
+  ).find((element) => element.dataset.ptMcpServer === serverName);
+  const operation = card?.querySelector<HTMLElement>(
+    '[data-pt-mcp-operation-status]',
+  );
+  return {
+    visible: Boolean(card?.getClientRects().length),
+    serverName,
+    operationId: operation?.dataset.ptMcpOperationId ?? '',
+    status: operation?.dataset.ptMcpOperationStatus ?? '',
+  };
+}
+
+async function cleanupMcpLifecycleDevelopmentState(
+  state: McpLifecycleDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  let uninstallOperation: Record<string, unknown> | null = null;
+  let conversationDeleted = !state.conversationId;
+  let serverRemoved = false;
+  let agentDeleted = !state.agentId;
+  let fixtureModelDeleted = !state.providerId || !state.modelId;
+  let fixtureProviderDeleted = !state.providerId;
+
+  if (state.conversationId) {
+    try {
+      await cleanupFoundationToolConversation(
+        state.conversationId,
+        state.turnId,
+      );
+      clearFoundationLocalConversationProjection(state.conversationId);
+      conversationDeleted = true;
+    } catch (error) {
+      failures.push(`conversation:${observedErrorCode(error)}`);
+    }
+  }
+
+  try {
+    const store = useMCPStore.getState();
+    await store.loadServers();
+    const existing = useMCPStore.getState().servers.find(
+      (server) => server.name === state.serverName,
+    );
+    if (existing) {
+      const active = useMCPStore.getState().operationsByServer[state.serverName];
+      if (
+        active
+        && !MCP_TERMINAL_OPERATION_STATUSES.has(active.status)
+      ) {
+        await useMCPStore.getState().cancelOperation(state.serverName);
+        await waitForMcpOperation(
+          state.serverName,
+          active.operationId,
+          new Set([CapabilityOperationStatus.CANCELLED]),
+          'MCP cleanup cancellation',
+        );
+      }
+      await useMCPStore.getState().deleteServer(state.serverName);
+      const uninstall = currentMcpOperation(
+        state.serverName,
+        'MCP uninstall',
+      );
+      const settled = await waitForMcpOperation(
+        state.serverName,
+        uninstall.operationId,
+        new Set([CapabilityOperationStatus.SUCCEEDED]),
+        'MCP uninstall',
+      );
+      uninstallOperation = mcpOperationEvidence(settled);
+      await useMCPStore.getState().loadServers();
+    }
+    serverRemoved = !useMCPStore.getState().servers.some(
+      (server) => server.name === state.serverName,
+    );
+    if (!serverRemoved) failures.push('server:still-present');
+  } catch (error) {
+    failures.push(`server:${observedErrorCode(error)}`);
+  }
+
+  if (state.agentId) {
+    try {
+      await api.deleteAgent(state.agentId);
+      await useAgentStore.getState().loadAgents();
+      agentDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        agentDeleted = true;
+      } else {
+        failures.push(`agent:${observedErrorCode(error)}`);
+      }
+    }
+  }
+
+  if (state.providerId && state.modelId) {
+    try {
+      await api.deleteModel(state.providerId, state.modelId);
+      fixtureModelDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        fixtureModelDeleted = true;
+      } else {
+        failures.push(`model:${observedErrorCode(error)}`);
+      }
+    }
+  }
+  if (state.providerId) {
+    try {
+      await api.deleteProvider(state.providerId);
+      fixtureProviderDeleted = true;
+    } catch (error) {
+      if (isFoundationResourceNotFound(error)) {
+        fixtureProviderDeleted = true;
+      } else {
+        failures.push(`provider:${observedErrorCode(error)}`);
+      }
+    }
+  }
+
+  try {
+    if (state.priorSelection) {
+      useAgentStore.getState().setSelectedAgent(state.priorSelection);
+      useAgentStore.getState().setAgentSurface(
+        state.priorSelection,
+        state.priorSurface,
+      );
+      await api.setSelectedAgent(state.priorSelection);
+    }
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  } catch (error) {
+    failures.push(`selection:${observedErrorCode(error)}`);
+  }
+
+  return {
+    status: (
+      failures.length === 0
+      && conversationDeleted
+      && serverRemoved
+      && agentDeleted
+      && fixtureModelDeleted
+      && fixtureProviderDeleted
+        ? 'clean'
+        : 'failed'
+    ),
+    conversationDeleted,
+    serverRemoved,
+    agentDeleted,
+    fixtureModelDeleted,
+    fixtureProviderDeleted,
+    selectionRestored:
+      !state.priorSelection
+      || useAgentStore.getState().selectedAgent === state.priorSelection,
+    uninstallOperation,
+    failures,
+  };
+}
+
+async function prepareMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  if (
+    !input.providerBaseUrl
+    || !input.command
+    || !input.args
+    || !input.env
+    || !input.toolName
+    || !input.expectedResult
+  ) {
+    throw new Error('agent.acceptance.mcpDevelopmentInputIncomplete');
+  }
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.mcpProviderUrlInvalid');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const state: McpLifecycleDevelopmentState = {
+    agentId: '',
+    agentName: '',
+    providerId: '',
+    modelId: '',
+    serverName: input.serverName,
+    conversationId: '',
+    turnId: '',
+    priorSelection,
+    priorSurface,
+    operationIds: {},
+  };
+  let primaryError: unknown = null;
+
+  try {
+    useMCPStore.getState().reset();
+    await useMCPStore.getState().loadServers();
+    if (useMCPStore.getState().servers.some(
+      (server) => server.name === input.serverName,
+    )) {
+      throw new Error('agent.acceptance.mcpFixtureServerAlreadyExists');
+    }
+
+    await useMCPStore.getState().createServer({
+      name: input.serverName,
+      title: `MCP lifecycle ${input.sampleId}`,
+      description: 'V2-J04 disposable stdio MCP fixture',
+      type: 'stdio',
+      command: input.command,
+      args: input.args,
+      env: input.env,
+      enabled: true,
+    });
+    const installStarted = currentMcpOperation(
+      input.serverName,
+      'MCP install',
+    );
+    state.operationIds.install = installStarted.operationId;
+    const install = await waitForMcpOperation(
+      input.serverName,
+      installStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP install',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'disconnected',
+      'MCP install projection',
+    );
+
+    await useMCPStore.getState().testServer(input.serverName);
+    const testStarted = currentMcpOperation(input.serverName, 'MCP test');
+    state.operationIds.test = testStarted.operationId;
+    const test = await waitForMcpOperation(
+      input.serverName,
+      testStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP test',
+    );
+    const testedServer = await waitForMcpServer(
+      input.serverName,
+      (server) =>
+        server.status === 'connected'
+        && server.toolCount > 0,
+      'MCP tested connection',
+    );
+
+    await useMCPStore.getState().toggleServer(input.serverName, false);
+    const disconnectStarted = currentMcpOperation(
+      input.serverName,
+      'MCP disconnect',
+    );
+    state.operationIds.disconnect = disconnectStarted.operationId;
+    const disconnect = await waitForMcpOperation(
+      input.serverName,
+      disconnectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP disconnect',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => !server.enabled && server.status === 'disconnected',
+      'MCP disconnected projection',
+    );
+
+    await useMCPStore.getState().toggleServer(input.serverName, true);
+    const connectStarted = currentMcpOperation(
+      input.serverName,
+      'MCP connect',
+    );
+    state.operationIds.connect = connectStarted.operationId;
+    const connect = await waitForMcpOperation(
+      input.serverName,
+      connectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP connect',
+    );
+    const connectedServer = await waitForMcpServer(
+      input.serverName,
+      (server) => server.enabled && server.status === 'connected',
+      'MCP connected projection',
+    );
+    await navigateToMcpSettings(input.serverName);
+    const connectedReceiver = mcpReceiverSnapshot(input.serverName);
+
+    const runtimeFixture = await createGovernedToolRuntimeFixture(
+      'mcp-lifecycle',
+      providerUrl.toString(),
+    );
+    state.providerId = runtimeFixture.providerId;
+    state.modelId = runtimeFixture.modelId;
+    const disposableAgent = await agentStore.createAgent({
+      name: `mcp-lifecycle-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `MCP lifecycle ${input.sampleId}`,
+      description: 'V2-J04 MCP lifecycle Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    state.agentId = disposableAgent.id || disposableAgent.name;
+    state.agentName = disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const toolFixture = await mcpToolFixture(
+      state.agentId,
+      input.serverName,
+      input.toolName,
+    );
+    const binding = await updateFoundationToolPolicy(
+      disposableAgent,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    const [bindingReadback, readiness] = await Promise.all([
+      api.listAgentCapabilityBindings(state.agentId),
+      api.getAgentCapabilityReadiness({
+        agent_id: state.agentId,
+        client_capability_session_id: capabilitySession.capabilitySessionId,
+      }),
+    ]);
+    const authoritativeBinding = bindingReadback.find(
+      (candidate) => candidate.bindingId === binding.bindingId,
+    );
+    const readyCapability = readiness.capabilities.find(
+      (candidate) =>
+        candidate.capability_id === toolFixture.manifest.capabilityId
+        && candidate.capability_version === toolFixture.manifest.version,
+    );
+
+    const turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: toolFixture,
+      sampleId: input.sampleId,
+      label: 'mcp-lifecycle-development',
+      onConversationCreated: (conversationId) => {
+        state.conversationId = conversationId;
+      },
+    });
+    state.turnId = turn.turnId;
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const settled = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'MCP ToolCall settlement',
+    );
+    const toolFact = settled.facts[0];
+    const toolCallId = String(
+      evidenceField(toolFact, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'MCP ToolCall native receiver projection',
+      30_000,
+    );
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallGroupSelector)),
+      'MCP ToolCall native receiver group',
+      30_000,
+    );
+    if (!document.querySelector(toolCallSelector)) {
+      const groupToggle = document.querySelector<HTMLElement>(
+        `${toolCallGroupSelector} `
+        + '[data-pt-agent-tool-call-group-toggle]',
+      );
+      if (!groupToggle) {
+        throw new Error('agent.acceptance.mcpToolCallGroupToggleMissing');
+      }
+      groupToggle.click();
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'MCP ToolCall native receiver',
+      30_000,
+    );
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      toolFact,
+    );
+    const stationFact = diagnosticToolCase(toolFact, sideEffectCount);
+    const conversationReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+
+    await useMCPStore.getState().testServer(input.serverName);
+    const blockedStarted = currentMcpOperation(
+      input.serverName,
+      'MCP cancellable test',
+    );
+    state.operationIds.cancel = blockedStarted.operationId;
+    const running = await waitForMcpOperation(
+      input.serverName,
+      blockedStarted.operationId,
+      new Set([CapabilityOperationStatus.RUNNING]),
+      'MCP cancellable test to run',
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    await useMCPStore.getState().cancelOperation(input.serverName);
+    const cancelled = await waitForMcpOperation(
+      input.serverName,
+      blockedStarted.operationId,
+      new Set([CapabilityOperationStatus.CANCELLED]),
+      'MCP cancellation',
+    );
+    await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'cancelled',
+      'MCP cancelled projection',
+    );
+    await navigateToMcpSettings(input.serverName);
+    const cancelledReceiver = mcpReceiverSnapshot(input.serverName);
+
+    await useMCPStore.getState().retryOperation(input.serverName);
+    const retryStarted = currentMcpOperation(input.serverName, 'MCP retry');
+    state.operationIds.retry = retryStarted.operationId;
+    const retry = await waitForMcpOperation(
+      input.serverName,
+      retryStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP retry',
+    );
+    const retryServer = await waitForMcpServer(
+      input.serverName,
+      (server) => server.status === 'connected',
+      'MCP retry projection',
+    );
+    const retryReceiver = mcpReceiverSnapshot(input.serverName);
+
+    const operationReplayEntries = await Promise.all(
+      Object.entries(state.operationIds).map(async ([name, operationId]) => [
+        name,
+        await mcpOperationReplayEvidence(operationId),
+      ] as const),
+    );
+    const operationReplay = Object.fromEntries(operationReplayEntries);
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const toolLineage = evidenceRecord(
+      stationFact.lineage,
+      'mcpToolLineage',
+    );
+    const lifecycleOperations = {
+      install: mcpOperationEvidence(install),
+      test: mcpOperationEvidence(test),
+      disconnect: mcpOperationEvidence(disconnect),
+      connect: mcpOperationEvidence(connect),
+      running: mcpOperationEvidence(running),
+      cancelled: mcpOperationEvidence(cancelled),
+      retry: mcpOperationEvidence(retry),
+    };
+    const assertions = {
+      manifestAndConfigurationVisible:
+        toolFixture.manifest.sourceKind === CapabilitySourceKind.MCP
+        && toolFixture.manifest.sourceInstanceId === 'local_mcp'
+        && toolFixture.manifest.capabilityId === 'mcp.invoke'
+        && connectedReceiver.visible === true
+        && connectedReceiver.status === 'connected',
+      installTestConnectSucceeded:
+        install.status === CapabilityOperationStatus.SUCCEEDED
+        && test.status === CapabilityOperationStatus.SUCCEEDED
+        && disconnect.status === CapabilityOperationStatus.SUCCEEDED
+        && connect.status === CapabilityOperationStatus.SUCCEEDED
+        && testedServer.toolCount > 0
+        && connectedServer.status === 'connected',
+      authoritativeBindingReady:
+        authoritativeBinding?.revision === binding.revision
+        && authoritativeBinding.enabled
+        && authoritativeBinding.approvalPolicy
+          === CapabilityApprovalPolicy.AUTO
+        && Boolean(readyCapability && isAgentCapabilityReady(readyCapability)),
+      governedMcpInvocationSucceeded:
+        receiverProjection?.status === 'success'
+        && stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1
+        && JSON.stringify(conversationReadback.messages)
+          .includes(toolCallId),
+      cancellationVisibleAndTerminal:
+        cancelled.status === CapabilityOperationStatus.CANCELLED
+        && cancelledReceiver.visible === true
+        && cancelledReceiver.status === 'cancelled',
+      retryRestoredConnection:
+        retry.status === CapabilityOperationStatus.SUCCEEDED
+        && retryServer.status === 'connected'
+        && retryReceiver.status === 'connected',
+      stationReplayEqual:
+        Object.values(operationReplay).every((value) => {
+          const replay = evidenceRecord(value, 'mcpOperationReplay');
+          return replay.sourceHash === replay.replayHash;
+        }),
+      toolLineageComplete:
+        [
+          toolLineage.toolCallId,
+          toolLineage.manifestId,
+          toolLineage.bindingId,
+          toolLineage.executionClaimId,
+          toolLineage.sideEffectReceiptId,
+          toolLineage.resultId,
+          toolLineage.continuationId,
+        ].every((value) => typeof value === 'string' && value.length > 0),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.mcpLifecycleAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    return evidenceValue({
+      phase: 'prepared',
+      state,
+      assertions,
+      'receiver-dom': {
+        connected: connectedReceiver,
+        toolCall: {
+          visible: Boolean(
+            document.querySelector<HTMLElement>(toolCallSelector)
+              ?.getClientRects().length,
+          ),
+          toolCallId,
+          status: receiverProjection?.status ?? '',
+        },
+        cancelled: cancelledReceiver,
+        retried: retryReceiver,
+      },
+      'station-readback': {
+        entityKind: 'mcp-lifecycle-and-tool-call',
+        readinessSnapshotId: readiness.snapshot_id,
+        runtimeSnapshotId: readiness.runtime_snapshot_id,
+        binding: authoritativeBinding,
+        toolFact: stationFact,
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+      },
+      'executor-receipts': {
+        operations: lifecycleOperations,
+        toolLineage,
+      },
+      replay: operationReplay,
+    }) as Record<string, unknown>;
+  } catch (error) {
+    primaryError = error;
+  }
+
+  const cleanup = await cleanupMcpLifecycleDevelopmentState(state);
+  if (cleanup.status !== 'clean') {
+    throw Object.assign(
+      new Error('agent.acceptance.mcpLifecycleCleanupFailed'),
+      { primaryError, cleanup },
+    );
+  }
+  throw primaryError;
+}
+
+async function recoverMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  const state = input.state;
+  if (!state || state.serverName !== input.serverName) {
+    throw new Error('agent.acceptance.mcpRecoveryStateInvalid');
+  }
+  let primaryError: unknown = null;
+  let capture: Record<string, unknown> | null = null;
+  let cleanup: Record<string, unknown> | null = null;
+  try {
+    useMCPStore.getState().reset();
+    const disconnected = await waitForMcpServer(
+      state.serverName,
+      (server) =>
+        server.status === 'disconnected'
+        && server.lastError === 'MCP_RUNTIME_RESTARTED',
+      'MCP restart reconciliation',
+    );
+    await navigateToMcpSettings(state.serverName);
+    const disconnectedReceiver = mcpReceiverSnapshot(state.serverName);
+    const terminalReadbackEntries = await Promise.all(
+      Object.entries(state.operationIds).map(async ([name, operationId]) => [
+        name,
+        await mcpOperationReplayEvidence(operationId),
+      ] as const),
+    );
+    const terminalReadback = Object.fromEntries(terminalReadbackEntries);
+    const bindingReadback = (
+      await api.listAgentCapabilityBindings(state.agentId)
+    ).find((binding) =>
+      binding.capabilityId === 'mcp.invoke'
+      && binding.capabilityVersion === '2'
+      && !binding.tombstonedAt);
+
+    await useMCPStore.getState().reconnectServer(state.serverName);
+    const reconnectStarted = currentMcpOperation(
+      state.serverName,
+      'MCP reconnect',
+    );
+    state.operationIds.reconnect = reconnectStarted.operationId;
+    const reconnect = await waitForMcpOperation(
+      state.serverName,
+      reconnectStarted.operationId,
+      new Set([CapabilityOperationStatus.SUCCEEDED]),
+      'MCP reconnect',
+    );
+    const reconnected = await waitForMcpServer(
+      state.serverName,
+      (server) => server.status === 'connected',
+      'MCP reconnect projection',
+    );
+    const reconnectedReceiver = mcpReceiverSnapshot(state.serverName);
+    const reconnectReplay = await mcpOperationReplayEvidence(
+      reconnect.operationId,
+    );
+    const assertions = {
+      restartInvalidatedConnection:
+        disconnected.status === 'disconnected'
+        && disconnected.lastError === 'MCP_RUNTIME_RESTARTED'
+        && disconnectedReceiver.visible === true
+        && disconnectedReceiver.status === 'disconnected',
+      priorOperationsRemainTerminal:
+        Object.values(terminalReadback).every((value) => {
+          const replay = evidenceRecord(value, 'mcpTerminalReadback');
+          const operation = evidenceRecord(
+            replay.operation,
+            'mcpTerminalOperation',
+          );
+          return [
+            'succeeded',
+            'cancelled',
+            'timed_out',
+            'failed',
+            'cleanup_failed',
+            'unknown_side_effect',
+          ].includes(String(operation.status ?? ''))
+            && replay.sourceHash === replay.replayHash;
+        }),
+      bindingSurvivedRestart:
+        Boolean(bindingReadback?.enabled)
+        && bindingReadback?.capabilityId === 'mcp.invoke',
+      reconnectRestoredConnection:
+        reconnect.status === CapabilityOperationStatus.SUCCEEDED
+        && reconnected.status === 'connected'
+        && reconnectedReceiver.status === 'connected'
+        && reconnectReplay.sourceHash === reconnectReplay.replayHash,
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.mcpRecoveryAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      phase: 'recovered',
+      assertions,
+      'receiver-dom': {
+        disconnected: disconnectedReceiver,
+        reconnected: reconnectedReceiver,
+      },
+      'station-readback': {
+        entityKind: 'mcp-lifecycle-recovery',
+        terminalOperations: terminalReadback,
+        reconnect: reconnectReplay,
+        binding: bindingReadback,
+      },
+      'executor-receipts': {
+        reconnect: mcpOperationEvidence(reconnect),
+      },
+      replay: {
+        terminalOperations: terminalReadback,
+        reconnect: reconnectReplay,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    cleanup = await cleanupMcpLifecycleDevelopmentState(state);
+  }
+  if (cleanup.status !== 'clean') {
+    throw Object.assign(
+      new Error('agent.acceptance.mcpLifecycleCleanupFailed'),
+      { primaryError, cleanup },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.mcpRecoveryCaptureMissing');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'mcpRecoveryAssertions'),
+      cleanupComplete: true,
+    },
+    cleanup,
+  }) as Record<string, unknown>;
+}
+
+async function runMcpLifecycleDevelopmentJourney(
+  input: McpLifecycleDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  switch (input.phase) {
+    case 'prepare':
+      return prepareMcpLifecycleDevelopmentJourney(input);
+    case 'recover':
+      return recoverMcpLifecycleDevelopmentJourney(input);
+    case 'cleanup': {
+      if (!input.state) {
+        throw new Error('agent.acceptance.mcpCleanupStateInvalid');
+      }
+      return cleanupMcpLifecycleDevelopmentState(input.state);
+    }
+    default:
+      throw new Error('agent.acceptance.mcpDevelopmentPhaseInvalid');
+  }
+}
+
+async function completeConnectorOAuthFixture(input: {
+  connectorId: string;
+  sampleId: string;
+  scopes: string[];
+  expiresAt: string;
+}): Promise<OAuth2Connection> {
+  const currentUser = useSessionStore.getState().currentUser;
+  if (!currentUser?.actorPtid) {
+    throw new Error('agent.acceptance.connectorActorMissing');
+  }
+  const loopback = await api.oauth2StartLoopback(
+    input.connectorId,
+    'acceptance',
+  );
+  const authorizeUrl = new URL(loopback.auth_url);
+  const returnTo = authorizeUrl.searchParams.get('return_to');
+  if (!returnTo) {
+    throw new Error('agent.acceptance.connectorLoopbackMissing');
+  }
+  const callback = new URL(returnTo);
+  callback.searchParams.set('provider', input.connectorId);
+  callback.searchParams.set(
+    'provider_user_id',
+    `mca-j05-${input.sampleId}`,
+  );
+  callback.searchParams.set('username', `mca-j05-${input.sampleId}`);
+  callback.searchParams.set(
+    'display_name',
+    `Connector fixture ${input.sampleId}`,
+  );
+  callback.searchParams.set(
+    'email',
+    currentUser.email || `mca-j05-${input.sampleId}@example.test`,
+  );
+  callback.searchParams.set('scope', input.scopes.join(' '));
+  callback.searchParams.set('expires_at', input.expiresAt);
+  try {
+    await fetch(callback.toString(), {
+      cache: 'no-store',
+      mode: 'no-cors',
+    });
+  } catch {
+    // A no-CORS response may be opaque; the poll result is authoritative.
+  }
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    const result = await api.oauth2PollLoopback(loopback.session_id);
+    if (result.completed) {
+      if (result.status !== 'completed') {
+        throw new Error(
+          `agent.acceptance.connectorLoopbackFailed:${result.error ?? result.status}`,
+        );
+      }
+      await useAgentConnectorStore.getState().loadConnectors();
+      const connection = useOAuth2Store.getState().connections.find(
+        (candidate) => candidate.provider_id === input.connectorId,
+      );
+      if (!connection) {
+        throw new Error('agent.acceptance.connectorConnectionMissing');
+      }
+      return connection;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('agent.acceptance.connectorLoopbackTimedOut');
+}
+
+async function connectorDevelopmentFixture(
+  agentId: string,
+  connectorId: string,
+): Promise<{
+  fixture: FoundationToolFixture;
+  resource: ConnectorResourceManifest;
+}> {
+  const connectorStore = useAgentConnectorStore.getState();
+  await connectorStore.loadConnectors();
+  const resource = useAgentConnectorStore.getState().resourceManifests.find(
+    (candidate) =>
+      candidate.connectorId === connectorId
+      && candidate.resourceId === 'connection.status'
+      && candidate.status === ConnectorResourceStatus.READY,
+  );
+  if (!resource || resource.toolManifests.length !== 1) {
+    throw new Error('agent.acceptance.connectorResourceManifestMissing');
+  }
+  const reference = resource.toolManifests[0];
+  const [manifests, bindings] = await Promise.all([
+    api.listCapabilityManifests([CapabilitySourceKind.CONNECTOR]),
+    api.listAgentCapabilityBindings(agentId),
+  ]);
+  const manifest = manifests.find((candidate) =>
+    candidate.capabilityId === reference.capabilityId
+    && candidate.version === reference.capabilityVersion
+    && candidate.sourceKind === CapabilitySourceKind.CONNECTOR
+    && !candidate.retiredAt);
+  if (!manifest || !manifest.sourceInstanceId.startsWith('connector_resource_')) {
+    throw new Error('agent.acceptance.connectorCapabilityManifestMissing');
+  }
+  const binding = bindings.find((candidate) =>
+    candidate.capabilityId === manifest.capabilityId
+    && candidate.capabilityVersion === manifest.version
+    && candidate.enabled
+    && !candidate.tombstonedAt) ?? null;
+  return {
+    fixture: {
+      manifest,
+      binding,
+      toolName: manifest.sourceInstanceId,
+      arguments: {
+        params: {
+          sample: 'mca-v2-j05',
+        },
+      },
+    },
+    resource,
+  };
+}
+
+async function waitForConnectorToolSession(
+  agentId: string,
+  fixture: FoundationToolFixture,
+): Promise<FoundationToolTurnSession> {
+  const startedAt = Date.now();
+  let lastError: unknown = null;
+  let lastObservation: Record<string, unknown> | null = null;
+  while (Date.now() - startedAt < 90_000) {
+    try {
+      const session = await resolveFoundationToolTurnSession();
+      const readiness = await api.getAgentCapabilityReadiness({
+        agent_id: agentId,
+        client_capability_session_id: session.capabilitySessionId,
+      });
+      lastObservation = {
+        expected: {
+          capabilityId: fixture.manifest.capabilityId,
+          capabilityVersion: fixture.manifest.version,
+        },
+        capabilitySessionId: session.capabilitySessionId,
+        readiness: readiness.capabilities.map((capability) => ({
+          capabilityId: capability.capability_id,
+          capabilityVersion: capability.capability_version,
+          state: capability.state,
+          reasonCode: capability.reason_code,
+        })),
+      };
+      if (readiness.capabilities.some((capability) =>
+        capability.capability_id === fixture.manifest.capabilityId
+        && capability.capability_version === fixture.manifest.version
+        && isAgentCapabilityReady(capability))) {
+        return session;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw Object.assign(
+    new Error(
+      'agent.acceptance.connectorCapabilitySessionUnavailable:'
+      + stableJson(lastObservation),
+    ),
+    { cause: lastError },
+  );
+}
+
+function connectorResourceEvidence(
+  resource: ConnectorResourceManifest,
+): Record<string, unknown> {
+  return {
+    connectorId: resource.connectorId,
+    connectionRevision: resource.connectionRevision.toString(),
+    resourceId: resource.resourceId,
+    resourceVersion: resource.resourceVersion,
+    scopes: [...resource.scopes],
+    status: resource.status,
+    capabilityRefs: resource.toolManifests.map((reference) => ({
+      capabilityId: reference.capabilityId,
+      capabilityVersion: reference.capabilityVersion,
+    })),
+  };
+}
+
+async function runConnectorInvocationDevelopmentJourney(
+  input: ConnectorInvocationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.connectorProviderUrlInvalid');
+  }
+  const connectorId = input.connectorId.trim();
+  if (!connectorId) {
+    throw new Error('agent.acceptance.connectorIdMissing');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let disposableAgent:
+    NonNullable<ReturnType<typeof selectedAgent>> | null = null;
+  let disposableAgentId = '';
+  let conversationId = '';
+  let turn: FoundationToolTurn | null = null;
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    connectorDisabled: false,
+    conversationDeleted: false,
+    disposableAgentDeleted: false,
+    fixtureModelDeleted: false,
+    fixtureProviderDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    const connected = await completeConnectorOAuthFixture({
+      connectorId,
+      sampleId: `${input.sampleId}-connected`,
+      scopes: ['read:user', 'user:email'],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    runtimeFixture = await createGovernedToolRuntimeFixture(
+      'connector-invocation',
+      providerUrl.toString(),
+    );
+    disposableAgent = await agentStore.createAgent({
+      name: `connector-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Connector ${input.sampleId}`,
+      description: 'V2-J05 Connector invocation Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    disposableAgentId = disposableAgent.id || disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'Connector Agent Profile',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    )?.click();
+    await useAgentConnectorStore.getState().loadConnectors();
+    await useAgentConnectorStore.getState().bindConnector(
+      disposableAgentId,
+      connectorId,
+    );
+    const initial = await connectorDevelopmentFixture(
+      disposableAgentId,
+      connectorId,
+    );
+    if (!initial.fixture.binding) {
+      throw new Error('agent.acceptance.connectorBindingReadbackMissing');
+    }
+    const capabilitySession = await waitForConnectorToolSession(
+      disposableAgentId,
+      initial.fixture,
+    );
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: initial.fixture,
+      sampleId: input.sampleId,
+      label: 'connector-invocation-development',
+      onConversationCreated: (createdConversationId) => {
+        conversationId = createdConversationId;
+      },
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.connectorApprovalInvalid');
+    }
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'Connector ToolCall native receiver',
+      30_000,
+    );
+    const toolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.connectorReceiverMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'Connector ToolCall approval control',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve || approve.disabled) {
+      throw new Error('agent.acceptance.connectorApprovalUnavailable');
+    }
+    approve.click();
+    await waitFor(
+      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+      'Connector ToolCall decision acknowledgement',
+      30_000,
+    );
+    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
+    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
+      throw new Error('agent.acceptance.connectorDecisionRejected');
+    }
+    const replayedDecision = await api.submitAgentToolDecision(
+      decisionAttempt.input,
+    );
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'Connector ToolCall settlement',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'Connector ToolCall replay',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'Connector ToolCall terminal receiver projection',
+      30_000,
+    );
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    const currentToolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!currentToolCallElement?.getClientRects().length) {
+      document.querySelector<HTMLElement>(
+        `${toolCallGroupSelector} `
+        + '[data-pt-agent-tool-call-group-toggle]',
+      )?.click();
+    }
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          toolCallSelector,
+        )?.getClientRects().length,
+      ),
+      'Connector ToolCall terminal native receiver',
+      30_000,
+    );
+    const sourceFact = source.facts[0];
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      sourceFact,
+    );
+    const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+    const sourceHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const replayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const terminalReceiverVisible = Boolean(
+      document.querySelector<HTMLElement>(
+        toolCallSelector,
+      )?.getClientRects().length,
+    );
+
+    const firstDisconnect = await api.oauth2Disconnect(connectorId);
+    const replayedDisconnect = await api.oauth2Disconnect(connectorId);
+    await useAgentConnectorStore.getState().loadConnectors();
+    const disconnected = useOAuth2Store.getState().connections.find(
+      (candidate) => candidate.provider_id === connectorId,
+    );
+    const disconnectedResources = useAgentConnectorStore.getState()
+      .resourceManifests
+      .filter((resource) => resource.connectorId === connectorId);
+
+    const reconnected = await completeConnectorOAuthFixture({
+      connectorId,
+      sampleId: `${input.sampleId}-reconnected`,
+      scopes: ['read:user', 'user:email'],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const rebound = await connectorDevelopmentFixture(
+      disposableAgentId,
+      connectorId,
+    );
+    const reboundBinding = rebound.fixture.binding;
+    if (!reboundBinding) {
+      throw new Error('agent.acceptance.connectorRebindingMissing');
+    }
+    const conversationReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'reconnected Connector Agent Profile',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    )?.click();
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-connector="${connectorId}"]`,
+        )?.getClientRects().length,
+      ),
+      'reconnected Connector row',
+      30_000,
+    );
+    const connectorRow = document.querySelector<HTMLElement>(
+      `[data-pt-agent-connector="${connectorId}"]`,
+    );
+    const manifestEvidence = connectorResourceEvidence(initial.resource);
+    const providerRevoke = firstDisconnect.provider_revoke;
+    const assertions = {
+      oauthConnectionProjected:
+        connected.status === 'active'
+        && connected.revision > 0
+        && connected.projected_revision === connected.revision,
+      resourceManifestVersionedAndCredentialFree:
+        initial.resource.connectionRevision === BigInt(connected.revision)
+        && initial.resource.resourceId === 'connection.status'
+        && initial.resource.resourceVersion.length > 0
+        && !/(access_token|refresh_token|client_secret)/i.test(
+          stableJson(manifestEvidence),
+        ),
+      bindingAndPolicyReadBack:
+        initial.fixture.binding.enabled
+        && initial.fixture.binding.approvalPolicy
+          === CapabilityApprovalPolicy.MANUAL,
+      governedInvocationPersistedOnce:
+        stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1,
+      nativeReceiverVisible:
+        receiverProjection?.status === 'success'
+        && receiverProjection.pending === false
+        && terminalReceiverVisible,
+      decisionAndStationReplayEqual:
+        decisionAttempt.response.decision_id
+          === replayedDecision.decision_id
+        && sourceHash === replayHash,
+      providerRevokeUnconfirmedAndIdempotent:
+        firstDisconnect.status === 'revocation_unconfirmed'
+        && providerRevoke.status === 'unconfirmed'
+        && providerRevoke.error_code
+          === 'CONNECTOR_PROVIDER_REVOKE_UNCONFIRMED'
+        && providerRevoke.idempotency_key.length > 0
+        && replayedDisconnect.provider_revoke.idempotency_key
+          === providerRevoke.idempotency_key,
+      disconnectDisabledEveryResource:
+        disconnected?.status === 'revocation_unconfirmed'
+        && disconnectedResources.length > 0
+        && disconnectedResources.every((resource) =>
+          resource.status === ConnectorResourceStatus.REVOCATION_UNCONFIRMED),
+      reconnectRebasedBinding:
+        reconnected.status === 'active'
+        && reconnected.revision > connected.revision
+        && reconnected.projected_revision === reconnected.revision
+        && reboundBinding.bindingId === initial.fixture.binding.bindingId
+        && reboundBinding.capabilityVersion
+          === rebound.fixture.manifest.version
+        && reboundBinding.approvalPolicy
+          === CapabilityApprovalPolicy.MANUAL
+        && reboundBinding.enabled,
+      connectorSurfaceVisible: Boolean(connectorRow?.getClientRects().length),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.connectorInvocationAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      assertions,
+      'receiver-dom': {
+        visible: true,
+        toolCallId,
+        status: receiverProjection?.status ?? '',
+        connectorVisible: Boolean(connectorRow?.getClientRects().length),
+      },
+      'station-readback': {
+        entityKind: 'connector-tool-call-lineage',
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        binding: initial.fixture.binding,
+        reboundBinding,
+        fact: stationFact,
+        sourceHash,
+        replayHash,
+        messages: conversationReadback.messages,
+      },
+      'oauth-resource-manifest': {
+        ...manifestEvidence,
+        scopesHash: await sha256Hex(stableJson(initial.resource.scopes)),
+      },
+      'provider-revoke': {
+        providerId: connectorId,
+        status: providerRevoke.status,
+        errorCode: providerRevoke.error_code,
+        idempotencyKeyHash: await sha256Hex(
+          providerRevoke.idempotency_key,
+        ),
+      },
+      'side-effect-count': {
+        counterId: await sha256Hex(toolCallId),
+        count: sideEffectCount,
+        maximum: 1,
+      },
+      replay: {
+        sourceHash,
+        replayHash,
+        equal: sourceHash === replayHash,
+      },
+      recovery: {
+        disconnected,
+        disconnectedResources: disconnectedResources.map(
+          connectorResourceEvidence,
+        ),
+        reconnected,
+        reboundResource: connectorResourceEvidence(rebound.resource),
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      const connection = useOAuth2Store.getState().connections.find(
+        (candidate) => candidate.provider_id === connectorId,
+      );
+      if (connection?.status === 'active') {
+        await api.oauth2Disconnect(connectorId);
+      }
+      cleanup.connectorDisabled = true;
+      if (conversationId) {
+        await cleanupFoundationToolConversation(
+          conversationId,
+          turn?.turnId ?? '',
+        );
+        cleanup.conversationDeleted = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (runtimeFixture) {
+        await api.deleteModel(
+          runtimeFixture.providerId,
+          runtimeFixture.modelId,
+        );
+        cleanup.fixtureModelDeleted = true;
+        await api.deleteProvider(runtimeFixture.providerId);
+        cleanup.fixtureProviderDeleted = true;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        !priorSelection
+        || useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.connectorInvocationCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.connectorInvocationCaptureMissing');
+  }
+  const cleanupComplete = Object.values(cleanup).every(Boolean);
+  if (!cleanupComplete) {
+    throw new Error('agent.acceptance.connectorInvocationCleanupIncomplete');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'connectorInvocationAssertions'),
+      cleanupComplete,
+    },
+    cleanup: {
+      ...cleanup,
+      status: 'clean',
+    },
+  }) as Record<string, unknown>;
+}
+
+const EVALUATION_SELECTORS = {
+  page: '[data-pt-evaluation-page]',
+  runsTab: '[data-pt-evaluation-tab="runs"]',
+  createRun: '[data-pt-evaluation-create-run]',
+  targetAgent: '[data-pt-evaluation-target-agent]',
+  dataset: '[data-pt-evaluation-dataset]',
+  createRunSubmit: '[data-pt-evaluation-create-run-submit]',
+  backToRuns: '[data-pt-evaluation-back-to-runs]',
+} as const;
+
+const EVALUATION_COMMANDS = {
+  createBenchmark: 'agent_evaluation_benchmark_create',
+  listBenchmarks: 'agent_evaluation_benchmark_list',
+  deleteBenchmark: 'agent_evaluation_benchmark_delete',
+  createDataset: 'agent_evaluation_dataset_create',
+  listDatasets: 'agent_evaluation_dataset_list',
+  deleteDataset: 'agent_evaluation_dataset_delete',
+  createTestCase: 'agent_evaluation_case_create',
+  listTestCases: 'agent_evaluation_case_list',
+  deleteTestCase: 'agent_evaluation_case_delete',
+  createRun: 'agent_evaluation_run_create',
+  startRun: 'agent_evaluation_run_start',
+  cancelRun: 'agent_evaluation_run_cancel',
+  retryCases: 'agent_evaluation_run_retry',
+  getRun: 'agent_evaluation_run_get',
+  listRuns: 'agent_evaluation_run_list',
+  listRunEvents: 'agent_evaluation_run_events_list',
+  deleteRun: 'agent_evaluation_run_delete',
+} as const;
+
+async function invokeEvaluationProto<
+  TRequest extends ProtoMessage,
+  TResponse extends ProtoMessage,
+>(
+  command: string,
+  requestSchema: GenMessage<TRequest>,
+  responseSchema: GenMessage<TResponse>,
+  request: TRequest,
+): Promise<TResponse> {
+  return invokeRustProto(
+    command,
+    responseSchema,
+    { requestBytes: Array.from(toBinary(requestSchema, request)) },
+  );
+}
+
+async function listEvaluationBenchmarks() {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listBenchmarks,
+    ListEvaluationBenchmarksRequestSchema,
+    ListEvaluationBenchmarksResponseSchema,
+    create(ListEvaluationBenchmarksRequestSchema),
+  );
+}
+
+async function listEvaluationDatasets(benchmarkId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listDatasets,
+    ListEvaluationDatasetsRequestSchema,
+    ListEvaluationDatasetsResponseSchema,
+    create(ListEvaluationDatasetsRequestSchema, { benchmarkId }),
+  );
+}
+
+async function listEvaluationTestCases(datasetId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listTestCases,
+    ListEvaluationTestCasesRequestSchema,
+    ListEvaluationTestCasesResponseSchema,
+    create(ListEvaluationTestCasesRequestSchema, { datasetId }),
+  );
+}
+
+async function listEvaluationRuns(parentRunId?: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listRuns,
+    ListEvaluationRunsRequestSchema,
+    ListEvaluationRunsResponseSchema,
+    create(ListEvaluationRunsRequestSchema, {
+      parentRunId,
+      page: 1,
+      pageSize: 100,
+    }),
+  );
+}
+
+async function getEvaluationRun(runId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.getRun,
+    GetEvaluationRunRequestSchema,
+    GetEvaluationRunResponseSchema,
+    create(GetEvaluationRunRequestSchema, { runId }),
+  );
+}
+
+async function listEvaluationRunEvents(runId: string) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.listRunEvents,
+    ListEvaluationRunEventsRequestSchema,
+    ListEvaluationRunEventsResponseSchema,
+    create(ListEvaluationRunEventsRequestSchema, {
+      runId,
+      afterSequence: 0n,
+    }),
+  );
+}
+
+function evaluationRunIsTerminal(run: EvaluationRun): boolean {
+  return new Set([
+    EvaluationRunStatus.COMPLETED,
+    EvaluationRunStatus.PARTIAL,
+    EvaluationRunStatus.FAILED,
+    EvaluationRunStatus.CANCELLED,
+  ]).has(run.status);
+}
+
+function evaluationAttemptStatusName(
+  status: EvaluationAttemptStatus,
+): string {
+  switch (status) {
+    case EvaluationAttemptStatus.PENDING:
+      return 'pending';
+    case EvaluationAttemptStatus.RUNNING:
+      return 'running';
+    case EvaluationAttemptStatus.COMPLETED:
+      return 'completed';
+    case EvaluationAttemptStatus.FAILED:
+      return 'failed';
+    case EvaluationAttemptStatus.CANCELLED:
+      return 'cancelled';
+    case EvaluationAttemptStatus.INTERRUPTED:
+      return 'interrupted';
+    default:
+      return 'unspecified';
+  }
+}
+
+async function waitForEvaluationRun(
+  runId: string,
+  predicate: (run: EvaluationRun) => boolean,
+  description: string,
+  timeoutMs = 300_000,
+) {
+  const startedAt = Date.now();
+  let latest = await getEvaluationRun(runId);
+  while (Date.now() - startedAt < timeoutMs) {
+    if (latest.run && predicate(latest.run)) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    latest = await getEvaluationRun(runId);
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function navigateToEvaluationLab(): Promise<HTMLElement> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'evaluation' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.page)
+        ?.getClientRects().length,
+    ),
+    'Evaluation Lab native surface',
+    30_000,
+  );
+  const page = document.querySelector<HTMLElement>(EVALUATION_SELECTORS.page);
+  if (!page) throw new Error('agent.acceptance.evaluationPageMissing');
+  return page;
+}
+
+async function openEvaluationRunsTab(): Promise<void> {
+  await navigateToEvaluationLab();
+  const createRun = document.querySelector<HTMLElement>(
+    EVALUATION_SELECTORS.createRun,
+  );
+  if (!createRun?.getClientRects().length) {
+    clickEvaluationTab(EVALUATION_SELECTORS.runsTab);
+  }
+  await waitFor(
+    () => {
+      const control = document.querySelector<HTMLButtonElement>(
+        EVALUATION_SELECTORS.createRun,
+      );
+      return Boolean(control?.getClientRects().length) && !control?.disabled;
+    },
+    'actionable Evaluation runs view',
+    10_000,
+  );
+}
+
+async function closeEvaluationRunDetail(): Promise<void> {
+  clickEvaluationControl(EVALUATION_SELECTORS.backToRuns);
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(EVALUATION_SELECTORS.createRun)
+        ?.getClientRects().length,
+    ),
+    'Evaluation run list',
+    10_000,
+  );
+}
+
+async function selectEvaluationOption(
+  selector: string,
+  label: string,
+): Promise<void> {
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(selector)?.getClientRects().length,
+    ),
+    `Evaluation control ${selector}`,
+    10_000,
+  );
+  const control = document.querySelector<HTMLElement>(selector);
+  if (!control || !control.getClientRects().length) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  const trigger =
+    control.querySelector<HTMLElement>('.ant-select-selector') ?? control;
+  for (const eventName of ['mousedown', 'mouseup', 'click']) {
+    trigger.dispatchEvent(new MouseEvent(eventName, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+  }
+  const optionSelector = '[role="option"],.ant-select-item-option';
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>(optionSelector),
+    ).some((option) =>
+      option.getClientRects().length > 0
+      && option.textContent?.trim() === label),
+    `Evaluation option ${label}`,
+    10_000,
+  );
+  const option = Array.from(
+    document.querySelectorAll<HTMLElement>(optionSelector),
+  ).find((candidate) =>
+    candidate.getClientRects().length > 0
+    && candidate.textContent?.trim() === label);
+  if (!option) {
+    throw new Error(`agent.acceptance.evaluationOptionMissing:${label}`);
+  }
+  option.click();
+}
+
+function clickEvaluationTab(selector: string): void {
+  const marker = document.querySelector<HTMLElement>(selector);
+  const label = marker?.closest<HTMLLabelElement>('label');
+  const input = label?.querySelector<HTMLInputElement>('input');
+  if (
+    !marker?.getClientRects().length
+    || !input
+    || input.disabled
+  ) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  input.click();
+}
+
+function clickEvaluationControl(selector: string): void {
+  const control = document.querySelector<HTMLButtonElement>(selector);
+  if (!control || !control.getClientRects().length || control.disabled) {
+    throw new Error(`agent.acceptance.evaluationControlMissing:${selector}`);
+  }
+  control.click();
+}
+
+async function createEvaluationRunThroughUi(input: {
+  agentId: string;
+  agentLabel: string;
+  datasetId: string;
+  datasetLabel: string;
+}): Promise<EvaluationRun> {
+  const before = new Set(
+    (await listEvaluationRuns()).runs.map((run) => run.runId),
+  );
+  clickEvaluationControl(EVALUATION_SELECTORS.createRun);
+  await selectEvaluationOption(
+    EVALUATION_SELECTORS.dataset,
+    input.datasetLabel,
+  );
+  await selectEvaluationOption(
+    EVALUATION_SELECTORS.targetAgent,
+    input.agentLabel,
+  );
+  clickEvaluationControl(EVALUATION_SELECTORS.createRunSubmit);
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    const created = (await listEvaluationRuns()).runs.find(
+      (run) =>
+        !before.has(run.runId)
+        && run.targetAgentId === input.agentId
+        && run.datasetId === input.datasetId,
+    );
+    if (created) {
+      await waitFor(
+        () => Boolean(
+          document.querySelector<HTMLElement>(
+            `[data-pt-evaluation-run-detail="${created.runId}"]`,
+          )?.getClientRects().length,
+        ),
+        `Evaluation run detail ${created.runId}`,
+        30_000,
+      );
+      return created;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error('agent.acceptance.evaluationUiCreateTimedOut');
+}
+
+async function startEvaluationRunThroughUi(run: EvaluationRun) {
+  clickEvaluationControl(
+    `[data-pt-evaluation-start-run="${run.runId}"]`,
+  );
+  return waitForEvaluationRun(
+    run.runId,
+    (candidate) =>
+      candidate.status !== EvaluationRunStatus.DRAFT
+      && candidate.status !== EvaluationRunStatus.PENDING
+      && candidate.revision > run.revision,
+    `Evaluation run ${run.runId} start`,
+  );
+}
+
+async function cancelEvaluationRunThroughUi(run: EvaluationRun) {
+  clickEvaluationControl(
+    `[data-pt-evaluation-cancel-run="${run.runId}"]`,
+  );
+  return waitForEvaluationRun(
+    run.runId,
+    evaluationRunIsTerminal,
+    `Evaluation run ${run.runId} cancellation`,
+  );
+}
+
+function evaluationAttemptEvidence(attempt: EvaluationCaseAttempt) {
+  return {
+    attemptId: attempt.attemptId,
+    runId: attempt.runId,
+    caseId: attempt.caseId,
+    attempt: attempt.attempt,
+    idempotencyKey: attempt.idempotencyKey,
+    sourceAttemptId: attempt.sourceAttemptId ?? '',
+    sourceResultId: attempt.sourceResultId ?? '',
+    turnId: attempt.turnId,
+    status: evaluationAttemptStatusName(attempt.status),
+    schedulerClaim: attempt.schedulerClaim,
+    cancellationAcknowledged: Boolean(attempt.cancellationAckAt),
+    terminal: Boolean(attempt.terminalAt),
+  };
+}
+
+async function cleanupEvaluationDevelopmentState(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  let retentionConflictObserved = false;
+  const deleted = {
+    childRun: !state.childRunId,
+    primaryRun: !state.primaryRunId,
+    cancelledRun: !state.cancelledRunId,
+    cases: 0,
+    dataset: !state.datasetId,
+    benchmark: !state.benchmarkId,
+    agent: !state.agentId,
+    model: !state.modelId,
+    provider: !state.providerId,
+  };
+
+  if (state.primaryRunId && state.childRunId) {
+    for (let attempt = 0; attempt < 3 && !retentionConflictObserved; attempt += 1) {
+      try {
+        const parent = await getEvaluationRun(state.primaryRunId);
+        if (!parent.run) throw new Error('parent readback missing');
+        await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteRun,
+          DeleteEvaluationRunRequestSchema,
+          DeleteEvaluationRunResponseSchema,
+          create(DeleteEvaluationRunRequestSchema, {
+            runId: state.primaryRunId,
+            expectedRevision: parent.run.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+      } catch (error) {
+        const code = observedErrorCode(error);
+        if (code === 'VERSION_CONFLICT') {
+          const children = await listEvaluationRuns(state.primaryRunId);
+          if (children.runs.some((run) => run.runId === state.childRunId)) {
+            retentionConflictObserved = true;
+            break;
+          }
+          continue;
+        }
+        retentionConflictObserved = code === 'RETENTION_CONFLICT';
+        if (!retentionConflictObserved) failures.push(`retention:${code}`);
+      }
+    }
+    if (!retentionConflictObserved) failures.push('retention:not-observed');
+  }
+
+  for (const [key, runId] of [
+    ['childRun', state.childRunId],
+    ['cancelledRun', state.cancelledRunId],
+    ['primaryRun', state.primaryRunId],
+  ] as const) {
+    if (!runId) continue;
+    try {
+      const readback = await getEvaluationRun(runId);
+      if (!readback.run) throw new Error('run readback missing');
+      const response = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteRun,
+        DeleteEvaluationRunRequestSchema,
+        DeleteEvaluationRunResponseSchema,
+        create(DeleteEvaluationRunRequestSchema, {
+          runId,
+          expectedRevision: readback.run.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+      deleted[key] = response.deleted;
+    } catch (error) {
+      failures.push(`${key}:${observedErrorCode(error)}`);
+    }
+  }
+
+  for (const testCase of [...state.cases].reverse()) {
+    try {
+      const current = (await listEvaluationTestCases(state.datasetId))
+        .testCases.find((candidate) => candidate.caseId === testCase.caseId);
+      if (!current) {
+        deleted.cases += 1;
+        continue;
+      }
+      const response = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteTestCase,
+        DeleteEvaluationTestCaseRequestSchema,
+        DeleteEvaluationTestCaseResponseSchema,
+        create(DeleteEvaluationTestCaseRequestSchema, {
+          caseId: current.caseId,
+          expectedRevision: current.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+      if (response.deleted) deleted.cases += 1;
+    } catch (error) {
+      failures.push(`case:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.datasetId) {
+    try {
+      const dataset = (await listEvaluationDatasets(state.benchmarkId))
+        .datasets.find((candidate) => candidate.datasetId === state.datasetId);
+      if (dataset) {
+        const response = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteDataset,
+          DeleteEvaluationDatasetRequestSchema,
+          DeleteEvaluationDatasetResponseSchema,
+          create(DeleteEvaluationDatasetRequestSchema, {
+            datasetId: dataset.datasetId,
+            expectedRevision: dataset.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        deleted.dataset = response.deleted;
+      } else {
+        deleted.dataset = true;
+      }
+    } catch (error) {
+      failures.push(`dataset:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.benchmarkId) {
+    try {
+      const benchmark = (await listEvaluationBenchmarks()).benchmarks.find(
+        (candidate) => candidate.benchmarkId === state.benchmarkId,
+      );
+      if (benchmark) {
+        const response = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteBenchmark,
+          DeleteEvaluationBenchmarkRequestSchema,
+          DeleteEvaluationBenchmarkResponseSchema,
+          create(DeleteEvaluationBenchmarkRequestSchema, {
+            benchmarkId: benchmark.benchmarkId,
+            expectedRevision: benchmark.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        deleted.benchmark = response.deleted;
+      } else {
+        deleted.benchmark = true;
+      }
+    } catch (error) {
+      failures.push(`benchmark:${observedErrorCode(error)}`);
+    }
+  }
+
+  if (state.agentId) {
+    try {
+      await api.deleteAgent(state.agentId);
+      await useAgentStore.getState().loadAgents();
+      deleted.agent = true;
+    } catch (error) {
+      failures.push(`agent:${observedErrorCode(error)}`);
+    }
+  }
+  if (state.providerId && state.modelId) {
+    try {
+      await api.deleteModel(state.providerId, state.modelId);
+      deleted.model = true;
+    } catch (error) {
+      failures.push(`model:${observedErrorCode(error)}`);
+    }
+    try {
+      await api.deleteProvider(state.providerId);
+      deleted.provider = true;
+    } catch (error) {
+      failures.push(`provider:${observedErrorCode(error)}`);
+    }
+  }
+  if (state.priorSelection) {
+    useAgentStore.getState().setSelectedAgent(state.priorSelection);
+    useAgentStore.getState().setAgentSurface(
+      state.priorSelection,
+      state.priorSurface,
+    );
+    await api.setSelectedAgent(state.priorSelection).catch((error) => {
+      failures.push(`selection:${observedErrorCode(error)}`);
+    });
+  }
+
+  const resourceDeletionComplete =
+    deleted.childRun
+    && deleted.primaryRun
+    && deleted.cancelledRun
+    && deleted.cases === state.cases.length
+    && deleted.dataset
+    && deleted.benchmark
+    && deleted.agent
+    && deleted.model
+    && deleted.provider;
+  return {
+    status: (
+      failures.length === 0
+      && retentionConflictObserved
+      && resourceDeletionComplete
+        ? 'clean'
+        : 'failed'
+    ),
+    retentionConflictObserved,
+    resourceDeletionComplete,
+    deleted,
+    failures,
+  };
+}
+
+async function prepareEvaluationDevelopmentJourney(
+  input: EvaluationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  if (!input.providerBaseUrl) {
+    throw new Error('agent.acceptance.evaluationProviderUrlMissing');
+  }
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.evaluationProviderUrlInvalid');
+  }
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId) throw new Error('agent.acceptance.evaluationActorMissing');
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const state: EvaluationDevelopmentState = {
+    ownerActorId: actorId,
+    agentId: '',
+    agentName: '',
+    agentRevision: 0,
+    providerId: '',
+    modelId: '',
+    benchmarkId: '',
+    benchmarkRevision: '0',
+    datasetId: '',
+    datasetRevision: '0',
+    cases: [],
+    primaryRunId: '',
+    cancelledRunId: '',
+    childRunId: '',
+    priorSelection,
+    priorSurface,
+  };
+
+  try {
+    const runtimeFixture = await createGovernedToolRuntimeFixture(
+      'evaluation',
+      providerUrl.toString(),
+    );
+    state.providerId = runtimeFixture.providerId;
+    state.modelId = runtimeFixture.modelId;
+    const agent = await agentStore.createAgent({
+      name: `evaluation-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Evaluation ${input.sampleId}`,
+      description: 'V2-J06 Evaluation Lab Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    state.agentId = agent.id || agent.name;
+    state.agentName = agent.name;
+    state.agentRevision = agent.version;
+    await api.setSelectedAgent(agent.name);
+    useAgentStore.getState().setSelectedAgent(agent.name);
+    useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: state.agentId,
+      client_capability_session_id: capabilitySession.capabilitySessionId,
+    });
+    if (!readiness.snapshot_id) {
+      throw new Error('agent.acceptance.evaluationReadinessMissing');
+    }
+
+    const benchmarkKey = crypto.randomUUID();
+    const benchmarkRequest = create(
+      CreateEvaluationBenchmarkRequestSchema,
+      {
+        name: `V2-J06 ${input.sampleId}`,
+        rubric: 'case_insensitive_contains',
+        idempotencyKey: benchmarkKey,
+      },
+    );
+    const benchmarkCreated = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createBenchmark,
+      CreateEvaluationBenchmarkRequestSchema,
+      CreateEvaluationBenchmarkResponseSchema,
+      benchmarkRequest,
+    );
+    const benchmarkReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createBenchmark,
+      CreateEvaluationBenchmarkRequestSchema,
+      CreateEvaluationBenchmarkResponseSchema,
+      benchmarkRequest,
+    );
+    if (!benchmarkCreated.benchmark || !benchmarkReplay.benchmark) {
+      throw new Error('agent.acceptance.evaluationBenchmarkMissing');
+    }
+    state.benchmarkId = benchmarkCreated.benchmark.benchmarkId;
+    state.benchmarkRevision =
+      benchmarkCreated.benchmark.revision.toString();
+
+    const datasetKey = crypto.randomUUID();
+    const datasetRequest = create(CreateEvaluationDatasetRequestSchema, {
+      benchmarkId: state.benchmarkId,
+      name: `V2-J06 dataset ${input.sampleId}`,
+      description: 'Deterministic pass, fail, and cancellation cases.',
+      expectedBenchmarkRevision: benchmarkCreated.benchmark.revision,
+      idempotencyKey: datasetKey,
+    });
+    const datasetCreated = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createDataset,
+      CreateEvaluationDatasetRequestSchema,
+      CreateEvaluationDatasetResponseSchema,
+      datasetRequest,
+    );
+    const datasetReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createDataset,
+      CreateEvaluationDatasetRequestSchema,
+      CreateEvaluationDatasetResponseSchema,
+      datasetRequest,
+    );
+    if (!datasetCreated.dataset || !datasetReplay.dataset) {
+      throw new Error('agent.acceptance.evaluationDatasetMissing');
+    }
+    state.datasetId = datasetCreated.dataset.datasetId;
+    state.datasetRevision = datasetCreated.dataset.revision.toString();
+
+    const caseDefinitions = [
+      {
+        input: `J06_PASS_CASE ${input.sampleId}`,
+        expected: 'J06_OK',
+        tags: ['j06', 'pass'],
+      },
+      {
+        input: `J06_FAIL_ONCE_CASE ${input.sampleId}`,
+        expected: 'J06_RETRY_OK',
+        tags: ['j06', 'failed-case'],
+      },
+      {
+        input: `J06_CANCEL_CASE ${input.sampleId}`,
+        expected: 'J06_CANCELLED',
+        tags: ['j06', 'cancel'],
+      },
+    ];
+    const caseReplayMatches: boolean[] = [];
+    for (const definition of caseDefinitions) {
+      const dataset = (await listEvaluationDatasets(state.benchmarkId))
+        .datasets.find((candidate) => candidate.datasetId === state.datasetId);
+      if (!dataset) {
+        throw new Error('agent.acceptance.evaluationDatasetReadbackMissing');
+      }
+      state.datasetRevision = dataset.revision.toString();
+      const request = create(CreateEvaluationTestCaseRequestSchema, {
+        datasetId: state.datasetId,
+        input: definition.input,
+        expected: definition.expected,
+        expectedDatasetRevision: dataset.revision,
+        idempotencyKey: crypto.randomUUID(),
+        tags: definition.tags,
+      });
+      const created = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.createTestCase,
+        CreateEvaluationTestCaseRequestSchema,
+        CreateEvaluationTestCaseResponseSchema,
+        request,
+      );
+      const replayed = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.createTestCase,
+        CreateEvaluationTestCaseRequestSchema,
+        CreateEvaluationTestCaseResponseSchema,
+        request,
+      );
+      if (!created.testCase || !replayed.testCase) {
+        throw new Error('agent.acceptance.evaluationCaseMissing');
+      }
+      state.cases.push({
+        caseId: created.testCase.caseId,
+        revision: created.testCase.revision.toString(),
+      });
+      caseReplayMatches.push(
+        created.testCase.caseId === replayed.testCase.caseId,
+      );
+    }
+    const authoritativeDataset = (
+      await listEvaluationDatasets(state.benchmarkId)
+    ).datasets.find((candidate) => candidate.datasetId === state.datasetId);
+    if (!authoritativeDataset) {
+      throw new Error('agent.acceptance.evaluationDatasetReadbackMissing');
+    }
+    state.datasetRevision = authoritativeDataset.revision.toString();
+
+    await refreshEvaluationTargetProjection(state.agentId, {
+      clientCapabilitySessionId: capabilitySession.capabilitySessionId,
+    });
+    await openEvaluationRunsTab();
+    const primaryDraft = await createEvaluationRunThroughUi({
+      agentId: state.agentId,
+      agentLabel: agent.title || agent.name,
+      datasetId: state.datasetId,
+      datasetLabel: authoritativeDataset.name,
+    });
+    state.primaryRunId = primaryDraft.runId;
+    const primaryCreateReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createRun,
+      CreateEvaluationRunRequestSchema,
+      CreateEvaluationRunResponseSchema,
+      create(CreateEvaluationRunRequestSchema, {
+        datasetId: primaryDraft.datasetId,
+        datasetRevision: primaryDraft.datasetRevision,
+        readinessSnapshotId: primaryDraft.readinessSnapshotId,
+        idempotencyKey: primaryDraft.idempotencyKey,
+        targetAgentId: primaryDraft.targetAgentId,
+        expectedAgentRevision: primaryDraft.targetAgentRevision,
+        modelId: primaryDraft.targetAgentSnapshot?.modelId || undefined,
+      }),
+    );
+    const primaryStarted = await startEvaluationRunThroughUi(primaryDraft);
+    if (!primaryStarted.run) {
+      throw new Error('agent.acceptance.evaluationStartReadbackMissing');
+    }
+    const primaryStartReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.startRun,
+      StartEvaluationRunRequestSchema,
+      StartEvaluationRunResponseSchema,
+      create(StartEvaluationRunRequestSchema, {
+        runId: primaryDraft.runId,
+        expectedRevision: primaryDraft.revision,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:start',
+          primaryDraft.runId,
+          primaryDraft.revision,
+        ),
+      }),
+    );
+    const primaryTerminal = await waitForEvaluationRun(
+      primaryDraft.runId,
+      evaluationRunIsTerminal,
+      `Evaluation primary run ${primaryDraft.runId}`,
+    );
+    if (!primaryTerminal.run) {
+      throw new Error('agent.acceptance.evaluationPrimaryRunMissing');
+    }
+    const failedAttempts = primaryTerminal.attempts.filter(
+      (attempt) => attempt.status === EvaluationAttemptStatus.FAILED,
+    );
+    const failedCaseIds = [...new Set(
+      failedAttempts.map((attempt) => attempt.caseId),
+    )];
+    if (failedCaseIds.length === 0) {
+      throw new Error('agent.acceptance.evaluationFailedCaseMissing');
+    }
+    const firstResult = primaryTerminal.results[0];
+    if (!firstResult) {
+      throw new Error('agent.acceptance.evaluationResultMissing');
+    }
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-evaluation-result="${firstResult.resultId}"]`,
+        )?.getClientRects().length,
+      ),
+      'Evaluation result detail',
+      30_000,
+    );
+    const primaryResultObserved = true;
+
+    clickEvaluationControl(
+      `[data-pt-evaluation-retry-run="${primaryDraft.runId}"]`,
+    );
+    const childStartedAt = Date.now();
+    let childRun: EvaluationRun | undefined;
+    while (Date.now() - childStartedAt < 30_000) {
+      childRun = (await listEvaluationRuns(primaryDraft.runId)).runs.find(
+        (candidate) => candidate.parentRunId === primaryDraft.runId,
+      );
+      if (childRun) break;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (!childRun) {
+      throw new Error('agent.acceptance.evaluationRetryChildMissing');
+    }
+    state.childRunId = childRun.runId;
+    const retryReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.retryCases,
+      RetryEvaluationCasesRequestSchema,
+      RetryEvaluationCasesResponseSchema,
+      create(RetryEvaluationCasesRequestSchema, {
+        parentRunId: primaryDraft.runId,
+        caseIds: failedCaseIds,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:retry',
+          primaryDraft.runId,
+          primaryTerminal.run.revision,
+          failedCaseIds,
+        ),
+        expectedParentRevision: primaryTerminal.run.revision,
+      }),
+    );
+    if (
+      childRun.status === EvaluationRunStatus.DRAFT
+      || childRun.status === EvaluationRunStatus.PENDING
+    ) {
+      const childStarted = await startEvaluationRunThroughUi(childRun);
+      if (!childStarted.run) {
+        throw new Error('agent.acceptance.evaluationChildStartMissing');
+      }
+    }
+    const childTerminal = await waitForEvaluationRun(
+      childRun.runId,
+      evaluationRunIsTerminal,
+      `Evaluation child run ${childRun.runId}`,
+    );
+    if (!childTerminal.run) {
+      throw new Error('agent.acceptance.evaluationChildRunMissing');
+    }
+    const [parentAfterRetry, retryChildren] = await Promise.all([
+      getEvaluationRun(primaryDraft.runId),
+      listEvaluationRuns(primaryDraft.runId),
+    ]);
+    if (!parentAfterRetry.run) {
+      throw new Error('agent.acceptance.evaluationParentAfterRetryMissing');
+    }
+
+    await closeEvaluationRunDetail();
+    const cancelDraft = await createEvaluationRunThroughUi({
+      agentId: state.agentId,
+      agentLabel: agent.title || agent.name,
+      datasetId: state.datasetId,
+      datasetLabel: authoritativeDataset.name,
+    });
+    const cancelCreateReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createRun,
+      CreateEvaluationRunRequestSchema,
+      CreateEvaluationRunResponseSchema,
+      create(CreateEvaluationRunRequestSchema, {
+        datasetId: cancelDraft.datasetId,
+        datasetRevision: cancelDraft.datasetRevision,
+        readinessSnapshotId: cancelDraft.readinessSnapshotId,
+        idempotencyKey: cancelDraft.idempotencyKey,
+        targetAgentId: cancelDraft.targetAgentId,
+        expectedAgentRevision: cancelDraft.targetAgentRevision,
+        modelId: cancelDraft.targetAgentSnapshot?.modelId || undefined,
+      }),
+    );
+    state.cancelledRunId = cancelDraft.runId;
+    const cancelStarted = await startEvaluationRunThroughUi(cancelDraft);
+    if (!cancelStarted.run) {
+      throw new Error('agent.acceptance.evaluationCancelStartMissing');
+    }
+    const cancelStartRevision = cancelDraft.revision;
+    const cancelRunningRevision = cancelStarted.run.revision;
+    const cancelledTerminal = await cancelEvaluationRunThroughUi(
+      cancelStarted.run,
+    );
+    if (!cancelledTerminal.run) {
+      throw new Error('agent.acceptance.evaluationCancelReadbackMissing');
+    }
+    const cancelStartReplay = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.startRun,
+      StartEvaluationRunRequestSchema,
+      StartEvaluationRunResponseSchema,
+      create(StartEvaluationRunRequestSchema, {
+        runId: cancelDraft.runId,
+        expectedRevision: cancelStartRevision,
+        idempotencyKey: evaluationRevisionMutationKey(
+          'run:start',
+          cancelDraft.runId,
+          cancelStartRevision,
+        ),
+      }),
+    );
+    let cancelledReplayRunId = '';
+    for (
+      let revision = cancelRunningRevision;
+      revision <= cancelledTerminal.run.revision;
+      revision += 1n
+    ) {
+      try {
+        const replay = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.cancelRun,
+          CancelEvaluationRunRequestSchema,
+          CancelEvaluationRunResponseSchema,
+          create(CancelEvaluationRunRequestSchema, {
+            runId: cancelDraft.runId,
+            expectedRevision: revision,
+            idempotencyKey: evaluationRevisionMutationKey(
+              'run:cancel',
+              cancelDraft.runId,
+              revision,
+            ),
+          }),
+        );
+        cancelledReplayRunId = replay.run?.runId ?? '';
+        break;
+      } catch (error) {
+        if (observedErrorCode(error) !== 'VERSION_CONFLICT') throw error;
+      }
+    }
+    if (cancelledReplayRunId !== cancelDraft.runId) {
+      throw new Error('agent.acceptance.evaluationCancelReplayMissing');
+    }
+
+    const primaryEvents = await listEvaluationRunEvents(primaryDraft.runId);
+    const cancelledEvents = await listEvaluationRunEvents(cancelDraft.runId);
+    const childEvents = await listEvaluationRunEvents(childRun.runId);
+    const allAttempts = [
+      ...primaryTerminal.attempts,
+      ...cancelledTerminal.attempts,
+      ...childTerminal.attempts,
+    ];
+    const attemptIds = allAttempts.map((attempt) => attempt.attemptId);
+    const schedulerClaims = allAttempts.map(
+      (attempt) => attempt.schedulerClaim,
+    );
+    const childSources = childTerminal.attempts.map((attempt) => ({
+      ...evaluationAttemptEvidence(attempt),
+      sourceResultPresent: Boolean(attempt.sourceResultId),
+    }));
+    const cancelledAttempts = cancelledTerminal.attempts.filter(
+      (attempt) =>
+        attempt.status === EvaluationAttemptStatus.CANCELLED
+        || attempt.status === EvaluationAttemptStatus.INTERRUPTED,
+    );
+    const allResults = [
+      ...primaryTerminal.results,
+      ...cancelledTerminal.results,
+      ...childTerminal.results,
+    ];
+    const lineage = allResults.filter(
+      (result) => Boolean(result.turnTraceId),
+    ).map((result) => ({
+      runId: result.runId,
+      caseId: result.caseId,
+      attemptId: result.attemptId,
+      resultId: result.resultId,
+      turnTraceId: result.turnTraceId,
+      latencyMs: result.latencyMs.toString(),
+    }));
+    const cancelledWithoutTurn = allResults.filter(
+      (result) =>
+        !result.turnTraceId
+        && result.latencyMs === 0n
+        && (
+          result.terminalStatus === EvaluationAttemptStatus.CANCELLED
+          || result.terminalStatus === EvaluationAttemptStatus.INTERRUPTED
+        ),
+    );
+    const assertions = {
+      exactActorOwned:
+        primaryTerminal.run.ptid === actorId
+        && primaryTerminal.run.targetAgentId === state.agentId
+        && benchmarkCreated.benchmark.ptid === actorId
+        && authoritativeDataset.ptid === actorId,
+      fixtureCreateIdempotent:
+        benchmarkReplay.benchmark.benchmarkId === state.benchmarkId
+        && datasetReplay.dataset.datasetId === state.datasetId
+        && caseReplayMatches.every(Boolean),
+      nativeCreateStartResultVisible: primaryResultObserved,
+      runMutationIdempotent:
+        primaryCreateReplay.run?.runId === primaryDraft.runId
+        && primaryStartReplay.run?.runId === primaryDraft.runId
+        && cancelCreateReplay.run?.runId === cancelDraft.runId
+        && cancelStartReplay.run?.runId === cancelDraft.runId
+        && cancelledReplayRunId === cancelDraft.runId,
+      schedulerUnique:
+        attemptIds.length === new Set(attemptIds).size
+        && schedulerClaims.every(Boolean)
+        && schedulerClaims.length === new Set(schedulerClaims).size,
+      cancellationAcknowledged:
+        cancelledAttempts.length > 0
+        && cancelledAttempts.every((attempt) =>
+          Boolean(attempt.cancellationAckAt)),
+      cancellationTerminal:
+        cancelledTerminal.run.status === EvaluationRunStatus.PARTIAL
+        || cancelledTerminal.run.status === EvaluationRunStatus.CANCELLED,
+      retryChildUnique:
+        childRun.runId !== primaryDraft.runId
+        && retryReplay.childRun?.runId === childRun.runId
+        && childTerminal.run.parentRunId === primaryDraft.runId
+        && retryChildren.runs.length === 1
+        && retryChildren.runs[0].runId === childRun.runId,
+      retryLineageComplete:
+        childSources.length === failedCaseIds.length
+        && childSources.every((attempt) =>
+          Boolean(
+            attempt.sourceAttemptId
+            && attempt.sourceResultId
+            && attempt.turnId
+            && attempt.sourceResultPresent,
+          )),
+      turnTraceComplete:
+        lineage.length + cancelledWithoutTurn.length === allResults.length
+        && lineage.length > 0
+        && lineage.every((item) =>
+          Boolean(item.turnTraceId && item.attemptId && item.resultId)),
+      parentMetricsImmutable:
+        parentAfterRetry.run.revision === primaryTerminal.run.revision
+        && stableJson(parentAfterRetry.run.metrics)
+          === stableJson(primaryTerminal.run.metrics),
+      eventCursorMonotonic: [
+        primaryEvents,
+        cancelledEvents,
+        childEvents,
+      ].every((batch) =>
+        batch.events.every(
+          (event, index) =>
+            index === 0
+            || event.sequence > batch.events[index - 1].sequence,
+        )),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.evaluationAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    return evidenceValue({
+      state,
+      assertions,
+      'receiver-dom': {
+        labVisible: true,
+        createSubmitted: true,
+        startSubmitted: true,
+        resultVisible: true,
+        cancelSubmitted: true,
+        retrySubmitted: true,
+        primaryRunId: primaryDraft.runId,
+        cancelledRunId: cancelDraft.runId,
+        childRunId: childRun.runId,
+      },
+      'station-readback': {
+        entityKind: 'evaluation-run-lineage',
+        ownerActorId: actorId,
+        benchmark: benchmarkCreated.benchmark,
+        dataset: authoritativeDataset,
+        cases: (await listEvaluationTestCases(state.datasetId)).testCases,
+        primary: primaryTerminal,
+        parentAfterRetry,
+        cancelled: cancelledTerminal,
+        child: childTerminal,
+      },
+      'runtime-events': {
+        primary: primaryEvents,
+        cancelled: cancelledEvents,
+        child: childEvents,
+      },
+      'turn-trace': {
+        lineage,
+        cancelledWithoutTurn: cancelledWithoutTurn.map((result) => ({
+          runId: result.runId,
+          caseId: result.caseId,
+          attemptId: result.attemptId,
+          resultId: result.resultId,
+        })),
+        complete: assertions.turnTraceComplete,
+      },
+      'metrics-lineage': {
+        parentRunId: primaryTerminal.run.runId,
+        parentMetrics: primaryTerminal.run.metrics,
+        parentMetricsAfterRetry: parentAfterRetry.run.metrics,
+        childRunId: childTerminal.run.runId,
+        childParentRunId: childTerminal.run.parentRunId,
+        childMetrics: childTerminal.run.metrics,
+        parentRevision: primaryTerminal.run.revision,
+      },
+      'side-effect-count': {
+        attemptCount: attemptIds.length,
+        uniqueAttemptCount: new Set(attemptIds).size,
+        schedulerClaimCount: schedulerClaims.length,
+        uniqueSchedulerClaimCount: new Set(schedulerClaims).size,
+      },
+      replay: {
+        benchmarkId: benchmarkReplay.benchmark.benchmarkId,
+        datasetId: datasetReplay.dataset.datasetId,
+        primaryRunId: primaryCreateReplay.run?.runId ?? '',
+        startedPrimaryRunId: primaryStartReplay.run?.runId ?? '',
+        createdCancelledRunId: cancelCreateReplay.run?.runId ?? '',
+        startedCancelledRunId: cancelStartReplay.run?.runId ?? '',
+        cancelledRunId: cancelledReplayRunId,
+        childRunId: retryReplay.childRun?.runId ?? '',
+      },
+    }) as Record<string, unknown>;
+  } catch (error) {
+    const cleanup = await cleanupEvaluationDevelopmentState(state);
+    throw Object.assign(
+      new Error(`agent.acceptance.evaluationPrepareFailed:${
+        observedErrorCode(error)
+      }`),
+      { cause: error, cleanup },
+    );
+  }
+}
+
+async function recoverEvaluationDevelopmentJourney(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (actorId !== state.ownerActorId) {
+    throw new Error('agent.acceptance.evaluationRecoveryActorMismatch');
+  }
+  await openEvaluationRunsTab();
+  const runIds = [
+    state.primaryRunId,
+    state.cancelledRunId,
+    state.childRunId,
+  ];
+  for (const runId of runIds) {
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-evaluation-run="${runId}"]`,
+        )?.getClientRects().length,
+      ),
+      `restored Evaluation run ${runId}`,
+      30_000,
+    );
+  }
+  const [primary, cancelled, child] = await Promise.all(
+    runIds.map(getEvaluationRun),
+  );
+  const events = await Promise.all(runIds.map(listEvaluationRunEvents));
+  const restored = [primary, cancelled, child].every(
+    (readback, index) =>
+      readback.run?.runId === runIds[index]
+      && evaluationRunIsTerminal(readback.run),
+  );
+  if (!restored) {
+    throw new Error('agent.acceptance.evaluationRestartRestoreMissing');
+  }
+  return evidenceValue({
+    assertions: {
+      actorRestored: actorId === state.ownerActorId,
+      nativeRowsRestored: true,
+      stationTerminalReadbackRestored: restored,
+      eventCursorRestored: events.every((batch) =>
+        batch.latestSequence > 0n),
+    },
+    'receiver-dom': {
+      labVisible: true,
+      restoredRunIds: runIds,
+    },
+    'station-readback': {
+      entityKind: 'evaluation-restart-readback',
+      runs: [primary, cancelled, child],
+    },
+    'runtime-events': {
+      runs: events,
+    },
+  }) as Record<string, unknown>;
+}
+
+async function isolateEvaluationDevelopmentJourney(
+  state: EvaluationDevelopmentState,
+): Promise<Record<string, unknown>> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId || actorId === state.ownerActorId) {
+    throw new Error('agent.acceptance.evaluationIsolationActorInvalid');
+  }
+  const denied = async (
+    action: () => Promise<unknown>,
+  ): Promise<string> => {
+    try {
+      await action();
+    } catch (error) {
+      const code = observedErrorCode(error);
+      if (/FORBIDDEN|NOT_FOUND|OWNERSHIP/.test(code)) return code;
+      throw error;
+    }
+    return '';
+  };
+  let directReadDenied = false;
+  let directReadError = '';
+  try {
+    await getEvaluationRun(state.primaryRunId);
+  } catch (error) {
+    directReadError = observedErrorCode(error);
+    directReadDenied = /FORBIDDEN|NOT_FOUND|OWNERSHIP/.test(directReadError);
+  }
+  const visibleRunIds = (await listEvaluationRuns()).runs.map(
+    (run) => run.runId,
+  );
+  const visibleBenchmarkIds = (await listEvaluationBenchmarks()).benchmarks.map(
+    (benchmark) => benchmark.benchmarkId,
+  );
+  const ownerRunsHidden = [
+    state.primaryRunId,
+    state.cancelledRunId,
+    state.childRunId,
+  ].every((runId) => !visibleRunIds.includes(runId));
+  const mutationErrors = {
+    cancel: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.cancelRun,
+      CancelEvaluationRunRequestSchema,
+      CancelEvaluationRunResponseSchema,
+      create(CancelEvaluationRunRequestSchema, {
+        runId: state.primaryRunId,
+        expectedRevision: 1n,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    )),
+    retry: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.retryCases,
+      RetryEvaluationCasesRequestSchema,
+      RetryEvaluationCasesResponseSchema,
+      create(RetryEvaluationCasesRequestSchema, {
+        parentRunId: state.primaryRunId,
+        caseIds: state.cases.slice(0, 1).map((item) => item.caseId),
+        idempotencyKey: crypto.randomUUID(),
+        expectedParentRevision: 1n,
+      }),
+    )),
+    delete: await denied(() => invokeEvaluationProto(
+      EVALUATION_COMMANDS.deleteRun,
+      DeleteEvaluationRunRequestSchema,
+      DeleteEvaluationRunResponseSchema,
+      create(DeleteEvaluationRunRequestSchema, {
+        runId: state.primaryRunId,
+        expectedRevision: 1n,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    )),
+  };
+  const ownerBenchmarkHidden = !visibleBenchmarkIds.includes(
+    state.benchmarkId,
+  );
+  const mutationsDenied = Object.values(mutationErrors).every(Boolean);
+  if (
+    !directReadDenied
+    || !ownerRunsHidden
+    || !ownerBenchmarkHidden
+    || !mutationsDenied
+  ) {
+    throw new Error('agent.acceptance.evaluationActorIsolationFailed');
+  }
+  return {
+    assertions: {
+      distinctActor: actorId !== state.ownerActorId,
+      directReadDenied,
+      ownerRunsHidden,
+      ownerBenchmarkHidden,
+      mutationsDenied,
+    },
+    actorId,
+    ownerActorId: state.ownerActorId,
+    directReadError,
+    mutationErrors,
+    visibleRunCount: visibleRunIds.length,
+    visibleBenchmarkCount: visibleBenchmarkIds.length,
+  };
+}
+
+async function runEvaluationDevelopmentJourney(
+  input: EvaluationDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  switch (input.phase) {
+    case 'prepare':
+      return prepareEvaluationDevelopmentJourney(input);
+    case 'recover':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationRecoveryStateMissing');
+      }
+      return recoverEvaluationDevelopmentJourney(input.state);
+    case 'isolate':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationIsolationStateMissing');
+      }
+      return isolateEvaluationDevelopmentJourney(input.state);
+    case 'cleanup':
+      if (!input.state) {
+        throw new Error('agent.acceptance.evaluationCleanupStateMissing');
+      }
+      return cleanupEvaluationDevelopmentState(input.state);
+    default:
+      throw new Error('agent.acceptance.evaluationDevelopmentPhaseInvalid');
+  }
+}
+
+async function runGovernedToolDevelopmentJourney(input: {
+  sampleId: string;
+  providerBaseUrl: string;
+}): Promise<Record<string, unknown>> {
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.governedToolProviderUrlInvalid');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let disposableAgent:
+    NonNullable<ReturnType<typeof selectedAgent>> | null = null;
+  let disposableAgentId = '';
+  let toolFixture: FoundationToolFixture | null = null;
+  let currentBinding: AgentCapabilityBinding | null = null;
+  let turn: FoundationToolTurn | null = null;
+  let conversationId = '';
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    bindingRestored: false,
+    conversationDeleted: false,
+    disposableAgentDeleted: false,
+    fixtureModelDeleted: false,
+    fixtureProviderDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    runtimeFixture = await createGovernedToolRuntimeFixture(
+      'governed-tool',
+      providerUrl.toString(),
+    );
+    disposableAgent = await agentStore.createAgent({
+      name: `governed-tool-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Governed Tool ${input.sampleId}`,
+      description: 'V2-J03 governed ToolCall Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    disposableAgentId = disposableAgent.id || disposableAgent.name;
+    await api.setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setSelectedAgent(disposableAgent.name);
+    useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    toolFixture = await foundationToolFixture(
+      disposableAgentId,
+      'desktop_app',
+    );
+    currentBinding = await updateFoundationToolPolicy(
+      disposableAgent,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent: disposableAgent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: toolFixture,
+      sampleId: input.sampleId,
+      label: 'governed-tool-development',
+      onConversationCreated: (createdConversationId) => {
+        conversationId = createdConversationId;
+      },
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.governedToolApprovalInvalid');
+    }
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'governed ToolCall native receiver',
+      30_000,
+    );
+    const toolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.governedToolReceiverMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'governed ToolCall approval control',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve || approve.disabled) {
+      throw new Error('agent.acceptance.governedToolApprovalUnavailable');
+    }
+    approve.click();
+    await waitFor(
+      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+      'governed ToolCall decision acknowledgement',
+      30_000,
+    );
+    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
+    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
+      throw new Error('agent.acceptance.governedToolDecisionRejected');
+    }
+    const replayedDecision = await api.submitAgentToolDecision(
+      decisionAttempt.input,
+    );
+
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'governed ToolCall settlement',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      governedToolSettlementSucceeded,
+      'governed ToolCall replay',
+    );
+    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await waitFor(
+      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      'governed ToolCall terminal receiver projection',
+      30_000,
+    );
+
+    const sourceFact = source.facts[0];
+    const sideEffectCount = await foundationToolSideEffectCount(
+      'desktop_app',
+      sourceFact,
+    );
+    const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+    const lineage = evidenceRecord(
+      stationFact.lineage,
+      'governedToolLineage',
+    );
+    const readback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    const sourceHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const replayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const toolCallGroupSelector =
+      `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallGroupSelector)),
+      'governed ToolCall terminal group',
+      30_000,
+    );
+    const toolCallGroup = document.querySelector<HTMLElement>(
+      toolCallGroupSelector,
+    );
+    if (
+      toolCallGroup
+      && !document.querySelector(toolCallSelector)
+    ) {
+      toolCallGroup.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-group-toggle]',
+      )?.click();
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'governed ToolCall terminal receiver',
+      30_000,
+    );
+    const settledToolCallElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    if (!settledToolCallElement) {
+      throw new Error('agent.acceptance.governedToolReceiverMissing');
+    }
+    let governance = settledToolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-governance]',
+    );
+    if (!governance?.getClientRects().length) {
+      settledToolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(
+          document.querySelector<HTMLElement>(
+            `${toolCallSelector} [data-pt-agent-tool-governance="${toolCallId}"]`,
+          )?.getClientRects().length,
+        ),
+        'governed ToolCall terminal governance',
+        10_000,
+      );
+      governance = document.querySelector<HTMLElement>(
+        `${toolCallSelector} [data-pt-agent-tool-governance="${toolCallId}"]`,
+      );
+    }
+    const lineageComplete = [
+      lineage.toolCallId,
+      lineage.toolBatchId,
+      lineage.manifestId,
+      lineage.manifestVersion,
+      lineage.bindingId,
+      lineage.readinessSnapshotId,
+      lineage.approvalId,
+      lineage.decisionId,
+      lineage.executionClaimId,
+      lineage.sideEffectReceiptId,
+      lineage.resultId,
+      lineage.continuationId,
+    ].every((value) => typeof value === 'string' && value.length > 0)
+      && Number(lineage.bindingRevision) > 0
+      && Number(lineage.decisionRevision) > 0
+      && Number(lineage.fencingToken) > 0;
+    const assertions = {
+      nativeApprovalSubmittedOnce:
+        decisionAttempt.response.decision_id
+          === replayedDecision.decision_id
+        && decisionAttempt.response.decision_revision
+          === replayedDecision.decision_revision
+        && decisionAttempt.response.payload_hash
+          === replayedDecision.payload_hash,
+      oneExecutionAndSideEffect:
+        stationFact.executionAttemptCount === 1
+        && stationFact.sideEffectCount === 1
+        && stationFact.resultCount === 1
+        && stationFact.continuationCount === 1,
+      durableLineageComplete: lineageComplete,
+      stationReplayEqual:
+        sourceHash === replayHash,
+      nativeReceiverAuthoritative:
+        receiverProjection?.status === 'success'
+        && receiverProjection.pending === false
+        && Boolean(governance?.getClientRects().length)
+        && JSON.stringify(readback.messages).includes(toolCallId),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.governedToolAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    capture = {
+      assertions,
+      'receiver-dom': {
+        visible: true,
+        toolCallId,
+        status: receiverProjection?.status ?? '',
+        governanceVisible: Boolean(governance?.getClientRects().length),
+      },
+      'station-readback': {
+        entityKind: 'agent-tool-call-lineage',
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        fact: stationFact,
+        replayHash,
+        sourceHash,
+      },
+      facts: {
+        capabilitySession: capabilitySession.facts,
+        decision: decisionAttempt.response,
+        replayedDecision,
+        lineage,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      if (conversationId) {
+        await cleanupFoundationToolConversation(
+          conversationId,
+          turn?.turnId ?? '',
+        );
+        cleanup.conversationDeleted = true;
+      }
+      if (currentBinding && disposableAgent && toolFixture) {
+        if (toolFixture.binding) {
+          await updateFoundationToolPolicy(
+            disposableAgent,
+            toolFixture,
+            currentBinding,
+            toolFixture.binding.approvalPolicy,
+            toolFixture.binding.enabled,
+          );
+        } else {
+          await api.deleteAgentCapabilityBinding(
+            currentBinding.bindingId,
+            currentBinding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.bindingRestored = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (runtimeFixture) {
+        await api.deleteModel(
+          runtimeFixture.providerId,
+          runtimeFixture.modelId,
+        );
+        cleanup.fixtureModelDeleted = true;
+        await api.deleteProvider(runtimeFixture.providerId);
+        cleanup.fixtureProviderDeleted = true;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        !priorSelection
+        || useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.governedToolCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.governedToolCaptureMissing');
+  }
+  const cleanupComplete = Object.values(cleanup).every(Boolean);
+  if (!cleanupComplete) {
+    throw new Error('agent.acceptance.governedToolCleanupIncomplete');
+  }
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'governedToolAssertions'),
+      cleanupComplete,
+    },
+    cleanup: {
+      ...cleanup,
+      status: 'clean',
+    },
+  }) as Record<string, unknown>;
+}
+
+async function runCapabilityBindingDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const capabilitySessions = await waitForCapabilitySessionEvidence();
+  const capabilitySessionId =
+    capabilitySessions.selectedStationSession?.session_id;
+  if (!capabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+
+  let disposableAgentId = '';
+  let knowledgeResourceId = '';
+  let knowledgeRevision = 0n;
+  let knowledgeBindingId = '';
+  let clientBindingId = '';
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    knowledgeBindingRemoved: false,
+    clientBindingRemoved: false,
+    knowledgeDescriptorRetired: false,
+    disposableAgentDeleted: false,
+    fixtureProviderRestored: false,
+    fixtureModelDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    runtimeFixture = await createFoundationDisposableRuntimeFixture(
+      'capability-binding',
+    );
+    const disposable = await agentStore.createAgent({
+      name: `capability-binding-${sampleId}-${crypto.randomUUID()}`,
+      title: `Capability binding ${sampleId}`,
+      description: 'V2-J02 capability binding Development Journey',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    disposableAgentId = disposable.id || disposable.name;
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+
+    const capabilityStore = useAgentCapabilityStore.getState();
+    const descriptor = await capabilityStore.createKnowledgeDescriptor(create(
+      CreateKnowledgeResourceDescriptorRequestSchema,
+      {
+        resourceKind: KnowledgeResourceKind.DOCUMENT,
+        source: {
+          case: 'stationContent',
+          value: new TextEncoder().encode(
+            `V2-J02 capability inventory ${sampleId}`,
+          ),
+        },
+        idempotencyKey: crypto.randomUUID(),
+        title: `V2-J02 Knowledge ${sampleId}`,
+      },
+    ));
+    knowledgeResourceId = descriptor.resourceId;
+    knowledgeRevision = descriptor.revision;
+    const manifest = useAgentCapabilityStore.getState().manifests.find(
+      (candidate) => (
+        candidate.sourceKind === CapabilitySourceKind.KNOWLEDGE
+        && candidate.sourceInstanceId === descriptor.resourceId
+        && candidate.version === descriptor.revision.toString()
+        && !candidate.retiredAt
+      ),
+    );
+    if (!manifest) {
+      throw new Error('agent.acceptance.capabilityKnowledgeManifestMissing');
+    }
+    const capabilityKey =
+      `${encodeURIComponent(manifest.capabilityId)}@`
+      + encodeURIComponent(manifest.version);
+
+    useAgentStore.getState().setAgentSurface(disposable.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'capability Agent Profile',
+      30_000,
+    );
+    const capabilityTab = document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    );
+    if (!capabilityTab) {
+      throw new Error('agent.acceptance.capabilityProfileTabMissing');
+    }
+    capabilityTab.click();
+    await capabilityStore.loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          '[data-pt-agent-capability-inventory]',
+        )?.getClientRects().length,
+      ),
+      'capability inventory',
+      30_000,
+    );
+    const knowledgeItem = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-capability]',
+      ),
+    ).find((element) =>
+      element.dataset.ptAgentCapability === capabilityKey);
+    if (!knowledgeItem) {
+      throw new Error('agent.acceptance.capabilityKnowledgeItemMissing');
+    }
+    knowledgeItem.click();
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-capability-detail]',
+        ),
+      ).some((element) => (
+        element.dataset.ptAgentCapabilityDetail === capabilityKey
+      )),
+      'Knowledge capability detail',
+      10_000,
+    );
+    const unboundInventory = capabilityDevelopmentInventorySnapshot(
+      capabilityKey,
+    );
+    const bindingToggle = document.querySelector<HTMLButtonElement>(
+      `[data-pt-agent-capability-binding="${capabilityKey}"]`,
+    );
+    if (!bindingToggle) {
+      throw new Error('agent.acceptance.capabilityBindingToggleMissing');
+    }
+    bindingToggle.click();
+    await waitFor(
+      () => Boolean(
+        useAgentCapabilityStore.getState()
+          .bindingsByAgentId[disposableAgentId]
+          ?.find((binding) => (
+            binding.capabilityId === manifest.capabilityId
+            && binding.capabilityVersion === manifest.version
+            && binding.enabled
+            && !binding.tombstonedAt
+          )),
+      ),
+      'Knowledge capability binding',
+      30_000,
+    );
+    let knowledgeBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.capabilityId === manifest.capabilityId
+      && binding.capabilityVersion === manifest.version
+      && binding.enabled
+      && !binding.tombstonedAt
+    ));
+    if (!knowledgeBinding) {
+      throw new Error('agent.acceptance.capabilityBindingReadbackMissing');
+    }
+    knowledgeBindingId = knowledgeBinding.bindingId;
+    const createdRevision = knowledgeBinding.revision;
+    const updatedBinding = await useAgentCapabilityStore.getState()
+      .upsertBinding({
+        bindingId: knowledgeBinding.bindingId,
+        agentId: disposableAgentId,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+        expectedAgentVersion: disposable.version,
+        expectedBindingRevision: knowledgeBinding.revision,
+        idempotencyKey: crypto.randomUUID(),
+        clientCapabilitySessionId: capabilitySessionId,
+      });
+    knowledgeBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.bindingId === updatedBinding.bindingId
+      && !binding.tombstonedAt
+    ));
+    if (!knowledgeBinding) {
+      throw new Error('agent.acceptance.capabilityPolicyReadbackMissing');
+    }
+    await waitFor(
+      () => capabilityDevelopmentInventorySnapshot(capabilityKey)
+        .bindingState === 'bound',
+      'bound Knowledge inventory',
+      10_000,
+    );
+    const boundInventory = capabilityDevelopmentInventorySnapshot(
+      capabilityKey,
+    );
+
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          '[data-pt-agent-composer]',
+        )?.getClientRects().length,
+      ),
+      'capability-aware composer',
+      30_000,
+    );
+    const readyComposer = capabilityDevelopmentComposerSnapshot();
+
+    const staleTraceBefore = await api.listAgentTurnTraces(
+      disposableAgentId,
+      { page: 1, pageSize: 200 },
+    );
+    let staleErrorCode = '';
+    try {
+      await useAgentCapabilityStore.getState().upsertBinding({
+        bindingId: knowledgeBinding.bindingId,
+        agentId: disposableAgentId,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.AUTO,
+        expectedAgentVersion: disposable.version,
+        expectedBindingRevision: createdRevision,
+        idempotencyKey: crypto.randomUUID(),
+        clientCapabilitySessionId: capabilitySessionId,
+      });
+    } catch (error) {
+      staleErrorCode = observedErrorCode(error);
+    }
+    const staleTraceAfter = await api.listAgentTurnTraces(
+      disposableAgentId,
+      { page: 1, pageSize: 200 },
+    );
+    const staleBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.bindingId === knowledgeBindingId
+      && !binding.tombstonedAt
+    ));
+    if (!staleBinding) {
+      throw new Error('agent.acceptance.capabilityStaleReadbackMissing');
+    }
+    const stale = {
+      errorCode: staleErrorCode,
+      submittedRevision: createdRevision.toString(),
+      authoritativeRevision: staleBinding.revision.toString(),
+      authoritativePolicy: staleBinding.approvalPolicy,
+      turnTraceDelta:
+        Number(staleTraceAfter.total ?? staleTraceAfter.entries.length)
+        - Number(staleTraceBefore.total ?? staleTraceBefore.entries.length),
+    };
+    knowledgeBinding = staleBinding;
+
+    const clientFixture = await foundationToolFixture(
+      disposableAgentId,
+      'desktop_app',
+    );
+    const clientBinding = await updateFoundationToolPolicy(
+      disposable,
+      clientFixture,
+      clientFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    clientBindingId = clientBinding.bindingId;
+    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: '',
+    });
+    await waitFor(
+      () => capabilityDevelopmentComposerSnapshot().reasonCode
+        === 'client_session_required',
+      'disconnected capability composer rejection',
+      30_000,
+    );
+    const disconnectedComposer = capabilityDevelopmentComposerSnapshot();
+    const disconnected = await runCapabilityAdmissionRejection({
+      agentId: disposableAgentId,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
+      capabilityId: clientBinding.capabilityId,
+      expectedReasonCode: 'client_session_required',
+      sampleId,
+    });
+    await api.deleteAgentCapabilityBinding(
+      clientBinding.bindingId,
+      clientBinding.revision,
+      crypto.randomUUID(),
+      'acceptance_fixture_cleanup',
+    );
+    clientBindingId = '';
+    cleanup.clientBindingRemoved = true;
+
+    await useAgentCapabilityStore.getState()
+      .tombstoneKnowledgeDescriptor(create(
+        TombstoneKnowledgeResourceDescriptorRequestSchema,
+        {
+          resourceId: knowledgeResourceId,
+          expectedRevision: knowledgeRevision,
+          idempotencyKey: crypto.randomUUID(),
+          reason: 'acceptance_fixture_cleanup',
+        },
+      ));
+    cleanup.knowledgeDescriptorRetired = true;
+    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+    await waitFor(
+      () => capabilityDevelopmentComposerSnapshot().reasonCode
+        === 'manifest_retired',
+      'retired capability composer rejection',
+      30_000,
+    );
+    const retiredComposer = capabilityDevelopmentComposerSnapshot();
+    const retired = await runCapabilityAdmissionRejection({
+      agentId: disposableAgentId,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
+      capabilityId: manifest.capabilityId,
+      expectedReasonCode: 'manifest_retired',
+      capabilitySessionId,
+      sampleId,
+    });
+
+    capture = {
+      assertions: {
+        knowledgeInventoryVisible:
+          unboundInventory.visible === true
+          && unboundInventory.source === 'knowledge'
+          && unboundInventory.version === manifest.version
+          && unboundInventory.risk === 'read'
+          && unboundInventory.knowledgeIconVisible === true,
+        bindingAndPolicyCasReadback:
+          createdRevision > 0n
+          && updatedBinding.revision === createdRevision + 1n
+          && knowledgeBinding.revision === updatedBinding.revision
+          && knowledgeBinding.approvalPolicy
+            === CapabilityApprovalPolicy.MANUAL
+          && boundInventory.bindingState === 'bound'
+          && boundInventory.policy
+            === String(CapabilityApprovalPolicy.MANUAL),
+        readinessAndCompatibilityVisible:
+          boundInventory.readinessState === 'ready'
+          && boundInventory.compatibility === 'compatible',
+        preSendRuntimeSnapshotVisible:
+          readyComposer.visible === true
+          && readyComposer.providerId === runtimeFixture.providerId
+          && readyComposer.modelId === runtimeFixture.modelId
+          && readyComposer.runtimeSnapshotId !== 'unknown'
+          && readyComposer.readinessSnapshotId !== 'unknown'
+          && readyComposer.readinessState === 'ready'
+          && readyComposer.compatibility === 'compatible'
+          && readyComposer.authority === 'station-capability-authority',
+        staleRejectedBeforeExecution:
+          stale.errorCode === 'VERSION_CONFLICT'
+          && stale.submittedRevision === createdRevision.toString()
+          && stale.authoritativeRevision
+            === updatedBinding.revision.toString()
+          && stale.authoritativePolicy === CapabilityApprovalPolicy.MANUAL
+          && stale.turnTraceDelta === 0,
+        disconnectedRejectedBeforeExecution:
+          disconnectedComposer.reasonCode === 'client_session_required'
+          && Object.values(
+            evidenceRecord(
+              disconnected.assertions,
+              'disconnectedAssertions',
+            ),
+          ).every(Boolean),
+        retiredRejectedBeforeExecution:
+          retiredComposer.reasonCode === 'manifest_retired'
+          && Object.values(
+            evidenceRecord(retired.assertions, 'retiredAssertions'),
+          ).every(Boolean),
+      },
+      facts: {
+        capabilityKey,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        unboundInventory,
+        boundInventory,
+        readyComposer,
+        disconnectedComposer,
+        retiredComposer,
+        binding: {
+          bindingId: knowledgeBinding.bindingId,
+          createdRevision: createdRevision.toString(),
+          policyRevision: updatedBinding.revision.toString(),
+          restoredRevision: knowledgeBinding.revision.toString(),
+        },
+        rejections: { stale, disconnected, retired },
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      if (clientBindingId && disposableAgentId) {
+        const binding = (
+          await api.listAgentCapabilityBindings(disposableAgentId)
+        ).find((candidate) => (
+          candidate.bindingId === clientBindingId
+          && !candidate.tombstonedAt
+        ));
+        if (binding) {
+          await api.deleteAgentCapabilityBinding(
+            binding.bindingId,
+            binding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.clientBindingRemoved = true;
+      }
+      if (knowledgeBindingId && disposableAgentId) {
+        const binding = (
+          await api.listAgentCapabilityBindings(disposableAgentId)
+        ).find((candidate) => (
+          candidate.bindingId === knowledgeBindingId
+          && !candidate.tombstonedAt
+        ));
+        if (binding) {
+          await api.deleteAgentCapabilityBinding(
+            binding.bindingId,
+            binding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.knowledgeBindingRemoved = true;
+      }
+      if (
+        knowledgeResourceId
+        && cleanup.knowledgeDescriptorRetired !== true
+      ) {
+        await useAgentCapabilityStore.getState()
+          .tombstoneKnowledgeDescriptor(create(
+            TombstoneKnowledgeResourceDescriptorRequestSchema,
+            {
+              resourceId: knowledgeResourceId,
+              expectedRevision: knowledgeRevision,
+              idempotencyKey: crypto.randomUUID(),
+              reason: 'acceptance_fixture_cleanup',
+            },
+          ));
+        cleanup.knowledgeDescriptorRetired = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (runtimeFixture) {
+        const fixtureCleanup =
+          await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+        cleanup.fixtureProviderRestored = fixtureCleanup.providerRestored;
+        cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.capabilityBindingCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.capabilityBindingCaptureMissing');
+  }
+  return evidenceValue({
+    ...capture,
+    cleanup: {
+      ...cleanup,
+      status: Object.values(cleanup).every(Boolean) ? 'clean' : 'failed',
+    },
+  }) as Record<string, unknown>;
+}
+
+async function runCapabilityIncompatibleDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const capabilitySessions = await waitForCapabilitySessionEvidence();
+  const capabilitySessionId =
+    capabilitySessions.selectedStationSession?.session_id;
+  if (!capabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  const scenario = await runFoundationIncompatibleCapabilityScenario({
+    capabilitySessionId,
+    sampleId,
+  });
+  const facts = evidenceRecord(
+    scenario.facts,
+    'foundationIncompatibleCapabilityFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationIncompatibleCapabilityReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationIncompatibleCapabilityStation',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationIncompatibleCapabilityExecution',
+  );
+  const cleanupProof = evidenceRecord(
+    facts.cleanup,
+    'foundationIncompatibleCapabilityCleanup',
+  );
+  const assertions =
+    evaluateFoundationIncompatibleCapabilityFacts(facts);
+  return evidenceValue({
+    assertions,
+    'receiver-dom': {
+      visible:
+        receiver.recoveryVisible === true
+        && receiver.errorVisible === true
+        && receiver.recoveryExecuted === true
+        && receiver.profileVisible === true
+        && receiver.modelSelectionVisible === true,
+      selector:
+        '[data-pt-agent-message-error-recovery="choose-compatible-model"],'
+        + '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"],'
+        + '[data-pt-agent-profile-model]',
+      locale: i18n.language,
+      textHash: await sha256Hex(stableJson({
+        recoveryText: receiver.recoveryText,
+        errorText: receiver.errorText,
+      })),
+    },
+    'station-readback': {
+      entityKind: 'agent-capability-readiness',
+      entityIdHash: await sha256Hex(String(station.agentId)),
+      revision: Number(station.conversationVersionAfter),
+      stateHash: String(station.afterHash),
+      typedError: facts.outcome,
+      readiness: facts.readiness,
+      deltas: {
+        turn: station.turnDelta,
+        message: station.messageDelta,
+        queue: station.queueDelta,
+        providerExecution: execution.providerCallDelta,
+      },
+    },
+    cleanup: {
+      status: assertions.cleanupComplete ? 'clean' : 'failed',
+      proof: cleanupProof,
+    },
+    facts,
+  }) as Record<string, unknown>;
+}
+
+async function runMarketplaceCatalogDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const installed: MarketSkillEntry[] = [];
+  const cleanup = {
+    agentRemoved: false,
+    skillRemoved: false,
+    mcpRemoved: false,
+    status: 'pending',
+  };
+  let primaryError: unknown;
+  let capture: Record<string, unknown> | undefined;
+
+  try {
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'marketplace' });
+    await waitFor(
+      () => {
+        const page = document.querySelector<HTMLElement>(
+          '[data-testid="marketplace-page"]',
+        );
+        return Boolean(page && page.getClientRects().length > 0);
+      },
+      'Marketplace page to become visible',
+      30_000,
+    );
+
+    const markets = await api.listSkillMarkets();
+    const source = markets.find((market) => market.id === 'peers-official');
+    if (
+      !source
+      || !source.builtIn
+      || source.signatureStatus !== 'verified'
+      || source.trustLevel !== 'official'
+      || source.transportKind !== 'official_station'
+      || source.url
+      || source.branch
+      || source.manifestPath
+      || !source.publicKeyFingerprint
+    ) {
+      throw new Error('agent.acceptance.marketplaceDefaultSourceInvalid');
+    }
+    const synchronized = await api.syncSkillMarket(source.id);
+    if (
+      synchronized.signatureStatus !== 'verified'
+      || synchronized.syncState !== 'fresh_verified'
+      || synchronized.transportKind !== 'official_station'
+      || synchronized.transportEndpoint !== '/sub-agent/agent/package-catalog/official'
+      || synchronized.distributionId !== 'peers-official-station-v1'
+      || !/^[0-9a-f]{64}$/.test(synchronized.envelopeSha256)
+      || synchronized.stale
+      || synchronized.error
+    ) {
+      throw new Error('agent.acceptance.marketplaceSyncUnverified');
+    }
+    const tamperedSync = await api.syncSkillMarket(source.id);
+    if (
+      !tamperedSync.stale
+      || tamperedSync.syncState !== 'stale_verified'
+      || tamperedSync.error !== 'OFFICIAL_CATALOG_TRANSPORT_DIGEST_INVALID'
+      || tamperedSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceTamperWasNotRejected');
+    }
+    const missingEndpointSync = await api.syncSkillMarket(source.id);
+    if (
+      !missingEndpointSync.stale
+      || missingEndpointSync.syncState !== 'stale_verified'
+      || missingEndpointSync.error !== 'OFFICIAL_CATALOG_ENDPOINT_UNAVAILABLE'
+      || missingEndpointSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceOldStationWasNotStale');
+    }
+    const recoveredSync = await api.syncSkillMarket(source.id);
+    if (
+      recoveredSync.stale
+      || recoveredSync.syncState !== 'fresh_verified'
+      || recoveredSync.catalogRevision !== synchronized.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplaceSyncDidNotRecover');
+    }
+
+    const firstPage = await api.listMarketSkills(source.id, undefined, undefined, 1);
+    if (!firstPage.nextCursor || firstPage.skills.length !== 1) {
+      throw new Error('agent.acceptance.marketplacePaginationMissing');
+    }
+    const secondPage = await api.listMarketSkills(
+      source.id,
+      undefined,
+      firstPage.nextCursor,
+      1,
+    );
+    if (
+      secondPage.skills.length !== 1
+      || secondPage.skills[0]?.identifier === firstPage.skills[0]?.identifier
+      || secondPage.catalogRevision !== firstPage.catalogRevision
+    ) {
+      throw new Error('agent.acceptance.marketplacePaginationInvalid');
+    }
+
+    const packages: MarketSkillEntry[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await api.listMarketSkills(source.id, undefined, cursor, 100);
+      packages.push(...page.skills);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const byType = new Map(packages.map((entry) => [entry.packageType, entry]));
+    const agentPackage = byType.get('agent');
+    const skillPackage = packages.find(
+      (entry) => entry.packageType === 'skill' && !entry.revoked,
+    );
+    const mcpPackage = byType.get('mcp');
+    const revokedPackage = packages.find((entry) => entry.revoked);
+    if (!agentPackage || !skillPackage || !mcpPackage || !revokedPackage) {
+      throw new Error('agent.acceptance.marketplacePackageTypesMissing');
+    }
+    if (
+      agentPackage.installPolicy !== 'confirmation_required'
+      || skillPackage.installPolicy !== 'allowed'
+      || mcpPackage.installPolicy !== 'allowed'
+      || revokedPackage.installPolicy !== 'blocked'
+    ) {
+      throw new Error('agent.acceptance.marketplacePolicyProjectionInvalid');
+    }
+
+    const visiblePackageIds: string[] = [];
+    for (const [tab, entries] of [
+      ['agents', [agentPackage]],
+      ['skills', [skillPackage, revokedPackage]],
+      ['tools', [mcpPackage]],
+    ] as const) {
+      document.querySelector<HTMLElement>(
+        `[data-testid="marketplace-tab-${tab}"]`,
+      )?.click();
+      await waitFor(
+        () => entries.every((entry) => {
+          const element = document.querySelector<HTMLElement>(
+            `[data-testid="marketplace-package-${entry.identifier}"]`,
+          );
+          return Boolean(element && element.getClientRects().length > 0);
+        }),
+        `Marketplace ${tab} packages to render`,
+        30_000,
+      );
+      visiblePackageIds.push(...entries.map((entry) => entry.identifier));
+    }
+    document.querySelector<HTMLElement>(
+      '[data-testid="marketplace-tab-agents"]',
+    )?.click();
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-testid="marketplace-package-${agentPackage.identifier}"]`,
+      )),
+      'Marketplace Agent package to render',
+      30_000,
+    );
+    document.querySelector<HTMLElement>(
+      `[data-testid="marketplace-detail-${agentPackage.identifier}"]`,
+    )?.click();
+    await waitFor(
+      () => document.querySelector<HTMLElement>(
+        '[data-testid="marketplace-package-detail"]',
+      )?.dataset.packageId === agentPackage.identifier,
+      'Marketplace package detail drawer',
+      30_000,
+    );
+    document.querySelector<HTMLButtonElement>('.ant-drawer-close')?.click();
+    await waitFor(
+      () => !document.querySelector<HTMLElement>(
+        '[data-testid="marketplace-package-detail"]',
+      )?.getClientRects().length,
+      'Marketplace package detail drawer to close',
+      10_000,
+    );
+    document.querySelector<HTMLButtonElement>(
+      `[data-testid="marketplace-install-${agentPackage.identifier}"]`,
+    )?.click();
+    await waitFor(
+      () => Boolean(document.querySelector('.ant-modal-confirm')),
+      'high-risk package confirmation',
+      10_000,
+    );
+    const riskConfirmationText =
+      document.querySelector<HTMLElement>('.ant-modal-confirm')?.innerText || '';
+    document.querySelectorAll<HTMLButtonElement>(
+      '.ant-modal-confirm .ant-modal-confirm-btns button',
+    )[0]?.click();
+
+    let unacknowledgedRiskRejected = false;
+    try {
+      await api.installMarketSkill(
+        source.id,
+        agentPackage.filePath,
+        false,
+      );
+    } catch (error) {
+      unacknowledgedRiskRejected = String(error).includes(
+        'MARKETPLACE_RISK_CONFIRMATION_REQUIRED',
+      );
+    }
+    if (!unacknowledgedRiskRejected) {
+      throw new Error('agent.acceptance.marketplaceRiskConfirmationBypassed');
+    }
+
+    const agentInstall = await api.installMarketSkill(
+      source.id,
+      agentPackage.filePath,
+      true,
+    );
+    if (agentInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceAgentWasNotNew');
+    }
+    installed.push(agentPackage);
+    const agents = await api.listAgents();
+    const agentReadback = agents.find((agent) => agent.id === agentInstall.id);
+    if (!agentReadback) {
+      throw new Error('agent.acceptance.marketplaceAgentReadbackMissing');
+    }
+
+    const skillInstall = await api.installMarketSkill(
+      source.id,
+      skillPackage.filePath,
+    );
+    if (skillInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceSkillWasNotNew');
+    }
+    installed.push(skillPackage);
+    const skills = await api.listSkills();
+    const skillReadback = skills.skills.find((skill) => skill.id === skillInstall.id);
+    if (!skillReadback) {
+      throw new Error('agent.acceptance.marketplaceSkillReadbackMissing');
+    }
+
+    const mcpInstall = await api.installMarketSkill(
+      source.id,
+      mcpPackage.filePath,
+    );
+    if (mcpInstall.isNew !== true) {
+      throw new Error('agent.acceptance.marketplaceMcpWasNotNew');
+    }
+    installed.push(mcpPackage);
+    const mcpServers = await api.listMCPServers();
+    const mcpReadback = mcpServers.find((server) => server.name === mcpInstall.id);
+    if (!mcpReadback) {
+      throw new Error('agent.acceptance.marketplaceMcpReadbackMissing');
+    }
+
+    let revokedInstallRejected = false;
+    try {
+      await api.installMarketSkill(source.id, revokedPackage.filePath, true);
+    } catch (error) {
+      revokedInstallRejected = String(error).includes(
+        'MARKETPLACE_PACKAGE_REVOKED_OR_BLOCKED',
+      );
+    }
+    if (!revokedInstallRejected) {
+      throw new Error('agent.acceptance.marketplaceRevocationBypassed');
+    }
+
+    capture = {
+      sampleId,
+      assertions: {
+        defaultSourceVerified: true,
+        signedSyncVerified: true,
+        officialStationTransportVerified: true,
+        tamperedTransportRejected: true,
+        oldStationMarkedStale: true,
+        transportRecovered: true,
+        paginationVerified: true,
+        packageTypesVisible: true,
+        packageDetailVisible: true,
+        highRiskConfirmationVisible: Boolean(riskConfirmationText),
+        unacknowledgedRiskRejected,
+        agentAuthorityReadback: true,
+        skillAuthorityReadback: true,
+        mcpAuthorityReadback: true,
+        revokedInstallRejected,
+      },
+      'receiver-dom': {
+        marketplaceVisible: true,
+        sourceVisible: Boolean(document.querySelector(
+          '[data-testid="marketplace-source-peers-official"]',
+        )),
+        packageIds: visiblePackageIds,
+        detailPackageId: agentPackage.identifier,
+        highRiskConfirmationVisible: Boolean(riskConfirmationText),
+      },
+      catalog: {
+        source,
+        sync: recoveredSync,
+        negativeTransport: {
+          tampered: tamperedSync,
+          oldStation: missingEndpointSync,
+        },
+        firstPage,
+        secondPage,
+        packagePolicies: packages.map((entry) => ({
+          packageId: entry.identifier,
+          packageType: entry.packageType,
+          signatureStatus: entry.signatureStatus,
+          scanVerdict: entry.scanVerdict,
+          riskLevel: entry.riskLevel,
+          installPolicy: entry.installPolicy,
+          revoked: entry.revoked,
+        })),
+      },
+      'target-readback': {
+        agent: agentReadback,
+        skill: skillReadback,
+        mcp: mcpReadback,
+      },
+      revocation: {
+        packageId: revokedPackage.identifier,
+        rejected: revokedInstallRejected,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    for (const entry of installed.reverse()) {
+      try {
+        await api.uninstallMarketSkill(entry.marketId || 'peers-official', entry.filePath);
+        if (entry.packageType === 'agent') cleanup.agentRemoved = true;
+        if (entry.packageType === 'skill') cleanup.skillRemoved = true;
+        if (entry.packageType === 'mcp') cleanup.mcpRemoved = true;
+      } catch (error) {
+        primaryError ||= error;
+      }
+    }
+    cleanup.status = (
+      cleanup.agentRemoved
+      && cleanup.skillRemoved
+      && cleanup.mcpRemoved
+    ) ? 'clean' : 'failed';
+  }
+
+  if (primaryError) throw primaryError;
+  if (!capture || cleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.marketplaceCleanupFailed');
+  }
+  return evidenceValue({ ...capture, cleanup }) as Record<string, unknown>;
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -13158,18 +25563,19 @@ export function installAcceptanceHarness(): void {
       const activeEntry = registry.entries.find(
         (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
       );
-      const peerIdAvailable = Boolean(
-        activeEntry?.peer_id?.trim() || probed.peer_id?.trim(),
+      const activeStationPeerId = (
+        activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
       );
 
       return {
         configured:
           activeUrl === expectedUrl
           && activeEntry?.online === true
-          && peerIdAvailable,
+          && Boolean(activeStationPeerId),
         activeUrl,
         online: activeEntry?.online === true,
-        peerIdAvailable,
+        peerIdAvailable: Boolean(activeStationPeerId),
+        activeStationPeerId,
       };
     },
 
@@ -13320,6 +25726,57 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async runCapabilityBindingDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runCapabilityBindingDevelopmentJourney(sampleId);
+    },
+
+    async runGovernedToolDevelopment({
+      sampleId,
+      providerBaseUrl,
+    }: {
+      sampleId: string;
+      providerBaseUrl: string;
+    }) {
+      return runGovernedToolDevelopmentJourney({
+        sampleId,
+        providerBaseUrl,
+      });
+    },
+
+    async runMcpLifecycleDevelopment(input: McpLifecycleDevelopmentInput) {
+      return runMcpLifecycleDevelopmentJourney(input);
+    },
+
+    async runConnectorInvocationDevelopment(
+      input: ConnectorInvocationDevelopmentInput,
+    ) {
+      return runConnectorInvocationDevelopmentJourney(input);
+    },
+
+    async runEvaluationDevelopment(input: EvaluationDevelopmentInput) {
+      return runEvaluationDevelopmentJourney(input);
+    },
+
+    async runMarketplaceCatalogDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runMarketplaceCatalogDevelopmentJourney(sampleId);
+    },
+
+    async runCapabilityIncompatibleDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runCapabilityIncompatibleDevelopmentJourney(sampleId);
+    },
+
     async navigateToAgent() {
       // Ensure agent-capability and agent-topic runtimes are bootstrapped
       // (normally triggered by PageHost when navigating to AgentChatPage)
@@ -13467,6 +25924,2041 @@ export function installAcceptanceHarness(): void {
         });
         throw error;
       }
+    },
+
+    async runDevelopmentRuntimeUnavailable({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerModelUnavailable');
+      }
+      const agentId = agent.id || agent.name;
+      const providerId = agent.provider;
+      const providerBefore = await api.getProvider(providerId);
+      if (!providerBefore.enabled) {
+        throw new Error('agent.acceptance.providerUnavailableBeforeScenario');
+      }
+      const conversation = await api.createAgentConversation({
+        agent_id: agentId,
+        title: `Runtime unavailable ${sampleId}`,
+        provider_id: providerId,
+        model_name: agent.model,
+      });
+      const conversationId = conversation.conversation_id;
+      await useChatStore.getState().selectSession(conversationId);
+
+      let providerDisabled = false;
+      let capture: Record<string, unknown> | null = null;
+      const cleanup: Record<string, unknown> = {
+        providerRestored: false,
+        conversationDeleted: false,
+        localProjectionCleared: false,
+      };
+      try {
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        await api.updateProvider(providerId, {
+          base_url: providerBefore.base_url || providerBefore.default_base_url,
+          enabled: false,
+          version: providerBefore.version,
+        });
+        providerDisabled = true;
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(
+          `Runtime unavailable ${sampleId}`,
+        );
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+                && message.resolution?.type === 'selectRuntime'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="select-runtime"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'runtime-unavailable recovery surface',
+          30_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="select-runtime"]',
+        );
+        if (!errorMessage || !recovery) {
+          throw new Error(
+            'agent.acceptance.runtimeUnavailableRecoveryMissing',
+          );
+        }
+        const recoveryVisibleBeforeAction =
+          recovery.getClientRects().length > 0;
+        const recoveryLabelBeforeAction = recovery.textContent?.trim() ?? '';
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name) === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'runtime selection profile surface',
+          30_000,
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const assertions = {
+          typedRuntimeUnavailable:
+            typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+            && typedError.locale_key === 'agent.errors.runtimeUnavailable'
+            && typedError.retryable === true
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['reason_code', 'runtime_kind'])
+            && typedError.details.runtime_kind === 'direct_model'
+            && typedError.details.reason_code === 'provider_disabled',
+          localizedRecoveryVisible:
+            recoveryVisibleBeforeAction
+            && recoveryLabelBeforeAction.length > 0,
+          selectRuntimeOpened:
+            resolution?.type === 'selectRuntime'
+            && resolution.runtimeKind === 'direct_model'
+            && resolution.reasonCode === 'provider_disabled'
+            && useAgentStore.getState().getAgentSurface(agent.name) === 'profile',
+          zeroAttemptAndProviderCall:
+            tracesAfter.entries.length === tracesBefore.entries.length,
+          stationStateUnchanged:
+            readbackAfter.messages.length === readbackBefore.messages.length
+            && readbackAfter.conversation.version
+              === readbackBefore.conversation.version
+            && queueAfter.entries.length === queueBefore.entries.length
+            && queueAfter.conversation_version
+              === queueBefore.conversation_version,
+        };
+        capture = {
+          assertions,
+          facts: {
+            conversationId,
+            runtimeKind: typedError?.details.runtime_kind ?? '',
+            reasonCode: typedError?.details.reason_code ?? '',
+            resolution,
+            recoveryLabel: recoveryLabelBeforeAction,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+            conversationVersionBefore: readbackBefore.conversation.version,
+            conversationVersionAfter: readbackAfter.conversation.version,
+          },
+        };
+      } finally {
+        if (providerDisabled) {
+          const currentProvider = await api.getProvider(providerId);
+          await api.updateProvider(providerId, {
+            base_url:
+              currentProvider.base_url || currentProvider.default_base_url,
+            enabled: true,
+            version: currentProvider.version,
+          });
+          await useProviderStore.getState().loadProviders();
+          cleanup.providerRestored = true;
+        }
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        clearFoundationLocalConversationProjection(conversationId);
+        cleanup.localProjectionCleared = true;
+        await deleteFoundationConversation(conversationId);
+        cleanup.conversationDeleted = true;
+      }
+      if (!capture) {
+        throw new Error('agent.acceptance.runtimeUnavailableCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          ...cleanup,
+          status: Object.values(cleanup).every((value) => value === true)
+            ? 'clean'
+            : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentProviderModelUnavailable({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerModelUnavailable');
+      }
+      const agentId = agent.id || agent.name;
+      const originalModel = agent.model;
+      const missingModel = `pt-missing-model-${sampleId}`;
+      let modelAdded = false;
+      let modelRemoved = false;
+      let agentRestored = false;
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let conversationId = '';
+      let capture: Record<string, unknown> | null = null;
+      try {
+        await api.addModel(agent.provider, {
+          id: missingModel,
+          display_name: missingModel,
+          type: 'chat',
+          context_window: 128_000,
+          streaming: true,
+          enabled: true,
+        });
+        modelAdded = true;
+        await useAgentStore.getState().loadModels();
+        await useAgentStore.getState().updateAgentProfile(agentId, {
+          provider: agent.provider,
+          model: missingModel,
+        });
+        await useAgentStore.getState().loadAgents();
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Model unavailable ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: missingModel,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(
+          `Model unavailable ${sampleId}`,
+        );
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type
+              === 'PROVIDER_MODEL_UNAVAILABLE'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type
+                  === 'PROVIDER_MODEL_UNAVAILABLE'
+                && message.resolution?.type === 'chooseCompatibleModel'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'provider-model-unavailable recovery surface',
+          120_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+        );
+        if (!errorMessage || !recovery) {
+          throw new Error(
+            'agent.acceptance.providerModelUnavailableRecoveryMissing',
+          );
+        }
+        const recoveryVisibleBeforeAction =
+          recovery.getClientRects().length > 0;
+        const recoveryLabelBeforeAction = recovery.textContent?.trim() ?? '';
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name) === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'compatible model profile surface',
+          30_000,
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerModelUnavailableTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerModelUnavailableProviderCalls',
+        );
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        capture = {
+          assertions: {
+            typedModelUnavailable:
+              typedError?.error_type === 'PROVIDER_MODEL_UNAVAILABLE'
+              && typedError.locale_key
+                === 'agent.errors.providerModelUnavailable'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['model_id', 'provider_id'])
+              && typedError.details.provider_id === agent.provider
+              && typedError.details.model_id === missingModel,
+            localizedRecoveryVisible:
+              recoveryVisibleBeforeAction
+              && recoveryLabelBeforeAction.length > 0,
+            chooseModelOpened:
+              resolution?.type === 'chooseCompatibleModel'
+              && resolution.providerId === agent.provider
+              && resolution.modelId === missingModel
+              && useAgentStore.getState().getAgentSurface(agent.name)
+                === 'profile',
+            oneTerminalProviderAttempt:
+              tracesAfter.entries.length === tracesBefore.entries.length + 1
+              && latestProviderCalls.length === 1,
+            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
+            queueUnchanged:
+              queueAfter.entries.length === queueBefore.entries.length,
+          },
+          facts: {
+            conversationId,
+            providerId: typedError?.details.provider_id ?? '',
+            modelId: typedError?.details.model_id ?? '',
+            resolution,
+            recoveryLabel: recoveryLabelBeforeAction,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+          },
+        };
+      } finally {
+        try {
+          await useAgentStore.getState().updateAgentProfile(agentId, {
+            provider: agent.provider,
+            model: originalModel,
+          });
+          await useAgentStore.getState().loadAgents();
+          agentRestored = true;
+          useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        } finally {
+          try {
+            if (modelAdded) {
+              await api.deleteModel(agent.provider, missingModel);
+              await useAgentStore.getState().loadModels();
+              modelRemoved = true;
+            }
+          } finally {
+            if (conversationId) {
+              clearFoundationLocalConversationProjection(conversationId);
+              localProjectionCleared = true;
+              const deletionErrorCode = await deleteFoundationConversation(
+                conversationId,
+              );
+              conversationDeleted = deletionErrorCode === ''
+                || deletionErrorCode.includes('AGENT_4004');
+            }
+          }
+        }
+      }
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.providerModelUnavailableCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          modelAdded,
+          modelRemoved,
+          agentRestored,
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            modelAdded
+              && modelRemoved
+              && agentRestored
+              && conversationDeleted
+              && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentProviderTimeout({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerTimeout');
+      }
+      const agentId = agent.id || agent.name;
+      const requestedWallTimeMs = 180_000;
+      const providerDeadlineMs = 120_000;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Provider timeout ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const submittedAtMs = Date.now();
+        const sent = useChatStore.getState().sendMessage(
+          `Provider timeout ${sampleId}. Output exactly 8192 tokens as a `
+            + 'numbered technical encyclopedia about distributed systems. '
+            + 'Continue without summarizing, abbreviating, or stopping early.',
+          [],
+          {
+            clientIdempotencyKey: crypto.randomUUID(),
+            requestedBudget: {
+              max_output_tokens: 8192,
+              wall_time_ms: requestedWallTimeMs,
+            },
+          },
+        );
+        if (!sent) {
+          throw new Error('agent.acceptance.providerTimeoutSendRejected');
+        }
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
+                && message.resolution?.type === 'retry'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="retry"]',
+            );
+            const errorSurface = document.querySelector<HTMLElement>(
+              '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0
+              && errorSurface
+              && errorSurface.getClientRects().length > 0,
+            );
+          },
+          'provider-timeout recovery surface',
+          150_000,
+        );
+        const terminalObservedAtMs = Date.now();
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="retry"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.providerTimeoutRecoveryMissing');
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const projectedDeadline =
+          errorSurface.dataset.ptAgentErrorDeadline ?? '';
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const deadline = typedError?.details.deadline ?? '';
+        const deadlineMs = Date.parse(deadline);
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerTimeoutTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerTimeoutProviderCalls',
+        ).map((value) => evidenceRecord(value, 'providerTimeoutProviderCall'));
+        const classifiedErrors = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'errorsClassified',
+            'errors_classified',
+          ),
+          'providerTimeoutClassifiedErrors',
+        ).map((value) => evidenceRecord(value, 'providerTimeoutClassifiedError'));
+        const providerCall = latestProviderCalls[0] ?? {};
+        const classifiedError = classifiedErrors[0] ?? {};
+        const classifiedReason = evidenceField(
+          classifiedError,
+          'reason',
+          'reason',
+        );
+        const timeoutClassified =
+          classifiedReason === FailoverReason.TIMEOUT
+          || classifiedReason === 'FAILOVER_REASON_TIMEOUT';
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        capture = {
+          assertions: {
+            typedProviderTimeout:
+              typedError?.error_type === 'PROVIDER_TIMEOUT'
+              && typedError.locale_key === 'agent.errors.providerTimeout'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['deadline', 'model_id', 'provider_id'])
+              && typedError.details.provider_id === agent.provider
+              && typedError.details.model_id === agent.model
+              && Number.isFinite(deadlineMs),
+            localizedRetryVisible:
+              recoveryVisible
+              && recoveryLabel.length > 0
+              && resolution?.type === 'retry'
+              && resolution.providerId === agent.provider
+              && resolution.modelId === agent.model
+              && resolution.deadline === deadline,
+            deadlineProjected: projectedDeadline === deadline,
+            oneTerminalProviderAttempt:
+              tracesAfter.entries.length === tracesBefore.entries.length + 1
+              && latestProviderCalls.length === 1
+              && String(
+                evidenceField(providerCall, 'provider', 'provider') ?? '',
+              ) === agent.provider
+              && String(
+                evidenceField(providerCall, 'model', 'model') ?? '',
+              ) === agent.model,
+            upstreamTimeoutCancelled:
+              classifiedErrors.length === 1
+              && timeoutClassified
+              && Number(
+                evidenceField(providerCall, 'latencyMs', 'latency_ms') ?? 0,
+              ) >= providerDeadlineMs - 5_000,
+            providerDeadlinePrecedesTurnBudget:
+              requestedWallTimeMs > providerDeadlineMs
+              && deadlineMs >= submittedAtMs + providerDeadlineMs - 5_000
+              && deadlineMs <= terminalObservedAtMs + 5_000,
+            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
+            queueUnchanged:
+              queueAfter.entries.length === queueBefore.entries.length,
+          },
+          facts: {
+            conversationId,
+            typedError,
+            providerId: typedError?.details.provider_id ?? '',
+            modelId: typedError?.details.model_id ?? '',
+            deadline,
+            projectedDeadline,
+            submittedAt: new Date(submittedAtMs).toISOString(),
+            terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
+            requestedBudget: {
+              maxOutputTokens: 8192,
+              wallTimeMs: requestedWallTimeMs,
+            },
+            resolution,
+            recoveryLabel,
+            recoveryVisible,
+            providerCalls: latestProviderCalls,
+            classifiedErrors,
+            completedAssistantMessageCount:
+              completedAssistantMessages.length,
+            traceCountBefore: tracesBefore.entries.length,
+            traceCountAfter: tracesAfter.entries.length,
+            queueCountBefore: queueBefore.entries.length,
+            queueCountAfter: queueAfter.entries.length,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+          },
+        };
+      } finally {
+        if (conversationId) {
+          clearFoundationLocalConversationProjection(conversationId);
+          localProjectionCleared = true;
+          const deletionErrorCode = await deleteFoundationConversation(
+            conversationId,
+          );
+          conversationDeleted = deletionErrorCode === ''
+            || deletionErrorCode.includes('AGENT_4004');
+        }
+      }
+      if (!capture) {
+        throw new Error('agent.acceptance.providerTimeoutCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentLoopBudget({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.loopBudget');
+      }
+      const agentId = agent.id || agent.name;
+      const fixture = await foundationToolFixture(agentId, 'browser');
+      const originalBinding = fixture.binding;
+      let currentBinding = originalBinding;
+      let conversationId = '';
+      let turnId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let bindingRestored = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        currentBinding = await updateFoundationToolPolicy(
+          agent,
+          fixture,
+          currentBinding,
+          CapabilityApprovalPolicy.AUTO,
+        );
+        const loop = await runFoundationToolLoopBudget({
+          agent,
+          fixture,
+          sampleId,
+          selectConversation: true,
+        });
+        conversationId = loop.conversationId;
+        turnId = loop.turnId;
+
+        let errorMessage = useChatStore.getState().messages.find(
+          (message) => (
+            message.turnId === turnId
+            && message.typedError?.error_type
+              === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+            && message.resolution?.type === 'inspectBudget'
+          ),
+        );
+        try {
+          await waitFor(
+            () => {
+              errorMessage = useChatStore.getState().messages.find(
+                (message) => (
+                  message.turnId === turnId
+                  && message.typedError?.error_type
+                    === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+                  && message.resolution?.type === 'inspectBudget'
+                ),
+              );
+              const recovery = document.querySelector<HTMLButtonElement>(
+                '[data-pt-agent-message-error-recovery="inspect-budget"]',
+              );
+              return Boolean(
+                errorMessage
+                && recovery
+                && recovery.getClientRects().length > 0,
+              );
+            },
+            'loop-budget Inspect budget recovery',
+            60_000,
+          );
+        } catch (error) {
+          const state = useChatStore.getState();
+          throw new Error(
+            'agent.acceptance.loopBudgetRecoveryTimeout:'
+            + stableJson({
+              cause: error instanceof Error ? error.message : String(error),
+              diagnostics: {
+                currentSessionKey: state.currentSessionKey,
+                operation: state.operations[conversationId] ?? null,
+                messages: state.messages.map((message) => ({
+                  id: message.id,
+                  turnId: message.turnId ?? null,
+                  role: message.role,
+                  error: message.error ?? null,
+                  errorType: message.typedError?.error_type ?? null,
+                  details: message.typedError?.details ?? null,
+                  resolution: message.resolution?.type ?? null,
+                  budgetKind: message.budgetNotice?.kind ?? null,
+                })),
+                terminalEvents: loop.events
+                  .filter((event) => (
+                    ['error', 'cancelled', 'done'].includes(event.event)
+                  ))
+                  .map((event) => ({
+                    event: event.event,
+                    data: event.data,
+                  })),
+              },
+            }),
+          );
+        }
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="inspect-budget"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="TOOL_LOOP_BUDGET_EXHAUSTED"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.loopBudgetRecoveryMissing');
+        }
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const countProviderCalls = (replay: Record<string, unknown>): number =>
+          evidenceArray(
+            evidenceField(replay, 'attempts', 'attempts'),
+            'loopBudgetAttempts',
+          ).reduce<number>((total, value) => {
+            const attempt = evidenceRecord(value, 'loopBudgetAttempt');
+            return total + optionalEvidenceArray(
+              evidenceField(attempt, 'providerCalls', 'provider_calls'),
+              'loopBudgetProviderCalls',
+            ).length;
+          }, 0);
+        const providerCallsBeforeAction = countProviderCalls(loop.replay);
+        const toolCallsBeforeAction =
+          foundationDiagnosticToolFacts(loop.replay).length;
+
+        recovery.click();
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return view?.type === 'turnDetails' && view.turnId === turnId;
+          },
+          'loop-budget Turn details',
+          30_000,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const replayAfterAction = await foundationDiagnosticReplay(turnId);
+        const providerCallsAfterAction =
+          countProviderCalls(replayAfterAction);
+        const toolCallsAfterAction =
+          foundationDiagnosticToolFacts(replayAfterAction).length;
+        const terminalEvents = loop.events.filter(
+          (event) => ['error', 'cancelled', 'done'].includes(event.event),
+        );
+        const stationError = terminalEvents[0]?.data ?? {};
+        const stationDetails = evidenceRecord(
+          stationError.details,
+          'loopBudgetStationDetails',
+        );
+        const activeView = usePortalStore.getState().activeView;
+
+        capture = {
+          assertions: {
+            stationTypedPayload:
+              stationError.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+              && stationError.locale_key
+                === 'agent.errors.toolLoopBudgetExhausted'
+              && stationError.retryable === false
+              && stationError.terminal === true
+              && stableJson(Object.keys(stationDetails).sort())
+                === stableJson(['budget_kind', 'limit', 'turn_id'])
+              && stationDetails.turn_id === turnId
+              && stationDetails.budget_kind === 'tool_calls'
+              && stationDetails.limit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            typedLoopBudget:
+              typedError?.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+              && typedError.locale_key
+                === 'agent.errors.toolLoopBudgetExhausted'
+              && typedError.retryable === false
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['budget_kind', 'limit', 'turn_id'])
+              && typedError.details.turn_id === turnId
+              && typedError.details.budget_kind === 'tool_calls'
+              && typedError.details.limit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            localizedInspectBudgetVisible:
+              recovery.getClientRects().length > 0
+              && recoveryLabel === i18n.t(
+                'agent.recovery.inspectBudget',
+                { ns: 'agent' },
+              )
+              && resolution?.type === 'inspectBudget'
+              && resolution.turnId === turnId
+              && resolution.budgetKind === 'tool_calls'
+              && resolution.limit === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            budgetIdentityProjected:
+              errorSurface.dataset.ptAgentErrorTurnId === turnId
+              && errorSurface.dataset.ptAgentErrorBudgetKind === 'tool_calls'
+              && errorSurface.dataset.ptAgentErrorBudgetLimit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            inspectBudgetOpenedTurnDetails:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+            terminalAtExactLimit:
+              loop.facts.stopped === true
+              && loop.facts.executionAfterLimit === 0
+              && terminalEvents.length === 1
+              && terminalEvents[0]?.event === 'error',
+            inspectBudgetHasNoAutomaticRetry:
+              providerCallsAfterAction === providerCallsBeforeAction
+              && toolCallsAfterAction === toolCallsBeforeAction,
+          },
+          facts: {
+            conversationId,
+            turnId,
+            typedError,
+            stationError,
+            resolution,
+            recoveryLabel,
+            recoveryVisible: recovery.getClientRects().length > 0,
+            projectedTurnId:
+              errorSurface.dataset.ptAgentErrorTurnId ?? '',
+            projectedBudgetKind:
+              errorSurface.dataset.ptAgentErrorBudgetKind ?? '',
+            projectedLimit:
+              errorSurface.dataset.ptAgentErrorBudgetLimit ?? '',
+            loopBudget: loop.facts,
+            providerCallsBeforeAction,
+            providerCallsAfterAction,
+            toolCallsBeforeAction,
+            toolCallsAfterAction,
+            terminalEventCount: terminalEvents.length,
+            terminalEventType: terminalEvents[0]?.event ?? '',
+            turnDetailsOpened:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+          },
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        usePortalStore.getState().close();
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            await cleanupFoundationToolConversation(conversationId, turnId);
+            conversationDeleted = true;
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+        try {
+          if (
+            originalBinding
+            && currentBinding
+            && currentBinding !== originalBinding
+          ) {
+            await updateFoundationToolPolicy(
+              agent,
+              fixture,
+              currentBinding,
+              originalBinding.approvalPolicy,
+              originalBinding.enabled,
+            );
+          } else if (!originalBinding && currentBinding) {
+            await api.deleteAgentCapabilityBinding(
+              currentBinding.bindingId,
+              currentBinding.revision,
+              crypto.randomUUID(),
+              'acceptance_fixture_cleanup',
+            );
+          }
+          bindingRestored = true;
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.loopBudgetCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error('agent.acceptance.loopBudgetCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          bindingRestored,
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            bindingRestored
+              && conversationDeleted
+              && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentStaleVersion({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent) {
+        throw new Error('agent.acceptance.lifecycleStaleVersionAgentMissing');
+      }
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Lifecycle stale version ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        useChatStore.getState().mergeSessions([{
+          id: conversationId,
+          key: conversationId,
+          agent_name: agent.name,
+          title: conversation.title,
+          message_count: 0,
+          version: conversation.version,
+          model_override: conversation.model_name,
+          created_at: conversation.created_at,
+          updated_at: conversation.updated_at,
+        }]);
+        await useChatStore.getState().selectSession(conversationId);
+        const projectedRevision = useChatStore.getState().sessions.find(
+          (session) => session.key === conversationId,
+        )?.version ?? 0;
+        if (projectedRevision !== conversation.version) {
+          throw new Error(
+            'agent.acceptance.lifecycleStaleVersionProjectionMissing',
+          );
+        }
+
+        const winner = await api.updateAgentConversation({
+          conversation_id: conversationId,
+          expected_version: conversation.version,
+          title: `Lifecycle winner ${sampleId}`,
+        });
+        const winnerReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const winnerHash = await sha256Hex(stableJson(winnerReadback));
+
+        await useChatStore.getState().editMessage(
+          `stale-source-${sampleId}`,
+          `Stale edit ${sampleId}`,
+        );
+        await waitFor(
+          () => {
+            const failure = useChatStore.getState().revisionCommandFailure;
+            const notice = document.querySelector<HTMLElement>(
+              `[data-pt-agent-revision-conflict="${conversationId}"]`,
+            );
+            const reload = document.querySelector<HTMLButtonElement>(
+              `[data-pt-agent-revision-reload-latest="${conversationId}"]`,
+            );
+            return Boolean(
+              failure?.conversationId === conversationId
+              && failure.typedError.error_type
+                === 'LIFECYCLE_STALE_VERSION'
+              && notice
+              && notice.getClientRects().length > 0
+              && reload
+              && reload.getClientRects().length > 0,
+            );
+          },
+          'lifecycle stale-version recovery surface',
+          30_000,
+        );
+
+        const failure = useChatStore.getState().revisionCommandFailure;
+        const notice = document.querySelector<HTMLElement>(
+          `[data-pt-agent-revision-conflict="${conversationId}"]`,
+        );
+        const errorText = document.querySelector<HTMLElement>(
+          '[data-pt-agent-revision-error-text]',
+        );
+        const reload = document.querySelector<HTMLButtonElement>(
+          `[data-pt-agent-revision-reload-latest="${conversationId}"]`,
+        );
+        if (!failure || !notice || !errorText || !reload) {
+          throw new Error(
+            'agent.acceptance.lifecycleStaleVersionRecoveryMissing',
+          );
+        }
+        const afterStaleReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const afterStaleHash = await sha256Hex(
+          stableJson(afterStaleReadback),
+        );
+        const receiverBeforeReload = {
+          conflictVisible: notice.getClientRects().length > 0,
+          conflictText: errorText.textContent?.trim() ?? '',
+          expectedConflictText: i18n.t(
+            'agent.errors.lifecycleStaleVersion',
+            { ns: 'agent' },
+          ),
+          reloadVisible: reload.getClientRects().length > 0,
+          reloadText: reload.textContent?.trim() ?? '',
+          expectedReloadText: i18n.t(
+            'agent.recovery.reloadLatest',
+            { ns: 'agent' },
+          ),
+          projectedErrorType:
+            notice.dataset.ptAgentRevisionErrorType ?? '',
+          projectedExpectedRevision: Number(
+            notice.dataset.ptAgentRevisionExpected ?? 0,
+          ),
+          projectedActualRevision: Number(
+            notice.dataset.ptAgentRevisionActual ?? 0,
+          ),
+        };
+
+        reload.click();
+        await waitFor(
+          () => {
+            const state = useChatStore.getState();
+            return (
+              state.revisionCommandFailure === null
+              && state.revisionReloadingConversationId === null
+              && state.sessions.find(
+                (session) => session.key === conversationId,
+              )?.version === winner.version
+            );
+          },
+          'lifecycle stale-version authoritative reload',
+          30_000,
+        );
+
+        const afterReloadReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const afterReloadHash = await sha256Hex(
+          stableJson(afterReloadReadback),
+        );
+        const reloadedSession = useChatStore.getState().sessions.find(
+          (session) => session.key === conversationId,
+        );
+        const receiver = {
+          ...receiverBeforeReload,
+          reloadExecuted: true,
+          reloadedRevision: reloadedSession?.version ?? 0,
+          conflictCleared: !document.querySelector(
+            `[data-pt-agent-revision-conflict="${conversationId}"]`,
+          ),
+        };
+        const typedError = failure.typedError;
+        const details = typedError.details;
+        const resolution = failure.resolution;
+        const facts = {
+          conversationId,
+          typedError,
+          resolution,
+          winner: {
+            resourceId: conversationId,
+            expectedRevision: conversation.version,
+            actualRevision: winner.version,
+            revisionBeforeStale: winnerReadback.conversation.version,
+            revisionAfterStale: afterStaleReadback.conversation.version,
+            revisionAfterReload: afterReloadReadback.conversation.version,
+            hashBeforeStale: winnerHash,
+            hashAfterStale: afterStaleHash,
+            hashAfterReload: afterReloadHash,
+          },
+          staleMutation: {
+            attemptedRevision: projectedRevision,
+            mutationDelta:
+              afterStaleReadback.conversation.version
+              - winnerReadback.conversation.version,
+            messageDelta:
+              afterStaleReadback.messages.length
+              - winnerReadback.messages.length,
+          },
+          receiver,
+          projection: {
+            revisionBeforeStale: projectedRevision,
+            revisionAfterReload: reloadedSession?.version ?? 0,
+            messageCountAfterReload:
+              useChatStore.getState().messages.length,
+          },
+        };
+        capture = {
+          assertions: {
+            typedStaleVersion:
+              typedError.error_type === 'LIFECYCLE_STALE_VERSION'
+              && typedError.locale_key
+                === 'agent.errors.lifecycleStaleVersion'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(details).sort())
+                === stableJson([
+                  'actual_revision',
+                  'expected_revision',
+                  'resource_id',
+                ])
+              && details.resource_id === conversationId
+              && Number(details.expected_revision) === conversation.version
+              && Number(details.actual_revision) === winner.version,
+            localizedReloadLatestVisible:
+              receiver.conflictVisible
+              && receiver.reloadVisible
+              && receiver.conflictText.includes(
+                receiver.expectedConflictText,
+              )
+              && receiver.reloadText === receiver.expectedReloadText
+              && receiver.projectedErrorType
+                === 'LIFECYCLE_STALE_VERSION'
+              && receiver.projectedExpectedRevision === conversation.version
+              && receiver.projectedActualRevision === winner.version
+              && resolution.type === 'reloadLatest',
+            reloadLatestExecuted:
+              receiver.reloadExecuted
+              && receiver.conflictCleared
+              && receiver.reloadedRevision === winner.version,
+            winnerPreserved:
+              winnerReadback.conversation.version === winner.version
+              && afterStaleReadback.conversation.version === winner.version
+              && afterReloadReadback.conversation.version === winner.version
+              && winnerHash === afterStaleHash
+              && winnerHash === afterReloadHash,
+            zeroStaleMutation:
+              facts.staleMutation.mutationDelta === 0
+              && facts.staleMutation.messageDelta === 0,
+            projectionReloaded:
+              facts.projection.revisionBeforeStale === conversation.version
+              && facts.projection.revisionAfterReload === winner.version
+              && facts.projection.messageCountAfterReload
+                === afterReloadReadback.messages.length,
+          },
+          facts,
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = (
+              !useChatStore.getState().sessions.some(
+                (session) => session.key === conversationId,
+              )
+              && useChatStore.getState().revisionCommandFailure === null
+            );
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.lifecycleStaleVersionCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.lifecycleStaleVersionCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentTerminalMutation({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error(
+          'agent.acceptance.lifecycleTerminalMutationAgentMissing',
+        );
+      }
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Lifecycle terminal mutation ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const sent = useChatStore.getState().sendMessage(
+          `Reply with exactly "terminal result ${sampleId}" and nothing else.`,
+          [],
+          { clientIdempotencyKey: crypto.randomUUID() },
+        );
+        if (!sent) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationSendRejected',
+          );
+        }
+        await waitFor(
+          () => useChatStore.getState().messages
+            .slice(messageCountBefore)
+            .some((message) => (
+              message.role === 'assistant'
+              && message.terminalStatus === 'completed'
+              && Boolean(message.turnId)
+              && message.content.trim().length > 0
+            )),
+          'completed terminal-mutation source Turn',
+          120_000,
+        );
+        const completed = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.terminalStatus === 'completed'
+            && Boolean(message.turnId)
+          ));
+        if (!completed?.turnId) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationTurnMissing',
+          );
+        }
+        const turnId = completed.turnId;
+        await useChatStore.getState().syncMessages();
+        const authoritativeMessage = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.turnId === turnId
+            && message.terminalStatus === 'completed'
+          ));
+        if (!authoritativeMessage) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationMessageMissing',
+          );
+        }
+
+        const replayBefore = await waitForFoundationDiagnosticReplay(
+          turnId,
+          (replay) => (
+            Number(replay.status) === AgentTurnStatus.COMPLETED
+          ),
+          'durable completed terminal-mutation source Turn',
+          30_000,
+        );
+        const readbackBefore = await foundationConversationReadback(
+          conversationId,
+        );
+        const terminalHashBefore = await sha256Hex(stableJson({
+          readback: readbackBefore,
+          replay: replayBefore,
+        }));
+        await useChatStore.getState().requestTurnCancellation(
+          turnId,
+          authoritativeMessage.id,
+        );
+
+        await waitFor(
+          () => {
+            const projected = useChatStore.getState().messages.find(
+              (message) => (
+                message.id === authoritativeMessage.id
+                && message.turnId === turnId
+                && message.typedError?.error_type
+                  === 'LIFECYCLE_TERMINAL_MUTATION'
+                && message.resolution?.type === 'openResult'
+              ),
+            );
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="open-result"]',
+            );
+            return Boolean(
+              projected
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'lifecycle terminal-mutation recovery surface',
+          30_000,
+        );
+
+        const projected = useChatStore.getState().messages.find(
+          (message) => (
+            message.id === authoritativeMessage.id
+            && message.turnId === turnId
+          ),
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="open-result"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          `[data-pt-agent-message-id="${authoritativeMessage.id}"]`,
+        );
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text="agent.errors.lifecycleTerminalMutation"]',
+        );
+        if (!projected || !recovery || !errorSurface || !errorText) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationRecoveryMissing',
+          );
+        }
+        const typedError = projected.typedError;
+        const resolution = projected.resolution;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const errorLabel = errorText.textContent?.trim() ?? '';
+        recovery.click();
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return view?.type === 'turnDetails' && view.turnId === turnId;
+          },
+          'terminal-mutation Turn details',
+          30_000,
+        );
+        await waitFor(
+          () => Boolean(document.querySelector(
+            `[data-agent-turn-details="${turnId}"]`
+            + ' [data-turn-details-state="ready"]',
+          )),
+          'terminal-mutation result readback',
+          30_000,
+        );
+
+        const [readbackAfter, replayAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          foundationDiagnosticReplay(turnId),
+        ]);
+        const terminalHashAfter = await sha256Hex(stableJson({
+          readback: readbackAfter,
+          replay: replayAfter,
+        }));
+        const stationAssistantBefore = readbackBefore.messages.find(
+          (message) => message.turnId === turnId && String(message.role) === '3',
+        ) ?? readbackBefore.messages.find(
+          (message) => (
+            message.turnId === turnId
+            && String(message.role).toLowerCase() === 'assistant'
+          ),
+        );
+        const stationAssistantAfter = readbackAfter.messages.find(
+          (message) => message.messageId === stationAssistantBefore?.messageId,
+        );
+        const eventsBefore = optionalEvidenceArray(
+          evidenceField(replayBefore, 'events', 'events'),
+          'terminalMutationEventsBefore',
+        );
+        const eventsAfter = optionalEvidenceArray(
+          evidenceField(replayAfter, 'events', 'events'),
+          'terminalMutationEventsAfter',
+        );
+        const activeView = usePortalStore.getState().activeView;
+        const facts = {
+          conversationId,
+          turnId,
+          typedError,
+          resolution,
+          receiver: {
+            recoveryVisible: recovery.getClientRects().length > 0,
+            recoveryLabel,
+            expectedRecoveryLabel: i18n.t(
+              'agent.recovery.openResult',
+              { ns: 'agent' },
+            ),
+            errorLabel,
+            expectedErrorLabel: i18n.t(
+              'agent.errors.lifecycleTerminalMutation',
+              { ns: 'agent' },
+            ),
+            projectedResourceId:
+              errorSurface.dataset.ptAgentErrorResourceId ?? '',
+            projectedTerminalStatus:
+              errorSurface.dataset.ptAgentErrorTerminalStatus ?? '',
+            messageTerminalStatus: projected.terminalStatus ?? '',
+            contentBefore: authoritativeMessage.content,
+            contentAfter: projected.content,
+          },
+          result: {
+            opened:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+            turnId:
+              activeView?.type === 'turnDetails'
+                ? activeView.turnId
+                : '',
+          },
+          terminal: {
+            hashBefore: terminalHashBefore,
+            hashAfter: terminalHashAfter,
+            conversationVersionBefore: readbackBefore.conversation.version,
+            conversationVersionAfter: readbackAfter.conversation.version,
+            messageCountBefore: readbackBefore.messages.length,
+            messageCountAfter: readbackAfter.messages.length,
+            eventCountBefore: eventsBefore.length,
+            eventCountAfter: eventsAfter.length,
+            messageIdBefore: stationAssistantBefore?.messageId ?? '',
+            messageIdAfter: stationAssistantAfter?.messageId ?? '',
+            messageStatusBefore: stationAssistantBefore?.status ?? null,
+            messageStatusAfter: stationAssistantAfter?.status ?? null,
+            messageContentBefore: stationAssistantBefore?.content ?? '',
+            messageContentAfter: stationAssistantAfter?.content ?? '',
+          },
+        };
+        capture = {
+          assertions: {
+            typedTerminalMutation:
+              typedError?.error_type === 'LIFECYCLE_TERMINAL_MUTATION'
+              && typedError.locale_key
+                === 'agent.errors.lifecycleTerminalMutation'
+              && typedError.retryable === false
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['resource_id', 'terminal_status'])
+              && typedError.details.resource_id === turnId
+              && typedError.details.terminal_status === 'completed',
+            localizedOpenResultVisible:
+              facts.receiver.recoveryVisible
+              && recoveryLabel === facts.receiver.expectedRecoveryLabel
+              && errorLabel === facts.receiver.expectedErrorLabel,
+            terminalIdentityProjected:
+              facts.receiver.projectedResourceId === turnId
+              && facts.receiver.projectedTerminalStatus === 'completed'
+              && facts.receiver.messageTerminalStatus === 'completed'
+              && resolution?.type === 'openResult'
+              && resolution.turnId === turnId
+              && resolution.terminalStatus === 'completed',
+            openResultOpenedTurnDetails:
+              facts.result.opened
+              && facts.result.turnId === turnId,
+            terminalHashUnchanged:
+              terminalHashBefore === terminalHashAfter
+              && terminalHashBefore.length === 64,
+            zeroTerminalMutation:
+              facts.terminal.conversationVersionBefore
+                === facts.terminal.conversationVersionAfter
+              && facts.terminal.messageCountBefore
+                === facts.terminal.messageCountAfter
+              && facts.terminal.eventCountBefore
+                === facts.terminal.eventCountAfter
+              && facts.terminal.messageIdBefore
+                === facts.terminal.messageIdAfter
+              && facts.terminal.messageStatusBefore
+                === facts.terminal.messageStatusAfter
+              && facts.terminal.messageContentBefore
+                === facts.terminal.messageContentAfter
+              && facts.receiver.contentBefore
+                === facts.receiver.contentAfter,
+          },
+          facts,
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        usePortalStore.getState().close();
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.lifecycleTerminalMutationCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.lifecycleTerminalMutationCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentUnknownTool({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.unknownTool');
+      }
+      const agentId = agent.id || agent.name;
+      const unknownToolId = 'skills_list';
+      let conversationId = '';
+      let turnId = '';
+      let capture: Record<string, unknown> | null = null;
+      let bindingRestored = false;
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let unsubscribeProviderStart: (() => void) | null = null;
+      const isolationRef: {
+        current: Promise<AgentCapabilityBinding> | null;
+      } = { current: null };
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        await restorePersistedFoundationCapabilityIsolation();
+        const authoritativeAgent = await api.getAgent(agentId);
+        const fixture = await foundationToolFixture(agentId, 'browser', {
+          toolName: unknownToolId,
+        });
+        const advertisedBinding = fixture.binding;
+        if (!advertisedBinding?.enabled || advertisedBinding.tombstonedAt) {
+          throw new Error(
+            'agent.acceptance.unknownToolAdvertisedBindingUnavailable',
+          );
+        }
+        const unknownToolVersion = fixture.manifest.version;
+        const capabilitySession = await resolveFoundationToolTurnSession();
+        const isolationJournal =
+          await prepareFoundationSelectiveCapabilityIsolation(
+            authoritativeAgent,
+            advertisedBinding,
+            capabilitySession.capabilitySessionId,
+          );
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Unknown tool ${sampleId}`,
+          provider_id: authoritativeAgent.provider,
+          model_name: authoritativeAgent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+
+        const [
+          readbackBefore,
+          tracesBefore,
+          queueBefore,
+          executionBefore,
+        ] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+          foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          ),
+        ]);
+        const messageCountBefore = useChatStore.getState().messages.length;
+        let providerStartObserved = false;
+        let providerStartSequence = 0;
+        unsubscribeProviderStart = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            if (
+              isolationRef.current
+              || payload.conversationId !== conversationId
+              || payload.event !== 'progress'
+              || payload.data.stage !== 'provider_call_started'
+            ) {
+              return;
+            }
+            providerStartObserved = true;
+            providerStartSequence = Number(payload.data.seq ?? 0);
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            turnId = String(
+              payload.data.turnId
+              ?? payload.data.turn_id
+              ?? sourceDelivery?.turnId
+              ?? '',
+            );
+            isolationRef.current = updateFoundationCapabilityBindingEnabled(
+              authoritativeAgent,
+              advertisedBinding,
+              false,
+            );
+          },
+        );
+        const sent = useChatStore.getState().sendMessage(
+          `Call the advertised ${unknownToolId} tool exactly once with `
+          + 'the arguments {} before answering. Do not answer with text '
+          + 'before the tool call and do not retry.',
+          [],
+          {
+            clientIdempotencyKey: crypto.randomUUID(),
+          },
+        );
+        if (!sent) {
+          throw new Error('agent.acceptance.unknownToolSendRejected');
+        }
+        await waitFor(
+          () => isolationRef.current !== null,
+          'unknown-tool provider start',
+          60_000,
+        );
+        const pendingIsolation = isolationRef.current;
+        if (!pendingIsolation) {
+          throw new Error(
+            'agent.acceptance.unknownToolBindingIsolationMissing',
+          );
+        }
+        const isolatedBinding = await pendingIsolation;
+        unsubscribeProviderStart();
+        unsubscribeProviderStart = null;
+        if (
+          isolatedBinding.enabled
+          || isolatedBinding.revision !== advertisedBinding.revision + 1n
+        ) {
+          throw new Error(
+            'agent.acceptance.unknownToolBindingIsolationFailed',
+          );
+        }
+
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'TOOL_UNKNOWN'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'TOOL_UNKNOWN'
+                && message.resolution?.type === 'chooseTool'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="choose-tool"]',
+            );
+            const errorSurface = document.querySelector<HTMLElement>(
+              '[data-pt-agent-error-type="TOOL_UNKNOWN"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0
+              && errorSurface
+              && errorSurface.getClientRects().length > 0,
+            );
+          },
+          'unknown-tool recovery surface',
+          180_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="choose-tool"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="TOOL_UNKNOWN"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.unknownToolRecoveryMissing');
+        }
+        turnId = errorMessage.turnId ?? '';
+        if (!turnId) {
+          throw new Error('agent.acceptance.unknownToolTurnMissing');
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+
+        const [
+          readbackAfter,
+          tracesAfter,
+          queueAfter,
+          executionAfter,
+        ] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+          foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          ),
+        ]);
+        const traceEntry = tracesAfter.entries.find(
+          (entry) => entry.turn?.turnId === turnId,
+        );
+        const traceRecord = traceEntry?.trace
+          ? evidenceRecord(
+              evidenceValue(traceEntry.trace),
+              'unknownToolTrace',
+            )
+          : {};
+        const providerCalls = optionalEvidenceArray(
+          evidenceField(
+            traceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'unknownToolProviderCalls',
+        );
+        const completedAssistantMessages =
+          readbackAfter.messages.filter((message) => (
+            message.turnId === turnId
+            && String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ));
+
+        const executionBeforeRecovery =
+          await foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          );
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name)
+              === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'unknown-tool Agent Profile surface',
+          30_000,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const executionAfterRecovery =
+          await foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          );
+
+        const assertions = {
+          providerBindingRace:
+            providerStartObserved
+            && providerStartSequence > 0
+            && isolatedBinding.bindingId === advertisedBinding.bindingId
+            && isolatedBinding.revision === advertisedBinding.revision + 1n
+            && !isolatedBinding.enabled,
+          typedUnknownTool:
+            typedError?.error_type === 'TOOL_UNKNOWN'
+            && typedError.locale_key === 'agent.errors.toolUnknown'
+            && typedError.retryable === false
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['tool_id', 'tool_version'])
+            && typedError.details.tool_id === unknownToolId
+            && typedError.details.tool_version === unknownToolVersion,
+          localizedChooseToolVisible:
+            recoveryVisible
+            && recoveryLabel === i18n.t(
+              'agent.recovery.chooseTool',
+              { ns: 'agent' },
+            )
+            && resolution?.type === 'chooseTool'
+            && resolution.toolId === unknownToolId
+            && resolution.toolVersion === unknownToolVersion,
+          toolIdentityProjected:
+            errorSurface.dataset.ptAgentErrorToolId === unknownToolId
+            && errorSurface.dataset.ptAgentErrorToolVersion
+              === unknownToolVersion,
+          oneTerminalProviderAttempt:
+            tracesAfter.entries.length === tracesBefore.entries.length + 1
+            && providerCalls.length === 1,
+          zeroDecisionOrExecution:
+            executionAfter.toolCallCount === executionBefore.toolCallCount
+            && executionAfter.toolExecutionCount
+              === executionBefore.toolExecutionCount
+            && executionAfter.sideEffectCount
+              === executionBefore.sideEffectCount,
+          zeroSuccessfulCompletion:
+            completedAssistantMessages.length === 0,
+          chooseToolHasNoAutomaticRetry:
+            executionAfterRecovery.turnCount
+              === executionBeforeRecovery.turnCount
+            && executionAfterRecovery.providerCallCount
+              === executionBeforeRecovery.providerCallCount
+            && useAgentStore.getState().getAgentSurface(agent.name)
+              === 'profile',
+          queueUnchanged:
+            queueAfter.entries.length === queueBefore.entries.length,
+        };
+        capture = {
+          assertions,
+          facts: {
+            conversationId,
+            turnId,
+            typedError,
+            resolution,
+            recoveryLabel,
+            recoveryVisible,
+            advertisedToolId: unknownToolId,
+            advertisedToolVersion: unknownToolVersion,
+            bindingId: advertisedBinding.bindingId,
+            originalBindingRevision: advertisedBinding.revision.toString(),
+            isolatedBindingRevision: isolatedBinding.revision.toString(),
+            isolatedBindingEnabled: isolatedBinding.enabled,
+            providerStartObserved,
+            providerStartSequence,
+            projectedToolId:
+              errorSurface.dataset.ptAgentErrorToolId ?? '',
+            projectedToolVersion:
+              errorSurface.dataset.ptAgentErrorToolVersion ?? '',
+            providerCalls,
+            providerCallCountBefore:
+              executionBefore.providerCallCount,
+            providerCallCountAfter:
+              executionAfter.providerCallCount,
+            toolCallCountBefore: executionBefore.toolCallCount,
+            toolCallCountAfter: executionAfter.toolCallCount,
+            toolExecutionCountBefore:
+              executionBefore.toolExecutionCount,
+            toolExecutionCountAfter:
+              executionAfter.toolExecutionCount,
+            sideEffectCountBefore: executionBefore.sideEffectCount,
+            sideEffectCountAfter: executionAfter.sideEffectCount,
+            completedAssistantMessageCount:
+              completedAssistantMessages.length,
+            traceCountBefore: tracesBefore.entries.length,
+            traceCountAfter: tracesAfter.entries.length,
+            queueCountBefore: queueBefore.entries.length,
+            queueCountAfter: queueAfter.entries.length,
+            messageCountBefore: readbackBefore.messages.length,
+            messageCountAfter: readbackAfter.messages.length,
+            originalReadyCapabilityCount:
+              isolationJournal.originalReadyCapabilityCount,
+            originalReadyCapabilityHash:
+              isolationJournal.originalReadyCapabilityHash,
+            capabilitySession: capabilitySession.facts,
+          },
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        unsubscribeProviderStart?.();
+        if (isolationRef.current) {
+          try {
+            await isolationRef.current;
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            if (primaryError && turnId) {
+              await cleanupFoundationToolConversation(
+                conversationId,
+                turnId,
+              );
+              conversationDeleted = true;
+            } else {
+              const deletionErrorCode = await deleteFoundationConversation(
+                conversationId,
+              );
+              conversationDeleted = deletionErrorCode === ''
+                || deletionErrorCode.includes('AGENT_4004');
+            }
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+        try {
+          const restoration =
+            await restorePersistedFoundationCapabilityIsolation();
+          bindingRestored = restoration?.restorationVerified === true;
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.unknownToolCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+
+      if (!capture) {
+        throw new Error('agent.acceptance.unknownToolCaptureMissing');
+      }
+      return evidenceValue({
+        ...(capture as Record<string, unknown>),
+        cleanup: {
+          bindingRestored,
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            bindingRestored
+              && conversationDeleted
+              && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
     },
 
     async sendMessage({ content }: SendMessageInput) {
@@ -13649,9 +28141,390 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async waitForCapabilitySession() {
+      return waitForCapabilitySessionEvidence();
+    },
+
     async openBrowserCapabilitySession() {
       await api.openBrowserCapabilitySession();
       return { opened: true };
+    },
+
+    async runDevelopmentInvalidResourceReference({
+      sampleId,
+      capabilitySessionId,
+      deferConversationCleanup,
+      externalExecutorEvidence,
+      scenarioKey,
+    }: {
+      sampleId: string;
+      capabilitySessionId?: string;
+      deferConversationCleanup?: boolean;
+      externalExecutorEvidence?: boolean;
+      scenarioKey?: string;
+    }) {
+      return evidenceValue(
+        await runDevelopmentInvalidResourceReferenceScenario({
+          sampleId,
+          capabilitySessionId,
+          deferConversationCleanup,
+          externalExecutorEvidence,
+          scenarioKey,
+        }),
+      );
+    },
+
+    async resolveFoundationInvalidResourceExecutorTarget() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const fixture = await foundationToolFixture(
+        agent.id || agent.name,
+        'desktop_app',
+        { toolName: 'local_file_read' },
+      );
+      const actorPtid = authenticatedFoundationActorPtid();
+      const stationSessions = await api.listAgentCapabilitySessions();
+      const targets = stationSessions.sessions.filter((candidate) => (
+        candidate.ptid === actorPtid
+        && clientPlatformName(candidate.platform) === 'desktop'
+        && candidate.typed_capabilities.some(
+          (capability) =>
+            capability.capability_id === fixture.manifest.capabilityId,
+        )
+      ));
+      if (targets.length !== 1) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidResourceExecutorAmbiguous',
+        );
+      }
+      const target = targets[0];
+      return {
+        capabilitySessionId: target.session_id,
+        capabilitySessionIdHash: await sha256Hex(target.session_id),
+        targetDeviceId: target.device_id,
+        targetDeviceIdHash: await sha256Hex(target.device_id),
+        targetCapabilityId: fixture.manifest.capabilityId,
+        targetPlatform: clientPlatformName(target.platform),
+      };
+    },
+
+    async getFoundationClientExecutorCounters({
+      targetCapabilitySessionId,
+      targetDeviceId,
+      targetCapabilityId,
+    }: {
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      const [sessionIdHash, deviceIdHash, snapshot] = await Promise.all([
+        sha256Hex(targetCapabilitySessionId),
+        sha256Hex(targetDeviceId),
+        api.getAgentCapabilitySessionSnapshot(),
+      ]);
+      const target = snapshot.sessions.find((candidate) => (
+        candidate.capability_session_id_hash === sessionIdHash
+        && candidate.device_id_hash === deviceIdHash
+        && candidate.capability_ids.includes(targetCapabilityId)
+      ));
+      if (!target) {
+        throw new Error(
+          'agent.acceptance.foundationExecutorCounterTargetMismatch',
+        );
+      }
+      return {
+        capabilitySessionIdHash: sessionIdHash,
+        targetDeviceIdHash: deviceIdHash,
+        targetCapabilityId,
+        targetPlatform: clientPlatformName(target.platform),
+        executionAttemptCount: target.local_execution_attempt_count,
+        sideEffectCount: target.local_side_effect_count,
+      };
+    },
+
+    async getFoundationClientExecutorTarget() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const fixture = await foundationToolFixture(
+        agent.id || agent.name,
+        'desktop_app',
+      );
+      const evidence = await capabilitySessionEvidence();
+      const target = evidence.selectedStationSession;
+      const localTarget = evidence.selectedLocalSession;
+      if (
+        !target
+        || !localTarget
+        || !target.typed_capabilities.some(
+          (capability) =>
+            capability.capability_id === fixture.manifest.capabilityId,
+        )
+      ) {
+        throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+      }
+      const targetCapability = target.typed_capabilities.find(
+        (capability) =>
+          capability.capability_id === fixture.manifest.capabilityId,
+      );
+      if (
+        !targetCapability
+        || !localTarget.capability_ids.includes(
+          fixture.manifest.capabilityId,
+        )
+      ) {
+        throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+      }
+      return {
+        capabilitySessionId: target.session_id,
+        targetDeviceId: target.device_id,
+        targetCapabilityId: targetCapability.capability_id,
+      };
+    },
+
+    async abortFoundationInvalidResourceReference({
+      scenarioKey,
+      conversationId,
+      turnId,
+    }: {
+      scenarioKey: string;
+      conversationId?: string;
+      turnId?: string;
+    }) {
+      const locator = foundationInvalidResourceReferenceScenarios.get(
+        scenarioKey,
+      );
+      const targetConversationId =
+        String(conversationId || locator?.conversationId || '');
+      const targetTurnId = String(turnId || locator?.turnId || '');
+      if (!targetConversationId) {
+        return {
+          conversationDeleted: true,
+          localProjectionCleared: true,
+        };
+      }
+      clearFoundationLocalConversationProjection(targetConversationId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'invalid resource outer composer cleanup',
+        );
+      }
+      try {
+        await cleanupFoundationToolConversation(
+          targetConversationId,
+          targetTurnId,
+        );
+      } finally {
+        foundationInvalidResourceReferenceScenarios.delete(scenarioKey);
+      }
+      return {
+        conversationDeleted: true,
+        localProjectionCleared: true,
+      };
+    },
+
+    async setFoundationClientExecutorAvailable({
+      available,
+      targetCapabilitySessionId,
+      targetDeviceId,
+      targetCapabilityId,
+    }: {
+      available: boolean;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      const [before, beforeLocal] = await Promise.all([
+        api.listAgentCapabilitySessions(),
+        api.getAgentCapabilitySessionSnapshot(),
+      ]);
+      const [targetDeviceIdHash, targetCapabilitySessionIdHash] =
+        await Promise.all([
+          sha256Hex(targetDeviceId),
+          sha256Hex(targetCapabilitySessionId),
+        ]);
+      if (available) {
+        await api.startAgentClientExecutorSupervisor();
+      } else {
+        await api.stopAgentClientExecutorSupervisor();
+      }
+      let after = await api.listAgentCapabilitySessions();
+      let afterLocal = await api.getAgentCapabilitySessionSnapshot();
+      const deadline = Date.now() + 30_000;
+      const matchesTarget = () => after.sessions.find((session) =>
+        session.device_id === targetDeviceId
+        && session.typed_capabilities.some(
+          (capability) => capability.capability_id === targetCapabilityId,
+        ));
+      const matchesLocalTarget = () => afterLocal.sessions.find((session) =>
+        session.device_id_hash === targetDeviceIdHash
+        && session.capability_ids.includes(targetCapabilityId));
+      while (
+        (
+          available
+            ? !matchesTarget() || !matchesLocalTarget()
+            : after.sessions.some(
+                (session) => session.session_id === targetCapabilitySessionId,
+              ) || afterLocal.sessions.some(
+                (session) =>
+                  session.capability_session_id_hash
+                    === targetCapabilitySessionIdHash,
+              )
+        )
+        && Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        [after, afterLocal] = await Promise.all([
+          api.listAgentCapabilitySessions(),
+          api.getAgentCapabilitySessionSnapshot(),
+        ]);
+      }
+      const restored = matchesTarget();
+      const restoredLocal = matchesLocalTarget();
+      const sessionRemoved = !after.sessions.some(
+        (session) => session.session_id === targetCapabilitySessionId,
+      );
+      const localSessionRemoved = !afterLocal.sessions.some(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      if (
+        (available && (!restored || !restoredLocal))
+        || (!available && (!sessionRemoved || !localSessionRemoved))
+      ) {
+        throw new Error(
+          available
+            ? 'agent.acceptance.foundationExecutorRestoreTimeout'
+            : 'agent.acceptance.foundationExecutorWithdrawalTimeout',
+        );
+      }
+      const beforeTargetLocal = beforeLocal.sessions.find(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      return {
+        requestedAvailable: available,
+        targetCapabilitySessionId,
+        targetDeviceId,
+        targetCapabilityId,
+        sessionPresentBefore: before.sessions.some(
+          (session) => session.session_id === targetCapabilitySessionId,
+        ),
+        sessionRemoved,
+        localSessionRemoved,
+        sessionRestored: Boolean(restored),
+        restoredCapabilitySessionId: restored?.session_id ?? '',
+        restoredDeviceId: restored?.device_id ?? '',
+        restoredCapabilityId: restored
+          ?.typed_capabilities.find(
+            (capability) => capability.capability_id === targetCapabilityId,
+          )?.capability_id ?? '',
+        ...(available
+          ? {
+              restoredExecutionAttemptCount:
+                restoredLocal?.local_execution_attempt_count ?? -1,
+              restoredSideEffectCount:
+                restoredLocal?.local_side_effect_count ?? -1,
+            }
+          : {
+              withdrawnExecutionAttemptCount:
+                beforeTargetLocal?.local_execution_attempt_count ?? -1,
+              withdrawnSideEffectCount:
+                beforeTargetLocal?.local_side_effect_count ?? -1,
+            }),
+      };
+    },
+
+    async prepareFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async rejectFoundationExecutorUnavailable({
+      scenarioKey,
+      executorStop,
+    }: {
+      scenarioKey: string;
+      executorStop: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await rejectFoundationExecutorUnavailableScenario(
+          scenarioKey,
+          executorStop,
+        ),
+      );
+    },
+
+    async recoverFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      executorStart: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await recoverFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async abortFoundationExecutorUnavailable({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await cleanupFoundationExecutorUnavailableScenario(scenarioKey);
+      return { scenarioKey, cleaned: true };
+    },
+
+    async prepareFoundationLeaseExpired(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationLeaseExpiredScenario(input),
+      );
+    },
+
+    async dispatchFoundationLeaseExpired({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await dispatchFoundationLeaseExpiredScenario(scenarioKey),
+      );
+    },
+
+    async completeFoundationLeaseExpired(input: {
+      scenarioKey: string;
+      leaseControl: Record<string, unknown>;
+      dispatchBaseline: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await completeFoundationLeaseExpiredScenario(input),
+      );
+    },
+
+    async abortFoundationLeaseExpired({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await cleanupFoundationLeaseExpiredScenario(scenarioKey);
+      return { scenarioKey, cleaned: true };
     },
 
     async runFoundationCapabilityNegativeControl({
@@ -13664,7 +28537,9 @@ export function installAcceptanceHarness(): void {
         | 'unauthorized'
         | 'signatureTamper'
         | 'schemaMismatch'
-        | 'crossDevice';
+        | 'crossDevice'
+        | 'leasePause'
+        | 'leaseExpired';
       capabilitySessionIdHash: string;
       crossDeviceSessionId?: string;
     }) {
@@ -13721,6 +28596,72 @@ export function installAcceptanceHarness(): void {
       return {
         locale: i18n.language,
         receiverDom: foundationDomSnapshot(),
+      };
+    },
+
+    async prepareFoundationForbiddenActorOwner(input: {
+      scenarioKey: string;
+      sampleId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationForbiddenActorOwner(input),
+      );
+    },
+
+    async readFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await readFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async cleanupFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await cleanupFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async rejectFoundationForbiddenActor(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      ownerFixture: Record<string, unknown>;
+    }) {
+      return evidenceValue(await rejectFoundationForbiddenActor(input));
+    },
+
+    async completeFoundationForbiddenActorRecovery(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      ownerReadback: Record<string, unknown>;
+      ownerCleanup: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await completeFoundationForbiddenActorRecovery(input),
+      );
+    },
+
+    async abortFoundationForbiddenActor({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      const conversationId =
+        foundationForbiddenActorReceiverResources.get(scenarioKey);
+      if (conversationId) {
+        clearFoundationLocalConversationProjection(conversationId);
+        foundationForbiddenActorReceiverResources.delete(scenarioKey);
+      }
+      return {
+        scenarioKey,
+        cleaned: true,
       };
     },
 
@@ -14149,12 +29090,14 @@ export function installAcceptanceHarness(): void {
       locale,
       sampleId,
       faultControlUrl,
+      faultBoundary,
     }: {
       scenarioKey: string;
       platform: string;
       locale: string;
       sampleId: string;
       faultControlUrl: string;
+      faultBoundary?: 'text-prefix' | 'provider-started';
     }) {
       try {
         const agent = selectedAgent();
@@ -14173,6 +29116,7 @@ export function installAcceptanceHarness(): void {
           locale,
           sampleId,
           faultControlUrl,
+          faultBoundary,
         }));
       } catch (error) {
         const primary = error instanceof Error ? error.message : String(error);
@@ -14211,6 +29155,37 @@ export function installAcceptanceHarness(): void {
     }) {
       return evidenceValue(
         await restoreFoundationF06CapabilityIsolation(scenarioKey),
+      );
+    },
+
+    async foundationF06ExportRestartHandoff({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await foundationF06ReplayRecording;
+      const handoff = readFoundationF06Handoff(scenarioKey);
+      if (!handoff) {
+        throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+      }
+      return evidenceValue(handoff);
+    },
+
+    async foundationF06ImportRestartHandoff({
+      scenarioKey,
+      platform,
+      handoff,
+    }: {
+      scenarioKey: string;
+      platform: string;
+      handoff: unknown;
+    }) {
+      return evidenceValue(
+        importFoundationF06RestartHandoff(
+          scenarioKey,
+          platform,
+          handoff,
+        ),
       );
     },
 
@@ -14301,6 +29276,8 @@ export function installAcceptanceHarness(): void {
       scenarioKey,
       stationRestart,
       durableReloadEvidence,
+      preparedScenario,
+      developmentSlice,
     }: {
       platform: string;
       locale: string;
@@ -14309,7 +29286,12 @@ export function installAcceptanceHarness(): void {
       scenarioKey?: string;
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
+      preparedScenario?: Record<string, unknown>;
+      developmentSlice?: 'queue-full';
     }) {
+      if (developmentSlice && cell !== 'AS-F02') {
+        throw new Error('agent.acceptance.foundationDevelopmentSliceMismatch');
+      }
       await reportFoundationCapabilityIsolationDebug(
         'C-D',
         'entry-restoration-start',
@@ -14362,6 +29344,182 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
+      if (cell === 'BASE-FORBIDDEN_ACTOR') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationForbiddenActorPreparedScenario',
+        );
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationForbiddenActorFacts',
+        );
+        const forbiddenRuntimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationForbiddenActorRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(forbiddenRuntimeEvent.eventId ?? ''),
+          eventType: String(forbiddenRuntimeEvent.eventType ?? ''),
+          sequence: Number(forbiddenRuntimeEvent.sequence ?? 0),
+          observedAt: String(forbiddenRuntimeEvent.observedAt ?? ''),
+          streamGeneration: Number(
+            forbiddenRuntimeEvent.streamGeneration ?? 0,
+          ),
+          streamIdHash: String(forbiddenRuntimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            forbiddenRuntimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(forbiddenRuntimeEvent.payloadHash ?? ''),
+          errorType: String(forbiddenRuntimeEvent.errorType ?? ''),
+          sourceTransport: String(
+            forbiddenRuntimeEvent.sourceTransport ?? '',
+          ),
+          sourcePtidHash: String(forbiddenRuntimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            forbiddenRuntimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(forbiddenRuntimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(forbiddenRuntimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(
+            forbiddenRuntimeEvent.sourceEventType ?? '',
+          ),
+        };
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const attestation = await runFoundationDirectAttestationTurn({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = attestation.conversationId;
+        preparedTurnId = attestation.turnId;
+        turnDurationMs =
+          Number(scenario.durationMs ?? 0) + attestation.durationMs;
+        if (
+          !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationForbiddenActorPreparedScenarioInvalid',
+          );
+        }
+      }
+
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationIncompatibleCapabilityScenario({
+          capabilitySessionId,
+          sampleId,
+        });
+        const attestation = await runFoundationDirectAttestationTurn({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = attestation.conversationId;
+        preparedTurnId = attestation.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs + attestation.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationExecutorUnavailablePreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationExecutorUnavailableFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationExecutorUnavailableRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationExecutorPreparedScenarioInvalid',
+          );
+        }
+      }
+
+      if (cell === 'BASE-LEASE_EXPIRED') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationLeaseExpiredPreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationLeaseExpiredRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(runtimeEvent.eventId ?? ''),
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+          streamGeneration: Number(runtimeEvent.streamGeneration ?? 0),
+          streamIdHash: String(runtimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            runtimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(runtimeEvent.payloadHash ?? ''),
+          errorType: String(runtimeEvent.errorType ?? ''),
+          sourceTransport: String(runtimeEvent.sourceTransport ?? ''),
+          sourcePtidHash: String(runtimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            runtimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        scenarioFacts = {
+          ...evidenceRecord(
+            scenario.facts,
+            'foundationLeaseExpiredFacts',
+          ),
+          runtimeEvent: preparedRuntimeEvent.current,
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !turnDurationMs
+          || preparedRuntimeEvent.current.eventType !== 'progress'
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationLeasePreparedScenarioInvalid',
+          );
+        }
+      }
+
       if (cell === 'BASE-DUPLICATE_CONFLICT') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -14416,6 +29574,26 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-INTERRUPTED') {
+        if (!stationRestart || !scenarioKey) {
+          throw new Error(
+            'agent.acceptance.foundationInterruptedStationRestartMissing',
+          );
+        }
+        const scenario = await runFoundationInterruptedScenario({
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+          stationRestart,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-CONTEXT_OVERFLOW') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -14432,6 +29610,93 @@ export function installAcceptanceHarness(): void {
         preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
+        // #region debug-point E-H:context-overflow-scenario-return
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'scenario-returned',
+          {
+            conversationIdPresent: scenario.conversationId.length > 0,
+            conversationIdHash: scenario.conversationId
+              ? await sha256Hex(scenario.conversationId)
+              : '',
+            turnIdPresent: scenario.turnId.length > 0,
+            scenarioFactsPresent: scenarioFacts !== null,
+            cleanupPresent:
+              scenarioFacts !== null
+              && typeof scenarioFacts.cleanup === 'object'
+              && scenarioFacts.cleanup !== null,
+          },
+        );
+        // #endregion
+      }
+
+      if (cell === 'BASE-INVALID_REFERENCE') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationInvalidReferenceScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-INVALID_RESOURCE_REF') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationInvalidResourceReferencePreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationInvalidResourceReferenceFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationInvalidResourceReferenceRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(runtimeEvent.eventId ?? ''),
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+          streamGeneration: Number(runtimeEvent.streamGeneration ?? 0),
+          streamIdHash: String(runtimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            runtimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(runtimeEvent.payloadHash ?? ''),
+          errorType: String(runtimeEvent.errorType ?? ''),
+          sourceTransport: String(runtimeEvent.sourceTransport ?? ''),
+          sourcePtidHash: String(runtimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            runtimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !scenarioKey
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventId
+          || preparedRuntimeEvent.current.sequence <= 0
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationInvalidResourcePreparedScenarioInvalid',
+          );
+        }
       }
 
       if (cell === 'BASE-CREDENTIAL_MISSING') {
@@ -14583,6 +29848,13 @@ export function installAcceptanceHarness(): void {
               authoritativeAgent,
               capabilitySessionId,
               async (toolIsolation) => {
+                await reportFoundationF01Debug('A-E', 'scenario-started', {
+                  platform,
+                  locale,
+                  sampleId,
+                  disabledBindingCount: toolIsolation.disabledBindingCount,
+                  readyCapabilityCount: toolIsolation.readyCapabilityCount,
+                });
                 const conversation = await api.createAgentConversation({
                   agent_id: authoritativeAgentId,
                   title: `Foundation ${sampleId}`,
@@ -14604,14 +29876,56 @@ export function installAcceptanceHarness(): void {
                   effort: 'low',
                   thinkingMode: 'disabled',
                   clientCapabilitySessionId: capabilitySessionId,
+                  onEvent: (event, events) => {
+                    void reportFoundationF01Debug(
+                      'A-E',
+                      'turn-event-observed',
+                      {
+                        eventType: event.event,
+                        sequence: Number(event.data.seq ?? 0),
+                        stage: String(event.data.stage ?? ''),
+                        terminal:
+                          classifyAgentTurnTerminalEvent({
+                            event: event.event,
+                            data: event.data,
+                          }),
+                        eventCount: events.length,
+                        sourceDelivered: Boolean(event.sourceDelivery),
+                        sourceTransport:
+                          event.sourceDelivery?.transport ?? null,
+                        sourceSequence:
+                          event.sourceDelivery?.sequence ?? null,
+                      },
+                    );
+                  },
                 });
                 const result = await observed.result;
+                const turnId = observedTurnId(result.events);
+                await reportFoundationF01Debug('A-E', 'turn-settled', {
+                  ok: result.ok,
+                  error: result.error,
+                  turnIdPresent: turnId.length > 0,
+                  eventCount: result.events.length,
+                  observedEvents: result.events.map((event) => ({
+                    eventType: event.event,
+                    sequence: Number(event.data.seq ?? 0),
+                    stage: String(event.data.stage ?? ''),
+                    terminal:
+                      classifyAgentTurnTerminalEvent({
+                        event: event.event,
+                        data: event.data,
+                      }),
+                  })),
+                });
                 if (!result.ok) {
+                  await reportFoundationF01FailureReadback(
+                    conversation.conversation_id,
+                    turnId,
+                  );
                   throw new Error(
                     result.error || 'agent.acceptance.foundationTurnFailed',
                   );
                 }
-                const turnId = observedTurnId(result.events);
                 const terminal = [...result.events].reverse().find((event) =>
                   classifyAgentTurnTerminalEvent(event) === 'completed');
                 if (!turnId || !terminal) {
@@ -14807,6 +30121,7 @@ export function installAcceptanceHarness(): void {
         await waitForToolApprovalEvent({
           conversationId: conversation.conversation_id,
           turnId: activeTurnId,
+          streamId: active.controller.streamId,
           observed: active,
         });
         void reportFoundationQueueCapacityDebug(
@@ -14885,22 +30200,81 @@ export function installAcceptanceHarness(): void {
           queueAtCapacity.conversation_version,
         );
         const queueReceiverPromise = (async () => {
+          const projectionObservation = () => {
+            const chatState = useChatStore.getState();
+            const portalState = usePortalStore.getState();
+            const storedQueue =
+              chatState.turnQueues[conversation.conversation_id];
+            const dom = foundationDomSnapshot();
+            return {
+              conversationId: conversation.conversation_id,
+              currentSessionKey: chatState.currentSessionKey,
+              selectedConversationMatches:
+                chatState.currentSessionKey === conversation.conversation_id,
+              activeViewType: portalState.activeView?.type ?? 'none',
+              portalExpanded: portalState.expanded,
+              authoritativeQueueSize: queueAtCapacity.entries.length,
+              authoritativeQueuePositions: queueAtCapacity.entries.map(
+                (entry) => entry.queue_position,
+              ),
+              storedQueueSize: storedQueue?.entries.length ?? -1,
+              storedQueuePositions: storedQueue?.entries.map(
+                (entry) => entry.queue_position,
+              ) ?? [],
+              queueTrayPresent: Boolean(
+                document.querySelector('[data-pt-agent-turn-queue]'),
+              ),
+              composerPresent: Boolean(
+                document.querySelector('[data-pt-agent-composer]'),
+              ),
+              domQueueEntryCount: dom.queueEntries.visibleCount,
+              domQueuePositionCount: dom.queuePositions.visibleCount,
+              documentVisibilityState: document.visibilityState,
+            };
+          };
+          await reportFoundationQueueProjectionDebug(
+            'B,C',
+            'queue-sync-started',
+            projectionObservation(),
+          );
           await useChatStore.getState().syncTurnQueue(
             conversation.conversation_id,
           );
-          await waitFor(
-            () => {
-              const queueProjection = foundationDomSnapshot();
-              return (
-                queueProjection.queueEntries.visibleCount > 0
-                && queueProjection.queuePositions.visibleCount
-                  === queueAtCapacity.entries.length
-              );
-            },
-            'Foundation AS-F02 queue projection',
-            30_000,
+          await reportFoundationQueueProjectionDebug(
+            'A-D',
+            'queue-sync-completed',
+            projectionObservation(),
           );
-          return foundationDomSnapshot();
+          try {
+            await waitFor(
+              () => {
+                const queueProjection = foundationDomSnapshot();
+                return (
+                  queueProjection.queueEntries.visibleCount > 0
+                  && queueProjection.queuePositions.visibleCount
+                    === queueAtCapacity.entries.length
+                );
+              },
+              'Foundation AS-F02 queue projection',
+              30_000,
+            );
+            await reportFoundationQueueProjectionDebug(
+              'A-D',
+              'queue-projection-visible',
+              projectionObservation(),
+            );
+            return foundationDomSnapshot();
+          } catch (error) {
+            await reportFoundationQueueProjectionDebug(
+              'A-D',
+              'queue-projection-timeout',
+              {
+                ...projectionObservation(),
+                error: String(error),
+              },
+            );
+            throw error;
+          }
         })();
         const [
           overflowResult,
@@ -14911,6 +30285,145 @@ export function installAcceptanceHarness(): void {
           activeDependencyPromise,
           queueReceiverPromise,
         ]);
+        const queueBeforeEditAction = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const readbackBeforeEditAction = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+        const messageCountBeforeEditAction =
+          useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(draftText);
+        let queueFullMessage = useChatStore.getState().messages
+          .slice(messageCountBeforeEditAction)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'ADMISSION_QUEUE_FULL'
+          ));
+        await waitFor(
+          () => {
+            queueFullMessage = useChatStore.getState().messages
+              .slice(messageCountBeforeEditAction)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'ADMISSION_QUEUE_FULL'
+                && message.resolution?.type === 'editQueue'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="edit-queue"]',
+            );
+            return Boolean(
+              queueFullMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'Foundation queue-full recovery surface',
+          30_000,
+        );
+        const queueFullRecovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="edit-queue"]',
+        );
+        if (!queueFullMessage || !queueFullRecovery) {
+          throw new Error('agent.acceptance.foundationQueueFullRecoveryMissing');
+        }
+        queueFullRecovery.click();
+        await waitFor(
+          () => (
+            document.activeElement instanceof HTMLElement
+            && document.activeElement.dataset.ptAgentTurnQueue
+              === conversation.conversation_id
+          ),
+          'Foundation queue editor focus',
+          10_000,
+        );
+        const queueAfterEditAction = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const readbackAfterEditAction = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+        const queueFullTypedError = queueFullMessage.typedError;
+        const queueFullResolution = queueFullMessage.resolution;
+        if (developmentSlice === 'queue-full') {
+          const queueFocused =
+            document.activeElement instanceof HTMLElement
+            && document.activeElement.dataset.ptAgentTurnQueue
+              === conversation.conversation_id;
+          const recoveryVisible =
+            queueFullRecovery.getClientRects().length > 0;
+          await cancelFoundationQueuedTurns(conversation.conversation_id);
+          const activeCancellation = await api.cancelAgentTurn(activeTurnId);
+          active.controller.abort();
+          duplicate.controller.abort();
+          for (const queued of queuedTurns) queued.controller.abort();
+          await restorePersistedFoundationCapabilityIsolation();
+          await restorePersistedFoundationCapabilityFixture();
+          const capabilityFixtureRestored =
+            readFoundationCapabilityFixtureJournal() === null;
+          const capabilityIsolationRestored =
+            readFoundationCapabilityIsolationJournal() === null;
+          clearFoundationLocalConversationProjection(
+            conversation.conversation_id,
+          );
+          const deletionErrorCode = await deleteFoundationConversation(
+            conversation.conversation_id,
+          );
+          const cleanupComplete = (
+            deletionErrorCode.includes('AGENT_4004')
+            || deletionErrorCode === ''
+          ) && capabilityFixtureRestored && capabilityIsolationRestored;
+          const details = queueFullTypedError?.details ?? {};
+          const assertions = {
+            queueAtCapacity:
+              queueAtCapacity.entries.length === queueAtCapacity.queue_capacity,
+            typedQueueFull:
+              observedErrorCode(overflowResult.error) === 'ADMISSION_QUEUE_FULL'
+              && queueFullTypedError?.error_type === 'ADMISSION_QUEUE_FULL'
+              && queueFullTypedError?.locale_key === 'agent.errors.queueFull'
+              && queueFullTypedError.retryable === true
+              && queueFullTypedError.terminal === true
+              && stableJson(Object.keys(details).sort())
+                === stableJson(['capacity', 'conversation_id'])
+              && details.conversation_id === conversation.conversation_id
+              && Number(details.capacity) === queueAtCapacity.queue_capacity,
+            localizedRecoveryVisible:
+              recoveryVisible
+              && Boolean(queueFullRecovery.textContent?.trim()),
+            editQueueFocused: queueFocused,
+            queueStateUnchanged:
+              queueAfterEditAction.entries.length
+                === queueBeforeEditAction.entries.length
+              && queueAfterEditAction.conversation_version
+                === queueBeforeEditAction.conversation_version,
+            zeroAutomaticResend:
+              readbackAfterEditAction.messages.length
+                === readbackBeforeEditAction.messages.length,
+            cleanupComplete,
+          };
+          return evidenceValue({
+            assertions,
+            scenarioFacts: {
+              queueCapacity: queueAtCapacity.queue_capacity,
+              queueSizeBeforeAction: queueBeforeEditAction.entries.length,
+              queueSizeAfterAction: queueAfterEditAction.entries.length,
+              typedError: queueFullTypedError,
+              resolution: queueFullResolution,
+              recovery: {
+                visible: recoveryVisible,
+                queueFocused,
+              },
+              activeCancellationStatus: activeCancellation.status,
+              deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
+            },
+            cleanup: {
+              status: cleanupComplete ? 'clean' : 'failed',
+              conversationDeleted: cleanupComplete,
+              capabilityFixtureRestored,
+              capabilityIsolationRestored,
+            },
+          });
+        }
         void reportFoundationQueueCapacityDebug(
           'A,H',
           'capacity-observations-completed',
@@ -15020,7 +30533,7 @@ export function installAcceptanceHarness(): void {
         if (!active.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          active.controller.disconnectTransport();
+          await active.controller.disconnectTransport();
         }
         const [
           firstActiveEvent,
@@ -15200,6 +30713,33 @@ export function installAcceptanceHarness(): void {
             overflow: {
               errorCode: observedErrorCode(overflowResult.error),
               queueSize: queueAtCapacity.entries.length,
+              typedError: {
+                errorType: queueFullTypedError?.error_type ?? '',
+                localeKey: queueFullTypedError?.locale_key ?? '',
+                retryable: queueFullTypedError?.retryable ?? false,
+                terminal: queueFullTypedError?.terminal ?? false,
+                details: queueFullTypedError?.details ?? {},
+              },
+              resolution: {
+                type: queueFullResolution?.type ?? '',
+                conversationId: queueFullResolution?.conversationId ?? '',
+                capacity: queueFullResolution?.capacity ?? 0,
+              },
+              recovery: {
+                visible: queueFullRecovery.getClientRects().length > 0,
+                queueFocused:
+                  document.activeElement instanceof HTMLElement
+                  && document.activeElement.dataset.ptAgentTurnQueue
+                    === conversation.conversation_id,
+              },
+              queueSizeAfterAction: queueAfterEditAction.entries.length,
+              conversationVersionBeforeAction:
+                queueBeforeEditAction.conversation_version,
+              conversationVersionAfterAction:
+                queueAfterEditAction.conversation_version,
+              stationMessageDelta:
+                readbackAfterEditAction.messages.length
+                - readbackBeforeEditAction.messages.length,
             },
             cancellation: {
               queueEntryId: cancellation?.entry.queue_entry_id ?? '',
@@ -15629,13 +31169,90 @@ export function installAcceptanceHarness(): void {
         });
       }
       if (
+        cell === 'BASE-INTERRUPTED'
+        && scenarioFacts
+        && scenarioKey
+        && currentConversationId
+        && turnId
+      ) {
+        preservedReplayReadback = conversationReadback;
+        const interruptionCleanup = await cleanupFoundationF06Scenario({
+          scenarioKey,
+          conversationId: currentConversationId,
+          turnId,
+        });
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationInterruptedCleanup',
+          ),
+          ...interruptionCleanup,
+          localProjectionCleared: (
+            !useChatStore.getState().sessions.some(
+              (session) => session.id === currentConversationId,
+            )
+            && !useChatStore.getState().messages.some(
+              (message) => message.turnId === turnId,
+            )
+          ),
+        };
+      }
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        // #region debug-point E-H:context-overflow-cleanup-branch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-branch-evaluated',
+          {
+            scenarioFactsPresent: scenarioFacts !== null,
+            preparedConversationIdPresent:
+              Boolean(preparedConversationId),
+            currentConversationIdPresent:
+              Boolean(currentConversationId),
+            currentConversationMatchesPrepared:
+              Boolean(currentConversationId)
+              && currentConversationId === preparedConversationId,
+          },
+        );
+        // #endregion
+      }
+      if (
+        cell === 'BASE-CONTEXT_OVERFLOW'
+        && scenarioFacts
+        && currentConversationId
+      ) {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-cleanup-dispatch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-dispatch-entered',
+          {
+            conversationIdHash: await sha256Hex(currentConversationId),
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
+      if (
         (
-          cell === 'BASE-APPROVAL_DENIED'
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+          || cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          || cell === 'BASE-LEASE_EXPIRED'
+          || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
+          || cell === 'BASE-INVALID_REFERENCE'
+          || cell === 'BASE-INVALID_RESOURCE_REF'
           || cell === 'BASE-DUPLICATE_CONFLICT'
           || cell === 'BASE-CREDENTIAL_MISSING'
         )
@@ -15643,6 +31260,9 @@ export function installAcceptanceHarness(): void {
         && currentConversationId
       ) {
         preservedReplayReadback = conversationReadback;
+        if (cell === 'BASE-INVALID_RESOURCE_REF') {
+          clearFoundationLocalConversationProjection(currentConversationId);
+        }
         const deletionErrorCode = await deleteFoundationConversation(
           currentConversationId,
         );
@@ -15661,23 +31281,85 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
               ? 'foundationActiveMutationConflictCleanup'
+              : cell === 'BASE-FORBIDDEN_ACTOR'
+                ? 'foundationForbiddenActorCleanup'
+              : cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+                ? 'foundationIncompatibleCapabilityCleanup'
               : cell === 'BASE-CANCELLED'
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
                 ? 'foundationContextOverflowCleanup'
+              : cell === 'BASE-INVALID_REFERENCE'
+                ? 'foundationInvalidReferenceCleanup'
+              : cell === 'BASE-INVALID_RESOURCE_REF'
+                ? 'foundationInvalidResourceReferenceCleanup'
               : cell === 'BASE-DUPLICATE_CONFLICT'
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
                 ? 'foundationCredentialMissingCleanup'
+              : cell === 'BASE-EXECUTOR_UNAVAILABLE'
+                ? 'foundationExecutorUnavailableCleanup'
+              : cell === 'BASE-LEASE_EXPIRED'
+                ? 'foundationLeaseExpiredCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
                   ? 'foundationApprovalExpiredCleanup'
                   : 'foundationAttachmentRejectedCleanup',
           ),
+          ...(cell === 'BASE-INVALID_RESOURCE_REF'
+            ? {
+                localProjectionCleared: (
+                  !useChatStore.getState().sessions.some(
+                    (session) => session.id === currentConversationId,
+                  )
+                  && !useChatStore.getState().messages.some(
+                    (message) => message.turnId === preparedTurnId,
+                  )
+                ),
+              }
+            : {}),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
+        if (
+          cell === 'BASE-INVALID_RESOURCE_REF'
+          && scenarioKey
+          && conversationDeleted
+          && evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationInvalidResourceReferenceCleanup',
+          ).localProjectionCleared === true
+        ) {
+          foundationInvalidResourceReferenceScenarios.delete(scenarioKey);
+        }
+        if (
+          cell === 'BASE-LEASE_EXPIRED'
+          && scenarioKey
+          && conversationDeleted
+        ) {
+          foundationLeaseExpiredScenarios.delete(scenarioKey);
+        }
+        if (cell === 'BASE-CONTEXT_OVERFLOW') {
+          const contextOverflowCleanup = evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationContextOverflowCleanup',
+          );
+          // #region debug-point E-H:context-overflow-cleanup-result
+          await reportFoundationContextOverflowRecoveryDebug(
+            'E-H',
+            'cleanup-deletion-completed',
+            {
+              deletionErrorCodePresent: deletionErrorCode.length > 0,
+              draftCleared: contextOverflowCleanup.draftCleared === true,
+              localProjectionCleared:
+                contextOverflowCleanup.localProjectionCleared === true,
+              conversationDeleted:
+                contextOverflowCleanup.conversationDeleted === true,
+            },
+          );
+          // #endregion
+        }
         if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
           await reportActiveMutationConflictDebug(
             'attestation-cleanup-complete',
@@ -15716,6 +31398,25 @@ export function installAcceptanceHarness(): void {
         locale,
         sampleId,
       };
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts?.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-assertion-input
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'assertion-input',
+          {
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
       const assertions = await evaluateDirectCellAssertions(assertionContext);
 
       const receiverDom = foundationDomSnapshot();
@@ -15787,6 +31488,55 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
       }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const owner = evidenceRecord(
+          scenarioFacts.owner,
+          'foundationForbiddenActorOwner',
+        );
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationForbiddenActorStation',
+        );
+        stationReadback.entityKind = 'agent-conversation-owner-boundary';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(owner.resourceId),
+        );
+        stationReadback.revision = Number(owner.versionAfter);
+        stationReadback.stateHash = String(owner.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          conversation: station.conversationDelta,
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        );
+        stationReadback.entityKind = 'agent-capability-readiness';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.agentId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.readiness = scenarioFacts.readiness;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: evidenceRecord(
+            scenarioFacts.execution,
+            'foundationIncompatibleCapabilityExecution',
+          ).providerCallDelta,
+        };
+      }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -15794,6 +31544,19 @@ export function installAcceptanceHarness(): void {
         );
         stationReadback.entityKind = 'agent-turn-cancellation';
         stationReadback.entityIdHash = await sha256Hex(String(station.turnId));
+        stationReadback.revision = Number(station.terminalEventCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+      }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInterruptedStation',
+        );
+        stationReadback.entityKind = 'agent-turn-interruption';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.turnId),
+        );
         stationReadback.revision = Number(station.terminalEventCount);
         stationReadback.stateHash = await sha256Hex(stableJson(station));
         stationReadback.typedError = scenarioFacts.outcome;
@@ -15817,6 +31580,122 @@ export function installAcceptanceHarness(): void {
           message: station.messageDelta,
           queue: station.queueDelta,
           providerExecution: station.providerExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        );
+        stationReadback.entityKind = 'agent-reference-recovery';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.successfulTurnId),
+        );
+        stationReadback.revision = Number(
+          station.successfulConversationVersion,
+        );
+        stationReadback.stateHash = String(station.successfulReadbackHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          rejectedTurn: station.rejectedTurnDelta,
+          rejectedMessage: station.rejectedMessageDelta,
+          rejectedQueue: station.rejectedQueueDelta,
+          rejectedProviderExecution:
+            station.rejectedProviderExecutionDelta,
+          successfulTurn: station.successfulTurnDelta,
+          successfulMessage: station.successfulMessageDelta,
+          successfulQueue: station.successfulQueueDelta,
+          successfulProviderExecution:
+            station.successfulProviderExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidResourceReferenceStation',
+        );
+        stationReadback.entityKind = 'agent-client-resource-reference';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.toolCallId),
+        );
+        stationReadback.revision = Number(station.factCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          executionAttempt:
+            Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).executionAttemptCountAfter)
+            - Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).executionAttemptCountBefore),
+          localSideEffect:
+            Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).sideEffectCountAfter)
+            - Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).sideEffectCountBefore),
+          providerContinuation:
+            station.continuationId === '' ? 0 : 1,
+        };
+      }
+      if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationLeaseExpiredStation',
+        );
+        const lease = evidenceRecord(
+          scenarioFacts.lease,
+          'foundationLeaseExpiredLease',
+        );
+        const executor = evidenceRecord(
+          scenarioFacts.executor,
+          'foundationLeaseExpiredExecutor',
+        );
+        const before = evidenceRecord(
+          executor.before,
+          'foundationLeaseExpiredExecutorBefore',
+        );
+        const after = evidenceRecord(
+          executor.after,
+          'foundationLeaseExpiredExecutorAfter',
+        );
+        stationReadback.entityKind = 'agent-client-capability-lease';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.toolCallId),
+        );
+        stationReadback.revision = Number(lease.sourceLeaseRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson({
+          station,
+          lease,
+          audit: scenarioFacts.audit,
+        }));
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          executionAttempt:
+            Number(after.localExecutionAttemptCount)
+            - Number(before.localExecutionAttemptCount),
+          localSideEffect:
+            Number(after.localSideEffectCount)
+            - Number(before.localSideEffectCount),
+          stationExecutionAttempt:
+            Number(station.executionAttemptCountAfter)
+            - Number(station.executionAttemptCountBefore),
+          stationExecutionClaim:
+            station.executionClaimIdBefore === station.executionClaimIdAfter
+              ? 0
+              : 1,
+          stationSideEffect:
+            station.sideEffectReceiptIdBefore === station.sideEffectReceiptIdAfter
+              ? 0
+              : 1,
+          result: station.resultId === '' ? 0 : 1,
+          continuation: station.continuationId === '' ? 0 : 1,
         };
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
@@ -15861,6 +31740,23 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
         stationReadback.credentialStatus = station.credentialStatusAfter;
+      }
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationExecutorUnavailableStation',
+        );
+        const lineage = evidenceRecord(
+          station.lineage,
+          'foundationExecutorUnavailableLineage',
+        );
+        stationReadback.entityKind = 'agent-tool-call';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(lineage.toolCallId),
+        );
+        stationReadback.revision = Number(lineage.decisionRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
       }
       if (
         (
@@ -15975,8 +31871,14 @@ export function installAcceptanceHarness(): void {
             }
           : (
             cell === 'BASE-ATTACHMENT_REJECTED'
+            || cell === 'BASE-FORBIDDEN_ACTOR'
+            || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
             || cell === 'BASE-CANCELLED'
+            || cell === 'BASE-INTERRUPTED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
+            || cell === 'BASE-INVALID_REFERENCE'
+            || cell === 'BASE-INVALID_RESOURCE_REF'
+            || cell === 'BASE-LEASE_EXPIRED'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
@@ -15993,7 +31895,13 @@ export function installAcceptanceHarness(): void {
                 ...(
                   (
                     cell === 'BASE-CANCELLED'
+                    || cell === 'BASE-INTERRUPTED'
+                    || cell === 'BASE-FORBIDDEN_ACTOR'
+                    || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
+                    || cell === 'BASE-INVALID_REFERENCE'
+                    || cell === 'BASE-INVALID_RESOURCE_REF'
+                    || cell === 'BASE-LEASE_EXPIRED'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
@@ -16038,11 +31946,14 @@ export function installAcceptanceHarness(): void {
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
       const measurementLimitMs =
-        cell === 'AS-F04'
+        cell === 'BASE-LEASE_EXPIRED'
+        || cell === 'AS-F04'
         || cell === 'AS-F12'
         || cell === 'BASE-APPROVAL_EXPIRED'
           ? 900_000
           : cell === 'AS-F06'
+            || cell === 'BASE-INVALID_REFERENCE'
+            || cell === 'BASE-INVALID_RESOURCE_REF'
             ? 300_000
             : 120_000;
       const measurementReport: Record<string, unknown> = {
@@ -16059,7 +31970,53 @@ export function installAcceptanceHarness(): void {
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
       const sideEffectCount: Record<string, unknown> =
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? (() => {
+              const station = evidenceRecord(
+                scenarioFacts.station,
+                'foundationForbiddenActorStation',
+              );
+              return {
+                counterId: String(
+                  evidenceRecord(
+                    scenarioFacts.owner,
+                    'foundationForbiddenActorOwner',
+                  ).resourceId,
+                ),
+                count:
+                  Number(station.conversationDelta)
+                  + Number(station.turnDelta)
+                  + Number(station.messageDelta)
+                  + Number(station.queueDelta)
+                  + Number(station.providerExecutionDelta),
+                maximum: 0,
+                measurements: station,
+              };
+            })()
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? (() => {
+                const execution = evidenceRecord(
+                  scenarioFacts.execution,
+                  'foundationIncompatibleCapabilityExecution',
+                );
+                return {
+                  counterId: String(
+                    evidenceRecord(
+                      scenarioFacts.station,
+                      'foundationIncompatibleCapabilityStation',
+                    ).turnId,
+                  ),
+                  count:
+                    Number(execution.runtimeExecutionDelta)
+                    + Number(execution.providerCallDelta)
+                    + Number(execution.toolCallDelta)
+                    + Number(execution.toolExecutionDelta)
+                    + Number(execution.sideEffectDelta),
+                  maximum: 0,
+                  measurements: execution,
+                };
+              })()
+          : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
           ? {
               counterId: await sha256Hex(stableJson({
                 cell,
@@ -16092,6 +32049,32 @@ export function installAcceptanceHarness(): void {
                     cancelledEventCount: station.cancelledEventCount,
                     liveTerminalEventCount: station.liveTerminalEventCount,
                     liveDoneEventCount: station.liveDoneEventCount,
+                  },
+                };
+              })()
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInterruptedStation',
+                );
+                const recovery = evidenceRecord(
+                  scenarioFacts.recovery,
+                  'foundationInterruptedRecovery',
+                );
+                return {
+                  counterId: String(station.turnId),
+                  count:
+                    Number(station.doneEventCount)
+                    + Number(station.liveDoneEventCount)
+                    + Number(recovery.completedInferenceCount),
+                  maximum: 0,
+                  measurements: {
+                    terminalEventCount: station.terminalEventCount,
+                    errorEventCount: station.errorEventCount,
+                    recoveryAttemptCount: station.recoveryAttemptCount,
+                    recoveryAttemptStatus:
+                      recovery.recoveryAttemptStatus,
                   },
                 };
               })()
@@ -16137,6 +32120,128 @@ export function installAcceptanceHarness(): void {
                   },
                 };
               })()
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInvalidReferenceStation',
+                );
+                const count =
+                  Number(station.rejectedTurnDelta)
+                  + Number(station.rejectedMessageDelta)
+                  + Number(station.rejectedQueueDelta)
+                  + Number(station.rejectedProviderExecutionDelta);
+                return {
+                  counterId: String(station.referenceHash),
+                  count,
+                  maximum: 0,
+                  measurements: {
+                    rejectedTurnDelta: station.rejectedTurnDelta,
+                    rejectedMessageDelta: station.rejectedMessageDelta,
+                    rejectedQueueDelta: station.rejectedQueueDelta,
+                    rejectedProviderExecutionDelta:
+                      station.rejectedProviderExecutionDelta,
+                    successfulTurnDelta: station.successfulTurnDelta,
+                    successfulMessageDelta: station.successfulMessageDelta,
+                    successfulProviderExecutionDelta:
+                      station.successfulProviderExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInvalidResourceReferenceStation',
+                );
+                const executor = evidenceRecord(
+                  scenarioFacts.executor,
+                  'foundationInvalidResourceReferenceExecutor',
+                );
+                const executionAttemptDelta =
+                  Number(executor.executionAttemptCountAfter)
+                  - Number(executor.executionAttemptCountBefore);
+                const sideEffectDelta =
+                  Number(executor.sideEffectCountAfter)
+                  - Number(executor.sideEffectCountBefore);
+                const providerContinuationDelta =
+                  station.continuationId === '' ? 0 : 1;
+                return {
+                  counterId: String(station.resourceRefHash),
+                  count:
+                    executionAttemptDelta
+                    + sideEffectDelta
+                    + providerContinuationDelta,
+                  maximum: 0,
+                  measurements: {
+                    executionAttemptDelta,
+                    sideEffectDelta,
+                    providerContinuationDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationLeaseExpiredStation',
+                );
+                const executor = evidenceRecord(
+                  scenarioFacts.executor,
+                  'foundationLeaseExpiredExecutor',
+                );
+                const before = evidenceRecord(
+                  executor.before,
+                  'foundationLeaseExpiredExecutorBefore',
+                );
+                const after = evidenceRecord(
+                  executor.after,
+                  'foundationLeaseExpiredExecutorAfter',
+                );
+                const executionAttemptDelta =
+                  Number(after.localExecutionAttemptCount)
+                  - Number(before.localExecutionAttemptCount);
+                const localSideEffectDelta =
+                  Number(after.localSideEffectCount)
+                  - Number(before.localSideEffectCount);
+                const stationExecutionAttemptDelta =
+                  Number(station.executionAttemptCountAfter)
+                  - Number(station.executionAttemptCountBefore);
+                const stationExecutionClaimDelta =
+                  station.executionClaimIdBefore
+                    === station.executionClaimIdAfter
+                    ? 0
+                    : 1;
+                const stationSideEffectDelta =
+                  station.sideEffectReceiptIdBefore
+                    === station.sideEffectReceiptIdAfter
+                    ? 0
+                    : 1;
+                const stationResultDelta = station.resultId === '' ? 0 : 1;
+                const continuationDelta =
+                  station.continuationId === '' ? 0 : 1;
+                return {
+                  counterId: String(station.toolCallId),
+                  count:
+                    executionAttemptDelta
+                    + localSideEffectDelta
+                    + stationExecutionAttemptDelta
+                    + stationExecutionClaimDelta
+                    + stationSideEffectDelta
+                    + stationResultDelta
+                    + continuationDelta,
+                  maximum: 0,
+                  measurements: {
+                    executionAttemptDelta,
+                    localSideEffectDelta,
+                    stationExecutionAttemptDelta,
+                    stationExecutionClaimDelta,
+                    stationSideEffectDelta,
+                    stationResultDelta,
+                    continuationDelta,
+                  },
+                };
+              })()
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
@@ -16178,6 +32283,26 @@ export function installAcceptanceHarness(): void {
                     providerExecutionDelta:
                       station.providerExecutionDelta,
                   },
+                };
+              })()
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationExecutorUnavailableStation',
+                );
+                const lineage = evidenceRecord(
+                  station.lineage,
+                  'foundationExecutorUnavailableLineage',
+                );
+                return {
+                  counterId: String(lineage.toolCallId),
+                  count:
+                    Number(station.executionAttemptCount)
+                    + Number(station.sideEffectCount)
+                    + Number(station.resultCount)
+                    + Number(station.continuationCount),
+                  maximum: 0,
                 };
               })()
           : (
@@ -16314,6 +32439,20 @@ export function installAcceptanceHarness(): void {
               'foundationActiveMutationConflictCleanup',
             )
           : null;
+      const forbiddenActorCleanup =
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationForbiddenActorCleanup',
+            )
+          : null;
+      const incompatibleCapabilityCleanup =
+        cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationIncompatibleCapabilityCleanup',
+            )
+          : null;
       const cancellationCleanup =
         cell === 'BASE-CANCELLED' && scenarioFacts
           ? evidenceRecord(
@@ -16321,11 +32460,39 @@ export function installAcceptanceHarness(): void {
               'foundationCancelledCleanup',
             )
           : null;
+      const interruptionCleanup =
+        cell === 'BASE-INTERRUPTED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInterruptedCleanup',
+            )
+          : null;
       const contextOverflowCleanup =
         cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
           ? evidenceRecord(
               scenarioFacts.cleanup,
               'foundationContextOverflowCleanup',
+            )
+          : null;
+      const invalidReferenceCleanup =
+        cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInvalidReferenceCleanup',
+            )
+          : null;
+      const invalidResourceReferenceCleanup =
+        cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInvalidResourceReferenceCleanup',
+            )
+          : null;
+      const leaseExpiredCleanup =
+        cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationLeaseExpiredCleanup',
             )
           : null;
       const duplicateConflictCleanup =
@@ -16344,7 +32511,42 @@ export function installAcceptanceHarness(): void {
           : null;
       const cleanup: Record<string, unknown> = {
         status: (
-          activeMutationCleanup
+          forbiddenActorCleanup
+            ? (
+                forbiddenActorCleanup.localProjectionCleared === true
+                && forbiddenActorCleanup.foreignResourceDeleted === true
+                && forbiddenActorCleanup.foreignAgentDeleted === true
+                && forbiddenActorCleanup.ownerSelectionRestored === true
+                && forbiddenActorCleanup.receiverRestored === true
+                && forbiddenActorCleanup.conversationDeleted === true
+              )
+            : invalidResourceReferenceCleanup
+              ? (
+                  invalidResourceReferenceCleanup.bindingRestored === true
+                  && invalidResourceReferenceCleanup.localProjectionCleared
+                    === true
+                  && invalidResourceReferenceCleanup.conversationDeleted
+                    === true
+                )
+            : leaseExpiredCleanup
+              ? (
+                  leaseExpiredCleanup.bindingRestored === true
+                  && leaseExpiredCleanup.turnCancelled === true
+                  && leaseExpiredCleanup.conversationDeleted === true
+                )
+            : incompatibleCapabilityCleanup
+              ? (
+                  incompatibleCapabilityCleanup.localProjectionCleared === true
+                  && incompatibleCapabilityCleanup.conversationDeleted === true
+                  && incompatibleCapabilityCleanup.disposableAgentDeleted === true
+                  && incompatibleCapabilityCleanup.capabilityBindingRemoved === true
+                  && incompatibleCapabilityCleanup.fixtureProviderRestored === true
+                  && incompatibleCapabilityCleanup.fixtureModelDeleted === true
+                  && incompatibleCapabilityCleanup.modelConfigurationUnchanged === true
+                  && incompatibleCapabilityCleanup.restoredSelection
+                    === incompatibleCapabilityCleanup.priorSelection
+                )
+            : activeMutationCleanup
             ? (
                 activeMutationCleanup.deletedFromRoster === true
                 && activeMutationCleanup.deletedFromStation === true
@@ -16358,11 +32560,26 @@ export function installAcceptanceHarness(): void {
                   && Number(cancellationCleanup.terminalCleanupCount) === 1
                   && cancellationCleanup.conversationDeleted === true
                 )
+            : interruptionCleanup
+              ? (
+                  interruptionCleanup.recoveryAttemptSettled === true
+                  && interruptionCleanup.cleanupComplete === true
+                  && interruptionCleanup.handoffCleared === true
+                  && interruptionCleanup.conversationDeleted === true
+                  && interruptionCleanup.recoveryRecordCleared === true
+                  && interruptionCleanup.localProjectionCleared === true
+                )
             : contextOverflowCleanup
               ? (
                   contextOverflowCleanup.draftCleared === true
                   && contextOverflowCleanup.localProjectionCleared === true
                   && contextOverflowCleanup.conversationDeleted === true
+                )
+            : invalidReferenceCleanup
+              ? (
+                  invalidReferenceCleanup.draftCleared === true
+                  && invalidReferenceCleanup.localProjectionCleared === true
+                  && invalidReferenceCleanup.conversationDeleted === true
                 )
             : duplicateConflictCleanup
               ? (
@@ -16392,6 +32609,25 @@ export function installAcceptanceHarness(): void {
                     scenarioFacts.cleanup,
                     'foundationAttachmentRejectedCleanup',
                   ).conversationDeleted === true
+                )
+            : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+              ? (
+                  evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).conversationDeleted === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).bindingRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).executorRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).turnCancelled === true
                 )
             : (
               cell === 'BASE-APPROVAL_DENIED'
@@ -16456,6 +32692,12 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -16465,7 +32707,15 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CANCELLED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
@@ -16475,12 +32725,19 @@ export function installAcceptanceHarness(): void {
       };
 
       const receiver = (
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        cell === 'BASE-FORBIDDEN_ACTOR'
+        || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+        || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
+        || cell === 'BASE-INTERRUPTED'
+        || cell === 'BASE-EXECUTOR_UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
+        || cell === 'BASE-INVALID_REFERENCE'
+        || cell === 'BASE-INVALID_RESOURCE_REF'
+        || cell === 'BASE-LEASE_EXPIRED'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
@@ -16500,7 +32757,47 @@ export function installAcceptanceHarness(): void {
         receiverSelector = '[data-pt-agent-message-attachment]';
         receiverText = receiverDom.messageAttachments.text;
       } else if (receiver) {
-        if (
+        if (cell === 'BASE-FORBIDDEN_ACTOR') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.accountGateObserved === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="switch-account"],'
+            + '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.profileVisible === true
+            && receiver.modelSelectionVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="choose-compatible-model"],'
+            + '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"],'
+            + '[data-pt-agent-profile-model]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-tool-recovery="reconnect-executor"],'
+            + '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
         ) {
@@ -16538,6 +32835,21 @@ export function installAcceptanceHarness(): void {
             errorText: receiver.errorText,
             recoveryVisible: receiver.recoveryVisible,
           };
+        } else if (cell === 'BASE-INTERRUPTED') {
+          receiverVisible =
+            receiver.visible === true
+            && receiver.terminalStatus === 'interrupted'
+            && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-terminal-status="interrupted"]'
+            + '[data-pt-agent-error-type="LIFECYCLE_INTERRUPTED"] '
+            + '[data-pt-agent-message-error-recovery="recover"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
         } else if (cell === 'BASE-CONTEXT_OVERFLOW') {
           receiverVisible =
             receiver.errorVisible === true
@@ -16545,6 +32857,54 @@ export function installAcceptanceHarness(): void {
           receiverSelector =
             '[data-pt-agent-message-error-text="agent.errors.contextOverflow"],'
             + '[data-pt-agent-message-error-recovery="reduce-context"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-INVALID_REFERENCE') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.removalVisible === true
+            && receiver.removalExecuted === true
+            && receiver.successfulAssistantVisible === true
+            && Number(receiver.successfulAssistantCount) === 1;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"],'
+            + '[data-pt-agent-message-error-recovery="remove-reference"],'
+            + '[data-pt-agent-message="assistant"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            removalText: receiver.removalText,
+            successfulAssistantId: receiver.successfulAssistantId,
+          };
+        } else if (cell === 'BASE-INVALID_RESOURCE_REF') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && Number(receiver.pickerActivationCount) === 1;
+          receiverSelector =
+            '[data-pt-agent-message-error-text='
+            + '"agent.errors.invalidResourceReference"],'
+            + '[data-pt-agent-message-error-recovery='
+            + '"choose-resource-again"],'
+            + '[data-pt-agent-resource-picker]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-LEASE_EXPIRED') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.errorClearedAfterReconcile === true
+            && receiver.messageLoading === true
+            && receiver.terminalStatus === ''
+            && receiver.toolCallPending === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text='
+            + '"agent.errors.clientLeaseExpired"],'
+            + '[data-pt-agent-message-error-recovery="reconcile"]';
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
@@ -16602,6 +32962,29 @@ export function installAcceptanceHarness(): void {
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
         replayEvidence.turnId = null;
       }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationForbiddenActorReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationIncompatibleCapabilityReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        ).turnId;
+      }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const replay = evidenceRecord(
           scenarioFacts.replay,
@@ -16609,6 +32992,24 @@ export function installAcceptanceHarness(): void {
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInterruptedReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationExecutorUnavailableReplay',
+        );
+        replayEvidence.sourceHash = replay.acknowledgementSourceHash;
+        replayEvidence.replayHash = replay.acknowledgementReplayHash;
         replayEvidence.equal = replay.equal;
       }
       if (
@@ -16645,6 +33046,42 @@ export function installAcceptanceHarness(): void {
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInvalidReferenceReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        ).successfulTurnId;
+      }
+      if (cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInvalidResourceReferenceReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidResourceReferenceStation',
+        ).turnId;
+      }
+      if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationLeaseExpiredReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = preparedTurnId;
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -16754,6 +33191,28 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
+          cell === 'BASE-INTERRUPTED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationF06Scenario({
+              scenarioKey,
+              conversationId: preparedConversationId ?? '',
+              turnId: preparedTurnId ?? '',
+            });
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInterruptionCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
           cell === 'BASE-CANCELLED'
           && preparedConversationId
         ) {
@@ -16791,6 +33250,42 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationForbiddenActorAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationIncompatibleCapabilityAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
           cell === 'BASE-ATTACHMENT_REJECTED'
           && preparedConversationId
         ) {
@@ -16813,22 +33308,106 @@ export function installAcceptanceHarness(): void {
           && preparedConversationId
         ) {
           try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
             const textarea = document.querySelector<HTMLTextAreaElement>(
               '[data-pt-agent-composer-input]',
             );
             if (textarea) {
-              const setTextareaValue = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype,
-                'value',
-              )?.set;
-              setTextareaValue?.call(textarea, '');
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              await setFoundationComposerDraft(
+                '',
+                'context overflow outer composer cleanup',
+              );
             }
             await deleteFoundationConversation(preparedConversationId);
           } catch (cleanupError) {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationContextOverflowCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INVALID_REFERENCE'
+          && preparedConversationId
+        ) {
+          try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            );
+            if (textarea) {
+              await setFoundationComposerDraft(
+                '',
+                'invalid reference outer composer cleanup',
+              );
+            }
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInvalidReferenceCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INVALID_RESOURCE_REF'
+          && preparedConversationId
+        ) {
+          try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            try {
+              await cleanupFoundationToolConversation(
+                preparedConversationId,
+                preparedTurnId ?? '',
+              );
+            } finally {
+              if (scenarioKey) {
+                foundationInvalidResourceReferenceScenarios.delete(
+                  scenarioKey,
+                );
+              }
+            }
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInvalidResourceCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-LEASE_EXPIRED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationLeaseExpiredScenario(scenarioKey);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationLeaseExpiredCleanupFailed',
               ),
               {
                 primaryError: error,
@@ -16847,6 +33426,27 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationCredentialMissingAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          && preparedConversationId
+        ) {
+          try {
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationExecutorUnavailableCleanupFailed',
               ),
               {
                 primaryError: error,

@@ -325,11 +325,12 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		return nil
 	}
 
-	notifications, replayBoundary, replayFence, unsubscribe, err := h.convService.SubscribeTurnEvents(
+	notifications, replayBoundary, replayFence, unsubscribe, err := h.convService.SubscribeTurnAttemptEvents(
 		ctx,
 		subjectActorID(ctx),
 		input.GetConversationId(),
 		input.GetTurnId(),
+		input.GetAttemptId(),
 	)
 	if err != nil {
 		logger.Warnf(ctx, "failed to subscribe turn events: conv_id=%s err=%v", input.GetConversationId(), err)

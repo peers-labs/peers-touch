@@ -83,7 +83,7 @@
     },
     "agent-v2-evaluation-lab-e2e": {
       "expectedTuples": 57,
-      "roles": ["receiver-dom", "station-readback", "turn-trace", "metrics-lineage", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
+      "roles": ["cell-results", "receiver-dom", "station-readback", "runtime-events", "turn-trace", "metrics-lineage", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
     }
   }
 }

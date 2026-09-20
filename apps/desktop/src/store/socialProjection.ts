@@ -41,6 +41,7 @@ export interface DesktopUnifiedConversationLike {
   federatedHandle?: string;
   homeStationDomain?: string;
   homeStationPeerId?: string;
+  homeStationName?: string;
   federationName?: string;
   memberCount?: number;
   muted?: boolean;
@@ -190,6 +191,7 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   federatedHandle?: string;
   homeStationDomain?: string;
   homeStationPeerId?: string;
+  homeStationName?: string;
   federationName?: string;
   memberCount?: number;
 };
@@ -316,6 +318,7 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     federatedHandle: conversation.federatedHandle,
     homeStationDomain: conversation.homeStationDomain,
     homeStationPeerId: conversation.homeStationPeerId,
+    homeStationName: conversation.homeStationName,
     federationName: conversation.federationName,
     memberCount: conversation.memberCount,
   };
