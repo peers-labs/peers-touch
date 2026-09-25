@@ -321,6 +321,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         class Session:
             def __init__(self) -> None:
+                self.refresh_attempts = 0
                 self.snapshots = [
                     {
                         "physicalTotalBytes": 3_000_000,
@@ -369,17 +370,25 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 raise AssertionError(action)
 
             def execute_script(self, script: str) -> object:
+                if "data-chat-storage-refresh" in script:
+                    self.refresh_attempts += 1
+                    return self.refresh_attempts >= 3
                 if "data-chat-storage-summary" in script:
                     return self.snapshots.pop(0)
                 return True
 
-        result = SimulatorSocialGate(
-            "storage-cache-cleanup"
-        )._run_storage_cache_cleanup_journey(
-            session=Session(),
-            journey_id="run",
-        )
+        session = Session()
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep",
+        ):
+            result = SimulatorSocialGate(
+                "storage-cache-cleanup"
+            )._run_storage_cache_cleanup_journey(
+                session=session,
+                journey_id="run",
+            )
 
+        self.assertEqual(session.refresh_attempts, 3)
         self.assertEqual(result["releasedBytes"], 2_200_000)
         self.assertTrue(result["draftPreserved"])
         self.assertTrue(result["messagingIdentityPreserved"])

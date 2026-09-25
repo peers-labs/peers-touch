@@ -488,13 +488,20 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 },
             },
         )
-        session.execute_script(
-            """
+        def click_storage_refresh() -> bool | None:
+            clicked = session.execute_script(
+                """
 const button = document.querySelector('[data-chat-storage-refresh]');
-if (!button) throw new Error('storage refresh action missing');
+if (!button) return false;
 button.click();
 return true;
 """
+            )
+            return True if clicked is True else None
+
+        self._wait_for_value(
+            click_storage_refresh,
+            "storage refresh action",
         )
         before = self._wait_for_storage_snapshot(
             session,
