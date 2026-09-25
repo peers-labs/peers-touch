@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   accessStart: vi.fn(),
   accessSubmitLogin: vi.fn(),
+  authRestoreSession: vi.fn(),
   stationBindingComplete: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../services/desktop_api', () => ({
   api: {
     accessStart: mocks.accessStart,
     accessSubmitLogin: mocks.accessSubmitLogin,
+    authRestoreSession: mocks.authRestoreSession,
     stationBindingComplete: mocks.stationBindingComplete,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
@@ -83,6 +85,7 @@ describe('session authentication convergence', () => {
       },
     });
     mocks.accessSubmitLogin.mockResolvedValue(authenticatedResponse);
+    mocks.authRestoreSession.mockResolvedValue(authenticatedResponse);
     mocks.stationBindingComplete.mockResolvedValue({ phase: 'bound' });
     mocks.authLogout.mockResolvedValue(undefined);
     mocks.ensureStationSession.mockResolvedValue({
@@ -107,6 +110,16 @@ describe('session authentication convergence', () => {
 
     expect(authenticatedDuringPipeline).toBe(true);
     expect(useSessionStore.getState().authenticated).toBe(true);
+    expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('completes the verified Station binding before publishing a restored session', async () => {
+    useSessionStore.getState().reset();
+
+    await useSessionStore.getState().restoreSession();
+
+    expect(mocks.authRestoreSession).toHaveBeenCalledOnce();
+    expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
     expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
   });
 
