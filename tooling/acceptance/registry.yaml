@@ -262,6 +262,31 @@
       ]
     },
     {
+      "id": "chat-storage-observability",
+      "features": [
+        "chat-storage-observability"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/chat/storage.proto",
+          "packages/messaging-core/src/storage_governance/**",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+          "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+          "apps/mobile/src-tauri/src/messaging/**",
+          "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+          "apps/mobile/src/pages/settings/SettingsSections.tsx",
+          "tooling/acceptance/environments/chat-storage-native.yaml",
+          "tooling/acceptance/provisioners/chat_storage_native.py",
+          "tooling/acceptance/gates/chat/storage_governance_*.py"
+        ]
+      },
+      "require": [
+        "chat-storage-contract",
+        "chat-storage-accounting-e2e"
+      ]
+    },
+    {
       "id": "station-messaging",
       "features": [
         "chat-service-contract",

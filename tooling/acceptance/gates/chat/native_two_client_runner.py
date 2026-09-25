@@ -52,6 +52,7 @@ LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
+STORAGE_ACCOUNTING_GATE_ID = "chat-storage-accounting-e2e"
 CURRENT_PROFILE_GATE_IDS = frozenset(
     {
         CURRENT_PROFILE_GATE_ID,
@@ -129,6 +130,8 @@ def is_current_profile_gate(gate_id: str) -> bool:
 
 
 def journey_for_gate(gate_id: str) -> str:
+    if gate_id == STORAGE_ACCOUNTING_GATE_ID:
+        return "storage-observability"
     if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
         return "onboarding-first-message"
     if gate_id == LIFECYCLE_DIRECT_GATE_ID:

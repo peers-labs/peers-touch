@@ -73,6 +73,8 @@
     "chat-lifecycle-mixed-client-same-station-e2e",
     "chat-lifecycle-mixed-client-cross-station-e2e",
     "chat-lifecycle-mixed-client-multi-device-e2e",
+    "chat-lifecycle-call-resolution-e2e",
+    "chat-lifecycle-mixed-client-group-mls-e2e",
     "chat-lifecycle-tree-zero-reference-e2e",
     "proto-build",
     "station-messaging-unit",

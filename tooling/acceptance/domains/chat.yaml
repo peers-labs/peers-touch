@@ -12,6 +12,7 @@
     "chat-native-visible-clients",
     "chat-mixed-client-convergence",
     "chat-client-unification-integrity",
+    "chat-storage-observability",
     "chat-message-interactions",
     "chat-typing-presence"
   ],

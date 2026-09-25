@@ -103,7 +103,15 @@ export function ChatStorageSettings() {
 
   return (
     <SettingsContainer fullHeight maxWidth={900}>
-      <Flexbox horizontal align="center" justify="space-between" gap={12}>
+      <Flexbox
+        horizontal
+        align="center"
+        justify="space-between"
+        gap={12}
+        data-chat-storage-summary
+        data-chat-storage-physical-bytes={String(snapshot.physicalTotalBytes)}
+        data-chat-storage-measured-at={String(snapshot.measuredAtUnixMs)}
+      >
         <Flexbox gap={2}>
           <Title level={4} style={{ margin: 0 }}>
             {formatBytes(snapshot.physicalTotalBytes)}
@@ -122,6 +130,8 @@ export function ChatStorageSettings() {
             <Tag color="warning">{t('settings.storage.stale')}</Tag>
           ) : null}
           <Button
+            aria-label={t('settings.storage.retry')}
+            data-chat-storage-refresh
             icon={<RefreshCw size={14} />}
             loading={projection.status === 'measuring'}
             onClick={() => void chatStorageProjectionRuntime.refresh()}
@@ -140,6 +150,8 @@ export function ChatStorageSettings() {
           <Flexbox
             key={category.key}
             gap={8}
+            data-chat-storage-category={category.key}
+            data-chat-storage-category-bytes={String(category.value)}
             style={{
               border: `1px solid ${token.colorBorderSecondary}`,
               borderRadius: 8,
@@ -168,20 +180,37 @@ export function ChatStorageSettings() {
           <Input.Search
             allowClear
             aria-label={t('settings.storage.search')}
+            data-chat-storage-search
             placeholder={t('settings.storage.search')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <Segmented<SortMode>
-            value={sortMode}
-            options={[
-              { label: t('settings.storage.sortSize'), value: 'size' },
-              { label: t('settings.storage.sortRecent'), value: 'recent' },
-            ]}
-            onChange={setSortMode}
-          />
+          <div data-chat-storage-sort={sortMode}>
+            <Segmented<SortMode>
+              value={sortMode}
+              options={[
+                {
+                  label: (
+                    <span data-chat-storage-sort-option="size">
+                      {t('settings.storage.sortSize')}
+                    </span>
+                  ),
+                  value: 'size',
+                },
+                {
+                  label: (
+                    <span data-chat-storage-sort-option="recent">
+                      {t('settings.storage.sortRecent')}
+                    </span>
+                  ),
+                  value: 'recent',
+                },
+              ]}
+              onChange={setSortMode}
+            />
+          </div>
         </Flexbox>
-        <Flexbox gap={0}>
+        <Flexbox gap={0} data-chat-storage-conversations>
           {conversations.map((usage) => (
             <Flexbox
               key={usage.conversationId}
@@ -189,6 +218,9 @@ export function ChatStorageSettings() {
               align="center"
               justify="space-between"
               gap={16}
+              data-chat-storage-conversation={usage.conversationId}
+              data-chat-storage-message-bytes={String(usage.messageBytes)}
+              data-chat-storage-media-bytes={String(usage.mediaBytes)}
               style={{
                 minHeight: 56,
                 padding: '10px 0',

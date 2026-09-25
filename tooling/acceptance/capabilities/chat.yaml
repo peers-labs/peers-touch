@@ -519,6 +519,48 @@
           "Runtime behavior is proven by the separate mixed-client and native receiver Gates"
         ]
       }
+    },
+    {
+      "id": "chat-storage-observability",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-observability"],
+      "required_gates": [
+        "chat-storage-contract",
+        "chat-storage-accounting-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/storage.proto",
+        "packages/messaging-core/src/storage_governance/**",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx",
+        "tooling/acceptance/gates/chat/storage_governance_*.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Device Messaging Engine SQLCipher and managed files",
+          "scope-fenced logical conversation projections"
+        ],
+        "surfaces": [
+          "Desktop Settings > Data > Storage",
+          "Mobile Me > Storage"
+        ],
+        "proven_by": [
+          "chat-storage-contract",
+          "chat-storage-accounting-e2e"
+        ],
+        "proven_scope": [
+          "Desktop and Mobile share one typed accounting contract and one Rust ownership model",
+          "Native Desktop shows real physical bytes and per-conversation logical usage",
+          "Native Desktop storage search, sorting and refresh preserve the active scope"
+        ],
+        "unproven_scope": [
+          "Native Mobile visible accounting remains unproven until its required storage governance closure runs",
+          "Cache cleanup, retention, redaction, conversation clear and physical reclaim are owned by later CSG closures"
+        ]
+      }
     }
   ]
 }
