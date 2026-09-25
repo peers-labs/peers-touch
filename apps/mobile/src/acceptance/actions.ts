@@ -470,6 +470,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       activeStationPeerId: stationRegistry.activeStationPeerId,
       activeActorPtid: runtime.activeActorPtid,
       runtimeStationPeerId: runtime.activeStationPeerId,
+      deviceId: runtime.deviceId,
       social: runtime.social,
       navigation: runtime.navigation,
     };

@@ -306,6 +306,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
 
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:
         runtime = object.__new__(MixedNativeRuntime)
+        runtime.gate_id = "chat-mixed-native-lifecycle-e2e"
         runtime.mobile_binding = MagicMock()
         runtime.mobile_binding.create_bound_session.return_value.scope = {
             "activeStationPeerId": "peer-secondary"
@@ -349,6 +350,59 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 call("sim-ios", "lifecycle.scope.read", {}),
                 call("sim-ios", "messaging.reconcile", {}),
                 call("sim-ios", "messaging.reconcile", {}),
+            ],
+        )
+
+    def test_station_access_mobile_uses_session_scope_without_chat_reconcile(
+        self,
+    ) -> None:
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.gate_id = "station-access-auth-e2e"
+        runtime.mobile_binding = MagicMock()
+        runtime.mobile_binding.create_bound_session.return_value.scope = {
+            "activeStationPeerId": "station-peer"
+        }
+        runtime.mobile_binding.create_bound_session.return_value.binding_proofs = {}
+        runtime.mobile_binding.authenticate_fixture_actor.return_value = {
+            "login": {"session": {"actorPtid": "ptid:bob"}}
+        }
+        runtime.mobile_clients = []
+        runtime.access_evidence = {}
+        runtime.call_action = MagicMock(
+            side_effect=[
+                {"requested": True, "scope": "webview"},
+                {
+                    "phase": "ACTIVE",
+                    "activeActorPtid": "ptid:bob",
+                    "activeStationPeerId": "station-peer",
+                },
+            ]
+        )
+        expected_identity = object()
+        runtime._identity_with_device = MagicMock(return_value=expected_identity)
+
+        result = runtime._start_mobile(
+            "sim-ios",
+            {
+                "ptid": "ptid:bob",
+                "homeStationPeerId": "station-peer",
+            },
+        )
+
+        self.assertIs(result, expected_identity)
+        runtime._identity_with_device.assert_called_once_with(
+            "sim-ios",
+            {
+                "ptid": "ptid:bob",
+                "homeStationPeerId": "station-peer",
+            },
+            runtime="tauri-ios-simulator",
+        )
+        self.assertEqual(
+            runtime.call_action.call_args_list,
+            [
+                call("sim-ios", "lifecycle.restart", {}),
+                call("sim-ios", "lifecycle.scope.read", {}),
             ],
         )
 

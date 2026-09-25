@@ -678,7 +678,10 @@ class MixedNativeRuntime:
             "Mobile lifecycle scope",
         )
         device: dict[str, Any] = {}
-        if scope.get("activeActorPtid") is not None:
+        if (
+            scope.get("activeActorPtid") is not None
+            and self.gate_id not in STATION_ACCESS_GATE_IDS
+        ):
             device = self._mapping(
                 self.call_action(client_id, "getRealtimeDevice", {}),
                 "Mobile realtime device",
@@ -690,7 +693,11 @@ class MixedNativeRuntime:
             "stationPeerId": scope.get("activeStationPeerId"),
             "runtimeStationPeerId": scope.get("runtimeStationPeerId"),
             "actorPtid": scope.get("activeActorPtid"),
-            "deviceIdentityDigest": device.get("deviceIdentityDigest"),
+            "deviceIdentityDigest": (
+                scope.get("deviceIdentityDigest")
+                if self.gate_id in STATION_ACCESS_GATE_IDS
+                else device.get("deviceIdentityDigest")
+            ),
         }
 
     def _wait_for_mobile_active_identity(
@@ -1622,6 +1629,13 @@ class MixedNativeRuntime:
             timeout_seconds=60.0,
         )
 
+        if self.gate_id in STATION_ACCESS_GATE_IDS:
+            return self._identity_with_device(
+                client_id,
+                expected,
+                runtime=MOBILE_RUNTIME,
+            )
+
         def reconcile_messaging_identity() -> MixedClientIdentity:
             self.call_action(client_id, "messaging.reconcile", {})
             return self._identity_with_device(
@@ -1645,6 +1659,20 @@ class MixedNativeRuntime:
     ) -> MixedClientIdentity:
         expected_ptid = str(expected.get("ptid") or "")
         if (
+            self.gate_id in STATION_ACCESS_GATE_IDS
+            and runtime == MOBILE_RUNTIME
+        ):
+            device = self._mapping(
+                self.call_action(client_id, "lifecycle.scope.read", {}),
+                f"{client_id} Station Access scope",
+            )
+            device_id = str(device.get("deviceIdentityDigest") or "")
+            device_active = (
+                device.get("phase") == "ACTIVE"
+                and device.get("activeStationPeerId")
+                == str(expected.get("homeStationPeerId") or "")
+            )
+        elif (
             self.gate_id in STATION_ACCESS_GATE_IDS
             and self._is_desktop(client_id)
         ):
