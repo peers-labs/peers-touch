@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use messaging_core::attachment::{
@@ -116,6 +116,7 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
 
 pub struct MobileMessagingStore {
     connection: Mutex<Connection>,
+    database_path: Option<PathBuf>,
 }
 
 pub struct ConversationSummary {
@@ -291,12 +292,115 @@ impl MobileMessagingStore {
         connection
             .pragma_update(None, "key", format!("x'{}'", hex_bytes(key)))
             .map_err(|error| format!("unlock mobile messaging SQLCipher store: {error}"))?;
-        Self::from_connection(connection)
+        Self::from_connection_with_path(connection, Some(path.to_path_buf()))
     }
 
     #[cfg(test)]
     fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
+    }
+
+    pub(crate) fn storage_database_path(&self) -> Result<PathBuf, String> {
+        self.database_path
+            .clone()
+            .ok_or_else(|| "mobile messaging storage path is unavailable".to_string())
+    }
+
+    pub(crate) fn storage_logical_usage(
+        &self,
+    ) -> Result<Vec<messaging_core::storage_governance::ConversationLogicalUsage>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT
+                    conversation.conversation_id,
+                    conversation.name,
+                    conversation.kind,
+                    COALESCE((
+                        SELECT SUM(
+                            length(CAST(message.message_id AS BLOB))
+                            + length(CAST(message.sender_ptid AS BLOB))
+                            + length(CAST(message.sender_device_id AS BLOB))
+                            + length(CAST(message.plaintext AS BLOB))
+                            + length(CAST(COALESCE(message.edited_text, '') AS BLOB))
+                            + length(CAST(COALESCE(message.reply_to_message_id, '') AS BLOB))
+                            + length(CAST(COALESCE(message.thread_root_message_id, '') AS BLOB))
+                        )
+                        FROM messaging_message_projections AS message
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    COALESCE((
+                        SELECT SUM(attachment.plaintext_size)
+                        FROM messaging_attachment_projections AS attachment
+                        JOIN messaging_message_projections AS message
+                          ON message.message_id = attachment.message_id
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    MAX(
+                        conversation.updated_at_unix_ms,
+                        COALESCE((
+                            SELECT MAX(message.committed_at_unix_ms)
+                            FROM messaging_message_projections AS message
+                            WHERE message.conversation_id = conversation.conversation_id
+                        ), 0)
+                    )
+                 FROM messaging_conversations AS conversation
+                 ORDER BY conversation.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let message_bytes = row.get::<_, i64>(3)?;
+                let media_bytes = row.get::<_, i64>(4)?;
+                Ok(
+                    messaging_core::storage_governance::ConversationLogicalUsage {
+                        conversation_id: row.get(0)?,
+                        conversation_name: row.get(1)?,
+                        conversation_kind: row.get(2)?,
+                        message_bytes: u64::try_from(message_bytes.max(0)).unwrap_or(0),
+                        media_bytes: u64::try_from(media_bytes.max(0)).unwrap_or(0),
+                        reclaimable_bytes: 0,
+                        last_activity_unix_ms: row.get(5)?,
+                    },
+                )
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    pub(crate) fn storage_media_paths(&self) -> Result<Vec<PathBuf>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT DISTINCT local_cache_path
+                 FROM messaging_attachment_projections
+                 WHERE local_cache_path IS NOT NULL AND local_cache_path <> ''
+                 ORDER BY local_cache_path",
+            )
+            .map_err(|error| error.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(paths)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn execute_storage_test_sql(&self, sql: &str) -> Result<(), String> {
+        self.connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .execute_batch(sql)
+            .map_err(|error| error.to_string())
     }
 
     pub fn active_device_signing_identity(
@@ -408,10 +512,18 @@ impl MobileMessagingStore {
     }
 
     fn from_connection(connection: Connection) -> Result<Self, String> {
+        Self::from_connection_with_path(connection, None)
+    }
+
+    fn from_connection_with_path(
+        connection: Connection,
+        database_path: Option<PathBuf>,
+    ) -> Result<Self, String> {
         migrate_messaging_schema(&RusqliteMessagingSchema(&connection))?;
         migrate_mobile_messaging_adapter_schema(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            database_path,
         })
     }
 

@@ -5,6 +5,7 @@
  * Sections never fetch or write directly; controller hooks own side effects.
  */
 
+import { useMemo, useState } from 'react';
 import {
   Avatar,
   Button,
@@ -25,6 +26,7 @@ import {
   HardDrive,
   Lock,
   Palette,
+  RefreshCw,
   RotateCcw,
   Server,
   Shield,
@@ -46,6 +48,10 @@ import type {
   NotificationPreferenceBooleanField,
   NotificationPreferencesController,
 } from './useSettingsController';
+import {
+  mobileChatStorageProjectionRuntime,
+  useMobileChatStorageProjection,
+} from '../../runtimes/chatStorageRuntime';
 
 const { Text } = Typography;
 
@@ -533,12 +539,104 @@ export function StorageSection({
   status: CacheClearStatus;
 }) {
   const { t } = useMobileI18n();
+  const projection = useMobileChatStorageProjection();
+  const [query, setQuery] = useState('');
+  const snapshot = projection.snapshot;
+  const conversations = useMemo(() => {
+    if (!snapshot) return [];
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return snapshot.conversations.filter((usage) => {
+      if (!normalizedQuery) return true;
+      return `${usage.conversationName} ${usage.conversationId}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [query, snapshot]);
+
   return (
     <Card className="settings-section" variant="borderless">
       <div className="settings-section-header">
         <HardDrive size={16} />
         <Text strong>{t('mobile.settings.section.storage')}</Text>
       </div>
+      {snapshot ? (
+        <>
+          <div className="settings-row">
+            <Text>{t('mobile.settings.storage.total')}</Text>
+            <Text strong>{formatBytes(snapshot.physicalTotalBytes)}</Text>
+          </div>
+          {[
+            ['message', snapshot.messageBytes],
+            ['media', snapshot.mediaBytes],
+            ['cache', snapshot.cacheBytes],
+            ['system', snapshot.systemBytes],
+          ].map(([key, value]) => (
+            <div className="settings-row" key={String(key)}>
+              <Text type="secondary">
+                {t(`mobile.settings.storage.${String(key)}`)}
+              </Text>
+              <Text>{formatBytes(value as bigint)}</Text>
+            </div>
+          ))}
+          <div className="settings-row">
+            <Text type="secondary">
+              {new Date(Number(snapshot.measuredAtUnixMs)).toLocaleString()}
+            </Text>
+            {projection.stale || snapshot.issues.length > 0 ? (
+              <Tag color="warning">{t('mobile.settings.storage.stale')}</Tag>
+            ) : null}
+            <Button
+              aria-label={t('mobile.settings.storage.retry')}
+              icon={<RefreshCw size={14} />}
+              loading={projection.status === 'measuring'}
+              onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
+            />
+          </div>
+          <Input.Search
+            allowClear
+            aria-label={t('mobile.settings.storage.search')}
+            placeholder={t('mobile.settings.storage.search')}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="settings-storage-conversations">
+            {conversations.map((usage) => (
+              <div className="settings-row" key={usage.conversationId}>
+                <div className="settings-storage-conversation-label">
+                  <Text strong ellipsis>
+                    {usage.conversationName || usage.conversationId}
+                  </Text>
+                  <Text type="secondary">
+                    {usage.conversationKind === 2
+                      ? t('mobile.settings.storage.group')
+                      : t('mobile.settings.storage.direct')}
+                  </Text>
+                </div>
+                <Text>{formatBytes(usage.messageBytes + usage.mediaBytes)}</Text>
+              </div>
+            ))}
+            {conversations.length === 0 ? (
+              <Text type="secondary">{t('mobile.settings.storage.empty')}</Text>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <div className="settings-row" role={projection.status === 'unavailable' ? 'alert' : 'status'}>
+          <Text type="secondary">
+            {projection.status === 'unavailable'
+              ? t('mobile.settings.storage.unavailable')
+              : t('mobile.settings.storage.calculating')}
+          </Text>
+          {projection.status === 'unavailable' ? (
+            <Button
+              size="small"
+              onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
+            >
+              {t('common.action.retry')}
+            </Button>
+          ) : null}
+        </div>
+      )}
       <Button
         block
         loading={status === 'clearing'}
@@ -555,6 +653,18 @@ export function StorageSection({
       ) : null}
     </Card>
   );
+}
+
+function formatBytes(value: bigint): string {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  const amount = bytes / 1024 ** exponent;
+  return `${amount >= 10 || exponent === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[exponent]}`;
 }
 
 // ---------------------------------------------------------------------------

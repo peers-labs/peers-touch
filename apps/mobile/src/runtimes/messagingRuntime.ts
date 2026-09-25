@@ -39,8 +39,9 @@ interface MessagingProjectionEvent {
   laneSequence: number;
 }
 
-interface MessagingProjectionScope extends MessagingAccountInput {
+export interface MessagingProjectionScope extends MessagingAccountInput {
   profileId: string;
+  deviceId: string;
   activationGeneration: number;
 }
 
@@ -64,6 +65,7 @@ const MESSAGING_READINESS_FAILURE_OPERATIONS = new Set([
 
 let activeScope: MessagingAccountInput | null = null;
 let activeProfileId: string | null = null;
+let activeDeviceId: string | null = null;
 let activeSessionScopeKey = '';
 let activeGeneration = 0;
 let lastDeliveredLaneSequence = 0;
@@ -74,6 +76,9 @@ let reconcileInFlight: {
   key: string;
   promise: Promise<MessagingReconcileResult | null>;
 } | null = null;
+const projectionScopeListeners = new Set<
+  (scope: MessagingProjectionScope | null) => void
+>();
 
 export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribe: (() => void) | null = null;
@@ -218,15 +223,15 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
     return Promise.resolve(null);
   }
   const scope = accountInput(session);
-  const projectionScope = currentProjectionScope();
+  const projectionScope = currentMessagingProjectionScope();
   if (!projectionScope || !sameAccount(scope, activeScope)) return Promise.resolve(null);
   const key = projectionScopeKey(projectionScope);
   if (reconcileInFlight?.key === key) return reconcileInFlight.promise;
   const promise = messagingReconcile(scope)
     .then(async (result) => {
-      if (projectionScopeKey(currentProjectionScope()) !== key) return null;
+      if (projectionScopeKey(currentMessagingProjectionScope()) !== key) return null;
       await refreshKnownMessageProjections();
-      if (projectionScopeKey(currentProjectionScope()) !== key) return null;
+      if (projectionScopeKey(currentMessagingProjectionScope()) !== key) return null;
       window.dispatchEvent(
         new CustomEvent(MOBILE_MESSAGING_RECONCILED_EVENT, { detail: result }),
       );
@@ -278,14 +283,17 @@ async function synchronizeSession(
     throw error;
   });
   if (!status.profileId) throw new Error('mobile.messaging.runtimeProfileMissing');
+  if (!status.deviceId) throw new Error('mobile.messaging.runtimeDeviceMissing');
   // Retain the native scope for cleanup even when activation was superseded.
   activeScope = scope;
   if (!isCurrent()) return;
   activeProfileId = status.profileId;
+  activeDeviceId = status.deviceId;
   activeSessionScopeKey = sessionKey(session);
   activeGeneration = status.activationGeneration;
   lastDeliveredLaneSequence = status.laneSequence;
   await reconcileActiveMessagingSession();
+  publishProjectionScope();
 }
 
 function enqueueProjectionDelivery(event: MessagingProjectionEvent): void {
@@ -303,11 +311,11 @@ function enqueueProjectionDelivery(event: MessagingProjectionEvent): void {
       ) {
         return;
       }
-      const expectedKey = projectionScopeKey(currentProjectionScope());
+      const expectedKey = projectionScopeKey(currentMessagingProjectionScope());
       await refreshMessageProjection(event.conversationId);
       if (
         !expectedKey
-        || projectionScopeKey(currentProjectionScope()) !== expectedKey
+        || projectionScopeKey(currentMessagingProjectionScope()) !== expectedKey
         || event.laneSequence <= lastDeliveredLaneSequence
       ) {
         return;
@@ -352,18 +360,26 @@ function sameAccount(
   );
 }
 
-function currentProjectionScope(): MessagingProjectionScope | null {
-  if (!activeScope || !activeProfileId || activeGeneration === 0) return null;
+export function currentMessagingProjectionScope(): MessagingProjectionScope | null {
+  if (!activeScope || !activeProfileId || !activeDeviceId || activeGeneration === 0) return null;
   return {
     ...activeScope,
     profileId: activeProfileId,
+    deviceId: activeDeviceId,
     activationGeneration: activeGeneration,
   };
 }
 
+export function subscribeMessagingProjectionScope(
+  listener: (scope: MessagingProjectionScope | null) => void,
+): () => void {
+  projectionScopeListeners.add(listener);
+  return () => projectionScopeListeners.delete(listener);
+}
+
 function projectionScopeKey(scope: MessagingProjectionScope | null): string {
   return scope
-    ? `${scope.stationPeerId}\u001f${scope.actorPtid}\u001f${scope.profileId}\u001f${scope.activationGeneration}`
+    ? `${scope.stationPeerId}\u001f${scope.actorPtid}\u001f${scope.profileId}\u001f${scope.deviceId}\u001f${scope.activationGeneration}`
     : '';
 }
 
@@ -388,10 +404,10 @@ async function refreshKnownMessageProjections(): Promise<void> {
 async function refreshMessageProjection(conversationId: string): Promise<void> {
   const scope = activeScope;
   if (!scope || !conversationId.trim()) return;
-  const projectionKey = projectionScopeKey(currentProjectionScope());
+  const projectionKey = projectionScopeKey(currentMessagingProjectionScope());
   const conversation = (await messagingListConversations(scope))
     .find((item) => item.conversationId === conversationId);
-  if (!conversation || projectionScopeKey(currentProjectionScope()) !== projectionKey) return;
+  if (!conversation || projectionScopeKey(currentMessagingProjectionScope()) !== projectionKey) return;
   const social = useSocialStore.getState();
   if (!social.authSession || !sameAccount(scope, accountInput(social.authSession))) return;
   if (social.activeSessionUlid === conversationId || conversationId in social.messages) {
@@ -405,10 +421,17 @@ async function refreshMessageProjection(conversationId: string): Promise<void> {
 function clearActiveProjectionScope(): void {
   activeScope = null;
   activeProfileId = null;
+  activeDeviceId = null;
   activeSessionScopeKey = '';
   activeGeneration = 0;
   lastDeliveredLaneSequence = 0;
   reconcileInFlight = null;
+  publishProjectionScope();
+}
+
+function publishProjectionScope(): void {
+  const scope = currentMessagingProjectionScope();
+  projectionScopeListeners.forEach((listener) => listener(scope));
 }
 
 function reportRuntimeError(operation: string, error: unknown): void {

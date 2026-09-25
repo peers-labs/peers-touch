@@ -6,6 +6,7 @@ use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
 use messaging_core::outbox::{CommandDispatchProgress, MetadataInteraction};
 use messaging_core::proto::chat::{MemberRole, MessagingMembershipAction, VoiceNoteMetadata};
 use messaging_core::proto::social::SocialRelationshipAction;
+use prost::Message;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
@@ -45,6 +46,12 @@ pub struct MessagingActivateInput {
 pub struct MessagingAccountInput {
     station_peer_id: String,
     actor_ptid: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStorageSnapshotInput {
+    request_bytes: Vec<u8>,
 }
 
 #[derive(Deserialize)]
@@ -727,6 +734,38 @@ pub fn messaging_status(
     runtime: State<'_, MobileMessagingRuntime>,
 ) -> MobileResult<MessagingRuntimeStatus> {
     runtime.status()
+}
+
+#[tauri::command]
+pub async fn chat_storage_snapshot(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: ChatStorageSnapshotInput,
+) -> MobileResult<Vec<u8>> {
+    let request = messaging_core::proto::chat::ChatStorageSnapshotRequest::decode(
+        input.request_bytes.as_slice(),
+    )
+    .map_err(|error| {
+        MobileError::invalid_input(format!("invalid chat storage snapshot request: {error}"))
+    })?;
+    let scope = request
+        .scope
+        .ok_or_else(|| MobileError::invalid_input("chat storage scope is required"))?;
+    let engine = runtime.active_engine(&scope.station_peer_id, &scope.actor_ptid)?;
+    if engine.scope().device_id != scope.device_id {
+        return Err(MobileError::coded(
+            "STORAGE_SCOPE_STALE",
+            "chat storage scope is stale",
+        ));
+    }
+    let revision = request.scope_revision;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_snapshot(&revision)
+            .map(|snapshot| snapshot.encode_to_vec())
+    })
+    .await
+    .map_err(|error| MobileError::messaging(format!("join storage scan task: {error}")))?
+    .map_err(MobileError::messaging)
 }
 
 #[tauri::command]

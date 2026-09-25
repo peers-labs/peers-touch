@@ -792,7 +792,6 @@ fn main() {
             system::system_health,
             system::open_external_url,
             system::onboarding_reset,
-            system::statistics_get,
             system::preferences_get,
             system::preferences_set,
             system::share_create,
@@ -1013,6 +1012,7 @@ fn main() {
             messaging_commands::messaging_commit_authorized_leave,
             messaging_commands::messaging_list_conversations,
             messaging_commands::messaging_command_status,
+            messaging_commands::chat_storage_snapshot,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,
             #[cfg(feature = "acceptance-webdriver")]

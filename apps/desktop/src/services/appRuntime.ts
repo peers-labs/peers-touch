@@ -20,6 +20,7 @@ import { toolRuntime } from '../runtimes/toolRuntime';
 import { chatRuntime } from '../runtimes/chatRuntime';
 import { evaluationRuntime } from '../runtimes/evaluationRuntime';
 import { callRuntime } from '../runtimes/callRuntime';
+import { chatStorageRuntime } from '../runtimes/chatStorageRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -33,6 +34,7 @@ function registerKernelRuntimes(): void {
   runtimesRegistered = true;
   registerRuntime(socialRuntime);
   registerRuntime(messagingRuntime);
+  registerRuntime(chatStorageRuntime);
   registerRuntime(callRuntime);
   registerRuntime(searchRuntime);
   registerRuntime(settingsRuntime);
@@ -165,6 +167,7 @@ export function teardownAppRuntime(): void {
 
   teardownRuntime(socialRuntime.id);
   teardownRuntime(messagingRuntime.id);
+  teardownRuntime(chatStorageRuntime.id);
   teardownRuntime(callRuntime.id);
   teardownRuntime(searchRuntime.id);
   teardownRuntime(settingsRuntime.id);
