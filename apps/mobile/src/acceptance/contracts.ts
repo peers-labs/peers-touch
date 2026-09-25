@@ -416,6 +416,7 @@ export interface LifecycleTransitionOutput {
 export interface MobileRuntimeScopeProjection {
   activeStationPeerId: string | null;
   activeActorPtid: string | null;
+  deviceId: string | null;
   social: {
     stationPeerId: string | null;
     actorPtid: string | null;
@@ -432,6 +433,7 @@ export interface LifecycleScopeReadOutput {
   launchState: PublicLifecycleSnapshot['launchState'];
   activeStationPeerId: string;
   activeActorPtid: string | null;
+  deviceId: string | null;
   runtimeStationPeerId: string | null;
   social: MobileRuntimeScopeProjection['social'];
   navigation: MobileRuntimeScopeProjection['navigation'];
