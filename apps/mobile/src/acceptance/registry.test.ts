@@ -61,6 +61,8 @@ function activateAcceptanceSession(): void {
     stationUrl: 'https://station.example',
     sessionId: 'session-1',
     actorPtid: 'ptid:alice',
+    deviceId: 'device-1',
+    lifecycleGeneration: 1,
     expiresAt: '2030-01-01T00:00:00Z',
   }, decision);
 }

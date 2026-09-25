@@ -55,7 +55,6 @@ vi.mock('./commandRuntime', () => ({
   suspendReliabilityRuntime: vi.fn(async () => undefined),
 }));
 
-import { ACCESS_DECISION_GRANTED } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import { useSocialStore } from '../features/social/socialStore';
 import {
@@ -403,12 +402,14 @@ function mobileSession(ptid: string, sessionId: string) {
     sessionId,
     actorRef: { ptid },
     authenticatedAt: 1,
+    deviceId: `device:${ptid}`,
+    lifecycleGeneration: 1,
   };
 }
 
 function grantedDecision() {
   return {
-    state: ACCESS_DECISION_GRANTED,
+    state: "ACCESS_DECISION_STATE_GRANTED",
     attemptId: 'attempt-1',
     gates: [],
   };
