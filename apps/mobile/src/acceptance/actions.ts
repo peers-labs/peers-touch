@@ -1,5 +1,6 @@
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+import { invoke } from '@tauri-apps/api/core';
 
 import {
   currentAccessGate,
@@ -1186,6 +1187,23 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       outcome: updated.outcome,
       snapshot: publicNotificationPreferences(updated.snapshot),
     };
+  },
+
+  'storage.cache.seed': async (input) => {
+    const runtime = await messagingStatus();
+    if (!runtime.active || !runtime.stationPeerId || !runtime.actorPtid) {
+      throw new Error('acceptance.mobile.messagingUnavailable');
+    }
+    return invoke<{ sizeBytes: number }>('chat_storage_acceptance_seed_cache', {
+      input: {
+        stationPeerId: runtime.stationPeerId,
+        actorPtid: runtime.actorPtid,
+        sizeBytes: requirePositiveInteger(
+          input?.sizeBytes,
+          'storage.cache.seed.sizeBytes',
+        ),
+      },
+    });
   },
 
   'settings.device.read': async () => {

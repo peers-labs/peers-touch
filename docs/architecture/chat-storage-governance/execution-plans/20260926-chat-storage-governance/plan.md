@@ -95,6 +95,7 @@
     "chat-native-group-mls-e2e",
     "chat-native-visible-static",
     "mobile-hard-cut-static",
+    "mobile-simulator-access-e2e",
     "mobile-ios-simulator-layout-accessibility-e2e",
     "mobile-simulator-chat-contacts-e2e",
     "mobile-simulator-moments-e2e",

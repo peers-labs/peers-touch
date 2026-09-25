@@ -30,10 +30,12 @@ import {
   RotateCcw,
   Server,
   Shield,
+  Trash2,
   User,
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileNotice } from '../../components/MobileNotice';
 import type {
   DevicePermission,
   DevicePreferences,
@@ -49,6 +51,7 @@ import type {
   NotificationPreferencesController,
 } from './useSettingsController';
 import {
+  chatStorageReleasedBytes,
   mobileChatStorageProjectionRuntime,
   useMobileChatStorageProjection,
 } from '../../runtimes/chatStorageRuntime';
@@ -541,7 +544,15 @@ export function StorageSection({
   const { t } = useMobileI18n();
   const projection = useMobileChatStorageProjection();
   const [query, setQuery] = useState('');
+  const [chatCacheConfirmationRevision, setChatCacheConfirmationRevision] = useState<
+    string | null
+  >(null);
   const snapshot = projection.snapshot;
+  const confirmingChatCacheClear = snapshot !== null
+    && chatCacheConfirmationRevision === snapshot.revision;
+  const releasedBytes = chatStorageReleasedBytes(projection.cleanup.result);
+  const chatCleanupRunning = projection.cleanup.status === 'clearing';
+
   const conversations = useMemo(() => {
     if (!snapshot) return [];
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -554,14 +565,23 @@ export function StorageSection({
   }, [query, snapshot]);
 
   return (
-    <Card className="settings-section" variant="borderless">
+    <Card
+      className="settings-section"
+      variant="borderless"
+      data-chat-storage-surface
+    >
       <div className="settings-section-header">
         <HardDrive size={16} />
         <Text strong>{t('mobile.settings.section.storage')}</Text>
       </div>
       {snapshot ? (
         <>
-          <div className="settings-row">
+          <div
+            className="settings-row"
+            data-chat-storage-summary
+            data-chat-storage-physical-bytes={String(snapshot.physicalTotalBytes)}
+            data-chat-storage-measured-at={String(snapshot.measuredAtUnixMs)}
+          >
             <Text>{t('mobile.settings.storage.total')}</Text>
             <Text strong>{formatBytes(snapshot.physicalTotalBytes)}</Text>
           </div>
@@ -571,7 +591,12 @@ export function StorageSection({
             ['cache', snapshot.cacheBytes],
             ['system', snapshot.systemBytes],
           ].map(([key, value]) => (
-            <div className="settings-row" key={String(key)}>
+            <div
+              className="settings-row"
+              key={String(key)}
+              data-chat-storage-category={String(key)}
+              data-chat-storage-category-bytes={String(value)}
+            >
               <Text type="secondary">
                 {t(`mobile.settings.storage.${String(key)}`)}
               </Text>
@@ -587,6 +612,7 @@ export function StorageSection({
             ) : null}
             <Button
               aria-label={t('mobile.settings.storage.retry')}
+              data-chat-storage-refresh
               icon={<RefreshCw size={14} />}
               loading={projection.status === 'measuring'}
               onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
@@ -601,7 +627,13 @@ export function StorageSection({
           />
           <div className="settings-storage-conversations">
             {conversations.map((usage) => (
-              <div className="settings-row" key={usage.conversationId}>
+              <div
+                className="settings-row"
+                key={usage.conversationId}
+                data-chat-storage-conversation={usage.conversationId}
+                data-chat-storage-message-bytes={String(usage.messageBytes)}
+                data-chat-storage-media-bytes={String(usage.mediaBytes)}
+              >
                 <div className="settings-storage-conversation-label">
                   <Text strong ellipsis>
                     {usage.conversationName || usage.conversationId}
@@ -637,19 +669,97 @@ export function StorageSection({
           ) : null}
         </div>
       )}
+      <div
+        className="settings-dirty-actions"
+        data-chat-storage-cache-cleanup
+      >
+        <div className="settings-row">
+          <div className="setting-copy">
+            <Text strong>{t('mobile.settings.storage.clearChatCacheTitle')}</Text>
+            <Text type="secondary">
+              {t('mobile.settings.storage.clearChatCacheDescription')}
+            </Text>
+          </div>
+          {!confirmingChatCacheClear ? (
+            <Button
+              data-chat-storage-clear-cache
+              icon={<Trash2 size={14} />}
+              disabled={chatCleanupRunning || !snapshot}
+              onClick={() => setChatCacheConfirmationRevision(snapshot?.revision ?? null)}
+            >
+              {t('mobile.settings.storage.clearChatCacheAction')}
+            </Button>
+          ) : null}
+        </div>
+        {confirmingChatCacheClear ? (
+          <>
+            <MobileNotice tone="info">
+              {t('mobile.settings.storage.clearChatCacheConfirm')}
+            </MobileNotice>
+            <div className="settings-station-actions" data-chat-storage-clear-confirm>
+              <Button
+                block
+                disabled={chatCleanupRunning}
+                onClick={() => setChatCacheConfirmationRevision(null)}
+              >
+                {t('mobile.settings.storage.clearChatCacheCancel')}
+              </Button>
+              <Button
+                block
+                danger
+                type="primary"
+                data-chat-storage-clear-confirm-apply
+                icon={<Trash2 size={14} />}
+                loading={chatCleanupRunning}
+                onClick={() => {
+                  void mobileChatStorageProjectionRuntime.clearCache().then(() => {
+                    setChatCacheConfirmationRevision(null);
+                  });
+                }}
+              >
+                {t('mobile.settings.storage.clearChatCacheConfirmAction')}
+              </Button>
+            </div>
+          </>
+        ) : null}
+        {projection.cleanup.status === 'succeeded' && releasedBytes !== null ? (
+          <div
+            data-chat-storage-clear-result="succeeded"
+            data-chat-storage-released-bytes={String(releasedBytes)}
+          >
+            <MobileNotice tone="success">
+              {t('mobile.settings.storage.clearChatCacheReleased', {
+                bytes: formatBytes(releasedBytes),
+              })}
+            </MobileNotice>
+          </div>
+        ) : null}
+        {projection.cleanup.status === 'failed' ? (
+          <div data-chat-storage-clear-result="failed">
+            <MobileNotice tone="error">
+              {releasedBytes === null
+                ? t('mobile.settings.storage.clearChatCacheFailed')
+                : t('mobile.settings.storage.clearChatCacheFailedWithReleased', {
+                    bytes: formatBytes(releasedBytes),
+                  })}
+            </MobileNotice>
+          </div>
+        ) : null}
+      </div>
       <Button
         block
+        data-mobile-device-cache-clear
         loading={status === 'clearing'}
         disabled={status === 'clearing'}
         onClick={() => void onClearCache()}
       >
-        {t('mobile.settings.storage.clearCache')}
+        {t('mobile.settings.storage.clearDeviceCache')}
       </Button>
       {status === 'cleared' ? (
-        <Text type="success">{t('mobile.settings.storage.cacheCleared')}</Text>
+        <Text type="success">{t('mobile.settings.storage.deviceCacheCleared')}</Text>
       ) : null}
       {status === 'error' ? (
-        <Text type="danger">{t('mobile.launch.unavailable')}</Text>
+        <Text type="danger">{t('mobile.settings.storage.deviceCacheClearFailed')}</Text>
       ) : null}
     </Card>
   );
