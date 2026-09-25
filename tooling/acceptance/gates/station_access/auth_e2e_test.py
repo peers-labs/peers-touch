@@ -56,6 +56,11 @@ class _FakeRuntime:
     def access_snapshot(self, client_id: str) -> dict[str, object]:
         if client_id == "desktop-bob":
             return {
+                "stationBinding": {
+                    "configured": True,
+                    "bindingPhase": "access_gate",
+                    "activeStationPeerId": "station-peer",
+                },
                 "preAuthentication": {
                     "authenticated": False,
                     "actorPtid": (
@@ -63,6 +68,9 @@ class _FakeRuntime:
                         if self._leak_pre_auth_actor
                         else ""
                     ),
+                },
+                "postAuthentication": {
+                    "phase": "bound",
                 },
                 "bindingProofRefs": [{"path": "desktop-binding.json"}],
             }

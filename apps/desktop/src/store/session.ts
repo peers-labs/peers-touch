@@ -137,6 +137,20 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     } catch (error) {
       throw stationAccessError(error);
     }
+    try {
+      await api.stationBindingComplete();
+    } catch (error) {
+      const bindingError = stationAccessError(error);
+      try {
+        await api.authLogout();
+      } catch (rollbackError) {
+        const rollbackMessage = rollbackError instanceof Error
+          ? rollbackError.message
+          : String(rollbackError);
+        throw new Error(`${bindingError.message}; session rollback failed: ${rollbackMessage}`);
+      }
+      throw bindingError;
+    }
     completeAccessSubmission(key);
     get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
