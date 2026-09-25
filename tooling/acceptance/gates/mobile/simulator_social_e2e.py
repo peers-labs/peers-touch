@@ -45,6 +45,7 @@ SCENARIO_GATES = {
     "recovery": "mobile-simulator-recovery-e2e",
     "recovery-ui": "mobile-simulator-recovery-ui-e2e",
     "moments": "mobile-simulator-moments-e2e",
+    "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
 }
 CLIENT_ASSIGNMENTS = {
     "sim-ios": ("station", "alice"),
@@ -75,6 +76,11 @@ SCENARIO_METADATA = {
         "phase": "W6B Simulator Moments Participation",
         "bom": ["W5", "W5-OWNER", "W6B"],
         "spec": ["MS-AG04", "MS-AG06", "MS-AG10"],
+    },
+    "storage-cache-cleanup": {
+        "phase": "CSG-02 Mobile Cache Cleanup",
+        "bom": ["CSG-G02"],
+        "spec": ["chat-storage-cache-cleanup"],
     },
 }
 OPTIONAL_DIAGNOSTIC_SCOPE = (
@@ -298,6 +304,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 receiver=receiver,
                 journey_id=artifacts.run_id[-12:],
             )
+        elif self.scenario == "storage-cache-cleanup":
+            journey_result = self._run_storage_cache_cleanup_journey(
+                session=sessions["sim-ios"],
+                journey_id=artifacts.run_id[-12:],
+            )
         else:
             raise GateError(
                 f"unsupported Mobile simulator scenario: {self.scenario}"
@@ -430,6 +441,178 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 ),
             )
         return actors
+
+    def _run_storage_cache_cleanup_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        fixture_size = 2 * 1024 * 1024
+        seeded = self._mapping(
+            session.call_action(
+                "storage.cache.seed",
+                {"sizeBytes": fixture_size},
+            ),
+            "storage cache fixture",
+        )
+        if seeded.get("sizeBytes") != fixture_size:
+            raise GateError("storage cache fixture size changed")
+
+        draft = session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "chat",
+                "targetId": f"storage-{journey_id}-draft",
+                "text": f"storage-{journey_id}-protected-draft",
+            },
+        )
+        identity_before = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity before cache cleanup",
+        )
+        if not identity_before.get("active"):
+            raise GateError("messaging runtime is inactive before cache cleanup")
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) throw new Error('storage refresh action missing');
+button.click();
+return true;
+"""
+        )
+        before = self._wait_for_storage_snapshot(
+            session,
+            lambda value: int(value.get("cacheBytes") or 0) >= fixture_size,
+            "seeded Mobile Chat cache measurement",
+        )
+
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-clear-cache]');
+if (!button) throw new Error('storage clear action missing');
+button.click();
+return true;
+"""
+        )
+        self._wait_for_storage_snapshot(
+            session,
+            lambda value: bool(value.get("confirmVisible")),
+            "Mobile Chat cache confirmation",
+        )
+        session.execute_script(
+            """
+const button = document.querySelector(
+  '[data-chat-storage-clear-confirm-apply]'
+);
+if (!button) throw new Error('storage clear confirmation action missing');
+button.click();
+return true;
+"""
+        )
+        after = self._wait_for_storage_snapshot(
+            session,
+            lambda value: value.get("resultState") == "succeeded"
+            and int(value.get("releasedBytes") or 0) > 0,
+            "Mobile Chat cache cleanup result",
+        )
+
+        released_bytes = int(after.get("releasedBytes") or 0)
+        if (
+            int(after.get("physicalTotalBytes") or 0)
+            >= int(before.get("physicalTotalBytes") or 0)
+            or int(after.get("cacheBytes") or 0)
+            >= int(before.get("cacheBytes") or 0)
+        ):
+            raise GateError("Mobile Chat cache cleanup did not reclaim physical bytes")
+
+        retained = session.call_action("reliability.draft.read", {})
+        self._require_drafts({"drafts": retained}, (draft,))
+        identity_after = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity after cache cleanup",
+        )
+        if identity_after != identity_before:
+            raise GateError("cache cleanup changed the active messaging identity")
+        session.call_action(
+            "reliability.draft.action",
+            {"action": "discard"},
+        )
+        return {
+            "scenario": "storage-cache-cleanup",
+            "fixtureBytes": fixture_size,
+            "physicalBytesBefore": int(before["physicalTotalBytes"]),
+            "physicalBytesAfter": int(after["physicalTotalBytes"]),
+            "cacheBytesBefore": int(before["cacheBytes"]),
+            "cacheBytesAfter": int(after["cacheBytes"]),
+            "releasedBytes": released_bytes,
+            "draftPreserved": True,
+            "messagingIdentityPreserved": True,
+            "confirmationObserved": True,
+        }
+
+    @classmethod
+    def _wait_for_storage_snapshot(
+        cls,
+        session: Any,
+        predicate: Any,
+        description: str,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 60
+        last: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            value = session.execute_script(
+                """
+const summary = document.querySelector('[data-chat-storage-summary]');
+if (!summary) return null;
+const categories = {};
+for (const item of document.querySelectorAll('[data-chat-storage-category]')) {
+  categories[item.getAttribute('data-chat-storage-category')] = Number(
+    item.getAttribute('data-chat-storage-category-bytes') || '0'
+  );
+}
+const result = document.querySelector('[data-chat-storage-clear-result]');
+return {
+  physicalTotalBytes: Number(
+    summary.getAttribute('data-chat-storage-physical-bytes') || '0'
+  ),
+  measuredAtUnixMs: Number(
+    summary.getAttribute('data-chat-storage-measured-at') || '0'
+  ),
+  cacheBytes: Number(categories.cache || 0),
+  confirmVisible: Boolean(
+    document.querySelector('[data-chat-storage-clear-confirm]')
+  ),
+  resultState: result?.getAttribute('data-chat-storage-clear-result') || '',
+  releasedBytes: Number(
+    result?.getAttribute('data-chat-storage-released-bytes') || '0'
+  ),
+};
+"""
+            )
+            if isinstance(value, Mapping):
+                last = dict(value)
+                if predicate(last):
+                    return last
+            time.sleep(0.25)
+        raise GateError(
+            f"timed out waiting for {description}: {redact_text(str(last))}"
+        )
 
     def _run_recovery_journey(
         self,

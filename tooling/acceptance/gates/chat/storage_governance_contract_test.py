@@ -112,6 +112,84 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ]
         self.assertEqual(offenders, [])
 
+    def test_cache_cleanup_is_shared_scope_fenced_and_native_visible(self) -> None:
+        core = (
+            ROOT / "packages/messaging-core/src/storage_governance/cache.rs"
+        ).read_text(encoding="utf-8")
+        schema = (
+            ROOT / "packages/messaging-core/src/store/schema.rs"
+        ).read_text(encoding="utf-8")
+        desktop_command = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        desktop_main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        desktop_runtime = (
+            ROOT / "apps/desktop/src/runtimes/chatStorageRuntime.ts"
+        ).read_text(encoding="utf-8")
+        desktop_ui = (
+            ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+        mobile_command = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/commands.rs"
+        ).read_text(encoding="utf-8")
+        mobile_registry = (
+            ROOT / "apps/mobile/src-tauri/src/commands/mod.rs"
+        ).read_text(encoding="utf-8")
+        mobile_runtime = (
+            ROOT / "apps/mobile/src/runtimes/chatStorageRuntime.ts"
+        ).read_text(encoding="utf-8")
+        mobile_ui = (
+            ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
+        ).read_text(encoding="utf-8")
+
+        for symbol in (
+            "ChatStorageClass",
+            "CacheCleanupJournalRepository",
+            "prepare_cache_cleanup",
+            "execute_cache_cleanup",
+            "finalize_cache_cleanup",
+            "ProtectedCandidate",
+            "CompactionPending",
+        ):
+            self.assertIn(symbol, core)
+        for table in ("chat_cleanup_journal", "chat_cleanup_items"):
+            self.assertIn(table, schema)
+        self.assertIn("pub async fn chat_storage_clear_cache(", desktop_command)
+        self.assertIn("messaging_commands::chat_storage_clear_cache", desktop_main)
+        self.assertIn("chatStorageClearCache", desktop_runtime)
+        self.assertIn("isChatStorageResultForScope", desktop_runtime)
+        self.assertIn("data-chat-storage-clear-confirm", desktop_ui)
+        self.assertIn("data-chat-storage-released-bytes", desktop_ui)
+        self.assertIn("pub async fn chat_storage_clear_cache(", mobile_command)
+        self.assertEqual(mobile_registry.count("chat_storage_clear_cache"), 2)
+        self.assertIn("chat_storage_acceptance_seed_cache", mobile_registry)
+        self.assertIn("chatStorageClearCache", mobile_runtime)
+        self.assertIn("isChatStorageResultForScope", mobile_runtime)
+        self.assertIn("data-chat-storage-clear-confirm", mobile_ui)
+        self.assertIn("data-chat-storage-released-bytes", mobile_ui)
+        self.assertIn("data-mobile-device-cache-clear", mobile_ui)
+
+    def test_cache_cleanup_gate_uses_one_station_mobile_runtime(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        gate = gates["chat-storage-cache-clear-e2e"]
+        environment = json.loads(
+            (
+                ROOT
+                / "tooling/acceptance/environments/mobile-direct-simulator.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(gate["environment"], "mobile-direct-simulator")
+        self.assertEqual(gate["provisioner"], "mobile-direct-simulator")
+        self.assertEqual(set(environment["services"]), {"station"})
+        self.assertIn("storage.cache.seed", environment["harness"]["required_actions"])
+        self.assertIn("--scenario storage-cache-cleanup", gate["command"])
+
     def test_accounting_gate_uses_single_profile_native_runtime(self) -> None:
         gates = json.loads(
             (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")

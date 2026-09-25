@@ -55,9 +55,10 @@ use messaging_core::outbox::{
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, conversation_event, ActorReadCursor, AttachmentTransferState, ChatCommand,
-    ChatStorageScope, ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
-    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
-    CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
+    ChatStorageOperationState, ChatStorageResult, ChatStorageScope, ChatStorageSnapshot,
+    Conversation, ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
+    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
@@ -74,6 +75,11 @@ use messaging_core::proto::social::{
     UnblockSocialActorRequest,
 };
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
+use messaging_core::storage_governance::cache::{
+    cache_cleanup_error_proto, cache_cleanup_operation_proto, execute_cache_cleanup,
+    finalize_cache_cleanup, prepare_cache_cleanup, storage_error_code_name, CacheCleanupError,
+    CacheCleanupJournalRepository, CacheCleanupPlanInput,
+};
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
@@ -363,6 +369,7 @@ pub struct MobileMessagingEngine {
     attachment_root: PathBuf,
     attachment_stages: Mutex<HashMap<String, StagedAttachment>>,
     attachment_source_lock: Mutex<()>,
+    storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     actor_identity: Arc<IdentityKeyPair>,
     mls_manager: Arc<MlsGroupManager>,
@@ -500,6 +507,7 @@ impl MobileMessagingEngine {
             attachment_root,
             attachment_stages: Mutex::new(HashMap::new()),
             attachment_source_lock: Mutex::new(()),
+            storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             actor_identity,
             mls_manager,
@@ -564,6 +572,82 @@ impl MobileMessagingEngine {
             conversations: self.store.storage_logical_usage()?,
         })
         .map_err(|error| error.to_string())
+    }
+
+    pub fn chat_storage_clear_cache(
+        &self,
+        scope_revision: &str,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "mobile chat storage governance lock poisoned".to_string())?;
+        let before = self.chat_storage_snapshot(scope_revision)?;
+        let cache_root = self.attachment_root.join("cache");
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let operation = prepare_cache_cleanup(
+            self.store.as_ref(),
+            CacheCleanupPlanInput {
+                scope_revision: scope_revision.to_string(),
+                cache_roots: vec![cache_root.clone()],
+                protected_paths: protected_paths.clone(),
+                physical_bytes_before: before.physical_total_bytes,
+                now_unix_ms: now_unix_ms(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let mut progress = execute_cache_cleanup(
+            self.store.as_ref(),
+            &operation,
+            std::slice::from_ref(&cache_root),
+            &protected_paths,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+
+        if progress.operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_checkpoint().is_err() {
+                let after = self.chat_storage_snapshot(scope_revision)?;
+                progress.operation = self.store.update_cache_cleanup_operation(
+                    &progress.operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    Some(after.physical_total_bytes),
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                progress.error = Some(CacheCleanupError::CompactionPending);
+                return Ok(cache_cleanup_result(after, progress));
+            }
+        }
+        let after = self.chat_storage_snapshot(scope_revision)?;
+        let execution_error = progress.error.clone();
+        progress = finalize_cache_cleanup(
+            self.store.as_ref(),
+            &progress.operation,
+            after.physical_total_bytes,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        if progress.error.is_none() {
+            progress.error = execution_error;
+        }
+        Ok(cache_cleanup_result(after, progress))
+    }
+
+    #[cfg(any(test, feature = "acceptance-harness"))]
+    pub fn seed_acceptance_storage_cache(&self, size_bytes: usize) -> Result<u64, String> {
+        if size_bytes == 0 || size_bytes > 16 * 1024 * 1024 {
+            return Err("acceptance cache fixture size is invalid".to_string());
+        }
+        let cache_root = self.attachment_root.join("cache");
+        std::fs::create_dir_all(&cache_root)
+            .map_err(|error| format!("create acceptance cache root: {error}"))?;
+        let path = cache_root.join(format!("acceptance-rebuildable-{}.bin", Ulid::new()));
+        std::fs::write(&path, vec![0x5a_u8; size_bytes])
+            .map_err(|error| format!("write acceptance cache fixture: {error}"))?;
+        Ok(size_bytes as u64)
     }
 
     pub fn scope(&self) -> &MessagingAccountScope {
@@ -3324,6 +3408,29 @@ fn hex_bytes(bytes: &[u8]) -> String {
     encoded
 }
 
+fn cache_cleanup_result(
+    snapshot: ChatStorageSnapshot,
+    progress: messaging_core::storage_governance::cache::CacheCleanupProgress,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = progress.error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if progress.failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} cache item(s) remain",
+                value.message, progress.failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: None,
+        operation: Some(cache_cleanup_operation_proto(scope, &progress.operation)),
+        error,
+    }
+}
+
 fn sqlite_sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
     let mut path = database_path.as_os_str().to_os_string();
     path.push(suffix);
@@ -4083,6 +4190,34 @@ mod tests {
         )
         .unwrap();
         (engine, root)
+    }
+
+    #[test]
+    fn cache_cleanup_reclaims_seeded_file_and_preserves_endpoint() {
+        let (engine, root) = test_engine("cache-cleanup");
+        let revision = "station-1\u{1f}ptid:alice\u{1f}mobile-device-1\u{1f}1";
+        let endpoint_before = engine.scope().clone();
+        assert_eq!(
+            engine
+                .seed_acceptance_storage_cache(2 * 1024 * 1024)
+                .unwrap(),
+            2 * 1024 * 1024
+        );
+        let before = engine.chat_storage_snapshot(revision).unwrap();
+        assert!(before.cache_bytes >= 2 * 1024 * 1024);
+
+        let result = engine.chat_storage_clear_cache(revision).unwrap();
+        let operation = result.operation.expect("cleanup operation");
+        let after = result.snapshot.expect("post-cleanup snapshot");
+
+        assert_eq!(operation.state, ChatStorageOperationState::Succeeded as i32);
+        assert!(result.error.is_none());
+        assert!(operation.physical_bytes_before > operation.physical_bytes_after);
+        assert!(after.physical_total_bytes < before.physical_total_bytes);
+        assert!(after.cache_bytes < before.cache_bytes);
+        assert_eq!(engine.scope(), &endpoint_before);
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

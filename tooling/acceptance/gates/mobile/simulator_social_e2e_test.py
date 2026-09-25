@@ -153,6 +153,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "recovery": "mobile-simulator-recovery-e2e",
                 "recovery-ui": "mobile-simulator-recovery-ui-e2e",
                 "moments": "mobile-simulator-moments-e2e",
+                "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
             },
         )
         self.assertNotEqual(
@@ -296,6 +297,81 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertEqual(result["visibleState"], "draft-restore-pending")
         self.assertEqual(result["actions"], ["restore", "discard"])
+
+    def test_storage_cache_cleanup_requires_physical_release_and_preserves_draft(
+        self,
+    ) -> None:
+        draft = {
+            "kind": "chat",
+            "targetId": "storage-run-draft",
+            "payloadSha256": "c" * 64,
+        }
+
+        class Session:
+            def __init__(self) -> None:
+                self.snapshots = [
+                    {
+                        "physicalTotalBytes": 3_000_000,
+                        "cacheBytes": 2_100_000,
+                        "confirmVisible": False,
+                        "resultState": "",
+                        "releasedBytes": 0,
+                    },
+                    {
+                        "physicalTotalBytes": 3_000_000,
+                        "cacheBytes": 2_100_000,
+                        "confirmVisible": True,
+                        "resultState": "",
+                        "releasedBytes": 0,
+                    },
+                    {
+                        "physicalTotalBytes": 800_000,
+                        "cacheBytes": 0,
+                        "confirmVisible": False,
+                        "resultState": "succeeded",
+                        "releasedBytes": 2_200_000,
+                    },
+                ]
+
+            def call_action(
+                self,
+                action: str,
+                _payload: object = None,
+            ) -> object:
+                if action == "storage.cache.seed":
+                    return {"sizeBytes": 2 * 1024 * 1024}
+                if action == "reliability.draft.write":
+                    return draft
+                if action == "reliability.draft.read":
+                    return [draft]
+                if action == "reliability.draft.action":
+                    return {"drafts": []}
+                if action == "getRealtimeDevice":
+                    return {
+                        "actorPtid": "ptid:alice",
+                        "deviceId": "device-one",
+                        "active": True,
+                    }
+                if action == "navigation.apply":
+                    return {}
+                raise AssertionError(action)
+
+            def execute_script(self, script: str) -> object:
+                if "data-chat-storage-summary" in script:
+                    return self.snapshots.pop(0)
+                return True
+
+        result = SimulatorSocialGate(
+            "storage-cache-cleanup"
+        )._run_storage_cache_cleanup_journey(
+            session=Session(),
+            journey_id="run",
+        )
+
+        self.assertEqual(result["releasedBytes"], 2_200_000)
+        self.assertTrue(result["draftPreserved"])
+        self.assertTrue(result["messagingIdentityPreserved"])
+        self.assertTrue(result["confirmationObserved"])
 
     def test_moments_journey_requires_receiver_and_rollback_readback(
         self,

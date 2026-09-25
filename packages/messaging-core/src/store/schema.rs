@@ -371,6 +371,49 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     attachment_filenames,
     tokenize = 'unicode61'
 );
+CREATE TABLE IF NOT EXISTS chat_cleanup_journal (
+    operation_id TEXT PRIMARY KEY,
+    scope_kind TEXT NOT NULL CHECK (
+        scope_kind IN ('cache', 'conversation', 'retention', 'actor_hide', 'retract')
+    ),
+    conversation_id TEXT,
+    scope_revision TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'planned', 'deleting_rows', 'deleting_files',
+            'compacting', 'compaction_pending', 'paused_scope_inactive',
+            'succeeded', 'failed_retryable', 'failed_terminal', 'cancelled'
+        )
+    ),
+    estimated_reclaimable_bytes INTEGER NOT NULL,
+    physical_bytes_before INTEGER NOT NULL,
+    physical_bytes_after INTEGER,
+    last_error_code TEXT,
+    created_at_unix_ms INTEGER NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_cleanup_journal_resume
+    ON chat_cleanup_journal(scope_kind, scope_revision, updated_at_unix_ms DESC);
+CREATE TABLE IF NOT EXISTS chat_cleanup_items (
+    operation_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_kind TEXT NOT NULL CHECK (
+        item_kind IN ('projection', 'fts', 'interaction', 'transfer', 'file')
+    ),
+    target_ref TEXT NOT NULL,
+    expected_size_bytes INTEGER NOT NULL,
+    expected_digest BLOB CHECK(expected_digest IS NULL OR length(expected_digest) = 32),
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'pending', 'deleted', 'skipped_protected',
+            'failed_retryable', 'failed_terminal'
+        )
+    ),
+    last_error_code TEXT,
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(operation_id, item_id),
+    FOREIGN KEY(operation_id) REFERENCES chat_cleanup_journal(operation_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS messaging_schema_migrations (
     migration_id TEXT PRIMARY KEY
 );

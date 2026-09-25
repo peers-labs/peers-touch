@@ -64,6 +64,8 @@
       "access.submit",
       "lifecycle.restart",
       "lifecycle.scope.read",
+      "navigation.snapshot",
+      "navigation.apply",
       "projection.read",
       "messaging.createDirect",
       "messaging.createGroup",
@@ -96,6 +98,8 @@
       "moments.react",
       "moments.comment",
       "moments.comments.read",
+      "storage.cache.seed",
+      "getRealtimeDevice",
       "cleanup"
     ],
     "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"

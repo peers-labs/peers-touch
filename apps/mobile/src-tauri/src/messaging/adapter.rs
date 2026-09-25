@@ -29,9 +29,13 @@ use messaging_core::outbox::{
 };
 use messaging_core::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
-    ConversationCommandKind, ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
-    DeviceConsumptionReceipt, EncryptedObjectDescriptor, EncryptedObjectUploadSpec,
-    VoiceNoteMetadata,
+    ChatStorageOperationState, ConversationCommandKind, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommand, DeviceConsumptionReceipt, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec, VoiceNoteMetadata,
+};
+use messaging_core::storage_governance::cache::{
+    parse_storage_operation_state, storage_operation_state_name, CacheCleanupItem,
+    CacheCleanupItemState, CacheCleanupJournalRepository, CacheCleanupOperation, CACHE_SCOPE_KIND,
 };
 use messaging_core::store::{
     migrate_messaging_schema, DirectOutboundEditCommit, DirectOutboundRepository,
@@ -112,6 +116,295 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
         }
         Ok(())
     }
+}
+
+impl CacheCleanupJournalRepository for MobileMessagingStore {
+    fn load_resumable_cache_cleanup(
+        &self,
+        scope_revision: &str,
+    ) -> Result<Option<CacheCleanupOperation>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let row = connection
+            .query_row(
+                "SELECT operation_id, scope_revision, state,
+                        estimated_reclaimable_bytes, physical_bytes_before,
+                        physical_bytes_after, last_error_code,
+                        created_at_unix_ms, updated_at_unix_ms
+                 FROM chat_cleanup_journal
+                 WHERE scope_kind = ?1 AND scope_revision = ?2
+                   AND state IN (
+                       'planned', 'deleting_files', 'compacting',
+                       'compaction_pending', 'paused_scope_inactive',
+                       'failed_retryable'
+                   )
+                 ORDER BY updated_at_unix_ms DESC, operation_id DESC
+                 LIMIT 1",
+                params![CACHE_SCOPE_KIND, scope_revision],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        row.map(cache_cleanup_operation_from_sql).transpose()
+    }
+
+    fn create_cache_cleanup(
+        &self,
+        operation: &CacheCleanupOperation,
+        items: &[CacheCleanupItem],
+    ) -> Result<(), String> {
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO chat_cleanup_journal(
+                    operation_id, scope_kind, conversation_id, scope_revision,
+                    state, estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, last_error_code,
+                    created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?7)",
+                params![
+                    operation.operation_id,
+                    CACHE_SCOPE_KIND,
+                    operation.scope_revision,
+                    storage_operation_state_name(operation.state),
+                    sql_i64(
+                        operation.estimated_reclaimable_bytes,
+                        "estimated cache bytes"
+                    )?,
+                    sql_i64(operation.physical_bytes_before, "physical bytes before")?,
+                    operation.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        for item in items {
+            transaction
+                .execute(
+                    "INSERT INTO chat_cleanup_items(
+                        operation_id, item_id, item_kind, target_ref,
+                        expected_size_bytes, expected_digest, state,
+                        last_error_code, updated_at_unix_ms
+                     ) VALUES(?1, ?2, 'file', ?3, ?4, ?5, ?6, NULL, ?7)",
+                    params![
+                        operation.operation_id,
+                        item.item_id,
+                        item.target_ref,
+                        sql_i64(item.expected_size_bytes, "expected cache item bytes")?,
+                        item.expected_digest.as_slice(),
+                        item.state.as_str(),
+                        operation.created_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    fn load_cache_cleanup_items(
+        &self,
+        operation_id: &str,
+    ) -> Result<Vec<CacheCleanupItem>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT item_id, target_ref, expected_size_bytes,
+                        expected_digest, state, last_error_code
+                 FROM chat_cleanup_items
+                 WHERE operation_id = ?1
+                 ORDER BY item_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![operation_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows.into_iter().map(cache_cleanup_item_from_sql).collect()
+    }
+
+    fn update_cache_cleanup_item(
+        &self,
+        operation_id: &str,
+        item_id: &str,
+        state: CacheCleanupItemState,
+        last_error_code: Option<&str>,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let changed = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .execute(
+                "UPDATE chat_cleanup_items
+                 SET state = ?3, last_error_code = ?4, updated_at_unix_ms = ?5
+                 WHERE operation_id = ?1 AND item_id = ?2",
+                params![
+                    operation_id,
+                    item_id,
+                    state.as_str(),
+                    last_error_code,
+                    updated_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("cache cleanup journal item is missing".to_string());
+        }
+        Ok(())
+    }
+
+    fn update_cache_cleanup_operation(
+        &self,
+        operation_id: &str,
+        state: ChatStorageOperationState,
+        physical_bytes_after: Option<u64>,
+        last_error_code: Option<&str>,
+        updated_at_unix_ms: i64,
+    ) -> Result<CacheCleanupOperation, String> {
+        let physical_bytes_after = physical_bytes_after
+            .map(|value| sql_i64(value, "physical bytes after"))
+            .transpose()?;
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let changed = connection
+            .execute(
+                "UPDATE chat_cleanup_journal
+                 SET state = ?2, physical_bytes_after = ?3,
+                     last_error_code = ?4, updated_at_unix_ms = ?5
+                 WHERE operation_id = ?1",
+                params![
+                    operation_id,
+                    storage_operation_state_name(state),
+                    physical_bytes_after,
+                    last_error_code,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("cache cleanup journal operation is missing".to_string());
+        }
+        load_cache_cleanup_operation(&connection, operation_id)
+    }
+}
+
+fn sql_i64(value: u64, field: &str) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| format!("{field} exceeds SQLCipher range"))
+}
+
+fn cache_cleanup_operation_from_sql(
+    row: (
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        Option<i64>,
+        Option<String>,
+        i64,
+        i64,
+    ),
+) -> Result<CacheCleanupOperation, String> {
+    let (operation_id, scope_revision, state, estimated, before, after, error, created, updated) =
+        row;
+    Ok(CacheCleanupOperation {
+        operation_id,
+        scope_revision,
+        state: parse_storage_operation_state(&state).map_err(|error| error.to_string())?,
+        estimated_reclaimable_bytes: u64::try_from(estimated)
+            .map_err(|_| "estimated cache bytes are invalid".to_string())?,
+        physical_bytes_before: u64::try_from(before)
+            .map_err(|_| "physical bytes before are invalid".to_string())?,
+        physical_bytes_after: after
+            .map(|value| {
+                u64::try_from(value).map_err(|_| "physical bytes after are invalid".to_string())
+            })
+            .transpose()?,
+        last_error_code: error,
+        created_at_unix_ms: created,
+        updated_at_unix_ms: updated,
+    })
+}
+
+fn cache_cleanup_item_from_sql(
+    row: (String, String, i64, Vec<u8>, String, Option<String>),
+) -> Result<CacheCleanupItem, String> {
+    let (item_id, target_ref, expected_size, digest, state, last_error_code) = row;
+    let expected_digest: [u8; 32] = digest
+        .try_into()
+        .map_err(|_| "cache cleanup item digest is invalid".to_string())?;
+    Ok(CacheCleanupItem {
+        item_id,
+        target_ref,
+        expected_size_bytes: u64::try_from(expected_size)
+            .map_err(|_| "expected cache item bytes are invalid".to_string())?,
+        expected_digest,
+        state: CacheCleanupItemState::from_str(&state).map_err(|error| error.to_string())?,
+        last_error_code,
+    })
+}
+
+fn load_cache_cleanup_operation(
+    connection: &Connection,
+    operation_id: &str,
+) -> Result<CacheCleanupOperation, String> {
+    let row = connection
+        .query_row(
+            "SELECT operation_id, scope_revision, state,
+                    estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, last_error_code,
+                    created_at_unix_ms, updated_at_unix_ms
+             FROM chat_cleanup_journal WHERE operation_id = ?1",
+            params![operation_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                ))
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    cache_cleanup_operation_from_sql(row)
 }
 
 pub struct MobileMessagingStore {
@@ -392,6 +685,43 @@ impl MobileMessagingStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
         Ok(paths)
+    }
+
+    pub(crate) fn storage_cache_protected_paths(&self) -> Result<Vec<PathBuf>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT local_cache_path AS path
+                 FROM messaging_attachment_projections
+                 WHERE local_cache_path IS NOT NULL AND local_cache_path <> ''
+                 UNION
+                 SELECT source_local_ref AS path
+                 FROM messaging_attachment_transfers
+                 WHERE source_local_ref <> ''
+                 UNION
+                 SELECT partial_local_ref AS path
+                 FROM messaging_attachment_transfers
+                 WHERE partial_local_ref <> ''
+                 ORDER BY path",
+            )
+            .map_err(|error| error.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(paths)
+    }
+
+    pub(crate) fn storage_checkpoint(&self) -> Result<(), String> {
+        self.connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|error| error.to_string())
     }
 
     #[cfg(test)]

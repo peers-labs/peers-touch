@@ -362,6 +362,14 @@
       "tier": "env-evidence",
       "description": "Measure real database sidecars and managed files, then prove non-zero total and per-conversation usage plus search, sorting, refresh, scope fencing, and rendering through one exact-source native Desktop."
     },
+    "chat-storage-cache-clear-e2e": {
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance::cache --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop cache_cleanup --offline && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib cache_cleanup --offline && pnpm --dir apps/desktop exec vitest run src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec vitest run src/runtimes/chatStorageRuntime.test.ts src/pages/settings/SettingsSections.test.tsx src/acceptance/registry.test.ts && python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.mobile.simulator_social_e2e_test && python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario storage-cache-cleanup",
+      "timeout_seconds": 2400,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Prove immutable cache cleanup journals and protected-state preservation in shared Core and both adapters, then clear a real cache fixture through the native Mobile Settings UI and report physically released bytes."
+    },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,
