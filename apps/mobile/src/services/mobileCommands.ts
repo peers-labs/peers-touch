@@ -956,6 +956,8 @@ export interface OAuthAccessDecisionProjection {
 export interface OAuthSessionProjection {
   sessionId: string;
   actorPtid: string;
+  deviceId: string;
+  lifecycleGeneration: number;
   expiresAt: string;
 }
 

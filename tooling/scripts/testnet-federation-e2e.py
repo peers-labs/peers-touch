@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -13,18 +14,20 @@ from _acceptance_artifacts import artifact_session, explicit_output_path
 
 
 NODES = {
-    "one": os.environ.get("TESTNET_NODE_ONE_BASE", "http://10.37.246.80:18080"),
-    "two": os.environ.get("TESTNET_NODE_TWO_BASE", "http://10.37.118.48:18080"),
-    "three": os.environ.get("TESTNET_NODE_THREE_BASE", "http://10.37.94.156:18080"),
+    "one": os.environ.get("TESTNET_NODE_ONE_BASE", ""),
+    "two": os.environ.get("TESTNET_NODE_TWO_BASE", ""),
+    "three": os.environ.get("TESTNET_NODE_THREE_BASE", ""),
 }
 DEMO_ACCOUNTS = {
-    "one": "alice@p.t",
-    "two": "bob@p.t",
-    "three": "carol@p.t",
+    "one": os.environ.get("TESTNET_NODE_ONE_ACCOUNT", ""),
+    "two": os.environ.get("TESTNET_NODE_TWO_ACCOUNT", ""),
+    "three": os.environ.get("TESTNET_NODE_THREE_ACCOUNT", ""),
 }
-DEMO_PASSWORD = "1"
+DEMO_PASSWORD = os.environ.get("TESTNET_DEMO_PASSWORD", "")
 GATE_ID = "federation-three-node-e2e"
 REPORT_ROLE = "reports/testnet-p5-federation-e2e.json"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ACCESS_CLIENT_DIR = REPO_ROOT / "apps/station/app"
 
 
 def request(method, url, payload=None, token=None):
@@ -58,16 +61,44 @@ def unwrap(body):
 
 def login_demo_actor(node_name, base):
     email = DEMO_ACCOUNTS[node_name]
-    body = unwrap(
-        request(
-            "POST",
-            base + "/actor/login",
-            {"email": email, "password": DEMO_PASSWORD, "device_type": "desktop"},
+    if not base or not email or not DEMO_PASSWORD:
+        raise RuntimeError(
+            "testnet federation access requires TESTNET_NODE_{ONE,TWO,THREE}_BASE, "
+            "TESTNET_NODE_{ONE,TWO,THREE}_ACCOUNT, and TESTNET_DEMO_PASSWORD"
         )
+    environment = {
+        **os.environ,
+        "PT_ACCESS_CLIENT_STATION": base,
+        "PT_ACCESS_CLIENT_EMAIL": email,
+        "PT_ACCESS_CLIENT_PASSWORD": DEMO_PASSWORD,
+    }
+    completed = subprocess.run(
+        ["go", "run", "./tests/access_client"],
+        cwd=ACCESS_CLIENT_DIR,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
     )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"canonical Access client failed for node {node_name}: "
+            f"{completed.stderr.strip() or 'unknown error'}"
+        )
+    try:
+        body = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"canonical Access client returned invalid output for node {node_name}"
+        ) from error
+    if not isinstance(body, dict) or not body.get("token") or not body.get("ptid"):
+        raise RuntimeError(
+            f"canonical Access client returned incomplete output for node {node_name}"
+        )
     return {
-        "token": body["tokens"]["access_token"],
-        "ptid": body["actor_ref"]["ptid"],
+        "token": body["token"],
+        "ptid": body["ptid"],
     }
 
 
@@ -160,6 +191,18 @@ def wait_for_convergence(logins, federation_id):
 
 
 def run():
+    missing = [
+        name
+        for name, value in {
+            **{f"TESTNET_NODE_{key.upper()}_BASE": value for key, value in NODES.items()},
+            **{f"TESTNET_NODE_{key.upper()}_ACCOUNT": value for key, value in DEMO_ACCOUNTS.items()},
+            "TESTNET_DEMO_PASSWORD": DEMO_PASSWORD,
+        }.items()
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"missing required testnet environment: {', '.join(missing)}")
+
     logins = {}
     health = {}
     for node_name, base in NODES.items():

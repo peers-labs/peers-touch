@@ -1,6 +1,6 @@
 # Station 接入生命周期 - 架构设计
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access
@@ -175,4 +175,4 @@ apps/station/
 └── app/subserver/federation/
 ```
 
-当前状态：`DESIGN_READY_FOR_OWNER_REVIEW`。
+当前状态：`accepted`。

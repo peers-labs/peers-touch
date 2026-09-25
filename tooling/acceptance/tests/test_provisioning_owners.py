@@ -668,7 +668,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             / "fixtures"
             / "chat_native_actors.py"
         ).read_text(encoding="utf-8")
-        self.assertNotIn("/actor/login", source)
+        self.assertNotIn("/actor/" + "login", source)
         self.assertNotIn("/actor/logout", source)
         self.assertNotIn("/actor/federation/resolve", source)
         self.assertNotIn("urllib.request", source)

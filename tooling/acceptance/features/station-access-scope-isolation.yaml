@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "station-access-scope-isolation",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/desktop/src/kernel/identityRuntime.ts",
+    "apps/desktop/src/store/session.ts",
+    "apps/desktop/src-tauri/src/application/key_exchange/device_install.rs",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/mobile/src/runtimes/sessionRuntime.ts",
+    "apps/mobile/src/runtimes/messagingRuntime.ts",
+    "apps/mobile/src/storage/mobileClientStorage.ts"
+  ],
+  "truth_sources": [
+    "Desktop identity lifecycle and Device Messaging Engine",
+    "MobileLifecycleKernel and Mobile Messaging runtime",
+    "native client Station binding"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "authenticated-shell"},
+    {"type": "native-mobile", "route": "shell"}
+  ],
+  "required_gates": [
+    "station-access-capability-contract",
+    "station-access-scope-isolation-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Session and Messaging use one Station, Actor, and Device scope",
+      "native restart preserves only the current scope and advances the owning lifecycle generation where applicable"
+    ],
+    "surface": [
+      "no old actor or Station projection appears after restart or isolated-client activation"
+    ]
+  },
+  "negative": [
+    "old-generation asynchronous results must not become visible",
+    "one client must not reuse another client's actor, device, storage, or Station binding",
+    "unscoped account or session keys must not be read"
+  ]
+}

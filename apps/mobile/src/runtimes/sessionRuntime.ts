@@ -50,6 +50,8 @@ export interface MobileSessionProjection {
   readonly stationUrl: string;
   readonly sessionId: string;
   readonly actorPtid: string;
+  readonly deviceId: string;
+  readonly lifecycleGeneration: number;
   readonly expiresAt?: string;
   readonly credentialOwner: SessionCredentialOwner;
 }
@@ -66,6 +68,8 @@ export interface NativeSessionProjection {
   readonly stationPeerId: string;
   readonly sessionId: string;
   readonly actorPtid: string;
+  readonly deviceId: string;
+  readonly lifecycleGeneration: number;
   readonly expiresAt: string;
 }
 
@@ -452,6 +456,8 @@ export function createSessionRuntimeController({
         stationPeerId: projection.stationPeerId ?? '',
         sessionId: projection.session.sessionId,
         actorPtid: projection.session.actorPtid,
+      deviceId: projection.session.deviceId,
+      lifecycleGeneration: projection.session.lifecycleGeneration,
         expiresAt: projection.session.expiresAt,
       }, station);
       activate(projected);
@@ -595,6 +601,8 @@ export const sessionRuntimeTestContract = {
         session: {
           sessionId: session.sessionId,
           actorPtid: session.actorPtid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           expiresAt: session.expiresAt,
         },
       },
@@ -749,8 +757,18 @@ function sanitizeNativeSessionProjection(
   const stationPeerId = value.stationPeerId?.trim();
   const sessionId = value.sessionId?.trim();
   const actorPtid = value.actorPtid?.trim();
+  const deviceId = value.deviceId?.trim();
+  const lifecycleGeneration = value.lifecycleGeneration;
   const expiresAt = value.expiresAt?.trim();
-  if (!stationPeerId || !sessionId || !actorPtid || !expiresAt) {
+  if (
+    !stationPeerId
+    || !sessionId
+    || !actorPtid
+    || !deviceId
+    || !Number.isSafeInteger(lifecycleGeneration)
+    || lifecycleGeneration <= 0
+    || !expiresAt
+  ) {
     throw new Error('mobile.auth.nativeSessionProjectionInvalid');
   }
   return {
@@ -758,6 +776,8 @@ function sanitizeNativeSessionProjection(
     stationUrl: stationUrl.replace(/\/+$/, ''),
     sessionId,
     actorPtid,
+    deviceId,
+    lifecycleGeneration,
     expiresAt,
     credentialOwner: 'native-oauth',
   };
@@ -773,6 +793,9 @@ export function isMobileSessionProjectionValid(
     || !session.stationUrl
     || !session.sessionId
     || !session.actorPtid
+    || !session.deviceId
+    || !Number.isSafeInteger(session.lifecycleGeneration)
+    || session.lifecycleGeneration <= 0
   ) {
     return false;
   }
@@ -788,6 +811,8 @@ function mobileAuthSessionFromProjection(
     stationPeerId: session.stationPeerId,
     stationUrl: session.stationUrl,
     sessionId: session.sessionId,
+    deviceId: session.deviceId,
+    lifecycleGeneration: session.lifecycleGeneration,
     expiresAt: session.expiresAt,
     actorRef: { ptid: session.actorPtid },
     authenticatedAt: Date.now(),

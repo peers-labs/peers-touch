@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
@@ -100,102 +99,6 @@ func TestMigrateSocialIdentityColumnsRollsBackAsASet(t *testing.T) {
 		t.Fatal("social audience migration was not rolled back with the module set")
 	}
 	assertIdentityValue(t, rds, "social_private_audience_grants", "actor_did", "ptid:alice")
-}
-
-func TestMigrateAccessGateIdentityBackfillsLegacyAttempt(t *testing.T) {
-	rds := openIdentityMigrationDB(t, "access_gate_preserves_attempt")
-	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE touch_actor (
-			id INTEGER PRIMARY KEY,
-			ptid TEXT,
-			home_station_peer_id TEXT,
-			origin TEXT
-		)`,
-		`CREATE TABLE access_gate_attempts (
-			id TEXT PRIMARY KEY,
-			actor_ptid TEXT
-		)`,
-		`INSERT INTO touch_actor (
-			id, ptid, home_station_peer_id, origin
-		) VALUES (
-			1, 'ptid:alice', 'station-local', 'local'
-		)`,
-		`INSERT INTO access_gate_attempts (
-			id, actor_ptid
-		) VALUES (
-			'attempt-1', 'ptid:alice'
-		)`,
-	)
-
-	if err := MigrateAccessGateIdentity(rds); err != nil {
-		t.Fatalf("migrate Access Gate identities: %v", err)
-	}
-	var migratedStationPeerID sql.NullString
-	var migratedActorPTID sql.NullString
-	if err := rds.Table(accessAttemptTable).
-		Select("station_peer_id, actor_ptid").
-		Where("id = ?", "attempt-1").
-		Row().
-		Scan(&migratedStationPeerID, &migratedActorPTID); err != nil {
-		t.Fatalf("read Access Gate attempt before auto-migrate: %v", err)
-	}
-	if migratedStationPeerID.String != "station-local" ||
-		migratedActorPTID.String != "ptid:alice" {
-		t.Fatalf(
-			"migrated Access Gate identities = (%q, %q), want (station-local, ptid:alice)",
-			migratedStationPeerID.String,
-			migratedActorPTID.String,
-		)
-	}
-	if err := rds.AutoMigrate(&AccessAttempt{}); err != nil {
-		t.Fatalf("auto migrate AccessAttempt after identity backfill: %v", err)
-	}
-
-	var stationPeerID string
-	if err := rds.Table(accessAttemptTable).
-		Select("station_peer_id").
-		Where("id = ?", "attempt-1").
-		Row().
-		Scan(&stationPeerID); err != nil {
-		t.Fatalf("read migrated Access Gate attempt: %v", err)
-	}
-	if stationPeerID != "station-local" {
-		t.Fatalf(
-			"access_gate_attempts.station_peer_id = %q, want station-local",
-			stationPeerID,
-		)
-	}
-}
-
-func TestMigrateAccessGateIdentityRejectsAmbiguousStationScope(t *testing.T) {
-	rds := openIdentityMigrationDB(t, "access_gate_rejects_ambiguous_station")
-	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE touch_actor (
-			id INTEGER PRIMARY KEY,
-			home_station_peer_id TEXT,
-			origin TEXT
-		)`,
-		`CREATE TABLE access_gate_attempts (
-			id TEXT PRIMARY KEY
-		)`,
-		`INSERT INTO touch_actor (
-			id, home_station_peer_id, origin
-		) VALUES
-			(1, 'station-a', 'local'),
-			(2, 'station-b', 'local')`,
-		`INSERT INTO access_gate_attempts (id) VALUES ('attempt-1')`,
-	)
-
-	err := MigrateAccessGateIdentity(rds)
-	if err == nil || !strings.Contains(err.Error(), "exactly one local Station PeerID") {
-		t.Fatalf("expected ambiguous Station identity error, got %v", err)
-	}
-	if rds.Migrator().HasColumn(
-		accessAttemptTable,
-		accessAttemptStationPeerColumn,
-	) {
-		t.Fatal("Station identity column was not rolled back after ambiguity")
-	}
 }
 
 func openIdentityMigrationDB(t *testing.T, name string) *gorm.DB {

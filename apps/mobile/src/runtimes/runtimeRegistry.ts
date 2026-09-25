@@ -27,7 +27,10 @@ import {
   type AccessDecision,
   type MobileAuthSession,
 } from '../features/auth/authSession';
-import { isMobileAuthSessionValid } from '../features/auth/mobileAuthIdentity';
+import {
+  isMobileAuthSessionValid,
+  mobileAuthScopeKey,
+} from '../features/auth/mobileAuthIdentity';
 import { useAuthStore } from '../features/auth/authStore';
 import {
   activeStationEntry,
@@ -792,7 +795,7 @@ export function readMobileRuntimeScopeProjection() {
 
 function runtimeSessionKey(session: MobileAuthSession | null): string {
   return session
-    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.sessionId}`
+    ? `${mobileAuthScopeKey(session)}\u001f${session.sessionId}`
     : '';
 }
 

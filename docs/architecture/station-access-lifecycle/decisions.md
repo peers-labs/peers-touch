@@ -1,6 +1,6 @@
 # Station 接入生命周期 - 设计决策
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access
@@ -11,12 +11,12 @@
 
 | ID | 决策 | 状态 |
 |---|---|---|
-| SAL-D01 | 双端统一按语义和结果衡量 | proposed |
-| SAL-D02 | 零兼容硬切并重建干净基线 | proposed |
-| SAL-D03 | 签名 Station identity + Access Gate 是唯一接入路径 | proposed |
-| SAL-D04 | Federation governance 与普通客户端分离 | proposed |
-| SAL-D05 | Relay 只属于基础设施 | proposed |
-| SAL-D06 | 完整 E2E 与九维零引用共同决定完成 | proposed |
+| SAL-D01 | 双端统一按语义和结果衡量 | accepted |
+| SAL-D02 | 零兼容硬切并重建干净基线 | accepted |
+| SAL-D03 | 签名 Station identity + Access Gate 是唯一接入路径 | accepted |
+| SAL-D04 | Federation governance 与普通客户端分离 | accepted |
+| SAL-D05 | Relay 只属于基础设施 | accepted |
+| SAL-D06 | 完整 E2E 与九维零引用共同决定完成 | accepted |
 
 ## SAL-D01：双端统一按语义和结果衡量
 
