@@ -778,6 +778,7 @@ export function readMobileRuntimeScopeProjection() {
   return {
     activeStationPeerId: auth?.stationPeerId ?? null,
     activeActorPtid: auth?.actorPtid ?? null,
+    deviceId: auth?.deviceId ?? null,
     social: {
       stationPeerId: social.authSession?.stationPeerId ?? null,
       actorPtid: social.currentUserPtid,
