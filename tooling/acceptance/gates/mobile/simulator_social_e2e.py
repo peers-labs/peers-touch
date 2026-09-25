@@ -100,9 +100,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
     ) -> None:
         if scenario not in SCENARIO_GATES:
             raise ValueError(f"unsupported Mobile social scenario: {scenario}")
+        self.gate_id = SCENARIO_GATES[scenario]
         super().__init__(**kwargs)
         self.scenario = scenario
-        self.gate_id = SCENARIO_GATES[scenario]
 
     def execute(self) -> int:
         with ArtifactSession(
