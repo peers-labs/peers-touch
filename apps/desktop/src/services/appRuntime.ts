@@ -128,7 +128,7 @@ export async function installAuthenticatedCriticalRuntimes(
   actorId: string,
 ): Promise<void> {
   // #region debug-point A:critical-bootstrap-entry
-  await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'A', location: 'apps/desktop/src/services/appRuntime.ts:critical-entry', msg: '[DEBUG] Critical runtime install requested', data: { actorPresent: Boolean(actorId), reusedInFlight: criticalInstallInFlight?.actorId === actorId }, ts: Date.now() }) }).catch(() => {});
+  await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A', location: 'apps/desktop/src/services/appRuntime.ts:critical-entry', msg: '[DEBUG] Critical runtime install requested', data: { actorPresent: Boolean(actorId), reusedInFlight: criticalInstallInFlight?.actorId === actorId }, ts: Date.now() }) }).catch(() => {});
   // #endregion
   if (criticalInstallInFlight?.actorId === actorId) {
     return criticalInstallInFlight.promise;
@@ -137,12 +137,12 @@ export async function installAuthenticatedCriticalRuntimes(
   const promise = (async () => {
     for (const runtimeId of CRITICAL_SESSION_RUNTIME_IDS) {
       // #region debug-point A-D:critical-runtime-step
-      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-start', msg: '[DEBUG] Critical runtime bootstrap started', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
+      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-start', msg: '[DEBUG] Critical runtime bootstrap started', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
       // #endregion
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, actorId);
       // #region debug-point A-D:critical-runtime-step
-      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-end', msg: '[DEBUG] Critical runtime bootstrap completed', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
+      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-end', msg: '[DEBUG] Critical runtime bootstrap completed', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
       // #endregion
     }
   })();

@@ -209,22 +209,33 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         _runtime_service: MagicMock,
     ) -> None:
         events: list[str] = []
+        station_results = {
+            "configureStation": {
+                "configured": True,
+                "activeUrl": "https://station.invalid",
+                "boundUrl": "https://station.invalid",
+                "bindingPhase": "access_gate",
+                "activeStationPeerId": "station-peer",
+            },
+            "identityState": {"authenticated": False, "actorPtid": ""},
+            "loginWithPassword": {
+                "authenticated": True,
+                "actorPtid": "ptid:bob",
+            },
+            "bindingState": {
+                "phase": "bound",
+                "bound_url": "https://station.invalid",
+            },
+            "scopeState": {
+                "authenticated": True,
+                "bindingPhase": "bound",
+                "actorPtid": "ptid:bob",
+                "deviceId": "desktop-device",
+                "stationPeerId": "station-peer",
+            },
+        }
         station_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
-            events.append(f"station:{method}")
-            or (
-                {
-                    "configured": True,
-                    "activeUrl": "https://station.invalid",
-                    "boundUrl": "https://station.invalid",
-                    "bindingPhase": "access_gate",
-                    "activeStationPeerId": "station-peer",
-                }
-                if method == "configureStation"
-                else {
-                    "phase": "bound",
-                    "bound_url": "https://station.invalid",
-                }
-            )
+            events.append(f"station:{method}") or station_results[method]
         )
         chat_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
             events.append(f"chat:{method}")
@@ -245,38 +256,47 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             ptid="ptid:bob",
             account_ref="station-account:bob",
             federation_id="fed-1",
-            device_id="desktop-device",
+            device_id=hashlib.sha256(b"desktop-device").hexdigest(),
         )
         runtime = object.__new__(MixedNativeRuntime)
         runtime.desktop_binding = MagicMock()
         runtime.desktop_binding.create_bound_session.return_value = session
         runtime.desktop_binding.proof_refs.return_value = ({"path": "binding"},)
         runtime.desktop_sessions = {}
+        runtime.client_specs = {
+            "desktop-bob": {
+                "actor": "bob",
+                "runtime": "native-tauri",
+            },
+        }
+        runtime.gate_id = "station-access-auth-e2e"
         runtime.desktop_instances = []
         runtime.desktop_lifecycles = MagicMock()
         runtime.access_evidence = {}
         runtime.manifest = {}
-        runtime._identity_with_device = MagicMock(return_value=identity)
 
         result = runtime._start_desktop(
             "desktop-bob",
             {
+                "role": "bob",
                 "ptid": "ptid:bob",
                 "accountRef": "station-account:bob",
+                "federationId": "fed-1",
             },
             window_slot=0,
             window_count=1,
         )
 
         self.assertEqual(result, identity)
+        chat_harness.assert_not_called()
         self.assertEqual(
             events,
             [
                 "station:configureStation",
-                "chat:identityState",
-                "chat:loginWithPassword",
+                "station:identityState",
+                "station:loginWithPassword",
                 "station:bindingState",
-                "chat:hydrateActiveActor",
+                "station:scopeState",
             ],
         )
         self.assertEqual(
