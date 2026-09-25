@@ -1,5 +1,7 @@
 import {
+  create,
   fromBinary,
+  toBinary,
   type DescMessage,
   type MessageShape,
 } from '@bufbuild/protobuf';
@@ -21,6 +23,11 @@ import {
   ImageAttachmentSchema,
   type ImageAttachment,
 } from '../gen/proto/domain/social/post_pb';
+import {
+  ChatStorageSnapshotRequestSchema,
+  ChatStorageSnapshotSchema,
+  type ChatStorageSnapshot,
+} from '../gen/proto/domain/chat/storage_pb';
 import {
   notifyReliabilityCommandChanged,
   type CommandState,
@@ -112,6 +119,28 @@ export async function discardNativeMomentMedia(
 export interface MessagingAccountInput {
   stationPeerId: string;
   actorPtid: string;
+}
+
+export async function chatStorageSnapshot(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+  },
+): Promise<ChatStorageSnapshot> {
+  const request = create(ChatStorageSnapshotRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+  });
+  const response = await invoke<number[]>('chat_storage_snapshot', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageSnapshotRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageSnapshotSchema, Uint8Array.from(response));
 }
 
 export interface MessagingConversationMutationInput extends MessagingAccountInput {

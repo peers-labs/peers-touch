@@ -7,13 +7,12 @@ import { Button } from '@lobehub/ui';
 import {
   Settings, Bot, Wrench, HelpCircle,
   MessageSquare, Puzzle, Sparkles,
-  BarChart3, Hash, Type,
-  Activity as ActivityIcon, Trophy, Layers,
+  Hash, Type, Activity as ActivityIcon, Trophy, Layers,
   Terminal, Users, BookOpen, Brain,
   Search, Key, Cpu, Globe, Zap, FileText,
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
-  GitBranch, Image, Trash2, Server, AlertTriangle, RotateCcw,
+  GitBranch, HardDrive, Image, Trash2, Server, AlertTriangle, RotateCcw,
   Database, Network,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -25,6 +24,7 @@ import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
+import { ChatStorageSettings } from '../components/settings/ChatStorageSettings';
 import { FederationTab } from '../components/settings/FederationTab';
 import { RecoverySettings } from '../components/settings/RecoverySettings';
 import { ModelProviderSelect } from '../components/ModelProviderSelect';
@@ -123,12 +123,12 @@ function useSettingsSections(): SectionDef[] {
         render: () => <FederationTab />,
       },
       {
-        key: 'statistics',
-        label: t('settings.tab.statistics'),
-        icon: BarChart3,
+        key: 'storage',
+        label: t('settings.tab.storage'),
+        icon: HardDrive,
         order: 50,
         policy: { cache: 'selected-only' },
-        render: () => <StatisticsTab />,
+        render: () => <ChatStorageSettings />,
       },
       {
         key: 'applets',
@@ -207,7 +207,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'data',
         label: t('settings.group.data'),
         icon: Database,
-        sectionKeys: ['statistics', 'logs'],
+        sectionKeys: ['storage', 'logs'],
       },
       {
         key: 'help',
@@ -218,7 +218,7 @@ function useTabGroups(): TabGroupDef[] {
     ];
 
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([...allSections, 'security', 'federation', 'statistics', 'applets', 'general', 'tools', 'help']);
+    const knownKeys = new Set([...allSections, 'security', 'federation', 'storage', 'applets', 'general', 'tools', 'help']);
     return groups.map((g) => ({
       ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
@@ -809,7 +809,7 @@ function RankList({
 
 /* ─── Statistics Tab ─────────────────────────────────────────────────── */
 
-function StatisticsTab() {
+export function StatisticsTab() {
   const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   // Statistics is per-page heavy data: prefetched onto the idle window
