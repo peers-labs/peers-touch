@@ -47,6 +47,7 @@ class DesktopMessagingDomainRuntime {
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private scopeTransition: Promise<void> = Promise.resolve();
+  private scopeListeners = new Set<(scope: MessagingRuntimeScope | null) => void>();
   private readonly onStationChanged = () => {
     this.enqueueScopeRefresh('station');
   };
@@ -112,6 +113,7 @@ class DesktopMessagingDomainRuntime {
     await this.requireLifecycle().reconcile('runtime:bootstrap', scope);
     this.assertCurrent(scope);
     this.startReconcile();
+    this.publishScope();
   }
 
   async reconcile(reason: string): Promise<void> {
@@ -134,6 +136,13 @@ class DesktopMessagingDomainRuntime {
 
   captureScope(): MessagingRuntimeScope | null {
     return this.activeScope ? { ...this.activeScope } : null;
+  }
+
+  subscribeScope(
+    listener: (scope: MessagingRuntimeScope | null) => void,
+  ): () => void {
+    this.scopeListeners.add(listener);
+    return () => this.scopeListeners.delete(listener);
   }
 
   isCurrent(scope: MessagingRuntimeScope): boolean {
@@ -195,6 +204,12 @@ class DesktopMessagingDomainRuntime {
     this.stopReconcile();
     this.activeScope = null;
     this.lifecycle?.resetProjection();
+    this.publishScope();
+  }
+
+  private publishScope(): void {
+    const scope = this.captureScope();
+    this.scopeListeners.forEach((listener) => listener(scope));
   }
 
   private enqueueScopeRefresh(reason: string): void {

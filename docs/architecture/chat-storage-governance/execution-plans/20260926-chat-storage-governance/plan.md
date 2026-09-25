@@ -1,14 +1,14 @@
 # Chat 本机存储治理
 
-> **Status**: prepared
-> **Branch**: merge-social-work
-> **Workspace ID**: b0a926025d2b25b9
-> **Initial HEAD**: 80f796894ecf4a98608ba0260cc49390ecba3c97
+> **Status**: active
+> **Branch**: work/chat-storage-governance
+> **Workspace ID**: db9e7bd2a30e4fc8
+> **Initial HEAD**: 2ffb93248c8636903f6b8d24ea9cf41c4da01a39
 
 ## Plan Package
 
 ```json
-{"kind":"peers-touch-plan-package","planId":"CSG-20260926","status":"prepared","binding":{"branch":"merge-social-work","workspaceId":"b0a926025d2b25b9","initialHead":"80f796894ecf4a98608ba0260cc49390ecba3c97"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/chat-storage-governance/product-definition.md","docs/architecture/chat-storage-governance/benchmark-disposition.md","docs/architecture/chat-storage-governance/experience-contract.md","docs/architecture/chat-storage-governance/product-state-model.md","docs/architecture/chat-storage-governance/acceptance-matrix.md","docs/architecture/chat-storage-governance/design.md","docs/architecture/chat-storage-governance/decisions.md","docs/architecture/chat-storage-governance/data-model.md","docs/architecture/chat-storage-governance/integration.md","docs/architecture/chat-storage-governance/legacy-inventory.json"],"decisions":["CSG-D01","CSG-D02","CSG-D03","CSG-D04","CSG-D05","CSG-D06","CSG-D07","CSG-D08"]},"scope":{"sourceClaims":[{"pathPrefix":"docs/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-storage-governance","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/messaging-platform","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/encryption","mode":"exclusive-write"},{"pathPrefix":"docs/client/chat","mode":"exclusive-write"},{"pathPrefix":"docs/client/desktop","mode":"exclusive-write"},{"pathPrefix":"docs/client/mobile","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge","mode":"exclusive-write"},{"pathPrefix":"model/domain/chat","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/model/chat","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/conversation","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"packages/client-storage","mode":"exclusive-write"},{"pathPrefix":"packages/client-chat-core","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/desktop/features/social-chat","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts","mode":"exclusive-write"}],"nonGoals":["Station authority history deletion","Enterprise retention, legal hold, cloud quota, archive tier or billing","Custom retention days or media-type policies","Disappearing messages","Station access, Access Gate, Federation or Relay redesign","Browser client readiness","Preserve old schema, archive, clear/restore or local-delete compatibility"]},"tasks":[{"id":"CSG-01-storage-observability","workstreamId":"CSG-W01","path":"tasks/CSG-01-storage-observability.md","dependsOn":[],"status":"pending","blocker":null},{"id":"CSG-02-cache-cleanup","workstreamId":"CSG-W02","path":"tasks/CSG-02-cache-cleanup.md","dependsOn":["CSG-01-storage-observability"],"status":"pending","blocker":null},{"id":"CSG-03-retention","workstreamId":"CSG-W03","path":"tasks/CSG-03-retention.md","dependsOn":["CSG-02-cache-cleanup"],"status":"pending","blocker":null},{"id":"CSG-04-redaction-recovery","workstreamId":"CSG-W04","path":"tasks/CSG-04-redaction-recovery.md","dependsOn":["CSG-03-retention"],"status":"pending","blocker":null},{"id":"CSG-05-local-clear-hard-cut","workstreamId":"CSG-W05","path":"tasks/CSG-05-local-clear-hard-cut.md","dependsOn":["CSG-04-redaction-recovery"],"status":"pending","blocker":null},{"id":"CSG-06-zero-legacy-aggregate","workstreamId":"CSG-W06","path":"tasks/CSG-06-zero-legacy-aggregate.md","dependsOn":["CSG-05-local-clear-hard-cut"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["chat-native-four","chat-native-disposable","mobile-simulator","mobile-ios-layout-simulator"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
+{"kind":"peers-touch-plan-package","planId":"CSG-20260926","status":"active","binding":{"branch":"work/chat-storage-governance","workspaceId":"db9e7bd2a30e4fc8","initialHead":"2ffb93248c8636903f6b8d24ea9cf41c4da01a39"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/chat-storage-governance/product-definition.md","docs/architecture/chat-storage-governance/benchmark-disposition.md","docs/architecture/chat-storage-governance/experience-contract.md","docs/architecture/chat-storage-governance/product-state-model.md","docs/architecture/chat-storage-governance/acceptance-matrix.md","docs/architecture/chat-storage-governance/design.md","docs/architecture/chat-storage-governance/decisions.md","docs/architecture/chat-storage-governance/data-model.md","docs/architecture/chat-storage-governance/integration.md","docs/architecture/chat-storage-governance/legacy-inventory.json"],"decisions":["CSG-D01","CSG-D02","CSG-D03","CSG-D04","CSG-D05","CSG-D06","CSG-D07","CSG-D08"]},"scope":{"sourceClaims":[{"pathPrefix":"docs/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-storage-governance","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/messaging-platform","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/encryption","mode":"exclusive-write"},{"pathPrefix":"docs/client/chat","mode":"exclusive-write"},{"pathPrefix":"docs/client/desktop","mode":"exclusive-write"},{"pathPrefix":"docs/client/mobile","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge","mode":"exclusive-write"},{"pathPrefix":"model/domain/chat","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/model/chat","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/conversation","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"packages/client-storage","mode":"exclusive-write"},{"pathPrefix":"packages/client-chat-core","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/desktop/features/social-chat","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts","mode":"exclusive-write"}],"nonGoals":["Station authority history deletion","Enterprise retention, legal hold, cloud quota, archive tier or billing","Custom retention days or media-type policies","Disappearing messages","Station access, Access Gate, Federation or Relay redesign","Browser client readiness","Preserve old schema, archive, clear/restore or local-delete compatibility"]},"tasks":[{"id":"CSG-01-storage-observability","workstreamId":"CSG-W01","path":"tasks/CSG-01-storage-observability.md","dependsOn":[],"status":"in_progress","blocker":null},{"id":"CSG-02-cache-cleanup","workstreamId":"CSG-W02","path":"tasks/CSG-02-cache-cleanup.md","dependsOn":["CSG-01-storage-observability"],"status":"pending","blocker":null},{"id":"CSG-03-retention","workstreamId":"CSG-W03","path":"tasks/CSG-03-retention.md","dependsOn":["CSG-02-cache-cleanup"],"status":"pending","blocker":null},{"id":"CSG-04-redaction-recovery","workstreamId":"CSG-W04","path":"tasks/CSG-04-redaction-recovery.md","dependsOn":["CSG-03-retention"],"status":"pending","blocker":null},{"id":"CSG-05-local-clear-hard-cut","workstreamId":"CSG-W05","path":"tasks/CSG-05-local-clear-hard-cut.md","dependsOn":["CSG-04-redaction-recovery"],"status":"pending","blocker":null},{"id":"CSG-06-zero-legacy-aggregate","workstreamId":"CSG-W06","path":"tasks/CSG-06-zero-legacy-aggregate.md","dependsOn":["CSG-05-local-clear-hard-cut"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["chat-native-four","chat-native-disposable","mobile-simulator","mobile-ios-layout-simulator"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
@@ -77,7 +77,34 @@
     "proto-build",
     "station-messaging-unit",
     "desktop-release-build",
-    "mobile-native-build"
+    "mobile-native-build",
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract",
+    "agent-marketplace-catalog-e2e",
+    "agent-native-knowledge-binding-e2e",
+    "agent-quick-completion-e2e",
+    "agent-stream-resilience-e2e",
+    "chat-desktop-gateway-e2e",
+    "chat-lifecycle-direct-e2e",
+    "chat-lifecycle-onboarding-e2e",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-group-mls-e2e",
+    "chat-native-visible-static",
+    "mobile-hard-cut-static",
+    "mobile-ios-simulator-layout-accessibility-e2e",
+    "mobile-simulator-chat-contacts-e2e",
+    "mobile-simulator-moments-e2e",
+    "mobile-simulator-platform-e2e",
+    "mobile-simulator-recovery-e2e",
+    "mobile-simulator-recovery-ui-e2e",
+    "mobile-simulator-runtime-lifecycle-e2e",
+    "mobile-simulator-settings-e2e",
+    "mobile-simulator-social-convergence-e2e",
+    "mobile-simulator-station-lifecycle-e2e",
+    "station-agent-unit",
+    "station-api-ownership"
   ]
 }
 ```

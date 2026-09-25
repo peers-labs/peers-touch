@@ -6,7 +6,7 @@ use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey}
 use crate::domain::crypto::{CryptoEndpoint, DirectSession, DirectSessionKey};
 use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
-use crate::infrastructure::storage::open_database;
+use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
@@ -53,6 +53,7 @@ use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use zeroize::Zeroizing;
 
@@ -695,6 +696,7 @@ fn conversation_message_projection_from_row(
 
 pub struct MessagingStore {
     connection: Mutex<Connection>,
+    database_path: Option<PathBuf>,
 }
 
 impl MessagingStore {
@@ -703,16 +705,119 @@ impl MessagingStore {
             return Err("messaging store requires a profile ID".to_string());
         }
         let spec = DatabaseOpenSpec::new_chat_main(profile_id.to_string());
+        let database_path = resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .map_err(|error| format!("{error:?}"))?;
         let connection = open_database(&spec, PlatformKeyProvider::shared())
             .map_err(|error| format!("{error:?}"))?;
-        Self::from_connection(connection)
+        Self::from_connection_with_path(connection, Some(database_path))
     }
 
     pub(super) fn from_connection(connection: Connection) -> Result<Self, String> {
+        Self::from_connection_with_path(connection, None)
+    }
+
+    fn from_connection_with_path(
+        connection: Connection,
+        database_path: Option<PathBuf>,
+    ) -> Result<Self, String> {
         migrate(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            database_path,
         })
+    }
+
+    pub(super) fn storage_database_path(&self) -> Result<PathBuf, String> {
+        self.database_path
+            .clone()
+            .ok_or_else(|| "messaging storage path is unavailable".to_string())
+    }
+
+    pub(super) fn storage_logical_usage(
+        &self,
+    ) -> Result<Vec<messaging_core::storage_governance::ConversationLogicalUsage>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT
+                    conversation.conversation_id,
+                    conversation.name,
+                    conversation.kind,
+                    COALESCE((
+                        SELECT SUM(
+                            length(CAST(message.message_id AS BLOB))
+                            + length(CAST(message.sender_ptid AS BLOB))
+                            + length(CAST(message.sender_device_id AS BLOB))
+                            + length(CAST(message.plaintext AS BLOB))
+                            + length(CAST(COALESCE(message.edited_text, '') AS BLOB))
+                            + length(CAST(COALESCE(message.reply_to_message_id, '') AS BLOB))
+                            + length(CAST(COALESCE(message.thread_root_message_id, '') AS BLOB))
+                        )
+                        FROM messaging_message_projections AS message
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    COALESCE((
+                        SELECT SUM(attachment.plaintext_size)
+                        FROM messaging_attachment_projections AS attachment
+                        JOIN messaging_message_projections AS message
+                          ON message.message_id = attachment.message_id
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    MAX(
+                        conversation.updated_at_unix_ms,
+                        COALESCE((
+                            SELECT MAX(message.committed_at_unix_ms)
+                            FROM messaging_message_projections AS message
+                            WHERE message.conversation_id = conversation.conversation_id
+                        ), 0)
+                    )
+                 FROM messaging_conversations AS conversation
+                 ORDER BY conversation.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let message_bytes = row.get::<_, i64>(3)?;
+                let media_bytes = row.get::<_, i64>(4)?;
+                Ok(
+                    messaging_core::storage_governance::ConversationLogicalUsage {
+                        conversation_id: row.get(0)?,
+                        conversation_name: row.get(1)?,
+                        conversation_kind: row.get(2)?,
+                        message_bytes: u64::try_from(message_bytes.max(0)).unwrap_or(0),
+                        media_bytes: u64::try_from(media_bytes.max(0)).unwrap_or(0),
+                        reclaimable_bytes: 0,
+                        last_activity_unix_ms: row.get(5)?,
+                    },
+                )
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    pub(super) fn storage_media_paths(&self) -> Result<Vec<PathBuf>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT DISTINCT local_cache_path
+                 FROM messaging_attachment_projections
+                 WHERE local_cache_path IS NOT NULL AND local_cache_path <> ''
+                 ORDER BY local_cache_path",
+            )
+            .map_err(|error| error.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(paths)
     }
 
     fn connection(&self) -> Result<MutexGuard<'_, Connection>, String> {
@@ -10604,6 +10709,43 @@ mod tests {
             active: true,
             updated_at_unix_ms: 100,
         }
+    }
+
+    #[test]
+    fn storage_logical_usage_reads_conversation_owned_plaintext_bytes() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id, kind,
+                    name, owner_ptid, membership_epoch, mls_epoch, active,
+                    updated_at_unix_ms
+                 ) VALUES('conversation-1', 'station-1', 'federation-1', 2,
+                    'Family', 'ptid:alice', 1, 1, 1, 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms
+                 ) VALUES('conversation-1', 'event-1', 1, 'message-1',
+                    'ptid:alice', 'device-1', 'hello', 'committed', 200)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let usage = store.storage_logical_usage().unwrap();
+
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].conversation_name, "Family");
+        assert_eq!(usage[0].conversation_kind, 2);
+        assert!(usage[0].message_bytes >= 5);
+        assert_eq!(usage[0].last_activity_unix_ms, 200);
     }
 
     #[test]

@@ -52,6 +52,10 @@ pub use messaging_core::outbox::MetadataInteraction;
 use messaging_core::outbox::MetadataInteractionPreparer;
 use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
+use messaging_core::proto::chat::{ChatStorageScope, ChatStorageSnapshot};
+use messaging_core::storage_governance::{
+    measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
+};
 use prost::Message;
 use reqwest::Method;
 use secure_content_core::object::{
@@ -544,6 +548,59 @@ impl MessagingEngine {
 
     pub fn profile_id(&self) -> &str {
         &self.profile_id
+    }
+
+    pub fn chat_storage_snapshot(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+    ) -> Result<ChatStorageSnapshot, String> {
+        if station_peer_id.trim().is_empty() || scope_revision.trim().is_empty() {
+            return Err("chat storage scope is incomplete".to_string());
+        }
+        let database_path = self.store.storage_database_path()?;
+        let mut physical_paths = vec![
+            PhysicalStoragePath::required(database_path.clone(), PhysicalStorageClass::System),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-wal"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-shm"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                attachment_source_root(&self.profile_id)?,
+                PhysicalStorageClass::Protected,
+            ),
+        ];
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        physical_paths.push(PhysicalStoragePath::optional(
+            cache_root,
+            PhysicalStorageClass::Cache,
+        ));
+        physical_paths.extend(
+            self.store
+                .storage_media_paths()?
+                .into_iter()
+                .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
+        );
+
+        measure_storage(StorageAccountingInput {
+            scope: ChatStorageScope {
+                station_peer_id: station_peer_id.to_string(),
+                actor_ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
+            revision: scope_revision.to_string(),
+            measured_at_unix_ms: now_unix_ms(),
+            physical_paths,
+            conversations: self.store.storage_logical_usage()?,
+        })
+        .map_err(|error| error.to_string())
     }
 
     pub fn endpoint(&self) -> &EngineEndpoint {
@@ -2734,6 +2791,12 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
         &["messaging-cache", &profile_hash, attachment_id],
     )
     .map_err(|error| format!("resolve messaging attachment cache path: {error}"))
+}
+
+fn sqlite_sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
+    let mut path = database_path.as_os_str().to_os_string();
+    path.push(suffix);
+    PathBuf::from(path)
 }
 
 fn materialize_attachment_cache(

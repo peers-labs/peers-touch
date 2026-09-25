@@ -5,6 +5,8 @@ pub mod engine;
 pub mod lifecycle;
 pub mod mls_leave_intent;
 pub mod transport;
+#[cfg(test)]
+mod storage_governance_test;
 
 pub use messaging_core::crypto::{
     double_ratchet::{DrSessionState, DrSkippedMessageKey},

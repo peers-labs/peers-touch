@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+enum ChatRetentionPreset {
+  CHAT_RETENTION_PRESET_UNSPECIFIED = 0;
+  CHAT_RETENTION_PRESET_FOREVER = 1;
+  CHAT_RETENTION_PRESET_365_DAYS = 2;
+  CHAT_RETENTION_PRESET_90_DAYS = 3;
+  CHAT_RETENTION_PRESET_30_DAYS = 4;
+}
+
+enum ChatStorageSnapshotStatus {
+  CHAT_STORAGE_SNAPSHOT_STATUS_UNSPECIFIED = 0;
+  CHAT_STORAGE_SNAPSHOT_STATUS_COMPLETE = 1;
+  CHAT_STORAGE_SNAPSHOT_STATUS_PARTIAL = 2;
+}
+
+enum ChatStorageOperationKind {
+  CHAT_STORAGE_OPERATION_KIND_UNSPECIFIED = 0;
+  CHAT_STORAGE_OPERATION_KIND_CLEAR_CACHE = 1;
+  CHAT_STORAGE_OPERATION_KIND_APPLY_RETENTION = 2;
+  CHAT_STORAGE_OPERATION_KIND_CLEAR_CONVERSATION = 3;
+  CHAT_STORAGE_OPERATION_KIND_HIDE_FOR_ACTOR = 4;
+  CHAT_STORAGE_OPERATION_KIND_RETRACT = 5;
+}
+
+enum ChatStorageOperationState {
+  CHAT_STORAGE_OPERATION_STATE_UNSPECIFIED = 0;
+  CHAT_STORAGE_OPERATION_STATE_PLANNED = 1;
+  CHAT_STORAGE_OPERATION_STATE_DELETING_ROWS = 2;
+  CHAT_STORAGE_OPERATION_STATE_DELETING_FILES = 3;
+  CHAT_STORAGE_OPERATION_STATE_COMPACTING = 4;
+  CHAT_STORAGE_OPERATION_STATE_COMPACTION_PENDING = 5;
+  CHAT_STORAGE_OPERATION_STATE_PAUSED_SCOPE_INACTIVE = 6;
+  CHAT_STORAGE_OPERATION_STATE_SUCCEEDED = 7;
+  CHAT_STORAGE_OPERATION_STATE_FAILED_RETRYABLE = 8;
+  CHAT_STORAGE_OPERATION_STATE_FAILED_TERMINAL = 9;
+  CHAT_STORAGE_OPERATION_STATE_CANCELLED = 10;
+}
+
+enum ChatStorageErrorCode {
+  CHAT_STORAGE_ERROR_CODE_UNSPECIFIED = 0;
+  CHAT_STORAGE_ERROR_CODE_SCOPE_STALE = 1;
+  CHAT_STORAGE_ERROR_CODE_BUSY = 2;
+  CHAT_STORAGE_ERROR_CODE_PROTECTED_STATE = 3;
+  CHAT_STORAGE_ERROR_CODE_IO_FAILED = 4;
+  CHAT_STORAGE_ERROR_CODE_COMPACTION_PENDING = 5;
+  CHAT_STORAGE_ERROR_CODE_MEASUREMENT_PARTIAL = 6;
+  CHAT_STORAGE_ERROR_CODE_INVALID_POLICY = 7;
+}
+
+message ChatStorageScope {
+  string station_peer_id = 1;
+  string actor_ptid = 2;
+  string device_id = 3;
+}
+
+message ConversationStorageUsage {
+  string conversation_id = 1;
+  uint64 message_bytes = 2;
+  uint64 media_bytes = 3;
+  uint64 reclaimable_bytes = 4;
+  int64 last_activity_unix_ms = 5;
+  string conversation_name = 6;
+  int32 conversation_kind = 7;
+}
+
+message ChatStorageMeasurementIssue {
+  ChatStorageErrorCode code = 1;
+  string source = 2;
+  string detail = 3;
+}
+
+message ChatStorageSnapshot {
+  ChatStorageScope scope = 1;
+  string revision = 2;
+  int64 measured_at_unix_ms = 3;
+  uint64 physical_total_bytes = 4;
+  uint64 message_bytes = 5;
+  uint64 media_bytes = 6;
+  uint64 cache_bytes = 7;
+  uint64 system_bytes = 8;
+  uint64 reclaimable_bytes = 9;
+  repeated ConversationStorageUsage conversations = 10;
+  uint64 protected_bytes = 11;
+  ChatStorageSnapshotStatus status = 12;
+  repeated ChatStorageMeasurementIssue issues = 13;
+}
+
+message ChatStorageSnapshotRequest {
+  ChatStorageScope scope = 1;
+  string scope_revision = 2;
+}
+
+message ChatStoragePolicy {
+  ChatStorageScope scope = 1;
+  ChatRetentionPreset retention_preset = 2;
+  int64 updated_at_unix_ms = 3;
+}
+
+message ChatStorageOperation {
+  string operation_id = 1;
+  ChatStorageScope scope = 2;
+  string scope_revision = 3;
+  ChatStorageOperationKind kind = 4;
+  ChatStorageOperationState state = 5;
+  string conversation_id = 6;
+  uint64 estimated_reclaimable_bytes = 7;
+  uint64 physical_bytes_before = 8;
+  uint64 physical_bytes_after = 9;
+  int64 created_at_unix_ms = 10;
+  int64 updated_at_unix_ms = 11;
+}
+
+message ChatStorageError {
+  ChatStorageErrorCode code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message ChatStorageResult {
+  ChatStorageSnapshot snapshot = 1;
+  ChatStoragePolicy policy = 2;
+  ChatStorageOperation operation = 3;
+  ChatStorageError error = 4;
+}

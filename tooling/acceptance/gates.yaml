@@ -347,6 +347,20 @@
       "tier": "ci-cheap",
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
+    "chat-storage-contract": {
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the canonical Chat storage contract, shared Core ownership, scope fencing, client registration, and fixed-zero API removal."
+    },
+    "chat-storage-accounting-e2e": {
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && pnpm --dir apps/desktop exec vitest run src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec vitest run src/runtimes/chatStorageRuntime.test.ts src/pages/settings/SettingsSections.test.tsx",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Measure real database sidecars and managed files with inode deduplication, then prove Desktop and Mobile scope fencing and storage rendering contracts."
+    },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,

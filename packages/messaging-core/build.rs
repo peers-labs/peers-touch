@@ -21,6 +21,7 @@ fn main() {
         "domain/chat/queue.proto",
         "domain/chat/receipt.proto",
         "domain/chat/sticker.proto",
+        "domain/chat/storage.proto",
         "domain/common/common.proto",
         "domain/federation/delivery.proto",
         "domain/key_exchange/key_exchange.proto",

@@ -4258,7 +4258,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_system::open_external_url(input))
         }
         "onboarding_reset" => to_json(app_system::onboarding_reset()),
-        "statistics_get" => to_json(app_system::statistics_get()),
         "preferences_get" => to_json(app_system::preferences_get()),
         "preferences_set" => {
             let input = match parse_args::<PreferencesSetInput>(args) {

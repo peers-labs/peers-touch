@@ -55,9 +55,9 @@ use messaging_core::outbox::{
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, conversation_event, ActorReadCursor, AttachmentTransferState, ChatCommand,
-    Conversation, ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
-    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
+    ChatStorageScope, ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
+    CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
@@ -74,6 +74,9 @@ use messaging_core::proto::social::{
     UnblockSocialActorRequest,
 };
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
+use messaging_core::storage_governance::{
+    measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
+};
 use messaging_core::store::MessagingRepository;
 use prost::Message;
 use rand::rngs::OsRng;
@@ -513,6 +516,54 @@ impl MobileMessagingEngine {
 
     pub fn profile_id(&self) -> &str {
         &self.profile_id
+    }
+
+    pub fn chat_storage_snapshot(
+        &self,
+        scope_revision: &str,
+    ) -> Result<ChatStorageSnapshot, String> {
+        if scope_revision.trim().is_empty() {
+            return Err("chat storage scope revision is empty".to_string());
+        }
+        let database_path = self.store.storage_database_path()?;
+        let mut physical_paths = vec![
+            PhysicalStoragePath::required(database_path.clone(), PhysicalStorageClass::System),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-wal"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-shm"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                self.attachment_root.join("cache"),
+                PhysicalStorageClass::Cache,
+            ),
+            PhysicalStoragePath::optional(
+                self.attachment_root.join("sources"),
+                PhysicalStorageClass::Protected,
+            ),
+        ];
+        physical_paths.extend(
+            self.store
+                .storage_media_paths()?
+                .into_iter()
+                .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
+        );
+
+        measure_storage(StorageAccountingInput {
+            scope: ChatStorageScope {
+                station_peer_id: self.scope.station_peer_id.clone(),
+                actor_ptid: self.scope.actor_ptid.clone(),
+                device_id: self.scope.device_id.clone(),
+            },
+            revision: scope_revision.to_string(),
+            measured_at_unix_ms: now_unix_ms(),
+            physical_paths,
+            conversations: self.store.storage_logical_usage()?,
+        })
+        .map_err(|error| error.to_string())
     }
 
     pub fn scope(&self) -> &MessagingAccountScope {
@@ -3271,6 +3322,12 @@ fn hex_bytes(bytes: &[u8]) -> String {
         encoded.push(HEX[(byte & 0x0f) as usize] as char);
     }
     encoded
+}
+
+fn sqlite_sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
+    let mut path = database_path.as_os_str().to_os_string();
+    path.push(suffix);
+    PathBuf::from(path)
 }
 
 fn build_signed_friend_request_command(

@@ -52,6 +52,7 @@ import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
+import { createChatStorageRuntimeDescriptor } from './chatStorageRuntime';
 import { runRuntimeSessionTransition } from './runtimeSessionTransition';
 import {
   createSessionRuntimeDescriptor,
@@ -686,6 +687,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createSessionRuntimeDescriptor(),
     createNativeEventBridgeDescriptor(),
     createMessagingRuntimeDescriptor(),
+    createChatStorageRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
     createAvatarAssetRuntimeDescriptor(),

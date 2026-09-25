@@ -31,6 +31,14 @@ import {
   RejectSocialFriendRequestResponseSchema,
   SendSocialFriendRequestResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
+import {
+  ChatStorageSnapshotRequestSchema,
+  ChatStorageSnapshotSchema,
+} from '../gen/proto/domain/chat/storage_pb';
+export type {
+  ChatStorageSnapshot,
+  ConversationStorageUsage,
+} from '../gen/proto/domain/chat/storage_pb';
 export type {
   ActorList,
   ActorProfile,
@@ -5678,7 +5686,7 @@ export const api = {
     invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),
 
   getStatistics: () =>
-    invokeRustDataFromStatus<void, StatisticsData>('statistics_get'),
+    Promise.reject(new Error('legacy_statistics_removed')),
 
   getPreferences: () =>
     invokeRustDataFromStatus<void, UserPreferences>('preferences_get'),
@@ -7173,6 +7181,26 @@ export const api = {
       conversation_id: conversationId,
       last_read_sequence: lastReadSequence,
     }),
+
+  chatStorageSnapshot: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_snapshot',
+      ChatStorageSnapshotRequestSchema,
+      ChatStorageSnapshotSchema,
+      create(ChatStorageSnapshotRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+      }),
+    ),
 
   messagingEditMessage: (
     conversationId: string,

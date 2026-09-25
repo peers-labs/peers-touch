@@ -6,6 +6,7 @@ use crate::model::chat::{
     UpdateMemberSettingsResponse, VoiceNoteMetadata,
 };
 use crate::state::AppState;
+use prost::Message;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -147,6 +148,12 @@ pub struct MessagingSearchMessagesInput {
     pub before_message_id: Option<String>,
     #[serde(default = "default_search_limit")]
     pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStorageSnapshotInput {
+    pub request_bytes: Vec<u8>,
 }
 
 fn default_search_limit() -> usize {
@@ -583,6 +590,70 @@ fn active_engine(
             )
         })?;
     Ok((session.account_id, session.jwt, engine))
+}
+
+#[tauri::command]
+pub async fn chat_storage_snapshot(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageSnapshotRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat storage snapshot request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_snapshot(&station_peer_id, &revision)
+            .map(|snapshot| AppResult::success(snapshot.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat storage measurement worker failed: {error}"))
 }
 
 fn leave_intent_json(intent: &MlsLeaveIntent) -> Value {
