@@ -1,3 +1,5 @@
+pub mod cache;
+
 use crate::proto::chat::{
     ChatStorageErrorCode, ChatStorageMeasurementIssue, ChatStorageScope, ChatStorageSnapshot,
     ChatStorageSnapshotStatus, ConversationStorageUsage,

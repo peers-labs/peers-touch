@@ -52,7 +52,14 @@ pub use messaging_core::outbox::MetadataInteraction;
 use messaging_core::outbox::MetadataInteractionPreparer;
 use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
-use messaging_core::proto::chat::{ChatStorageScope, ChatStorageSnapshot};
+use messaging_core::proto::chat::{
+    ChatStorageOperationState, ChatStorageResult, ChatStorageScope, ChatStorageSnapshot,
+};
+use messaging_core::storage_governance::cache::{
+    cache_cleanup_error_proto, cache_cleanup_operation_proto, execute_cache_cleanup,
+    finalize_cache_cleanup, prepare_cache_cleanup, storage_error_code_name, CacheCleanupError,
+    CacheCleanupJournalRepository, CacheCleanupPlanInput,
+};
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
@@ -416,6 +423,7 @@ pub struct MessagingEngine {
     membership_transition_lock: Mutex<()>,
     prekey_maintenance: Mutex<PreKeyMaintenanceState>,
     attachment_source_lock: Mutex<()>,
+    storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
@@ -540,6 +548,7 @@ impl MessagingEngine {
             membership_transition_lock: Mutex::new(()),
             prekey_maintenance: Mutex::new(PreKeyMaintenanceState::default()),
             attachment_source_lock: Mutex::new(()),
+            storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
@@ -601,6 +610,89 @@ impl MessagingEngine {
             conversations: self.store.storage_logical_usage()?,
         })
         .map_err(|error| error.to_string())
+    }
+
+    pub fn chat_storage_clear_cache(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "chat storage governance lock poisoned".to_string())?;
+        let before = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let operation = prepare_cache_cleanup(
+            self.store.as_ref(),
+            CacheCleanupPlanInput {
+                scope_revision: scope_revision.to_string(),
+                cache_roots: vec![cache_root.clone()],
+                protected_paths: protected_paths.clone(),
+                physical_bytes_before: before.physical_total_bytes,
+                now_unix_ms: now_unix_ms(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let mut progress = execute_cache_cleanup(
+            self.store.as_ref(),
+            &operation,
+            std::slice::from_ref(&cache_root),
+            &protected_paths,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+
+        if progress.operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_checkpoint().is_err() {
+                let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+                progress.operation = self.store.update_cache_cleanup_operation(
+                    &progress.operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    Some(after.physical_total_bytes),
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                progress.error = Some(CacheCleanupError::CompactionPending);
+                return Ok(cache_cleanup_result(after, progress));
+            }
+        }
+        let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let execution_error = progress.error.clone();
+        progress = finalize_cache_cleanup(
+            self.store.as_ref(),
+            &progress.operation,
+            after.physical_total_bytes,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        if progress.error.is_none() {
+            progress.error = execution_error;
+        }
+        Ok(cache_cleanup_result(after, progress))
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn seed_acceptance_storage_cache(&self, size_bytes: usize) -> Result<PathBuf, String> {
+        if size_bytes == 0 || size_bytes > 16 * 1024 * 1024 {
+            return Err("acceptance cache fixture size is invalid".to_string());
+        }
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        std::fs::create_dir_all(&cache_root)
+            .map_err(|error| format!("create acceptance cache root: {error}"))?;
+        let path = cache_root.join(format!("acceptance-rebuildable-{}.bin", Ulid::new()));
+        std::fs::write(&path, vec![0x5a_u8; size_bytes])
+            .map_err(|error| format!("write acceptance cache fixture: {error}"))?;
+        Ok(path)
     }
 
     pub fn endpoint(&self) -> &EngineEndpoint {
@@ -2778,6 +2870,29 @@ fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, Stri
             .is_some_and(|value| {
                 value.len() == 26 && value.chars().all(|ch| ch.is_ascii_alphanumeric())
             }))
+}
+
+fn cache_cleanup_result(
+    snapshot: ChatStorageSnapshot,
+    progress: messaging_core::storage_governance::cache::CacheCleanupProgress,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = progress.error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if progress.failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} cache item(s) remain",
+                value.message, progress.failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: None,
+        operation: Some(cache_cleanup_operation_proto(scope, &progress.operation)),
+        error,
+    }
 }
 
 fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBuf, String> {

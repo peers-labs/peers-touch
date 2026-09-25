@@ -13,6 +13,7 @@
     "chat-mixed-client-convergence",
     "chat-client-unification-integrity",
     "chat-storage-observability",
+    "chat-storage-cache-cleanup",
     "chat-message-interactions",
     "chat-typing-presence"
   ],

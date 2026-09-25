@@ -1,0 +1,53 @@
+{
+  "id": "chat-storage-cache-cleanup",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/messaging-core/src/storage_governance/cache.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+    "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+    "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "apps/mobile/src/acceptance/**",
+    "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+  ],
+  "truth_sources": [
+    "Device Messaging Engine cache cleanup journal",
+    "Device Messaging Engine managed cache files",
+    "post-cleanup physical storage snapshot"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Settings > Data > Storage > Clear Chat cache"
+    },
+    {
+      "type": "native-mobile",
+      "route": "Me > Chat Settings > Storage > Clear Chat cache"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-cache-clear-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "shared Rust Core freezes immutable cache candidates and resumes one journal",
+      "Desktop and Mobile delete only Engine-managed rebuildable cache classes",
+      "cleanup succeeds only after a post-cleanup measurement proves physical bytes were released"
+    ],
+    "visible": [
+      "native Mobile requires explicit confirmation before clearing Chat cache",
+      "native Mobile reports actual released bytes from the completed operation",
+      "the active messaging identity and a local Chat draft survive cleanup"
+    ]
+  },
+  "negative": [
+    "cleanup must not delete messages, drafts, reliability state, crypto, active transfers, or exported files",
+    "a stale scope result must not update the active Settings surface",
+    "compaction_pending or partial cleanup must not render as success",
+    "the existing non-Chat Mobile app-cache action must remain separate"
+  ]
+}

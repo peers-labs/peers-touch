@@ -32,10 +32,12 @@ import {
   SendSocialFriendRequestResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
 import {
+  ChatStorageResultSchema,
   ChatStorageSnapshotRequestSchema,
   ChatStorageSnapshotSchema,
 } from '../gen/proto/domain/chat/storage_pb';
 export type {
+  ChatStorageResult,
   ChatStorageSnapshot,
   ConversationStorageUsage,
 } from '../gen/proto/domain/chat/storage_pb';
@@ -7192,6 +7194,26 @@ export const api = {
       'chat_storage_snapshot',
       ChatStorageSnapshotRequestSchema,
       ChatStorageSnapshotSchema,
+      create(ChatStorageSnapshotRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+      }),
+    ),
+
+  chatStorageClearCache: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_clear_cache',
+      ChatStorageSnapshotRequestSchema,
+      ChatStorageResultSchema,
       create(ChatStorageSnapshotRequestSchema, {
         scope: {
           stationPeerId: input.stationPeerId,

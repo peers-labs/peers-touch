@@ -1,11 +1,18 @@
 import { useSyncExternalStore } from 'react';
 
-import type { ChatStorageSnapshot } from '../gen/proto/domain/chat/storage_pb';
+import {
+  ChatStorageOperationState,
+  type ChatStorageResult,
+  type ChatStorageSnapshot,
+} from '../gen/proto/domain/chat/storage_pb';
 import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
-import { chatStorageSnapshot } from '../services/mobileCommands';
+import {
+  chatStorageClearCache,
+  chatStorageSnapshot,
+} from '../services/mobileCommands';
 import {
   currentMessagingProjectionScope,
   subscribeMessagingProjectionScope,
@@ -14,25 +21,38 @@ import {
 
 const RECONCILE_INTERVAL_MS = 5 * 60_000;
 
-export type MobileChatStorageProjection =
+export type MobileChatStorageCleanupProjection =
   | {
-      readonly status: 'idle' | 'unavailable';
-      readonly snapshot: null;
-      readonly stale: false;
+      readonly status: 'idle' | 'clearing';
+      readonly result: null;
       readonly error: string | null;
     }
   | {
-      readonly status: 'measuring' | 'ready' | 'stale';
-      readonly snapshot: ChatStorageSnapshot | null;
-      readonly stale: boolean;
+      readonly status: 'succeeded' | 'failed';
+      readonly result: ChatStorageResult | null;
       readonly error: string | null;
     };
+
+export interface MobileChatStorageProjection {
+  readonly status: 'idle' | 'measuring' | 'ready' | 'stale' | 'unavailable';
+  readonly snapshot: ChatStorageSnapshot | null;
+  readonly stale: boolean;
+  readonly error: string | null;
+  readonly cleanup: MobileChatStorageCleanupProjection;
+}
+
+const idleCleanup: MobileChatStorageCleanupProjection = Object.freeze({
+  status: 'idle',
+  result: null,
+  error: null,
+});
 
 const idleProjection: MobileChatStorageProjection = Object.freeze({
   status: 'idle',
   snapshot: null,
   stale: false,
   error: null,
+  cleanup: idleCleanup,
 });
 
 class MobileChatStorageRuntime {
@@ -40,6 +60,10 @@ class MobileChatStorageRuntime {
   private listeners = new Set<() => void>();
   private interval: ReturnType<typeof setInterval> | null = null;
   private inFlight: { revision: string; promise: Promise<void> } | null = null;
+  private cleanupInFlight: {
+    revision: string;
+    promise: Promise<ChatStorageResult | null>;
+  } | null = null;
   private unsubscribeScope: (() => void) | null = null;
 
   install(): void {
@@ -61,6 +85,7 @@ class MobileChatStorageRuntime {
     this.unsubscribeScope?.();
     this.unsubscribeScope = null;
     this.inFlight = null;
+    this.cleanupInFlight = null;
     this.publish(idleProjection);
   }
 
@@ -80,6 +105,7 @@ class MobileChatStorageRuntime {
       snapshot: previous,
       stale: previous !== null,
       error: null,
+      cleanup: this.projection.cleanup,
     });
     const operation = chatStorageSnapshot({
       stationPeerId: scope.stationPeerId,
@@ -94,6 +120,7 @@ class MobileChatStorageRuntime {
           snapshot,
           stale: false,
           error: null,
+          cleanup: this.projection.cleanup,
         });
       })
       .catch((error: unknown) => {
@@ -105,18 +132,93 @@ class MobileChatStorageRuntime {
               snapshot: previous,
               stale: true,
               error: message,
+              cleanup: this.projection.cleanup,
             }
           : {
               status: 'unavailable',
               snapshot: null,
               stale: false,
               error: message,
+              cleanup: this.projection.cleanup,
             });
       })
       .finally(() => {
         if (this.inFlight?.promise === operation) this.inFlight = null;
       });
     this.inFlight = { revision, promise: operation };
+    return operation;
+  }
+
+  clearCache(): Promise<ChatStorageResult | null> {
+    const scope = currentMessagingProjectionScope();
+    if (!scope) return Promise.resolve(null);
+    const revision = chatStorageScopeRevision(scope);
+    if (this.cleanupInFlight?.revision === revision) {
+      return this.cleanupInFlight.promise;
+    }
+    this.publish({
+      ...this.projection,
+      cleanup: {
+        status: 'clearing',
+        result: null,
+        error: null,
+      },
+    });
+    const operation = chatStorageClearCache({
+      stationPeerId: scope.stationPeerId,
+      actorPtid: scope.actorPtid,
+      deviceId: scope.deviceId,
+      scopeRevision: revision,
+    })
+      .then((result) => {
+        if (!sameScope(scope, currentMessagingProjectionScope())) return null;
+        if (!isChatStorageResultForScope(scope, result)) {
+          this.publish({
+            ...this.projection,
+            cleanup: {
+              status: 'failed',
+              result: null,
+              error: 'chat cache cleanup returned a stale scope',
+            },
+          });
+          return null;
+        }
+        const succeeded = !result.error
+          && result.operation?.state === ChatStorageOperationState.SUCCEEDED;
+        this.publish({
+          status: 'ready',
+          snapshot: result.snapshot ?? null,
+          stale: false,
+          error: null,
+          cleanup: {
+            status: succeeded ? 'succeeded' : 'failed',
+            result,
+            error: succeeded
+              ? null
+              : result.error?.message ?? 'chat cache cleanup did not complete',
+          },
+        });
+        return result;
+      })
+      .catch((error: unknown) => {
+        if (!sameScope(scope, currentMessagingProjectionScope())) return null;
+        const message = error instanceof Error ? error.message : String(error);
+        this.publish({
+          ...this.projection,
+          cleanup: {
+            status: 'failed',
+            result: null,
+            error: message,
+          },
+        });
+        return null;
+      })
+      .finally(() => {
+        if (this.cleanupInFlight?.promise === operation) {
+          this.cleanupInFlight = null;
+        }
+      });
+    this.cleanupInFlight = { revision, promise: operation };
     return operation;
   }
 
@@ -162,6 +264,31 @@ export function isChatStorageSnapshotForScope(
     && snapshot.scope.actorPtid === scope.actorPtid
     && snapshot.scope.deviceId === scope.deviceId,
   );
+}
+
+export function isChatStorageResultForScope(
+  scope: MessagingProjectionScope,
+  result: ChatStorageResult,
+): boolean {
+  const snapshot = result.snapshot;
+  const operation = result.operation;
+  return Boolean(
+    snapshot
+    && operation
+    && isChatStorageSnapshotForScope(scope, snapshot)
+    && operation.scopeRevision === chatStorageScopeRevision(scope)
+    && operation.scope?.stationPeerId === scope.stationPeerId
+    && operation.scope.actorPtid === scope.actorPtid
+    && operation.scope.deviceId === scope.deviceId,
+  );
+}
+
+export function chatStorageReleasedBytes(result: ChatStorageResult | null): bigint | null {
+  const operation = result?.operation;
+  if (!operation) return null;
+  return operation.physicalBytesBefore > operation.physicalBytesAfter
+    ? operation.physicalBytesBefore - operation.physicalBytesAfter
+    : 0n;
 }
 
 function sameScope(
