@@ -110,6 +110,7 @@ import {
   type EvaluationRun,
 } from '../../gen/proto/domain/agent/evaluation_pb';
 import { registerAcceptanceHarness } from '../registry';
+import { configureCurrentAcceptanceStation } from '../stationAccess';
 import {
   assertFoundationCapabilityFixtureCleanupState,
   assertFoundationCapabilityIsolationPrerequisites,
@@ -25555,28 +25556,7 @@ export function installAcceptanceHarness(): void {
     },
 
     async configureStation({ stationUrl }: ConfigureStationInput) {
-      const expectedUrl = stationUrl.trim().replace(/\/+$/, '');
-      const probed = await api.stationAdd(expectedUrl);
-      await api.stationSetActive(expectedUrl);
-      const registry = await api.stationList();
-      const activeUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? null;
-      const activeEntry = registry.entries.find(
-        (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
-      );
-      const activeStationPeerId = (
-        activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
-      );
-
-      return {
-        configured:
-          activeUrl === expectedUrl
-          && activeEntry?.online === true
-          && Boolean(activeStationPeerId),
-        activeUrl,
-        online: activeEntry?.online === true,
-        peerIdAvailable: Boolean(activeStationPeerId),
-        activeStationPeerId,
-      };
+      return configureCurrentAcceptanceStation(stationUrl);
     },
 
     async loginWithPassword({ account, password }: LoginInput) {

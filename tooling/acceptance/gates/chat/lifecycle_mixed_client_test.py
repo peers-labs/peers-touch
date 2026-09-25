@@ -184,6 +184,106 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             ],
         )
 
+    @patch(
+        "tooling.acceptance.gates.chat.mixed_native_runtime."
+        "require_runtime_client_service",
+        return_value=(
+            "station",
+            {
+                "endpoint": "https://station.invalid/",
+                "runtimeIdentity": "station-peer",
+            },
+        ),
+    )
+    @patch(
+        "tooling.acceptance.gates.chat.mixed_native_runtime.async_harness"
+    )
+    @patch(
+        "tooling.acceptance.gates.chat.mixed_native_runtime."
+        "call_async_harness"
+    )
+    def test_desktop_start_verifies_station_before_credentials(
+        self,
+        station_harness: MagicMock,
+        chat_harness: MagicMock,
+        _runtime_service: MagicMock,
+    ) -> None:
+        events: list[str] = []
+        station_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
+            events.append(f"station:{method}")
+            or (
+                {
+                    "configured": True,
+                    "activeUrl": "https://station.invalid",
+                    "boundUrl": "https://station.invalid",
+                    "bindingPhase": "access_gate",
+                    "activeStationPeerId": "station-peer",
+                }
+                if method == "configureStation"
+                else {
+                    "phase": "bound",
+                    "bound_url": "https://station.invalid",
+                }
+            )
+        )
+        chat_harness.side_effect = lambda _session, method, *_args, **_kwargs: (
+            events.append(f"chat:{method}")
+            or {
+                "identityState": {"authenticated": False, "actorPtid": ""},
+                "loginWithPassword": {"authenticated": True},
+                "hydrateActiveActor": {"actorPtid": "ptid:bob"},
+            }[method]
+        )
+        session = MagicMock()
+        session.get_current_url.return_value = "tauri://localhost"
+        identity = MixedClientIdentity(
+            client_id="desktop-bob",
+            actor="bob",
+            runtime="desktop-macos-native",
+            station_service_id="station",
+            station_peer_id="station-peer",
+            ptid="ptid:bob",
+            account_ref="station-account:bob",
+            federation_id="fed-1",
+            device_id="desktop-device",
+        )
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.desktop_binding = MagicMock()
+        runtime.desktop_binding.create_bound_session.return_value = session
+        runtime.desktop_binding.proof_refs.return_value = ({"path": "binding"},)
+        runtime.desktop_sessions = {}
+        runtime.desktop_instances = []
+        runtime.desktop_lifecycles = MagicMock()
+        runtime.access_evidence = {}
+        runtime.manifest = {}
+        runtime._identity_with_device = MagicMock(return_value=identity)
+
+        result = runtime._start_desktop(
+            "desktop-bob",
+            {
+                "ptid": "ptid:bob",
+                "accountRef": "station-account:bob",
+            },
+            window_slot=0,
+            window_count=1,
+        )
+
+        self.assertEqual(result, identity)
+        self.assertEqual(
+            events,
+            [
+                "station:configureStation",
+                "chat:identityState",
+                "chat:loginWithPassword",
+                "station:bindingState",
+                "chat:hydrateActiveActor",
+            ],
+        )
+        self.assertEqual(
+            runtime.access_evidence["desktop-bob"]["postAuthentication"]["phase"],
+            "bound",
+        )
+
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:
         runtime = object.__new__(MixedNativeRuntime)
         runtime.mobile_binding = MagicMock()

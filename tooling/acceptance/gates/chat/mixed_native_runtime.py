@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     EvidenceStore,
     GateError,
     REPO_ROOT,
+    call_async_harness,
     load_runtime_manifest,
     require_runtime_client_service,
 )
@@ -1391,6 +1392,40 @@ class MixedNativeRuntime:
                 window_count=window_count,
             ),
         )
+        _, station_service = require_runtime_client_service(
+            self.manifest,
+            client_id,
+            "station",
+        )
+        station_url = self._required_text(
+            station_service.get("endpoint"),
+            f"{client_id} Station endpoint",
+        ).rstrip("/")
+        expected_station_peer_id = self._required_text(
+            station_service.get("runtimeIdentity"),
+            f"{client_id} Station identity",
+        )
+        station_binding = self._mapping(
+            call_async_harness(
+                session,
+                "configureStation",
+                {"stationUrl": station_url},
+                namespace="stationAccess",
+                script_timeout=30,
+            ),
+            "Desktop Station binding",
+        )
+        if (
+            station_binding.get("configured") is not True
+            or station_binding.get("activeUrl") != station_url
+            or station_binding.get("boundUrl") != station_url
+            or station_binding.get("bindingPhase") != "access_gate"
+            or station_binding.get("activeStationPeerId")
+            != expected_station_peer_id
+        ):
+            raise GateError(
+                f"{client_id} did not verify the configured Station"
+            )
         pre_authentication = self._mapping(
             async_harness(
                 session,
@@ -1405,6 +1440,7 @@ class MixedNativeRuntime:
             access_evidence = {}
             self.access_evidence = access_evidence
         access_evidence[client_id] = {
+            "stationBinding": station_binding,
             "preAuthentication": pre_authentication,
             "bindingProofRefs": list(self.desktop_binding.proof_refs()),
         }
@@ -1424,6 +1460,25 @@ class MixedNativeRuntime:
         )
         if not isinstance(login, Mapping) or login.get("authenticated") is not True:
             raise GateError(f"{client_id} login did not authenticate")
+        bound_station = self._mapping(
+            call_async_harness(
+                session,
+                "bindingState",
+                {},
+                namespace="stationAccess",
+                script_timeout=10,
+            ),
+            "Desktop authenticated Station binding",
+        )
+        if (
+            bound_station.get("phase") != "bound"
+            or str(bound_station.get("bound_url") or "").rstrip("/")
+            != station_url
+        ):
+            raise GateError(
+                f"{client_id} Station binding did not complete after access grant"
+            )
+        access_evidence[client_id]["postAuthentication"] = bound_station
         self.desktop_lifecycles.mark_authenticated(session)
         hydrated = async_harness(
             session,
