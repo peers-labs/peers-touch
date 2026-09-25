@@ -10,24 +10,70 @@ interface ScrollPosition {
   scrollTop: number;
   scrollLeft: number;
   timestamp: number;
+  anchor?: { id: string; offset: number };
 }
 
 const scrollPositions = new Map<string, ScrollPosition>();
+const listAnchors = new Map<string, string>();
+const routeQueries = new Map<string, string>();
+const MAX_SAVED_LOCATIONS = 100;
 
 /** Maximum age (ms) before a stored scroll position is considered stale. */
 const MAX_SCROLL_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
+export function resolveScrollOwner(element: Element | null): Element | null {
+  if (!element) return null;
+  return element.querySelector('[data-message-viewport]')
+    ?? element.querySelector('.page-container')
+    ?? element;
+}
+
+function remember<T>(cache: Map<string, T>, key: string, value: T): void {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > MAX_SAVED_LOCATIONS) cache.delete(cache.keys().next().value!);
+}
+
+export function readListAnchor(key: string): string | undefined {
+  return listAnchors.get(key);
+}
+
+export function saveListAnchor(key: string, anchor: string): void {
+  remember(listAnchors, key, anchor);
+}
+
+export function readRouteQuery(key: string): string {
+  return routeQueries.get(key) ?? '';
+}
+
+export function saveRouteQuery(key: string, query: string): void {
+  remember(routeQueries, key, query);
+}
+
+export function findScrollAnchor(element: Element, id: string): Element | undefined {
+  return Array.from(element.querySelectorAll('[data-scroll-anchor-id]'))
+    .find((row) => row.getAttribute('data-scroll-anchor-id') === id);
+}
 
 /**
  * Save the current scroll position for a route.
  * Call this when navigating away from a tab or detail view.
  */
 export function saveScrollPosition(routeId: string, element: Element | null): void {
+  element = resolveScrollOwner(element);
   if (!element) return;
 
-  scrollPositions.set(routeId, {
+  const top = element.getBoundingClientRect?.().top ?? 0;
+  const anchor = Array.from(element.querySelectorAll('[data-scroll-anchor-id]'))
+    .find((row) => row.getBoundingClientRect().bottom > top);
+  remember(scrollPositions, routeId, {
     scrollTop: element.scrollTop,
     scrollLeft: element.scrollLeft,
     timestamp: Date.now(),
+    anchor: anchor ? {
+      id: anchor.getAttribute('data-scroll-anchor-id')!,
+      offset: anchor.getBoundingClientRect().top - top,
+    } : undefined,
   });
 }
 
@@ -37,6 +83,7 @@ export function saveScrollPosition(routeId: string, element: Element | null): vo
  * Returns true if a position was restored, false if none was found or it was stale.
  */
 export function restoreScrollPosition(routeId: string, element: Element | null): boolean {
+  element = resolveScrollOwner(element);
   if (!element) return false;
 
   const saved = scrollPositions.get(routeId);
@@ -50,6 +97,11 @@ export function restoreScrollPosition(routeId: string, element: Element | null):
 
   element.scrollTop = saved.scrollTop;
   element.scrollLeft = saved.scrollLeft;
+  const anchor = saved.anchor && findScrollAnchor(element, saved.anchor.id);
+  if (anchor && saved.anchor) {
+    element.scrollTop += anchor.getBoundingClientRect().top
+      - element.getBoundingClientRect().top - saved.anchor.offset;
+  }
   return true;
 }
 
@@ -65,6 +117,9 @@ export function clearScrollPosition(routeId: string): void {
  */
 export function clearAllScrollPositions(): void {
   scrollPositions.clear();
+  listAnchors.clear();
+  routeQueries.clear();
+  focusTargets.clear();
 }
 
 /**
@@ -77,7 +132,7 @@ export function saveFocusTarget(routeId: string): string | null {
 
   const focusId = active.getAttribute('data-focus-id');
   if (focusId) {
-    focusTargets.set(routeId, focusId);
+    remember(focusTargets, routeId, focusId);
   }
   return focusId;
 }

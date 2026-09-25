@@ -12,16 +12,13 @@
 
 import client from './client';
 
-// AccessGateType enum names, kept in sync with model/domain/access_gate.proto.
+// Gate types that the current Station registry can safely place in a policy.
+// Other proto enum values remain reserved until their gatekeepers are shipped.
 export const ACCESS_GATE_TYPE = {
   STATION_CAPABILITY: 'ACCESS_GATE_TYPE_STATION_CAPABILITY',
   AUTH_LOGIN: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
-  AUTH_SESSION_RESTORE: 'ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE',
   INVITE_ALLOWLIST: 'ACCESS_GATE_TYPE_INVITE_ALLOWLIST',
   INVITE_CODE: 'ACCESS_GATE_TYPE_INVITE_CODE',
-  DEVICE_TRUST: 'ACCESS_GATE_TYPE_DEVICE_TRUST',
-  MAINTENANCE: 'ACCESS_GATE_TYPE_MAINTENANCE',
-  TERMS_ACCEPTANCE: 'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
 } as const;
 
 export type AccessGateType = (typeof ACCESS_GATE_TYPE)[keyof typeof ACCESS_GATE_TYPE];

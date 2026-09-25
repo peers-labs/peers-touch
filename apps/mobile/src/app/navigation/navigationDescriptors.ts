@@ -82,7 +82,7 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
     routeId: 'detail:group-conversation',
     labelKey: 'mobile.nav.groupConversation',
     layout: 'detail',
-    ownerRuntimeId: 'group',
+    ownerRuntimeId: 'messaging',
     keepAlive: false,
   },
   {
@@ -90,6 +90,20 @@ export const detailDescriptors: readonly NavigationDescriptor[] = [
     labelKey: 'mobile.nav.contactProfile',
     layout: 'detail',
     ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:moment',
+    labelKey: 'mobile.nav.momentDetail',
+    layout: 'detail',
+    ownerRuntimeId: 'social',
+    keepAlive: false,
+  },
+  {
+    routeId: 'detail:setting',
+    labelKey: 'mobile.nav.settingDetail',
+    layout: 'detail',
+    ownerRuntimeId: 'auth',
     keepAlive: false,
   },
 ];
@@ -108,7 +122,7 @@ export const overlayDescriptors: readonly NavigationDescriptor[] = [
     routeId: 'overlay:create-group',
     labelKey: 'mobile.nav.createGroup',
     layout: 'overlay',
-    ownerRuntimeId: 'group',
+    ownerRuntimeId: 'messaging',
     keepAlive: false,
   },
 ];

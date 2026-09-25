@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	ErrProfileRevisionRequired = errors.New("profile observed revision is required")
+	ErrEmptyProfileMutation    = errors.New("profile mutation is empty")
 )
 
 type PeersTouchInfo struct {
@@ -46,6 +53,7 @@ type ProfileResponse struct {
 	ManuallyApprovesFollowers bool       `json:"manually_approves_followers"`
 	MessagePermission         string     `json:"message_permission"`
 	AutoExpireDays            int        `json:"auto_expire_days"`
+	ProfileRevision           uint64     `json:"profile_revision"`
 
 	PeersTouch PeersTouchInfo `json:"peers_touch"`
 }
@@ -63,6 +71,12 @@ type UpdateProfileRequest struct {
 	ManuallyApprovesFollowers *bool       `json:"manually_approves_followers"`
 	MessagePermission         *string     `json:"message_permission"`
 	AutoExpireDays            *int        `json:"auto_expire_days"`
+	ObservedRevision          uint64      `json:"observed_revision"`
+}
+
+type ProfileUpdateResult struct {
+	Outcome modelpb.ProfileUpdateOutcome
+	Profile *ProfileResponse
 }
 
 // GetWebProfile resolves a LOCAL profile by preferred_username. It
@@ -173,6 +187,7 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 		ManuallyApprovesFollowers: meta.ManuallyApprovesFollowers,
 		MessagePermission:         meta.MessagePermission,
 		AutoExpireDays:            meta.AutoExpireDays,
+		ProfileRevision:           canonicalProfileRevision(meta.ProfileRevision),
 		PeersTouch: PeersTouchInfo{
 			NetworkID: actor.PTID,
 		},
@@ -181,112 +196,207 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 	return response, nil
 }
 
-func UpdateProfile(c context.Context, username string, req UpdateProfileRequest) error {
+func UpdateProfile(c context.Context, username, baseURL string, req UpdateProfileRequest) (*ProfileUpdateResult, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var actor db.Actor
 	err = rds.Where("preferred_username = ? AND namespace = ?", username, "peers").First(&actor).Error
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return updateProfileInternal(c, rds, &actor, req)
+	return updateProfileInternal(c, rds, actor.ID, baseURL, req)
 }
 
-func UpdateProfileByID(c context.Context, actorID uint64, req UpdateProfileRequest) error {
+func UpdateProfileByID(c context.Context, actorID uint64, baseURL string, req UpdateProfileRequest) (*ProfileUpdateResult, error) {
 	rds, err := store.GetRDS(c)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var actor db.Actor
-	if err := rds.First(&actor, actorID).Error; err != nil {
-		return err
-	}
-	return updateProfileInternal(c, rds, &actor, req)
+	return updateProfileInternal(c, rds, actorID, baseURL, req)
 }
 
-func updateProfileInternal(c context.Context, rds *gorm.DB, actor *db.Actor, req UpdateProfileRequest) error {
-	var meta db.ActorTouchMeta
-	err := rds.Where("actor_id = ?", actor.ID).First(&meta).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+func (req UpdateProfileRequest) hasMutation() bool {
+	return req.DisplayName != nil ||
+		req.Note != nil ||
+		req.Avatar != nil ||
+		req.Header != nil ||
+		req.Region != nil ||
+		req.Timezone != nil ||
+		req.Tags != nil ||
+		req.Links != nil ||
+		req.DefaultVisibility != nil ||
+		req.ManuallyApprovesFollowers != nil ||
+		req.MessagePermission != nil ||
+		req.AutoExpireDays != nil
+}
+
+func ValidateProfileUpdateRequest(req UpdateProfileRequest) error {
+	if req.ObservedRevision == 0 {
+		return ErrProfileRevisionRequired
+	}
+	if !req.hasMutation() {
+		return ErrEmptyProfileMutation
+	}
+	return nil
+}
+
+func canonicalProfileRevision(revision uint64) uint64 {
+	if revision == 0 {
+		return 1
+	}
+	return revision
+}
+
+func updateProfileInternal(
+	c context.Context,
+	rds *gorm.DB,
+	actorID uint64,
+	baseURL string,
+	req UpdateProfileRequest,
+) (*ProfileUpdateResult, error) {
+	if err := ValidateProfileUpdateRequest(req); err != nil {
+		return nil, err
+	}
+
+	var result ProfileUpdateResult
+	changed := false
+	err := rds.WithContext(c).Transaction(func(tx *gorm.DB) error {
+		var actor db.Actor
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&actor, actorID).Error; err != nil {
+			return err
+		}
+
+		var meta db.ActorTouchMeta
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("actor_id = ?", actor.ID).
+			First(&meta).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			meta = db.ActorTouchMeta{
-				ActorID: actor.ID,
+				ActorID:         actor.ID,
+				ProfileRevision: 1,
 			}
-			if err := rds.Create(&meta).Error; err != nil {
+			if err := tx.Create(&meta).Error; err != nil {
 				return err
 			}
-		} else {
+		} else if err != nil {
 			return err
 		}
-	}
+		meta.ProfileRevision = canonicalProfileRevision(meta.ProfileRevision)
 
-	actorUpdates := map[string]interface{}{}
-	if req.DisplayName != nil {
-		actorUpdates["name"] = *req.DisplayName
-	}
-	if req.Note != nil {
-		actorUpdates["summary"] = *req.Note
-	}
-	if req.Avatar != nil {
-		actorUpdates["icon"] = *req.Avatar
-	}
-	if req.Header != nil {
-		actorUpdates["image"] = *req.Header
-	}
+		if req.ObservedRevision != meta.ProfileRevision {
+			profile, err := getWebProfileFromActor(c, tx, &actor, baseURL)
+			if err != nil {
+				return err
+			}
+			result = ProfileUpdateResult{
+				Outcome: modelpb.ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_CONFLICT,
+				Profile: profile,
+			}
+			return nil
+		}
 
-	if len(actorUpdates) > 0 {
-		if err := rds.Model(actor).Updates(actorUpdates).Error; err != nil {
+		actorUpdates := map[string]interface{}{}
+		if req.DisplayName != nil && *req.DisplayName != actor.Name {
+			actorUpdates["name"] = *req.DisplayName
+		}
+		if req.Note != nil && *req.Note != actor.Summary {
+			actorUpdates["summary"] = *req.Note
+		}
+		if req.Avatar != nil && *req.Avatar != actor.Icon {
+			actorUpdates["icon"] = *req.Avatar
+		}
+		if req.Header != nil && *req.Header != actor.Image {
+			actorUpdates["image"] = *req.Header
+		}
+
+		metaUpdates := map[string]interface{}{}
+		if req.Region != nil && *req.Region != meta.Region {
+			metaUpdates["region"] = *req.Region
+		}
+		if req.Timezone != nil && *req.Timezone != meta.Timezone {
+			metaUpdates["timezone"] = *req.Timezone
+		}
+		if req.Tags != nil {
+			tagsJSON, err := json.Marshal(*req.Tags)
+			if err != nil {
+				return err
+			}
+			if string(tagsJSON) != meta.Tags {
+				metaUpdates["tags"] = string(tagsJSON)
+			}
+		}
+		if req.Links != nil {
+			linksJSON, err := json.Marshal(*req.Links)
+			if err != nil {
+				return err
+			}
+			if string(linksJSON) != meta.Links {
+				metaUpdates["links"] = string(linksJSON)
+			}
+		}
+		if req.DefaultVisibility != nil && *req.DefaultVisibility != meta.DefaultVisibility {
+			metaUpdates["default_visibility"] = *req.DefaultVisibility
+		}
+		if req.ManuallyApprovesFollowers != nil &&
+			*req.ManuallyApprovesFollowers != meta.ManuallyApprovesFollowers {
+			metaUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
+		}
+		if req.MessagePermission != nil && *req.MessagePermission != meta.MessagePermission {
+			metaUpdates["message_permission"] = *req.MessagePermission
+		}
+		if req.AutoExpireDays != nil && *req.AutoExpireDays != meta.AutoExpireDays {
+			metaUpdates["auto_expire_days"] = *req.AutoExpireDays
+		}
+
+		if len(actorUpdates) == 0 && len(metaUpdates) == 0 {
+			profile, err := getWebProfileFromActor(c, tx, &actor, baseURL)
+			if err != nil {
+				return err
+			}
+			result = ProfileUpdateResult{
+				Outcome: modelpb.ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_UNCHANGED,
+				Profile: profile,
+			}
+			return nil
+		}
+
+		if len(actorUpdates) > 0 {
+			if err := tx.Model(&actor).Updates(actorUpdates).Error; err != nil {
+				return err
+			}
+		}
+		nextRevision := meta.ProfileRevision + 1
+		metaUpdates["profile_revision"] = nextRevision
+		if err := tx.Model(&meta).Updates(metaUpdates).Error; err != nil {
 			return err
 		}
-	}
-
-	metaUpdates := map[string]interface{}{}
-	if req.Region != nil {
-		metaUpdates["region"] = *req.Region
-	}
-	if req.Timezone != nil {
-		metaUpdates["timezone"] = *req.Timezone
-	}
-	if req.Tags != nil {
-		tagsJSON, _ := json.Marshal(*req.Tags)
-		metaUpdates["tags"] = string(tagsJSON)
-	}
-	if req.Links != nil {
-		linksJSON, _ := json.Marshal(*req.Links)
-		metaUpdates["links"] = string(linksJSON)
-	}
-	if req.DefaultVisibility != nil {
-		metaUpdates["default_visibility"] = *req.DefaultVisibility
-	}
-	if req.ManuallyApprovesFollowers != nil {
-		metaUpdates["manually_approves_followers"] = *req.ManuallyApprovesFollowers
-	}
-	if req.MessagePermission != nil {
-		metaUpdates["message_permission"] = *req.MessagePermission
-	}
-	if req.AutoExpireDays != nil {
-		metaUpdates["auto_expire_days"] = *req.AutoExpireDays
-	}
-
-	if len(metaUpdates) > 0 {
-		if err := rds.Model(&meta).Updates(metaUpdates).Error; err != nil {
+		if err := tx.First(&actor, actorID).Error; err != nil {
 			return err
 		}
+
+		profile, err := getWebProfileFromActor(c, tx, &actor, baseURL)
+		if err != nil {
+			return err
+		}
+		result = ProfileUpdateResult{
+			Outcome: modelpb.ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_APPLIED,
+			Profile: profile,
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Tier C1 — re-publish the locator record so receivers' caches
-	// get invalidated on the next broadcast. We trigger only when at
-	// least one row actually changed; an empty PATCH is a no-op and
-	// must not generate federation traffic. publishVisibilityAsync is
-	// internally gated on Origin=local + federated_handle non-empty,
-	// so non-local / not-yet-bootstrapped actors fall through quietly.
-	if len(actorUpdates) > 0 || len(metaUpdates) > 0 {
-		publishVisibilityAsync(actor.ID)
+	// This is a user-driven content change. Publish only after the transaction
+	// commits, and never for stale or equal-value requests.
+	if changed {
+		publishVisibilityAsync(actorID)
 	}
-
-	return nil
+	return &result, nil
 }
 
 // WebProfileToActorProfileProto maps a web ProfileResponse to the domain ActorProfile proto
@@ -326,6 +436,7 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 		ManuallyApprovesFollowers: p.ManuallyApprovesFollowers,
 		MessagePermission:         p.MessagePermission,
 		AutoExpireDays:            int32(p.AutoExpireDays),
+		ProfileRevision:           p.ProfileRevision,
 	}
 }
 
@@ -392,5 +503,6 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 		n := int(*req.AutoExpireDays)
 		out.AutoExpireDays = &n
 	}
+	out.ObservedRevision = req.ObservedRevision
 	return out
 }

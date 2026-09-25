@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package peers_touch.model.mobile.v1;
+
+import "domain/social/post.proto";
+import "domain/social/relationship.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/mobile;mobile";
+
+enum MobileDurableCommandState {
+  MOBILE_DURABLE_COMMAND_STATE_UNSPECIFIED = 0;
+  MOBILE_DURABLE_COMMAND_STATE_QUEUED = 1;
+  MOBILE_DURABLE_COMMAND_STATE_DISPATCH_FENCED = 2;
+  MOBILE_DURABLE_COMMAND_STATE_SUBMITTING = 3;
+  MOBILE_DURABLE_COMMAND_STATE_ACCEPTED_PENDING = 4;
+  MOBILE_DURABLE_COMMAND_STATE_COMMITTED = 5;
+  MOBILE_DURABLE_COMMAND_STATE_RETRY_WAIT = 6;
+  MOBILE_DURABLE_COMMAND_STATE_UNKNOWN_OUTCOME = 7;
+  MOBILE_DURABLE_COMMAND_STATE_RECONCILING = 8;
+  MOBILE_DURABLE_COMMAND_STATE_UNRESOLVED = 9;
+  MOBILE_DURABLE_COMMAND_STATE_FAILED_TERMINAL = 10;
+  MOBILE_DURABLE_COMMAND_STATE_CHECKPOINTING = 11;
+  MOBILE_DURABLE_COMMAND_STATE_CANCELLED = 12;
+  MOBILE_DURABLE_COMMAND_STATE_ACKNOWLEDGED = 13;
+  MOBILE_DURABLE_COMMAND_STATE_DISCARDED = 14;
+}
+
+enum MobileDurableCommandErrorCode {
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_INVALID = 1;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_UNAUTHORIZED = 2;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_POLICY_REJECTED = 3;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_LOCAL_UNAVAILABLE = 4;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_TRANSPORT = 5;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_DEADLINE = 6;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_RESPONSE_DECODE = 7;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_RESULT_MISMATCH = 8;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_ATTEMPT_EXHAUSTED = 9;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_DOMAIN_EXPIRED = 10;
+  MOBILE_DURABLE_COMMAND_ERROR_CODE_LEDGER_FULL = 11;
+}
+
+message MobileDurableCommandEnvelopeV2 {
+  uint32 schema_revision = 1;
+  string command_id = 2;
+  string station_peer_id = 3;
+  string actor_ptid = 4;
+  uint64 origin_generation = 5;
+  string ordering_key = 6;
+  bytes payload_sha256 = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  uint32 attempt_count = 11;
+  MobileDurableCommandState state = 12;
+  MobileDurableCommandErrorCode typed_last_error = 13;
+  google.protobuf.Timestamp dispatch_started_at = 14;
+  google.protobuf.Timestamp next_attempt_at = 15;
+
+  oneof payload {
+    peers_touch.model.social.v1.FriendRequestCommand friend_request = 20;
+    peers_touch.model.social.v1.SocialRelationshipCommand social_relationship = 21;
+  }
+}
+
+enum MobileDraftSurfaceKind {
+  MOBILE_DRAFT_SURFACE_KIND_UNSPECIFIED = 0;
+  MOBILE_DRAFT_SURFACE_KIND_CHAT_COMPOSER = 1;
+  MOBILE_DRAFT_SURFACE_KIND_MOMENT_COMPOSER = 2;
+}
+
+message EncryptedBlobReference {
+  string blob_id = 1;
+}
+
+message ChatDraftPayload {
+  string text = 1;
+  string reply_to_message_id = 2;
+  repeated EncryptedBlobReference attachment_refs = 3;
+}
+
+message MomentDraftPayload {
+  string text = 1;
+  peers_touch.model.social.v1.Audience audience = 2;
+  repeated EncryptedBlobReference media_refs = 3;
+}
+
+message MobileDraftEnvelopeV2 {
+  uint32 schema_revision = 1;
+  string station_peer_id = 2;
+  string actor_ptid = 3;
+  MobileDraftSurfaceKind surface_kind = 4;
+  string target_id = 5;
+  google.protobuf.Timestamp updated_at = 6;
+
+  oneof payload {
+    ChatDraftPayload chat = 10;
+    MomentDraftPayload moment = 11;
+  }
+}

@@ -271,13 +271,14 @@ func (AccessPolicyMode) EnumDescriptor() ([]byte, []int) {
 }
 
 type AccessGateClientInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Platform      string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
-	AppVersion    string                 `protobuf:"bytes,2,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
-	DeviceId      string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	Locale        string                 `protobuf:"bytes,4,opt,name=locale,proto3" json:"locale,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Platform            string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	AppVersion          string                 `protobuf:"bytes,2,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
+	DeviceId            string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	Locale              string                 `protobuf:"bytes,4,opt,name=locale,proto3" json:"locale,omitempty"`
+	LifecycleGeneration uint64                 `protobuf:"varint,5,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *AccessGateClientInfo) Reset() {
@@ -338,16 +339,25 @@ func (x *AccessGateClientInfo) GetLocale() string {
 	return ""
 }
 
-// AccessGateAction is one credential action accepted by its parent gate.
-// AUTH_LOGIN remains the ordered credential-stage gate; OAuth is advertised as
-// an alternative action rather than inserted as another mandatory gate.
+func (x *AccessGateClientInfo) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
+// AccessGateAction is one exact action accepted by its parent gate. The schema
+// digest binds the rendered form to the submitted action without allowing the
+// client to select an endpoint.
 type AccessGateAction struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActionId      string                 `protobuf:"bytes,1,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
-	Type          AccessGateType         `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.access_gate.v1.AccessGateType" json:"type,omitempty"`
-	SubmitAction  string                 `protobuf:"bytes,3,opt,name=submit_action,json=submitAction,proto3" json:"submit_action,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ActionId       string                 `protobuf:"bytes,1,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	Type           AccessGateType         `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.access_gate.v1.AccessGateType" json:"type,omitempty"`
+	SubmitAction   string                 `protobuf:"bytes,3,opt,name=submit_action,json=submitAction,proto3" json:"submit_action,omitempty"`
+	SchemaRevision uint32                 `protobuf:"varint,4,opt,name=schema_revision,json=schemaRevision,proto3" json:"schema_revision,omitempty"`
+	SchemaDigest   string                 `protobuf:"bytes,5,opt,name=schema_digest,json=schemaDigest,proto3" json:"schema_digest,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AccessGateAction) Reset() {
@@ -401,6 +411,20 @@ func (x *AccessGateAction) GetSubmitAction() string {
 	return ""
 }
 
+func (x *AccessGateAction) GetSchemaRevision() uint32 {
+	if x != nil {
+		return x.SchemaRevision
+	}
+	return 0
+}
+
+func (x *AccessGateAction) GetSchemaDigest() string {
+	if x != nil {
+		return x.SchemaDigest
+	}
+	return ""
+}
+
 type AccessGate struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	GateId          string                 `protobuf:"bytes,1,opt,name=gate_id,json=gateId,proto3" json:"gate_id,omitempty"`
@@ -415,6 +439,9 @@ type AccessGate struct {
 	// here. These actions are choices within one gate, not additional gate-chain
 	// stages.
 	AlternativeActions []*AccessGateAction `protobuf:"bytes,9,rep,name=alternative_actions,json=alternativeActions,proto3" json:"alternative_actions,omitempty"`
+	ActionId           string              `protobuf:"bytes,10,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	SchemaRevision     uint32              `protobuf:"varint,11,opt,name=schema_revision,json=schemaRevision,proto3" json:"schema_revision,omitempty"`
+	SchemaDigest       string              `protobuf:"bytes,12,opt,name=schema_digest,json=schemaDigest,proto3" json:"schema_digest,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -510,6 +537,27 @@ func (x *AccessGate) GetAlternativeActions() []*AccessGateAction {
 		return x.AlternativeActions
 	}
 	return nil
+}
+
+func (x *AccessGate) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+func (x *AccessGate) GetSchemaRevision() uint32 {
+	if x != nil {
+		return x.SchemaRevision
+	}
+	return 0
+}
+
+func (x *AccessGate) GetSchemaDigest() string {
+	if x != nil {
+		return x.SchemaDigest
+	}
+	return ""
 }
 
 type AccessDecision struct {
@@ -683,6 +731,7 @@ func (x *StartAccessAttemptRequest) GetStationPeerId() string {
 type StartAccessAttemptResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Decision      *AccessDecision        `protobuf:"bytes,1,opt,name=decision,proto3" json:"decision,omitempty"`
+	StationLabel  string                 `protobuf:"bytes,2,opt,name=station_label,json=stationLabel,proto3" json:"station_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -724,21 +773,252 @@ func (x *StartAccessAttemptResponse) GetDecision() *AccessDecision {
 	return nil
 }
 
-type SubmitAccessGateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
-	GateId        string                 `protobuf:"bytes,2,opt,name=gate_id,json=gateId,proto3" json:"gate_id,omitempty"`
-	Type          AccessGateType         `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.access_gate.v1.AccessGateType" json:"type,omitempty"`
-	Login         *model.LoginRequest    `protobuf:"bytes,4,opt,name=login,proto3" json:"login,omitempty"`
-	InviteCode    string                 `protobuf:"bytes,5,opt,name=invite_code,json=inviteCode,proto3" json:"invite_code,omitempty"`
-	SessionId     string                 `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+func (x *StartAccessAttemptResponse) GetStationLabel() string {
+	if x != nil {
+		return x.StationLabel
+	}
+	return ""
+}
+
+type AccessGateScalarValue struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	FieldName string                 `protobuf:"bytes,1,opt,name=field_name,json=fieldName,proto3" json:"field_name,omitempty"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*AccessGateScalarValue_StringValue
+	//	*AccessGateScalarValue_BoolValue
+	//	*AccessGateScalarValue_IntegerValue
+	//	*AccessGateScalarValue_NumberValue
+	Value         isAccessGateScalarValue_Value `protobuf_oneof:"value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *AccessGateScalarValue) Reset() {
+	*x = AccessGateScalarValue{}
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessGateScalarValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessGateScalarValue) ProtoMessage() {}
+
+func (x *AccessGateScalarValue) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessGateScalarValue.ProtoReflect.Descriptor instead.
+func (*AccessGateScalarValue) Descriptor() ([]byte, []int) {
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AccessGateScalarValue) GetFieldName() string {
+	if x != nil {
+		return x.FieldName
+	}
+	return ""
+}
+
+func (x *AccessGateScalarValue) GetValue() isAccessGateScalarValue_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *AccessGateScalarValue) GetStringValue() string {
+	if x != nil {
+		if x, ok := x.Value.(*AccessGateScalarValue_StringValue); ok {
+			return x.StringValue
+		}
+	}
+	return ""
+}
+
+func (x *AccessGateScalarValue) GetBoolValue() bool {
+	if x != nil {
+		if x, ok := x.Value.(*AccessGateScalarValue_BoolValue); ok {
+			return x.BoolValue
+		}
+	}
+	return false
+}
+
+func (x *AccessGateScalarValue) GetIntegerValue() int64 {
+	if x != nil {
+		if x, ok := x.Value.(*AccessGateScalarValue_IntegerValue); ok {
+			return x.IntegerValue
+		}
+	}
+	return 0
+}
+
+func (x *AccessGateScalarValue) GetNumberValue() float64 {
+	if x != nil {
+		if x, ok := x.Value.(*AccessGateScalarValue_NumberValue); ok {
+			return x.NumberValue
+		}
+	}
+	return 0
+}
+
+type isAccessGateScalarValue_Value interface {
+	isAccessGateScalarValue_Value()
+}
+
+type AccessGateScalarValue_StringValue struct {
+	StringValue string `protobuf:"bytes,2,opt,name=string_value,json=stringValue,proto3,oneof"`
+}
+
+type AccessGateScalarValue_BoolValue struct {
+	BoolValue bool `protobuf:"varint,3,opt,name=bool_value,json=boolValue,proto3,oneof"`
+}
+
+type AccessGateScalarValue_IntegerValue struct {
+	IntegerValue int64 `protobuf:"zigzag64,4,opt,name=integer_value,json=integerValue,proto3,oneof"`
+}
+
+type AccessGateScalarValue_NumberValue struct {
+	NumberValue float64 `protobuf:"fixed64,5,opt,name=number_value,json=numberValue,proto3,oneof"`
+}
+
+func (*AccessGateScalarValue_StringValue) isAccessGateScalarValue_Value() {}
+
+func (*AccessGateScalarValue_BoolValue) isAccessGateScalarValue_Value() {}
+
+func (*AccessGateScalarValue_IntegerValue) isAccessGateScalarValue_Value() {}
+
+func (*AccessGateScalarValue_NumberValue) isAccessGateScalarValue_Value() {}
+
+type AccessGateGenericInput struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Fields        []*AccessGateScalarValue `protobuf:"bytes,1,rep,name=fields,proto3" json:"fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccessGateGenericInput) Reset() {
+	*x = AccessGateGenericInput{}
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessGateGenericInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessGateGenericInput) ProtoMessage() {}
+
+func (x *AccessGateGenericInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessGateGenericInput.ProtoReflect.Descriptor instead.
+func (*AccessGateGenericInput) Descriptor() ([]byte, []int) {
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AccessGateGenericInput) GetFields() []*AccessGateScalarValue {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+type AccessGateDeviceTrustInput struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque reference to native attestation material. Raw credentials, binary
+	// payloads, and executable data are never valid generic field values.
+	AttestationHandle string `protobuf:"bytes,1,opt,name=attestation_handle,json=attestationHandle,proto3" json:"attestation_handle,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AccessGateDeviceTrustInput) Reset() {
+	*x = AccessGateDeviceTrustInput{}
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessGateDeviceTrustInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessGateDeviceTrustInput) ProtoMessage() {}
+
+func (x *AccessGateDeviceTrustInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessGateDeviceTrustInput.ProtoReflect.Descriptor instead.
+func (*AccessGateDeviceTrustInput) Descriptor() ([]byte, []int) {
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AccessGateDeviceTrustInput) GetAttestationHandle() string {
+	if x != nil {
+		return x.AttestationHandle
+	}
+	return ""
+}
+
+type SubmitAccessGateRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AttemptId string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	GateId    string                 `protobuf:"bytes,2,opt,name=gate_id,json=gateId,proto3" json:"gate_id,omitempty"`
+	Type      AccessGateType         `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.access_gate.v1.AccessGateType" json:"type,omitempty"`
+	// Types that are valid to be assigned to ActionInput:
+	//
+	//	*SubmitAccessGateRequest_Login
+	//	*SubmitAccessGateRequest_InviteCode
+	//	*SubmitAccessGateRequest_SessionId
+	//	*SubmitAccessGateRequest_DeviceTrust
+	//	*SubmitAccessGateRequest_Generic
+	ActionInput         isSubmitAccessGateRequest_ActionInput `protobuf_oneof:"action_input"`
+	ActionId            string                                `protobuf:"bytes,7,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	StationPeerId       string                                `protobuf:"bytes,8,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	DeviceId            string                                `protobuf:"bytes,9,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration uint64                                `protobuf:"varint,10,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	SchemaRevision      uint32                                `protobuf:"varint,11,opt,name=schema_revision,json=schemaRevision,proto3" json:"schema_revision,omitempty"`
+	SchemaDigest        string                                `protobuf:"bytes,12,opt,name=schema_digest,json=schemaDigest,proto3" json:"schema_digest,omitempty"`
+	SubmissionId        string                                `protobuf:"bytes,13,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
 func (x *SubmitAccessGateRequest) Reset() {
 	*x = SubmitAccessGateRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[6]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +1030,7 @@ func (x *SubmitAccessGateRequest) String() string {
 func (*SubmitAccessGateRequest) ProtoMessage() {}
 
 func (x *SubmitAccessGateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[6]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +1043,7 @@ func (x *SubmitAccessGateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAccessGateRequest.ProtoReflect.Descriptor instead.
 func (*SubmitAccessGateRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{6}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SubmitAccessGateRequest) GetAttemptId() string {
@@ -787,26 +1067,140 @@ func (x *SubmitAccessGateRequest) GetType() AccessGateType {
 	return AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED
 }
 
+func (x *SubmitAccessGateRequest) GetActionInput() isSubmitAccessGateRequest_ActionInput {
+	if x != nil {
+		return x.ActionInput
+	}
+	return nil
+}
+
 func (x *SubmitAccessGateRequest) GetLogin() *model.LoginRequest {
 	if x != nil {
-		return x.Login
+		if x, ok := x.ActionInput.(*SubmitAccessGateRequest_Login); ok {
+			return x.Login
+		}
 	}
 	return nil
 }
 
 func (x *SubmitAccessGateRequest) GetInviteCode() string {
 	if x != nil {
-		return x.InviteCode
+		if x, ok := x.ActionInput.(*SubmitAccessGateRequest_InviteCode); ok {
+			return x.InviteCode
+		}
 	}
 	return ""
 }
 
 func (x *SubmitAccessGateRequest) GetSessionId() string {
 	if x != nil {
-		return x.SessionId
+		if x, ok := x.ActionInput.(*SubmitAccessGateRequest_SessionId); ok {
+			return x.SessionId
+		}
 	}
 	return ""
 }
+
+func (x *SubmitAccessGateRequest) GetDeviceTrust() *AccessGateDeviceTrustInput {
+	if x != nil {
+		if x, ok := x.ActionInput.(*SubmitAccessGateRequest_DeviceTrust); ok {
+			return x.DeviceTrust
+		}
+	}
+	return nil
+}
+
+func (x *SubmitAccessGateRequest) GetGeneric() *AccessGateGenericInput {
+	if x != nil {
+		if x, ok := x.ActionInput.(*SubmitAccessGateRequest_Generic); ok {
+			return x.Generic
+		}
+	}
+	return nil
+}
+
+func (x *SubmitAccessGateRequest) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+func (x *SubmitAccessGateRequest) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *SubmitAccessGateRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *SubmitAccessGateRequest) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
+func (x *SubmitAccessGateRequest) GetSchemaRevision() uint32 {
+	if x != nil {
+		return x.SchemaRevision
+	}
+	return 0
+}
+
+func (x *SubmitAccessGateRequest) GetSchemaDigest() string {
+	if x != nil {
+		return x.SchemaDigest
+	}
+	return ""
+}
+
+func (x *SubmitAccessGateRequest) GetSubmissionId() string {
+	if x != nil {
+		return x.SubmissionId
+	}
+	return ""
+}
+
+type isSubmitAccessGateRequest_ActionInput interface {
+	isSubmitAccessGateRequest_ActionInput()
+}
+
+type SubmitAccessGateRequest_Login struct {
+	Login *model.LoginRequest `protobuf:"bytes,4,opt,name=login,proto3,oneof"`
+}
+
+type SubmitAccessGateRequest_InviteCode struct {
+	InviteCode string `protobuf:"bytes,5,opt,name=invite_code,json=inviteCode,proto3,oneof"`
+}
+
+type SubmitAccessGateRequest_SessionId struct {
+	SessionId string `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3,oneof"`
+}
+
+type SubmitAccessGateRequest_DeviceTrust struct {
+	DeviceTrust *AccessGateDeviceTrustInput `protobuf:"bytes,14,opt,name=device_trust,json=deviceTrust,proto3,oneof"`
+}
+
+type SubmitAccessGateRequest_Generic struct {
+	Generic *AccessGateGenericInput `protobuf:"bytes,15,opt,name=generic,proto3,oneof"`
+}
+
+func (*SubmitAccessGateRequest_Login) isSubmitAccessGateRequest_ActionInput() {}
+
+func (*SubmitAccessGateRequest_InviteCode) isSubmitAccessGateRequest_ActionInput() {}
+
+func (*SubmitAccessGateRequest_SessionId) isSubmitAccessGateRequest_ActionInput() {}
+
+func (*SubmitAccessGateRequest_DeviceTrust) isSubmitAccessGateRequest_ActionInput() {}
+
+func (*SubmitAccessGateRequest_Generic) isSubmitAccessGateRequest_ActionInput() {}
 
 type SubmitAccessGateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -818,7 +1212,7 @@ type SubmitAccessGateResponse struct {
 
 func (x *SubmitAccessGateResponse) Reset() {
 	*x = SubmitAccessGateResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[7]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -830,7 +1224,7 @@ func (x *SubmitAccessGateResponse) String() string {
 func (*SubmitAccessGateResponse) ProtoMessage() {}
 
 func (x *SubmitAccessGateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[7]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -843,7 +1237,7 @@ func (x *SubmitAccessGateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitAccessGateResponse.ProtoReflect.Descriptor instead.
 func (*SubmitAccessGateResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{7}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SubmitAccessGateResponse) GetDecision() *AccessDecision {
@@ -861,15 +1255,18 @@ func (x *SubmitAccessGateResponse) GetLoginResponse() *model.LoginResponse {
 }
 
 type GetAccessDecisionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	AttemptId           string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	StationPeerId       string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	DeviceId            string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration uint64                 `protobuf:"varint,4,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetAccessDecisionRequest) Reset() {
 	*x = GetAccessDecisionRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[8]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +1278,7 @@ func (x *GetAccessDecisionRequest) String() string {
 func (*GetAccessDecisionRequest) ProtoMessage() {}
 
 func (x *GetAccessDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[8]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +1291,7 @@ func (x *GetAccessDecisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccessDecisionRequest.ProtoReflect.Descriptor instead.
 func (*GetAccessDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{8}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetAccessDecisionRequest) GetAttemptId() string {
@@ -904,16 +1301,38 @@ func (x *GetAccessDecisionRequest) GetAttemptId() string {
 	return ""
 }
 
+func (x *GetAccessDecisionRequest) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *GetAccessDecisionRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *GetAccessDecisionRequest) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
 type GetAccessDecisionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Decision      *AccessDecision        `protobuf:"bytes,1,opt,name=decision,proto3" json:"decision,omitempty"`
+	LoginResponse *model.LoginResponse   `protobuf:"bytes,2,opt,name=login_response,json=loginResponse,proto3" json:"login_response,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetAccessDecisionResponse) Reset() {
 	*x = GetAccessDecisionResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[9]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +1344,7 @@ func (x *GetAccessDecisionResponse) String() string {
 func (*GetAccessDecisionResponse) ProtoMessage() {}
 
 func (x *GetAccessDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[9]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +1357,7 @@ func (x *GetAccessDecisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccessDecisionResponse.ProtoReflect.Descriptor instead.
 func (*GetAccessDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{9}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetAccessDecisionResponse) GetDecision() *AccessDecision {
@@ -948,16 +1367,26 @@ func (x *GetAccessDecisionResponse) GetDecision() *AccessDecision {
 	return nil
 }
 
+func (x *GetAccessDecisionResponse) GetLoginResponse() *model.LoginResponse {
+	if x != nil {
+		return x.LoginResponse
+	}
+	return nil
+}
+
 type CancelAccessAttemptRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	AttemptId           string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	StationPeerId       string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	DeviceId            string                 `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration uint64                 `protobuf:"varint,4,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CancelAccessAttemptRequest) Reset() {
 	*x = CancelAccessAttemptRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[10]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -969,7 +1398,7 @@ func (x *CancelAccessAttemptRequest) String() string {
 func (*CancelAccessAttemptRequest) ProtoMessage() {}
 
 func (x *CancelAccessAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[10]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -982,7 +1411,7 @@ func (x *CancelAccessAttemptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccessAttemptRequest.ProtoReflect.Descriptor instead.
 func (*CancelAccessAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{10}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CancelAccessAttemptRequest) GetAttemptId() string {
@@ -990,6 +1419,27 @@ func (x *CancelAccessAttemptRequest) GetAttemptId() string {
 		return x.AttemptId
 	}
 	return ""
+}
+
+func (x *CancelAccessAttemptRequest) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *CancelAccessAttemptRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *CancelAccessAttemptRequest) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
 }
 
 type CancelAccessAttemptResponse struct {
@@ -1001,7 +1451,7 @@ type CancelAccessAttemptResponse struct {
 
 func (x *CancelAccessAttemptResponse) Reset() {
 	*x = CancelAccessAttemptResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[11]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1013,7 +1463,7 @@ func (x *CancelAccessAttemptResponse) String() string {
 func (*CancelAccessAttemptResponse) ProtoMessage() {}
 
 func (x *CancelAccessAttemptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[11]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1026,7 +1476,7 @@ func (x *CancelAccessAttemptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccessAttemptResponse.ProtoReflect.Descriptor instead.
 func (*CancelAccessAttemptResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{11}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CancelAccessAttemptResponse) GetCancelled() bool {
@@ -1057,7 +1507,7 @@ type AccessPolicy struct {
 
 func (x *AccessPolicy) Reset() {
 	*x = AccessPolicy{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[12]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1069,7 +1519,7 @@ func (x *AccessPolicy) String() string {
 func (*AccessPolicy) ProtoMessage() {}
 
 func (x *AccessPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[12]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1082,7 +1532,7 @@ func (x *AccessPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessPolicy.ProtoReflect.Descriptor instead.
 func (*AccessPolicy) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{12}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AccessPolicy) GetMode() AccessPolicyMode {
@@ -1150,7 +1600,7 @@ type UpdateAccessPolicyRequest struct {
 
 func (x *UpdateAccessPolicyRequest) Reset() {
 	*x = UpdateAccessPolicyRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[13]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1162,7 +1612,7 @@ func (x *UpdateAccessPolicyRequest) String() string {
 func (*UpdateAccessPolicyRequest) ProtoMessage() {}
 
 func (x *UpdateAccessPolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[13]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1175,7 +1625,7 @@ func (x *UpdateAccessPolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAccessPolicyRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAccessPolicyRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{13}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateAccessPolicyRequest) GetPolicy() *AccessPolicy {
@@ -1194,7 +1644,7 @@ type UpdateAccessPolicyResponse struct {
 
 func (x *UpdateAccessPolicyResponse) Reset() {
 	*x = UpdateAccessPolicyResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[14]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +1656,7 @@ func (x *UpdateAccessPolicyResponse) String() string {
 func (*UpdateAccessPolicyResponse) ProtoMessage() {}
 
 func (x *UpdateAccessPolicyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[14]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,7 +1669,7 @@ func (x *UpdateAccessPolicyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAccessPolicyResponse.ProtoReflect.Descriptor instead.
 func (*UpdateAccessPolicyResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{14}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateAccessPolicyResponse) GetPolicy() *AccessPolicy {
@@ -1250,7 +1700,7 @@ type InviteCode struct {
 
 func (x *InviteCode) Reset() {
 	*x = InviteCode{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[15]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1712,7 @@ func (x *InviteCode) String() string {
 func (*InviteCode) ProtoMessage() {}
 
 func (x *InviteCode) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[15]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1725,7 @@ func (x *InviteCode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteCode.ProtoReflect.Descriptor instead.
 func (*InviteCode) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{15}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *InviteCode) GetId() string {
@@ -1363,7 +1813,7 @@ type CreateInviteCodeRequest struct {
 
 func (x *CreateInviteCodeRequest) Reset() {
 	*x = CreateInviteCodeRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[16]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1825,7 @@ func (x *CreateInviteCodeRequest) String() string {
 func (*CreateInviteCodeRequest) ProtoMessage() {}
 
 func (x *CreateInviteCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[16]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1838,7 @@ func (x *CreateInviteCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteCodeRequest.ProtoReflect.Descriptor instead.
 func (*CreateInviteCodeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{16}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CreateInviteCodeRequest) GetCode() string {
@@ -1428,7 +1878,7 @@ type CreateInviteCodeResponse struct {
 
 func (x *CreateInviteCodeResponse) Reset() {
 	*x = CreateInviteCodeResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[17]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1890,7 @@ func (x *CreateInviteCodeResponse) String() string {
 func (*CreateInviteCodeResponse) ProtoMessage() {}
 
 func (x *CreateInviteCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[17]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1903,7 @@ func (x *CreateInviteCodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteCodeResponse.ProtoReflect.Descriptor instead.
 func (*CreateInviteCodeResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{17}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CreateInviteCodeResponse) GetInviteCode() *InviteCode {
@@ -1472,7 +1922,7 @@ type ListInviteCodesRequest struct {
 
 func (x *ListInviteCodesRequest) Reset() {
 	*x = ListInviteCodesRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[18]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1484,7 +1934,7 @@ func (x *ListInviteCodesRequest) String() string {
 func (*ListInviteCodesRequest) ProtoMessage() {}
 
 func (x *ListInviteCodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[18]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1497,7 +1947,7 @@ func (x *ListInviteCodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInviteCodesRequest.ProtoReflect.Descriptor instead.
 func (*ListInviteCodesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{18}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListInviteCodesRequest) GetIncludeRevoked() bool {
@@ -1516,7 +1966,7 @@ type ListInviteCodesResponse struct {
 
 func (x *ListInviteCodesResponse) Reset() {
 	*x = ListInviteCodesResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[19]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1528,7 +1978,7 @@ func (x *ListInviteCodesResponse) String() string {
 func (*ListInviteCodesResponse) ProtoMessage() {}
 
 func (x *ListInviteCodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[19]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1991,7 @@ func (x *ListInviteCodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInviteCodesResponse.ProtoReflect.Descriptor instead.
 func (*ListInviteCodesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{19}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListInviteCodesResponse) GetInviteCodes() []*InviteCode {
@@ -1560,7 +2010,7 @@ type RevokeInviteCodeRequest struct {
 
 func (x *RevokeInviteCodeRequest) Reset() {
 	*x = RevokeInviteCodeRequest{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[20]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1572,7 +2022,7 @@ func (x *RevokeInviteCodeRequest) String() string {
 func (*RevokeInviteCodeRequest) ProtoMessage() {}
 
 func (x *RevokeInviteCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[20]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1585,7 +2035,7 @@ func (x *RevokeInviteCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeInviteCodeRequest.ProtoReflect.Descriptor instead.
 func (*RevokeInviteCodeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{20}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RevokeInviteCodeRequest) GetId() string {
@@ -1604,7 +2054,7 @@ type RevokeInviteCodeResponse struct {
 
 func (x *RevokeInviteCodeResponse) Reset() {
 	*x = RevokeInviteCodeResponse{}
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[21]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1616,7 +2066,7 @@ func (x *RevokeInviteCodeResponse) String() string {
 func (*RevokeInviteCodeResponse) ProtoMessage() {}
 
 func (x *RevokeInviteCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_access_gate_access_gate_proto_msgTypes[21]
+	mi := &file_domain_access_gate_access_gate_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1629,7 +2079,7 @@ func (x *RevokeInviteCodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeInviteCodeResponse.ProtoReflect.Descriptor instead.
 func (*RevokeInviteCodeResponse) Descriptor() ([]byte, []int) {
-	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{21}
+	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RevokeInviteCodeResponse) GetInviteCode() *InviteCode {
@@ -1643,17 +2093,20 @@ var File_domain_access_gate_access_gate_proto protoreflect.FileDescriptor
 
 const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\n" +
-	"$domain/access_gate/access_gate.proto\x12 peers_touch.model.access_gate.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\x1a\x16domain/auth/auth.proto\"\x88\x01\n" +
+	"$domain/access_gate/access_gate.proto\x12 peers_touch.model.access_gate.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\x1a\x16domain/auth/auth.proto\"\xbb\x01\n" +
 	"\x14AccessGateClientInfo\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1f\n" +
 	"\vapp_version\x18\x02 \x01(\tR\n" +
 	"appVersion\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x16\n" +
-	"\x06locale\x18\x04 \x01(\tR\x06locale\"\x9a\x01\n" +
+	"\x06locale\x18\x04 \x01(\tR\x06locale\x121\n" +
+	"\x14lifecycle_generation\x18\x05 \x01(\x04R\x13lifecycleGeneration\"\xe8\x01\n" +
 	"\x10AccessGateAction\x12\x1b\n" +
 	"\taction_id\x18\x01 \x01(\tR\bactionId\x12D\n" +
 	"\x04type\x18\x02 \x01(\x0e20.peers_touch.model.access_gate.v1.AccessGateTypeR\x04type\x12#\n" +
-	"\rsubmit_action\x18\x03 \x01(\tR\fsubmitAction\"\xcb\x03\n" +
+	"\rsubmit_action\x18\x03 \x01(\tR\fsubmitAction\x12'\n" +
+	"\x0fschema_revision\x18\x04 \x01(\rR\x0eschemaRevision\x12#\n" +
+	"\rschema_digest\x18\x05 \x01(\tR\fschemaDigest\"\xb6\x04\n" +
 	"\n" +
 	"AccessGate\x12\x17\n" +
 	"\agate_id\x18\x01 \x01(\tR\x06gateId\x12D\n" +
@@ -1664,7 +2117,11 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x0fblocking_reason\x18\x06 \x01(\tR\x0eblockingReason\x12#\n" +
 	"\rsubmit_action\x18\a \x01(\tR\fsubmitAction\x12*\n" +
 	"\x11input_schema_json\x18\b \x01(\tR\x0finputSchemaJson\x12c\n" +
-	"\x13alternative_actions\x18\t \x03(\v22.peers_touch.model.access_gate.v1.AccessGateActionR\x12alternativeActions\"\xa1\x03\n" +
+	"\x13alternative_actions\x18\t \x03(\v22.peers_touch.model.access_gate.v1.AccessGateActionR\x12alternativeActions\x12\x1b\n" +
+	"\taction_id\x18\n" +
+	" \x01(\tR\bactionId\x12'\n" +
+	"\x0fschema_revision\x18\v \x01(\rR\x0eschemaRevision\x12#\n" +
+	"\rschema_digest\x18\f \x01(\tR\fschemaDigest\"\xa1\x03\n" +
 	"\x0eAccessDecision\x12K\n" +
 	"\x05state\x18\x01 \x01(\x0e25.peers_touch.model.access_gate.v1.AccessDecisionStateR\x05state\x12\x1d\n" +
 	"\n" +
@@ -1682,30 +2139,62 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x06client\x18\x02 \x01(\v26.peers_touch.model.access_gate.v1.AccessGateClientInfoR\x06client\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tR\tsessionId\x12&\n" +
-	"\x0fstation_peer_id\x18\x04 \x01(\tR\rstationPeerId\"j\n" +
+	"\x0fstation_peer_id\x18\x04 \x01(\tR\rstationPeerId\"\x8f\x01\n" +
 	"\x1aStartAccessAttemptResponse\x12L\n" +
-	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\"\x96\x02\n" +
+	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\x12#\n" +
+	"\rstation_label\x18\x02 \x01(\tR\fstationLabel\"\xd1\x01\n" +
+	"\x15AccessGateScalarValue\x12\x1d\n" +
+	"\n" +
+	"field_name\x18\x01 \x01(\tR\tfieldName\x12#\n" +
+	"\fstring_value\x18\x02 \x01(\tH\x00R\vstringValue\x12\x1f\n" +
+	"\n" +
+	"bool_value\x18\x03 \x01(\bH\x00R\tboolValue\x12%\n" +
+	"\rinteger_value\x18\x04 \x01(\x12H\x00R\fintegerValue\x12#\n" +
+	"\fnumber_value\x18\x05 \x01(\x01H\x00R\vnumberValueB\a\n" +
+	"\x05value\"i\n" +
+	"\x16AccessGateGenericInput\x12O\n" +
+	"\x06fields\x18\x01 \x03(\v27.peers_touch.model.access_gate.v1.AccessGateScalarValueR\x06fields\"K\n" +
+	"\x1aAccessGateDeviceTrustInput\x12-\n" +
+	"\x12attestation_handle\x18\x01 \x01(\tR\x11attestationHandle\"\xed\x05\n" +
 	"\x17SubmitAccessGateRequest\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x17\n" +
 	"\agate_id\x18\x02 \x01(\tR\x06gateId\x12D\n" +
-	"\x04type\x18\x03 \x01(\x0e20.peers_touch.model.access_gate.v1.AccessGateTypeR\x04type\x12=\n" +
-	"\x05login\x18\x04 \x01(\v2'.peers_touch.model.auth.v1.LoginRequestR\x05login\x12\x1f\n" +
-	"\vinvite_code\x18\x05 \x01(\tR\n" +
-	"inviteCode\x12\x1d\n" +
+	"\x04type\x18\x03 \x01(\x0e20.peers_touch.model.access_gate.v1.AccessGateTypeR\x04type\x12?\n" +
+	"\x05login\x18\x04 \x01(\v2'.peers_touch.model.auth.v1.LoginRequestH\x00R\x05login\x12!\n" +
+	"\vinvite_code\x18\x05 \x01(\tH\x00R\n" +
+	"inviteCode\x12\x1f\n" +
 	"\n" +
-	"session_id\x18\x06 \x01(\tR\tsessionId\"\xb9\x01\n" +
+	"session_id\x18\x06 \x01(\tH\x00R\tsessionId\x12a\n" +
+	"\fdevice_trust\x18\x0e \x01(\v2<.peers_touch.model.access_gate.v1.AccessGateDeviceTrustInputH\x00R\vdeviceTrust\x12T\n" +
+	"\ageneric\x18\x0f \x01(\v28.peers_touch.model.access_gate.v1.AccessGateGenericInputH\x00R\ageneric\x12\x1b\n" +
+	"\taction_id\x18\a \x01(\tR\bactionId\x12&\n" +
+	"\x0fstation_peer_id\x18\b \x01(\tR\rstationPeerId\x12\x1b\n" +
+	"\tdevice_id\x18\t \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\n" +
+	" \x01(\x04R\x13lifecycleGeneration\x12'\n" +
+	"\x0fschema_revision\x18\v \x01(\rR\x0eschemaRevision\x12#\n" +
+	"\rschema_digest\x18\f \x01(\tR\fschemaDigest\x12#\n" +
+	"\rsubmission_id\x18\r \x01(\tR\fsubmissionIdB\x0e\n" +
+	"\faction_input\"\xb9\x01\n" +
 	"\x18SubmitAccessGateResponse\x12L\n" +
 	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\x12O\n" +
-	"\x0elogin_response\x18\x02 \x01(\v2(.peers_touch.model.auth.v1.LoginResponseR\rloginResponse\"9\n" +
+	"\x0elogin_response\x18\x02 \x01(\v2(.peers_touch.model.auth.v1.LoginResponseR\rloginResponse\"\xb1\x01\n" +
 	"\x18GetAccessDecisionRequest\x12\x1d\n" +
 	"\n" +
-	"attempt_id\x18\x01 \x01(\tR\tattemptId\"i\n" +
+	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12&\n" +
+	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\x04 \x01(\x04R\x13lifecycleGeneration\"\xba\x01\n" +
 	"\x19GetAccessDecisionResponse\x12L\n" +
-	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\";\n" +
+	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\x12O\n" +
+	"\x0elogin_response\x18\x02 \x01(\v2(.peers_touch.model.auth.v1.LoginResponseR\rloginResponse\"\xb3\x01\n" +
 	"\x1aCancelAccessAttemptRequest\x12\x1d\n" +
 	"\n" +
-	"attempt_id\x18\x01 \x01(\tR\tattemptId\";\n" +
+	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12&\n" +
+	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12\x1b\n" +
+	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\x04 \x01(\x04R\x13lifecycleGeneration\";\n" +
 	"\x1bCancelAccessAttemptResponse\x12\x1c\n" +
 	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\xbb\x03\n" +
 	"\fAccessPolicy\x12F\n" +
@@ -1806,7 +2295,7 @@ func file_domain_access_gate_access_gate_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_access_gate_access_gate_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_access_gate_access_gate_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_domain_access_gate_access_gate_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_domain_access_gate_access_gate_proto_goTypes = []any{
 	(AccessGateType)(0),                 // 0: peers_touch.model.access_gate.v1.AccessGateType
 	(AccessGateState)(0),                // 1: peers_touch.model.access_gate.v1.AccessGateState
@@ -1818,26 +2307,29 @@ var file_domain_access_gate_access_gate_proto_goTypes = []any{
 	(*AccessDecision)(nil),              // 7: peers_touch.model.access_gate.v1.AccessDecision
 	(*StartAccessAttemptRequest)(nil),   // 8: peers_touch.model.access_gate.v1.StartAccessAttemptRequest
 	(*StartAccessAttemptResponse)(nil),  // 9: peers_touch.model.access_gate.v1.StartAccessAttemptResponse
-	(*SubmitAccessGateRequest)(nil),     // 10: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
-	(*SubmitAccessGateResponse)(nil),    // 11: peers_touch.model.access_gate.v1.SubmitAccessGateResponse
-	(*GetAccessDecisionRequest)(nil),    // 12: peers_touch.model.access_gate.v1.GetAccessDecisionRequest
-	(*GetAccessDecisionResponse)(nil),   // 13: peers_touch.model.access_gate.v1.GetAccessDecisionResponse
-	(*CancelAccessAttemptRequest)(nil),  // 14: peers_touch.model.access_gate.v1.CancelAccessAttemptRequest
-	(*CancelAccessAttemptResponse)(nil), // 15: peers_touch.model.access_gate.v1.CancelAccessAttemptResponse
-	(*AccessPolicy)(nil),                // 16: peers_touch.model.access_gate.v1.AccessPolicy
-	(*UpdateAccessPolicyRequest)(nil),   // 17: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest
-	(*UpdateAccessPolicyResponse)(nil),  // 18: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse
-	(*InviteCode)(nil),                  // 19: peers_touch.model.access_gate.v1.InviteCode
-	(*CreateInviteCodeRequest)(nil),     // 20: peers_touch.model.access_gate.v1.CreateInviteCodeRequest
-	(*CreateInviteCodeResponse)(nil),    // 21: peers_touch.model.access_gate.v1.CreateInviteCodeResponse
-	(*ListInviteCodesRequest)(nil),      // 22: peers_touch.model.access_gate.v1.ListInviteCodesRequest
-	(*ListInviteCodesResponse)(nil),     // 23: peers_touch.model.access_gate.v1.ListInviteCodesResponse
-	(*RevokeInviteCodeRequest)(nil),     // 24: peers_touch.model.access_gate.v1.RevokeInviteCodeRequest
-	(*RevokeInviteCodeResponse)(nil),    // 25: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse
-	(*model.ActorRef)(nil),              // 26: peers_touch.model.actor.v1.ActorRef
-	(*timestamppb.Timestamp)(nil),       // 27: google.protobuf.Timestamp
-	(*model.LoginRequest)(nil),          // 28: peers_touch.model.auth.v1.LoginRequest
-	(*model.LoginResponse)(nil),         // 29: peers_touch.model.auth.v1.LoginResponse
+	(*AccessGateScalarValue)(nil),       // 10: peers_touch.model.access_gate.v1.AccessGateScalarValue
+	(*AccessGateGenericInput)(nil),      // 11: peers_touch.model.access_gate.v1.AccessGateGenericInput
+	(*AccessGateDeviceTrustInput)(nil),  // 12: peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput
+	(*SubmitAccessGateRequest)(nil),     // 13: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
+	(*SubmitAccessGateResponse)(nil),    // 14: peers_touch.model.access_gate.v1.SubmitAccessGateResponse
+	(*GetAccessDecisionRequest)(nil),    // 15: peers_touch.model.access_gate.v1.GetAccessDecisionRequest
+	(*GetAccessDecisionResponse)(nil),   // 16: peers_touch.model.access_gate.v1.GetAccessDecisionResponse
+	(*CancelAccessAttemptRequest)(nil),  // 17: peers_touch.model.access_gate.v1.CancelAccessAttemptRequest
+	(*CancelAccessAttemptResponse)(nil), // 18: peers_touch.model.access_gate.v1.CancelAccessAttemptResponse
+	(*AccessPolicy)(nil),                // 19: peers_touch.model.access_gate.v1.AccessPolicy
+	(*UpdateAccessPolicyRequest)(nil),   // 20: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest
+	(*UpdateAccessPolicyResponse)(nil),  // 21: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse
+	(*InviteCode)(nil),                  // 22: peers_touch.model.access_gate.v1.InviteCode
+	(*CreateInviteCodeRequest)(nil),     // 23: peers_touch.model.access_gate.v1.CreateInviteCodeRequest
+	(*CreateInviteCodeResponse)(nil),    // 24: peers_touch.model.access_gate.v1.CreateInviteCodeResponse
+	(*ListInviteCodesRequest)(nil),      // 25: peers_touch.model.access_gate.v1.ListInviteCodesRequest
+	(*ListInviteCodesResponse)(nil),     // 26: peers_touch.model.access_gate.v1.ListInviteCodesResponse
+	(*RevokeInviteCodeRequest)(nil),     // 27: peers_touch.model.access_gate.v1.RevokeInviteCodeRequest
+	(*RevokeInviteCodeResponse)(nil),    // 28: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse
+	(*model.ActorRef)(nil),              // 29: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),       // 30: google.protobuf.Timestamp
+	(*model.LoginRequest)(nil),          // 31: peers_touch.model.auth.v1.LoginRequest
+	(*model.LoginResponse)(nil),         // 32: peers_touch.model.auth.v1.LoginResponse
 }
 var file_domain_access_gate_access_gate_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.access_gate.v1.AccessGateAction.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
@@ -1846,32 +2338,36 @@ var file_domain_access_gate_access_gate_proto_depIdxs = []int32{
 	5,  // 3: peers_touch.model.access_gate.v1.AccessGate.alternative_actions:type_name -> peers_touch.model.access_gate.v1.AccessGateAction
 	2,  // 4: peers_touch.model.access_gate.v1.AccessDecision.state:type_name -> peers_touch.model.access_gate.v1.AccessDecisionState
 	6,  // 5: peers_touch.model.access_gate.v1.AccessDecision.gates:type_name -> peers_touch.model.access_gate.v1.AccessGate
-	26, // 6: peers_touch.model.access_gate.v1.AccessDecision.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	27, // 7: peers_touch.model.access_gate.v1.AccessDecision.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 6: peers_touch.model.access_gate.v1.AccessDecision.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	30, // 7: peers_touch.model.access_gate.v1.AccessDecision.expires_at:type_name -> google.protobuf.Timestamp
 	4,  // 8: peers_touch.model.access_gate.v1.StartAccessAttemptRequest.client:type_name -> peers_touch.model.access_gate.v1.AccessGateClientInfo
 	7,  // 9: peers_touch.model.access_gate.v1.StartAccessAttemptResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	0,  // 10: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
-	28, // 11: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.login:type_name -> peers_touch.model.auth.v1.LoginRequest
-	7,  // 12: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	29, // 13: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.login_response:type_name -> peers_touch.model.auth.v1.LoginResponse
-	7,  // 14: peers_touch.model.access_gate.v1.GetAccessDecisionResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	3,  // 15: peers_touch.model.access_gate.v1.AccessPolicy.mode:type_name -> peers_touch.model.access_gate.v1.AccessPolicyMode
-	27, // 16: peers_touch.model.access_gate.v1.AccessPolicy.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 17: peers_touch.model.access_gate.v1.AccessPolicy.enabled_gates:type_name -> peers_touch.model.access_gate.v1.AccessGateType
-	16, // 18: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
-	16, // 19: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
-	27, // 20: peers_touch.model.access_gate.v1.InviteCode.created_at:type_name -> google.protobuf.Timestamp
-	27, // 21: peers_touch.model.access_gate.v1.InviteCode.expires_at:type_name -> google.protobuf.Timestamp
-	27, // 22: peers_touch.model.access_gate.v1.InviteCode.last_used_at:type_name -> google.protobuf.Timestamp
-	27, // 23: peers_touch.model.access_gate.v1.CreateInviteCodeRequest.expires_at:type_name -> google.protobuf.Timestamp
-	19, // 24: peers_touch.model.access_gate.v1.CreateInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	19, // 25: peers_touch.model.access_gate.v1.ListInviteCodesResponse.invite_codes:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	19, // 26: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	10, // 10: peers_touch.model.access_gate.v1.AccessGateGenericInput.fields:type_name -> peers_touch.model.access_gate.v1.AccessGateScalarValue
+	0,  // 11: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	31, // 12: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.login:type_name -> peers_touch.model.auth.v1.LoginRequest
+	12, // 13: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.device_trust:type_name -> peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput
+	11, // 14: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.generic:type_name -> peers_touch.model.access_gate.v1.AccessGateGenericInput
+	7,  // 15: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	32, // 16: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.login_response:type_name -> peers_touch.model.auth.v1.LoginResponse
+	7,  // 17: peers_touch.model.access_gate.v1.GetAccessDecisionResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	32, // 18: peers_touch.model.access_gate.v1.GetAccessDecisionResponse.login_response:type_name -> peers_touch.model.auth.v1.LoginResponse
+	3,  // 19: peers_touch.model.access_gate.v1.AccessPolicy.mode:type_name -> peers_touch.model.access_gate.v1.AccessPolicyMode
+	30, // 20: peers_touch.model.access_gate.v1.AccessPolicy.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 21: peers_touch.model.access_gate.v1.AccessPolicy.enabled_gates:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	19, // 22: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
+	19, // 23: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
+	30, // 24: peers_touch.model.access_gate.v1.InviteCode.created_at:type_name -> google.protobuf.Timestamp
+	30, // 25: peers_touch.model.access_gate.v1.InviteCode.expires_at:type_name -> google.protobuf.Timestamp
+	30, // 26: peers_touch.model.access_gate.v1.InviteCode.last_used_at:type_name -> google.protobuf.Timestamp
+	30, // 27: peers_touch.model.access_gate.v1.CreateInviteCodeRequest.expires_at:type_name -> google.protobuf.Timestamp
+	22, // 28: peers_touch.model.access_gate.v1.CreateInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	22, // 29: peers_touch.model.access_gate.v1.ListInviteCodesResponse.invite_codes:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	22, // 30: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_domain_access_gate_access_gate_proto_init() }
@@ -1879,13 +2375,26 @@ func file_domain_access_gate_access_gate_proto_init() {
 	if File_domain_access_gate_access_gate_proto != nil {
 		return
 	}
+	file_domain_access_gate_access_gate_proto_msgTypes[6].OneofWrappers = []any{
+		(*AccessGateScalarValue_StringValue)(nil),
+		(*AccessGateScalarValue_BoolValue)(nil),
+		(*AccessGateScalarValue_IntegerValue)(nil),
+		(*AccessGateScalarValue_NumberValue)(nil),
+	}
+	file_domain_access_gate_access_gate_proto_msgTypes[9].OneofWrappers = []any{
+		(*SubmitAccessGateRequest_Login)(nil),
+		(*SubmitAccessGateRequest_InviteCode)(nil),
+		(*SubmitAccessGateRequest_SessionId)(nil),
+		(*SubmitAccessGateRequest_DeviceTrust)(nil),
+		(*SubmitAccessGateRequest_Generic)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_access_gate_access_gate_proto_rawDesc), len(file_domain_access_gate_access_gate_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   22,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

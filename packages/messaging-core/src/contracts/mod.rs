@@ -47,6 +47,15 @@ pub enum ConversationKind {
     Group = 2,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationAuthorityMemberProjection {
+    pub ptid: Ptid,
+    pub role: i32,
+    pub home_station_peer_id: String,
+    pub muted: bool,
+    pub muted_until_unix_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConversationProjection {
     pub conversation_id: ConversationId,
@@ -55,7 +64,7 @@ pub struct ConversationProjection {
     pub kind: i32,
     pub name: String,
     pub owner_ptid: Ptid,
-    pub member_ptids: Vec<Ptid>,
+    pub members: Vec<ConversationAuthorityMemberProjection>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
     pub active: bool,
@@ -86,6 +95,8 @@ pub struct ConversationMessageProjection {
     pub edited_text: Option<String>,
     pub edited_at_unix_ms: Option<i64>,
     pub retracted: bool,
+    pub moderated: bool,
+    pub moderation_reason_code: Option<String>,
     pub reactions: Vec<(String, String, i64)>,
     pub pinned_by_ptid: Option<String>,
     pub pinned_at_unix_ms: Option<i64>,
@@ -107,6 +118,16 @@ pub struct ConversationStateReceiveCommit<'a> {
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemberAuthorityReceiveCommit<'a> {
+    pub state: ConversationStateReceiveCommit<'a>,
+    pub command_id: &'a str,
+    pub operator_ptid: &'a str,
+    pub operator_device_id: &'a str,
+    pub action: i32,
+    pub target_ptid: &'a str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,6 +209,12 @@ pub enum InteractionMutation<'a> {
         edited_at_unix_ms: i64,
     },
     Retract,
+    HideForActor,
+    Moderate {
+        moderator_ptid: &'a str,
+        reason_code: &'a str,
+        moderated_at_unix_ms: i64,
+    },
     Reaction {
         actor_ptid: &'a str,
         reaction: &'a str,
@@ -223,12 +250,6 @@ pub struct InteractionReceiveCommit<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MlsConversationMemberProjection {
-    pub ptid: String,
-    pub role: i32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MlsConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
@@ -236,7 +257,7 @@ pub struct MlsConversationProjection {
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
-    pub members: Vec<MlsConversationMemberProjection>,
+    pub members: Vec<ConversationAuthorityMemberProjection>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
     pub active: bool,

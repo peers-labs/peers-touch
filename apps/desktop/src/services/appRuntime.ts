@@ -14,10 +14,12 @@ import { appletsRuntime } from '../runtimes/appletsRuntime';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
+import { messagingRuntime } from '../runtimes/messagingRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { chatRuntime } from '../runtimes/chatRuntime';
 import { evaluationRuntime } from '../runtimes/evaluationRuntime';
+import { callRuntime } from '../runtimes/callRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -30,6 +32,8 @@ function registerKernelRuntimes(): void {
   if (runtimesRegistered) return;
   runtimesRegistered = true;
   registerRuntime(socialRuntime);
+  registerRuntime(messagingRuntime);
+  registerRuntime(callRuntime);
   registerRuntime(searchRuntime);
   registerRuntime(settingsRuntime);
   registerRuntime(federationRuntime);
@@ -60,6 +64,8 @@ const DEFERRED_APP_RUNTIME_IDS = [
 ];
 
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
+  messagingRuntime.id,
+  callRuntime.id,
   chatRuntime.id,
   homeRuntime.id,
 ];
@@ -149,6 +155,8 @@ export function teardownAppRuntime(): void {
   criticalInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
+  teardownRuntime(messagingRuntime.id);
+  teardownRuntime(callRuntime.id);
   teardownRuntime(searchRuntime.id);
   teardownRuntime(settingsRuntime.id);
   teardownRuntime(federationRuntime.id);

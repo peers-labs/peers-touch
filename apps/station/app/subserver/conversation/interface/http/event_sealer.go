@@ -226,6 +226,12 @@ func commandKindToProto(kind domainevent.Kind) chat.ConversationCommandKind {
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE
 	case domainevent.KindMessageRetracted:
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE
+	case domainevent.KindMessageHiddenForActor:
+		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR
+	case domainevent.KindMessageModerated:
+		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE
+	case domainevent.KindMessageForwarded:
+		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE
 	case domainevent.KindConversationDissolved:
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE
 	case domainevent.KindConversationSettings:
@@ -236,6 +242,8 @@ func commandKindToProto(kind domainevent.Kind) chat.ConversationCommandKind {
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE
 	case domainevent.KindMembershipCommitted:
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION
+	case domainevent.KindMemberAuthority:
+		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY
 	default:
 		return chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED
 	}

@@ -41,12 +41,18 @@ slice you *can* finish cleanly, and land that slice whole.
 
 - Raise the refactor the moment you see the root design is wrong — do not smuggle
   a redesign inside an unrelated task, and do not silently keep bad structure.
-- Before large execution, state root cause → target design → blast radius, and
-  get user approval (AGENTS.md §6.2 no silent fixes; §7 confirm before generating).
+- Before large execution, state root cause → target design → blast radius and
+  bind the work to accepted product/architecture/Plan sources. An explicit
+  fix/continue/execute request authorizes non-destructive work inside that
+  envelope; do not create a repeated user approval boundary at every Task or
+  review.
 - For any cross-layer or module-level change, design the target first with
   [`pt-architecture-design-methodology`](../pt-architecture-design-methodology/SKILL.md),
   and decompose the landing with
   [`pt-architecture-execution-methodology`](../pt-architecture-execution-methodology/SKILL.md).
+- Run the required agent-led review/remediation loop. Escalate only destructive
+  or irreversible work, missing external authorization/resources, or a
+  material semantic choice that accepted sources cannot resolve.
 
 ### 2. One source of truth — no split-brain (不脑裂)
 
@@ -105,8 +111,9 @@ code on that path are updated by the same hand, in the same change.
    [`pt-read-before-edit`](../pt-read-before-edit/SKILL.md); read the design doc
    and `owns:` knowledge for every path in scope. Name the current source of truth.
 2. **Design the target.** Define the new boundary/ownership/contract and *what
-   the old one becomes* (deleted, merged, superseded). Get approval for anything
-   cross-layer (Law 1).
+   the old one becomes* (deleted, merged, superseded). Pass the project
+   architecture and plan review loop; request human input only for a DWF-D20
+   hard-boundary decision (Law 1).
 3. **Inventory the blast radius.** Enumerate every consumer, call site, doc,
    test, fixture, gate, and script that references the thing you are replacing.
    This list is your definition of done for the cut.

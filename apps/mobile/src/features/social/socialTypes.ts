@@ -1,4 +1,5 @@
 export { readableErrorMessage } from '../../utils/errorMessage';
+export type { FederationResolveView } from '../../gen/proto/domain/federation/federation_resolve_pb';
 
 export interface StationSuccessEnvelope<T> {
   code?: string;
@@ -53,10 +54,10 @@ export interface FriendChatSession {
   participantBAvatar: string;
   participantAOnline: boolean;
   participantBOnline: boolean;
-  lastMessage?: FriendChatMessage;
+  lastMessage?: SocialMessage;
 }
 
-export interface FriendChatMessage {
+export interface SocialMessage {
   ulid: string;
   eventSequence?: number;
   messagingState?: string;
@@ -75,11 +76,20 @@ export interface FriendChatMessage {
   threadRootUlid?: string;
   recalled?: boolean;
   editedAt?: SocialTimestamp;
+  moderated?: boolean;
+  moderationReasonCode?: string;
+  reactions?: Array<{
+    actorPtid: string;
+    reaction: string;
+    createdAtUnixMs: number;
+  }>;
+  pinnedByPtid?: string;
+  pinnedAtUnixMs?: number;
   encryptedPayload?: Uint8Array;
-  attachments?: FriendMessageAttachment[];
+  attachments?: SocialMessageAttachment[];
 }
 
-export interface FriendMessageAttachment {
+export interface SocialMessageAttachment {
   cid: string;
   filename: string;
   mimeType: string;
@@ -95,6 +105,11 @@ export interface FriendMessageAttachment {
   plaintextSize?: number;
   ciphertextSize?: number;
   availabilityState?: 'remote' | 'local';
+  voiceNote?: {
+    durationMs: number;
+    codec: string;
+    waveform: number[];
+  };
 }
 
 export interface SocialNotification {
@@ -126,12 +141,19 @@ export interface SocialConversation {
   peerAvatar: string;
   peerOnline: boolean;
   unread: number;
-  lastMessage?: FriendChatMessage;
+  lastMessage?: SocialMessage;
 }
 
 export interface FriendshipStatus {
   targetPtid: string;
+  targetHomeStationPeerId?: string;
   blocked: boolean;
+  following?: boolean;
+  followedBy?: boolean;
+  interactionAllowed?: boolean;
+  deniedReason?: number;
+  allowedActions?: readonly number[];
+  revision?: number;
 }
 
 export interface TypingEntry {
@@ -142,7 +164,6 @@ export interface TypingEntry {
 export interface ActorSearchResult {
   id: string;
   ptid: string;
-  federationId: string;
   homeStationPeerId: string;
   username: string;
   displayName: string;
@@ -163,6 +184,7 @@ export interface PeerProfileLink {
 
 export interface PeerProfile {
   id: string;
+  profileRevision: bigint;
   username: string;
   acct: string;
   displayName: string;
@@ -184,42 +206,6 @@ export interface PeerProfile {
   messagePermission: string;
   autoExpireDays: number;
   networkId: string;
-}
-
-export interface FederationResolveView {
-  federationId?: string;
-  federation_id?: string;
-  federatedHandle?: string;
-  federated_handle?: string;
-  homeStationDomain?: string;
-  home_station_domain?: string;
-  homeStationPeerId?: string;
-  home_station_peer_id?: string;
-  fromCache?: boolean;
-  from_cache?: boolean;
-  isLocal?: boolean;
-  is_local?: boolean;
-  locatorSeq?: number | string;
-  locator_seq?: number | string;
-  profile?: {
-    id?: string;
-    ptid?: string;
-    username?: string;
-    preferredUsername?: string;
-    preferred_username?: string;
-    displayName?: string;
-    display_name?: string;
-    avatar?: string;
-    ref?: {
-      ptid?: string;
-    };
-    peersTouch?: {
-      networkId?: string;
-    };
-    peers_touch?: {
-      network_id?: string;
-    };
-  };
 }
 
 export interface SocialApiErrorContext {

@@ -8,14 +8,13 @@
 ## Plan Package
 
 ```json
-{"schemaVersion":2,"kind":"peers-touch-plan-package","planId":"CHAT-LIFECYCLE-20260916","status":"active","binding":{"branch":"fix/deploy-env-host-guard","workspaceId":"a534541b87e49abf","initialHead":"c6d3b79b409013c921fafcb8c735b7f419cc303f"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/chat-lifecycle/product-definition.md","docs/architecture/chat-lifecycle/experience-contract.md","docs/architecture/chat-lifecycle/product-state-model.md","docs/architecture/chat-lifecycle/acceptance-matrix.md","docs/architecture/chat-lifecycle/design.md","docs/architecture/chat-lifecycle/integration.md","docs/architecture/messaging-platform/design.md","docs/architecture/realtime/voice-video-calls.md"],"decisions":["CHAT-D01","CHAT-D02","CHAT-D03","CHAT-D04","CHAT-D05","CHAT-D06","CHAT-D07","CHAT-D08"]},"scope":{"sourceClaims":[{"pathPrefix":"debug-chat-experience-failures.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/messaging-platform","mode":"shared-read"},{"pathPrefix":"docs/architecture/realtime","mode":"shared-read"},{"pathPrefix":"docs/architecture/social/prototype/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/social-runtime","mode":"shared-read"},{"pathPrefix":"docs/client/chat","mode":"shared-read"},{"pathPrefix":"model/domain/chat","mode":"exclusive-write"},{"pathPrefix":"model/domain/realtime","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/plugin/server/hertz","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/server","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/actor","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"packages/client-chat-core","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/desktop/features/social-chat","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/devctl","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/lib/machine-dev-paths.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/deploy/source_sync.py","mode":"exclusive-write"}],"nonGoals":["Browser Chat readiness","Group voice or video conferencing","Server-side plaintext search or media processing","Conversation Authority hard-cut execution owned by peers-access-gate","Permanent aliases, fallback reads, or dual writes"]},"tasks":[{"id":"CHAT-01-safety","workstreamId":"CHAT-W00","path":"tasks/CHAT-01-safety.md","dependsOn":[],"status":"done","blocker":null},{"id":"CHAT-02-onboarding","workstreamId":"CHAT-W01","path":"tasks/CHAT-02-onboarding.md","dependsOn":["CHAT-01-safety"],"status":"blocked","blocker":{"code":"RUNTIME_WORKTREE_NAME_COLLISION","owner":"local-dev-control-plane","evidenceRef":"machine-dev://workspaces/a534541b87e49abf/workflow/CHAT-02-onboarding/artifacts/a534541b87e49abf/development-run/20260917T092053645148Z-088804cdeb587ddd80e73afaf364f3ba/reports/run.json"}},{"id":"CHAT-03-direct","workstreamId":"CHAT-W02","path":"tasks/CHAT-03-direct.md","dependsOn":["CHAT-01-safety"],"status":"in_progress","blocker":null},{"id":"CHAT-04-rich-voice","workstreamId":"CHAT-W03","path":"tasks/CHAT-04-rich-voice.md","dependsOn":["CHAT-03-direct"],"status":"pending","blocker":null},{"id":"CHAT-05-interactions-group","workstreamId":"CHAT-W04","path":"tasks/CHAT-05-interactions-group.md","dependsOn":["CHAT-04-rich-voice"],"status":"pending","blocker":null},{"id":"CHAT-06-live-voice","workstreamId":"CHAT-W05","path":"tasks/CHAT-06-live-voice.md","dependsOn":["CHAT-05-interactions-group"],"status":"pending","blocker":null},{"id":"CHAT-07-mobile","workstreamId":"CHAT-W06","path":"tasks/CHAT-07-mobile.md","dependsOn":["CHAT-06-live-voice"],"status":"pending","blocker":null},{"id":"CHAT-08-continuity","workstreamId":"CHAT-W07","path":"tasks/CHAT-08-continuity.md","dependsOn":["CHAT-07-mobile"],"status":"pending","blocker":null},{"id":"CHAT-09-release","workstreamId":"CHAT-W08","path":"tasks/CHAT-09-release.md","dependsOn":["CHAT-08-continuity"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"denied"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["four","chat-native-disposable"],"destructiveResetScopes":["chat-native-disposable-station"]},"history":{"rewrite":"denied"}}}
+{"kind":"peers-touch-plan-package","planId":"CHAT-LIFECYCLE-20260916","status":"active","binding":{"branch":"fix/deploy-env-host-guard","workspaceId":"a534541b87e49abf","initialHead":"c6d3b79b409013c921fafcb8c735b7f419cc303f"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/chat-lifecycle/product-definition.md","docs/architecture/chat-lifecycle/experience-contract.md","docs/architecture/chat-lifecycle/product-state-model.md","docs/architecture/chat-lifecycle/acceptance-matrix.md","docs/architecture/chat-lifecycle/design.md","docs/architecture/chat-lifecycle/integration.md","docs/architecture/messaging-platform/design.md","docs/architecture/realtime/voice-video-calls.md"],"decisions":["CHAT-D01","CHAT-D02","CHAT-D03","CHAT-D04","CHAT-D05","CHAT-D06","CHAT-D07","CHAT-D08","CHAT-D09"]},"scope":{"sourceClaims":[{"pathPrefix":"debug-chat-experience-failures.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/chat-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/messaging-platform","mode":"shared-read"},{"pathPrefix":"docs/architecture/realtime","mode":"shared-read"},{"pathPrefix":"docs/architecture/social/prototype/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/social-runtime","mode":"shared-read"},{"pathPrefix":"docs/client/chat","mode":"shared-read"},{"pathPrefix":"model/domain/chat","mode":"exclusive-write"},{"pathPrefix":"model/domain/realtime","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/plugin/server/hertz","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/core/server","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/actor","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"packages/client-chat-core","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/desktop/features/social-chat","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/devctl","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/lib/machine-dev-paths.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/deploy/source_sync.py","mode":"exclusive-write"}],"nonGoals":["Browser Chat readiness","Scheduled webinars and enterprise meeting administration","Server-side plaintext search or media processing","Conversation Authority hard-cut execution owned by peers-access-gate","Permanent aliases, fallback reads, or dual writes"]},"tasks":[{"id":"CHAT-01-safety","workstreamId":"CHAT-W00","path":"tasks/CHAT-01-safety.md","dependsOn":[],"status":"done","blocker":null},{"id":"CHAT-02-onboarding","workstreamId":"CHAT-W01","path":"tasks/CHAT-02-onboarding.md","dependsOn":["CHAT-01-safety"],"status":"blocked","blocker":{"code":"RUNTIME_WORKTREE_NAME_COLLISION","owner":"local-dev-control-plane","evidenceRef":"machine-dev://workspaces/a534541b87e49abf/workflow/CHAT-02-onboarding/artifacts/a534541b87e49abf/development-run/20260917T092053645148Z-088804cdeb587ddd80e73afaf364f3ba/reports/run.json"}},{"id":"CHAT-03-direct","workstreamId":"CHAT-W02","path":"tasks/CHAT-03-direct.md","dependsOn":["CHAT-01-safety"],"status":"done","blocker":null},{"id":"CHAT-04-rich-voice","workstreamId":"CHAT-W03","path":"tasks/CHAT-04-rich-voice.md","dependsOn":["CHAT-03-direct"],"status":"in_progress","blocker":null},{"id":"CHAT-05-interactions-group","workstreamId":"CHAT-W04","path":"tasks/CHAT-05-interactions-group.md","dependsOn":["CHAT-04-rich-voice"],"status":"pending","blocker":null},{"id":"CHAT-06-live-voice","workstreamId":"CHAT-W05","path":"tasks/CHAT-06-live-voice.md","dependsOn":["CHAT-05-interactions-group"],"status":"pending","blocker":null},{"id":"CHAT-06-group-live","workstreamId":"CHAT-W05B","path":"tasks/CHAT-06-group-live.md","dependsOn":["CHAT-06-live-voice"],"status":"pending","blocker":null},{"id":"CHAT-07-mobile","workstreamId":"CHAT-W06","path":"tasks/CHAT-07-mobile.md","dependsOn":["CHAT-06-group-live"],"status":"pending","blocker":null},{"id":"CHAT-08-continuity","workstreamId":"CHAT-W07","path":"tasks/CHAT-08-continuity.md","dependsOn":["CHAT-07-mobile"],"status":"pending","blocker":null},{"id":"CHAT-09-release","workstreamId":"CHAT-W08","path":"tasks/CHAT-09-release.md","dependsOn":["CHAT-08-continuity"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"denied"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["four","chat-native-disposable"],"destructiveResetScopes":["chat-native-disposable-station"]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
 
 ```json
 {
-  "schemaVersion": 1,
   "closures": {
     "chat-safety": ["chat-lifecycle-safety-e2e"],
     "chat-onboarding": ["chat-lifecycle-onboarding-e2e"],
@@ -23,6 +22,7 @@
     "chat-rich-voice": ["chat-lifecycle-rich-voice-e2e"],
     "chat-interactions-group": ["chat-lifecycle-interactions-group-e2e"],
     "chat-live-voice": ["chat-lifecycle-live-voice-e2e"],
+    "chat-group-live": ["chat-lifecycle-group-live-e2e"],
     "chat-mobile": ["chat-lifecycle-mobile-e2e"],
     "chat-continuity": ["chat-lifecycle-continuity-e2e"],
     "chat-release": ["chat-lifecycle-release-e2e"]
@@ -34,6 +34,7 @@
     "chat-lifecycle-rich-voice-e2e",
     "chat-lifecycle-interactions-group-e2e",
     "chat-lifecycle-live-voice-e2e",
+    "chat-lifecycle-group-live-e2e",
     "chat-lifecycle-mobile-e2e",
     "chat-lifecycle-continuity-e2e",
     "chat-lifecycle-release-e2e"
@@ -45,6 +46,7 @@
     "chat-lifecycle-rich-voice-e2e",
     "chat-lifecycle-interactions-group-e2e",
     "chat-lifecycle-live-voice-e2e",
+    "chat-lifecycle-group-live-e2e",
     "chat-lifecycle-mobile-e2e",
     "chat-lifecycle-continuity-e2e",
     "chat-lifecycle-release-e2e",
@@ -80,7 +82,7 @@
 Deliver product-grade Chat from account continuity and person discovery through
 durable messaging, recorded voice, live one-to-one voice/video, groups, Mobile
 parity, and continuity. Current
-readiness starts at 0/11 required capabilities proven.
+readiness starts at 0/12 required capabilities proven.
 
 ## Dependency Model
 
@@ -91,6 +93,7 @@ W00 safety/evidence integrity
   -> W03 rich media and recorded voice
   -> W04 interactions and complete Group lifecycle
   -> W05 live one-to-one voice/video
+  -> W05B group live voice/video
   -> W06 Mobile parity
   -> W07 cross-Station, multi-device, recovery continuity
   -> W08 current-source release aggregate
@@ -104,6 +107,11 @@ the closures share Chat UI, Messaging Core, Conversation contracts, and
 Acceptance fixtures. One integrator keeps each vertical product result usable
 before advancing.
 
+W05B is part of the required product release, but it cannot be selected for
+execution until a reviewed group-call SFU/room architecture satisfies
+`CHAT-D09`. The dependency remains explicit so Mobile, continuity, and release
+cannot silently omit group live calls.
+
 ## Cutover Rules
 
 - Remove debug egress and false evidence before product proof.
@@ -116,6 +124,6 @@ before advancing.
 
 ## Completion
 
-The plan completes only when CHAT-G00-G13 pass on current exact source, every
-required Desktop/Mobile cell is proven, old owners have zero references, and
-quality/completion review has no unresolved required finding.
+The plan completes only when CHAT-G00-G12 and CHAT-G14 pass on current exact
+source, every required Desktop/Mobile cell is proven, old owners have zero
+references, and quality/completion review has no unresolved required finding.

@@ -1,8 +1,8 @@
 # Mobile Shell — 产品可行性闭环
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Version**: v1.1
+> **Created**: 2026-08-27 | **Updated**: 2026-09-19
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -25,7 +25,7 @@
 | MS-C06 Advanced messages | React, pin, forward, reply in thread, reload | Existing conversation commands/events and prototype | Endpoint wiring and authoritative readback parity | MS-PA07, MS-PA08 |
 | MS-C07 Contacts/groups | Search/resolve, send/accept/reject request, inspect, create/manage group | Contact/group stores, APIs and pages | Failure/duplicate/federation recovery evidence | MS-PA09, MS-PA10, MS-PA19 |
 | MS-C08 Moments | Read/paginate/publish/react/comment/reply and recover draft | Publish/upload path, social Proto, prototype feed | Feed/detail runtime, failure rollback and policy states | MS-PA11, MS-PA20, MS-PA23 |
-| MS-C09 Profile/settings | Edit profile and account/device settings, manage block, switch/logout | Minimal Settings, profile/block APIs, prototype Me | Complete preference contracts and permission/storage states | MS-PA12, MS-PA21, MS-PA24 |
+| MS-C09 Profile/settings | Edit Profile/privacy, Notification, Social blocked-user, and device-local settings; switch/logout | Owner-backed settings surfaces, Profile/Notification APIs, Social block owner, device settings runtime, prototype Me | Complete cross-client Profile/Notification CAS and selected-owner save states | MS-PA12, MS-PA21, MS-PA24 |
 | MS-C10 Runtime recovery | Background/resume, reconnect, revoke, reconcile, recover commands | Social/group runtimes and native event bridge | Lifecycle kernel, generation fence, durable ledger | MS-PA08, MS-PA13, MS-PA14, MS-PA26 |
 | MS-C11 WeChat OAuth | See truthful unavailable state | Disabled prototype action | Provider contract absent; remains deferred | MS-PA27 |
 | MS-C12 Voice/video call | See unavailable action before commitment | Disabled prototype call action | Call product/runtime contract absent; remains deferred | MS-PA27 |
@@ -37,8 +37,10 @@
 - Existing code is evidence only for the row's “foundation”, not proof of the
   missing closure.
 - A required capability remains incomplete until every listed MS-PA assertion
-  has native evidence and authoritative readback where state persists.
+  has source-bound simulator evidence and authoritative readback where state
+  persists.
 - Deferred capability UI is absent unless its unavailable explanation helps the
   current decision; disabled controls must never imply near-term readiness.
 - Prototype evidence establishes interaction intent only. Production proof uses
-  the native runtime cells in `acceptance-matrix.md`.
+  the required runtime cells in `acceptance-matrix.md`; physical-device runs
+  are optional diagnostics.

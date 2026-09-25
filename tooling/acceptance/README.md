@@ -21,6 +21,12 @@ run for a changed path, and which artifacts should be produced for human review.
 - Runtime manifests use typed `services[service-id]` as the only service
   topology. Every required service must carry an ID/kind-matched source-bound
   attestation; the removed top-level `station` field is invalid.
+- Mobile multi-service environments resolve endpoint and deployment references
+  from the Gate process environment. They do not require or activate an
+  aggregate local-development profile.
+- Current two-actor Mobile product Gates use `mobile-direct-simulator`: two
+  isolated iOS clients bind to one source-attested Station without Relay.
+  `mobile-social-simulator` is retained only for deferred cross-Station proof.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.

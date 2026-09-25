@@ -14,6 +14,7 @@ import {
   discoverPlanPackages,
   loadPlanPackage,
   renderPlanDocument,
+  summarizePlanProgress,
 } from './plan-package.mjs';
 import {
   commitPlanMigration,
@@ -26,6 +27,12 @@ import {
   validatePlanMigrationJournal,
 } from './plan-migration.mjs';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
+import {
+  createSessionStore,
+  sessionStorePaths,
+  transitionSessionStore,
+} from '../local-dev/dev-session-store.mjs';
+import { createInitialSessionState } from '../local-dev/dev-session-schema.mjs';
 
 const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const PLANCTL = path.join(TEST_DIRECTORY, 'planctl.mjs');
@@ -67,7 +74,6 @@ function manifestForStatus(status) {
   const selected = statuses[status];
   if (!selected) throw new Error(`unsupported fixture status ${status}`);
   return {
-    schemaVersion: 2,
     kind: 'peers-touch-plan-package',
     planId: 'DWF-TEST',
     status,
@@ -129,7 +135,6 @@ function manifestForStatus(status) {
 
 function taskSliceFor(entry) {
   return {
-    schemaVersion: 1,
     kind: 'peers-touch-task-slice',
     planId: 'DWF-TEST',
     taskId: entry.id,
@@ -182,10 +187,26 @@ function acceptanceForTasks(tasks) {
     gates.push(gateId);
   }
   return {
-    schemaVersion: 1,
     closures,
     completion: gates,
     full: [...gates, 'release-gate'],
+  };
+}
+
+function progressPackage(statuses, { status = 'active', dependsOn = {} } = {}) {
+  const tasks = statuses.map((taskStatus, index) => {
+    const id = `task-${index + 1}`;
+    return {
+      id,
+      status: taskStatus,
+      dependsOn: dependsOn[id] ?? [],
+    };
+  });
+  return {
+    manifest: { status, tasks },
+    taskSlices: new Map(
+      tasks.map((task) => [task.id, { title: `Task ${task.id}` }]),
+    ),
   };
 }
 
@@ -292,6 +313,65 @@ async function makeFixture(
   };
 }
 
+function blockedSessionFor(fixture, evidenceRef = 'evidence/task-a.json') {
+  const home = path.join(fixture.root, 'home');
+  const workItemId = 'DWF-TEST-WORK';
+  const initial = createInitialSessionState(
+    {
+      sessionId: 'DWF-TEST-SESSION',
+      workItemId,
+      planId: fixture.manifest.planId,
+      taskId: 'task-a',
+      workspaceId: fixture.manifest.binding.workspaceId,
+      branch: fixture.manifest.binding.branch,
+      journeyId: fixture.taskSlices.get('task-a').journeyId,
+      executionMode: fixture.taskSlices.get('task-a').executionMode,
+    },
+    FIXED_TIME,
+  );
+  const options = {
+    home,
+    workspaceRoot: fixture.root,
+    workspaceId: fixture.manifest.binding.workspaceId,
+    workItemId,
+    now: FIXED_TIME,
+    expected: {
+      sessionId: initial.sessionId,
+      workItemId,
+      planId: initial.planId,
+      taskId: initial.taskId,
+      workspaceId: initial.workspaceId,
+      branch: initial.branch,
+    },
+  };
+  createSessionStore(initial, {
+    ...options,
+    reason: 'start blocked handoff fixture',
+  });
+  transitionSessionStore({
+    ...options,
+    now: '2026-09-16T00:00:01.000Z',
+    context: {
+      task: fixture.taskSlices.get('task-a'),
+      acceptance: fixture.acceptance,
+      authorization: fixture.manifest.authorization,
+    },
+    to: 'BLOCKED',
+    reason: 'host capability unavailable',
+    updates: {
+      failure: {
+        kind: 'SOURCE_CHECK_FAILED',
+        stage: 'BOUND',
+        owner: 'source',
+        summary: 'blocked handoff fixture',
+        retryable: false,
+        diagnosticRef: evidenceRef,
+      },
+    },
+  });
+  return sessionStorePaths(options).session;
+}
+
 async function expectPlanError(promise, code) {
   await assert.rejects(promise, (error) => {
     assert.equal(error.code, code);
@@ -350,10 +430,46 @@ test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhau
     );
   });
 
-  await t.test('obsolete Plan Package schema version', async (t) => {
+  await t.test('workflow version labels are rejected as unknown fields', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateManifest(manifest) {
+        manifest.workflowVersion = 1;
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('Plan Package schemaVersion is rejected', async (t) => {
     const fixture = await makeFixture(t, {
       mutateManifest(manifest) {
         manifest.schemaVersion = 1;
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('Task Slice schemaVersion is rejected', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        taskSlices.get('task-a').schemaVersion = 1;
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('Acceptance Execution schemaVersion is rejected', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateAcceptance(acceptance) {
+        acceptance.schemaVersion = 1;
       },
     });
     await expectPlanError(
@@ -1064,6 +1180,8 @@ test('planctl validate/current/next/status emit structured JSON through direct a
       title: 'Task task-a',
       transition: 'in_progress->done',
       completedDelta: 1,
+      completedAfter: 1,
+      percentageAfter: 50,
       percentagePointDelta: 50,
       unlocksTaskIds: ['task-b'],
     },
@@ -1094,6 +1212,109 @@ test('planctl validate/current/next/status emit structured JSON through direct a
   assert.equal(failure.ok, false);
   assert.equal(failure.error.type, 'PlanPackageError');
   assert.equal(failure.error.code, 'PLAN_CLI_USAGE');
+});
+
+test('progress projection exposes the exact post-Next target from integer task counts', () => {
+  const statuses = Array(42).fill('pending');
+  statuses.fill('done', 0, 29);
+  statuses[29] = 'in_progress';
+
+  const progress = summarizePlanProgress(progressPackage(statuses));
+
+  assert.equal(progress.completed, 29);
+  assert.equal(progress.total, 42);
+  assert.equal(progress.percentage, 69.05);
+  assert.equal(progress.nextProgressBoundary.completedDelta, 1);
+  assert.equal(progress.nextProgressBoundary.completedAfter, 30);
+  assert.equal(progress.nextProgressBoundary.percentageAfter, 71.43);
+  assert.equal(progress.nextProgressBoundary.percentagePointDelta, 2.38);
+});
+
+test('progress projection handles the first and final task boundaries', () => {
+  const first = summarizePlanProgress(
+    progressPackage(['in_progress', 'pending', 'pending']),
+  );
+  assert.deepEqual(
+    {
+      completedAfter: first.nextProgressBoundary.completedAfter,
+      percentageAfter: first.nextProgressBoundary.percentageAfter,
+      percentagePointDelta: first.nextProgressBoundary.percentagePointDelta,
+    },
+    {
+      completedAfter: 1,
+      percentageAfter: 33.33,
+      percentagePointDelta: 33.33,
+    },
+  );
+
+  const final = summarizePlanProgress(
+    progressPackage(['done', 'done', 'in_progress']),
+  );
+  assert.deepEqual(
+    {
+      completedAfter: final.nextProgressBoundary.completedAfter,
+      percentageAfter: final.nextProgressBoundary.percentageAfter,
+      percentagePointDelta: final.nextProgressBoundary.percentagePointDelta,
+      unlocksTaskIds: final.nextProgressBoundary.unlocksTaskIds,
+    },
+    {
+      completedAfter: 3,
+      percentageAfter: 100,
+      percentagePointDelta: 33.33,
+      unlocksTaskIds: [],
+    },
+  );
+});
+
+test('progress projection reports newly unlocked tasks without counting them complete', () => {
+  const progress = summarizePlanProgress(
+    progressPackage(
+      ['done', 'in_progress', 'pending', 'pending', 'pending'],
+      {
+        dependsOn: {
+          'task-3': [],
+          'task-4': ['task-2'],
+          'task-5': ['task-2', 'task-3'],
+        },
+      },
+    ),
+  );
+
+  assert.equal(progress.nextProgressBoundary.completedAfter, 2);
+  assert.deepEqual(progress.nextProgressBoundary.unlocksTaskIds, ['task-4']);
+});
+
+test('progress projection derives each percentage endpoint before rounding the delta', () => {
+  const progress = summarizePlanProgress(
+    progressPackage([
+      'done',
+      'in_progress',
+      'pending',
+      'pending',
+      'pending',
+      'pending',
+    ]),
+  );
+
+  assert.equal(progress.percentage, 16.67);
+  assert.equal(progress.nextProgressBoundary.percentageAfter, 33.33);
+  assert.equal(progress.nextProgressBoundary.percentagePointDelta, 16.66);
+});
+
+test('progress projection has no post-Next target without an active current task', () => {
+  for (const [status, statuses] of [
+    ['draft', ['pending', 'pending']],
+    ['prepared', ['pending', 'pending']],
+    ['blocked', ['blocked', 'pending']],
+    ['completed', ['done', 'done']],
+    ['superseded', ['pending', 'pending']],
+  ]) {
+    const progress = summarizePlanProgress(
+      progressPackage(statuses, { status }),
+    );
+    assert.equal(progress.currentTaskId, null, status);
+    assert.equal(progress.nextProgressBoundary, null, status);
+  }
 });
 
 test('planctl advance atomically hands off and completes without changing immutable binding', async (t) => {
@@ -1182,17 +1403,6 @@ test('planctl advance validates Session terminal state against completion class'
       acceptance.closures['closure-task-a'] = [];
     },
   });
-  const sourceSession = path.join(sourceFixture.root, 'source-session.json');
-  await fsp.writeFile(
-    sourceSession,
-    JSON.stringify({
-      state: {
-        state: 'SOURCE_READY',
-        planId: 'DWF-TEST',
-        taskId: 'task-a',
-      },
-    }),
-  );
   const sourceAdvance = parseCliSuccess(
     invokeCli([
       'advance',
@@ -1201,7 +1411,7 @@ test('planctl advance validates Session terminal state against completion class'
       '--repo-root',
       sourceFixture.root,
       '--session',
-      sourceSession,
+      'NONE',
       '--task',
       'task-a',
       '--to',
@@ -1242,17 +1452,106 @@ test('planctl advance validates Session terminal state against completion class'
     ]),
   );
   assert.equal(rejected.error.code, 'PLAN_ADVANCE_INVALID');
+
+  const blockedFixture = await makeFixture(t, {
+    mutateManifest(manifest) {
+      manifest.tasks[1].dependsOn = [];
+    },
+  });
+  const blockedSession = blockedSessionFor(blockedFixture);
+  for (const session of ['NONE', path.join(blockedFixture.root, 'missing-session.json')]) {
+    const rejectedBlockedHandoff = parseCliFailure(
+      invokeCli([
+        'advance',
+        '--plan',
+        blockedFixture.planPath,
+        '--repo-root',
+        blockedFixture.root,
+        '--session',
+        session,
+        '--task',
+        'task-a',
+        '--to',
+        'blocked',
+        '--next',
+        'task-b',
+        '--blocker-code',
+        'SOURCE_CHECK_FAILED',
+        '--blocker-owner',
+        'source',
+        '--blocker-evidence-ref',
+        'evidence/task-a.json',
+      ]),
+    );
+    assert.equal(rejectedBlockedHandoff.error.code, 'PLAN_ADVANCE_INVALID');
+  }
+  const mismatchedBlocker = parseCliFailure(
+    invokeCli([
+      'advance',
+      '--plan',
+      blockedFixture.planPath,
+      '--repo-root',
+      blockedFixture.root,
+      '--session',
+      blockedSession,
+      '--task',
+      'task-a',
+      '--to',
+      'blocked',
+      '--next',
+      'task-b',
+      '--blocker-code',
+      'WRONG_BLOCKER',
+      '--blocker-owner',
+      'source',
+      '--blocker-evidence-ref',
+      'evidence/task-a.json',
+    ]),
+  );
+  assert.equal(mismatchedBlocker.error.code, 'PLAN_ADVANCE_INVALID');
+  const parked = parseCliSuccess(
+    invokeCli([
+      'advance',
+      '--plan',
+      blockedFixture.planPath,
+      '--repo-root',
+      blockedFixture.root,
+      '--session',
+      blockedSession,
+      '--task',
+      'task-a',
+      '--to',
+      'blocked',
+      '--next',
+      'task-b',
+      '--blocker-code',
+      'SOURCE_CHECK_FAILED',
+      '--blocker-owner',
+      'source',
+      '--blocker-evidence-ref',
+      'evidence/task-a.json',
+    ]),
+  );
+  assert.equal(parked.currentTaskId, 'task-b');
+  const parkedPlan = await loadPlanPackage(blockedFixture.planPath, {
+    repoRoot: blockedFixture.root,
+  });
+  assert.equal(
+    lifecycleTask(parkedPlan.manifest.tasks, 'task-a').status,
+    'blocked',
+  );
 });
 
 test('planctl advance records typed exhaustion and can reactivate an explicit blocked Task', async (t) => {
   const fixture = await makeFixture(t);
+  const blockedSession = blockedSessionFor(fixture);
   const common = [
     '--plan',
     fixture.planPath,
     '--repo-root',
     fixture.root,
     '--session',
-    'NONE',
+    blockedSession,
   ];
   const blocked = parseCliSuccess(
     invokeCli([
@@ -1263,9 +1562,9 @@ test('planctl advance records typed exhaustion and can reactivate an explicit bl
       '--to',
       'blocked',
       '--blocker-code',
-      'OWNER_INPUT_REQUIRED',
+      'SOURCE_CHECK_FAILED',
       '--blocker-owner',
-      'architecture',
+      'source',
       '--blocker-evidence-ref',
       'evidence/task-a.json',
       '--recorded-at',
@@ -1280,13 +1579,72 @@ test('planctl advance records typed exhaustion and can reactivate an explicit bl
   assert.equal(blocked.currentTaskId, null);
 
   const reactivated = parseCliSuccess(
-    invokeCli(['advance', ...common, '--to', 'reactivate', '--next', 'task-a']),
+    invokeCli([
+      'advance',
+      '--plan',
+      fixture.planPath,
+      '--repo-root',
+      fixture.root,
+      '--session',
+      'NONE',
+      '--to',
+      'reactivate',
+      '--next',
+      'task-a',
+    ]),
   );
   assert.equal(reactivated.status, 'active');
   assert.equal(reactivated.currentTaskId, 'task-a');
   const loaded = await loadPlanPackage(fixture.planPath, { repoRoot: fixture.root });
   assert.equal(loaded.manifest.exhaustion, null);
   assert.equal(lifecycleTask(loaded.manifest.tasks, 'task-a').blocker, null);
+});
+
+test('planctl invalidate-source reopens the declared owner and resets its closure', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateManifest(manifest) {
+      manifest.tasks[0].status = 'done';
+      manifest.tasks[1].status = 'in_progress';
+    },
+    planSuffix: `
+
+## Source Invalidation Policy
+
+\`\`\`json
+{"kind":"peers-touch-source-invalidation-policy","sourceOwnerTaskId":"task-a","rootTaskIds":["task-b"]}
+\`\`\`
+`,
+  });
+  const home = path.join(fixture.root, 'home');
+  const invalidated = parseCliSuccess(
+    invokeCli([
+      'invalidate-source',
+      '--plan',
+      fixture.planPath,
+      '--repo-root',
+      fixture.root,
+      '--task',
+      'task-b',
+      '--first-failure-ref',
+      'evidence/task-b-source-drift.json',
+      '--home',
+      home,
+    ]),
+  );
+
+  assert.equal(invalidated.status, 'active');
+  assert.equal(invalidated.currentTaskId, 'task-a');
+  assert.equal(invalidated.invalidationProof.proofDigest.length, 64);
+  assert.equal(
+    fs.existsSync(invalidated.invalidationProof.proofPath),
+    true,
+  );
+
+  const loaded = await loadPlanPackage(fixture.planPath, {
+    repoRoot: fixture.root,
+  });
+  assert.equal(lifecycleTask(loaded.manifest.tasks, 'task-a').status, 'in_progress');
+  assert.equal(lifecycleTask(loaded.manifest.tasks, 'task-b').status, 'pending');
 });
 
 function lifecycleTask(tasks, taskId) {
@@ -1428,6 +1786,7 @@ async function makeMigrationFixture(t, { targetStatus = 'active' } = {}) {
     discoveryRoot: 'docs/architecture/test/execution-plans',
     expectedActivePlanCount: 1,
     expectedPackageStatus: targetStatus,
+    expectedCurrentTaskId: targetStatus === 'active' ? 'task-a' : null,
   };
   return {
     ...fixture,
@@ -2436,6 +2795,31 @@ test('migration binds commit to reviewed journal and exact source identity', asy
     await assert.rejects(fsp.stat(fixture.lockPath), { code: 'ENOENT' });
   });
 
+  await t.test('journal mutation after lock acquisition fails compare-and-swap', async (t) => {
+    const fixture = await makeMigrationFixture(t);
+    await prepareReviewedMigration(fixture);
+    let injected = false;
+    await expectPlanError(
+      commitPlanMigration({
+        ...fixture.migrationOptions,
+        async beforeJournalAtomicCommit() {
+          if (injected) return;
+          injected = true;
+          await fsp.appendFile(fixture.journalPath, '\n');
+        },
+      }),
+      'PLAN_CONCURRENT_MODIFICATION',
+    );
+    assert.equal(injected, true);
+    assert.deepEqual(await fsp.readFile(fixture.legacyPath), fixture.legacyBytes);
+    await assert.rejects(
+      fsp.stat(
+        path.join(fixture.root, ...fixture.backupRelative.split('/')),
+      ),
+      { code: 'ENOENT' },
+    );
+  });
+
   await t.test('branch or worktree binding drift fails before lock', async (t) => {
     const fixture = await makeMigrationFixture(t);
     await prepareReviewedMigration(fixture);
@@ -2480,6 +2864,7 @@ test('migration journals mandatory one-live-package verification', async (t) => 
     'discoveryRoot',
     'expectedActivePlanCount',
     'expectedPackageStatus',
+    'expectedCurrentTaskId',
   ]) {
     const fixture = await makeMigrationFixture(t);
     const invalid = { ...fixture.migrationOptions };
@@ -2497,7 +2882,19 @@ test('migration journals mandatory one-live-package verification', async (t) => 
     discoveryRoot: 'docs/architecture/test/execution-plans',
     expectedActivePlanCount: 1,
     expectedPackageStatus: 'blocked',
+    expectedCurrentTaskId: null,
   });
+
+  const mismatchedCurrent = await makeMigrationFixture(t);
+  mismatchedCurrent.migrationOptions.expectedCurrentTaskId = 'different-task';
+  await expectPlanError(
+    preparePlanMigration(mismatchedCurrent.migrationOptions),
+    'PLAN_MIGRATION_INVALID',
+  );
+  await assert.rejects(
+    fsp.stat(mismatchedCurrent.journalPath),
+    { code: 'ENOENT' },
+  );
 
   const duplicateDirectory = path.join(
     fixture.root,
@@ -3104,6 +3501,17 @@ test('planctl migrate emits structured PREPARED JSON without locking discovery',
       reboundManifest,
     ),
   );
+  const targetManifest = structuredClone(reboundManifest);
+  targetManifest.status = 'active';
+  targetManifest.tasks[0].status = 'in_progress';
+  const preparedTargetRelative = `${fixture.packageRelative}/prepared-cli.md`;
+  await fsp.writeFile(
+    path.join(fixture.root, ...preparedTargetRelative.split('/')),
+    renderPlanDocument(
+      await fsp.readFile(fixture.planPath, 'utf8'),
+      targetManifest,
+    ),
+  );
   const legacyRelative = 'docs/architecture/test/execution-plans/legacy-cli.md';
   await fsp.writeFile(path.join(fixture.root, ...legacyRelative.split('/')), '# Legacy CLI\n');
   const machineHome = await fsp.mkdtemp(
@@ -3161,6 +3569,14 @@ test('planctl migrate emits structured PREPARED JSON without locking discovery',
       '1',
       '--expected-package-status',
       'active',
+      '--expected-current-task',
+      'task-a',
+      '--replacement',
+      JSON.stringify({
+        path: `${fixture.packageRelative}/plan.md`,
+        preparedPath: preparedTargetRelative,
+        backupPath: `${fixture.packageRelative}/migration-backups/plan-cli.backup.md`,
+      }),
     ], PLANCTL, { ...process.env, HOME: machineHome }),
   );
   assert.equal(result.ok, true);

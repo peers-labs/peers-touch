@@ -118,6 +118,10 @@ type ConversationReader interface {
 		conversationID valueobject.ConversationID,
 		actor valueobject.PTID,
 	) (query.ConversationView, error)
+	ResolveRoute(
+		ctx context.Context,
+		conversationID valueobject.ConversationID,
+	) (query.ConversationRoute, error)
 }
 
 // DeviceDirectory exposes actor-owned device eligibility and routing.

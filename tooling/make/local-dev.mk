@@ -4,6 +4,8 @@
 .PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        dev-session-start dev-session-status dev-transition dev-functional-result \
+        active-work-sync active-work-status active-work-status-all active-work-close \
         plan-bind plan-binding plan-validate plan-status plan-current plan-next \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
@@ -38,6 +40,8 @@ DEV_RUNTIME_CLAIMS_ARG := $(or $(RUNTIME_CLAIMS),$(DEV_RUNTIME_CLAIMS))
 DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)),$(if $(filter undefined,$(origin DEV_RUNTIME_CLAIMS)),,1),1)
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
+DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
+ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
 
 env-register:
 	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
@@ -175,6 +179,66 @@ dev-release:
 	@node $(DEV_WORK_SCRIPT) release \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-session-start:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_TASK_ARG)" ] || [ -z "$(DEV_JOURNEY_ARG)" ]; then \
+		echo "Usage: make dev-session-start WORK_ITEM=<id> TASK=<id> JOURNEY=<id> [PLAN=<path>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) start \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--task "$(DEV_TASK_ARG)" \
+		--journey "$(DEV_JOURNEY_ARG)" \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",)
+
+dev-session-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-session-status WORK_ITEM=<id>"; exit 1; fi
+	@node $(DEV_SESSION_SCRIPT) status --work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-transition:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(TO)" ] || [ -z "$(REASON)" ]; then \
+		echo "Usage: make dev-transition WORK_ITEM=<id> TO=<state> REASON='<text>' [SOURCE='<json>'] [VERIFICATION='<json>'] [FAILURE='<json>'] [RUNTIME_BINDING_REF=<ref>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) transition \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--to "$(TO)" \
+		--reason "$(REASON)" \
+		$(if $(SOURCE),--source '$(SOURCE)',) \
+		$(if $(VERIFICATION),--verification '$(VERIFICATION)',) \
+		$(if $(FAILURE),--failure '$(FAILURE)',) \
+		$(if $(RUNTIME_BINDING_REF),--runtime-binding-ref "$(RUNTIME_BINDING_REF)",)
+
+dev-functional-result:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(REASON)" ]; then \
+		echo "Usage: make dev-functional-result WORK_ITEM=<id> REASON='<text>' [RUNTIME_CELL=<cell>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) functional-result \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--reason "$(REASON)" \
+		$(if $(RUNTIME_CELL),--runtime-cell "$(RUNTIME_CELL)",)
+
+active-work-sync:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]"; exit 1; fi
+	@node $(ACTIVE_WORK_SCRIPT) sync \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(EXPECTED_REVISION),--expected-revision "$(EXPECTED_REVISION)",)
+
+active-work-status:
+	@node $(ACTIVE_WORK_SCRIPT) status
+
+active-work-status-all:
+	@node $(ACTIVE_WORK_SCRIPT) status-all
+
+active-work-close:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(EXPECTED_REVISION)" ]; then \
+		echo "Usage: make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>"; \
+		exit 1; \
+	fi
+	@node $(ACTIVE_WORK_SCRIPT) close \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--expected-revision "$(EXPECTED_REVISION)"
 
 station:
 	@$(DEVCTL) station start

@@ -23,7 +23,8 @@ Evaluate:
    receiver, durable readback, recovery path, and bounded non-claim.
 3. Whether Actor/Social, Conversation, Device Messaging Engine, Realtime, and
    Federation ownership remains single-source and free of fallback paths.
-4. Whether recorded voice and live voice are correctly separated.
+4. Whether recorded voice, one-to-one live calls, and group live calls are
+   correctly separated.
 5. Whether the safety/evidence closure is a mandatory predecessor.
 6. Whether Desktop and Mobile claims remain independent.
 7. Whether obsolete NDR/Messaging progress is prevented from entering current
@@ -32,6 +33,8 @@ Evaluate:
    current-source acceptance requirements are complete.
 9. Whether any required product behavior or architecture decision remains
    implicit.
+10. Whether `CHAT-C12`/`CHAT-J09` is correctly blocked on a separate reviewed
+    SFU architecture and cannot fall back to peer-to-peer mesh.
 
 Return one verdict:
 

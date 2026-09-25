@@ -15,14 +15,24 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-station-trust", "mobile-access-gate-oauth"],
-      "required_gates": ["mobile-contract-static", "mobile-identity-contract", "mobile-native-access-e2e"],
-      "synthetic_paths": ["apps/mobile/src/features/station/stationConnection.ts", "apps/mobile/src/features/auth/authSession.ts", "model/domain/access_gate/access_gate.proto"],
+      "required_gates": ["mobile-contract-static", "mobile-identity-contract", "mobile-simulator-access-e2e"],
+      "synthetic_paths": [
+        "apps/mobile/src/features/station/stationConnection.ts",
+        "apps/mobile/src/features/auth/authSession.ts",
+        "apps/mobile/src/features/auth/AccessGateHost.tsx",
+        "apps/mobile/src/assets/logo.png",
+        "model/domain/access_gate/access_gate.proto"
+      ],
       "evidence": {
         "truth_sources": ["signed Station handshake", "Station AccessAttempt and AccessDecision"],
-        "surfaces": ["Mobile Station selector", "Mobile Access Gate and OAuth recovery"],
-        "proven_by": ["mobile-contract-static", "mobile-identity-contract", "mobile-native-access-e2e"],
-        "proven_scope": ["Static ownership and contract rules", "Native Station and access journeys when the environment Gate passes"],
-        "unproven_scope": ["Native iOS/Android Station and OAuth behavior until environment evidence passes"]
+        "surfaces": [
+          "Mobile Station selector",
+          "Mobile Access Gate and OAuth recovery",
+          "Mobile Auth card and expired-session presentation"
+        ],
+        "proven_by": ["mobile-contract-static", "mobile-identity-contract", "mobile-simulator-access-e2e"],
+        "proven_scope": ["Static ownership and contract rules", "Required simulator Station, callback, restart, and access-failure journeys"],
+        "unproven_scope": ["Optional live-provider browser and physical secure-storage diagnostics"]
       }
     },
     {
@@ -33,27 +43,33 @@
       "required_gates": [
         "mobile-contract-static",
         "mobile-simulator-runtime-lifecycle-e2e",
-        "mobile-simulator-station-lifecycle-e2e",
-        "mobile-native-lifecycle-e2e"
+        "mobile-simulator-station-lifecycle-e2e"
       ],
-      "synthetic_paths": ["apps/mobile/src/App.tsx", "apps/mobile/src/runtimes/runtimeRegistry.ts", "apps/mobile/src/components/MobileShell.tsx"],
+      "synthetic_paths": [
+        "apps/mobile/src/App.tsx",
+        "apps/mobile/src/runtimes/runtimeRegistry.ts",
+        "apps/mobile/src/runtimes/stationRuntime.ts",
+        "apps/mobile/src/components/MobileShell.tsx",
+        "apps/mobile/src/components/MobileRouteBoundary.tsx",
+        "apps/mobile/src/app/lifecycle/runtimeAvailability.ts",
+        "apps/mobile/src/runtimes/runtimeSessionTransition.ts",
+        "apps/mobile/src/runtimes/messagingRuntime.ts"
+      ],
       "evidence": {
         "truth_sources": ["MobileLifecycleKernel", "Mobile runtime registry", "Station session validation"],
         "surfaces": ["Mobile launch, Shell, detail navigation, recovery overlays"],
         "proven_by": [
           "mobile-contract-static",
           "mobile-simulator-runtime-lifecycle-e2e",
-          "mobile-simulator-station-lifecycle-e2e",
-          "mobile-native-lifecycle-e2e"
+          "mobile-simulator-station-lifecycle-e2e"
         ],
         "proven_scope": [
           "Static lifecycle ownership",
-          "Simulator runtime-graph suspend, resume, restart, and generation transitions when the simulator Gate passes",
-          "Station-bound simulator session restore, takeover revocation, Station switch, logout, and old-scope isolation when the supplemental Gate passes",
-          "Native lifecycle transitions when the physical environment Gate passes"
+          "Simulator runtime-graph suspend, resume, restart, generation, and descriptor-owned navigation state transitions when the simulator Gate passes",
+          "Station-bound simulator session restore, takeover revocation, Station switch, logout, and old-scope isolation"
         ],
         "unproven_scope": [
-          "Physical background/foreground, secure-storage failure, and W5 event-ingress lifecycle behavior until their environment Gates pass"
+          "Optional physical background/foreground and secure-hardware behavior"
         ]
       }
     },
@@ -62,19 +78,33 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-command-draft-recovery", "mobile-recovery-degraded-states"],
-      "required_gates": ["mobile-contract-static", "mobile-native-recovery-e2e", "mobile-native-recovery-ui-e2e"],
+      "required_gates": [
+        "mobile-contract-static",
+        "mobile-hard-cut-static",
+        "mobile-simulator-recovery-e2e",
+        "mobile-simulator-recovery-ui-e2e"
+      ],
       "synthetic_paths": [
+        "model/domain/mobile/reliability.proto",
+        "model/domain/social/relationship.proto",
+        "apps/station/app/subserver/social/application/federated_friend_request.go",
         "apps/mobile/src/pages/ChatPage.tsx",
         "apps/mobile/src/pages/MomentsPage.tsx",
         "apps/mobile/src/runtimes/recoveryProjection.ts",
-        "apps/mobile/src-tauri/src/messaging/adapter.rs"
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src-tauri/src/runtime/reliability/mod.rs"
       ],
       "evidence": {
         "truth_sources": ["Station command outcome readback", "Mobile Rust command ledger", "Mobile Rust draft store"],
         "surfaces": ["Mobile pending/unknown/capacity states", "Chat and Moments draft recovery"],
-        "proven_by": ["mobile-contract-static", "mobile-native-recovery-e2e", "mobile-native-recovery-ui-e2e"],
-        "proven_scope": ["Static single-owner rules", "Restart-safe command and draft recovery when native Gates pass"],
-        "unproven_scope": ["Crash/restart and overload behavior until native evidence passes"]
+        "proven_by": [
+          "mobile-contract-static",
+          "mobile-hard-cut-static",
+          "mobile-simulator-recovery-e2e",
+          "mobile-simulator-recovery-ui-e2e"
+        ],
+        "proven_scope": ["Static single-owner rules", "Same-Station restart-safe command, draft, and visible recovery behavior on required simulator cells"],
+        "unproven_scope": ["Cross-Station or Relay-backed recovery", "Optional physical interruption and filesystem diagnostics"]
       }
     },
     {
@@ -82,14 +112,24 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-chat-contacts-groups", "mobile-moments-participation", "mobile-profile-settings"],
-      "required_gates": ["mobile-native-social-convergence-e2e", "mobile-native-chat-contacts-e2e", "mobile-native-moments-e2e", "mobile-native-settings-e2e"],
-      "synthetic_paths": ["apps/mobile/src/features/social/socialRuntime.ts", "apps/mobile/src/features/group/groupRuntime.ts", "apps/mobile/src/pages/ContactsPage.tsx", "apps/mobile/src/pages/MomentsPage.tsx", "apps/mobile/src/pages/SettingsPage.tsx"],
+      "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
+      "synthetic_paths": [
+        "apps/mobile/src/features/social/socialRuntime.ts",
+        "apps/mobile/src/runtimes/messagingRuntime.ts",
+        "apps/mobile/src/pages/ContactsPage.tsx",
+        "apps/mobile/src/pages/MomentsPage.tsx",
+        "apps/mobile/src/pages/SettingsPage.tsx",
+        "apps/mobile/src/components/MobileRouteBoundary.tsx",
+        "apps/mobile/src/app/lifecycle/runtimeAvailability.ts",
+        "apps/mobile/src/runtimes/runtimeSessionTransition.ts",
+        "apps/mobile/src/runtimes/messagingRuntime.ts"
+      ],
       "evidence": {
         "truth_sources": ["Station conversation and social domains", "Station actor preferences", "Mobile runtime projections"],
         "surfaces": ["Chat", "Contacts", "Moments", "Me and Settings"],
-        "proven_by": ["mobile-native-social-convergence-e2e", "mobile-native-chat-contacts-e2e", "mobile-native-moments-e2e", "mobile-native-settings-e2e"],
-        "proven_scope": ["Receiver-visible social journeys only when all required native Gates pass"],
-        "unproven_scope": ["All Mobile social product behavior until native evidence passes"]
+        "proven_by": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-settings-e2e"],
+        "proven_scope": ["Source-level runtime ownership and generation fencing", "Receiver-visible social journeys for two actors on the required two-simulator/same-Station cell"],
+        "unproven_scope": ["Cross-Station or Relay-backed Social delivery", "Optional physical-radio and hardware-specific behavior"]
       }
     },
     {
@@ -97,7 +137,7 @@
       "domain": "mobile",
       "direction": "acceptance_validates_product",
       "features": ["mobile-native-accessibility-performance"],
-      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static"],
+      "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
       "synthetic_paths": [
         "apps/mobile/src/runtimes/nativeLifecycleBridge.ts",
         "apps/mobile/src-tauri/src/platform/native_events.rs",
@@ -107,9 +147,9 @@
       "evidence": {
         "truth_sources": ["Mobile native lifecycle and secure-storage ports", "Mobile rendered accessibility tree", "Mobile runtime telemetry"],
         "surfaces": ["iOS and Android native Mobile Shell"],
-        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static"],
-        "proven_scope": ["iOS Simulator launch-surface layout and accessibility", "Native accessibility, performance, cleanup, and hard-cut assertions when required Gates pass"],
-        "unproven_scope": ["Physical-device behavior until both platform cells pass"]
+        "proven_by": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+        "proven_scope": ["iOS Simulator launch-surface layout and accessibility", "Required iOS Simulator platform, timing, cleanup, and hard-cut assertions"],
+        "unproven_scope": ["Optional Android and physical-device accessibility and pinned-hardware performance"]
       }
     }
   ]

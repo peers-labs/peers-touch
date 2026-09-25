@@ -24,13 +24,38 @@ english_workflow_skill="tooling/skills/pt-ew/SKILL.md"
 execution_guardian_skill="tooling/skills/pt-execution-plan-guardian/SKILL.md"
 dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
 dev_work_script="tooling/scripts/local-dev/dev-work.mjs"
+dev_work_ledger="tooling/scripts/local-dev/dev-work-ledger.mjs"
+dev_session_script="tooling/scripts/local-dev/dev-session.mjs"
+dev_session_store="tooling/scripts/local-dev/dev-session-store.mjs"
+dev_session_test="tooling/scripts/local-dev/dev-session.test.mjs"
+planctl_script="tooling/scripts/plan/planctl.mjs"
+acceptance_run="tooling/scripts/acceptance-run.py"
+acceptance_registry="tooling/acceptance/registry.yaml"
+local_dev_make="tooling/make/local-dev.mk"
+ide_setup_script="tooling/scripts/ide-setup.sh"
+setup_make="tooling/make/setup.mk"
+skill_rollout_audit="tooling/scripts/skill-rollout-audit.py"
+skill_installer="tooling/scripts/install-project-skills.sh"
+skill_rollout_test="tooling/scripts/skill-rollout-audit-test.py"
+skill_rollout_control="tooling/scripts/skill-rollout-control.py"
+skill_overlay_test="tooling/scripts/skill-overlay-control-test.py"
+skill_overlay_control="tooling/scripts/skill-overlay-control.py"
 context_anchor_skill="tooling/skills/pt-context-anchor/SKILL.md"
 god_view_skill="tooling/skills/pt-god-view/SKILL.md"
-goal_orchestrator_skill="tooling/skills/pt-trae-goal-orchestrator/SKILL.md"
-goal_template="tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md"
-goal_review_rubric="tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md"
+goal_orchestrator_skill="tooling/skills/pt-goal-orchestrator/SKILL.md"
+goal_template="tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md"
+goal_review_rubric="tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
+runtime_handoff_skill="tooling/skills/pt-dev-runtime-handoff/SKILL.md"
+defect_closure_skill="tooling/skills/pt-defect-closure/SKILL.md"
+local_dev_env_skill="tooling/skills/pt-local-dev-env/SKILL.md"
+trae_host_adapter="tooling/skills/pt-trae-host-adapter/SKILL.md"
+cursor_host_adapter="tooling/skills/pt-cursor-host-adapter/SKILL.md"
+codex_host_adapter="tooling/skills/pt-codex-host-adapter/SKILL.md"
 workflow_architecture="docs/architecture/development-workflow/design.md"
 agents_contract="AGENTS.md"
+continuous_plan_invariant="docs/knowledge/invariants/continuous-plan-run.md"
+host_neutral_invariant="docs/knowledge/invariants/host-neutral-agent-execution.md"
+skill_overlay_invariant="docs/knowledge/invariants/user-skill-overlays-are-interaction-only.md"
 
 failures=0
 
@@ -62,13 +87,37 @@ require_file "$english_workflow_skill"
 require_file "$execution_guardian_skill"
 require_file "$dev_workflow_skill"
 require_file "$dev_work_script"
+require_file "$dev_work_ledger"
+require_file "$dev_session_script"
+require_file "$dev_session_store"
+require_file "$dev_session_test"
+require_file "$planctl_script"
+require_file "$acceptance_run"
+require_file "$acceptance_registry"
+require_file "$local_dev_make"
+require_file "$ide_setup_script"
+require_file "$setup_make"
+require_file "$skill_rollout_audit"
+require_file "$skill_installer"
+require_file "$skill_rollout_test"
+require_file "$skill_rollout_control"
+require_file "$skill_overlay_test"
+require_file "$skill_overlay_control"
 require_file "$context_anchor_skill"
 require_file "$god_view_skill"
 require_file "$goal_orchestrator_skill"
 require_file "$goal_template"
 require_file "$goal_review_rubric"
+require_file "$runtime_handoff_skill"
+require_file "$defect_closure_skill"
+require_file "$trae_host_adapter"
+require_file "$cursor_host_adapter"
+require_file "$codex_host_adapter"
 require_file "$workflow_architecture"
 require_file "$agents_contract"
+require_file "$continuous_plan_invariant"
+require_file "$host_neutral_invariant"
+require_file "$skill_overlay_invariant"
 
 required_sections=(
   "Review Philosophy"
@@ -167,6 +216,329 @@ for marker in \
     fail "explicit PR Plan input is missing marker: $marker"
   fi
 done
+if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
+  fail "$planctl_script must permit only evidence-backed blocked Task handoff"
+fi
+for marker in \
+  "ACTIVE_ACTION_IN_FLIGHT" \
+  "ROLLOUT_RESTART_REQUIRED" \
+  "ACKNOWLEDGED"; do
+  if ! grep -Fq "$marker" "$skill_rollout_control"; then
+    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
+  fi
+done
+
+for marker in \
+  "functional-result" \
+  "commitFunctionalResult" \
+  "runDevelopmentClosure" \
+  "development-run-manifest" \
+  "gateIds" \
+  "development-functional-evidence-bundle" \
+  "functional result may commit only from FUNCTIONAL_RUNNING" \
+  "source changed between Development evidence validation and Session commit" \
+  "SESSION_EVIDENCE_OUT_OF_SEQUENCE"; do
+  if ! grep -Fq "$marker" "$dev_session_script"; then
+    fail "$dev_session_script missing functional result commit marker: $marker"
+  fi
+done
+for marker in \
+  "HOST_CAPABILITY_UNAVAILABLE" \
+  "HOST_CAPABILITY_AVAILABLE" \
+  "HOST_CLEANUP_QUARANTINED" \
+  "HOST_CLEANUP_RELEASED" \
+  "HOST_CLEANUP_ESCALATION_REQUIRED" \
+  "repeated BLOCKED transition is not a legal host observation update"; do
+  if ! grep -Fq "$marker" tooling/scripts/local-dev/dev-session-schema.mjs; then
+    fail "tooling/scripts/local-dev/dev-session-schema.mjs missing durable host observation marker: $marker"
+  fi
+done
+for marker in \
+  "--development-manifest-out" \
+  "finalize_development_run" \
+  "gate_run.finalize" \
+  "development-run-manifest"; do
+  if ! grep -Fq -- "$marker" tooling/scripts/acceptance-run.py; then
+    fail "tooling/scripts/acceptance-run.py missing runner provenance marker: $marker"
+  fi
+done
+if grep -Fq -- "--result-file" "$dev_session_script"; then
+  fail "$dev_session_script still accepts caller-authored functional result files"
+fi
+if ! python3 -m unittest "$skill_rollout_test" >/tmp/pt-skill-rollout-test.$$ 2>&1; then
+  cat /tmp/pt-skill-rollout-test.$$
+  fail "$skill_rollout_test failed"
+fi
+rm -f /tmp/pt-skill-rollout-test.$$
+for marker in \
+  "transitionSessionSequenceStore" \
+  "writeDurableFileAtomic" \
+  "linkSync(temp, file)"; do
+  if ! grep -Fq "$marker" "$dev_session_store"; then
+    fail "$dev_session_store missing durable result commit marker: $marker"
+  fi
+done
+for marker in "declared_incomplete" 'standardized["proofStatus"] = "UNPROVEN"'; do
+  if ! grep -Fq "$marker" "$acceptance_run"; then
+    fail "$acceptance_run missing incomplete Development result marker: $marker"
+  fi
+done
+for marker in "dev-functional-result:" "RUNTIME_CELL"; do
+  if ! grep -Fq "$marker" "$local_dev_make"; then
+    fail "$local_dev_make missing functional result command marker: $marker"
+  fi
+done
+if grep -Fq "RESULT_FILE" "$local_dev_make"; then
+  fail "$local_dev_make still accepts caller-authored functional result files"
+fi
+
+for setup_file in "$ide_setup_script" "$setup_make"; do
+  for marker in "trae" "cursor" "codex"; do
+    if ! grep -Fqi "$marker" "$setup_file"; then
+      fail "$setup_file missing supported host marker: $marker"
+    fi
+  done
+done
+if ! grep -Fq ".agents" "$skill_rollout_control"; then
+  fail "$skill_rollout_control must project Codex skills through .agents/skills"
+fi
+for marker in \
+  'IDE_NAME="$(IDE)"' \
+  "skill-rollout-audit:"; do
+  if ! grep -Fq "$marker" "$setup_make"; then
+    fail "$setup_make missing non-interactive rollout marker: $marker"
+  fi
+done
+for marker in \
+  "retired-project-skills" \
+  "pt-trae-goal-orchestrator" \
+  "project pt-* skills under"; do
+  if ! grep -Fq "$marker" "$skill_rollout_control"; then
+    fail "$skill_rollout_control missing non-interactive install marker: $marker"
+  fi
+done
+for marker in \
+  "missingCanonicalSkills" \
+  "canonicalSourceFindings" \
+  "legacyReferences" \
+  "hostProjectionFindings" \
+  "workflowIdentity" \
+  "planBinding" \
+  "currentTaskId" \
+  "planLegacyClaims" \
+  "declarationLegacyClaims" \
+  "acceptanceRegistry" \
+  "missingCanonicalMatchers" \
+  "canonicalCatalog" \
+  "rolloutReceipt"; do
+  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
+    fail "$skill_rollout_audit missing rollout audit marker: $marker"
+  fi
+done
+for marker in \
+  "binding-canonical-invalid" \
+  "declaration-plan-locator-missing" \
+  "declaration-current-task-mismatch" \
+  "registry-missing" \
+  "rollout-branch-mismatch" \
+  "rollout-{field}-mismatch" \
+  "rollout-restart-evidence-invalid" \
+  "wrong-project-skill-target"; do
+  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
+    fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
+  fi
+done
+for marker in \
+  "staleRecoveryPath" \
+  "claimAndRemoveStaleLock" \
+  "readRecoveryMetadata" \
+  "clearStaleRecovery" \
+  "lstatSync"; do
+  if ! grep -Fq "$marker" "$dev_work_ledger"; then
+    fail "$dev_work_ledger missing inode-safe stale lock recovery marker: $marker"
+  fi
+done
+for marker in \
+  "acceptance-workflow-contract" \
+  "tooling/skills/pt-goal-orchestrator/**" \
+  "tooling/skills/pt-trae-host-adapter/**" \
+  "tooling/skills/pt-cursor-host-adapter/**" \
+  "tooling/skills/pt-codex-host-adapter/**"; do
+  if ! grep -Fq "$marker" "$acceptance_registry"; then
+    fail "$acceptance_registry missing canonical host-neutral matcher: $marker"
+  fi
+done
+
+if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
+  fail "$planctl_script must permit only evidence-backed blocked Task handoff"
+fi
+
+for marker in \
+  "ACTIVE_ACTION_IN_FLIGHT" \
+  "ROLLOUT_RESTART_REQUIRED" \
+  "ACKNOWLEDGED"; do
+  if ! grep -Fq "$marker" "$skill_rollout_control"; then
+    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
+  fi
+done
+
+for marker in \
+  "functional-result" \
+  "commitFunctionalResult" \
+  "runDevelopmentClosure" \
+  "development-run-manifest" \
+  "gateIds" \
+  "development-functional-evidence-bundle" \
+  "functional result may commit only from FUNCTIONAL_RUNNING" \
+  "source changed between Development evidence validation and Session commit" \
+  "SESSION_EVIDENCE_OUT_OF_SEQUENCE"; do
+  if ! grep -Fq "$marker" "$dev_session_script"; then
+    fail "$dev_session_script missing functional result commit marker: $marker"
+  fi
+done
+
+for marker in \
+  "HOST_CAPABILITY_UNAVAILABLE" \
+  "HOST_CAPABILITY_AVAILABLE" \
+  "HOST_CLEANUP_QUARANTINED" \
+  "HOST_CLEANUP_RELEASED" \
+  "HOST_CLEANUP_ESCALATION_REQUIRED" \
+  "repeated BLOCKED transition is not a legal host observation update"; do
+  if ! grep -Fq "$marker" tooling/scripts/local-dev/dev-session-schema.mjs; then
+    fail "tooling/scripts/local-dev/dev-session-schema.mjs missing durable host observation marker: $marker"
+  fi
+done
+
+for marker in \
+  "--development-manifest-out" \
+  "finalize_development_run" \
+  "gate_run.finalize" \
+  "development-run-manifest"; do
+  if ! grep -Fq -- "$marker" "$acceptance_run"; then
+    fail "$acceptance_run missing runner provenance marker: $marker"
+  fi
+done
+
+if grep -Fq -- "--result-file" "$dev_session_script"; then
+  fail "$dev_session_script still accepts caller-authored functional result files"
+fi
+
+if ! python3 -m unittest "$skill_rollout_test" >/tmp/pt-skill-rollout-test.$$ 2>&1; then
+  cat /tmp/pt-skill-rollout-test.$$
+  fail "$skill_rollout_test failed"
+fi
+rm -f /tmp/pt-skill-rollout-test.$$
+
+if ! python3 -m unittest "$skill_overlay_test" >/tmp/pt-skill-overlay-test.$$ 2>&1; then
+  cat /tmp/pt-skill-overlay-test.$$
+  fail "$skill_overlay_test failed"
+fi
+rm -f /tmp/pt-skill-overlay-test.$$
+
+for marker in \
+  "transitionSessionSequenceStore" \
+  "writeDurableFileAtomic" \
+  "linkSync(temp, file)"; do
+  if ! grep -Fq "$marker" "$dev_session_store"; then
+    fail "$dev_session_store missing durable result commit marker: $marker"
+  fi
+done
+
+for marker in "declared_incomplete" 'standardized["proofStatus"] = "UNPROVEN"'; do
+  if ! grep -Fq "$marker" "$acceptance_run"; then
+    fail "$acceptance_run missing incomplete Development result marker: $marker"
+  fi
+done
+
+for marker in "dev-functional-result:" "RUNTIME_CELL"; do
+  if ! grep -Fq "$marker" "$local_dev_make"; then
+    fail "$local_dev_make missing functional result command marker: $marker"
+  fi
+done
+if grep -Fq "RESULT_FILE" "$local_dev_make"; then
+  fail "$local_dev_make still accepts caller-authored functional result files"
+fi
+
+for setup_file in "$ide_setup_script" "$setup_make"; do
+  for marker in "trae" "cursor" "codex"; do
+    if ! grep -Fqi "$marker" "$setup_file"; then
+      fail "$setup_file missing supported host marker: $marker"
+    fi
+  done
+done
+if ! grep -Fq ".agents" "$skill_rollout_control"; then
+  fail "$skill_rollout_control must project Codex skills through .agents/skills"
+fi
+for marker in \
+  'IDE_NAME="$(IDE)"' \
+  "skill-rollout-audit:"; do
+  if ! grep -Fq "$marker" "$setup_make"; then
+    fail "$setup_make missing non-interactive rollout marker: $marker"
+  fi
+done
+for marker in \
+  "retired-project-skills" \
+  "pt-trae-goal-orchestrator" \
+  "project pt-* skills under"; do
+  if ! grep -Fq "$marker" "$skill_rollout_control"; then
+    fail "$skill_rollout_control missing non-interactive install marker: $marker"
+  fi
+done
+
+for marker in \
+  "missingCanonicalSkills" \
+  "canonicalSourceFindings" \
+  "legacyReferences" \
+  "hostProjectionFindings" \
+  "workflowIdentity" \
+  "planBinding" \
+  "currentTaskId" \
+  "planLegacyClaims" \
+  "declarationLegacyClaims" \
+  "acceptanceRegistry" \
+  "missingCanonicalMatchers" \
+  "canonicalCatalog" \
+  "rolloutReceipt"; do
+  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
+    fail "$skill_rollout_audit missing rollout audit marker: $marker"
+  fi
+done
+
+for marker in \
+  "binding-canonical-invalid" \
+  "declaration-plan-locator-missing" \
+  "declaration-current-task-mismatch" \
+  "registry-missing" \
+  "rollout-branch-mismatch" \
+  "rollout-{field}-mismatch" \
+  "rollout-restart-evidence-invalid" \
+  "wrong-project-skill-target"; do
+  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
+    fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
+  fi
+done
+
+for marker in \
+  "staleRecoveryPath" \
+  "claimAndRemoveStaleLock" \
+  "readRecoveryMetadata" \
+  "clearStaleRecovery" \
+  "lstatSync"; do
+  if ! grep -Fq "$marker" "$dev_work_ledger"; then
+    fail "$dev_work_ledger missing inode-safe stale lock recovery marker: $marker"
+  fi
+done
+
+for marker in \
+  "acceptance-workflow-contract" \
+  "tooling/skills/pt-goal-orchestrator/**" \
+  "tooling/skills/pt-trae-host-adapter/**" \
+  "tooling/skills/pt-cursor-host-adapter/**" \
+  "tooling/skills/pt-codex-host-adapter/**"; do
+  if ! grep -Fq "$marker" "$acceptance_registry"; then
+    fail "$acceptance_registry missing canonical host-neutral matcher: $marker"
+  fi
+done
 
 for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci" "acceptance-gap-detect.py"; do
   if ! grep -q -- "$marker" "$submit_pipeline"; then
@@ -181,25 +553,22 @@ if ! grep -Fq 'Execution plans MUST NOT contain a `## Context Anchor` section.' 
   fail "$plan_skill missing the canonical Context Anchor ownership boundary"
 fi
 
-english_workflow_markers=(
-  "Chinese input: translate the complete intent"
-  "English input: preserve the original sentence"
-  "Mixed Chinese and English: produce one complete natural English version"
-  "Default response language: English."
-  "Chinese input does not deactivate the skill"
+overlay_host_markers=(
+  "shared overlay host"
+  "skill-overlay-control.py resolve --target pt-ew"
+  "No enabled overlays means passthrough"
+  "pt-god-view"
+  "Never execute scripts"
 )
 
-for marker in "${english_workflow_markers[@]}"; do
+for marker in "${overlay_host_markers[@]}"; do
   if ! grep -Fq "$marker" "$english_workflow_skill"; then
-    fail "$english_workflow_skill missing required language behavior: $marker"
+    fail "$english_workflow_skill missing required Overlay host behavior: $marker"
   fi
 done
 
-if grep -Fq "User writes only Chinese | Skip English check" "$english_workflow_skill"; then
-  fail "$english_workflow_skill must translate Chinese input instead of disabling coaching"
-fi
-if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
-  fail "$english_workflow_skill must require explicit English-mode deactivation"
+if rg -q "Chinese input:|English input:|Default response language: English" "$english_workflow_skill"; then
+  fail "$english_workflow_skill must not embed a user-specific language policy"
 fi
 if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
   fail "$review_runner must run skill-check for every canonical project skill change"
@@ -207,10 +576,12 @@ fi
 
 for marker in \
   "Mandatory Concurrency Decision" \
+  "Host Capability Projection" \
+  "HOST_PARALLELISM_UNAVAILABLE" \
   "exclusive write sets are disjoint" \
   "Reserve every write path before spawning." \
   "SUBAGENT_REGISTRY_STALE" \
-  "SUBAGENT_RUNTIME_UNAVAILABLE"; do
+  "host-neutral scheduler"; do
   if ! grep -Fq "$marker" "$goal_orchestrator_skill"; then
     fail "$goal_orchestrator_skill missing scheduler marker: $marker"
   fi
@@ -220,7 +591,11 @@ for marker in \
   "read-only policy guard" \
   "May this specific proposed action run now?" \
   "ACTION_ALLOWED" \
-  "The Guardian does not perform the amendment"; do
+  "The Guardian does not perform the amendment" \
+  "already-authorized operations execute directly" \
+  "accepted Plan's explicit" \
+  "actual external permission" \
+  "outside every explicit grant"; do
   if ! grep -Fq "$marker" "$execution_guardian_skill"; then
     fail "$execution_guardian_skill missing policy-boundary marker: $marker"
   fi
@@ -231,8 +606,18 @@ if grep -Fq "Self-amend and continue" "$execution_guardian_skill" ||
   fail "$execution_guardian_skill must not own plan mutation or scheduling"
 fi
 
+if grep -Fq "infer authorization from a plan" "$execution_guardian_skill"; then
+  fail "$execution_guardian_skill must distinguish explicit Plan authorization from mere Plan existence"
+fi
+
 for marker in \
   "single entry point" \
+  "Plan Run Authorization" \
+  "Already-authorized operations execute directly" \
+  "actual external" \
+  "out-of-envelope" \
+  "Agent Review Loop" \
+  "dependency-ready successor" \
   "make dev-start" \
   "make dev-check" \
   "make dev-release" \
@@ -242,6 +627,26 @@ for marker in \
   "PROVEN"; do
   if ! grep -Fq "$marker" "$dev_workflow_skill"; then
     fail "$dev_workflow_skill missing Development Workflow marker: $marker"
+  fi
+done
+
+for contract in \
+  docs/global/workflow.md \
+  docs/knowledge/invariants/continuous-plan-run.md \
+  docs/architecture/development-workflow/design.md; do
+  if ! grep -Fiq "already-authorized operations execute directly" "$contract"; then
+    fail "$contract missing authorization-reuse invariant"
+  fi
+done
+
+for marker in \
+  "authorization.runtime.deployProfiles" \
+  "case-insensitive \`stable\` substring" \
+  "without human involvement" \
+  "PROFILE_RESET_PROTECTED" \
+  "never converted into another user confirmation"; do
+  if ! grep -Fq "$marker" "$local_dev_env_skill"; then
+    fail "$local_dev_env_skill missing Profile admission marker: $marker"
   fi
 done
 
@@ -293,7 +698,12 @@ rm -f /tmp/pt-dev-work-acceptance-writer.$$
 for marker in \
   "Completed delta" \
   "Next Progress Slice" \
+  "Projected progress after Next" \
   "Expected progress effect" \
+  "Plan Run queue" \
+  "Execution mandate" \
+  "Autonomous horizon" \
+  "Stop conditions" \
   "Remaining frontier" \
   "Execution mode / lanes" \
   "Conflict controls" \
@@ -313,12 +723,20 @@ for marker in \
 done
 
 for marker in \
-  "Existing-Agent Reconciliation" \
+  "Only live, addressable workers" \
   "SUBAGENT_REGISTRY_STALE" \
-  "SUBAGENT_RUNTIME_UNAVAILABLE" \
-  "GOAL_REPLACEMENT_REQUIRED"; do
+  "HOST_PARALLELISM_UNAVAILABLE" \
+  "GOAL_SOURCE_UNRESOLVED"; do
   if ! grep -Fq "$marker" "$goal_orchestrator_skill"; then
     fail "$goal_orchestrator_skill missing agent reconciliation marker: $marker"
+  fi
+done
+
+for marker in \
+  "scheduling and recovery unit inside a Plan Run" \
+  "without user confirmation"; do
+  if ! grep -Fq "$marker" "$goal_orchestrator_skill"; then
+    fail "$goal_orchestrator_skill missing continuous Plan Run marker: $marker"
   fi
 done
 
@@ -330,10 +748,9 @@ for marker in \
   "Exclusive write-set owners" \
   "Shared runtime resources" \
   "Integration order and rollback boundary" \
-  "Existing-agent reconciliation" \
-  "Context Anchor, when tracked: include the Progress Slice baseline" \
-  "conflict controls" \
-  "Critical path"; do
+  "Existing-worker reconciliation" \
+  "Host capability request" \
+  "Host adapter"; do
   if ! grep -Fq "$marker" "$goal_template"; then
     fail "$goal_template missing parallel tracking marker: $marker"
   fi
@@ -341,8 +758,9 @@ done
 
 for marker in \
   "Concurrency decision" \
-  "Agent reconciliation" \
-  "stale entries cannot create a blanket spawn ban"; do
+  "Worker reconciliation" \
+  "Host neutrality" \
+  "Adapter boundary"; do
   if ! grep -Fq "$marker" "$goal_review_rubric"; then
     fail "$goal_review_rubric missing parallel review marker: $marker"
   fi
@@ -351,6 +769,15 @@ done
 if ! grep -Fq "merely to print the Anchor" "$god_view_skill"; then
   fail "$god_view_skill must not let resume-time Anchor projection pause execution"
 fi
+
+for marker in \
+  "continuous Plan Run across dependency-ready Tasks" \
+  "Never end a Context Anchor or successful" \
+  "full authorized Plan Run"; do
+  if ! grep -Fq "$marker" "$english_workflow_skill"; then
+    fail "$english_workflow_skill missing continuous execution marker: $marker"
+  fi
+done
 
 for marker in \
   "methodology facade" \
@@ -385,18 +812,34 @@ for contract_file in "${plan_package_contract_files[@]}"; do
 done
 
 tracked_locator_files=(
-  "$plan_skill"
   "$dev_workflow_skill"
   "$context_anchor_skill"
-  "$agents_contract"
 )
 
 for contract_file in "${tracked_locator_files[@]}"; do
-  for marker in "current_task_id" "current_task_path" "dev_state"; do
+  for marker in "currentTaskId" "currentTaskPath" "devState"; do
     if ! grep -Fq "$marker" "$contract_file"; then
       fail "$contract_file missing tracked locator marker: $marker"
     fi
   done
+done
+
+for marker in \
+  "Workspace active-work record" \
+  "Plan/Task locator" \
+  "devState"; do
+  if ! grep -Fq "$marker" "$agents_contract"; then
+    fail "$agents_contract missing workspace active-work marker: $marker"
+  fi
+done
+
+for marker in \
+  "prepared package 没有 current Task" \
+  "make active-work-sync WORK_ITEM=<id>" \
+  "不创建 active-work"; do
+  if ! grep -Fq "$marker" "$plan_skill"; then
+    fail "$plan_skill missing deferred active-work registration marker: $marker"
+  fi
 done
 
 for marker in \
@@ -426,6 +869,251 @@ fi
 for marker in "Task lifecycle" "current Task" "Development Session"; do
   if ! grep -Fq "$marker" "$workflow_architecture"; then
     fail "$workflow_architecture missing workflow ownership marker: $marker"
+  fi
+done
+
+for marker in \
+  "Continuous Plan Run" \
+  "The user is not the default reviewer." \
+  "Do not ask \`Continue?\`"; do
+  if ! grep -Fq "$marker" "$agents_contract"; then
+    fail "$agents_contract missing Plan Run governance marker: $marker"
+  fi
+done
+
+for marker in \
+  "continuous Plan Run over its accepted scope" \
+  "Review MUST be agent-led by default" \
+  "fixed-point exhaustion"; do
+  if ! grep -Fq "$marker" "$continuous_plan_invariant"; then
+    fail "$continuous_plan_invariant missing invariant marker: $marker"
+  fi
+done
+
+for marker in \
+  "Repository-owned Make targets" \
+  "Host Capability Need" \
+  "HOST_CAPABILITY_UNAVAILABLE" \
+  "Functional Result Commit" \
+  "SESSION_PROJECTION_STALE" \
+  "SESSION_EVIDENCE_OUT_OF_SEQUENCE" \
+  "\`--idle 0\` is forbidden"; do
+  if ! grep -Fq "$marker" "$runtime_handoff_skill"; then
+    fail "$runtime_handoff_skill missing host-neutral runtime marker: $marker"
+  fi
+done
+if ! grep -Fq "sole request projector" "$goal_orchestrator_skill"; then
+  fail "$goal_orchestrator_skill must own Host Capability Request projection"
+fi
+if grep -Fq "projects a Host Capability Request" "$runtime_handoff_skill"; then
+  fail "$runtime_handoff_skill must not duplicate Host Capability Request ownership"
+fi
+
+for marker in \
+  "Host Transport Failure Loop" \
+  "HOST_TOOL_CALL_FAILED" \
+  "retryable" \
+  "recompute serial/hybrid" \
+  "zero-progress retry loop"; do
+  if ! grep -Fq "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing host failure closure marker: $marker"
+  fi
+done
+
+for marker in \
+  "HOST_DIAGNOSTIC_RETAINED" \
+  "blocksPlanRun=false" \
+  "cleanup=retained-bounded" \
+  "leaseExpiresAt" \
+  "Session transition" \
+  "Task closure" \
+  "before any host cleanup follow-up" \
+  "never write the transient envelope to Session" \
+  "never wait for its confirmation workflow"; do
+  if ! grep -Fq "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing non-blocking diagnostic marker: $marker"
+  fi
+done
+
+for marker in \
+  "diagnostic sidecar" \
+  "Never enter a host debugger workflow in this owner turn" \
+  "Commit the deterministic project result and Session transition" \
+  "Task progression remains with" \
+  "After that commit, remove runtime-owned instrumentation" \
+  "HOST_DIAGNOSTIC_RETAINED" \
+  "blocksPlanRun=false" \
+  "cleanup=retained-bounded" \
+  "leaseExpiresAt" \
+  "Return to Dev Workflow immediately"; do
+  if ! grep -Fq "$marker" "$runtime_handoff_skill"; then
+    fail "$runtime_handoff_skill missing diagnostic sidecar boundary: $marker"
+  fi
+done
+
+if grep -Fq 'use `TRAE-debugger` workflow' "$defect_closure_skill"; then
+  fail "$defect_closure_skill must not require a TRAE-specific debugger"
+fi
+for marker in \
+  "host-neutral evidence loop" \
+  "pt-dev-runtime-handoff" \
+  "FUNCTIONAL_PASS"; do
+  if ! grep -Fq "$marker" "$defect_closure_skill"; then
+    fail "$defect_closure_skill missing host-neutral defect marker: $marker"
+  fi
+done
+
+for adapter in "$trae_host_adapter" "$cursor_host_adapter" "$codex_host_adapter"; do
+  for marker in \
+    "owns no product semantics" \
+    'Invoked only by `pt-dev-workflow` after `ACTION_ALLOWED`' \
+    "HOST_CAPABILITY_UNAVAILABLE" \
+    "HOST_CLEANUP_QUARANTINED" \
+    "HOST_CLEANUP_ESCALATION_REQUIRED" \
+    "operation=inspect-quarantine" \
+    "current tool registry" \
+    "requestId" \
+    "actionId" \
+    "adapterAttempted=true" \
+    "resourceId" \
+    "cleanupAttempt=1" \
+    "cleanupHandle" \
+    "host-neutral"; do
+    if ! grep -Fq "$marker" "$adapter"; then
+      fail "$adapter missing host adapter boundary: $marker"
+    fi
+  done
+done
+
+for marker in \
+  "isolated diagnostic sidecar" \
+  "workflow in the Dev Workflow or Runtime Handoff owner turn" \
+  "return to Dev Workflow immediately" \
+  "HOST_DIAGNOSTIC_RETAINED" \
+  "blocksPlanRun=false" \
+  "cleanup=retained-bounded" \
+  "leaseExpiresAt"; do
+  if ! grep -Fq "$marker" "$trae_host_adapter"; then
+    fail "$trae_host_adapter missing isolated diagnostic contract: $marker"
+  fi
+done
+
+for marker in \
+  "WorkLedgerLock" \
+  "RELEASING" \
+  "ROLLOUT_RESTART_NOT_OBSERVED" \
+  "HOST_SESSION_ID_AMBIGUOUS" \
+  "installedSessionHash" \
+  "catalogDigest" \
+  "catalogStatusDigest" \
+  "validated_work_ledger" \
+  "HOST_PROJECTION_ESCAPE"; do
+  if ! grep -Fq "$marker" "$skill_rollout_control"; then
+    fail "$skill_rollout_control missing fail-closed rollout marker: $marker"
+  fi
+done
+if grep -Fq "schemaVersion" "$skill_rollout_control"; then
+  fail "$skill_rollout_control must not publish a rollout format version"
+fi
+for marker in \
+  "peers-touch-skill-overlay-registry" \
+  "OVERLAY_NAME_CONFLICT" \
+  "OVERLAY_STORE_INVALID" \
+  "SUPPORTED_TARGETS" \
+  "source must not contain symlinks"; do
+  if ! grep -Fq "$marker" "$skill_overlay_control"; then
+    fail "$skill_overlay_control missing fail-closed Overlay marker: $marker"
+  fi
+done
+if grep -Fq "schemaVersion" "$skill_overlay_control"; then
+  fail "$skill_overlay_control must not publish an Overlay format version"
+fi
+for marker in \
+  "skill-overlay-install:" \
+  "skill-overlay-list:" \
+  "skill-overlay-enable:" \
+  "skill-overlay-disable:" \
+  "skill-overlay-uninstall:" \
+  "skill-overlay-resolve:"; do
+  if ! grep -Fq "$marker" "$setup_make"; then
+    fail "$setup_make missing Overlay control marker: $marker"
+  fi
+done
+for marker in \
+  "interaction policy only" \
+  "immutable installed copy" \
+  "Canonical project Skill rollout"; do
+  if ! grep -Fq "$marker" "$skill_overlay_invariant"; then
+    fail "$skill_overlay_invariant missing Overlay boundary marker: $marker"
+  fi
+done
+if rg -n '^> \*\*Version\*\*:' docs/architecture/development-workflow \
+  >/tmp/pt-workflow-version-labels.$$; then
+  cat /tmp/pt-workflow-version-labels.$$
+  fail "Development Workflow documents must not publish version labels"
+fi
+rm -f /tmp/pt-workflow-version-labels.$$
+if ! grep -Fq "No Invented Development Workflow Versions" "$agents_contract"; then
+  fail "$agents_contract must define the unversioned internal workflow rule"
+fi
+if rg -n 'schemaVersion|protocolVersion' \
+  apps/dev/server/index.mjs apps/dev/server/status.mjs \
+  >/tmp/pt-peers-dev-version-labels.$$; then
+  cat /tmp/pt-peers-dev-version-labels.$$
+  fail "Peers Dev public payloads must not publish workflow versions"
+fi
+rm -f /tmp/pt-peers-dev-version-labels.$$
+while IFS= read -r plan_doc; do
+  if grep -Fq '"schemaVersion"' "$plan_doc"; then
+    fail "$plan_doc contains a versioned Plan/Task contract"
+  fi
+done < <(
+  rg -l \
+    'peers-touch-plan-package|peers-touch-task-slice' \
+    docs/architecture \
+    --glob '**/execution-plans/**/*.md'
+)
+
+if rg -n \
+  'HOST_UI_ADAPTER_UNAVAILABLE|`pt-goal-orchestrator` needs|`pt-dev-runtime-handoff` needs|actual .*project-native fallback used|the project.s Playwright path' \
+  "$runtime_handoff_skill" "$trae_host_adapter" "$cursor_host_adapter" \
+  "$codex_host_adapter" >/tmp/pt-host-adapter-bypass.$$; then
+  cat /tmp/pt-host-adapter-bypass.$$
+  fail "host adapter contracts contain an unowned entrypoint or status alias"
+fi
+rm -f /tmp/pt-host-adapter-bypass.$$
+
+if grep -Fq -- "-> optional detected pt-*-host-adapter" "$runtime_handoff_skill"; then
+  fail "$runtime_handoff_skill still models direct Host Adapter invocation"
+fi
+
+if rg -n \
+  'pt-trae-goal-orchestrator|use `TRAE-debugger` workflow' \
+  AGENTS.md docs/global tooling/skills tooling/scripts/review \
+  --glob '!tooling/scripts/review/skill-check.sh' >/tmp/pt-host-coupling.$$; then
+  cat /tmp/pt-host-coupling.$$
+  fail "live workflow contracts still depend on the retired TRAE-specific owner"
+fi
+rm -f /tmp/pt-host-coupling.$$
+
+if rg -n 'TRAE-debugger' \
+  "$dev_workflow_skill" "$runtime_handoff_skill" \
+  >/tmp/pt-parent-debugger-coupling.$$; then
+  cat /tmp/pt-parent-debugger-coupling.$$
+  fail "Dev Workflow and Runtime Handoff must not enter a host debugger directly"
+fi
+rm -f /tmp/pt-parent-debugger-coupling.$$
+
+for marker in \
+  "Peers-Touch owns scheduling, authorization, product Journeys" \
+  "HOST_CAPABILITY_UNAVAILABLE" \
+  "SESSION_PROJECTION_STALE" \
+  "isolated diagnostic sidecar" \
+  "blocksPlanRun=false" \
+  "cleanup=retained-bounded" \
+  "leaseExpiresAt"; do
+  if ! grep -Fq "$marker" "$host_neutral_invariant"; then
+    fail "$host_neutral_invariant missing invariant marker: $marker"
   fi
 done
 

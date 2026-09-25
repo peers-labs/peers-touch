@@ -242,6 +242,8 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
         fromActorPtid: s.fromActorPtid,
         kind: kindStr,
         payload: s.payload,
+        callId: s.callId || undefined,
+        winningDeviceId: s.winningDeviceId || undefined,
       });
       return;
     }
@@ -514,7 +516,8 @@ function socialGraphKindFromEnum(value: number): RealtimeSocialGraphEventPayload
 function signalKindFromEnum(value: number): RealtimeCallSignalKind | null {
   // The enum values come from the generated CallSignal_Kind proto:
   //   OFFER=1, ANSWER=2, CANDIDATE=3, HANGUP=4,
-  //   CALL_REQUEST=5, CALL_ACCEPT=6, CALL_REJECT=7, CALL_END=8
+  //   CALL_REQUEST=5, CALL_ACCEPT=6, CALL_REJECT=7, CALL_END=8,
+  //   CALL_NO_ANSWER=9
   //   (KIND_UNSPECIFIED=0).
   switch (value) {
     case 1: return 'OFFER';
@@ -525,6 +528,7 @@ function signalKindFromEnum(value: number): RealtimeCallSignalKind | null {
     case 6: return 'CALL_ACCEPT';
     case 7: return 'CALL_REJECT';
     case 8: return 'CALL_END';
+    case 9: return 'CALL_NO_ANSWER';
     default: return null;
   }
 }

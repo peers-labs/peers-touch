@@ -4,6 +4,7 @@ mod android;
 #[cfg(target_os = "ios")]
 mod ios_keychain;
 
+mod reliability_vault;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod unsupported;
 
@@ -15,3 +16,5 @@ pub use ios_keychain::SecureStorage;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use unsupported::SecureStorage;
+
+pub(crate) use reliability_vault::ReliabilityKeyVault;

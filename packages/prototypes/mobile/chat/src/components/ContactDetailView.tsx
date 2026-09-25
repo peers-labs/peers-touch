@@ -1,13 +1,25 @@
-import { Avatar, Typography } from 'antd';
+import { Avatar, Button, Spin, Typography } from 'antd';
 import {
   ArrowLeft, Ban, Calendar, Fingerprint, Mail as MailIcon,
   MessageCircle, Phone, Server, ShieldCheck, Trash2, Video,
 } from 'lucide-react';
 import type { Contact } from '../types';
+import copy from '../../../../../locales/en/common.json';
 
 const { Text } = Typography;
 
-export function ContactDetailView({ contact, onBack, onMessage }: { contact: Contact; onBack: () => void; onMessage?: (contact: Contact) => void }) {
+export function ContactDetailView({
+  contact, onBack, onMessage, directStatus, canMessage = true,
+  messageUnavailableText = copy['mobile.contacts.federationRequired'],
+}: {
+  contact: Contact;
+  onBack: () => void;
+  onMessage?: (contact: Contact) => void;
+  directStatus?: 'preparing' | 'failed' | 'ready';
+  canMessage?: boolean;
+  messageUnavailableText?: string;
+}) {
+  const preparing = directStatus === 'preparing';
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
@@ -33,9 +45,10 @@ export function ContactDetailView({ contact, onBack, onMessage }: { contact: Con
       </div>
 
       <div className="mp-detail-actions">
-        <button type="button" className="mp-detail-action-btn" onClick={() => onMessage?.(contact)}>
+        <button type="button" className="mp-detail-action-btn"
+          disabled={preparing || !canMessage} onClick={() => onMessage?.(contact)}>
           <span className="mp-detail-action-icon"><MessageCircle size={22} /></span>
-          <span className="mp-detail-action-label">Message</span>
+          <span className="mp-detail-action-label">{copy['mobile.contacts.openChat']}</span>
         </button>
         <button type="button" className="mp-detail-action-btn" disabled>
           <span className="mp-detail-action-icon"><Phone size={22} /></span>
@@ -46,6 +59,21 @@ export function ContactDetailView({ contact, onBack, onMessage }: { contact: Con
           <span className="mp-detail-action-label">Video</span>
         </button>
       </div>
+
+      {(preparing || directStatus === 'failed' || !canMessage) && (
+        <section className="mp-direct-state" role="status" aria-busy={preparing}
+          data-demo-direct-status={directStatus ?? 'unavailable'}>
+          {preparing && <Spin aria-label={copy['common.state.loading']} />}
+          <Text className="mp-recovery-description">
+            {!canMessage ? messageUnavailableText
+              : copy[preparing ? 'mobile.contacts.conversationPreparing'
+              : 'mobile.contacts.openChatFailed']}
+          </Text>
+          {directStatus === 'failed' && canMessage && (
+            <Button onClick={() => onMessage?.(contact)}>{copy['common.action.retry']}</Button>
+          )}
+        </section>
+      )}
 
       <div className="mp-detail-section">
         <div className="mp-detail-section-title">Info</div>

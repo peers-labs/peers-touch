@@ -1,3 +1,5 @@
+#![cfg(feature = "acceptance-harness")]
+
 use serde::Deserialize;
 use tauri::{AppHandle, Runtime};
 

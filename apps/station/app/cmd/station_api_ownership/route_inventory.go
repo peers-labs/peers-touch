@@ -21,6 +21,7 @@ var handlerConstructors = map[string]struct{}{
 	"NewHertzHandler":             {},
 	"NewHTTPHandler":              {},
 	"NewSimpleHandler":            {},
+	"NewStrictTypedHandler":       {},
 	"NewTypedHandler":             {},
 	"NewCanonicalProtobufHandler": {},
 }
@@ -286,7 +287,7 @@ func routeFromCall(
 ) (discoveredRoute, bool) {
 	var nameExpression, pathExpression, methodExpression ast.Expr
 	switch constructor {
-	case "NewTypedHandler", "NewCanonicalProtobufHandler",
+	case "NewTypedHandler", "NewStrictTypedHandler", "NewCanonicalProtobufHandler",
 		"NewHTTPHandler", "NewSimpleHandler", "NewHertzHandler":
 		if len(call.Args) < 3 {
 			return discoveredRoute{}, false

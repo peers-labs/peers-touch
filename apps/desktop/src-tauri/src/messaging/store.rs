@@ -10,6 +10,7 @@ use crate::infrastructure::storage::open_database;
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
+    VoiceNoteMetadata,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::{
@@ -157,6 +158,7 @@ pub struct PendingAttachmentUpload {
     pub filename: String,
     pub mime_type: String,
     pub plaintext_sha256: Vec<u8>,
+    pub voice_note: Option<VoiceNoteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +207,25 @@ pub struct ConversationProjection {
     pub mls_epoch: i64,
     pub active: bool,
     pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSummaryProjection {
+    pub unread_count: i64,
+    pub latest_message: Option<ConversationMessageProjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationMessagePage {
+    pub messages: Vec<ConversationMessageProjection>,
+    pub has_more: bool,
+    pub next_before_sequence: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageRetryDisposition {
+    ExactCommand { command_id: String },
+    DraftReady,
 }
 
 pub struct DirectAuthorityCheckpoint<'a> {
@@ -328,6 +349,12 @@ pub enum InteractionMutation<'a> {
         edited_at_unix_ms: i64,
     },
     Retract,
+    HideForActor,
+    Moderate {
+        moderator_ptid: &'a str,
+        reason_code: &'a str,
+        moderated_at_unix_ms: i64,
+    },
     Reaction {
         actor_ptid: &'a str,
         reaction: &'a str,
@@ -571,6 +598,33 @@ impl OrderedMessageProjection for ThreadReplyProjection {
     }
 }
 
+fn map_conversation_message_projection(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ConversationMessageProjection> {
+    Ok(ConversationMessageProjection {
+        event_id: row.get(0)?,
+        event_sequence: row.get(1)?,
+        message_id: row.get(2)?,
+        sender_ptid: row.get(3)?,
+        sender_device_id: row.get(4)?,
+        plaintext: row.get(5)?,
+        attachments: Vec::new(),
+        state: row.get(6)?,
+        timestamp_unix_ms: row.get(7)?,
+        reply_to_message_id: row.get(8)?,
+        thread_root_message_id: row.get(9)?,
+        edited_text: row.get(10)?,
+        edited_at_unix_ms: row.get(11)?,
+        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
+        moderated: false,
+        moderation_reason_code: None,
+        reactions: Vec::new(),
+        pinned_by_ptid: None,
+        pinned_at_unix_ms: None,
+        read_by_ptids: Vec::new(),
+    })
+}
+
 fn merge_message_projection_rows<T: OrderedMessageProjection>(rows: Vec<(T, i64)>) -> Vec<T> {
     let (mut committed, mut pending): (Vec<_>, Vec<_>) = rows
         .into_iter()
@@ -603,6 +657,40 @@ fn merge_message_projection_rows<T: OrderedMessageProjection>(rows: Vec<(T, i64)
     }
     merged.extend(pending);
     merged
+}
+
+fn conversation_message_projection_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ConversationMessageProjection> {
+    let retracted = row.get::<_, i64>(12)? != 0;
+    let moderated = row.get::<_, i64>(14)? != 0;
+    let unavailable = retracted || moderated;
+    Ok(ConversationMessageProjection {
+        event_id: row.get(0)?,
+        event_sequence: row.get(1)?,
+        message_id: row.get(2)?,
+        sender_ptid: row.get(3)?,
+        sender_device_id: row.get(4)?,
+        plaintext: if unavailable {
+            String::new()
+        } else {
+            row.get(5)?
+        },
+        attachments: Vec::new(),
+        state: row.get(6)?,
+        timestamp_unix_ms: row.get(7)?,
+        reply_to_message_id: row.get(8)?,
+        thread_root_message_id: row.get(9)?,
+        edited_text: if unavailable { None } else { row.get(10)? },
+        edited_at_unix_ms: if unavailable { None } else { row.get(11)? },
+        retracted,
+        moderated,
+        moderation_reason_code: row.get(15)?,
+        reactions: Vec::new(),
+        pinned_by_ptid: None,
+        pinned_at_unix_ms: None,
+        read_by_ptids: Vec::new(),
+    })
 }
 
 pub struct MessagingStore {
@@ -2095,7 +2183,8 @@ impl MessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT attachment_id, filename, mime_type, plaintext_size,
-                        plaintext_sha256, object_key, base_nonce, descriptor_bytes
+                        plaintext_sha256, object_key, base_nonce, descriptor_bytes,
+                        voice_note_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id = ?1
                  ORDER BY attachment_id",
@@ -2129,6 +2218,7 @@ impl MessagingStore {
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -2665,16 +2755,17 @@ impl MessagingStore {
                            delivery_state, committed_at_unix_ms,
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
+                           hidden_for_actor, moderated, moderation_reason_code,
                            0 AS pending_rank
                     FROM messaging_message_projections
-                    WHERE conversation_id = ?1
+                    WHERE conversation_id = ?1 AND hidden_for_actor = 0
                     UNION ALL
                     SELECT NULL, NULL, pending.message_id,
                            pending.sender_ptid, pending.sender_device_id,
                            pending.plaintext, pending.state, pending.created_at_unix_ms,
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
-                           NULL, NULL, 0,
+                           NULL, NULL, 0, 0, 0, NULL,
                            1
                     FROM messaging_pending_messages pending
                     WHERE pending.conversation_id = ?1
@@ -2689,6 +2780,7 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
+                        hidden_for_actor, moderated, moderation_reason_code,
                         pending_rank
                  FROM conversation_messages
                  ORDER BY pending_rank ASC, event_sequence ASC, message_id ASC",
@@ -2697,27 +2789,8 @@ impl MessagingStore {
         let projection_rows = statement
             .query_map(params![conversation_id], |row| {
                 Ok((
-                    ConversationMessageProjection {
-                        event_id: row.get(0)?,
-                        event_sequence: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    },
-                    row.get::<_, i64>(13)?,
+                    conversation_message_projection_from_row(row)?,
+                    row.get::<_, i64>(16)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2745,6 +2818,148 @@ impl MessagingStore {
         Ok(rows)
     }
 
+    pub fn conversation_message_page(
+        &self,
+        conversation_id: &str,
+        before_sequence: Option<i64>,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        if conversation_id.trim().is_empty()
+            || before_sequence.is_some_and(|sequence| sequence <= 0)
+            || !(1..=200).contains(&limit)
+        {
+            return Err("messaging message page request is invalid".to_string());
+        }
+        let connection = self.connection()?;
+        let upper_sequence = before_sequence.unwrap_or(i64::MAX);
+        let query_limit = i64::try_from(limit + 1)
+            .map_err(|_| "messaging message page limit exceeds i64".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
+                 FROM messaging_message_projections
+                 WHERE conversation_id = ?1
+                   AND event_sequence < ?2
+                   AND COALESCE(thread_root_message_id, '') = ''
+                 ORDER BY event_sequence DESC, message_id DESC
+                 LIMIT ?3",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut committed = statement
+            .query_map(
+                params![conversation_id, upper_sequence, query_limit],
+                map_conversation_message_projection,
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let has_more = committed.len() > limit;
+        if has_more {
+            committed.truncate(limit);
+        }
+        committed.reverse();
+        let next_before_sequence = has_more
+            .then(|| committed.first().and_then(|message| message.event_sequence))
+            .flatten();
+
+        let mut messages = committed;
+        if before_sequence.is_none() {
+            let mut pending_statement = connection
+                .prepare(
+                    "SELECT NULL, NULL, pending.message_id,
+                            pending.sender_ptid, pending.sender_device_id,
+                            pending.plaintext, pending.state, pending.created_at_unix_ms,
+                            NULLIF(pending.reply_to_message_id, ''),
+                            NULLIF(pending.thread_root_message_id, ''),
+                            NULL, NULL, 0
+                     FROM messaging_pending_messages pending
+                     WHERE pending.conversation_id = ?1
+                       AND pending.thread_root_message_id = ''
+                       AND NOT EXISTS (
+                           SELECT 1 FROM messaging_message_projections committed
+                           WHERE committed.conversation_id = pending.conversation_id
+                             AND committed.message_id = pending.message_id
+                       )
+                     ORDER BY pending.created_at_unix_ms ASC, pending.message_id ASC",
+                )
+                .map_err(|error| error.to_string())?;
+            let pending = pending_statement
+                .query_map(
+                    params![conversation_id],
+                    map_conversation_message_projection,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            messages.extend(pending);
+        }
+
+        let pins = load_pins_for_conversation(&connection, conversation_id)?;
+        for message in &mut messages {
+            message.attachments =
+                load_visible_message_attachments(&connection, &message.message_id)?;
+            message.reactions = load_reactions_for_message(&connection, &message.message_id)?;
+            message.read_by_ptids = load_readers_for_message(
+                &connection,
+                conversation_id,
+                message.event_sequence,
+                &message.sender_ptid,
+            )?;
+            if let Some((_, actor_ptid, pinned_at_unix_ms)) = pins
+                .iter()
+                .find(|(message_id, _, _)| message_id == &message.message_id)
+            {
+                message.pinned_by_ptid = Some(actor_ptid.clone());
+                message.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
+        }
+        Ok(ConversationMessagePage {
+            messages,
+            has_more,
+            next_before_sequence,
+        })
+    }
+
+    pub fn conversation_summary_projection(
+        &self,
+        conversation_id: &str,
+        actor_ptid: &str,
+    ) -> Result<ConversationSummaryProjection, String> {
+        if conversation_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+            return Err("messaging conversation summary identity is incomplete".to_string());
+        }
+        let unread_count = self
+            .connection()?
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM messaging_message_projections message
+                 WHERE message.conversation_id = ?1
+                   AND message.sender_ptid <> ?2
+                   AND message.event_sequence > COALESCE((
+                       SELECT cursor.last_read_sequence
+                       FROM read_cursors cursor
+                       WHERE cursor.conversation_id = message.conversation_id
+                         AND cursor.actor_ptid = ?2
+                   ), 0)",
+                params![conversation_id, actor_ptid],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let page = self.conversation_message_page(conversation_id, None, 1)?;
+        Ok(ConversationSummaryProjection {
+            unread_count,
+            latest_message: page.messages.into_iter().max_by(|left, right| {
+                left.timestamp_unix_ms
+                    .cmp(&right.timestamp_unix_ms)
+                    .then_with(|| left.message_id.cmp(&right.message_id))
+            }),
+        })
+    }
+
     pub fn thread_message_projections(
         &self,
         conversation_id: &str,
@@ -2762,10 +2977,12 @@ impl MessagingStore {
                            delivery_state, committed_at_unix_ms,
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
+                           hidden_for_actor, moderated, moderation_reason_code,
                            CASE WHEN message_id = ?2 THEN 0 ELSE 1 END AS root_rank,
                            0 AS pending_rank
                     FROM messaging_message_projections
                     WHERE conversation_id = ?1
+                      AND hidden_for_actor = 0
                       AND (message_id = ?2 OR thread_root_message_id = ?2)
                     UNION ALL
                     SELECT NULL, NULL, pending.message_id,
@@ -2773,7 +2990,7 @@ impl MessagingStore {
                            pending.plaintext, pending.state, pending.created_at_unix_ms,
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
-                           NULL, NULL, 0,
+                           NULL, NULL, 0, 0, 0, NULL,
                            CASE WHEN pending.message_id = ?2 THEN 0 ELSE 1 END,
                            1
                     FROM messaging_pending_messages pending
@@ -2793,6 +3010,7 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
+                        hidden_for_actor, moderated, moderation_reason_code,
                         root_rank, pending_rank
                  FROM thread_messages
                  ORDER BY root_rank ASC,
@@ -2804,28 +3022,9 @@ impl MessagingStore {
         let projection_rows = statement
             .query_map(params![conversation_id, thread_root_message_id], |row| {
                 Ok((
-                    ConversationMessageProjection {
-                        event_id: row.get(0)?,
-                        event_sequence: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    },
-                    row.get::<_, i64>(13)?,
-                    row.get::<_, i64>(14)?,
+                    conversation_message_projection_from_row(row)?,
+                    row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2999,13 +3198,18 @@ impl MessagingStore {
                         message.sender_ptid, message.sender_device_id, message.plaintext,
                         message.delivery_state, message.committed_at_unix_ms,
                         message.reply_to_message_id, message.thread_root_message_id,
-                        message.edited_text, message.edited_at_unix_ms, message.retracted
+                        message.edited_text, message.edited_at_unix_ms, message.retracted,
+                        message.hidden_for_actor, message.moderated,
+                        message.moderation_reason_code
                  FROM messaging_message_search_fts
                  JOIN messaging_message_projections message
                    ON message.conversation_id = messaging_message_search_fts.conversation_id
                   AND message.message_id = messaging_message_search_fts.message_id
                  WHERE messaging_message_search_fts MATCH ?1
                    AND messaging_message_search_fts.conversation_id = ?2
+                   AND message.retracted = 0
+                   AND message.hidden_for_actor = 0
+                   AND message.moderated = 0
                    AND (
                      message.committed_at_unix_ms < ?3
                      OR (
@@ -3026,28 +3230,7 @@ impl MessagingStore {
                     before_message_id,
                     i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?
                 ],
-                |row| {
-                    Ok(ConversationMessageProjection {
-                        event_id: Some(row.get(0)?),
-                        event_sequence: Some(row.get(1)?),
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    })
-                },
+                conversation_message_projection_from_row,
             )
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
@@ -3411,8 +3594,8 @@ impl MessagingStore {
                     "INSERT INTO messaging_attachment_drafts(
                         attachment_id, conversation_id, message_id, filename,
                         mime_type, plaintext_sha256, descriptor_bytes,
-                        created_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
+                        voice_note_bytes, created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8)",
                     params![
                         transfer.attachment_id,
                         transfer.conversation_id,
@@ -3420,6 +3603,7 @@ impl MessagingStore {
                         upload.filename,
                         upload.mime_type,
                         upload.plaintext_sha256,
+                        encode_voice_note_column(upload.voice_note.as_ref()),
                         draft.created_at_unix_ms,
                     ],
                 )
@@ -3689,7 +3873,8 @@ impl MessagingStore {
                         attachment.filename, attachment.mime_type,
                         attachment.plaintext_size, attachment.plaintext_sha256,
                         attachment.object_key, attachment.base_nonce,
-                        attachment.descriptor_bytes, attachment.local_cache_path
+                        attachment.descriptor_bytes, attachment.voice_note_bytes,
+                        attachment.local_cache_path
                  FROM messaging_attachment_projections attachment
                  JOIN messaging_message_projections message
                    ON message.message_id = attachment.message_id
@@ -3726,8 +3911,9 @@ impl MessagingStore {
                             object_key: row.get(7)?,
                             base_nonce: row.get(8)?,
                             object: Some(object),
+                            voice_note: decode_voice_note_column(row.get(10)?, 10)?,
                         },
-                        local_cache_path: row.get(10)?,
+                        local_cache_path: row.get(11)?,
                     })
                 },
             )
@@ -4474,6 +4660,99 @@ impl MessagingStore {
         Ok(Some(draft))
     }
 
+    pub fn prepare_message_retry(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<MessageRetryDisposition, String> {
+        if conversation_id.trim().is_empty() || message_id.trim().is_empty() || now_unix_ms <= 0 {
+            return Err("messaging retry identity is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let pending_state = transaction
+            .query_row(
+                "SELECT state
+                 FROM messaging_pending_messages
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging retry target is unavailable".to_string())?;
+        if pending_state == "draft" {
+            return Ok(MessageRetryDisposition::DraftReady);
+        }
+
+        let command = transaction
+            .query_row(
+                "SELECT attempt.command_id, outbox.state
+                 FROM messaging_command_attempts attempt
+                 JOIN messaging_command_outbox outbox
+                   ON outbox.command_id = attempt.command_id
+                 WHERE attempt.conversation_id = ?1
+                   AND attempt.message_id = ?2
+                 ORDER BY attempt.created_at_unix_ms DESC, attempt.command_id DESC
+                 LIMIT 1",
+                params![conversation_id, message_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging retry command is unavailable".to_string())?;
+
+        match command.1.as_str() {
+            "pending" | "retry_wait" => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_command_outbox
+                         SET next_attempt_at_unix_ms = ?2,
+                             last_error_code = ''
+                         WHERE command_id = ?1
+                           AND state IN ('pending', 'retry_wait')",
+                        params![command.0, now_unix_ms],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging exact retry was not fenced".to_string());
+                }
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::ExactCommand {
+                    command_id: command.0,
+                })
+            }
+            "failed" | "superseded" => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_pending_messages
+                         SET state = 'draft',
+                             attempt_count = 0,
+                             next_attempt_at_unix_ms = ?3,
+                             last_error_code = ''
+                         WHERE conversation_id = ?1
+                           AND message_id = ?2
+                           AND state IN ('failed', 'draft')",
+                        params![conversation_id, message_id, now_unix_ms],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging logical retry was not fenced".to_string());
+                }
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::DraftReady)
+            }
+            "submitted" => {
+                Err("messaging submitted command is awaiting canonical reconciliation".to_string())
+            }
+            "committed" => Err("messaging committed message cannot be retried".to_string()),
+            state => Err(format!("messaging retry state is unsupported: {state}")),
+        }
+    }
+
     pub fn schedule_message_draft_retry(
         &self,
         conversation_id: &str,
@@ -4638,7 +4917,7 @@ impl MessagingStore {
             .prepare(
                 "SELECT message_id, attachment_id, filename, mime_type,
                         plaintext_size, plaintext_sha256, object_key, base_nonce,
-                        descriptor_bytes
+                        descriptor_bytes, voice_note_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id IN (
                      SELECT message_id FROM messaging_message_projections
@@ -4679,6 +4958,7 @@ impl MessagingStore {
                     object_key: row.get(6)?,
                     base_nonce: row.get(7)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(9)?, 9)?,
                 };
                 Ok(RecoveryAttachmentMetadata {
                     message_id: row.get(0)?,
@@ -4844,10 +5124,10 @@ impl MessagingStore {
                     "INSERT INTO messaging_attachment_projections(
                         message_id, attachment_id, object_id, storage_ref,
                         filename, mime_type, plaintext_size, plaintext_sha256,
-                        object_key, base_nonce, descriptor_bytes,
+                        object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                         availability_state, local_cache_path
                      ) VALUES (
-                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                         'remote', NULL
                      )",
                     params![
@@ -4863,6 +5143,7 @@ impl MessagingStore {
                         metadata.object_key,
                         metadata.base_nonce,
                         object.encode_to_vec(),
+                        encode_voice_note_column(metadata.voice_note.as_ref()),
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -5349,6 +5630,56 @@ impl MessagingStore {
                         .execute(
                             "UPDATE messaging_message_projections
                              SET retracted = 1
+                             WHERE conversation_id = ?1 AND message_id = ?2",
+                            params![input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                InteractionMutation::HideForActor => {
+                    let changed = transaction
+                        .execute(
+                            "UPDATE messaging_message_projections
+                             SET hidden_for_actor = 1
+                             WHERE conversation_id = ?1 AND message_id = ?2",
+                            params![input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    if changed != 1 {
+                        return Err("messaging actor-hide target message not found".to_string());
+                    }
+                    transaction
+                        .execute(
+                            "DELETE FROM messaging_message_search_fts
+                             WHERE conversation_id = ?1 AND message_id = ?2",
+                            params![input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                InteractionMutation::Moderate {
+                    moderator_ptid,
+                    reason_code,
+                    moderated_at_unix_ms,
+                } => {
+                    if moderator_ptid.trim().is_empty()
+                        || reason_code.trim().is_empty()
+                        || *moderated_at_unix_ms <= 0
+                    {
+                        return Err("messaging moderation event is incomplete".to_string());
+                    }
+                    let changed = transaction
+                        .execute(
+                            "UPDATE messaging_message_projections
+                             SET moderated = 1, moderation_reason_code = ?1
+                             WHERE conversation_id = ?2 AND message_id = ?3",
+                            params![reason_code, input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    if changed != 1 {
+                        return Err("messaging moderation target message not found".to_string());
+                    }
+                    transaction
+                        .execute(
+                            "DELETE FROM messaging_message_search_fts
                              WHERE conversation_id = ?1 AND message_id = ?2",
                             params![input.conversation_id, input.message_id],
                         )
@@ -7006,10 +7337,10 @@ impl MessagingStore {
                         "INSERT INTO messaging_attachment_projections(
                             message_id, attachment_id, object_id, storage_ref,
                             filename, mime_type, plaintext_size, plaintext_sha256,
-                            object_key, base_nonce, descriptor_bytes,
+                            object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                             availability_state, local_cache_path
                          ) VALUES (
-                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                             'remote', NULL
                          )",
                         params![
@@ -7025,6 +7356,7 @@ impl MessagingStore {
                             attachment.object_key,
                             attachment.base_nonce,
                             object.encode_to_vec(),
+                            encode_voice_note_column(attachment.voice_note.as_ref()),
                         ],
                     )
                     .map_err(|error| error.to_string())?;
@@ -7787,11 +8119,7 @@ impl CommandResultRepository for MessagingStore {
         MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
     }
 
-    fn command_bytes(
-        &self,
-        conversation_id: &str,
-        command_id: &str,
-    ) -> Result<Vec<u8>, String> {
+    fn command_bytes(&self, conversation_id: &str, command_id: &str) -> Result<Vec<u8>, String> {
         MessagingStore::command_bytes(self, conversation_id, command_id)
     }
 
@@ -8269,6 +8597,16 @@ impl MlsInboundRepository for MessagingStore {
                 edited_at_unix_ms: *edited_at_unix_ms,
             },
             CoreInteractionMutation::Retract => InteractionMutation::Retract,
+            CoreInteractionMutation::HideForActor => InteractionMutation::HideForActor,
+            CoreInteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms,
+            } => InteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms: *moderated_at_unix_ms,
+            },
             CoreInteractionMutation::Reaction {
                 actor_ptid,
                 reaction,
@@ -9251,6 +9589,28 @@ fn apply_terminal_command_result(
     Ok(())
 }
 
+fn encode_voice_note_column(voice_note: Option<&VoiceNoteMetadata>) -> Vec<u8> {
+    voice_note.map(Message::encode_to_vec).unwrap_or_default()
+}
+
+fn decode_voice_note_column(
+    bytes: Vec<u8>,
+    column_index: usize,
+) -> rusqlite::Result<Option<VoiceNoteMetadata>> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    VoiceNoteMetadata::decode(bytes.as_slice())
+        .map(Some)
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                column_index,
+                rusqlite::types::Type::Blob,
+                Box::new(error),
+            )
+        })
+}
+
 fn persist_sender_content(
     transaction: &Transaction<'_>,
     conversation_id: &str,
@@ -9273,10 +9633,10 @@ fn persist_sender_content(
                 "INSERT INTO messaging_attachment_projections(
                     message_id, attachment_id, object_id, storage_ref,
                     filename, mime_type, plaintext_size, plaintext_sha256,
-                    object_key, base_nonce, descriptor_bytes,
+                    object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                     availability_state, local_cache_path
                  ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                     'local', NULL
                  )
                  ON CONFLICT(message_id, attachment_id) DO UPDATE SET
@@ -9289,7 +9649,8 @@ fn persist_sender_content(
                    AND messaging_attachment_projections.plaintext_sha256 = excluded.plaintext_sha256
                    AND messaging_attachment_projections.object_key = excluded.object_key
                    AND messaging_attachment_projections.base_nonce = excluded.base_nonce
-                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes",
+                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes
+                   AND messaging_attachment_projections.voice_note_bytes = excluded.voice_note_bytes",
                 params![
                     message_id,
                     attachment.attachment_id,
@@ -9303,6 +9664,7 @@ fn persist_sender_content(
                     attachment.object_key,
                     attachment.base_nonce,
                     object.encode_to_vec(),
+                    encode_voice_note_column(attachment.voice_note.as_ref()),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -9356,7 +9718,8 @@ fn load_attachment_metadata(
     let mut statement = connection
         .prepare(
             "SELECT attachment_id, filename, mime_type, plaintext_size,
-                    plaintext_sha256, object_key, base_nonce, descriptor_bytes
+                    plaintext_sha256, object_key, base_nonce, descriptor_bytes,
+                    voice_note_bytes
              FROM messaging_attachment_projections
              WHERE message_id = ?1
              ORDER BY attachment_id",
@@ -9389,6 +9752,7 @@ fn load_attachment_metadata(
                 object_key: row.get(5)?,
                 base_nonce: row.get(6)?,
                 object: Some(object),
+                voice_note: decode_voice_note_column(row.get(8)?, 8)?,
             })
         })
         .map_err(|error| error.to_string())?
@@ -9418,7 +9782,8 @@ fn load_staged_attachment_metadata(
         .prepare(
             "SELECT draft.attachment_id, draft.filename, draft.mime_type,
                     transfer.plaintext_size, draft.plaintext_sha256,
-                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes
+                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes,
+                    draft.voice_note_bytes
              FROM messaging_attachment_drafts draft
              JOIN messaging_attachment_transfers transfer
                ON transfer.attachment_id = draft.attachment_id
@@ -9456,6 +9821,7 @@ fn load_staged_attachment_metadata(
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
                 })
             },
         )
@@ -11332,6 +11698,131 @@ mod tests {
     }
 
     #[test]
+    fn conversation_message_page_and_summary_are_durable_and_actor_scoped() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (sequence, sender_ptid) in [(1, "ptid:bob"), (2, "ptid:bob"), (3, "ptid:alice")] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms, retracted
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'committed', ?8, 0)",
+                    params![
+                        "conversation-1",
+                        format!("event-{sequence}"),
+                        sequence,
+                        format!("message-{sequence}"),
+                        sender_ptid,
+                        format!("device-{sequence}"),
+                        format!("message body {sequence}"),
+                        sequence * 100,
+                    ],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO read_cursors(
+                    conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms
+                 ) VALUES (?1, ?2, 1, 100)",
+                params!["conversation-1", "ptid:alice"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id, sender_ptid,
+                    sender_device_id, plaintext, state, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+                 ) VALUES (?1, 1, ?2, ?3, ?4, ?5, 'failed', 1, 0, 'rejected', 400)",
+                params![
+                    "conversation-1",
+                    "message-pending",
+                    "ptid:alice",
+                    "alice-device",
+                    "pending body",
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let newest = store
+            .conversation_message_page("conversation-1", None, 2)
+            .unwrap();
+        assert_eq!(
+            newest
+                .messages
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["message-2", "message-3", "message-pending"]
+        );
+        assert!(newest.has_more);
+        assert_eq!(newest.next_before_sequence, Some(2));
+
+        let older = store
+            .conversation_message_page("conversation-1", Some(2), 2)
+            .unwrap();
+        assert_eq!(older.messages.len(), 1);
+        assert_eq!(older.messages[0].message_id, "message-1");
+        assert!(!older.has_more);
+        assert_eq!(older.next_before_sequence, None);
+
+        let summary = store
+            .conversation_summary_projection("conversation-1", "ptid:alice")
+            .unwrap();
+        assert_eq!(summary.unread_count, 1);
+        assert_eq!(
+            summary.latest_message.unwrap().message_id,
+            "message-pending"
+        );
+    }
+
+    #[test]
+    fn manual_retry_preserves_message_identity_and_selects_safe_command_path() {
+        let exact_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&exact_store, "message-1", b"exact bytes", 10).unwrap();
+        exact_store
+            .mark_command_retry("message-1", b"exact bytes", 0, 1_000, "offline")
+            .unwrap();
+        assert_eq!(
+            exact_store
+                .prepare_message_retry("conversation-1", "message-1", 20)
+                .unwrap(),
+            MessageRetryDisposition::ExactCommand {
+                command_id: "message-1".to_string(),
+            }
+        );
+        let exact = exact_store.next_command(20).unwrap().unwrap();
+        assert_eq!(exact.command_id, "message-1");
+        assert_eq!(exact.command_bytes, b"exact bytes");
+
+        let failed_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&failed_store, "message-2", b"terminal bytes", 10).unwrap();
+        failed_store
+            .mark_command_failed("message-2", b"terminal bytes", 0, "rejected")
+            .unwrap();
+        assert_eq!(
+            failed_store
+                .prepare_message_retry("conversation-1", "message-2", 20)
+                .unwrap(),
+            MessageRetryDisposition::DraftReady
+        );
+        let draft = failed_store.message_draft("message-2").unwrap().unwrap();
+        assert_eq!(draft.message_id, "message-2");
+        assert_eq!(
+            failed_store
+                .command_status("message-2")
+                .unwrap()
+                .unwrap()
+                .state,
+            "failed"
+        );
+    }
+
+    #[test]
     fn submitted_command_reconciliation_is_bounded_exact_and_cursor_neutral() {
         let store = MessagingStore::in_memory().unwrap();
         for index in 0..65 {
@@ -11581,6 +12072,60 @@ mod tests {
                 .map(|message| message.event_sequence)
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3), None, None]
+        );
+    }
+
+    #[test]
+    fn conversation_projection_distinguishes_moderation_and_actor_hide() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (event_sequence, message_id, hidden, moderated, reason) in [
+            (1, "visible", 0, 0, None),
+            (2, "moderated", 0, 1, Some("group_policy_violation")),
+            (3, "hidden", 1, 0, None),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        hidden_for_actor, moderated, moderation_reason_code
+                     ) VALUES (
+                        'conversation-1', ?1, ?2, ?3,
+                        'ptid:alice', 'alice-device', ?3,
+                        'consumed', ?2, ?4, ?5, ?6
+                     )",
+                    params![
+                        format!("event-{message_id}"),
+                        event_sequence,
+                        message_id,
+                        hidden,
+                        moderated,
+                        reason
+                    ],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let transcript = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+
+        assert_eq!(
+            transcript
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["visible", "moderated"]
+        );
+        assert_eq!(transcript[0].plaintext, "visible");
+        assert!(transcript[1].moderated);
+        assert_eq!(transcript[1].plaintext, "");
+        assert_eq!(
+            transcript[1].moderation_reason_code.as_deref(),
+            Some("group_policy_violation")
         );
     }
 
@@ -11926,6 +12471,7 @@ mod tests {
                     filename: metadata.filename.clone(),
                     mime_type: metadata.mime_type.clone(),
                     plaintext_sha256: metadata.plaintext_sha256.clone(),
+                    voice_note: metadata.voice_note.clone(),
                 }],
             )
             .unwrap();

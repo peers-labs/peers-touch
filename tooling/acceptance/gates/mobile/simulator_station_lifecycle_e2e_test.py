@@ -6,13 +6,13 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef, GateError
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
-    GATE_ID,
+    DEFAULT_GATE_ID as GATE_ID,
     MobileSimulatorBindingActivation,
     MobileSimulatorBindingSelection,
 )
 from tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e import (
-    ANDROID_CLIENT,
     IOS_CLIENT,
+    PEER_IOS_CLIENT,
     PRIMARY_BINDING,
     SECONDARY_BINDING,
     SWITCH_COUNT,
@@ -91,11 +91,7 @@ class FakeBinding:
             client_id=client_id,
             launch_generation=generation,
             identity={
-                "runtime": (
-                    "tauri-ios-simulator"
-                    if client_id == IOS_CLIENT
-                    else "tauri-android-emulator"
-                ),
+                "runtime": "tauri-ios-simulator",
                 "instanceId": f"{client_id}-binding-{generation}",
                 "identityDigest": "c" * 64,
             },
@@ -160,7 +156,7 @@ class FakeBinding:
                 else ALICE_PTIDS[PRIMARY_BINDING]
             )
             state["launchState"] = "shell"
-            if client_id == ANDROID_CLIENT:
+            if client_id == PEER_IOS_CLIENT:
                 self.ios_revoked = True
             return {
                 "decision": {"state": "ACCESS_DECISION_STATE_GRANTED"},
@@ -225,9 +221,6 @@ class FakeBinding:
             "login": login,
         }
 
-    def refresh_webview(self, client_id: str) -> None:
-        self.calls.append(("refresh_webview", client_id, {}))
-
     def close(self) -> tuple[str, ...]:
         self.closed = True
         stopped = tuple(reversed(tuple(self.clients)))
@@ -260,8 +253,9 @@ class FakeBinding:
                 "messageThreadCount": 0,
             },
             "navigation": {
-                "primaryRouteId": "chat",
+                "primaryRouteId": "tab:chat",
                 "detailKeys": [],
+                "overlayRouteId": None,
             },
         }
 
@@ -308,7 +302,7 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
             launches,
             [
                 (IOS_CLIENT, {}),
-                (ANDROID_CLIENT, {}),
+                (PEER_IOS_CLIENT, {}),
             ],
         )
         selections = [
@@ -344,12 +338,16 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
                 for item in result["switches"]
             )
         )
-        self.assertIn(
-            ("lifecycle.restart", IOS_CLIENT, {}),
-            binding.calls,
+        self.assertEqual(
+            [
+                event["remoteRevocation"]
+                for event in gate.events
+                if event["event"] == "binding-selected"
+            ][-SWITCH_COUNT:],
+            ["confirmed"] * SWITCH_COUNT,
         )
         self.assertIn(
-            ("refresh_webview", IOS_CLIENT, {}),
+            ("lifecycle.restart", IOS_CLIENT, {}),
             binding.calls,
         )
         self.assertIn(

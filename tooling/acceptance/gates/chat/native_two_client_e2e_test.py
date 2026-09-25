@@ -100,6 +100,12 @@ class SyntheticRuntimeBinding:
 
 
 class NativeTwoClientEvidenceTest(unittest.TestCase):
+    unmanaged_gate_environment = {
+        "PT_ACCEPTANCE_WORKSPACE_ID": "",
+        "PT_ACCEPTANCE_GATE_ID": "",
+        "PT_ACCEPTANCE_RUN_ID": "",
+    }
+
     def test_key_exchange_uses_enrolled_messaging_endpoint(self) -> None:
         root = Path(__file__).resolve().parents[4]
         source = (
@@ -827,13 +833,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ],
             "reset": {"authorized": False, "targetVerified": True},
         }
-        gate = NativeTwoClientGate(
-            manifest=manifest,
-            actor_manifest=actors,
-            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
-            gate_id=CURRENT_PROFILE_GATE_ID,
-            allow_existing_fixture=True,
-        )
+        with patch.dict(os.environ, self.unmanaged_gate_environment):
+            gate = NativeTwoClientGate(
+                manifest=manifest,
+                actor_manifest=actors,
+                runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+                gate_id=CURRENT_PROFILE_GATE_ID,
+                allow_existing_fixture=True,
+            )
 
         self.assertTrue(gate.verify_fixture_ready())
         self.assertEqual(gate.direction_order, ["bob", "alice"])
@@ -852,13 +859,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ],
             "reset": {"authorized": False, "targetVerified": True},
         }
-        gate = NativeTwoClientGate(
-            manifest=manifest,
-            actor_manifest=actors,
-            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
-            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
-            allow_existing_fixture=True,
-        )
+        with patch.dict(os.environ, self.unmanaged_gate_environment):
+            gate = NativeTwoClientGate(
+                manifest=manifest,
+                actor_manifest=actors,
+                runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+                gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+                allow_existing_fixture=True,
+            )
 
         self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
         self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
@@ -911,13 +919,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ],
             "reset": {"authorized": False, "targetVerified": True},
         }
-        gate = NativeTwoClientGate(
-            manifest=manifest,
-            actor_manifest=actors,
-            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
-            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
-            allow_existing_fixture=True,
-        )
+        with patch.dict(os.environ, self.unmanaged_gate_environment):
+            gate = NativeTwoClientGate(
+                manifest=manifest,
+                actor_manifest=actors,
+                runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+                gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+                allow_existing_fixture=True,
+            )
         gate.clients = {"alice": object(), "bob": object()}  # type: ignore[assignment]
         gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
         environment = {
@@ -1487,7 +1496,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertNotIn("CacheVerifiedRemoteDeviceSigningKeys", federation_resolver)
         self.assertNotIn("migrateLegacyPresetAvatarRows", actor_seed)
         self.assertIn(
-            "await refreshConversation('friend', sessionUlid)",
+            "await social.loadMessages(sessionUlid, 'friend')",
             friend_sync,
         )
         self.assertNotIn("conversation.syncFromStation", friend_sync)

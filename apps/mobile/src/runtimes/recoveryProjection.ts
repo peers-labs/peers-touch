@@ -10,7 +10,12 @@
  * - Each failure state maps to exactly one overlay descriptor.
  */
 
-import type { CommandProjection, DraftProjection } from './commandRuntime';
+import type {
+  CommandProjection,
+  DraftProjection,
+  ReliabilityCapacityExhaustionCause,
+  ReliabilityCommandCapacityStatus,
+} from './commandRuntime';
 import type {
   IngressState,
   ProjectionStaleness,
@@ -18,6 +23,7 @@ import type {
   WriteAdmission,
 } from './socialEventIngress';
 import type { LifecycleKernelState, RuntimeBootstrapStatus } from '../app/lifecycle/types';
+import { readRuntimeAvailability } from '../app/lifecycle/runtimeAvailability';
 
 // ---------------------------------------------------------------------------
 // Recovery state discriminated union
@@ -30,9 +36,9 @@ export interface DraftRestorePending {
   readonly discoveredAtMs: number;
 }
 
-/** Commands with unknown outcome — Station never confirmed or denied. */
-export interface UnknownOutcomeState {
-  readonly kind: 'unknown-outcome';
+/** Durable commands that require a user-visible recovery action or status. */
+export interface CommandRecoveryState {
+  readonly kind: 'command-recovery';
   readonly commands: readonly CommandProjection[];
 }
 
@@ -41,6 +47,21 @@ export interface CapacityReadOnlyState {
   readonly kind: 'capacity-read-only';
   readonly currentDepth: number;
   readonly maxCapacity: number;
+  readonly currentBytes: number;
+  readonly maxBytes: number;
+  readonly exhaustionCauses: readonly ReliabilityCapacityExhaustionCause[];
+}
+
+/** Opaque v1 reliability data requires an explicit owner action. */
+export interface LegacyReliabilityRecoveryState {
+  readonly kind: 'legacy-reliability-recovery';
+  readonly archivedLegacyFiles: number;
+  readonly retainedReadOnly: boolean;
+}
+
+/** An interrupted whole-app reliability reset must resume before activation. */
+export interface ReliabilityResetRecoveryState {
+  readonly kind: 'reliability-reset-recovery';
 }
 
 /** Write admission revoked by ingress due to control-event loss. */
@@ -89,8 +110,10 @@ export interface DeviceLocalFlagState {
 }
 
 export type RecoveryState =
+  | LegacyReliabilityRecoveryState
+  | ReliabilityResetRecoveryState
   | DraftRestorePending
-  | UnknownOutcomeState
+  | CommandRecoveryState
   | CapacityReadOnlyState
   | WriteRevocationState
   | SessionMismatchState
@@ -144,17 +167,32 @@ export interface RecoveryProjectionController {
   /** Clear draft restore state after user confirms or dismisses. */
   clearDraftRestore(): void;
 
-  /** Report commands with unknown outcome from ledger readback. */
-  reportUnknownOutcome(commands: readonly CommandProjection[]): void;
+  /** Report durable commands requiring status or an explicit recovery action. */
+  reportCommandRecovery(commands: readonly CommandProjection[]): void;
 
-  /** Clear unknown outcome state (commands resolved). */
-  clearUnknownOutcome(): void;
+  /** Clear command recovery state after the Rust owner reports no remaining rows. */
+  clearCommandRecovery(): void;
 
-  /** Report ledger capacity exhaustion. */
-  reportCapacityReadOnly(currentDepth: number, maxCapacity: number): void;
+  /** Project the Rust-owned record and byte capacity state. */
+  reportCapacityReadOnly(capacity: ReliabilityCommandCapacityStatus): void;
 
   /** Clear capacity read-only (after purge reclaimed space). */
   clearCapacityReadOnly(): void;
+
+  /** Report an opaque v1 archive that keeps v2 command admission closed. */
+  reportLegacyReliabilityRecovery(
+    archivedLegacyFiles: number,
+    retainedReadOnly?: boolean,
+  ): void;
+
+  /** Clear legacy recovery only after the Rust owner confirms discard/reset. */
+  clearLegacyReliabilityRecovery(): void;
+
+  /** Report an interrupted whole-app reset that must be resumed. */
+  reportReliabilityResetRecovery(): void;
+
+  /** Clear interrupted-reset recovery after Rust confirms logical cleanup. */
+  clearReliabilityResetRecovery(): void;
 
   /** Report ingress write admission state. */
   reportWriteAdmission(admission: WriteAdmission): void;
@@ -192,14 +230,16 @@ export interface RecoveryProjectionController {
 // ---------------------------------------------------------------------------
 
 const SEVERITY_ORDER: Record<RecoveryState['kind'], number> = {
-  'session-mismatch': 0,
-  'write-revocation': 1,
-  'capacity-read-only': 2,
-  'device-local-flag': 3,
-  'event-overflow-reconcile': 4,
-  'unknown-outcome': 5,
-  'draft-restore-pending': 6,
-  'deferred-capability': 7,
+  'reliability-reset-recovery': 0,
+  'legacy-reliability-recovery': 1,
+  'session-mismatch': 2,
+  'write-revocation': 3,
+  'capacity-read-only': 4,
+  'device-local-flag': 5,
+  'event-overflow-reconcile': 6,
+  'command-recovery': 7,
+  'draft-restore-pending': 8,
+  'deferred-capability': 9,
 };
 
 const SHELL_RECOVERY_LAUNCH_STATES = new Set<LifecycleKernelState['launchState']>([
@@ -230,8 +270,10 @@ export function createRecoveryProjection(): RecoveryProjectionController {
 
   // Mutable slots for each recovery state
   let draftRestore: DraftRestorePending | null = null;
-  let unknownOutcome: UnknownOutcomeState | null = null;
+  let commandRecovery: CommandRecoveryState | null = null;
   let capacityReadOnly: CapacityReadOnlyState | null = null;
+  let legacyReliabilityRecovery: LegacyReliabilityRecoveryState | null = null;
+  let reliabilityResetRecovery: ReliabilityResetRecoveryState | null = null;
   let writeRevocation: WriteRevocationState | null = null;
   let sessionMismatch: SessionMismatchState | null = null;
   let eventOverflow: EventOverflowReconcileState | null = null;
@@ -242,8 +284,10 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     if (torn) return;
 
     const states: RecoveryState[] = [];
+    if (reliabilityResetRecovery) states.push(reliabilityResetRecovery);
+    if (legacyReliabilityRecovery) states.push(legacyReliabilityRecovery);
     if (draftRestore) states.push(draftRestore);
-    if (unknownOutcome) states.push(unknownOutcome);
+    if (commandRecovery) states.push(commandRecovery);
     if (capacityReadOnly) states.push(capacityReadOnly);
     if (writeRevocation) states.push(writeRevocation);
     if (sessionMismatch) states.push(sessionMismatch);
@@ -254,6 +298,8 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     states.sort(compareSeverity);
 
     const isWriteBlocked =
+      reliabilityResetRecovery !== null ||
+      legacyReliabilityRecovery !== null ||
       sessionMismatch !== null ||
       writeRevocation !== null ||
       capacityReadOnly !== null ||
@@ -295,34 +341,79 @@ export function createRecoveryProjection(): RecoveryProjectionController {
       rebuild();
     },
 
-    reportUnknownOutcome(commands: readonly CommandProjection[]): void {
+    reportCommandRecovery(commands: readonly CommandProjection[]): void {
       if (torn) return;
       if (commands.length === 0) {
-        if (unknownOutcome) {
-          unknownOutcome = null;
+        if (commandRecovery) {
+          commandRecovery = null;
           rebuild();
         }
         return;
       }
-      unknownOutcome = { kind: 'unknown-outcome', commands };
+      commandRecovery = { kind: 'command-recovery', commands };
       rebuild();
     },
 
-    clearUnknownOutcome(): void {
-      if (!unknownOutcome) return;
-      unknownOutcome = null;
+    clearCommandRecovery(): void {
+      if (!commandRecovery) return;
+      commandRecovery = null;
       rebuild();
     },
 
-    reportCapacityReadOnly(currentDepth: number, maxCapacity: number): void {
+    reportCapacityReadOnly(capacity: ReliabilityCommandCapacityStatus): void {
       if (torn) return;
-      capacityReadOnly = { kind: 'capacity-read-only', currentDepth, maxCapacity };
+      if (capacity.exhaustionCauses.length === 0) {
+        if (capacityReadOnly) {
+          capacityReadOnly = null;
+          rebuild();
+        }
+        return;
+      }
+      capacityReadOnly = {
+        kind: 'capacity-read-only',
+        currentDepth: capacity.recordCount,
+        maxCapacity: capacity.recordLimit,
+        currentBytes: capacity.byteUsage,
+        maxBytes: capacity.byteLimit,
+        exhaustionCauses: [...capacity.exhaustionCauses],
+      };
       rebuild();
     },
 
     clearCapacityReadOnly(): void {
       if (!capacityReadOnly) return;
       capacityReadOnly = null;
+      rebuild();
+    },
+
+    reportLegacyReliabilityRecovery(
+      archivedLegacyFiles: number,
+      retainedReadOnly = false,
+    ): void {
+      if (torn) return;
+      legacyReliabilityRecovery = {
+        kind: 'legacy-reliability-recovery',
+        archivedLegacyFiles,
+        retainedReadOnly,
+      };
+      rebuild();
+    },
+
+    clearLegacyReliabilityRecovery(): void {
+      if (!legacyReliabilityRecovery) return;
+      legacyReliabilityRecovery = null;
+      rebuild();
+    },
+
+    reportReliabilityResetRecovery(): void {
+      if (torn) return;
+      reliabilityResetRecovery = { kind: 'reliability-reset-recovery' };
+      rebuild();
+    },
+
+    clearReliabilityResetRecovery(): void {
+      if (!reliabilityResetRecovery) return;
+      reliabilityResetRecovery = null;
       rebuild();
     },
 
@@ -388,15 +479,17 @@ export function createRecoveryProjection(): RecoveryProjectionController {
 
       const unavailable: DeferredRuntimeEntry[] = [];
       kernelState.runtimes.forEach((entry, runtimeId) => {
+        const availability = readRuntimeAvailability(kernelState, runtimeId);
         if (
           runtimeId !== 'recovery-projection'
-          && DEFERRED_RUNTIME_STATUSES.has(entry.status)
+          && availability
+          && DEFERRED_RUNTIME_STATUSES.has(availability.status)
         ) {
           unavailable.push({
             runtimeId,
             title: entry.descriptor.title,
-            status: entry.status,
-            errorMessage: entry.lastError,
+            status: availability.status,
+            errorMessage: availability.errorKey,
           });
         }
       });
@@ -457,8 +550,10 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     teardown(): void {
       torn = true;
       draftRestore = null;
-      unknownOutcome = null;
+      commandRecovery = null;
       capacityReadOnly = null;
+      legacyReliabilityRecovery = null;
+      reliabilityResetRecovery = null;
       writeRevocation = null;
       sessionMismatch = null;
       eventOverflow = null;
