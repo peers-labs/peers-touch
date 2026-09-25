@@ -1667,6 +1667,7 @@ class MixedNativeRuntime:
                 f"{client_id} Station Access scope",
             )
             device_id = str(device.get("deviceIdentityDigest") or "")
+            device_actor_ptid = str(device.get("activeActorPtid") or "")
             device_active = (
                 device.get("phase") == "ACTIVE"
                 and device.get("activeStationPeerId")
@@ -1686,6 +1687,7 @@ class MixedNativeRuntime:
                 f"{client_id} Station Access scope",
             )
             device_id = self._identity_digest(device.get("deviceId"))
+            device_actor_ptid = str(device.get("actorPtid") or "")
             device_active = (
                 device.get("authenticated") is True
                 and device.get("bindingPhase") == "bound"
@@ -1698,10 +1700,11 @@ class MixedNativeRuntime:
                 device.get("deviceIdentityDigest")
                 or self._identity_digest(device.get("deviceId"))
             )
+            device_actor_ptid = str(device.get("actorPtid") or "")
             device_active = device.get("active") is True
         if (
             not device_active
-            or str(device.get("actorPtid") or "") != expected_ptid
+            or device_actor_ptid != expected_ptid
             or not device_id
         ):
             raise GateError(f"{client_id} messaging endpoint is not active")
