@@ -34,6 +34,7 @@ def scope(
         "activeStationPeerId": station_peer_id,
         "activeActorPtid": actor_ptid,
         "runtimeStationPeerId": station_peer_id if active else None,
+        "deviceIdentityDigest": "d" * 64 if active else None,
         "social": {
             "stationPeerId": station_peer_id if active else None,
             "actorPtid": actor_ptid,
