@@ -113,6 +113,7 @@ describe('Settings truthful unavailable and permission states', () => {
     expect(markup.match(/mobile\.launch\.unavailable/g)).toHaveLength(1);
     expect(markup).toContain('mobile.settings.storage.clearChatCacheAction');
     expect(markup).toContain('mobile.settings.storage.clearDeviceCache');
+    expect(markup).toContain('data-chat-storage-refresh');
     expect(markup).toContain('data-chat-storage-clear-cache');
     expect(markup).toContain('data-mobile-device-cache-clear');
     expect(markup).not.toContain('mobile.settings.notifications.enabled');

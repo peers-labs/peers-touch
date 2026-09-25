@@ -659,14 +659,13 @@ export function StorageSection({
               ? t('mobile.settings.storage.unavailable')
               : t('mobile.settings.storage.calculating')}
           </Text>
-          {projection.status === 'unavailable' ? (
-            <Button
-              size="small"
-              onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
-            >
-              {t('common.action.retry')}
-            </Button>
-          ) : null}
+          <Button
+            aria-label={t('mobile.settings.storage.retry')}
+            data-chat-storage-refresh
+            icon={<RefreshCw size={14} />}
+            loading={projection.status === 'measuring'}
+            onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
+          />
         </div>
       )}
       <div
