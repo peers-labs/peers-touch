@@ -26,7 +26,7 @@ Do **not** use this for post-login, in-shell permission checks — those are not
 
 - [ ] The gate's contract (type enum + any new request/field shape) is added to `model/domain/access_gate/access_gate.proto` and reviewed.
 - [ ] `./model/build.sh` has regenerated Go proto, and `./tooling/scripts/proto-gen-mobile.sh` the mobile/native bindings.
-- [ ] You have read invariant [`access-gate-wire-contract.md`](../invariants/access-gate-wire-contract.md) — every client predicate you touch must match both enum forms and snake_case-first keys.
+- [ ] You have read invariant [`access-gate-wire-contract.md`](../invariants/access-gate-wire-contract.md) — the Access wire remains generated protobuf-only with canonical MIME and no compatibility parser.
 
 ## Steps
 
@@ -36,11 +36,11 @@ Do **not** use this for post-login, in-shell permission checks — those are not
 
 3. **Register it in chain order** — Add `r.Register(<name>Gatekeeper{…})` in `buildRegistry` in [`service.go`](../../../apps/station/frame/touch/accessgate/service.go) at the correct position. Order matters: gates needing actor identity (allowlist, invite) MUST register after `loginGatekeeper`.
 
-4. **Handle submission server-side** — If the gate accepts input, add a `submitAccess<Name>` branch to the type switch in `SubmitAccessGate` in [`actor_handler.go`](../../../apps/station/frame/touch/actor_handler.go), mirroring `submitAccessInviteCode`. Validate input, evaluate, and return a `SubmitAccessGateResponse{Decision: …}`. Never trust client-asserted pass state — the decision is recomputed server-side.
+4. **Handle submission server-side** — If the gate accepts input, add its generated oneof field to `SubmitAccessGateRequest` and handle the type in `submitSchemaBoundAccessGate` in [`actor_handler.go`](../../../apps/station/frame/touch/actor_handler.go). Validate the schema-bound action and recompute the decision server-side. Do not add a route, JSON body, generic compatibility branch, or client-selected endpoint.
 
-5. **Render on Mobile** — In [`apps/mobile/src/features/auth/authSession.ts`](../../../apps/mobile/src/features/auth/authSession.ts) add the numeric+string enum constant and an `is<Name>Gate` predicate (match both forms). If the gate needs a submit transport, add a `submitStation<Name>Gate` helper. Render it in [`AccessGateHost.tsx`](../../../apps/mobile/src/features/auth/AccessGateHost.tsx) using `parseGateFields` for schema-driven fields. All user-facing text via locale keys — no literals.
+5. **Render on Mobile** — Extend the generated native Access projection and expose one typed gate name to [`apps/mobile/src/features/auth/authSession.ts`](../../../apps/mobile/src/features/auth/authSession.ts). Add an `is<Name>Gate` predicate and a submit helper that invokes the native protobuf owner. Render it in [`AccessGateHost.tsx`](../../../apps/mobile/src/features/auth/AccessGateHost.tsx) using `parseGateFields` for schema-driven fields. Never parse Access response bytes or raw response objects in TypeScript.
 
-6. **Render on Desktop** — Mirror step 5 in [`apps/desktop/src/services/accessGate.ts`](../../../apps/desktop/src/services/accessGate.ts) (predicate + constant). Transport lives in Rust: add a Tauri command in `apps/desktop/src-tauri/src/application/auth/service.rs` + `interface/tauri_commands/auth.rs`, register it in `main.rs`, expose it through `desktop_api.ts` and `store/session.ts`, then branch in `LoginPage.tsx` alongside the invite-code gate. Locale keys go in `packages/locales/{en,zh-CN}/auth.json`.
+6. **Render on Desktop** — Mirror step 5 in [`apps/desktop/src/services/accessGate.ts`](../../../apps/desktop/src/services/accessGate.ts). Transport lives in Rust: generated prost messages are encoded in `application/auth/service.rs`, exposed by a Tauri command, and projected through `desktop_api.ts` and `store/session.ts`. TypeScript must not receive raw wire variants or own a normalization adapter.
 
 7. **Add Dashboard management if the gate is policy-driven** — If an admin toggles or configures the gate, extend `AccessGatesPage.tsx` and its API. Clients must never expose policy management.
 
@@ -48,7 +48,8 @@ Do **not** use this for post-login, in-shell permission checks — those are not
 
 - [ ] `./model/build.sh` succeeds; no hand edits to generated files.
 - [ ] `cd apps/station && gofmt -l . && go test ./...` passes.
-- [ ] `rg -n '<NEW_ENUM_STRING_NAME>' apps/mobile/src/features/auth/authSession.ts apps/desktop/src/services/accessGate.ts` shows both clients match the new enum by string **and** number.
+- [ ] `rg -n '<NEW_ENUM_STRING_NAME>' apps/mobile/src/features/auth/authSession.ts apps/desktop/src/services/accessGate.ts` shows both clients expose the same typed gate name.
+- [ ] `python3 tooling/scripts/acceptance-run.py --gate station-access-capability-contract` proves canonical transport and rejects compatibility implementations.
 - [ ] `cd apps/desktop && pnpm run check` passes; `cargo check --lib` in `src-tauri` passes.
 - [ ] Manual: a Station with the new gate enabled blocks `granted`/shell until the gate is cleared, identically on Desktop and Mobile.
 - [ ] No raw UI strings introduced — all text resolves through locale keys.

@@ -10,9 +10,6 @@ import {
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { mobileAuthScope, mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 
-const MOBILE_IDENTITY_SCOPE_CUTOVER_KEY = 'peers-touch.mobile.identity-scope-hard-cut.v1';
-const MOBILE_CLIENT_STORAGE_PREFIX = 'peers-touch.client-storage.v1:mobile:';
-
 export interface MobileClientStorageRuntime {
   readonly kernel: ClientStorageKernel;
   readonly cache: CacheStore;
@@ -113,21 +110,9 @@ export function mobileStorageScope(session: MobileAuthSession | null): ClientSto
     app: 'mobile',
     station: scope.stationPeerId,
     actor: scope.ptid,
-    device: null,
+    device: scope.deviceId,
     session: mobileAuthScopeKey(session),
   };
-}
-
-export function purgeLegacyMobileIdentityStorage(storage: Storage | null = browserLocalStorage()): void {
-  if (!storage || storage.getItem(MOBILE_IDENTITY_SCOPE_CUTOVER_KEY) === 'complete') return;
-
-  const legacyKeys: string[] = [];
-  for (let index = 0; index < storage.length; index += 1) {
-    const key = storage.key(index);
-    if (key?.startsWith(MOBILE_CLIENT_STORAGE_PREFIX)) legacyKeys.push(key);
-  }
-  legacyKeys.forEach((key) => storage.removeItem(key));
-  storage.setItem(MOBILE_IDENTITY_SCOPE_CUTOVER_KEY, 'complete');
 }
 
 function browserLocalStorage(): Storage | null {

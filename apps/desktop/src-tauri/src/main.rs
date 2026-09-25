@@ -586,10 +586,11 @@ fn main() {
             i18n::i18n_load_resources,
             actor::actor_search_actors,
             actor::actor_get_my_profile,
-            auth::auth_login,
             auth::access_start,
             auth::access_submit_invite_code,
             auth::access_submit_login,
+            auth::access_decision,
+            auth::access_cancel,
             auth::auth_logout,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_logout_window_session,

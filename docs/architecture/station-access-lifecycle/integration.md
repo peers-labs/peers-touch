@@ -1,6 +1,6 @@
 # Station 接入生命周期 - 集成与硬切
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access

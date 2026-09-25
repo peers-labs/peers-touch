@@ -103,6 +103,8 @@ pub enum OAuthPublicPhase {
 pub struct OAuthSessionProjection {
     pub session_id: String,
     pub actor_ptid: String,
+    pub device_id: String,
+    pub lifecycle_generation: u64,
     pub expires_at: String,
 }
 
@@ -1319,6 +1321,8 @@ fn persist_credential_before_ack<S: SecretStore>(
     attempt.public_session = Some(OAuthSessionProjection {
         session_id: session.session_id.clone(),
         actor_ptid: session.actor_ptid.clone(),
+        device_id: session.device_id.clone(),
+        lifecycle_generation: session.lifecycle_generation,
         expires_at: session.expires_at.clone(),
     });
     attempt.phase = OAuthPublicPhase::CredentialDelivery;
@@ -1375,6 +1379,8 @@ fn read_public_projection<S: SecretStore>(storage: &S) -> MobileResult<OAuthPubl
                     session: Some(OAuthSessionProjection {
                         session_id: session.session_id.clone(),
                         actor_ptid: session.actor_ptid.clone(),
+                        device_id: session.device_id.clone(),
+                        lifecycle_generation: session.lifecycle_generation,
                         expires_at: session.expires_at.clone(),
                     }),
                 });
@@ -1960,7 +1966,7 @@ mod tests {
         assert_eq!(decoded.action_type, AccessGateType::AuthOauth as i32);
         assert_eq!(decoded.attempt_secret_hash.len(), 32);
         assert_eq!(decoded.credential_delivery_public_key.len(), 32);
-        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/x-protobuf");
+        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Station 接入生命周期 - 验收矩阵
 
-> **Status**: draft
+> **Status**: active
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access
@@ -18,9 +18,9 @@
 
 | Capability | Journey | 当前差距 | Gate |
 |---|---|---|---|
-| SAL-C01 可信 Station | SAL-J01/J03/J05 | Desktop 仍主要依赖 probe/metadata | SAL-G01 |
-| SAL-C02 Access Gate | SAL-J01/J02/J05 | Desktop 保留 `/actor/login` fallback | SAL-G01 |
-| SAL-C03 Scope 隔离 | SAL-J02/J03 | 旧账号 key 与 runtime scope 约束不统一 | SAL-G02 |
+| SAL-C01 可信 Station | SAL-J01/J03/J05 | 原生双端证据待运行 | SAL-G01 |
+| SAL-C02 Access Gate | SAL-J01/J02/J05 | protobuf-only 静态闭环已实现，原生双端证据待运行 | SAL-G01 |
+| SAL-C03 Scope 隔离 | SAL-J02/J03 | 双端 scope fence 已实现，原生重启/登出证据待运行 | SAL-G02 |
 | SAL-C04 Federation context | SAL-J04 | context 语义分散，Desktop 另有治理 UI | SAL-G03 |
 | SAL-C05 基础设施收口 | SAL-J04/J05 | 普通客户端仍暴露治理与 Relay 概念 | SAL-G03 |
 | SAL-C06 能力与遗产治理 | 全部 | 缺 client applicability 与零消费者审计 | SAL-G00/SAL-G04 |
@@ -40,11 +40,18 @@
 - 签名错误、PeerID 变化、404、unknown gate 与 attempt expiry 均 fail closed。
 - 运行中不命中 `/actor/login`、`auth_login` 或 fallback。
 
+Stable Gate：`station-access-auth-e2e`，环境
+`station-access-native`（macOS Desktop + iOS Simulator，同一 source-attested
+Station，无服务端 destructive reset）。
+
 ### SAL-G02：Scope 隔离
 
 - Session、Messaging、Federation 与本地 projection 的 Station/Actor/Device 一致。
 - 账号、Station 切换和重启不泄漏旧 projection。
 - 未限定 scope 的历史 key 与兼容清理逻辑零引用。
+
+Stable Gate：`station-access-scope-isolation-e2e`，环境
+`station-access-native`。
 
 ### SAL-G03：Federation 与 Relay 边界
 

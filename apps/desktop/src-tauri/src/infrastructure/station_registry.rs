@@ -169,6 +169,17 @@ impl StationRegistry {
             .iter_mut()
             .find(|current| current.url == entry.url)
         {
+            if current
+                .peer_id
+                .as_deref()
+                .zip(entry.peer_id.as_deref())
+                .is_some_and(|(current, candidate)| current != candidate)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Station identity changed without explicit replacement",
+                ));
+            }
             if let Some(pin) = existing_pin.as_ref() {
                 if entry
                     .peer_id
@@ -183,6 +194,9 @@ impl StationRegistry {
                 if entry.peer_id.is_none() {
                     entry.peer_id = current.peer_id.clone();
                 }
+            }
+            if entry.peer_id.is_none() {
+                entry.peer_id = current.peer_id.clone();
             }
             *current = entry;
         } else {
@@ -245,8 +259,21 @@ impl StationRegistry {
             .iter_mut()
             .find(|entry| entry.url == normalized)
         {
+            if entry
+                .peer_id
+                .as_deref()
+                .zip(peer_id.as_deref())
+                .is_some_and(|(current, candidate)| current != candidate)
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Station identity changed without explicit replacement",
+                ));
+            }
             entry.label = label;
-            entry.peer_id = peer_id;
+            if peer_id.is_some() {
+                entry.peer_id = peer_id;
+            }
             entry.peers_count = peers_count;
             entry.online = online;
             entry.last_probe = Some(now_rfc3339());

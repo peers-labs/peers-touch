@@ -14,13 +14,14 @@ import {
 } from '../src/features/station/stationRegistry';
 import {
   mobileStorageScope,
-  purgeLegacyMobileIdentityStorage,
 } from '../src/storage/mobileClientStorage';
 
 const session: MobileAuthSession = {
   stationPeerId: '12D3KooWStation',
   stationUrl: 'https://station.example',
-  accessToken: 'test-token',
+  sessionId: 'session-1',
+  deviceId: 'device-1',
+  lifecycleGeneration: 7,
   actorRef: {
     ptid: 'ptid:alice',
     acct: '@alice@station.example',
@@ -30,11 +31,13 @@ const session: MobileAuthSession = {
 
 describe('Mobile identity scope hard cut', () => {
   it('keys authenticated state only by Station peer ID and PTID', () => {
-    expect(mobileAuthScopeKey(session)).toBe('12D3KooWStation|ptid:alice');
+    expect(mobileAuthScopeKey(session)).toBe(
+      '12D3KooWStation|ptid:alice|device-1|7',
+    );
     expect(mobileStorageScope(session)).toMatchObject({
       station: '12D3KooWStation',
       actor: 'ptid:alice',
-      session: '12D3KooWStation|ptid:alice',
+      session: '12D3KooWStation|ptid:alice|device-1|7',
     });
   });
 
@@ -42,7 +45,7 @@ describe('Mobile identity scope hard cut', () => {
     expect(parseMobileAuthSession({
       stationUrl: session.stationUrl,
       sessionId: 'legacy-session',
-      accessToken: session.accessToken,
+      accessToken: 'legacy-token',
       actor: { actor_id: 42 },
       authenticatedAt: 1,
     })).toBeNull();
@@ -97,46 +100,4 @@ describe('Mobile identity scope hard cut', () => {
     )).toThrow('mobile.launch.stationIdentityMismatch');
     expect(activateStationEntry(first.registry, '12D3KooWOther')).toBe(first.registry);
   });
-
-  it('deletes pre-cutover Mobile cache state once', () => {
-    const storage = new MemoryStorage();
-    storage.setItem('peers-touch.client-storage.v1:mobile:https_station:actor:device:session:process:chat.message:x', 'legacy');
-    storage.setItem('unrelated', 'keep');
-
-    purgeLegacyMobileIdentityStorage(storage);
-    expect(storage.getItem('peers-touch.client-storage.v1:mobile:https_station:actor:device:session:process:chat.message:x')).toBeNull();
-    expect(storage.getItem('unrelated')).toBe('keep');
-
-    storage.setItem('peers-touch.client-storage.v1:mobile:12D3KooWStation:ptid_alice:device:scope:process:chat.message:x', 'current');
-    purgeLegacyMobileIdentityStorage(storage);
-    expect(storage.getItem('peers-touch.client-storage.v1:mobile:12D3KooWStation:ptid_alice:device:scope:process:chat.message:x')).toBe('current');
-  });
 });
-
-class MemoryStorage implements Storage {
-  readonly #items = new Map<string, string>();
-
-  get length(): number {
-    return this.#items.size;
-  }
-
-  clear(): void {
-    this.#items.clear();
-  }
-
-  getItem(key: string): string | null {
-    return this.#items.get(key) ?? null;
-  }
-
-  key(index: number): string | null {
-    return Array.from(this.#items.keys())[index] ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.#items.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
-    this.#items.set(key, value);
-  }
-}

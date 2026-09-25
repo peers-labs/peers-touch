@@ -241,6 +241,8 @@ function requireCurrentSession(
   if (
     active.stationPeerId !== session.stationPeerId
     || active.actorPtid !== session.actorRef.ptid
+    || active.deviceId !== session.deviceId
+    || active.lifecycleGeneration !== session.lifecycleGeneration
   ) {
     throw new Error('mobile.stationTransport.sessionScopeMismatch');
   }

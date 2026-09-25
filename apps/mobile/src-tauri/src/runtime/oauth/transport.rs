@@ -8,10 +8,9 @@ use super::proto::common::v1::PeersResponse;
 use crate::error::{MobileError, MobileResult};
 use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
-pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/x-protobuf";
+pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const JSON_CONTENT_TYPE: &str = "application/json";
-const STATION_RESPONSE_CONTENT_TYPES: [&str; 2] =
-    ["application/x-protobuf", "application/protobuf"];
+const STATION_RESPONSE_CONTENT_TYPES: [&str; 1] = ["application/protobuf"];
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const SESSION_REVOCATION_TIMEOUT: Duration = Duration::from_secs(5);

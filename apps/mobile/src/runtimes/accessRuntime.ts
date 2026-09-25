@@ -6,9 +6,10 @@ import type {
 } from '../app/lifecycle/types';
 import {
   cancelStationAccessAttempt,
+  accessDecisionFromProjection,
   getStationAccessDecision,
   isAccessGranted,
-  normalizeDecision,
+  stationAccessError,
   startStationAccessAttempt,
   type AccessDecision,
 } from '../features/auth/authSession';
@@ -79,9 +80,10 @@ export async function startAccessAttemptForActiveStation(): Promise<AccessDecisi
     applyAccessGateRuntimeResult(decision);
     return decision;
   } catch (error) {
-    state.setError(readableErrorMessage(error));
+    const typed = stationAccessError(error);
+    state.setError(readableErrorMessage(typed));
     publishFromStore();
-    throw error;
+    throw typed;
   } finally {
     state.setLoading(false);
     publishFromStore();
@@ -106,9 +108,10 @@ export async function refreshAccessDecisionForActiveStation(): Promise<AccessDec
     });
     return applyRefreshedAccessDecision(station, decision);
   } catch (error) {
-    state.setError(readableErrorMessage(error));
+    const typed = stationAccessError(error);
+    state.setError(readableErrorMessage(typed));
     publishFromStore();
-    throw error;
+    throw typed;
   } finally {
     state.setLoading(false);
     publishFromStore();
@@ -153,9 +156,10 @@ export async function cancelAccessAttemptForActiveStation(): Promise<void> {
     state.setAccessDecision(null);
     publishFromStore();
   } catch (error) {
-    state.setError(readableErrorMessage(error));
+    const typed = stationAccessError(error);
+    state.setError(readableErrorMessage(typed));
     publishFromStore();
-    throw error;
+    throw typed;
   } finally {
     state.setLoading(false);
     publishFromStore();
@@ -224,9 +228,10 @@ export async function restoreAndRevalidateAccessRuntime(): Promise<void> {
     );
     applyAccessGateRuntimeResult(decision);
   } catch (error) {
-    state.setError(readableErrorMessage(error));
+    const typed = stationAccessError(error);
+    state.setError(readableErrorMessage(typed));
     publishFromStore();
-    throw error;
+    throw typed;
   } finally {
     state.setRestored(true);
     state.setLoading(false);
@@ -326,33 +331,7 @@ function isRevokedSessionError(message: string): boolean {
 function sanitizeAccessDecision(
   projection: OAuthAccessDecisionProjection,
 ): AccessDecision {
-  return normalizeDecision({
-    state: projection.state,
-    attemptId: projection.attemptId,
-    currentGateId: projection.currentGateId,
-    accessGrantId: projection.accessGrantId,
-    message: projection.message,
-    gates: projection.gates.map((gate) => ({
-      gateId: gate.gateId,
-      type: gate.gateType,
-      state: gate.state,
-      title: gate.title,
-      description: gate.description,
-      blockingReason: gate.blockingReason,
-      submitAction: gate.submitAction,
-      inputSchemaJson: gate.inputSchemaJson,
-      alternativeActions: gate.alternativeActions.map((action) => ({
-        actionId: action.actionId,
-        actionType: action.actionType,
-        submitAction: action.submitAction,
-        schemaRevision: action.schemaRevision,
-        schemaDigest: action.schemaDigest,
-      })),
-      actionId: gate.actionId,
-      schemaRevision: gate.schemaRevision,
-      schemaDigest: gate.schemaDigest,
-    })),
-  });
+  return accessDecisionFromProjection(projection);
 }
 
 function subscribe(listener: () => void): () => void {

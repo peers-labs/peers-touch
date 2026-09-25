@@ -8,6 +8,8 @@ activation:
     - complete_inventory_for_every_governed_prefix
     - implementation_gate_and_schema_validation_land_together
 governed_prefixes:
+  - /sub-bootstrap/station-identity
+  - /actor/access/
   - /conversation/
   - /messaging/
   - /envelope/
@@ -24,6 +26,10 @@ governed_prefixes:
   - /notification/push/
   - /federation/
 owner_roots:
+  station.bootstrap_identity:
+    - apps/station/frame/core/plugin/native/subserver/bootstrap/
+  station.access:
+    - apps/station/frame/touch/
   station.conversation:
     - apps/station/app/subserver/conversation/
   station.conversation.delivery:
@@ -72,6 +78,116 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: station.identity.verify
+    domain_owner: station.bootstrap_identity
+    truth_owner: station.identity
+    exposure: client
+    canonical_route: { method: POST, path: /sub-bootstrap/station-identity }
+    request_proto: peers_touch.model.peer.v1.StationIdentityRequest
+    response_proto: peers_touch.model.peer.v1.StationIdentityResponse
+    truth_stores: []
+    allowed_dependencies: [station.host_identity.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.start
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/start }
+    request_proto: peers_touch.model.access_gate.v1.StartAccessAttemptRequest
+    response_proto: peers_touch.model.access_gate.v1.StartAccessAttemptResponse
+    truth_stores: [access_gate_attempts]
+    allowed_dependencies: [station.identity, actor.session.read]
+    forbidden_aliases:
+      - { method: POST, path: /actor/login }
+    superseded_symbols: []
+
+  - id: access.gate.start.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/start }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.submit
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/submit }
+    request_proto: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
+    response_proto: peers_touch.model.access_gate.v1.SubmitAccessGateResponse
+    truth_stores: [access_gate_attempts, access_gate_submissions]
+    allowed_dependencies: [access.gate.evaluate, actor.session.issue]
+    forbidden_aliases:
+      - { method: POST, path: /actor/login }
+    superseded_symbols: []
+
+  - id: access.gate.submit.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/submit }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.decision
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/decision }
+    request_proto: peers_touch.model.access_gate.v1.GetAccessDecisionRequest
+    response_proto: peers_touch.model.access_gate.v1.GetAccessDecisionResponse
+    truth_stores: [access_gate_attempts]
+    allowed_dependencies: [access.gate.evaluate, actor.session.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.decision.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/decision }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.cancel
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/cancel }
+    request_proto: peers_touch.model.access_gate.v1.CancelAccessAttemptRequest
+    response_proto: peers_touch.model.access_gate.v1.CancelAccessAttemptResponse
+    truth_stores: [access_gate_attempts, access_gate_submissions]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.cancel.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/cancel }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: notification.push.register
     domain_owner: station.notification
     truth_owner: notification.push_registration
@@ -1163,6 +1279,7 @@ capabilities:
     superseded_symbols: []
 
 target_absent_routes:
+  - { method: POST, path: /actor/login }
   - { method: POST, path: /envelope/submit }
   - { method: POST, path: /envelope/ack }
   - { method: GET, path: /envelope/resume }
