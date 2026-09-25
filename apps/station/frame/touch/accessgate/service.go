@@ -92,6 +92,9 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 	if strings.TrimSpace(client.GetDeviceId()) == "" {
 		return nil, fmt.Errorf("access attempt device id is required")
 	}
+	if _, err := accessGateSessionDeviceType(client.GetPlatform()); err != nil {
+		return nil, err
+	}
 	if client.GetLifecycleGeneration() == 0 {
 		return nil, fmt.Errorf("access attempt lifecycle generation is required")
 	}
