@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -110,6 +111,38 @@ class StorageGovernanceContractTest(unittest.TestCase):
             if removed_command in path.read_text(encoding="utf-8")
         ]
         self.assertEqual(offenders, [])
+
+    def test_accounting_gate_uses_single_profile_native_runtime(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        gate = gates["chat-storage-accounting-e2e"]
+        environment = json.loads(
+            (
+                ROOT
+                / "tooling/acceptance/environments/chat-storage-native.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        desktop_storage = (
+            ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(gate["environment"], "chat-storage-native")
+        self.assertEqual(gate["provisioner"], "chat-storage-native")
+        self.assertEqual(set(environment["services"]), {"station"})
+        self.assertEqual(
+            {client["id"] for client in environment["clients"]},
+            {"alice", "bob"},
+        )
+        self.assertIn("storage_governance_runner", gate["command"])
+        for selector in (
+            "data-chat-storage-summary",
+            "data-chat-storage-conversation",
+            "data-chat-storage-search",
+            "data-chat-storage-sort-option",
+            "data-chat-storage-refresh",
+        ):
+            self.assertIn(selector, desktop_storage)
 
 
 if __name__ == "__main__":
