@@ -24,8 +24,11 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import org.json.JSONArray
 
 private const val PREFERENCES_NAME = "peers_touch_secure_storage"
+private const val INVENTORY_PREFERENCE_KEY = "__peers_touch_secure_storage_inventory_v1"
+private const val INVENTORY_LOGICAL_KEY = "peers-touch.mobile.secure-storage.inventory.v1"
 private const val MASTER_KEY_ALIAS = "com.peers.touch.mobile.secure-storage.master.v1"
 private const val ANDROID_KEY_STORE = "AndroidKeyStore"
 private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
@@ -35,6 +38,7 @@ private const val TAG_SIZE_BITS = TAG_SIZE_BYTES * 8
 private const val AES_KEY_SIZE_BITS = 256
 private const val MAX_KEY_LENGTH = 256
 private const val MAX_VALUE_SIZE_BYTES = 1024 * 1024
+private const val MAX_RECORD_COUNT = 4096
 
 @InvokeArg
 class SetArgs {
@@ -45,6 +49,11 @@ class SetArgs {
 @InvokeArg
 class KeyArgs {
     lateinit var key: String
+}
+
+@InvokeArg
+class ListArgs {
+    lateinit var prefix: String
 }
 
 @TauriPlugin
@@ -86,6 +95,18 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
                 val args = invoke.parseArgs(KeyArgs::class.java)
                 storage.remove(args.key)
                 invoke.resolve()
+            }
+        }
+    }
+
+    @Command
+    fun list(invoke: Invoke) {
+        executor.execute {
+            execute(invoke, "list") {
+                val args = invoke.parseArgs(ListArgs::class.java)
+                val response = JSObject()
+                response.put("keys", JSONArray(storage.list(args.prefix)))
+                invoke.resolve(response)
             }
         }
     }
@@ -162,11 +183,20 @@ internal class SecureStorageEngine(
                 EncryptedRecord(iv = iv, ciphertext = ciphertext, tag = tag),
             )
             val encoded = Base64.encodeToString(record, Base64.NO_WRAP)
+            val inventory = loadInventory(key).apply {
+                add(logicalKey)
+            }
+            val encodedInventory = encodeInventory(key, inventory)
 
-            if (!preferences.edit().putString(preferenceKey, encoded).commit()) {
+            if (
+                !preferences.edit()
+                    .putString(preferenceKey, encoded)
+                    .putString(INVENTORY_PREFERENCE_KEY, encodedInventory)
+                    .commit()
+            ) {
                 throw SecureStorageFailure(
                     "SECURE_STORAGE_COMMIT_FAILED",
-                    "synchronous preference commit did not complete",
+                    "synchronous record and inventory commit did not complete",
                 )
             }
         } catch (failure: SecureStorageFailure) {
@@ -222,15 +252,106 @@ internal class SecureStorageEngine(
     fun remove(logicalKey: String) {
         validateLogicalKey(logicalKey)
         val preferenceKey = SecureStorageEncoding.preferenceKey(logicalKey)
-        val encoded = preferences.getString(preferenceKey, null) ?: return
+        val encoded = preferences.getString(preferenceKey, null)
+        val hasInventory = preferences.contains(INVENTORY_PREFERENCE_KEY)
+        if (encoded == null && !hasInventory) return
 
-        val record = decodeStoredRecord(encoded)
-        decrypt(requireExistingKey(), logicalKey, record).fill(0)
-        if (!preferences.edit().remove(preferenceKey).commit()) {
+        val key = requireExistingKey()
+        if (encoded != null) {
+            val record = decodeStoredRecord(encoded)
+            decrypt(key, logicalKey, record).fill(0)
+        }
+        val inventory = loadInventory(key).apply {
+            remove(logicalKey)
+        }
+        val editor = preferences.edit().remove(preferenceKey)
+        if (inventory.isEmpty()) {
+            editor.remove(INVENTORY_PREFERENCE_KEY)
+        } else {
+            editor.putString(INVENTORY_PREFERENCE_KEY, encodeInventory(key, inventory))
+        }
+        if (!editor.commit()) {
             throw SecureStorageFailure(
                 "SECURE_STORAGE_COMMIT_FAILED",
-                "synchronous preference removal did not complete",
+                "synchronous record and inventory removal did not complete",
             )
+        }
+    }
+
+    fun list(prefix: String): List<String> {
+        validateLogicalKey(prefix)
+        if (!preferences.contains(INVENTORY_PREFERENCE_KEY)) return emptyList()
+        return loadInventory(requireExistingKey())
+            .filter { logicalKey -> logicalKey.startsWith(prefix) }
+            .sorted()
+    }
+
+    private fun loadInventory(key: SecretKey): MutableSet<String> {
+        val encoded = preferences.getString(INVENTORY_PREFERENCE_KEY, null)
+            ?: return linkedSetOf()
+        val plaintext = decrypt(
+            key,
+            INVENTORY_LOGICAL_KEY,
+            decodeStoredRecord(encoded),
+        )
+        return try {
+            val array = JSONArray(plaintext.toString(Charsets.UTF_8))
+            if (array.length() > MAX_RECORD_COUNT) {
+                throw SecureStorageFailure(
+                    "SECURE_STORAGE_CORRUPT",
+                    "record inventory exceeds the supported limit",
+                )
+            }
+            buildSet {
+                for (index in 0 until array.length()) {
+                    val logicalKey = array.optString(index, "")
+                    validateLogicalKey(logicalKey)
+                    add(logicalKey)
+                }
+            }.toMutableSet()
+        } catch (failure: SecureStorageFailure) {
+            throw failure
+        } catch (failure: Exception) {
+            throw SecureStorageFailure(
+                "SECURE_STORAGE_CORRUPT",
+                "record inventory is malformed",
+                failure,
+            )
+        } finally {
+            plaintext.fill(0)
+        }
+    }
+
+    private fun encodeInventory(key: SecretKey, inventory: Set<String>): String {
+        if (inventory.size > MAX_RECORD_COUNT) {
+            throw SecureStorageFailure(
+                "SECURE_STORAGE_INVALID_VALUE",
+                "record inventory exceeds the supported limit",
+            )
+        }
+        val plaintext = JSONArray(inventory.sorted()).toString().toByteArray(Charsets.UTF_8)
+        return try {
+            val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            val iv = cipher.iv
+            if (iv.size != IV_SIZE_BYTES) {
+                throw SecureStorageFailure(
+                    "SECURE_STORAGE_CRYPTO_FAILED",
+                    "AndroidKeyStore generated an invalid inventory GCM IV",
+                )
+            }
+            cipher.updateAAD(SecureStorageEncoding.aad(applicationId, INVENTORY_LOGICAL_KEY))
+            val sealed = cipher.doFinal(plaintext)
+            val record = SecureStorageRecordCodec.encode(
+                EncryptedRecord(
+                    iv = iv,
+                    ciphertext = sealed.copyOfRange(0, sealed.size - TAG_SIZE_BYTES),
+                    tag = sealed.copyOfRange(sealed.size - TAG_SIZE_BYTES, sealed.size),
+                ),
+            )
+            Base64.encodeToString(record, Base64.NO_WRAP)
+        } finally {
+            plaintext.fill(0)
         }
     }
 

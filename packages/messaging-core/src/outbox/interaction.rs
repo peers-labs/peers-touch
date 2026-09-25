@@ -4,12 +4,14 @@ use prost::Message;
 
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
-    chat_command, ChatCommand, CryptoEndpoint, PinMessageIntent,
-    PrepareConversationCommandResponse, ReactionIntent, RetractMessageIntent,
+    chat_command, ChatCommand, CryptoEndpoint, HideMessageForActorIntent, ModerateMessageIntent,
+    PinMessageIntent, PrepareConversationCommandResponse, ReactionIntent, RetractMessageIntent,
 };
 
 pub enum MetadataInteraction<'a> {
     Retract,
+    HideForActor,
+    Moderate { reason_code: &'a str },
     Reaction { reaction: &'a str, remove: bool },
     Pin { remove: bool },
 }
@@ -121,6 +123,24 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
                 }),
                 "retract",
             ),
+            MetadataInteraction::HideForActor => (
+                chat_command::Payload::HideMessageForActor(HideMessageForActorIntent {
+                    message_id: message_id.to_string(),
+                }),
+                "hide-for-actor",
+            ),
+            MetadataInteraction::Moderate { reason_code } => {
+                if reason_code.trim().is_empty() || reason_code.len() > 128 {
+                    return Err("messaging moderation reason code is invalid".to_string());
+                }
+                (
+                    chat_command::Payload::ModerateMessage(ModerateMessageIntent {
+                        message_id: message_id.to_string(),
+                        reason_code: reason_code.to_string(),
+                    }),
+                    "moderate",
+                )
+            }
             MetadataInteraction::Reaction { reaction, remove } => {
                 if reaction.trim().is_empty() {
                     return Err("messaging reaction value is required".to_string());

@@ -5,7 +5,7 @@ use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::blocking::RequestBuilder;
 use reqwest::header::HeaderMap;
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
@@ -1013,7 +1013,7 @@ where
     decode_peers_envelope(bytes.as_ref())
 }
 
-// JSON-based request for chat APIs (group_chat, social, etc.).
+// JSON-based request for chat APIs (social, messaging, etc.).
 // Sends/receives JSON with Content-Type: application/json.
 pub(crate) fn request_json(
     method: Method,
@@ -1111,6 +1111,10 @@ fn request_json_with_policy_base_url(
             &text,
             Some(&headers),
         ));
+    }
+    if status == StatusCode::NO_CONTENT {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no content)");
+        return Ok(Value::Null);
     }
 
     let result: Value = resp.json().map_err(|e| {
@@ -1693,6 +1697,41 @@ mod tests {
             StationTransportPolicy::TurnExecution.label(),
             "turn_execution"
         );
+    }
+
+    #[test]
+    fn json_request_accepts_successful_no_content_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind no-content fixture");
+        let address = listener
+            .local_addr()
+            .expect("read no-content fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept no-content request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read no-content request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\n\
+                      Content-Length: 0\r\n\
+                      Connection: close\r\n\
+                      \r\n",
+                )
+                .expect("write no-content response");
+        });
+
+        let response = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/realtime/signal",
+            "fixture-token",
+            None,
+            Some(json!({"kind": "CALL_REQUEST"})),
+            StationTransportPolicy::Interactive,
+        )
+        .expect("204 response must succeed");
+        server.join().expect("join no-content fixture");
+
+        assert!(response.is_null());
     }
 
     #[test]

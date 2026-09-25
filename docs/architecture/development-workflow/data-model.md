@@ -1,11 +1,16 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: accepted
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 
 ---
+
+The Development Workflow itself is unversioned. Plan, Task, Acceptance
+Execution, and rollout contracts use `kind` plus a closed current shape.
+Machine-state records that already participate in digest/replay chains may keep
+an internal format guard for integrity; that number is never a workflow or
+project version.
 
 ## 1. Work Classification
 
@@ -33,7 +38,6 @@ a runtime Journey.
 
 ```ts
 interface PlanPackage {
-  schemaVersion: 2;
   kind: 'peers-touch-plan-package';
   planId: string;
   status:
@@ -103,7 +107,8 @@ Current Task derives from exactly one manifest Task entry with
 owned outside tracked Plan content: Git is physical truth,
 `DevelopmentResourceDeclaration.sourceHead` authorizes the current mutation
 slice, `DevelopmentSession.source.commit` identifies a clean runtime
-checkpoint, and `active_work.expected_head` is the durable resume projection.
+checkpoint, and the consuming workspace's active-work `expectedHead` is the
+durable resume projection.
 Sibling worktree inventory is machine topology and is not part of this binding.
 
 `planctl status` also derives a read-only progress projection:
@@ -120,16 +125,48 @@ interface PlanProgress {
     title: string;
     transition: 'in_progress->done';
     completedDelta: 1;
+    completedAfter: number;
+    percentageAfter: number;
     percentagePointDelta: number;
     unlocksTaskIds: string[];
   };
 }
 ```
 
+Plans that permit a completed source owner to reopen declare a separate strict
+block outside the Plan Package:
+
+```ts
+interface SourceInvalidationPolicy {
+  kind: 'peers-touch-source-invalidation-policy';
+  sourceOwnerTaskId: string;
+  rootTaskIds: string[];
+}
+```
+
+The policy is optional because most Plans never reopen source. When present,
+`planctl invalidate-source` derives the full transitive closure from
+`rootTaskIds`; callers cannot provide an owner or affected set. The command
+stores an immutable machine-local proof containing the prior manifest digest,
+the first-failure reference, and every invalidated durable-evidence reference
+before atomically replacing the Plan lifecycle projection.
+
 The projection is computed from manifest lifecycle and Task titles. It is not
 persisted. A non-blocked active package always exposes one
 `nextProgressBoundary`. Prepared, blocked, completed and superseded packages
 expose `null`.
+
+The endpoint is derived from integer Task counts:
+
+```text
+completedAfter = completed + 1
+percentageAfter = round(100 * completedAfter / total, 2)
+percentagePointDelta = round(percentageAfter - percentage, 2)
+```
+
+`percentageAfter` is never derived by adding a rounded delta to
+`percentage`. Newly unlocked Tasks remain pending and do not contribute to
+`completedAfter`.
 
 Status rules:
 
@@ -150,7 +187,6 @@ Each `tasks/<task-id>.md` contains one fenced `Task Slice` JSON object:
 
 ```ts
 interface TaskSlice {
-  schemaVersion: 1;
   kind: 'peers-touch-task-slice';
   planId: string;
   taskId: string;
@@ -276,7 +312,6 @@ The manifest contains exactly one `Acceptance Execution` JSON contract:
 
 ```ts
 interface AcceptanceExecution {
-  schemaVersion: 1;
   closures: Record<string, string[]>;
   completion: string[];
   full: string[];
@@ -322,46 +357,132 @@ Rules:
 - the referenced package must claim the same `workspaceId`;
 - repository/branch scans, Plan status and declaration recency never select a
   Plan;
-- CI does not consume this machine-local record. Pull requests declare one or
-  more repository-relative Plan paths in `## Execution Plans / 执行计划`, and CI
-  validates every declared path explicitly.
+- CI does not consume this machine-local record and requires an explicit Plan
+  input.
 
-## 6. Active Work Pointer
+## 6. Workspace Active-Work Projection
 
-The tracked-work row becomes:
+The distributed workflow implementation writes one record for the consuming
+workspace:
+
+```ts
+interface WorkspaceActiveWork {
+  schemaVersion: 1;
+  kind: 'peers-touch-workspace-active-work';
+  revision: number;
+  workspaceId: string;
+  workItemId: string;
+  planId: string;
+  planPath: string;
+  planStatus: 'draft' | 'prepared' | 'active' | 'blocked' | 'completed' | 'superseded';
+  currentTaskId: string;
+  currentTaskPath: string;
+  taskStatus: 'pending' | 'in_progress' | 'blocked' | 'done';
+  sessionId: string;
+  journeyId: string;
+  devState: DevelopmentState | null;
+  branch: string;
+  initialHead: string;
+  expectedHead: string;
+  updatedAt: string;
+  recordDigest: string;
+}
+```
+
+Storage:
 
 ```text
-id
-plan
-stage
-current_task_id
-current_task_path
-dev_state
-branch
-workspace_id
-initial_head
-expected_head
-blocked
-last_session
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json
 ```
 
 Ownership:
 
-- `plan`, `stage`, binding and task pointers are a durable locator/index.
-- `plan` must equal the immutable workspace Plan binding. `active_work` cannot
-  establish, replace or repair that binding.
-- `current_task_id/path` mirror the manifest's single `in_progress` Task, or
-  both are `NONE` when package status is `blocked` or `completed`.
-- `dev_state` is a projection of the current Development Session, or `NONE`
+- `peers-dev-workflow` owns the canonical record shape and rollout implementation,
+  not any consuming worktree's record.
+- The installed implementation derives `workspaceId` from the consuming
+  worktree's canonical root.
+- `planId/planPath` must equal the immutable workspace Plan binding. The record
+  cannot establish, replace or repair that binding.
+- `currentTaskId/currentTaskPath/taskStatus` mirror the declaration-selected
+  Task and its manifest lifecycle.
+- `devState` is a projection of the current Development Session, or `null`
   before a Session exists.
-- `blocked` is true only after fixed-point queue exhaustion.
-- On disagreement, manifest and Session repair `active_work`; the projection
-  never rewrites its owners.
-- `current_step` is removed after package cutover; it cannot coexist as a second
-  current-state field.
-- adopting DWF-D17 atomically removes the obsolete sibling-topology column
-  while preserving workspace and HEAD identity and appending a binding
-  migration audit row.
+- `initialHead` comes from the immutable Plan; `expectedHead` comes from the
+  active declaration and must equal Git at sync time.
+- Every update holds a workspace-local lock, verifies optional CAS revision,
+  increments `revision`, recalculates `recordDigest`, atomically replaces the
+  file, fsyncs the directory and reads back the record.
+- On owner disagreement, sync fails closed; the projection never repairs its
+  owners.
+- Project memory, Context Anchor and Peers Dev may read records but cannot write
+  them. Legacy Markdown is migration-only input and has no compatibility
+  writer.
+
+## 6.1 Machine-Local User Skill Overlays
+
+An external Overlay source contains one strict manifest beside its Skill:
+
+```ts
+interface SkillOverlayManifest {
+  kind: 'peers-touch-skill-overlay';
+  name: string;
+  target: 'pt-ew';
+  entry: 'SKILL.md';
+  priority: number;
+}
+```
+
+The manifest and `SKILL.md` use the same kebab-case `name`, and the source
+directory name matches it. `priority` is an integer from 0 through 1000; lower
+values resolve first. The manifest is closed and unversioned.
+
+The machine registry is:
+
+```ts
+interface SkillOverlayRegistry {
+  kind: 'peers-touch-skill-overlay-registry';
+  overlays: Record<string, {
+    name: string;
+    target: 'pt-ew';
+    digest: string;
+    priority: number;
+    enabled: boolean;
+    installedAt: string;
+  }>;
+}
+```
+
+Storage:
+
+```text
+~/.peers-touch/dev/skill-overlays/
+├── registry.json
+├── registry.lock
+└── store/<name>/<digest>/
+    ├── overlay.json
+    └── SKILL.md
+```
+
+Rules:
+
+- install input may be outside the repository, but it must be a real directory
+  with regular files only and no symlink at any depth;
+- the digest covers every relative file path, mode, size, and SHA-256;
+- installation stages and verifies a complete copy before atomically publishing
+  the registry pointer;
+- the installed copy is immutable by contract; a changed source has no effect
+  until an explicit replacement install;
+- replacing different content under the same name requires `--replace`;
+- install, enable, disable, and uninstall hold the machine registry lock and
+  write `registry.json` atomically with owner-only permissions;
+- list and resolve hold the same lock for a consistent read but do not mutate
+  registry or store state;
+- resolution validates the closed registry and rehashes every enabled installed
+  copy before returning its absolute `skillPath`;
+- resolution order is ascending `priority`, then `name`;
+- no registry or manifest field carries a workflow or schema version;
+- the registry controls interaction policy only and is not Plan, Session,
+  declaration, authorization, or Acceptance state.
 
 ## 7. Development Work Item
 
@@ -445,11 +566,8 @@ interface DevelopmentResourceDeclaration extends DevelopmentResourceIntent {
 The Plan locator fields are an all-or-none tuple. Null means the declaration is
 explicitly untracked; it never means "discover a Plan". A non-null
 `planPath` is repository-relative, resolves inside the declared worktree, and
-must identify a package whose `planId` and binding match the declaration and
-immutable workspace Plan binding. While the package is active, `taskId` must
-name its current Task. A blocked/completed package may retain the exact
-blocked/done Task locator through cleanup and delivery; that terminal locator
-cannot select another Task or resume execution. Once a workspace is bound,
+must identify a package whose `planId`, binding, and current `taskId` match the
+declaration and immutable workspace Plan binding. Once a workspace is bound,
 locator-less declarations are rejected with
 `WORKSPACE_PLAN_DECLARATION_REQUIRED`. During the mixed-version rollout,
 legacy terminal records may omit the tuple; they are historical only and
@@ -484,6 +602,129 @@ interface ExecutionAuthorization {
 
 Local commit does not imply push; deploy does not imply reset; PR does not imply
 merge; merge does not imply history rewrite.
+
+`DevelopmentFunctionalResult.runtimeIdentity.profile` identifies the selected
+single runtime Profile when the Environment has one. A composite Acceptance
+Environment may instead identify itself there; in that case every
+`runtimeIdentity.services.*` entry MUST carry `kind` and
+`deploymentEnvironment`, and the Development declaration MUST contain the exact
+`<kind>.connect` or `<kind>.deploy` claim for that deployment environment.
+Composite Environment IDs MUST NOT be compared to `deployProfiles` as though
+they were canonical Profile IDs. Every reported service `liveCommit` that is
+present MUST still equal the Session source checkpoint.
+
+A proposed operation resolves authorization from two explicit sources:
+
+1. an exact user grant in the current Development Run; and
+2. the accepted Plan's matching `ExecutionAuthorization` field or exact runtime
+   scope.
+
+Mere Plan existence, a public declaration, or an unrelated prior command does
+not grant authority. When either explicit source grants the exact operation,
+that authorization remains valid throughout the Plan Run and the operation
+executes directly after the remaining Guardian checks pass. Operation category,
+Task handoff, retry, context compaction, and host change do not consume or
+invalidate the grant.
+
+`OPERATION_AUTHORIZATION_REQUIRED` is an admission result used only when the
+operation is denied or outside every explicit grant. Session failure
+`AUTHORIZATION_REQUIRED` records an actual external permission, credential, or
+scope failure returned after an admitted operation was attempted. The latter
+cannot be manufactured preemptively from the operation category.
+
+A Plan Run adds no second authorization schema. One explicit continue/execute
+request consumes this accepted envelope across multiple Task and Goal Slice
+transitions. Task handoff, agent review, source-backed remediation, Context
+Anchor output, and context compaction do not reset the envelope. Operations
+outside it remain typed hard boundaries and are never inferred from the Plan
+Run request.
+
+### 9.1 Host Adapter Contract
+
+Host transport is not execution authority:
+
+```ts
+type AgentHost = 'trae' | 'cursor' | 'codex' | string;
+
+interface HostCapabilityRequest {
+  requestId: string;
+  actionId: string;
+  sessionId: string;
+  workItemId: string;
+  planId: string;
+  taskId: string;
+  workspaceId: string;
+  journeyId: string;
+  sourceCommit: string;
+  runtimeBindingRef: string | null;
+  host: AgentHost;
+  operation: 'execute' | 'cleanup' | 'inspect-quarantine';
+  capability: 'worker' | 'browser-ui' | 'desktop-ui' | 'diagnostic';
+  nativeAttempted: boolean;
+  expectedPostcondition: string;
+  worktree: WorktreeBinding;
+  resourceId?: string;
+  cleanupHandle?: string;
+  cleanupAttempt?: 1;
+}
+
+interface HostCapabilityResult {
+  status:
+    | 'HOST_ADAPTER_READY'
+    | 'HOST_CAPABILITY_UNAVAILABLE'
+    | 'HOST_TOOL_CALL_FAILED'
+    | 'HOST_CLEANUP_QUARANTINED'
+    | 'HOST_CLEANUP_ESCALATION_REQUIRED'
+    | 'HOST_DIAGNOSTIC_RETAINED';
+  requestId: HostCapabilityRequest['requestId'];
+  actionId: HostCapabilityRequest['actionId'];
+  sessionId: HostCapabilityRequest['sessionId'];
+  workItemId: HostCapabilityRequest['workItemId'];
+  planId: HostCapabilityRequest['planId'];
+  taskId: HostCapabilityRequest['taskId'];
+  workspaceId: HostCapabilityRequest['workspaceId'];
+  journeyId: HostCapabilityRequest['journeyId'];
+  sourceCommit: HostCapabilityRequest['sourceCommit'];
+  runtimeBindingRef: HostCapabilityRequest['runtimeBindingRef'];
+  host: AgentHost;
+  capability: HostCapabilityRequest['capability'];
+  nativeAttempted: HostCapabilityRequest['nativeAttempted'];
+  adapterAttempted: true;
+  tool: string | null;
+  observationRef: string | null;
+  retryable: boolean;
+  possibleLiveSideEffect: boolean;
+  cleanupHandle: string | null;
+  cleanupAttempt: 1 | null;
+  resourceId: string | null;
+  cleanupOwner: 'host-adapter';
+  cleanup: 'released' | 'retained-bounded' | 'not-acquired';
+  leaseExpiresAt: string | null;
+}
+```
+
+The scheduler projects the request but does not invoke the adapter. After the
+Guardian allows the action, Dev Workflow selects and invokes the adapter.
+Host metadata selects an adapter; directories and installed binaries do not.
+The result can describe transport, retryability, cleanup and observation, but
+cannot mutate authorization, Task progress, verification class, Session, or
+Acceptance evidence.
+
+When `possibleLiveSideEffect=true`, `cleanupHandle` is mandatory. Dev Workflow
+must submit one idempotent `operation=cleanup` request to the same adapter and
+observe `cleanup=released` before retry or fallback. Cleanup has exactly one
+admitted attempt and never recursively creates another cleanup request. A
+failed cleanup returns `HOST_CLEANUP_QUARANTINED`,
+`cleanup=retained-bounded`, the unchanged handle, an observation reference and
+a concrete `leaseExpiresAt`. Dev Workflow persists that quarantine, parks the
+current resource-dependent Task, and continues independent ready Tasks. After
+expiry it submits one read-only `operation=inspect-quarantine` request. That
+observation maps to `HOST_CLEANUP_RELEASED` when the adapter returns
+`HOST_ADAPTER_READY` with `cleanup=released`, or to
+`HOST_CLEANUP_ESCALATION_REQUIRED` when the side effect remains. It never
+performs or requests a second cleanup. An unbounded retained side effect is
+invalid adapter output and becomes an external-resource hard boundary only
+after the independent frontier is drained.
 
 ## 10. Development Session
 
@@ -527,6 +768,7 @@ interface DevelopmentSessionState {
   source: SourceCheckpoint | null;
   runtimeBindingRef: string | null;
   currentFailure: DevelopmentFailure | null;
+  hostRequests?: DevelopmentFailure[]; // bounded durable request tombstones
   lastVerification: VerificationRecord | null;
   startedAt: string;
   updatedAt: string;
@@ -548,7 +790,8 @@ from `in_progress` to `done`.
 
 Only one state is current. The bounded event log owns transition order;
 `session.json` is its materialized current projection. Neither is duplicated in
-a Task.
+a Task. `hostRequests` is an additive bounded field: legacy states without it
+read as an empty history, and the first host observation materializes it.
 
 ## 11. Transition Event
 
@@ -630,7 +873,37 @@ interface VerificationRecord {
 }
 ```
 
-`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS`.
+`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS` and the owner command may
+commit it only from `FUNCTIONAL_RUNNING`.
+
+The Session owner runs the current Task closure and commits its source-bound
+functional result and matching Session transition in one result slice. The
+command accepts no caller-selected Gate or result file. It starts the
+Acceptance Development runner with the bound Plan and receives one private
+reference to a canonical aggregate run manifest. That manifest must bind the
+complete closure Gate set, Plan, Task, Journey, work item, workspace and clean
+source. The Session owner resolves every content-addressed Gate run, source
+report, runtime manifest and cleanup artifact required by the Task's
+`runtimeClass`; `source-only` rejects runtime identity, while runtime-backed
+classes require the existing source checkpoint and runtime binding. It then
+seals the complete content as one self-contained bundle under `checks/` before
+committing the Session journal. Seal publication is create-once, fsynced and
+content-addressed. A failure before journal publication may retain an
+unreferenced orphan seal, but a published journal never references a deleted
+seal. Static/local Gate results require `traceability=not-required`; typed
+environment evidence requires complete traceability. Static/local results also
+require `cleanupStatus=not-required` and no cleanup artifact; runtime-backed
+results require `cleanupStatus=passed` plus a durable cleanup artifact. The
+command does not accept a caller-authored PASS record.
+
+Runtime evidence matches the Task class: `browser` requires a browser client,
+`native-desktop` requires a native Tauri desktop client, `native-mobile`
+requires an iOS or Android Tauri runtime, and `service` requires a declared
+runtime profile without substituting a client class.
+A machine result that reports `FUNCTIONAL_CHECK/PASS` while the Session remains
+before `FUNCTIONAL_PASS` is `SESSION_PROJECTION_STALE`; it is not a valid Task
+closure. Stale, substituted, replayed or out-of-order source/runtime/Journey
+identity is `SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
 `ACCEPTANCE_PASS` requires `ACCEPTANCE_PROOF/PASS`.
 
 ## 13. Failure
@@ -651,6 +924,11 @@ interface DevelopmentFailure {
     | 'DRIVER_FAILED'
     | 'TIMEOUT'
     | 'CLEANUP_FAILED'
+    | 'HOST_CAPABILITY_UNAVAILABLE'
+    | 'HOST_CAPABILITY_AVAILABLE'
+    | 'HOST_CLEANUP_QUARANTINED'
+    | 'HOST_CLEANUP_RELEASED'
+    | 'HOST_CLEANUP_ESCALATION_REQUIRED'
     | 'CANCELLED';
   stage: DevelopmentState;
   journeyStepId?: string;
@@ -660,15 +938,54 @@ interface DevelopmentFailure {
     | 'local-dev-control-plane'
     | 'runtime'
     | 'journey-driver'
+    | 'host-adapter'
     | 'authorization';
   summary: string;
   diagnosticRef?: string;
+  requestId?: string;
+  actionId?: string;
+  host?: string;
+  capability?: 'worker' | 'browser-ui' | 'desktop-ui' | 'diagnostic';
+  sessionId?: string;
+  workItemId?: string;
+  planId?: string;
+  taskId?: string;
+  workspaceId?: string;
+  journeyId?: string;
+  sourceCommit?: string;
+  runtimeBindingRef?: string;
+  nativeAttempted?: boolean;
+  adapterAttempted?: true;
+  resourceId?: string;
+  cleanupHandle?: string;
+  cleanupAttempt?: 1;
+  leaseExpiresAt?: string;
+  observationRef?: string;
   retryable: boolean;
 }
 ```
 
 Only the current first failure lives in `session.json`. Resolution appends a new
-transition event and clears `currentFailure`.
+transition event and clears `currentFailure`. Initial `FAILED` or `BLOCKED`
+entry requires `failure.stage` to equal the Session state that observed it.
+Host transport records require
+immutable request/action/host/capability identity, explicit native and adapter
+attempt state, a new observation reference, `owner=host-adapter`, and
+`retryable=false`. Host cleanup quarantine/release/escalation additionally
+requires every bounded resource identity field, `cleanupAttempt=1`, and a lease
+expiry; non-host failures cannot carry host fields.
+
+While blocked, host observations are monotonic and one-shot:
+
+- `HOST_CAPABILITY_UNAVAILABLE -> HOST_CAPABILITY_AVAILABLE`;
+- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_RELEASED`;
+- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_ESCALATION_REQUIRED`.
+
+Cleanup inspection cannot occur before lease expiry. Only AVAILABLE or RELEASED
+may recover to `BOUND`; unchanged unavailable, quarantined, repeated, or
+escalated records remain blocked. The scheduler may advance other
+dependency-ready Tasks, but it cannot erase the blocked Task's transport record
+to manufacture progress.
 
 ## 14. State Transition Guards
 

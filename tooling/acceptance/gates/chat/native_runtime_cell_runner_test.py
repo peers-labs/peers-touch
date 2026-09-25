@@ -858,6 +858,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "src/acceptance/chat/passwordLogin.test.ts",
             command,
         )
+        self.assertIn(
+            "env -u PT_ACCEPTANCE_WORKSPACE_ID "
+            "-u PT_ACCEPTANCE_GATE_ID "
+            "-u PT_ACCEPTANCE_RUN_ID python3 -m unittest",
+            command,
+        )
         for suite in (
             "native_runtime_cell_runner_test",
             "native_recovery_runner_test",

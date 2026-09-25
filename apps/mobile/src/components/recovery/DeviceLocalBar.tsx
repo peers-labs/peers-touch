@@ -53,6 +53,7 @@ export function DeviceLocalBar({
   return (
     <section
       className="recovery-notice recovery-device-local"
+      data-acceptance-id="recovery-device-local"
       role="status"
       aria-label={t(reasonKey)}
       aria-busy={pendingAction !== null}
@@ -68,6 +69,7 @@ export function DeviceLocalBar({
         <div className="recovery-notice__actions">
           <button
             type="button"
+            data-acceptance-id="recovery-device-local-retry"
             className="recovery-btn recovery-btn--compact recovery-btn--primary"
             disabled={pendingAction !== null}
             onClick={() => {
@@ -83,6 +85,7 @@ export function DeviceLocalBar({
           </button>
           <button
             type="button"
+            data-acceptance-id="recovery-device-local-switch-station"
             className="recovery-btn recovery-btn--compact recovery-btn--secondary"
             disabled={pendingAction !== null}
             onClick={() => {

@@ -9,9 +9,6 @@ export interface MobileAuthSession {
   stationPeerId: string;
   stationUrl: string;
   sessionId: string;
-  accessToken: string;
-  refreshToken?: string;
-  tokenType?: string;
   expiresAt?: string;
   actorRef: MobileActorRef;
   authenticatedAt: number;
@@ -36,18 +33,37 @@ export function mobileAuthScopeKey(session: MobileAuthSession): string {
   return `${scope.stationPeerId}|${scope.ptid}`;
 }
 
+export function isMobileAuthSessionValid(
+  session: MobileAuthSession | null | undefined,
+  now = Date.now(),
+): session is MobileAuthSession {
+  if (
+    !session
+    || !session.stationPeerId.trim()
+    || !session.stationUrl.trim()
+    || !session.sessionId.trim()
+    || !session.actorRef.ptid.trim()
+    || !Number.isFinite(session.authenticatedAt)
+  ) {
+    return false;
+  }
+  if (!session.expiresAt) return true;
+
+  const expiresAt = Date.parse(session.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt > now;
+}
+
 export function parseMobileAuthSession(value: unknown): MobileAuthSession | null {
   if (!value || typeof value !== 'object') return null;
   const input = value as Partial<MobileAuthSession>;
   const actorRef = input.actorRef;
   const stationPeerId = typeof input.stationPeerId === 'string' ? input.stationPeerId.trim() : '';
   const stationUrl = typeof input.stationUrl === 'string' ? input.stationUrl.replace(/\/+$/, '') : '';
-  const accessToken = typeof input.accessToken === 'string' ? input.accessToken : '';
   const sessionId = typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
   const ptid = typeof actorRef?.ptid === 'string' ? actorRef.ptid.trim() : '';
   const authenticatedAt = Number(input.authenticatedAt);
 
-  if (!stationPeerId || !stationUrl || !sessionId || !accessToken || !ptid || !Number.isFinite(authenticatedAt)) {
+  if (!stationPeerId || !stationUrl || !sessionId || !ptid || !Number.isFinite(authenticatedAt)) {
     return null;
   }
 
@@ -55,9 +71,6 @@ export function parseMobileAuthSession(value: unknown): MobileAuthSession | null
     stationPeerId,
     stationUrl,
     sessionId,
-    accessToken,
-    refreshToken: optionalString(input.refreshToken),
-    tokenType: optionalString(input.tokenType),
     expiresAt: optionalString(input.expiresAt),
     actorRef: {
       ptid,

@@ -14,7 +14,8 @@
  * It is NOT product code: no WebRTC, no signaling, no store/kernel/tauri. A
  * reviewer toolbar walks every call state the design enumerates
  * (architecture/realtime/voice-video-calls.md §6):
- *   idle / outgoing / incoming / active / reconnecting / ended / failed.
+ *   idle / outgoing / incoming / ringing_all_devices / active / active_here /
+ *   reconnecting / ended / handled_elsewhere / failed.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DesktopShell } from '@peers-touch/prototype-desktop-shell';
@@ -38,6 +39,8 @@ import {
   Paperclip,
   MessageCircle,
   Contact,
+  Monitor,
+  Smartphone,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
@@ -48,9 +51,12 @@ type CallState =
   | 'idle'
   | 'outgoing'
   | 'incoming'
+  | 'ringing_all_devices'
   | 'active'
+  | 'active_here'
   | 'reconnecting'
   | 'ended'
+  | 'handled_elsewhere'
   | 'failed';
 type MediaKind = 'audio' | 'video';
 type EndReason = 'hangup' | 'canceled' | 'rejected' | 'missed' | 'denied' | 'network';
@@ -504,7 +510,7 @@ function CallHud({
   onPeerAccept,
   onSimWeak,
 }: {
-  state: 'outgoing' | 'active' | 'reconnecting';
+  state: 'outgoing' | 'active' | 'active_here' | 'reconnecting';
   media: MediaKind;
   duration: number;
   micOn: boolean;
@@ -514,9 +520,10 @@ function CallHud({
   onHangup: () => void;
   onPeerAccept: () => void;
   onSimWeak: () => void;
+  activeHere?: boolean;
 }) {
   const isVideo = media === 'video';
-  const isActive = state === 'active' || state === 'reconnecting';
+  const isActive = state === 'active' || state === 'active_here' || state === 'reconnecting';
   const reconnecting = state === 'reconnecting';
 
   return (
@@ -651,6 +658,21 @@ function CallHud({
             )}
           </span>
         </div>
+        {state === 'active_here' && (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            fontSize: 11,
+            color: T.primary,
+            backgroundColor: T.primaryWash,
+            padding: '2px 8px',
+            borderRadius: 10,
+            alignSelf: 'flex-start',
+          }}>
+            <Monitor size={12} /> Active on this device
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 2 }}>
           {isActive && (
@@ -762,6 +784,143 @@ function SimHint({ text, onClick }: { text: string; onClick: () => void }) {
   );
 }
 
+function MultiDeviceRingingModal({
+  media,
+  onAcceptHere,
+  onAcceptedOnMobile,
+  onReject,
+}: {
+  media: MediaKind;
+  onAcceptHere: () => void;
+  onAcceptedOnMobile: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 30,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.45)',
+      }}
+    >
+      <div
+        style={{
+          width: 340,
+          borderRadius: 16,
+          backgroundColor: T.bg,
+          padding: '28px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        }}
+      >
+        <div style={{ position: 'relative' }}>
+          <Avatar size={80} ring />
+          <span
+            style={{
+              position: 'absolute',
+              right: -2,
+              bottom: -2,
+              width: 30,
+              height: 30,
+              borderRadius: '50%',
+              backgroundColor: T.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: T.white,
+              border: `3px solid ${T.bg}`,
+            }}
+          >
+            <PhoneIncoming size={15} />
+          </span>
+        </div>
+        <div style={{ marginTop: 16, fontSize: 18, fontWeight: 600, color: T.text }}>{peer.name}</div>
+        <div style={{ marginTop: 5, fontSize: 13, color: T.textTertiary }}>
+          Incoming {media === 'video' ? 'video' : 'voice'} call…
+        </div>
+        <div
+          style={{
+            marginTop: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            color: T.primary,
+            backgroundColor: T.primaryWash,
+            padding: '4px 12px',
+            borderRadius: 20,
+          }}
+        >
+          <Monitor size={14} />
+          <span>Desktop</span>
+          <span style={{ color: T.textQuaternary }}>+</span>
+          <Smartphone size={14} />
+          <span>Mobile</span>
+        </div>
+        <div style={{ marginTop: 24, display: 'flex', gap: 40 }}>
+          <ModalAction icon={PhoneOff} label="Decline" tone="danger" onClick={onReject} />
+          <ModalAction icon={media === 'video' ? Video : Phone} label="Accept" tone="accept" onClick={onAcceptHere} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <SimHint text="▶ accept here" onClick={onAcceptHere} />
+          <SimHint text="▶ accepted on Mobile" onClick={onAcceptedOnMobile} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HandledElsewhereCard({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 74,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 25,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '14px 18px',
+        borderRadius: 12,
+        backgroundColor: T.bg,
+        border: `1px solid ${T.border}`,
+        boxShadow: '0 12px 36px rgba(0,0,0,0.16)',
+      }}
+    >
+      <Avatar size={40} />
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{peer.name}</div>
+        <div style={{ fontSize: 12, color: T.textTertiary, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Smartphone size={13} /> Call handled on another device
+        </div>
+      </div>
+      <div
+        onClick={onDismiss}
+        title="Dismiss"
+        style={{
+          marginLeft: 6,
+          fontSize: 12,
+          color: T.textTertiary,
+          cursor: 'pointer',
+          padding: '4px 8px',
+          borderRadius: 6,
+          backgroundColor: T.fillQuaternary,
+        }}
+      >
+        Dismiss
+      </div>
+    </div>
+  );
+}
+
 /* --------------------------------------------------- reviewer state toolbar */
 
 function StateToolbar({
@@ -779,7 +938,7 @@ function StateToolbar({
   onMedia: (m: MediaKind) => void;
   onReason: (r: EndReason) => void;
 }) {
-  const states: CallState[] = ['idle', 'outgoing', 'incoming', 'active', 'reconnecting', 'ended', 'failed'];
+  const states: CallState[] = ['idle', 'outgoing', 'incoming', 'ringing_all_devices', 'active', 'active_here', 'reconnecting', 'ended', 'handled_elsewhere', 'failed'];
   const reasons: EndReason[] = ['hangup', 'canceled', 'rejected', 'missed', 'denied', 'network'];
   return (
     <div
@@ -855,7 +1014,7 @@ export function ChatPageBlock() {
 
   // run the in-call timer while active/reconnecting
   useEffect(() => {
-    const counting = state === 'active' || state === 'reconnecting';
+    const counting = state === 'active' || state === 'active_here' || state === 'reconnecting';
     if (counting && timer.current === null) {
       timer.current = window.setInterval(() => setDuration((d) => d + 1), 1000);
     }
@@ -863,7 +1022,7 @@ export function ChatPageBlock() {
       window.clearInterval(timer.current);
       timer.current = null;
     }
-    if (state === 'idle' || state === 'outgoing' || state === 'incoming') setDuration(0);
+    if (state === 'idle' || state === 'outgoing' || state === 'incoming' || state === 'ringing_all_devices' || state === 'handled_elsewhere') setDuration(0);
     return () => {
       if (timer.current !== null) {
         window.clearInterval(timer.current);
@@ -912,7 +1071,18 @@ export function ChatPageBlock() {
             }}
           />
         )}
-        {(state === 'outgoing' || state === 'active' || state === 'reconnecting') && (
+        {state === 'ringing_all_devices' && (
+          <MultiDeviceRingingModal
+            media={media}
+            onAcceptHere={() => setState('active_here')}
+            onAcceptedOnMobile={() => setState('handled_elsewhere')}
+            onReject={() => {
+              setReason('rejected');
+              setState('ended');
+            }}
+          />
+        )}
+        {(state === 'outgoing' || state === 'active' || state === 'active_here' || state === 'reconnecting') && (
           <CallHud
             state={state}
             media={media}
@@ -928,6 +1098,9 @@ export function ChatPageBlock() {
             onPeerAccept={() => setState('active')}
             onSimWeak={() => setState(state === 'reconnecting' ? 'active' : 'reconnecting')}
           />
+        )}
+        {state === 'handled_elsewhere' && (
+          <HandledElsewhereCard onDismiss={() => setState('idle')} />
         )}
         {state === 'ended' && <ResultToast reason={reason} duration={duration} onClose={() => setState('idle')} />}
         {state === 'failed' && (

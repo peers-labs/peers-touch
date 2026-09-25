@@ -76,6 +76,11 @@ export const FAILURE_KINDS = new Set([
   'DRIVER_FAILED',
   'TIMEOUT',
   'CLEANUP_FAILED',
+  'HOST_CAPABILITY_UNAVAILABLE',
+  'HOST_CAPABILITY_AVAILABLE',
+  'HOST_CLEANUP_QUARANTINED',
+  'HOST_CLEANUP_RELEASED',
+  'HOST_CLEANUP_ESCALATION_REQUIRED',
   'CANCELLED',
 ]);
 export const FAILURE_OWNERS = new Set([
@@ -84,6 +89,7 @@ export const FAILURE_OWNERS = new Set([
   'local-dev-control-plane',
   'runtime',
   'journey-driver',
+  'host-adapter',
   'authorization',
 ]);
 
@@ -97,7 +103,7 @@ const SESSION_KEYS = new Set([
   'eventCount',
   'eventDigest',
 ]);
-const STATE_KEYS = new Set([
+const STATE_REQUIRED_KEYS = new Set([
   'sessionId',
   'workItemId',
   'planId',
@@ -114,6 +120,7 @@ const STATE_KEYS = new Set([
   'startedAt',
   'updatedAt',
 ]);
+const STATE_OPTIONAL_KEYS = new Set(['hostRequests']);
 const SOURCE_KEYS = new Set([
   'commit',
   'tree',
@@ -143,7 +150,29 @@ const FAILURE_REQUIRED_KEYS = new Set([
   'summary',
   'retryable',
 ]);
-const FAILURE_OPTIONAL_KEYS = new Set(['journeyStepId', 'diagnosticRef']);
+const FAILURE_OPTIONAL_KEYS = new Set([
+  'journeyStepId',
+  'diagnosticRef',
+  'requestId',
+  'actionId',
+  'host',
+  'capability',
+  'sessionId',
+  'workItemId',
+  'planId',
+  'taskId',
+  'workspaceId',
+  'journeyId',
+  'sourceCommit',
+  'runtimeBindingRef',
+  'nativeAttempted',
+  'adapterAttempted',
+  'resourceId',
+  'cleanupHandle',
+  'cleanupAttempt',
+  'leaseExpiresAt',
+  'observationRef',
+]);
 const EVENT_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -161,6 +190,24 @@ const UPDATE_KEYS = new Set([
   'runtimeBindingRef',
   'failure',
   'verification',
+]);
+const HOST_CAPABILITIES = new Set([
+  'worker',
+  'browser-ui',
+  'desktop-ui',
+  'diagnostic',
+]);
+const HOST_FAILURE_KINDS = new Set([
+  'HOST_CAPABILITY_UNAVAILABLE',
+  'HOST_CAPABILITY_AVAILABLE',
+  'HOST_CLEANUP_QUARANTINED',
+  'HOST_CLEANUP_RELEASED',
+  'HOST_CLEANUP_ESCALATION_REQUIRED',
+]);
+const HOST_CLEANUP_FAILURE_KINDS = new Set([
+  'HOST_CLEANUP_QUARANTINED',
+  'HOST_CLEANUP_RELEASED',
+  'HOST_CLEANUP_ESCALATION_REQUIRED',
 ]);
 
 export class DevSessionError extends Error {
@@ -344,11 +391,145 @@ export function validateFailure(failure) {
   if (failure.diagnosticRef !== undefined) {
     requiredText(failure.diagnosticRef, 'failure.diagnosticRef', 2048);
   }
+  for (const field of [
+    'requestId',
+    'actionId',
+    'host',
+    'capability',
+    'sessionId',
+    'workItemId',
+    'planId',
+    'taskId',
+    'workspaceId',
+    'journeyId',
+    'sourceCommit',
+    'runtimeBindingRef',
+    'resourceId',
+    'cleanupHandle',
+    'observationRef',
+  ]) {
+    if (failure[field] !== undefined) {
+      requiredText(failure[field], `failure.${field}`, 2048);
+    }
+  }
+  for (const field of ['nativeAttempted', 'adapterAttempted']) {
+    if (failure[field] !== undefined && typeof failure[field] !== 'boolean') {
+      sessionFail(
+        'SESSION_SCHEMA_INVALID',
+        `failure.${field} must be boolean`,
+      );
+    }
+  }
+  if (
+    failure.cleanupAttempt !== undefined &&
+    failure.cleanupAttempt !== 1
+  ) {
+    sessionFail(
+      'SESSION_SCHEMA_INVALID',
+      'failure.cleanupAttempt must be exactly 1',
+    );
+  }
+  if (failure.leaseExpiresAt !== undefined) {
+    validateIsoTimestamp(failure.leaseExpiresAt, 'failure.leaseExpiresAt');
+  }
+  if (
+    HOST_FAILURE_KINDS.has(failure.kind) &&
+    (
+      failure.owner !== 'host-adapter' ||
+      failure.retryable !== false ||
+      typeof failure.requestId !== 'string' ||
+      typeof failure.actionId !== 'string' ||
+      typeof failure.host !== 'string' ||
+      !HOST_CAPABILITIES.has(failure.capability) ||
+      typeof failure.sessionId !== 'string' ||
+      typeof failure.workItemId !== 'string' ||
+      typeof failure.planId !== 'string' ||
+      typeof failure.taskId !== 'string' ||
+      typeof failure.workspaceId !== 'string' ||
+      typeof failure.journeyId !== 'string' ||
+      typeof failure.sourceCommit !== 'string' ||
+      typeof failure.runtimeBindingRef !== 'string' ||
+      typeof failure.nativeAttempted !== 'boolean' ||
+      failure.adapterAttempted !== true ||
+      typeof failure.observationRef !== 'string'
+    )
+  ) {
+    sessionFail(
+      'SESSION_SCHEMA_INVALID',
+      'host transport failure requires immutable request and attempt identity',
+    );
+  }
+  if (
+    HOST_CLEANUP_FAILURE_KINDS.has(failure.kind) &&
+    (
+      typeof failure.resourceId !== 'string' ||
+      typeof failure.cleanupHandle !== 'string' ||
+      failure.cleanupAttempt !== 1 ||
+      typeof failure.leaseExpiresAt !== 'string' ||
+      typeof failure.observationRef !== 'string'
+    )
+  ) {
+    sessionFail(
+      'SESSION_SCHEMA_INVALID',
+      'host cleanup observation requires bounded quarantine identity',
+    );
+  }
+  if (
+    HOST_FAILURE_KINDS.has(failure.kind) &&
+    !HOST_CLEANUP_FAILURE_KINDS.has(failure.kind) &&
+    [
+      'resourceId',
+      'cleanupHandle',
+      'cleanupAttempt',
+      'leaseExpiresAt',
+    ].some((field) => failure[field] !== undefined)
+  ) {
+    sessionFail(
+      'SESSION_SCHEMA_INVALID',
+      'host capability observation cannot carry cleanup identity',
+    );
+  }
+  if (
+    !HOST_FAILURE_KINDS.has(failure.kind) &&
+    [
+      'requestId',
+      'actionId',
+      'host',
+      'capability',
+      'sessionId',
+      'workItemId',
+      'planId',
+      'taskId',
+      'workspaceId',
+      'journeyId',
+      'sourceCommit',
+      'runtimeBindingRef',
+      'nativeAttempted',
+      'adapterAttempted',
+      'resourceId',
+      'cleanupHandle',
+      'cleanupAttempt',
+      'leaseExpiresAt',
+      'observationRef',
+    ].some((field) => failure[field] !== undefined)
+  ) {
+    sessionFail(
+      'SESSION_SCHEMA_INVALID',
+      'bounded quarantine identity is valid only for host cleanup failures',
+    );
+  }
   return failure;
 }
 
 export function validateSessionState(state) {
-  if (!isObject(state) || !exactKeys(state, STATE_KEYS)) {
+  if (
+    !isObject(state) ||
+    !requiredAndOptionalKeys(
+      state,
+      STATE_REQUIRED_KEYS,
+      STATE_OPTIONAL_KEYS,
+    )
+  ) {
     sessionFail('SESSION_SCHEMA_INVALID', 'session state fields are invalid');
   }
   for (const field of [
@@ -375,6 +556,55 @@ export function validateSessionState(state) {
     requiredText(state.runtimeBindingRef, 'runtimeBindingRef', 2048);
   }
   if (state.currentFailure !== null) validateFailure(state.currentFailure);
+  if (state.hostRequests !== undefined) {
+    if (!Array.isArray(state.hostRequests) || state.hostRequests.length > 128) {
+      sessionFail('SESSION_SCHEMA_INVALID', 'hostRequests is invalid');
+    }
+    const requestIds = new Set();
+    for (const request of state.hostRequests) {
+      validateFailure(request);
+      if (!HOST_FAILURE_KINDS.has(request.kind)) {
+        sessionFail(
+          'SESSION_SCHEMA_INVALID',
+          'hostRequests contains a non-host record',
+        );
+      }
+      if (requestIds.has(request.requestId)) {
+        sessionFail(
+          'SESSION_SCHEMA_INVALID',
+          'hostRequests contains a duplicate requestId',
+        );
+      }
+      requestIds.add(request.requestId);
+    }
+  }
+  for (const request of [
+    ...(state.hostRequests ?? []),
+    ...(state.currentFailure !== null &&
+    HOST_FAILURE_KINDS.has(state.currentFailure.kind)
+      ? [state.currentFailure]
+      : []),
+  ]) {
+    const expected = {
+      sessionId: state.sessionId,
+      workItemId: state.workItemId,
+      planId: state.planId,
+      taskId: state.taskId,
+      workspaceId: state.workspaceId,
+      journeyId: state.journeyId,
+      sourceCommit: state.source?.commit ?? 'UNCOMMITTED',
+      runtimeBindingRef: state.runtimeBindingRef ?? 'UNBOUND',
+    };
+    for (const [field, value] of Object.entries(expected)) {
+      if (request[field] !== value) {
+        sessionFail(
+          'SESSION_SCHEMA_INVALID',
+          'host request identity does not match its Session',
+          { field, expected: value, actual: request[field] },
+        );
+      }
+    }
+  }
   if (state.lastVerification !== null) {
     validateVerificationRecord(state.lastVerification);
   }
@@ -475,6 +705,7 @@ export function createInitialSessionState(input, at) {
     source: null,
     runtimeBindingRef: null,
     currentFailure: null,
+    hostRequests: [],
     lastVerification: null,
     startedAt: at,
     updatedAt: at,
@@ -577,13 +808,95 @@ function normalTargets(state, context) {
   }
 }
 
-function expectedBlockedRecovery(owner) {
-  if (owner === 'source') return 'IMPLEMENTING';
+function assertHostObservationTransition(currentFailure, nextFailure, at) {
+  const allowed = new Set([
+    'HOST_CAPABILITY_UNAVAILABLE:HOST_CAPABILITY_AVAILABLE',
+    'HOST_CLEANUP_QUARANTINED:HOST_CLEANUP_RELEASED',
+    'HOST_CLEANUP_QUARANTINED:HOST_CLEANUP_ESCALATION_REQUIRED',
+  ]);
   if (
-    ['local-dev-control-plane', 'runtime', 'journey-driver'].includes(owner)
+    !isObject(currentFailure) ||
+    !isObject(nextFailure) ||
+    !allowed.has(`${currentFailure.kind}:${nextFailure.kind}`)
+  ) {
+    sessionFail(
+      'SESSION_TRANSITION_INVALID',
+      'repeated BLOCKED transition is not a legal host observation update',
+    );
+  }
+  for (const field of [
+    'stage',
+    'owner',
+    'requestId',
+    'actionId',
+    'host',
+    'capability',
+    'sessionId',
+    'workItemId',
+    'planId',
+    'taskId',
+    'workspaceId',
+    'journeyId',
+    'sourceCommit',
+    'runtimeBindingRef',
+    'nativeAttempted',
+    'adapterAttempted',
+  ]) {
+    if (currentFailure[field] !== nextFailure[field]) {
+      sessionFail(
+        'SESSION_TRANSITION_INVALID',
+        'host observation changed immutable request identity',
+        { field },
+      );
+    }
+  }
+  if (currentFailure.observationRef === nextFailure.observationRef) {
+    sessionFail(
+      'SESSION_TRANSITION_INVALID',
+      'host observation update requires a new observation reference',
+    );
+  }
+  if (currentFailure.kind === 'HOST_CLEANUP_QUARANTINED') {
+    for (const field of [
+      'resourceId',
+      'cleanupHandle',
+      'cleanupAttempt',
+      'leaseExpiresAt',
+    ]) {
+      if (currentFailure[field] !== nextFailure[field]) {
+        sessionFail(
+          'SESSION_TRANSITION_INVALID',
+          'host cleanup observation changed quarantine identity',
+          { field },
+        );
+      }
+    }
+    if (Date.parse(at) < Date.parse(currentFailure.leaseExpiresAt)) {
+      sessionFail(
+        'SESSION_TRANSITION_INVALID',
+        'host cleanup quarantine cannot be inspected before lease expiry',
+      );
+    }
+  }
+}
+
+function expectedBlockedRecovery(failure) {
+  if (failure?.owner === 'source') return 'IMPLEMENTING';
+  if (
+    ['local-dev-control-plane', 'runtime', 'journey-driver'].includes(
+      failure?.owner,
+    )
   ) {
     return 'DEPLOYING';
   }
+  if (
+    ['HOST_CAPABILITY_AVAILABLE', 'HOST_CLEANUP_RELEASED'].includes(
+      failure?.kind,
+    )
+  ) {
+    return 'BOUND';
+  }
+  if (failure?.owner === 'host-adapter') return null;
   return 'BOUND';
 }
 
@@ -616,6 +929,27 @@ function assertTransitionGuard(current, next, context) {
     });
   }
   if (next.state === 'CLEANING') return;
+  if (current.state === 'BLOCKED' && next.state === 'BLOCKED') {
+    assertHostObservationTransition(
+      current.currentFailure,
+      next.currentFailure,
+      next.updatedAt,
+    );
+    return;
+  }
+  if (
+    next.state === 'BLOCKED' &&
+    [
+      'HOST_CAPABILITY_AVAILABLE',
+      'HOST_CLEANUP_RELEASED',
+      'HOST_CLEANUP_ESCALATION_REQUIRED',
+    ].includes(next.currentFailure?.kind)
+  ) {
+    sessionFail(
+      'SESSION_TRANSITION_INVALID',
+      'host resolution or escalation requires an existing blocked observation',
+    );
+  }
   if (['FAILED', 'BLOCKED', 'STALE'].includes(next.state)) {
     if (
       ['FAILED', 'BLOCKED'].includes(next.state) &&
@@ -624,6 +958,19 @@ function assertTransitionGuard(current, next, context) {
       sessionFail(
         'SESSION_TRANSITION_INVALID',
         `${next.state} requires a first failure`,
+      );
+    }
+    if (
+      ['FAILED', 'BLOCKED'].includes(next.state) &&
+      next.currentFailure.stage !== current.state
+    ) {
+      sessionFail(
+        'SESSION_TRANSITION_INVALID',
+        'failure stage must match the state that observed it',
+        {
+          expected: current.state,
+          actual: next.currentFailure.stage,
+        },
       );
     }
     return;
@@ -761,8 +1108,12 @@ function assertTransitionGuard(current, next, context) {
     );
   }
   if (current.state === 'BLOCKED') {
-    const expected = expectedBlockedRecovery(current.currentFailure?.owner);
-    if (next.state !== expected || next.currentFailure !== null) {
+    const expected = expectedBlockedRecovery(current.currentFailure);
+    if (
+      expected === null ||
+      next.state !== expected ||
+      next.currentFailure !== null
+    ) {
       sessionFail(
         'SESSION_TRANSITION_INVALID',
         'blocked recovery does not match the failure owner',
@@ -793,6 +1144,41 @@ export function transitionSessionState(
     });
   }
   validateIsoTimestamp(at, 'transition.at');
+  let hostRequests = current.hostRequests ?? [];
+  if (
+    to === 'BLOCKED' &&
+    HOST_FAILURE_KINDS.has(updates.failure?.kind)
+  ) {
+    const existingIndex = hostRequests.findIndex(
+      (request) => request.requestId === updates.failure.requestId,
+    );
+    if (current.state === 'BLOCKED') {
+      if (existingIndex < 0) {
+        sessionFail(
+          'SESSION_TRANSITION_INVALID',
+          'host observation update has no persisted request identity',
+        );
+      }
+      hostRequests = hostRequests.map((request, index) =>
+        index === existingIndex ? updates.failure : request
+      );
+    } else {
+      if (existingIndex >= 0) {
+        sessionFail(
+          'SESSION_TRANSITION_INVALID',
+          'host request identity cannot be replayed after recovery',
+          { requestId: updates.failure.requestId },
+        );
+      }
+      if (hostRequests.length >= 128) {
+        sessionFail(
+          'SESSION_BOUNDS_EXCEEDED',
+          'host request history exceeds the Session bound',
+        );
+      }
+      hostRequests = [...hostRequests, updates.failure];
+    }
+  }
   const next = {
     ...current,
     state: to,
@@ -809,6 +1195,7 @@ export function transitionSessionState(
       Object.prototype.hasOwnProperty.call(updates, 'failure')
         ? updates.failure
         : current.currentFailure,
+    hostRequests,
     lastVerification:
       Object.prototype.hasOwnProperty.call(updates, 'verification')
         ? updates.verification

@@ -56,6 +56,7 @@ export function SessionMismatchOverlay({
   return (
     <main
       className="recovery-screen recovery-session-mismatch"
+      data-acceptance-id="recovery-session-mismatch"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="recovery-session-mismatch-title"
@@ -85,6 +86,7 @@ export function SessionMismatchOverlay({
         <div className="recovery-panel__actions">
           <button
             type="button"
+            data-acceptance-id="recovery-session-switch-station"
             className="recovery-btn recovery-btn--secondary"
             disabled={pendingAction !== null}
             onClick={() => {
@@ -96,6 +98,7 @@ export function SessionMismatchOverlay({
           <button
             ref={primaryActionRef}
             type="button"
+            data-acceptance-id="recovery-session-reauthenticate"
             className="recovery-btn recovery-btn--primary"
             disabled={pendingAction !== null}
             onClick={() => {

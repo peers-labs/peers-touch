@@ -5,8 +5,8 @@ import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../services/desktop_api';
 import type { StationEntry, StationProbeResult } from '../../services/desktop_api';
+import { dispatchStationActiveChanged } from '../../services/stationRegistryEvents';
 import { log } from '../../utils/logger';
-import { dispatchStationActiveChanged } from './stationRegistryEvents';
 
 type StationHealthStatus = 'unknown' | 'checking' | 'online' | 'offline';
 

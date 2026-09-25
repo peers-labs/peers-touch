@@ -694,7 +694,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             worktree.mkdir()
             store = EvidenceStore(root / "artifacts", worktree=worktree)
             run = store.begin_run("test-gate", source={})
-            with patch.dict(
+            with run, patch.dict(
                 os.environ,
                 run.subprocess_environment(os.environ),
             ), patch(
@@ -713,7 +713,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ),
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
-            ):
+            ) as friendships:
                 manifest, path, reference = produce_actor_manifest(
                     environment_id="home-station",
                     run_id="run-1",
@@ -724,6 +724,13 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     reset_authorized=True,
                 )
 
+            friendships.assert_called_once_with(
+                {
+                    "alice": ("http://station.example", "station-three"),
+                    "bob": ("http://station.example", "station-three"),
+                },
+                manifest.actors,
+            )
             serialized = path.read_text(encoding="utf-8")
             self.assertNotIn("not-persisted", serialized)
             self.assertIn("auto:uuid", serialized)
@@ -733,7 +740,6 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 store.resolve(ArtifactRef.from_dict(reference)),
                 path,
             )
-            run.close()
 
     def test_bound_actor_manifest_uses_each_roles_declared_station(self) -> None:
         from tooling.acceptance.core.provisioning import ActorIdentity
@@ -854,11 +860,16 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
             side_effect=lambda _station, _environment, account: by_account[account],
         ) as read_actor, patch(
+            "tooling.acceptance.fixtures.chat_native_actors."
+            "refresh_fixture_actor_locator",
+            side_effect=lambda _station, _environment, actor: actor,
+        ) as refresh_locator, patch(
             "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
         ) as seed_contact:
             prepare_bound_friendships(role_targets, actors)
 
         self.assertEqual(read_actor.call_count, 3)
+        self.assertEqual(refresh_locator.call_count, 3)
         self.assertEqual(
             seed_contact.call_args_list,
             [

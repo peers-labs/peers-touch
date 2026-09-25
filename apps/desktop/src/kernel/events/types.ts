@@ -22,7 +22,7 @@ export interface RealtimeMessageReceivedPayload {
   /** Recipient DID (always the local actor's stream target). */
   recipientActorPtid: string;
   /** Raw envelope ciphertext bytes; today this is the marshaled
-   *  FriendChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
+   *  ChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
   ciphertext: Uint8Array;
   /** Sender's claim of when the message was sent. UI display only. */
   sentTsUnixMs: number;
@@ -59,7 +59,8 @@ export type RealtimeCallSignalKind =
   | 'CALL_REQUEST'
   | 'CALL_ACCEPT'
   | 'CALL_REJECT'
-  | 'CALL_END';
+  | 'CALL_END'
+  | 'CALL_NO_ANSWER';
 
 export interface RealtimeCallSignalPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
@@ -80,6 +81,12 @@ export interface RealtimeCallSignalPayload {
    *  strict in-order delivery and would stall on dropped candidates).
    *  Wire layout: `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`. */
   payload: Uint8Array;
+  /** Plaintext call identifier visible to Station (CCU-D06). Present
+   *  on every signal belonging to an active call. */
+  callId?: string;
+  /** Populated by Station after first-terminal-action-wins resolution.
+   *  Present on the fan-out of the winning CALL_ACCEPT / CALL_REJECT. */
+  winningDeviceId?: string;
 }
 
 /**

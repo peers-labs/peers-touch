@@ -1,8 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 
 ---
@@ -15,20 +14,24 @@
 | `pt-god-view` | Methodology entry facade | Classifies intent and routes exactly one owner; never executes or persists |
 | `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close Development Run application service |
 | `pt-architecture-execution-methodology` | Execution-plan analysis | Produces the vertical dependency model without writing files |
-| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and initial tracked locator |
-| `pt-trae-goal-orchestrator` | Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
+| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and immutable workspace Plan binding |
+| `pt-goal-orchestrator` | Host-neutral Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
+| `pt-dev-runtime-handoff` | Runtime verification owner | Selects project drivers, operates the Journey, commits Session results, and cleans up |
+| `pt-*-host-adapter` | Optional host transport | Invokes capabilities exposed by detected TRAE, Cursor, Codex, or future hosts |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
 | `execution-plan.py` | Resolves local or explicit Plan input | Loads the immutable workspace binding locally; CI validates every Plan path declared by the PR |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
+| `skill-overlay-control.py` | Machine-local user Overlay lifecycle | Installs immutable copies and resolves interaction-only policy for `pt-ew` |
+| `pt-ew` | Shared personal-workflow entry | Loads enabled user Overlays, then delegates project routing to `pt-god-view` |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
 | execution plans | Scope and current status | Stable manifest + bounded Task snapshots |
 
 ## 2. Control-Plane Composition
 
 ```text
-active_work pointer
+workspace active-work pointer
       |
       v
 Plan Package -> current Task -> Development Session
@@ -108,7 +111,14 @@ make dev-session-start \
   WORK_ITEM=<id> PLAN=<package-plan.md> TASK=<task-id> JOURNEY=<journey-id>
 make dev-session-status WORK_ITEM=<id>
 make dev-transition WORK_ITEM=<id> TO=<state> REASON=<text> \
-  [VERIFICATION_CLASS=<class>] [RESULT=<result>] [FAILURE=<json>]
+  [SOURCE=<json>] [VERIFICATION=<json>] [FAILURE=<json>] \
+  [RUNTIME_BINDING_REF=<ref>]
+make dev-functional-result WORK_ITEM=<id> REASON=<text> \
+  [RUNTIME_CELL=<cell>]
+make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]
+make active-work-status
+make active-work-status-all
+make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
 ```
 
 All commands:
@@ -117,8 +127,52 @@ All commands:
 - return non-zero typed errors;
 - accept an injected machine root/clock in tests;
 - resolve direct and symlinked invocation identically;
-- never infer authorization or run broad Acceptance.
+- never infer authorization from operation need, declaration, or mere Plan
+  existence; consume explicit user grants and accepted Plan authorization
+  fields without requesting them again;
+- never run broad Acceptance before functional promotion;
 - use atomic replacement, lock metadata and replayable migration/session journals.
+
+`active-work-sync` runs from the consuming worktree and derives its record from
+the immutable Plan binding, Plan/Task, active declaration, Session and Git. It
+does not accept arbitrary progress data. `active-work-status-all` and Peers Dev
+only enumerate per-workspace records. The canonical implementation originates
+in `peers-dev-workflow`, but mutable records never report back to that source
+repository.
+
+`dev-functional-result` is the single run-and-commit path for deterministic
+Development proof. It derives the current closure from the bound Plan and
+starts the Acceptance runner itself; callers cannot select one Gate or provide
+a result file, and it starts only from `FUNCTIONAL_RUNNING`. When the workspace
+runtime contains `acceptance-venv`, the owner invokes its exact Python
+executable; otherwise it uses the machine `python3`. The Acceptance runner then
+binds portable Python Gate argv to that same executable, so an isolated child
+cannot drift back to another `PATH` interpreter. Under the Session lock the
+owner validates the aggregate canonical run manifest, the exact required Gate
+set, all class-required child source/runtime/cleanup artifacts, current Git
+identity and the Task/Journey binding. Runtime-backed classes require the
+existing checkpoint and runtime binding; `source-only` rejects runtime identity.
+The owner then publishes a create-once, fsynced, content-addressed evidence
+bundle before the Session journal. A pre-journal failure may leave an unreferenced
+orphan seal for later garbage collection, but no published journal may reference
+a missing seal. Missing or substituted identity returns
+`SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
+
+User Skill Overlays:
+
+```bash
+make skill-overlay-install SOURCE=<local-skill-directory> [REPLACE=1]
+make skill-overlay-list
+make skill-overlay-enable OVERLAY=<name>
+make skill-overlay-disable OVERLAY=<name>
+make skill-overlay-uninstall OVERLAY=<name>
+make skill-overlay-resolve [TARGET=pt-ew]
+```
+
+These commands mutate only `~/.peers-touch/dev/skill-overlays/`. They do not
+project files into `.trae/skills`, `.cursor/skills`, or `.agents/skills`, and
+they do not change Plan, declaration, Session, active-work, or Acceptance
+state. `make skills` remains the only canonical project Skill projector.
 
 ## 4. Skill Integration
 
@@ -130,14 +184,39 @@ All commands:
 - asks the Goal scheduler what is ready and the Guardian whether each proposed
   action may execute;
 - performs allowed work and persists Session, Task, manifest, and
-  `active_work` updates through their owning commands;
+  workspace active-work updates through their owning commands;
 - drains supporting actions until the current Progress Slice closes one Task or
   reaches a hard boundary;
+- treats one user-authorized `continue`/`execute plan` request as a Plan Run,
+  repeatedly activating dependency-ready successor Tasks and scheduling new
+  Goal Slices until the Plan is terminal or DWF-D20 hard-boundary exhaustion is
+  proven;
+- executes an operation already granted by the user or the accepted Plan
+  directly; it asks an authorization question only for an out-of-envelope
+  action or after an admitted attempt returns an actual external permission
+  failure;
+- invokes agent-led methodology, quality, completion, and code review inside
+  the Run; fixes source-backed findings and reruns affected review without
+  delegating ordinary review work to the user;
 - reports task/Journey progress, not file/Gate counts;
 - fences Acceptance before `FUNCTIONAL_PASS`;
 - releases declaration and leases on close/cancel.
 
+### `pt-ew`
+
+- handles explicit Overlay install/list/enable/disable/uninstall intent through
+  the repository-owned control command;
+- resolves enabled `pt-ew` Overlays from the machine-local registry before a
+  normal request;
+- reads only resolver-returned, digest-verified installed `SKILL.md` files;
+- permits interaction transforms but rejects any attempt to change task intent,
+  owner routing, authorization, Plan execution, verification, Acceptance, or
+  stop conditions;
+- passes the original request through unchanged when resolution is empty;
+- delegates exactly once to `pt-god-view` after Overlay processing.
+
 ### `pt-architecture-execution-methodology`
+
 
 - derives vertical Journey/functional closures and their dependency DAG;
 - defines atomic cutovers and risk/state-based verification;
@@ -147,8 +226,9 @@ All commands:
 
 - renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- registers the initial
-  `active_work.current_task_id/current_task_path/dev_state`;
+- creates the immutable workspace Plan binding; after review, Dev Workflow
+  publishes the tracked declaration and derives workspace active-work from its
+  owners;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
@@ -157,6 +237,10 @@ All commands:
 - consumes one scheduler-proposed action;
 - validates binding, current Task, dependencies, scope, ownership,
   authorization, concurrency safety, and evidence policy;
+- returns `ACTION_ALLOWED` for an exact user or accepted Plan grant when all
+  other checks pass, regardless of the operation category;
+- returns `OPERATION_AUTHORIZATION_REQUIRED` only for a denied or
+  out-of-envelope action, never to repeat an existing grant;
 - returns allow, deny, or typed amendment escalation;
 - never selects work, executes commands, or mutates Plan/Task/Session/tracking
   state.
@@ -165,7 +249,7 @@ All commands:
 
 Reads only:
 
-1. matching `active_work` row;
+1. matching workspace active-work record;
 2. compact `plan.md`;
 3. `current_task_path`;
 4. matching `session.json`;
@@ -184,20 +268,83 @@ continuation contract:
 - completed/total Task closures;
 - completed delta since the previous Anchor;
 - next Progress Slice;
+- machine-derived post-Next completed count and percentage;
 - expected `+1` closure and percentage-point delta;
-- newly unlocked Tasks, evidence, and hard boundaries.
+- ordered Plan Run successor queue;
+- newly unlocked Tasks, execution mandate/autonomous horizon, evidence, and
+  hard boundaries.
+
+The Anchor and Peers Dev copy `completedAfter` and `percentageAfter` from
+`planctl status.progress.nextProgressBoundary`. They never add rounded
+percentages locally or count unlocked pending Tasks as completed.
 
 It does not expose an administrative command as the user-facing next action.
+During an authorized Plan Run it also does not ask for confirmation; the Anchor
+states the autonomous horizon and hard stop conditions, then execution
+continues.
 
-### `pt-trae-goal-orchestrator`
+### `pt-goal-orchestrator`
 
 - builds ready queue from manifest DAG;
 - maps one Goal Slice to dependency-ready actions inside the current Task;
 - binds the Goal Slice completion boundary to the current Task's derived
   Progress Slice;
 - chooses serial/parallel/hybrid lanes and one integration order;
-- never rewrites manifest, Task, Session, `active_work`, or evidence;
+- returns a successor candidate after Task closure, while Dev Workflow alone
+  activates it and continues the Plan Run;
+- never rewrites manifest, Task, Session, workspace active-work, or evidence;
 - treats stale/unaddressable agent records as runtime metadata, not blockers.
+
+The schedule is complete before any host transport is selected. Parallel
+worker capability missing from the current host degrades to a safe serial or
+hybrid schedule and does not become a project blocker.
+
+### `pt-dev-runtime-handoff`
+
+- owns runtime selection, launch, Journey operation policy, deterministic
+  functional result interpretation, Session result commit, and cleanup;
+- prefers repository-native Make, Harness, WebDriver, Appium, accessibility,
+  and browser drivers;
+- reports a typed missing capability and native-attempt state to Dev Workflow
+  without selecting a host or creating a request;
+- rejects a PASS report that has not reached the source-bound
+  `FUNCTIONAL_PASS` Session state as `SESSION_PROJECTION_STALE`.
+
+Host adapters never own a Journey assertion, proof class, Session transition,
+repository-native fallback, or Task blocker. Dev Workflow alone invokes
+`pt-trae-host-adapter`, `pt-cursor-host-adapter`, or
+`pt-codex-host-adapter` after `pt-goal-orchestrator`, the sole Host Capability
+Request projector, has bound the need and Guardian has admitted it.
+`HOST_CAPABILITY_UNAVAILABLE` with a typed UI capability blocks only the
+required interaction when no repository-native path exists. The repository
+driver and adapter are each attempted at most once for one unchanged capability
+request. Dev Workflow persists `HOST_CAPABILITY_UNAVAILABLE`; only a new
+`HOST_CAPABILITY_AVAILABLE` observation with the same immutable request identity
+can unblock it. Without that observation, recomputation must select independent
+ready Tasks or park the dependent Task instead of retrying at zero progress. A
+failed cleanup enters bounded `HOST_CLEANUP_QUARANTINED`; it cannot recursively
+request cleanup or stop unrelated ready Tasks. After lease expiry one read-only
+`inspect-quarantine` observation commits either `HOST_CLEANUP_RELEASED` or
+`HOST_CLEANUP_ESCALATION_REQUIRED`. Repeated, identity-changing, and pre-expiry
+blocked updates fail closed.
+
+### Agent Review Loop
+
+Review prompts remain structured inputs, not user handoff requirements. The
+Development Run routes them through the repository's review stack:
+
+```text
+stage methodology review
+  -> pt-quality-check
+  -> pt-completion-auditor
+  -> pt-github-review
+  -> source-backed remediation
+  -> affected checks and review rerun
+```
+
+An internal pass advances the stage or Task. A finding that accepted sources
+already resolve is implementation work. Only DWF-D20 hard-boundary decisions
+are projected to the user.
 
 ### `pt-completion-auditor`
 
@@ -207,7 +354,7 @@ Rejects:
 - completion inferred from archive or chat;
 - a product Task without current functional proof;
 - a plan completed while any Task is not `done`;
-- active_work pointers inconsistent with package/session.
+- workspace active-work pointers inconsistent with package/session.
 
 ## 5. Acceptance Integration
 
@@ -271,7 +418,8 @@ Projection migration order is deterministic:
 7. emit a Context Anchor from the new sources.
 
 If projection update stops after manifest/Session mutation, resume repairs
-`active_work` from those owners. No fallback reads `current_step` after migration.
+workspace active-work from those owners. No fallback reads `current_step` after
+migration.
 
 The Mobile pilot has no `active_work` row in project memory. Its reviewed
 crosswalk therefore declares `NONE -> NONE`; prepare, commit and recovery read
@@ -380,6 +528,7 @@ completion or rollback without a Git checkpoint.
 - No automatic commit, deploy, reset, push or history rewrite.
 - No broad Acceptance run during the pilot.
 - No second Profile, lease, driver, Journey or evidence authority.
+- No host-specific scheduler, Journey, Session, or evidence authority.
 - No old/new current-state owner after cutover.
 - No historical raw logs copied into Task snapshots.
 - No plan split by test case or command.
@@ -408,6 +557,6 @@ in machine-local artifacts.
 
 The `next` field is a Progress Slice, not an individual command. Its successful
 completion must match the `planctl status.progress.nextProgressBoundary`
-projection. Dev Workflow continues across internal actions until that boundary
-is reached; otherwise it reports the hard boundary and the unchanged delta
-explicitly.
+projection. Dev Workflow continues across internal actions and, after the Task
+closes, across dependency-ready successor Slices until the Plan Run ends.
+Otherwise it reports the hard boundary and the unchanged delta explicitly.

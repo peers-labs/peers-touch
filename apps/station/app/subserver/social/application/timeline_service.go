@@ -57,7 +57,13 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 		if req.ActorPtid == "" {
 			return nil, fmt.Errorf("invalid actor_ptid")
 		}
-		posts, nextCursor, hasMore, err := s.moments.ListByAuthor(ctx, req.ActorPtid, viewerPTID, req.Cursor, limit)
+		posts, nextCursor, hasMore, scannedCount, err := s.moments.ListByAuthorPage(
+			ctx,
+			req.ActorPtid,
+			viewerPTID,
+			req.Cursor,
+			limit,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -65,12 +71,12 @@ func (s *TimelineService) GetTimeline(ctx context.Context, req *model.GetTimelin
 		if err != nil {
 			return nil, err
 		}
-		return &model.GetTimelineResponse{
+		return finalizeTimelineResponse(&model.GetTimelineResponse{
 			Posts:        posts,
 			NextCursor:   nextCursor,
 			HasMore:      hasMore,
 			Explanations: buildFeedObjectExplanations(posts, nil, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
-		}, nil
+		}, scannedCount), nil
 	case model.TimelineType_TIMELINE_HOME:
 		return s.getHomeTimeline(ctx, req.Cursor, limit, viewerPTID)
 	default:
@@ -117,12 +123,12 @@ func (s *TimelineService) getPublicTimeline(ctx context.Context, cursor string, 
 		last := scannedRows[len(scannedRows)-1]
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
 	}
-	return &model.GetTimelineResponse{
+	return finalizeTimelineResponse(&model.GetTimelineResponse{
 		Posts:        posts,
 		NextCursor:   nextCursor,
 		HasMore:      hasMore,
 		Explanations: buildFeedObjectExplanations(posts, nil, model.RelationshipReason_RELATIONSHIP_REASON_PUBLIC_FEDERATED),
-	}, nil
+	}, len(scannedRows)), nil
 }
 
 // getPublicHotTimeline returns the trending public feed. Repo
@@ -168,12 +174,12 @@ func (s *TimelineService) getPublicHotTimeline(ctx context.Context, cursor strin
 			LastID:    last.ID,
 		}.Encode()
 	}
-	return &model.GetTimelineResponse{
+	return finalizeTimelineResponse(&model.GetTimelineResponse{
 		Posts:        posts,
 		NextCursor:   nextCursor,
 		HasMore:      hasMore,
 		Explanations: buildFeedObjectExplanations(posts, nil, model.RelationshipReason_RELATIONSHIP_REASON_PUBLIC_FEDERATED),
-	}, nil
+	}, len(scannedRows)), nil
 }
 
 // getHomeTimeline merges the six sources described in the package
@@ -190,7 +196,7 @@ func (s *TimelineService) getHomeTimeline(ctx context.Context, cursor string, li
 
 func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
 	if viewerPTID == "" {
-		return &model.GetTimelineResponse{}, nil
+		return finalizeTimelineResponse(&model.GetTimelineResponse{}, 0), nil
 	}
 
 	mc, err := domain.DecodeMultiSourceCursor(cursor)
@@ -218,8 +224,24 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 	if err != nil {
 		return nil, err
 	}
-	selfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerPTID, mc.Source("self_public"), pageBudget)
-	followedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
+	selfPublic, err := s.repos.PublicPosts.ListByAuthor(
+		ctx,
+		viewerPTID,
+		mc.Source("self_public"),
+		pageBudget,
+	)
+	if err != nil {
+		return nil, err
+	}
+	followedPublic, err := s.repos.PublicPosts.ListPublicByAuthors(
+		ctx,
+		followingPTIDs,
+		mc.Source("followed_public"),
+		pageBudget,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	items := make([]timelineItem, 0, len(deliveries)+len(selfPublic)+len(followedPublic))
 	for i := range deliveries {
@@ -228,10 +250,16 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 		if err != nil {
 			return nil, err
 		}
+		domainPost := &domain.Post{ID: d.PostID, AuthorPTID: d.AuthorPTID, CreatedAt: d.DeliveredAt}
 		if post == nil {
+			items = append(items, timelineItem{
+				source:   "delivery",
+				delivery: &d,
+				post:     domainPost,
+				filtered: true,
+			})
 			continue
 		}
-		domainPost := &domain.Post{ID: d.PostID, AuthorPTID: d.AuthorPTID, CreatedAt: d.DeliveredAt}
 		items = append(items, timelineItem{source: "delivery", delivery: &d, post: domainPost, wire: post})
 	}
 	for _, p := range selfPublic {
@@ -249,11 +277,16 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 	if hasMore {
 		items = items[:limit]
 	}
+	scannedCount := len(items)
 
 	posts := make([]*model.Post, 0, len(items))
 	reasonsByPostID := make(map[string]model.RelationshipReason_Kind, len(items))
 	srcLastSeen := make(map[string]timelineItem)
 	for _, item := range items {
+		srcLastSeen[item.source] = item
+		if item.filtered {
+			continue
+		}
 		var wirePost *model.Post
 		if item.wire != nil {
 			wirePost = item.wire
@@ -267,7 +300,6 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 			posts = append(posts, wirePost)
 			reasonsByPostID[wirePost.GetId()] = timelineReasonFromSource(item.source, item.deliveryAudienceKind())
 		}
-		srcLastSeen[item.source] = item
 	}
 	posts, err = s.applyStationModeration(ctx, posts)
 	if err != nil {
@@ -275,10 +307,10 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 	}
 
 	if !hasMore {
-		return &model.GetTimelineResponse{
+		return finalizeTimelineResponse(&model.GetTimelineResponse{
 			Posts:        posts,
 			Explanations: buildFeedObjectExplanations(posts, reasonsByPostID, model.RelationshipReason_RELATIONSHIP_REASON_UNKNOWN),
-		}, nil
+		}, scannedCount), nil
 	}
 	nextMC := domain.MultiSourceCursor{}
 	for _, name := range []string{"delivery", "self_public", "followed_public"} {
@@ -296,17 +328,17 @@ func (s *TimelineService) getDeliveryHomeTimeline(ctx context.Context, cursor st
 			nextMC.SetSource(name, &cur)
 		}
 	}
-	return &model.GetTimelineResponse{
+	return finalizeTimelineResponse(&model.GetTimelineResponse{
 		Posts:        posts,
 		NextCursor:   nextMC.Encode(),
 		HasMore:      true,
 		Explanations: buildFeedObjectExplanations(posts, reasonsByPostID, model.RelationshipReason_RELATIONSHIP_REASON_UNKNOWN),
-	}, nil
+	}, scannedCount), nil
 }
 
 func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor string, limit int, viewerPTID string) (*model.GetTimelineResponse, error) {
 	if viewerPTID == "" {
-		return &model.GetTimelineResponse{}, nil
+		return finalizeTimelineResponse(&model.GetTimelineResponse{}, 0), nil
 	}
 
 	mc, err := domain.DecodeMultiSourceCursor(cursor)
@@ -346,12 +378,30 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 
 	pageBudget := limit + 1
 
-	srcSelfPublic, _ := s.repos.PublicPosts.ListByAuthor(ctx, viewerPTID, mc.Source("self_public"), pageBudget)
-	srcSelfPrivate, _ := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, viewerPTID, viewerPTID, mc.Source("self_private"), pageBudget)
-	srcFollowedPublic, _ := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
-	srcFollowedFollowers, _ := s.repos.PrivatePosts.ListByFollowingForViewer(ctx, viewerPTID, followingPTIDs, mc.Source("followed_followers"), pageBudget)
-	srcCircles, _ := s.repos.PrivatePosts.ListByCirclesForViewer(ctx, viewerPTID, circleIDs, mc.Source("circles"), pageBudget)
-	srcGroups, _ := s.repos.PrivatePosts.ListByGroupsForViewer(ctx, viewerPTID, groupIDs, mc.Source("groups"), pageBudget)
+	srcSelfPublic, err := s.repos.PublicPosts.ListByAuthor(ctx, viewerPTID, mc.Source("self_public"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	srcSelfPrivate, err := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, viewerPTID, viewerPTID, mc.Source("self_private"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	srcFollowedPublic, err := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	srcFollowedFollowers, err := s.repos.PrivatePosts.ListByFollowingForViewer(ctx, viewerPTID, followingPTIDs, mc.Source("followed_followers"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	srcCircles, err := s.repos.PrivatePosts.ListByCirclesForViewer(ctx, viewerPTID, circleIDs, mc.Source("circles"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
+	srcGroups, err := s.repos.PrivatePosts.ListByGroupsForViewer(ctx, viewerPTID, groupIDs, mc.Source("groups"), pageBudget)
+	if err != nil {
+		return nil, err
+	}
 
 	type src struct {
 		name  string
@@ -382,6 +432,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	if hasMore {
 		merged = merged[:limit]
 	}
+	scannedCount := len(merged)
 	if err := markBlockedAuthors(ctx, &viewer, s.repos, postAuthorPTIDs(merged)); err != nil {
 		return nil, fmt.Errorf("mark blocked authors: %w", err)
 	}
@@ -415,10 +466,10 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	}
 
 	if !hasMore {
-		return &model.GetTimelineResponse{
+		return finalizeTimelineResponse(&model.GetTimelineResponse{
 			Posts:        posts,
 			Explanations: buildFeedObjectExplanations(posts, reasonsByPostID, model.RelationshipReason_RELATIONSHIP_REASON_UNKNOWN),
-		}, nil
+		}, scannedCount), nil
 	}
 
 	nextMC := domain.MultiSourceCursor{}
@@ -428,12 +479,38 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 			nextMC.SetSource(name, &cur)
 		}
 	}
-	return &model.GetTimelineResponse{
+	return finalizeTimelineResponse(&model.GetTimelineResponse{
 		Posts:        posts,
 		NextCursor:   nextMC.Encode(),
 		HasMore:      true,
 		Explanations: buildFeedObjectExplanations(posts, reasonsByPostID, model.RelationshipReason_RELATIONSHIP_REASON_UNKNOWN),
-	}, nil
+	}, scannedCount), nil
+}
+
+func finalizeTimelineResponse(
+	response *model.GetTimelineResponse,
+	scannedCount int,
+) *model.GetTimelineResponse {
+	if response == nil {
+		response = &model.GetTimelineResponse{}
+	}
+	if scannedCount < len(response.Posts) {
+		scannedCount = len(response.Posts)
+	}
+	filteredCount := scannedCount - len(response.Posts)
+	response.PolicySummary = &model.TimelinePolicySummary{
+		ScannedCount:  uint32(scannedCount),
+		FilteredCount: uint32(filteredCount),
+	}
+	switch {
+	case len(response.Posts) > 0:
+		response.Outcome = model.TimelinePageOutcome_TIMELINE_PAGE_OUTCOME_ITEMS
+	case scannedCount > 0:
+		response.Outcome = model.TimelinePageOutcome_TIMELINE_PAGE_OUTCOME_FILTERED_EMPTY
+	default:
+		response.Outcome = model.TimelinePageOutcome_TIMELINE_PAGE_OUTCOME_EMPTY
+	}
+	return response
 }
 
 func (s *TimelineService) applyStationModeration(ctx context.Context, posts []*model.Post) ([]*model.Post, error) {
@@ -469,6 +546,7 @@ type timelineItem struct {
 	post     *domain.Post
 	wire     *model.Post
 	delivery *domain.MomentDelivery
+	filtered bool
 }
 
 func (i timelineItem) deliveryAudienceKind() model.Audience_Kind {

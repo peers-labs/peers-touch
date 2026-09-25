@@ -1,3 +1,5 @@
+#[cfg(feature = "acceptance-harness")]
+use serde::Deserialize;
 use tauri::{AppHandle, Runtime, State};
 
 use crate::error::MobileResult;
@@ -5,13 +7,57 @@ use crate::platform::browser;
 use crate::platform::secure_storage::SecureStorage;
 #[cfg(feature = "acceptance-harness")]
 use crate::runtime::oauth::{
-    CallbackReplayHandleProjection, CallbackReplayHandleRequest, NegativeCallbackProjection,
-    NegativeCallbackRequest,
+    configure_secure_storage_fault, CallbackReplayHandleProjection, CallbackReplayHandleRequest,
+    NegativeCallbackProjection, NegativeCallbackRequest, SecureStorageFaultProjection,
 };
 use crate::runtime::oauth::{
-    OAuthCoordinator, OAuthPublicProjection, OAuthPurgeProjection, OAuthScopeIntent,
-    OAuthStartIntent,
+    NativeAccessDecisionInput, NativeAccessProjection, NativeAccessStartInput,
+    NativeAccessSubmitInput, NativeSessionProjection, OAuthCoordinator, OAuthPublicProjection,
+    OAuthPurgeProjection, OAuthScopeIntent, OAuthStartIntent,
 };
+
+#[cfg(feature = "acceptance-harness")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SecureStorageFaultInput {
+    mode: String,
+}
+
+#[tauri::command]
+pub async fn access_start(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: NativeAccessStartInput,
+) -> MobileResult<NativeAccessProjection> {
+    coordinator.access_start(&storage, input).await
+}
+
+#[tauri::command]
+pub async fn access_submit(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: NativeAccessSubmitInput,
+) -> MobileResult<NativeAccessProjection> {
+    coordinator.access_submit(&storage, input).await
+}
+
+#[tauri::command]
+pub async fn access_decision(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: NativeAccessDecisionInput,
+) -> MobileResult<NativeAccessProjection> {
+    coordinator.access_decision(&storage, input).await
+}
+
+#[tauri::command]
+pub async fn access_cancel(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: NativeAccessDecisionInput,
+) -> MobileResult<bool> {
+    coordinator.access_cancel(&storage, input).await
+}
 
 #[tauri::command]
 pub async fn oauth_start<R: Runtime>(
@@ -82,6 +128,24 @@ pub async fn oauth_restore(
     coordinator.restore(&storage, input).await
 }
 
+#[tauri::command]
+pub fn oauth_session_projection(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: OAuthScopeIntent,
+) -> MobileResult<Option<NativeSessionProjection>> {
+    coordinator.session_projection(&storage, input)
+}
+
+#[tauri::command]
+pub async fn oauth_session_refresh(
+    coordinator: State<'_, OAuthCoordinator>,
+    storage: State<'_, SecureStorage>,
+    input: OAuthScopeIntent,
+) -> MobileResult<NativeSessionProjection> {
+    coordinator.refresh_session(&storage, input).await
+}
+
 #[cfg(feature = "acceptance-harness")]
 #[tauri::command]
 pub fn oauth_acceptance_callback_replay_handle(
@@ -102,4 +166,12 @@ pub async fn oauth_acceptance_negative_callback(
     coordinator
         .acceptance_negative_callback(&*storage, input)
         .await
+}
+
+#[cfg(feature = "acceptance-harness")]
+#[tauri::command]
+pub fn oauth_acceptance_configure_secure_storage_fault(
+    input: SecureStorageFaultInput,
+) -> MobileResult<SecureStorageFaultProjection> {
+    configure_secure_storage_fault(&input.mode)
 }

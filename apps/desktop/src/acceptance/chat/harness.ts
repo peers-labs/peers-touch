@@ -1,5 +1,5 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
-import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
+import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
 import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
@@ -11,9 +11,9 @@ import {
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
-import { messageGroupSeq } from '../../store/socialProjection';
+import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
-import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { callP2p } from '../../modules/p2p/callP2p';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
 import { nativeAcceptanceBridge } from './nativeBridge';
@@ -225,8 +225,8 @@ async function waitForIdentityState(
 }
 
 interface PressureWindowState {
-  rawByUlid: Map<string, GroupMessage>;
-  decodedByUlid: Map<string, GroupMessage>;
+  rawByUlid: Map<string, SocialMessage>;
+  decodedByUlid: Map<string, SocialMessage>;
   nextDecodeIndex: number;
 }
 
@@ -236,8 +236,8 @@ function groupPressureWindow(groupUlid: string): PressureWindowState {
   let state = groupPressureWindows.get(groupUlid);
   if (!state) {
     state = {
-      rawByUlid: new Map<string, GroupMessage>(),
-      decodedByUlid: new Map<string, GroupMessage>(),
+      rawByUlid: new Map<string, SocialMessage>(),
+      decodedByUlid: new Map<string, SocialMessage>(),
       nextDecodeIndex: 0,
     };
     groupPressureWindows.set(groupUlid, state);
@@ -245,11 +245,13 @@ function groupPressureWindow(groupUlid: string): PressureWindowState {
   return state;
 }
 
-function orderedPressureMessages(state: PressureWindowState): GroupMessage[] {
+function orderedPressureMessages(state: PressureWindowState): SocialMessage[] {
   return Array.from(state.rawByUlid.values()).sort((a, b) => {
-    const secondsDelta = Number(a.sentAt?.seconds ?? 0n) - Number(b.sentAt?.seconds ?? 0n);
+    const aTs = a.sentAt as { seconds?: bigint; nanos?: number } | undefined;
+    const bTs = b.sentAt as { seconds?: bigint; nanos?: number } | undefined;
+    const secondsDelta = Number(aTs?.seconds ?? 0n) - Number(bTs?.seconds ?? 0n);
     if (secondsDelta) return secondsDelta;
-    const nanosDelta = Number(a.sentAt?.nanos ?? 0) - Number(b.sentAt?.nanos ?? 0);
+    const nanosDelta = Number(aTs?.nanos ?? 0) - Number(bTs?.nanos ?? 0);
     return nanosDelta || (a.ulid || '').localeCompare(b.ulid || '');
   });
 }
@@ -369,7 +371,7 @@ export function installAcceptanceHarness(): void {
           identityRuntime.completeCurrentSession(),
       }, account, password);
       const actorPtid = activeActorPtid();
-      await installDeferredAppRuntimeProjections(actorPtid);
+      await installAuthenticatedCriticalRuntimes(actorPtid);
       await hydrateSocialForActiveActor();
       return {
         authenticated: true,
@@ -494,14 +496,58 @@ export function installAcceptanceHarness(): void {
       return { conversationId: conversation.conversationId };
     },
 
-    async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
-      await refreshConversation('friend', sessionUlid);
-      const messages = useSocialChatStore.getState().getIMMessages('friend', sessionUlid);
+    async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages = 1 }: SyncFriendInput) {
+      const social = useSocialChatStore.getState();
+      await social.loadMessages(sessionUlid, 'friend');
+      let pagesFetched = 1;
+      while (
+        pagesFetched < maxPages
+        && useSocialChatStore.getState().messageHasMore[sessionUlid]
+      ) {
+        await useSocialChatStore.getState().loadOlderMessages(
+          sessionUlid,
+          'friend',
+        );
+        pagesFetched += 1;
+      }
+      selectConversation('friend', sessionUlid);
+      const messages = useSocialChatStore.getState()
+        .getIMMessages('friend', sessionUlid);
       return {
         sessionUlid,
         messageCount: messages.length,
         syncedCount: messages.length,
-        pagesFetched: 1,
+        pagesFetched,
+      };
+    },
+
+    async parkConversation() {
+      useSocialChatStore.setState({
+        activeSessionUlid: null,
+        activeGroupUlid: null,
+        openThreadRootUlid: null,
+      });
+      return { parked: true };
+    },
+
+    async messagePage({
+      conversationId,
+      beforeSequence,
+      limit = 50,
+    }: {
+      conversationId: string;
+      beforeSequence?: number;
+      limit?: number;
+    }) {
+      const page = await imServiceV1.messaging.listMessages(
+        conversationId,
+        { beforeSequence, limit },
+      );
+      return {
+        messageIds: page.messages.map(message => message.messageId),
+        sequences: page.messages.map(message => message.eventSequence ?? 0),
+        hasMore: page.hasMore,
+        nextBeforeSequence: page.nextBeforeSequence ?? null,
       };
     },
 
@@ -806,8 +852,8 @@ export function installAcceptanceHarness(): void {
 
     async syncGroupPressureProjection({ groupUlid }: SyncGroupPressureProjectionInput) {
       groupPressureWindows.set(groupUlid, {
-        rawByUlid: new Map<string, GroupMessage>(),
-        decodedByUlid: new Map<string, GroupMessage>(),
+        rawByUlid: new Map<string, SocialMessage>(),
+        decodedByUlid: new Map<string, SocialMessage>(),
         nextDecodeIndex: 0,
       });
       const social = useSocialChatStore.getState();
@@ -827,7 +873,7 @@ export function installAcceptanceHarness(): void {
       await social.loadMessages(groupUlid, 'group');
       const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
       const state = groupPressureWindow(groupUlid);
-      for (const message of messages as unknown as GroupMessage[]) {
+      for (const message of messages as unknown as SocialMessage[]) {
         if (message.ulid) state.rawByUlid.set(message.ulid, message);
       }
       void prefix;
@@ -853,8 +899,8 @@ export function installAcceptanceHarness(): void {
       const decoded = ordered.map((message) => state.decodedByUlid.get(message.ulid) ?? message);
       const decodedContents = decoded.map((message) => message.content || '');
       useSocialChatStore.setState((state) => {
-        const existing = (state.messages[groupUlid] || []) as GroupMessage[];
-        const byUlid = new Map<string, GroupMessage>();
+        const existing = (state.messages[groupUlid] || []) as SocialMessage[];
+        const byUlid = new Map<string, SocialMessage>();
         for (const message of existing) {
           if (message.ulid) byUlid.set(message.ulid, message);
         }
@@ -862,7 +908,9 @@ export function installAcceptanceHarness(): void {
           if (message.ulid) byUlid.set(message.ulid, message);
         }
         const merged = Array.from(byUlid.values()).sort((a, b) => {
-          const delta = Number(a.sentAt?.seconds ?? 0n) - Number(b.sentAt?.seconds ?? 0n);
+          const aTs = a.sentAt as { seconds?: bigint } | undefined;
+          const bTs = b.sentAt as { seconds?: bigint } | undefined;
+          const delta = Number(aTs?.seconds ?? 0n) - Number(bTs?.seconds ?? 0n);
           return delta || (a.ulid || '').localeCompare(b.ulid || '');
         });
         return {
@@ -887,18 +935,13 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async addFederatedGroupMember({ groupUlid, member }: AddFederatedGroupMemberInput) {
-      const response = await api.groupChatAddFederatedMember(groupUlid, member);
-      const social = useSocialChatStore.getState();
-      await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
-      social.selectGroup(groupUlid);
-      social.setActiveTab('group');
-      return {
-        groupUlid,
-        success: Boolean(response.success),
-        memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
-      };
+    async addFederatedGroupMember({ groupUlid, member: _member }: AddFederatedGroupMemberInput) {
+      // CCU-03: groupChatAddFederatedMember was removed during proto migration.
+      // This acceptance harness entry is retained as a placeholder for the
+      // replacement API integration.
+      throw new Error(
+        `addFederatedGroupMember: groupChatAddFederatedMember API removed in CCU-03 (group ${groupUlid})`,
+      );
     },
 
     async inviteToGroup({ groupUlid, memberPtids }: { groupUlid: string; memberPtids: string[] }) {
@@ -948,6 +991,35 @@ export function installAcceptanceHarness(): void {
         deviceId,
         active,
       };
+    },
+
+    async initiateCall({ calleePtid }: { calleePtid: string }) {
+      return callP2p.initiateCallForAcceptance(
+        activeActorPtid(),
+        requireCanonicalAcceptancePtid(calleePtid),
+      );
+    },
+
+    async callResolutionState({ callId }: { callId: string }) {
+      return callP2p.callResolutionStateForAcceptance(callId);
+    },
+
+    async acceptCall({ callId }: { callId: string }) {
+      return callP2p.resolveCallForAcceptance(callId, 'accept');
+    },
+
+    async rejectCall({ callId }: { callId: string }) {
+      return callP2p.resolveCallForAcceptance(callId, 'reject');
+    },
+
+    async disconnectRealtime() {
+      await api.realtimeStreamStop();
+      return { disconnected: true };
+    },
+
+    async reconnectRealtime() {
+      await api.realtimeStreamStart();
+      return { connected: true };
     },
 
     async mlsReadiness() {

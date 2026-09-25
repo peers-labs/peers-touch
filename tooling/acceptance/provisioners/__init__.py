@@ -13,6 +13,8 @@ from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
 from .mobile_simulator import (
+    ChatMixedNativeProvisioner,
+    MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
@@ -30,9 +32,13 @@ from .native_tauri_current_profile import (
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
+    ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
+    MobileDirectSimulatorProvisioner.environment_id: (
+        MobileDirectSimulatorProvisioner
+    ),
     MobileIOSLayoutSimulatorProvisioner.environment_id: (
         MobileIOSLayoutSimulatorProvisioner
     ),
@@ -74,7 +80,11 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
-    if provisioner_class is MobileSocialSimulatorProvisioner:
+    if provisioner_class in {
+        ChatMixedNativeProvisioner,
+        MobileDirectSimulatorProvisioner,
+        MobileSocialSimulatorProvisioner,
+    }:
         return provisioner_class(
             contract,
             station_profiles=station_profiles,
@@ -103,8 +113,10 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 
 
 __all__ = [
+    "ChatMixedNativeProvisioner",
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
+    "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",

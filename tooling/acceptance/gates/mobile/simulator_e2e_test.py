@@ -14,20 +14,23 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.simulator_e2e import (
-    DOCUMENT_TIME_ORIGIN_SCRIPT,
+    DOCUMENT_SOURCE_SCRIPT,
     GATE_ID,
     HARNESS_INVENTORY_SCRIPT,
+    IOS_WEBVIEW_CONNECT_ATTEMPT_TIMEOUT_MS,
     MAX_APPIUM_ERROR_RESPONSE_BYTES,
     MAX_APPIUM_RESPONSE_BYTES,
     MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
     PHYSICAL_PROVIDER_SCOPE,
     PROVEN_SCOPE,
+    READ_FINALIZE_EVIDENCE_SCRIPT,
     SimulatorAppiumSession,
     SimulatorBuildTarget,
     SimulatorCallbackRoutingGate,
     SimulatorClientSpec,
     SimulatorDeviceTarget,
     SimulatorGateBlocked,
+    START_FINALIZE_EVIDENCE_SCRIPT,
     UrllibAppiumTransport,
     W3C_ELEMENT_KEY,
     _redacted_markup,
@@ -81,25 +84,6 @@ def simulator_resources() -> dict[str, Any]:
                     "version": "9.10.5",
                     "expectedVersion": "9.10.5",
                 },
-                "android": {
-                    "identity": "appium-uiautomator2-driver",
-                    "automationName": "UiAutomator2",
-                    "version": "4.2.9",
-                    "expectedVersion": "4.2.9",
-                },
-            },
-        },
-        "chromedriver": {
-            "version": "124.0.6367.207",
-            "source": "https://example.invalid/chromedriver.zip",
-            "sha256": "c" * 64,
-            "executableReference": (
-                "<runtime-cache>/chromedriver/124/chromedriver"
-            ),
-            "browser": {
-                "activePackage": "com.google.android.webview",
-                "version": "124.0.6367.82",
-                "major": 124,
             },
         },
         "applications": {
@@ -108,12 +92,6 @@ def simulator_resources() -> dict[str, Any]:
                 "id": "com.peers.touch.mobile",
                 "callbackScheme": "peers-touch",
                 "sha256": "a" * 64,
-            },
-            "android": {
-                "artifact": "/tmp/peers-touch-android.apk",
-                "id": "com.peers.touch.mobile",
-                "callbackScheme": "peers-touch",
-                "sha256": "b" * 64,
             },
         },
         "clients": {
@@ -127,22 +105,14 @@ def simulator_resources() -> dict[str, Any]:
                     "webview": 9511,
                 },
             },
-            "sim-android": {
-                "platform": "android",
-                "device": "emulator-5554",
-                "deviceRole": "android-emulator",
+            "sim-ios-peer": {
+                "platform": "ios",
+                "device": "ios-peer-simulator-udid",
+                "deviceRole": "peer-ios-simulator",
                 "ports": {
-                    "system": 8201,
+                    "wda-local": 8102,
                     "mjpeg": 9201,
                     "webview": 9512,
-                },
-                "appiumCapabilities": {
-                    "appium:chromedriverExecutable": (
-                        "/tmp/chromedriver"
-                    ),
-                    "chromedriverExecutableReference": (
-                        "<runtime-cache>/chromedriver/124/chromedriver"
-                    ),
                 },
             },
         },
@@ -206,13 +176,6 @@ class FakeAppiumTransport:
         self.requests.append((method, path, body))
         if method == "POST" and path == "/session":
             return {"sessionId": self.session_id, "capabilities": {}}
-        if (
-            method == "POST"
-            and path.endswith("/execute/sync")
-            and body
-            and body.get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT
-        ):
-            return 1000.0
         return None
 
 
@@ -370,6 +333,135 @@ class UrllibAppiumTransportTests(unittest.TestCase):
         ):
             session.get_page_source()
 
+    def test_webview_source_uses_bounded_script_transport(self) -> None:
+        requests: list[tuple[str, str, object, int]] = []
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                payload: Mapping[str, Any] | None = None,
+                *,
+                max_response_bytes: int,
+            ) -> str:
+                requests.append((method, path, payload, max_response_bytes))
+                return "<html><body>ready</body></html>"
+
+        session = SimulatorAppiumSession(
+            transport=Transport(),
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="simulator-id",
+                role="ios-simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+        session.session_id = "test"
+
+        self.assertEqual(
+            session.get_webview_source(),
+            "<html><body>ready</body></html>",
+        )
+        self.assertEqual(
+            requests,
+            [
+                (
+                    "POST",
+                    "/session/test/execute/async",
+                    {"script": DOCUMENT_SOURCE_SCRIPT, "args": []},
+                    MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
+                ),
+            ],
+        )
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_e2e."
+            "MAX_MOBILE_PAGE_SOURCE_BYTES",
+            8,
+        ), self.assertRaisesRegex(
+            DriverError,
+            "WebView source exceeds",
+        ):
+            session.get_webview_source()
+
+    def test_final_evidence_invokes_actions_once_then_polls_result(self) -> None:
+        requests: list[tuple[str, str, object]] = []
+        projection = valid_projection()
+        cleanup = valid_cleanup_result()
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> dict[str, object]:
+                requests.append((method, path, payload))
+                if (
+                    payload
+                    and payload.get("script")
+                    == START_FINALIZE_EVIDENCE_SCRIPT
+                ):
+                    return {"started": True}
+                return {
+                    "state": "done",
+                    "value": {
+                        "source": "<html><body>ready</body></html>",
+                        "projection": projection,
+                        "cleanup": cleanup,
+                    }
+                }
+
+        session = SimulatorAppiumSession(
+            transport=Transport(),
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="simulator-id",
+                role="ios-simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+        session.session_id = "test"
+
+        self.assertEqual(
+            session.finalize_evidence_and_cleanup(),
+            ("<html><body>ready</body></html>", projection, cleanup),
+        )
+        self.assertEqual(
+            requests,
+            [
+                (
+                    "POST",
+                    "/session/test/execute/sync",
+                    {"script": START_FINALIZE_EVIDENCE_SCRIPT, "args": []},
+                ),
+                (
+                    "POST",
+                    "/session/test/execute/sync",
+                    {"script": READ_FINALIZE_EVIDENCE_SCRIPT, "args": []},
+                ),
+            ],
+        )
+
 
 class FakeEvidenceWriter:
     def __init__(self) -> None:
@@ -436,6 +528,9 @@ class FakeSimulatorSession:
         self.events: list[str] = []
         self.current_context = "NATIVE_APP"
         self.stopped = False
+        self.driver_reconnects = 0
+        self.native_source_reads = 0
+        self.native_source_reads_at_reconnect: list[int] = []
         self.native_ready_timeouts: list[float] = []
         self.webview_ready_timeout: float | None = None
 
@@ -448,6 +543,16 @@ class FakeSimulatorSession:
         self.events.append("stop")
         self.session_id = ""
         self.stopped = True
+
+    def reconnect_after_runtime_relaunch(
+        self,
+    ) -> "FakeSimulatorSession":
+        self.driver_reconnects += 1
+        self.native_source_reads_at_reconnect.append(
+            self.native_source_reads
+        )
+        self.stop()
+        return self.start()
 
     def wait_for_ready(self, timeout: float = 30.0) -> None:
         self.native_ready_timeouts.append(timeout)
@@ -504,9 +609,6 @@ class FakeSimulatorSession:
             return copy.deepcopy(self.cleanup_result)
         raise AssertionError(f"unexpected action {action}")
 
-    def refresh_webview(self) -> None:
-        self.events.append("refresh:webview")
-
     def deep_link_for_failure_case(
         self,
         url: str,
@@ -539,8 +641,24 @@ class FakeSimulatorSession:
 
     def get_page_source(self) -> str:
         if self.current_context == "NATIVE_APP":
+            self.native_source_reads += 1
             return '<hierarchy authorization="Bearer native-secret"/>'
         return '<html password="web-secret"></html>'
+
+    def get_webview_source(self) -> str:
+        return '<html password="web-secret"></html>'
+
+    def finalize_evidence_and_cleanup(
+        self,
+    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        self.events.append("action:projection.read")
+        projection = valid_projection()
+        self.events.append("action:cleanup")
+        return (
+            '<html password="web-secret"></html>',
+            projection,
+            copy.deepcopy(self.cleanup_result),
+        )
 
     def screenshot_bytes(self) -> bytes:
         return b"simulator-screenshot"
@@ -633,7 +751,7 @@ class SimulatorSeamContractTests(unittest.TestCase):
         )
         self.assertEqual(
             gate["command"],
-            "python3 -m tooling.acceptance.gates.mobile.simulator_e2e",
+            "python3 -m tooling.acceptance.gates.mobile.simulator_access_e2e",
         )
         self.assertIn("mobileSimulator", manifest)
         self.assertNotIn("mobileNative", manifest)
@@ -671,33 +789,20 @@ class SimulatorSeamContractTests(unittest.TestCase):
             identity["appium"]["drivers"]["ios"]["version"],
             "9.10.5",
         )
-        self.assertEqual(
-            identity["appium"]["drivers"]["android"]["version"],
-            "4.2.9",
-        )
-        self.assertNotIn(
-            "/tmp/chromedriver",
-            json.dumps(identity["chromedriver"]),
-        )
-        self.assertIn(
-            "executableReference",
-            identity["chromedriver"],
-        )
-        android = next(
+        self.assertEqual(identity["chromedriver"], {})
+        peer = next(
             spec
             for spec in SimulatorCallbackRoutingGate()._client_specs(
                 resources
             )
-            if spec.platform == "android"
+            if spec.client_id == "sim-ios-peer"
         )
-        self.assertEqual(
-            android.chromedriver_executable,
-            "/tmp/chromedriver",
-        )
+        self.assertEqual(peer.platform, "ios")
+        self.assertEqual(peer.chromedriver_executable, "")
 
     def test_runtime_identity_rejects_version_or_hash_mismatch(self) -> None:
         resources = simulator_resources()
-        resources["appium"]["drivers"]["android"]["version"] = "4.2.8"
+        resources["appium"]["drivers"]["ios"]["version"] = "9.10.4"
         with self.assertRaisesRegex(
             SimulatorGateBlocked,
             "driver is not verified",
@@ -714,11 +819,11 @@ class SimulatorSeamContractTests(unittest.TestCase):
 
 
 class SimulatorAppiumCapabilityTests(unittest.TestCase):
-    def test_refresh_waits_for_a_new_webview_document(self) -> None:
-        class ReloadTransport(FakeAppiumTransport):
+    def test_webview_switch_retries_a_stale_ios_target(self) -> None:
+        class StaleTargetTransport(FakeAppiumTransport):
             def __init__(self) -> None:
                 super().__init__("ios-session")
-                self.document_time_origins = iter((1000.0, 1000.0, 2000.0))
+                self.context_queries = 0
 
             def request(
                 self,
@@ -728,22 +833,29 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
             ) -> Any:
                 result = super().request(method, path, payload)
                 if method == "GET" and path.endswith("/contexts"):
-                    return [
-                        "NATIVE_APP",
-                        "WEBVIEW_com.peers.touch.mobile",
-                    ]
+                    self.context_queries += 1
+                    webview = (
+                        "WEBVIEW_stale.1"
+                        if self.context_queries == 1
+                        else "WEBVIEW_current.2"
+                    )
+                    return ["NATIVE_APP", webview]
+                if (
+                    method == "POST"
+                    and path.endswith("/context")
+                    and payload == {"name": "WEBVIEW_stale.1"}
+                ):
+                    raise DriverError("stale WebKit target")
                 if (
                     method == "POST"
                     and path.endswith("/execute/sync")
                     and payload
+                    and payload.get("script") == HARNESS_INVENTORY_SCRIPT
                 ):
-                    if payload.get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT:
-                        return next(self.document_time_origins)
-                    if payload.get("script") == HARNESS_INVENTORY_SCRIPT:
-                        return ["projection.read"]
+                    return ["projection.read"]
                 return result
 
-        transport = ReloadTransport()
+        transport = StaleTargetTransport()
         session = SimulatorAppiumSession(
             transport,
             client_id="sim-ios",
@@ -763,7 +875,6 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
             ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
         )
         session.start()
-        session.refresh_webview()
 
         with patch(
             "tooling.acceptance.gates.mobile.simulator_e2e.time.sleep",
@@ -771,17 +882,43 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
         ):
             context = session.switch_to_app_webview(timeout=1.0)
 
-        self.assertEqual(context, "WEBVIEW_com.peers.touch.mobile")
-        epoch_requests = [
+        self.assertEqual(context, "WEBVIEW_current.2")
+        self.assertEqual(transport.context_queries, 2)
+
+    def test_ios_reconnects_driver_after_runtime_relaunch(self) -> None:
+        transport = FakeAppiumTransport("ios-session")
+        session = SimulatorAppiumSession(
+            transport,
+            client_id="sim-ios",
+            platform="ios",
+            automation_name="XCUITest",
+            device=SimulatorDeviceTarget(
+                platform="ios",
+                identifier="ios-simulator-udid",
+                role="ios-simulator",
+            ),
+            build=SimulatorBuildTarget(
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
+                application_id="com.peers.touch.mobile",
+            ),
+            callback_scheme="peers-touch",
+            ports={"wda-local": 8101, "mjpeg": 9101, "webview": 9511},
+        )
+
+        session.start()
+        session.reconnect_after_runtime_relaunch()
+
+        create_requests = [
             request
             for request in transport.requests
-            if request[0] == "POST"
-            and request[1].endswith("/execute/sync")
-            and request[2]
-            and request[2].get("script") == DOCUMENT_TIME_ORIGIN_SCRIPT
+            if request[0] == "POST" and request[1] == "/session"
         ]
-        self.assertEqual(len(epoch_requests), 3)
-
+        self.assertEqual(len(create_requests), 2)
+        self.assertIn(
+            ("DELETE", "/session/ios-session", None),
+            transport.requests,
+        )
     def test_public_w3c_element_and_orientation_operations(self) -> None:
         class ElementTransport(FakeAppiumTransport):
             def request(
@@ -929,6 +1066,14 @@ class SimulatorAppiumCapabilityTests(unittest.TestCase):
                             capabilities["appium:bundleId"],
                             "com.peers.touch.mobile",
                         )
+                        self.assertTrue(capabilities["appium:isHeadless"])
+                        self.assertFalse(
+                            capabilities["appium:shouldTerminateApp"]
+                        )
+                        self.assertEqual(
+                            capabilities["appium:webviewConnectTimeout"],
+                            IOS_WEBVIEW_CONNECT_ATTEMPT_TIMEOUT_MS,
+                        )
                         self.assertEqual(capabilities["appium:wdaLocalPort"], 8101)
                     else:
                         self.assertEqual(
@@ -960,7 +1105,7 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
             event
             for event in session.events
             if event.startswith(
-                ("action:", "deep-link:", "refresh:", "script:")
+                ("action:", "deep-link:", "script:")
             )
         ]
         self.assertEqual(
@@ -974,8 +1119,8 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
                 "deep-link:cold",
                 "action:projection.read",
                 "action:lifecycle.restart",
-                "refresh:webview",
                 "action:projection.read",
+                "action:cleanup",
             ],
         )
         self.assertEqual(
@@ -988,10 +1133,16 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
             ],
         )
         self.assertFalse(result["physicalRoleClaimed"])
+        self.assertEqual(session.driver_reconnects, 1)
+        self.assertEqual(session.native_source_reads_at_reconnect, [4])
         self.assertEqual(session.native_ready_timeouts[0], 15.0)
         self.assertEqual(session.webview_ready_timeout, 30.0)
         self.assertEqual(len(artifacts.json_values), 5)
-        self.assertEqual(len(artifacts.byte_values), 14)
+        self.assertEqual(len(artifacts.byte_values), 13)
+        self.assertNotIn(
+            "mobile-simulator/sim-ios/restart-reconnected/native-ax.xml",
+            artifacts.byte_values,
+        )
         preflight = artifacts.json_values[
             "mobile-simulator/sim-ios/preflight/status.json"
         ]
@@ -1244,7 +1395,7 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         self.assertFalse(result["physicalDeviceClaimed"])
         self.assertFalse(result["successfulCallbackInjected"])
         self.assertFalse(result["stationMocksUsed"])
-        self.assertEqual(set(result["clients"]), {"sim-ios", "sim-android"})
+        self.assertEqual(set(result["clients"]), {"sim-ios", "sim-ios-peer"})
         self.assertEqual(
             artifacts.json_values[
                 "mobile-simulator/source-identity.json"

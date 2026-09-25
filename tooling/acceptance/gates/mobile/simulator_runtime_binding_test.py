@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from tooling.acceptance.core import ArtifactRef, DriverError
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     CAPABILITY_ID,
-    GATE_ID,
+    DEFAULT_GATE_ID,
     MobileSimulatorRuntimeBinding,
     validate_scope_projection,
 )
@@ -41,15 +41,10 @@ def scope(
             "requestCount": 0,
             "messageThreadCount": 0,
         },
-        "group": {
-            "stationPeerId": station_peer_id if active else None,
-            "actorPtid": actor_ptid,
-            "groupCount": 0,
-            "messageThreadCount": 0,
-        },
         "navigation": {
-            "primaryRouteId": "chat",
+            "primaryRouteId": "tab:chat",
             "detailKeys": [],
+            "overlayRouteId": None,
         },
     }
 
@@ -58,10 +53,11 @@ def proof_ref(
     client_id: str,
     generation: int,
     binding_role: str,
+    gate_id: str = DEFAULT_GATE_ID,
 ) -> dict[str, object]:
     return ArtifactRef(
         workspace_id=WORKSPACE_ID,
-        gate_id=GATE_ID,
+        gate_id=gate_id,
         run_id=RUN_ID,
         path=(
             "runtime/mobile-simulator/bindings/"
@@ -73,12 +69,13 @@ def proof_ref(
 
 
 class RecordingClient:
-    def __init__(self) -> None:
+    def __init__(self, gate_id: str = DEFAULT_GATE_ID) -> None:
         self.calls: list[
             tuple[str, str, dict[str, object], float]
         ] = []
         self.closed = False
-        self.generations = {"sim-ios": 0, "sim-android": 0}
+        self.gate_id = gate_id
+        self.generations = {"sim-ios": 0, "sim-ios-peer": 0}
 
     def invoke(
         self,
@@ -107,11 +104,7 @@ class RecordingClient:
                 "clientId": client_id,
                 "launchGeneration": generation,
                 "identity": {
-                    "runtime": (
-                        "tauri-ios-simulator"
-                        if client_id == "sim-ios"
-                        else "tauri-android-emulator"
-                    ),
+                    "runtime": "tauri-ios-simulator",
                     "instanceId": f"{client_id}-binding-{generation}",
                     "identityDigest": "c" * 64,
                 },
@@ -125,6 +118,7 @@ class RecordingClient:
                         client_id,
                         generation,
                         binding_role,
+                        self.gate_id,
                     )
                     for binding_role in binding_roles
                 },
@@ -144,6 +138,7 @@ class RecordingClient:
                     client_id,
                     generation,
                     binding_role,
+                    self.gate_id,
                 ),
                 "remoteRevocation": "confirmed",
             }
@@ -184,8 +179,6 @@ class RecordingClient:
                     else {"ok": True}
                 ),
             }
-        if operation == "refresh_webview":
-            return {"clientId": client_id, "refreshed": True}
         if operation == "stop":
             return {"clientId": client_id, "stopped": True}
         raise AssertionError(operation)
@@ -200,7 +193,7 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
             MobileSimulatorRuntimeBinding
         ).parameters
 
-        self.assertEqual(set(parameters), {"client"})
+        self.assertEqual(set(parameters), {"client", "gate_id"})
         for forbidden in (
             "server_url",
             "device_id",
@@ -291,6 +284,25 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 ):
                     binding.call_action("sim-ios", action, {})
 
+    def test_recovery_snapshot_is_child_callable(self) -> None:
+        client = RecordingClient()
+        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
+
+        self.assertEqual(
+            binding.call_action("sim-ios", "recovery.snapshot", {}),
+            {"ok": True},
+        )
+        _, operation, payload, _ = client.calls[-1]
+        self.assertEqual(operation, "harness_action")
+        self.assertEqual(
+            payload,
+            {
+                "clientId": "sim-ios",
+                "action": "recovery.snapshot",
+                "actionPayload": {},
+            },
+        )
+
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
@@ -318,11 +330,23 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 ):
                     validate_scope_projection(invalid)
 
+    def test_scope_rejects_retired_standalone_group_projection(self) -> None:
+        invalid = scope()
+        invalid["group"] = {
+            "stationPeerId": "station-peer-primary",
+            "actorPtid": "ptid:alice",
+            "groupCount": 0,
+            "messageThreadCount": 0,
+        }
+
+        with self.assertRaisesRegex(DriverError, "invalid shape"):
+            validate_scope_projection(invalid)
+
     def test_cleanup_stops_clients_in_reverse_activation_order(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
         binding.create_bound_session("sim-ios")
-        binding.create_bound_session("sim-android")
+        binding.create_bound_session("sim-ios-peer")
 
         stopped = binding.close()
 
@@ -333,10 +357,35 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
         ]
         self.assertEqual(
             stop_clients,
-            ["sim-android", "sim-ios"],
+            ["sim-ios-peer", "sim-ios"],
         )
-        self.assertEqual(stopped, ("sim-android", "sim-ios"))
+        self.assertEqual(stopped, ("sim-ios-peer", "sim-ios"))
         self.assertTrue(client.closed)
+
+    def test_binding_proofs_are_scoped_to_the_requested_gate(self) -> None:
+        client = RecordingClient()
+        binding = MobileSimulatorRuntimeBinding(  # type: ignore[arg-type]
+            client,
+            gate_id="mobile-simulator-settings-e2e",
+        )
+
+        with self.assertRaisesRegex(DriverError, "wrong Gate"):
+            binding.create_bound_session("sim-ios")
+
+    def test_binding_accepts_proofs_for_a_second_allowed_gate(self) -> None:
+        gate_id = "mobile-simulator-settings-e2e"
+        client = RecordingClient(gate_id)
+        binding = MobileSimulatorRuntimeBinding(  # type: ignore[arg-type]
+            client,
+            gate_id=gate_id,
+        )
+
+        activation = binding.create_bound_session("sim-ios")
+
+        self.assertEqual(
+            {reference.gate_id for reference in activation.binding_proofs.values()},
+            {gate_id},
+        )
 
 
 if __name__ == "__main__":

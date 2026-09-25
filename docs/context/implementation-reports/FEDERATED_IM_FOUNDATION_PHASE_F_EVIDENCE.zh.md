@@ -27,7 +27,7 @@ Phase F 要求：
 | `chat-group-pressure-security` | home Station 群聊 100 actors / 10 senders / 1000 messages | PASS | `/tmp/peers-touch-chat-group-pressure-full/group_pressure_security_report.json` |
 | `chat-private-pressure-security` | home Station 私聊 100 actors / 50 sessions / 1000 messages | PASS | `/tmp/peers-touch-chat-private-pressure-full/private_pressure_security_report.json` |
 | `chat-federated-group-pressure` | relay-mediated 3-Station federation proposal/event path | PASS | `GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProposalPressureAcceptance -count=1 -v` |
-| `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
+| `chat-federated-browser-prereq` | live deployed federation browser/runtime prerequisite | PASS | `CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py` |
 | `chat-federated-desktop-dom-group-decrypt` | live deployed cross-Station group projection + SKDM relay delivery + follower Desktop browser decrypt | PASS | single: `/tmp/peers-touch-chat-federated-dom-home/chat-federated-desktop-dom-group-decrypt.txt`; repeated 3x5: `/tmp/peers-touch-chat-federated-dom-home-repeat/chat-federated-desktop-dom-group-decrypt-report.json` |
 | `chat-federated-desktop-dom-removed-member-negative` | live deployed removed-member browser negative: post-remove plaintext must not render in follower DOM | PASS | `/tmp/peers-touch-chat-federated-dom-removed-negative/chat-federated-desktop-dom-removed-member-negative-report.json` |
 | `chat-federated-desktop-dom-late-join-negative` | live deployed late-join browser negative: post-add follower must not decrypt pre-join plaintext, then must decrypt post-join plaintext | PASS | `/tmp/peers-touch-chat-federated-dom-late-join-negative/chat-federated-desktop-dom-late-join-negative-report.json` |
@@ -40,7 +40,7 @@ Phase F 要求：
 命令：
 
 ```bash
-CHAT_GROUP_PRESSURE_STATION_URL=http://10.0.0.10:18080 \
+CHAT_GROUP_PRESSURE_STATION_URL=http://10.0.0.50:18080 \
 CHAT_GROUP_PRESSURE_ACTORS=100 \
 CHAT_GROUP_PRESSURE_SENDERS=10 \
 CHAT_GROUP_PRESSURE_MESSAGES=1000 \
@@ -54,7 +54,7 @@ python3 tooling/acceptance/gates/chat/group_pressure_security.py
 
 | 指标 | 值 |
 | --- | --- |
-| Station | `http://10.0.0.10:18080` |
+| Station | `http://10.0.0.50:18080` |
 | Group | `gcg-1783199717561813891` |
 | Actors | `100` |
 | Senders | `10` |
@@ -96,7 +96,7 @@ GOWORK=off go test ./subserver/events ./subserver/group_chat/...
 命令：
 
 ```bash
-CHAT_PRIVATE_PRESSURE_STATION_URL=http://10.0.0.10:18080 \
+CHAT_PRIVATE_PRESSURE_STATION_URL=http://10.0.0.50:18080 \
 CHAT_PRIVATE_PRESSURE_ACTORS=100 \
 CHAT_PRIVATE_PRESSURE_MESSAGES=1000 \
 CHAT_PRIVATE_PRESSURE_WORKERS=16 \
@@ -110,7 +110,7 @@ python3 tooling/acceptance/gates/chat/private_pressure_security.py
 
 | 指标 | 值 |
 | --- | --- |
-| Station | `http://10.0.0.10:18080` |
+| Station | `http://10.0.0.50:18080` |
 | Actors | `100` |
 | Sessions | `50` |
 | Messages | `1000` |
@@ -178,9 +178,9 @@ GOWORK=off go test ./subserver/group_chat -run TestRelayMediatedThreeStationProp
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
@@ -191,11 +191,11 @@ python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 关键输出：
 
 ```text
-[OK] authority Station peer id: discovered from http://10.0.0.10:18080/actor/federation/health
-[OK] follower Station peer id: discovered from http://10.0.0.10:18082/actor/federation/health
-[OK] authority Station: http://10.0.0.10:18080/sub-oss/healthz
-[OK] follower Station: http://10.0.0.10:18082/sub-oss/healthz
-[OK] Relay: http://10.0.0.10:18081/sub-oss/healthz
+[OK] authority Station peer id: discovered from http://10.0.0.50:18080/actor/federation/health
+[OK] follower Station peer id: discovered from http://10.0.0.50:18082/actor/federation/health
+[OK] authority Station: http://10.0.0.50:18080/sub-oss/healthz
+[OK] follower Station: http://10.0.0.50:18082/sub-oss/healthz
+[OK] Relay: http://10.0.0.50:18081/sub-oss/healthz
 [OK] authority gateway: http://127.0.0.1:3131
 [OK] follower gateway: http://127.0.0.1:3132
 ```
@@ -213,17 +213,17 @@ python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 修复与部署：
 
 - Commit: `c0a77579 fix(station): mint SKDM tokens from sender home`
-- Authority Station: `http://10.0.0.10:18080`
-- Follower Station: `http://10.0.0.10:18082`
-- Relay: `http://10.0.0.10:18081`
+- Authority Station: `http://10.0.0.50:18080`
+- Follower Station: `http://10.0.0.50:18082`
+- Relay: `http://10.0.0.50:18081`
 - Desktop gateways: `3131` -> authority, `3132` -> follower
 
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -275,9 +275,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_decrypt.py
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -334,9 +334,9 @@ Groups:
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -385,9 +385,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_removed_member_negat
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -439,9 +439,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_late_join_negative.p
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_PEER_ID=12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D \
 CHAT_FEDERATION_FOLLOWER_PEER_ID=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 \
 CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3 \
@@ -494,9 +494,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py
 
 运行环境：
 
-- authority Station：`http://10.0.0.10:18080`
-- follower Station：`http://10.0.0.10:18082`
-- Relay：`http://10.0.0.10:18081`
+- authority Station：`http://10.0.0.50:18080`
+- follower Station：`http://10.0.0.50:18082`
+- Relay：`http://10.0.0.50:18081`
 - authority Desktop runtime：`3131/3311`
 - follower Desktop runtime A：`3132/3312`
 - follower Desktop runtime B：`3133/3313`
@@ -505,9 +505,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_group_pressure.py
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -552,10 +552,10 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_press
 
 运行环境：
 
-- authority Station：`http://10.0.0.10:18080`
-- follower Station A：`http://10.0.0.10:18082`，PeerID `12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6`
-- follower Station B：`http://10.0.0.10:18083`，PeerID `12D3KooWH7pDSUuERrU3gARjRCbGgRa3t3yh1o1xTESbkPi3p9b1`
-- Relay：`http://10.0.0.10:18081`
+- authority Station：`http://10.0.0.50:18080`
+- follower Station A：`http://10.0.0.50:18082`，PeerID `12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6`
+- follower Station B：`http://10.0.0.50:18083`，PeerID `12D3KooWH7pDSUuERrU3gARjRCbGgRa3t3yh1o1xTESbkPi3p9b1`
+- Relay：`http://10.0.0.50:18081`
 - authority Desktop runtime：`3131/3311`
 - follower Desktop runtime A：`3132/3312`
 - follower Desktop runtime B：`3133/3313`
@@ -564,9 +564,9 @@ python3 tooling/acceptance/gates/chat/federated_desktop_dom_multi_follower_press
 命令：
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URLS=http://10.0.0.10:18082,http://10.0.0.10:18083 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URLS=http://10.0.0.50:18082,http://10.0.0.50:18083 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \

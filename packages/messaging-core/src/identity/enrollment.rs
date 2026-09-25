@@ -59,6 +59,23 @@ pub fn load_or_create_device_identity<R: DeviceEnrollmentRepository>(
     )
 }
 
+pub fn load_or_create_device_identity_for_device<R: DeviceEnrollmentRepository>(
+    repository: &R,
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: [u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceEnrollment, String> {
+    let actor_identity_seed = Zeroizing::new(actor_identity_seed);
+    load_or_create_device_identity_from_seed_for_device(
+        repository,
+        ptid,
+        device_id,
+        &actor_identity_seed,
+        actor_profile_version,
+    )
+}
+
 pub fn load_or_create_device_identity_from_seed<R: DeviceEnrollmentRepository>(
     repository: &R,
     ptid: &str,
@@ -78,6 +95,50 @@ pub fn load_or_create_device_identity_from_seed<R: DeviceEnrollmentRepository>(
         None => {
             let identity = generate_fresh_device_identity_from_seed(
                 ptid,
+                actor_identity_seed,
+                actor_profile_version,
+            )?;
+            repository.install_fresh_device_identity(&identity)?;
+            Ok(identity.enrollment)
+        }
+    }
+}
+
+fn load_or_create_device_identity_from_seed_for_device<R: DeviceEnrollmentRepository>(
+    repository: &R,
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceEnrollment, String> {
+    if device_id.trim().is_empty() || device_id.trim() != device_id {
+        return Err("messaging device identity requires canonical device_id".to_string());
+    }
+    match repository.device_enrollment()? {
+        Some(enrollment) => {
+            validate_enrollment_actor_from_seed(
+                &enrollment,
+                ptid,
+                actor_identity_seed,
+                actor_profile_version,
+            )?;
+            if enrollment
+                .certificate
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str())
+                != Some(device_id)
+            {
+                return Err(
+                    "messaging device identity does not match authenticated session".to_string(),
+                );
+            }
+            Ok(enrollment)
+        }
+        None => {
+            let identity = generate_fresh_device_identity_for_device_from_seed(
+                ptid,
+                device_id,
                 actor_identity_seed,
                 actor_profile_version,
             )?;
@@ -113,6 +174,28 @@ impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
         let Some(enrollment) = self.repository.pending_device_enrollment()? else {
             return Ok(None);
         };
+        self.enroll(&enrollment, label, transport, true).map(Some)
+    }
+
+    pub fn enroll_current<T: DeviceEnrollmentTransport>(
+        &self,
+        label: String,
+        transport: &T,
+    ) -> Result<ActorDevice, String> {
+        let enrollment = self
+            .repository
+            .device_enrollment()?
+            .ok_or_else(|| "messaging device enrollment is unavailable".to_string())?;
+        self.enroll(&enrollment, label, transport, false)
+    }
+
+    fn enroll<T: DeviceEnrollmentTransport>(
+        &self,
+        enrollment: &FreshDeviceEnrollment,
+        label: String,
+        transport: &T,
+        complete_local_enrollment: bool,
+    ) -> Result<ActorDevice, String> {
         let certificate = &enrollment.certificate;
         if actor_device_ptid(
             certificate
@@ -137,9 +220,11 @@ impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
             .device
             .ok_or_else(|| "messaging enrollment response has no device".to_string())?;
         validate_enrollment_response(&enrollment, &device)?;
-        self.repository
-            .complete_device_enrollment(&self.device_id)?;
-        Ok(Some(device))
+        if complete_local_enrollment {
+            self.repository
+                .complete_device_enrollment(&self.device_id)?;
+        }
+        Ok(device)
     }
 
     pub fn recover_stale(&self, error: &str) -> Result<bool, String> {
@@ -164,16 +249,33 @@ pub fn generate_fresh_device_identity_from_seed(
     actor_identity_seed: &[u8; 32],
     actor_profile_version: u64,
 ) -> Result<FreshDeviceIdentityState, String> {
+    let device_id = Ulid::new().to_string();
+    generate_fresh_device_identity_for_device_from_seed(
+        ptid,
+        &device_id,
+        actor_identity_seed,
+        actor_profile_version,
+    )
+}
+
+fn generate_fresh_device_identity_for_device_from_seed(
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+) -> Result<FreshDeviceIdentityState, String> {
     if ptid.trim().is_empty() || actor_profile_version == 0 {
         return Err("fresh messaging identity requires PTID and profile version".to_string());
     }
+    if device_id.trim().is_empty() || device_id.trim() != device_id {
+        return Err("fresh messaging identity requires canonical device_id".to_string());
+    }
     let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
-    let device_id = Ulid::new().to_string();
     let device_signing_key =
-        DeviceSigningKey::generate_cross_signed(&actor_identity, &device_id, |device_key| {
+        DeviceSigningKey::generate_cross_signed(&actor_identity, device_id, |device_key| {
             build_device_certificate(
                 ptid,
-                &device_id,
+                device_id,
                 actor_profile_version,
                 &actor_identity,
                 device_key.as_bytes(),
@@ -182,7 +284,7 @@ pub fn generate_fresh_device_identity_from_seed(
         });
     let certificate = build_device_certificate(
         ptid,
-        &device_id,
+        device_id,
         actor_profile_version,
         &actor_identity,
         device_signing_key.verifying_key().as_bytes(),
@@ -316,6 +418,26 @@ mod tests {
     }
 
     #[test]
+    fn fresh_enrollment_uses_authenticated_session_device_id() {
+        let state = generate_fresh_device_identity_for_device_from_seed(
+            "alice@p.t",
+            "mobile-session-device",
+            &[42u8; 32],
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            state
+                .enrollment
+                .certificate
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str()),
+            Some("mobile-session-device"),
+        );
+    }
+
+    #[test]
     fn enrollment_rejects_wrong_ptid() {
         let seed = [42u8; 32];
         let state = generate_fresh_device_identity("alice@p.t", seed, 1).unwrap();
@@ -325,5 +447,12 @@ mod tests {
     #[test]
     fn enrollment_rejects_empty_ptid() {
         assert!(generate_fresh_device_identity("", [1u8; 32], 1).is_err());
+        assert!(generate_fresh_device_identity_for_device_from_seed(
+            "alice@p.t",
+            " device ",
+            &[1u8; 32],
+            1,
+        )
+        .is_err());
     }
 }

@@ -17,7 +17,11 @@ const (
 	accessAttemptTable             = "access_gate_attempts"
 	legacyAccessAttemptActorColumn = "actor_id"
 	accessAttemptActorPTIDColumn   = "actor_ptid"
+	accessAttemptStationPeerColumn = "station_peer_id"
 	actorTable                     = "touch_actor"
+	actorHomeStationPeerIDColumn   = "home_station_peer_id"
+	actorOriginColumn              = "origin"
+	localActorOrigin               = "local"
 )
 
 type accessPolicyIdentityRow struct {
@@ -32,24 +36,31 @@ type accessAttemptIdentityRow struct {
 	ActorPTID sql.NullString `gorm:"column:actor_ptid"`
 }
 
-// MigrateAccessGateActorIdentity performs the Access Gate PTID hard cut as one
-// transaction. Legacy numeric identities are resolved only through
-// touch_actor.id -> touch_actor.ptid; missing or divergent mappings abort the
+// MigrateAccessGateIdentity performs the Access Gate identity hard cut as one
+// transaction. Legacy Station scope is recovered only from the unique local
+// Actor home Station, while numeric Actor identities are resolved only through
+// touch_actor.id -> touch_actor.ptid. Missing or divergent mappings abort the
 // entire schema and data migration.
-func MigrateAccessGateActorIdentity(rds *gorm.DB) error {
+func MigrateAccessGateIdentity(rds *gorm.DB) error {
 	if rds == nil {
-		return errors.New("migrate Access Gate actor identity: database is nil")
+		return errors.New("migrate Access Gate identities: database is nil")
 	}
 
+	hasAttempts := rds.Migrator().HasTable(accessAttemptTable)
 	hasLegacyPolicies := rds.Migrator().HasTable(accessPolicyTable) &&
 		rds.Migrator().HasColumn(accessPolicyTable, legacyAllowedActorIDsColumn)
-	hasLegacyAttempts := rds.Migrator().HasTable(accessAttemptTable) &&
+	hasLegacyAttempts := hasAttempts &&
 		rds.Migrator().HasColumn(accessAttemptTable, legacyAccessAttemptActorColumn)
-	if !hasLegacyPolicies && !hasLegacyAttempts {
+	if !hasAttempts && !hasLegacyPolicies {
 		return nil
 	}
 
 	return rds.Transaction(func(tx *gorm.DB) error {
+		if hasAttempts {
+			if err := migrateAccessAttemptStationIdentity(tx); err != nil {
+				return err
+			}
+		}
 		if hasLegacyPolicies {
 			if err := migrateAccessPolicyActorIdentity(tx); err != nil {
 				return err
@@ -62,6 +73,88 @@ func MigrateAccessGateActorIdentity(rds *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func migrateAccessAttemptStationIdentity(tx *gorm.DB) error {
+	if err := addColumnIfMissing(
+		tx,
+		accessAttemptTable,
+		accessAttemptStationPeerColumn,
+		"VARCHAR(255)",
+	); err != nil {
+		return fmt.Errorf(
+			"add %s.%s: %w",
+			accessAttemptTable,
+			accessAttemptStationPeerColumn,
+			err,
+		)
+	}
+
+	var missing int64
+	if err := tx.Table(accessAttemptTable).
+		Where("station_peer_id IS NULL OR station_peer_id = ''").
+		Count(&missing).Error; err != nil {
+		return fmt.Errorf("count Access Gate attempts without Station identity: %w", err)
+	}
+	if missing == 0 {
+		return nil
+	}
+	if !tx.Migrator().HasTable(actorTable) ||
+		!tx.Migrator().HasColumn(actorTable, actorHomeStationPeerIDColumn) {
+		return errors.New(
+			"Access Gate attempts require a local Actor Home Station identity",
+		)
+	}
+
+	query := tx.Table(actorTable).
+		Distinct(actorHomeStationPeerIDColumn).
+		Where("home_station_peer_id IS NOT NULL AND home_station_peer_id <> ''")
+	if tx.Migrator().HasColumn(actorTable, actorOriginColumn) {
+		query = query.Where("origin = ?", localActorOrigin)
+	}
+	var candidates []string
+	if err := query.Pluck(actorHomeStationPeerIDColumn, &candidates).Error; err != nil {
+		return fmt.Errorf("read local Actor Home Station identities: %w", err)
+	}
+
+	stationPeerIDs := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if value := strings.TrimSpace(candidate); value != "" {
+			stationPeerIDs[value] = struct{}{}
+		}
+	}
+	if len(stationPeerIDs) != 1 {
+		return fmt.Errorf(
+			"Access Gate attempts require exactly one local Station PeerID, found %d",
+			len(stationPeerIDs),
+		)
+	}
+
+	var stationPeerID string
+	for candidate := range stationPeerIDs {
+		stationPeerID = candidate
+	}
+	var conflicts int64
+	if err := tx.Table(accessAttemptTable).
+		Where(
+			"station_peer_id IS NOT NULL AND station_peer_id <> '' AND station_peer_id <> ?",
+			stationPeerID,
+		).
+		Count(&conflicts).Error; err != nil {
+		return fmt.Errorf("count divergent Access Gate Station identities: %w", err)
+	}
+	if conflicts > 0 {
+		return fmt.Errorf(
+			"Access Gate attempts have %d rows for a different Station PeerID",
+			conflicts,
+		)
+	}
+	if err := tx.Table(accessAttemptTable).
+		Where("station_peer_id IS NULL OR station_peer_id = ''").
+		Update(accessAttemptStationPeerColumn, stationPeerID).Error; err != nil {
+		return fmt.Errorf("backfill Access Gate attempt Station identity: %w", err)
+	}
+	return nil
 }
 
 func migrateAccessPolicyActorIdentity(tx *gorm.DB) error {

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -26,7 +27,11 @@ except ModuleNotFoundError:
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MOBILE_ROOT = PROJECT_ROOT / "apps/mobile"
 DESKTOP_ICON_SOURCE_PATH = PROJECT_ROOT / "apps/desktop/src-tauri/icon-source.png"
-WORDMARK_PATH = MOBILE_ROOT / "src/assets/logo.png"
+DESKTOP_AUTH_LOGO_PATH = PROJECT_ROOT / "apps/desktop/src-tauri/icons/icon.png"
+AUTH_LOGO_PATHS = (
+    MOBILE_ROOT / "src/assets/logo.png",
+    PROJECT_ROOT / "packages/prototypes/mobile/chat/src/assets/logo.png",
+)
 ICON_SOURCE_PATH = MOBILE_ROOT / "src-tauri/icon-source.png"
 IOS_APPICON_CONTENTS = (
     MOBILE_ROOT / "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/Contents.json"
@@ -35,7 +40,7 @@ TAURI_ICONS_DIR = MOBILE_ROOT / "src-tauri/icons"
 
 
 def main() -> None:
-    normalize_wordmark()
+    sync_auth_logos()
     icon = build_mobile_icon_from_desktop()
     icon.save(ICON_SOURCE_PATH)
     update_ios_app_icons(icon)
@@ -43,22 +48,10 @@ def main() -> None:
     update_android_launcher_icons(icon)
 
 
-def normalize_wordmark() -> None:
-    source = Image.open(WORDMARK_PATH).convert("RGBA")
-    output = Image.new("RGBA", source.size, (0, 0, 0, 0))
-    source_pixels = source.load()
-    output_pixels = output.load()
-
-    for y in range(source.height):
-        for x in range(source.width):
-            r, g, b, a = source_pixels[x, y]
-            if a > 0 and not (r > 235 and g > 235 and b > 235):
-                output_pixels[x, y] = (r, g, b, a)
-
-    bbox = output.getchannel("A").getbbox()
-    if bbox:
-        output = output.crop(bbox)
-    output.save(WORDMARK_PATH)
+def sync_auth_logos() -> None:
+    for destination in AUTH_LOGO_PATHS:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(DESKTOP_AUTH_LOGO_PATH, destination)
 
 
 def build_mobile_icon_from_desktop() -> Image.Image:

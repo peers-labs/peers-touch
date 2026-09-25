@@ -400,6 +400,27 @@ func (s *subServer) handlePrepareCommand(
 
 		return response, mapProductionConversationError(ctx, err)
 	}
+	actorScoped := false
+	switch request.GetCommandKind() {
+	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE:
+	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
+		actorScoped = true
+	default:
+		return nil, server.BadRequest(
+			"Conversation command preparation kind is unsupported",
+		)
+	}
 	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -420,6 +441,7 @@ func (s *subServer) handlePrepareCommand(
 			Sender:            sender,
 			SenderHomeStation: s.localStation,
 			VerifiedRoutes:    verifiedRoutes,
+			ActorScoped:       actorScoped,
 		},
 	)
 	if err != nil {
@@ -701,6 +723,24 @@ func (s *subServer) handleUpdateConversationMember(
 	ctx context.Context,
 	request *chatmodel.UpdateConversationMemberRequest,
 ) (*chatmodel.UpdateConversationMemberResponse, error) {
+	if proposal := request.GetProposal(); proposal != nil {
+		authenticated, _, err := authenticatedConversationActor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if proposal.GetMemberAuthorityCommand().GetAction() !=
+			chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER {
+			return nil, server.BadRequest(
+				"Conversation member authority proposal has the wrong action",
+			)
+		}
+		if err := s.forwardConversationProposal(ctx, authenticated, proposal); err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+		return &chatmodel.UpdateConversationMemberResponse{
+			AcceptedForForwarding: true,
+		}, nil
+	}
 	result, err := s.submitMemberAuthorityCommand(
 		ctx,
 		request.GetCommand(),
@@ -736,6 +776,24 @@ func (s *subServer) handleTransferConversationOwnership(
 	ctx context.Context,
 	request *chatmodel.TransferConversationOwnershipRequest,
 ) (*chatmodel.TransferConversationOwnershipResponse, error) {
+	if proposal := request.GetProposal(); proposal != nil {
+		authenticated, _, err := authenticatedConversationActor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if proposal.GetMemberAuthorityCommand().GetAction() !=
+			chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP {
+			return nil, server.BadRequest(
+				"Conversation ownership-transfer proposal has the wrong action",
+			)
+		}
+		if err := s.forwardConversationProposal(ctx, authenticated, proposal); err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+		return &chatmodel.TransferConversationOwnershipResponse{
+			AcceptedForForwarding: true,
+		}, nil
+	}
 	result, err := s.submitMemberAuthorityCommand(
 		ctx,
 		request.GetCommand(),
@@ -890,23 +948,36 @@ func (s *subServer) handleListConversationMessages(
 	ctx context.Context,
 	request *chatmodel.ListConversationMessagesRequest,
 ) (*chatmodel.ListConversationMessagesResponse, error) {
-	limit := normalizedConversationLimit(int(request.GetLimit()))
-	events, hasMore, err := s.filteredConversationEvents(
-		ctx,
-		request.GetConversationId(),
-		request.GetAfterSeq(),
-		limit,
-		func(record domainevent.Record) bool {
-			return productionMessageEvent(record.Fact.Kind)
-		},
-	)
+	actor, err := authenticatedConversationPTID(ctx)
 	if err != nil {
 		return nil, err
+	}
+	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if request.GetAfterSeq() < 0 {
+		return nil, server.BadRequest("after sequence cannot be negative")
+	}
+	limit := normalizedConversationLimit(int(request.GetLimit()))
+	page, err := s.composition.QueryService.ListMessages(
+		ctx,
+		conversationID,
+		actor,
+		valueobject.Sequence(request.GetAfterSeq()),
+		limit,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	events, err := productionEvents(page.Events)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
 	}
 
 	return &chatmodel.ListConversationMessagesResponse{
 		Events:  events,
-		HasMore: hasMore,
+		HasMore: page.HasMore,
 	}, nil
 }
 
@@ -917,23 +988,41 @@ func (s *subServer) handleListThreadMessages(
 	if request.GetRootId() == "" {
 		return nil, server.BadRequest("thread root message ID is required")
 	}
-	limit := normalizedConversationLimit(int(request.GetLimit()))
-	events, hasMore, err := s.filteredConversationEvents(
-		ctx,
-		request.GetConversationId(),
-		request.GetAfterSeq(),
-		limit,
-		func(record domainevent.Record) bool {
-			return productionThreadEvent(record, request.GetRootId())
-		},
-	)
+	actor, err := authenticatedConversationPTID(ctx)
 	if err != nil {
 		return nil, err
+	}
+	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	threadRootID, err := valueobject.NewMessageID(request.GetRootId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if request.GetAfterSeq() < 0 {
+		return nil, server.BadRequest("after sequence cannot be negative")
+	}
+	limit := normalizedConversationLimit(int(request.GetLimit()))
+	page, err := s.composition.QueryService.ListThreadMessages(
+		ctx,
+		conversationID,
+		actor,
+		threadRootID,
+		valueobject.Sequence(request.GetAfterSeq()),
+		limit,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	events, err := productionEvents(page.Events)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
 	}
 
 	return &chatmodel.ListThreadMessagesResponse{
 		Events:  events,
-		HasMore: hasMore,
+		HasMore: page.HasMore,
 	}, nil
 }
 
@@ -1248,40 +1337,6 @@ func (s *subServer) authenticatedEventRecords(
 	}
 
 	return records, nil
-}
-
-func (s *subServer) filteredConversationEvents(
-	ctx context.Context,
-	conversationID string,
-	afterSequence int64,
-	limit int,
-	include func(domainevent.Record) bool,
-) ([]*chatmodel.ConversationEvent, bool, error) {
-	records, err := s.authenticatedEventRecords(
-		ctx,
-		conversationID,
-		afterSequence,
-		maximumConversationQueryLimit,
-	)
-	if err != nil {
-		return nil, false, err
-	}
-	filtered := make([]domainevent.Record, 0, limit+1)
-	for _, record := range records {
-		if include(record) {
-			filtered = append(filtered, record)
-			if len(filtered) == limit+1 {
-				break
-			}
-		}
-	}
-	hasMore := len(filtered) > limit
-	if hasMore {
-		filtered = filtered[:limit]
-	}
-	events, err := productionEvents(filtered)
-
-	return events, hasMore, err
 }
 
 func (s *subServer) localCommandPreparation(
@@ -2197,25 +2252,6 @@ func productionGenesisMembers(plan entity.AuthorityPlan) []valueobject.PTID {
 	})
 
 	return result
-}
-
-func productionMessageEvent(kind domainevent.Kind) bool {
-	switch kind {
-	case domainevent.KindMessageCommitted,
-		domainevent.KindMessageEdited,
-		domainevent.KindMessageRetracted,
-		domainevent.KindReactionCommitted,
-		domainevent.KindMessagePinCommitted:
-		return true
-	default:
-		return false
-	}
-}
-
-func productionThreadEvent(record domainevent.Record, rootID string) bool {
-	root, _, matched := productionThreadReply(record)
-
-	return matched && root == rootID
 }
 
 func productionThreadReply(

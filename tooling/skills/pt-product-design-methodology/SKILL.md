@@ -41,7 +41,8 @@ It does **not**:
 - Decompose implementation work, define phases, or write code.
 - Copy an external product without a Peers-Touch disposition decision.
 - Treat screenshots, feature lists, or a prototype as production acceptance.
-- Declare a product gate passed without owner or independent review.
+- Declare a product gate passed without an agent-led independent review pass or
+  a precise owner decision for an unresolved product tradeoff.
 
 ## Invoke When
 
@@ -284,7 +285,9 @@ Return `PRODUCT_READY_FOR_ARCHITECTURE` only when:
   executable proof.
 - Every required capability maps to receiver-perspective acceptance.
 - Open product decisions are resolved or named as blockers.
-- An independent reviewer or owner explicitly approves the product contract.
+- An agent-led independent review pass approves the product contract, or a
+  human owner resolves the one precise product tradeoff that accepted sources
+  cannot determine.
 
 Otherwise return `PRODUCT_DESIGN_INCOMPLETE` and list exact missing product
 decisions. Do not push ambiguity into architecture or planning.
@@ -324,7 +327,8 @@ falsifiable.
 
 ## Review Prompt
 
-Generate a review prompt asking an independent reviewer to evaluate:
+Generate a review prompt and have the Development Run invoke an independent
+agent or a separate findings-first review pass to evaluate:
 
 1. Whether target users, jobs, and product promise are coherent.
 2. Whether benchmark observations and dispositions are evidence-backed.
@@ -339,6 +343,10 @@ Generate a review prompt asking an independent reviewer to evaluate:
    product design.
 
 The reviewer returns `passed`, `conditionally passed`, or `changes required`.
+The agent fixes source-backed findings and reruns review without asking the user
+to perform the review. Escalate only when multiple materially valid product
+outcomes remain and evidence plus accepted sources cannot select one, or when a
+DWF-D20 external authorization/destructive boundary applies.
 
 ## Anti-Patterns
 

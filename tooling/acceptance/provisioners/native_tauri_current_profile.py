@@ -16,7 +16,10 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioner import (
+    EnvironmentProvisioner,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
@@ -536,6 +539,46 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource="source-identity:worktree-tree",
             )
 
+    @staticmethod
+    def _worktree_runtime_ports(
+        worktree: ClientWorktreeIdentity,
+        profile_name: str,
+    ) -> dict[str, int]:
+        (
+            resolved_profile,
+            _,
+            resolved_slot,
+            environment,
+        ) = resolve_machine_profile_environment(
+            repo_root=worktree.root,
+        )
+        if resolved_profile != profile_name:
+            raise BlockedError(
+                reason=(
+                    "Current-profile worktree runtime profile does not match "
+                    f"{worktree.logical_name}: expected {profile_name!r}, "
+                    f"got {resolved_profile!r}"
+                ),
+                resource=f"client-worktree-runtime:{worktree.logical_name}",
+            )
+        values = {
+            "gateway": int(environment["PT_DESKTOP_APP_GATEWAY_PORT"]),
+            "renderer": int(environment["PT_DESKTOP_APP_WEB_PORT"]),
+            "webdriver": 4445 + resolved_slot * 10,
+        }
+        if any(
+            not isinstance(value, int) or value <= 0
+            for value in values.values()
+        ):
+            raise BlockedError(
+                reason=(
+                    "Current-profile worktree runtime ports are incomplete "
+                    f"for {worktree.logical_name}"
+                ),
+                resource=f"client-worktree-runtime:{worktree.logical_name}",
+            )
+        return values
+
     @classmethod
     def _client_worktrees(cls) -> dict[str, ClientWorktreeIdentity]:
         raw = os.environ.get(CLIENT_WORKTREES_ENV, "").strip()
@@ -754,47 +797,39 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             self._persistent_storage_reset_authorized(profile_name)
         )
         retained_engine_state_roles = self._retained_engine_state_roles()
+        runtime_ports = {
+            role: self._worktree_runtime_ports(worktree, profile_name)
+            for role, worktree in client_worktrees.items()
+        }
         actors_by_role = {actor.role: actor for actor in actors}
         if set(actors_by_role) != set(CLIENT_ROLES):
             raise BlockedError(
                 reason="Current-profile Native actors are incomplete",
                 resource=f"gate-environment:{GATE_ID}",
             )
-        configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
-        configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
-        configured_webdriver = 4445 + slot * 10
-        allocation = next(
-            (
-                (
-                    configured_gateway + offset,
-                    configured_renderer + offset,
-                    configured_webdriver + offset,
-                )
-                for offset in range(0, 1_000, 10)
-                if all(
-                    self._port_available(port)
-                    for port in (
-                        configured_gateway + offset,
-                        configured_gateway + offset + 1,
-                        configured_renderer + offset,
-                        configured_renderer + offset + 1,
-                        configured_webdriver + offset,
-                        configured_webdriver + offset + 1,
-                    )
-                )
-            ),
-            None,
-        )
-        if allocation is None:
+        del profile_env, slot
+        allocated_ports = [
+            port
+            for ports in runtime_ports.values()
+            for port in ports.values()
+        ]
+        if (
+            len(set(allocated_ports)) != len(allocated_ports)
+            or not all(self._port_available(port) for port in allocated_ports)
+        ):
             raise BlockedError(
-                reason="No complete two-client Native port set is available",
+                reason=(
+                    "Current-profile Native worktree port allocation is not "
+                    "available"
+                ),
                 resource="client-isolation:ports",
             )
-        gateway_base, renderer_base, webdriver_base = allocation
         desktop_profile = f"{profile_name}-app"
         clients: list[ClientRuntime] = []
-        for index, (role, seed_root, persistent_root) in enumerate(
-            zip(CLIENT_ROLES, seed_roots, persistent_roots)
+        for role, seed_root, persistent_root in zip(
+            CLIENT_ROLES,
+            seed_roots,
+            persistent_roots,
         ):
             storage_root = self._persistent_storage(
                 role=role,
@@ -813,9 +848,9 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 actor=declared[role].actor,
                 runtime="native-tauri",
                 worktree=str(client_worktrees[role].root),
-                gateway_port=gateway_base + index,
-                renderer_port=renderer_base + index,
-                webdriver_port=webdriver_base + index,
+                gateway_port=runtime_ports[role]["gateway"],
+                renderer_port=runtime_ports[role]["renderer"],
+                webdriver_port=runtime_ports[role]["webdriver"],
                 profile=desktop_profile,
                 storage_root=str(storage_root),
                 storage_lifecycle="persistent",

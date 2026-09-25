@@ -1,4 +1,4 @@
-import { Button, Typography } from 'antd';
+import { Button, Spin, Typography } from 'antd';
 import {
   AlertTriangle,
   FileClock,
@@ -6,13 +6,74 @@ import {
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
+import copy from '../../../../../locales/en/common.json';
+import type { DemoFriendRequest, SocialDemoState } from '../socialDemo';
 
 const { Text, Title } = Typography;
 
+export function SocialUnavailablePage({ title, runtime }: {
+  title: string;
+  runtime: SocialDemoState['runtime'];
+}) {
+  const retrying = runtime === 'retrying';
+  return (
+    <div className="mp-page" data-demo-runtime={runtime}>
+      <header className="mp-header"><h1 className="mp-header-title">{title}</h1></header>
+      <section className="mp-route-state" role="status" aria-busy={retrying}>
+        {retrying
+          ? <Spin aria-label={copy['mobile.recovery.deferredCapability.title']} />
+          : <Text type="secondary">{copy['mobile.launch.unavailable']}</Text>}
+      </section>
+    </div>
+  );
+}
+
+export function SocialRuntimeNotice({ runtime, onRetry }: {
+  runtime: SocialDemoState['runtime'];
+  onRetry: () => void;
+}) {
+  if (runtime === 'ready') return null;
+  const retrying = runtime === 'retrying';
+  return (
+    <section className="mp-runtime-notice" role="status" aria-busy={retrying}
+      data-demo-recovery-owner="lifecycle">
+      <Text strong>{copy[retrying
+        ? 'mobile.recovery.deferredCapability.title'
+        : 'mobile.recovery.deferredCapability.failedTitle']}</Text>
+      <Text className="mp-recovery-description">
+        {copy[retrying
+          ? 'mobile.recovery.deferredCapability.body'
+          : 'mobile.recovery.deferredCapability.failedBody'].replace('{{count}}', '2')}
+      </Text>
+      <Button type="primary" loading={retrying} disabled={retrying} onClick={onRetry}
+        icon={<RefreshCw size={16} />}>
+        {copy['common.action.retry']}
+      </Button>
+    </section>
+  );
+}
+
+export function RequestRecoveryNotice({ request, onCheck }: {
+  request: DemoFriendRequest | null;
+  onCheck: () => void;
+}) {
+  if (!request || (request.status !== 'unknown' && request.status !== 'reconciling')) return null;
+  const checking = request.status === 'reconciling';
+  return (
+    <section className="mp-request-recovery" role="status" aria-busy={checking}
+      data-demo-intent-id={request.intentId}>
+      <Text strong>{copy['mobile.recovery.command.title']}</Text>
+      <Text className="mp-recovery-description">{copy['mobile.contacts.requestUnconfirmed']}</Text>
+      <Button loading={checking} disabled={checking} onClick={onCheck}>
+        {copy['mobile.recovery.command.reconcile'].replace('{{count}}', '1')}
+      </Button>
+    </section>
+  );
+}
+
 export type BlockingEvidenceScenario =
   | 'station-identity-mismatch'
-  | 'oauth-expired'
-  | 'session-revoked';
+  | 'oauth-expired';
 
 export type ShellEvidenceScenario =
   | 'unknown-write'
@@ -39,16 +100,6 @@ const blockingContent = {
     status: 'Authorization expired',
     primary: 'Try GitHub again',
     secondary: 'Use Email login',
-  },
-  'session-revoked': {
-    Icon: ShieldAlert,
-    eyebrow: 'Session',
-    title: 'Sign in again',
-    description:
-      'This device session was revoked. Previous account content has been hidden.',
-    status: 'Session revoked',
-    primary: 'Continue to sign in',
-    secondary: 'Change Station',
   },
 } satisfies Record<
   BlockingEvidenceScenario,

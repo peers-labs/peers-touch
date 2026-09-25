@@ -20,6 +20,8 @@ const (
 	PayloadKindConversationDeliveryReceipt  = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT
 	PayloadKindConversationTyping           = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING
 	PayloadKindConversationReadCursor       = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR
+	PayloadKindSocialRelationshipEvent      = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_RELATIONSHIP_EVENT
+	PayloadKindRealtimeCallSignal           = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_REALTIME_CALL_SIGNAL
 
 	DispositionUnspecified         = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED
 	DispositionAccepted            = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED

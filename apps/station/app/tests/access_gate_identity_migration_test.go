@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestAccessGateActorIdentityMigrationLegacyOnly(t *testing.T) {
+func TestAccessGateIdentityMigrationLegacyOnly(t *testing.T) {
 	db := openAccessGateMigrationDB(t)
 	createAccessGateMigrationActorTable(t, db)
 	execAccessGateMigrationSQL(t, db, `
@@ -37,7 +37,7 @@ func TestAccessGateActorIdentityMigrationLegacyOnly(t *testing.T) {
 		VALUES ('attempt-1', 202), ('attempt-anonymous', 0)
 	`)
 
-	if err := modeldb.MigrateAccessGateActorIdentity(db); err != nil {
+	if err := modeldb.MigrateAccessGateIdentity(db); err != nil {
 		t.Fatalf("migrate legacy Access Gate identities: %v", err)
 	}
 
@@ -45,9 +45,11 @@ func TestAccessGateActorIdentityMigrationLegacyOnly(t *testing.T) {
 	assertAccessGatePolicyPTIDs(t, db, "ptid:alice,ptid:bob")
 	assertAccessGateAttemptPTID(t, db, "attempt-1", "ptid:bob")
 	assertAccessGateAttemptPTID(t, db, "attempt-anonymous", "")
+	assertAccessGateAttemptStationPeerID(t, db, "attempt-1", "station-local")
+	assertAccessGateAttemptStationPeerID(t, db, "attempt-anonymous", "station-local")
 }
 
-func TestAccessGateActorIdentityMigrationMatchingDualColumns(t *testing.T) {
+func TestAccessGateIdentityMigrationMatchingDualColumns(t *testing.T) {
 	db := openAccessGateMigrationDB(t)
 	createAccessGateMigrationActorTable(t, db)
 	createDualAccessGateMigrationTables(t, db)
@@ -64,16 +66,17 @@ func TestAccessGateActorIdentityMigrationMatchingDualColumns(t *testing.T) {
 		VALUES ('attempt-1', 101, 'ptid:alice')
 	`)
 
-	if err := modeldb.MigrateAccessGateActorIdentity(db); err != nil {
+	if err := modeldb.MigrateAccessGateIdentity(db); err != nil {
 		t.Fatalf("migrate matching dual Access Gate identities: %v", err)
 	}
 
 	assertAccessGateLegacyColumnsDropped(t, db)
 	assertAccessGatePolicyPTIDs(t, db, "ptid:alice,ptid:bob")
 	assertAccessGateAttemptPTID(t, db, "attempt-1", "ptid:alice")
+	assertAccessGateAttemptStationPeerID(t, db, "attempt-1", "station-local")
 }
 
-func TestAccessGateActorIdentityMigrationDivergenceRollsBack(t *testing.T) {
+func TestAccessGateIdentityMigrationDivergenceRollsBack(t *testing.T) {
 	db := openAccessGateMigrationDB(t)
 	createAccessGateMigrationActorTable(t, db)
 	createDualAccessGateMigrationTables(t, db)
@@ -90,7 +93,7 @@ func TestAccessGateActorIdentityMigrationDivergenceRollsBack(t *testing.T) {
 		VALUES ('attempt-1', 101, 'ptid:bob')
 	`)
 
-	err := modeldb.MigrateAccessGateActorIdentity(db)
+	err := modeldb.MigrateAccessGateIdentity(db)
 	if err == nil || !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("expected conflicting identity error, got %v", err)
 	}
@@ -100,7 +103,7 @@ func TestAccessGateActorIdentityMigrationDivergenceRollsBack(t *testing.T) {
 	assertAccessGateAttemptPTID(t, db, "attempt-1", "ptid:bob")
 }
 
-func TestAccessGateActorIdentityMigrationUnresolvedActorRollsBack(t *testing.T) {
+func TestAccessGateIdentityMigrationUnresolvedActorRollsBack(t *testing.T) {
 	db := openAccessGateMigrationDB(t)
 	createAccessGateMigrationActorTable(t, db)
 	execAccessGateMigrationSQL(t, db, `
@@ -125,7 +128,7 @@ func TestAccessGateActorIdentityMigrationUnresolvedActorRollsBack(t *testing.T) 
 		VALUES ('attempt-unresolved', 999)
 	`)
 
-	err := modeldb.MigrateAccessGateActorIdentity(db)
+	err := modeldb.MigrateAccessGateIdentity(db)
 	if err == nil || !strings.Contains(err.Error(), "unresolved") {
 		t.Fatalf("expected unresolved identity error, got %v", err)
 	}
@@ -159,7 +162,9 @@ func createAccessGateMigrationActorTable(t *testing.T, db *gorm.DB) {
 	execAccessGateMigrationSQL(t, db, `
 		CREATE TABLE touch_actor (
 			id INTEGER PRIMARY KEY,
-			ptid VARCHAR(255)
+			ptid VARCHAR(255),
+			home_station_peer_id VARCHAR(255),
+			origin VARCHAR(16)
 		)
 	`)
 }
@@ -185,8 +190,10 @@ func createDualAccessGateMigrationTables(t *testing.T, db *gorm.DB) {
 func insertAccessGateMigrationActors(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	execAccessGateMigrationSQL(t, db, `
-		INSERT INTO touch_actor (id, ptid)
-		VALUES (101, 'ptid:alice'), (202, 'ptid:bob')
+		INSERT INTO touch_actor (id, ptid, home_station_peer_id, origin)
+		VALUES
+			(101, 'ptid:alice', 'station-local', 'local'),
+			(202, 'ptid:bob', 'station-local', 'local')
 	`)
 }
 
@@ -248,5 +255,24 @@ func assertAccessGateAttemptPTID(t *testing.T, db *gorm.DB, attemptID, expected 
 	}
 	if actual.String != expected {
 		t.Fatalf("attempt %q actor_ptid = %q, want %q", attemptID, actual.String, expected)
+	}
+}
+
+func assertAccessGateAttemptStationPeerID(
+	t *testing.T,
+	db *gorm.DB,
+	attemptID string,
+	expected string,
+) {
+	t.Helper()
+	var actual string
+	if err := db.Table("access_gate_attempts").
+		Select("station_peer_id").
+		Where("id = ?", attemptID).
+		Scan(&actual).Error; err != nil {
+		t.Fatalf("read migrated attempt Station PeerID: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("station_peer_id = %q, want %q", actual, expected)
 	}
 }

@@ -9,7 +9,6 @@
 
 ```json
 {
-  "schemaVersion": 2,
   "kind": "peers-touch-plan-package",
   "planId": "DWF-PROGRESS-20260917",
   "status": "completed",
@@ -188,7 +187,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "closures": {
     "dwf-progress-contract": [],
     "ldcp-agent-policy": [],
