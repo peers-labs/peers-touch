@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   accessStart: vi.fn(),
   accessSubmitLogin: vi.fn(),
+  stationBindingComplete: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
   markLocalIdentityAction: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../services/desktop_api', () => ({
   api: {
     accessStart: mocks.accessStart,
     accessSubmitLogin: mocks.accessSubmitLogin,
+    stationBindingComplete: mocks.stationBindingComplete,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
   },
@@ -81,6 +83,8 @@ describe('session authentication convergence', () => {
       },
     });
     mocks.accessSubmitLogin.mockResolvedValue(authenticatedResponse);
+    mocks.stationBindingComplete.mockResolvedValue({ phase: 'bound' });
+    mocks.authLogout.mockResolvedValue(undefined);
     mocks.ensureStationSession.mockResolvedValue({
       ...authenticatedResponse,
       login_method: 'github',
@@ -104,6 +108,21 @@ describe('session authentication convergence', () => {
     expect(authenticatedDuringPipeline).toBe(true);
     expect(useSessionStore.getState().authenticated).toBe(true);
     expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('rolls back the native session when Station binding cannot complete', async () => {
+    const bindingError = new Error('station binding failed');
+    useSessionStore.getState().reset();
+    mocks.stationBindingComplete.mockRejectedValueOnce(bindingError);
+
+    await expect(
+      useSessionStore.getState().accessSubmitLogin(
+        'attempt-1', loginGate, 'alice@p.t', 'password',
+      ),
+    ).rejects.toThrow('station binding failed');
+
+    expect(mocks.authLogout).toHaveBeenCalledOnce();
+    expect(useSessionStore.getState().authenticated).toBe(false);
   });
 
   it('runs the identity pipeline before propagating native cleanup failure', async () => {

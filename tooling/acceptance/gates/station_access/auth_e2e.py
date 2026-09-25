@@ -88,6 +88,14 @@ class StationAccessAuthGate(AcceptanceGate):
                 desktop_access.get("preAuthentication"),
                 "Desktop pre-authentication state",
             )
+            desktop_station_binding = self._mapping(
+                desktop_access.get("stationBinding"),
+                "Desktop pre-authentication Station binding",
+            )
+            desktop_bound_station = self._mapping(
+                desktop_access.get("postAuthentication"),
+                "Desktop authenticated Station binding",
+            )
             mobile_pre_auth = self._mapping(
                 mobile_access.get("preAuthentication"),
                 "Mobile pre-authentication scope",
@@ -97,6 +105,12 @@ class StationAccessAuthGate(AcceptanceGate):
                 (
                     bool(desktop_access.get("bindingProofRefs"))
                     and bool(mobile_access.get("bindingProofRefs"))
+                    and desktop_station_binding.get("configured") is True
+                    and desktop_station_binding.get("bindingPhase")
+                    == "access_gate"
+                    and desktop_station_binding.get("activeStationPeerId")
+                    == desktop.station_peer_id
+                    and desktop_bound_station.get("phase") == "bound"
                     and desktop_pre_auth.get("authenticated") is False
                     and not desktop_pre_auth.get("actorPtid")
                     and mobile_pre_auth.get("activeStationPeerId")
