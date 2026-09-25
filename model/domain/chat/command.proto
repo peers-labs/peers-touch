@@ -61,6 +61,24 @@ message RetractMessageIntent {
   string message_id = 1;
 }
 
+message HideMessageForActorIntent {
+  string message_id = 1;
+}
+
+message ModerateMessageIntent {
+  string message_id = 1;
+  string reason_code = 2;
+}
+
+message ForwardMessageIntent {
+  string destination_message_id = 1;
+  MessagingContentKind content_kind = 2;
+  repeated EncryptedObjectDescriptor destination_attachments = 3;
+  repeated PreparedEndpointPayload destination_payloads = 4;
+  bytes mls_application_payload = 5;
+  bytes mls_application_payload_sha256 = 6;
+}
+
 message ReactionIntent {
   string message_id = 1;
   string reaction = 2;
@@ -165,6 +183,9 @@ message ChatCommand {
     UpdateConversationIntent update_conversation = 25;
     MembershipTransitionIntent membership_transition = 26;
     DissolveConversationIntent dissolve_conversation = 27;
+    HideMessageForActorIntent hide_message_for_actor = 28;
+    ModerateMessageIntent moderate_message = 29;
+    ForwardMessageIntent forward_message = 30;
   }
 }
 
@@ -184,6 +205,7 @@ message ConversationCommandProposal {
   bytes actor_signature = 11;
   int64 created_at_unix_ms = 12;
   int64 expires_at_unix_ms = 13;
+  ConversationMemberAuthorityCommand member_authority_command = 14;
 }
 
 // Exact deterministic protobuf input signed by the actor device.

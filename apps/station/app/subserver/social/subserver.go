@@ -47,6 +47,7 @@ type subServer struct {
 	privateObjectSvc  *application.PrivateObjectService
 
 	federatedFriendRequestSvc *application.FederatedFriendRequestService
+	federatedRelationshipSvc  *application.FederatedRelationshipService
 	friendRequestEffectSvc    *application.FriendRequestDirectEffectService
 	friendRequestEffectCancel context.CancelFunc
 	friendRequestEffectWait   sync.WaitGroup
@@ -211,10 +212,26 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		return fmt.Errorf("initialize federated Friend Request service: %w", err)
 	}
 	s.federatedFriendRequestSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
+	s.federatedRelationshipSvc, err = application.NewFederatedRelationshipService(
+		federatedStore,
+		federationRuntime.Signer(),
+		federationRuntime.LocalStationPeerID(),
+		clock,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize federated Social relationship service: %w", err)
+	}
+	s.federatedRelationshipSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
-		return infrastructure.RegisterFederatedFriendRequestReceivers(
+		if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,
 			s.federatedFriendRequestSvc,
+		); err != nil {
+			return err
+		}
+		return infrastructure.RegisterFederatedRelationshipReceiver(
+			registry,
+			s.federatedRelationshipSvc,
 		)
 	}); err != nil {
 		return fmt.Errorf("register Social Federation receivers: %w", err)
@@ -245,6 +262,7 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.federatedFriendRequestSvc == nil ||
+		s.federatedRelationshipSvc == nil ||
 		s.friendRequestEffectSvc == nil ||
 		s.privateObjectSvc == nil {
 		s.status = server.StatusError

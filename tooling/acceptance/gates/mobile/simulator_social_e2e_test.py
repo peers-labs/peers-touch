@@ -9,6 +9,8 @@ from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
+from tooling.acceptance.gates.mobile.simulator_e2e import SimulatorGateBlocked
+from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
 
 
 class Artifacts:
@@ -43,7 +45,7 @@ class Artifacts:
 
 
 class SimulatorSocialGateTests(unittest.TestCase):
-    def test_supplemental_gate_never_claims_full_proof(self) -> None:
+    def test_canonical_simulator_gate_claims_declared_proof(self) -> None:
         artifacts = Artifacts()
         gate = SimulatorSocialGate("social-convergence")
         with (
@@ -68,8 +70,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(artifacts.completed["status"], "PASS")
-        self.assertEqual(artifacts.completed["completion_status"], "PARTIAL")
-        self.assertEqual(artifacts.completed["proof_status"], "UNPROVEN")
+        self.assertEqual(artifacts.completed["completion_status"], "DONE")
+        self.assertEqual(artifacts.completed["proof_status"], "PROVEN")
         result = next(
             value
             for path, value, _role in artifacts.writes
@@ -80,12 +82,15 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "acceptance-gate-evidence-report",
         )
         self.assertEqual(result["gateId"], gate.gate_id)
-        self.assertEqual(result["phase"], "W9-D Social")
-        self.assertEqual(result["bom"], ["W5", "W6A", "W9-D"])
-        self.assertEqual(result["spec"], ["MS-AG04", "MS-AG06"])
+        self.assertEqual(result["phase"], "W5 Simulator Social Convergence")
+        self.assertEqual(result["bom"], ["W5", "W5-OWNER"])
+        self.assertEqual(result["spec"], ["MS-AG06"])
         self.assertEqual(result["gate"], gate.gate_id)
         self.assertFalse(result["physicalDeviceClaimed"])
-        self.assertIn("full MS-AG04 and MS-AG06", result["unprovenScope"])
+        self.assertIn(
+            "physical-device hardware behavior",
+            result["unprovenScope"],
+        )
 
     def test_cleanup_failure_does_not_hide_primary_failure(self) -> None:
         artifacts = Artifacts()
@@ -145,6 +150,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     "mobile-simulator-social-convergence-e2e"
                 ),
                 "chat-contacts": "mobile-simulator-chat-contacts-e2e",
+                "recovery": "mobile-simulator-recovery-e2e",
+                "recovery-ui": "mobile-simulator-recovery-ui-e2e",
+                "moments": "mobile-simulator-moments-e2e",
             },
         )
         self.assertNotEqual(
@@ -152,9 +160,240 @@ class SimulatorSocialGateTests(unittest.TestCase):
             SimulatorSocialGate("chat-contacts").gate_id,
         )
 
+    def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
+        artifacts = Artifacts()
+        gate = SimulatorSocialGate("social-convergence")
+
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "ArtifactSession",
+                return_value=artifacts,
+            ),
+            patch.object(
+                gate,
+                "_load_social_manifest",
+                side_effect=SimulatorGateBlocked(
+                    "runtime manifest missing",
+                    f"{ENVIRONMENT_ID}:manifest",
+                ),
+            ) as load_manifest,
+            patch.object(gate, "_run_social_journey") as run_journey,
+            patch.object(gate, "_cleanup_sessions"),
+        ):
+            exit_code = gate.execute()
+
+        self.assertEqual(exit_code, 2)
+        load_manifest.assert_called_once()
+        run_journey.assert_not_called()
+        result = next(
+            value
+            for path, value, _role in artifacts.writes
+            if path.endswith("/result.json")
+        )
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(
+            result["blockedResource"],
+            f"{ENVIRONMENT_ID}:manifest",
+        )
+
+    def test_runtime_manifest_requires_only_same_station_service(self) -> None:
+        gate = SimulatorSocialGate("recovery")
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_RUNTIME_MANIFEST": "/tmp/direct.json"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "load_runtime_manifest",
+                return_value={"environmentId": ENVIRONMENT_ID},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "require_runtime_service",
+            ) as require_service,
+        ):
+            manifest = gate._load_social_manifest()
+
+        self.assertEqual(manifest["environmentId"], ENVIRONMENT_ID)
+        require_service.assert_called_once_with(
+            manifest,
+            "station",
+            "station",
+        )
+
+    def test_cross_station_manifest_cannot_satisfy_direct_gate(self) -> None:
+        gate = SimulatorSocialGate("recovery")
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_RUNTIME_MANIFEST": "/tmp/social.json"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "load_runtime_manifest",
+                return_value={"environmentId": "mobile-social-simulator"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "require_runtime_service",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                SimulatorGateBlocked,
+                ENVIRONMENT_ID,
+            ):
+                gate._load_social_manifest()
+
     def test_unknown_scenario_fails_before_runtime_allocation(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported"):
             SimulatorSocialGate("unknown")
+
+    def test_recovery_ui_uses_restart_and_authoritative_draft_readback(
+        self,
+    ) -> None:
+        draft = {
+            "kind": "chat",
+            "targetId": "recovery-ui-run",
+            "payloadSha256": "a" * 64,
+        }
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                _payload: object = None,
+            ) -> object:
+                if action == "reliability.draft.write":
+                    return draft
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "recovery.snapshot":
+                    return {
+                        "states": [{
+                            "kind": "draft-restore-pending",
+                            "actions": ["restore", "discard"],
+                        }],
+                    }
+                if action == "reliability.snapshot":
+                    return {
+                        "runtime": {},
+                        "commands": [],
+                        "drafts": [draft],
+                        "checkpoints": [],
+                    }
+                raise AssertionError(action)
+
+        result = SimulatorSocialGate(
+            "recovery-ui"
+        )._run_recovery_ui_journey(
+            session=Session(),
+            journey_id="run",
+        )
+
+        self.assertEqual(result["visibleState"], "draft-restore-pending")
+        self.assertEqual(result["actions"], ["restore", "discard"])
+
+    def test_moments_journey_requires_receiver_and_rollback_readback(
+        self,
+    ) -> None:
+        draft = {
+            "kind": "moment",
+            "targetId": "moment-compose-run",
+            "payloadSha256": "b" * 64,
+        }
+
+        class SenderSession:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "moments.publish":
+                    return {
+                        "postId": "post-1",
+                        "authorPtid": "ptid:alice",
+                        "text": "mobile-moment-run",
+                    }
+                if action == "moments.comment":
+                    return {"commentId": "reply-1"}
+                if action == "reliability.draft.write":
+                    return draft
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "reliability.draft.read":
+                    return [draft]
+                if action == "reliability.draft.action":
+                    return {"drafts": []}
+                raise AssertionError((action, payload))
+
+        class ReceiverSession:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "moments.feed.read":
+                    return {
+                        "posts": [{
+                            "postId": "post-1",
+                            "authorPtid": "ptid:alice",
+                            "text": "mobile-moment-run",
+                        }]
+                    }
+                if action == "moments.react":
+                    if isinstance(payload, dict) and payload.get("active"):
+                        return [{
+                            "kind": 1,
+                            "count": "1",
+                            "reactedByViewer": True,
+                        }]
+                    return []
+                if action == "moments.comment":
+                    return {"commentId": "comment-1"}
+                if action == "moments.comments.read":
+                    return [
+                        {"commentId": "comment-1"},
+                        {"commentId": "reply-1"},
+                    ]
+                raise AssertionError((action, payload))
+
+        sender = MessagingActor(
+            client_id="sim-ios",
+            role="alice",
+            station_url="https://primary.example",
+            station_peer_id="station-primary",
+            ptid="ptid:alice",
+            account_ref="station-account:alice@p.t",
+            federated_handle="@alice@primary",
+            federation_id="federation-1",
+        )
+        receiver = MessagingActor(
+            client_id="sim-ios-peer",
+            role="bob",
+            station_url="https://secondary.example",
+            station_peer_id="station-secondary",
+            ptid="ptid:bob",
+            account_ref="station-account:bob@p.t",
+            federated_handle="@bob@secondary",
+            federation_id="federation-1",
+        )
+
+        result = SimulatorSocialGate("moments")._run_moments_journey(
+            sender_session=SenderSession(),
+            receiver_session=ReceiverSession(),
+            sender=sender,
+            receiver=receiver,
+            journey_id="run",
+        )
+
+        self.assertEqual(result["post"]["postId"], "post-1")
+        self.assertTrue(result["reactionCommitted"])
+        self.assertTrue(result["reactionRolledBack"])
+        self.assertTrue(result["draftRestartReadback"])
 
 
 if __name__ == "__main__":

@@ -70,6 +70,7 @@ const NON_LIVE_DIRECTORY_NAMES = new Set([
   'target',
   'tmp',
 ]);
+const JOURNAL_PERSISTED_CONTENT = new WeakMap();
 
 export class PlanMigrationError extends PlanPackageError {
   constructor(code, message, details = undefined) {
@@ -934,7 +935,12 @@ function validateSourceIdentity(sourceIdentity) {
 function validateCommitVerification(verification) {
   assertClosedObject(
     verification,
-    ['discoveryRoot', 'expectedActivePlanCount', 'expectedPackageStatus'],
+    [
+      'discoveryRoot',
+      'expectedActivePlanCount',
+      'expectedPackageStatus',
+      'expectedCurrentTaskId',
+    ],
     'Plan Migration Journal.verification',
   );
   validateRepositoryPath(
@@ -951,6 +957,18 @@ function validateCommitVerification(verification) {
     fail(
       'PLAN_MIGRATION_JOURNAL_INVALID',
       'Plan migration target status must be active or blocked',
+    );
+  }
+  if (verification.expectedPackageStatus === 'active') {
+    assertString(
+      verification.expectedCurrentTaskId,
+      'Plan Migration Journal.verification.expectedCurrentTaskId',
+      ID_PATTERN,
+    );
+  } else if (verification.expectedCurrentTaskId !== null) {
+    fail(
+      'PLAN_MIGRATION_JOURNAL_INVALID',
+      'Blocked migration target must not declare a current Task',
     );
   }
 }
@@ -1074,8 +1092,10 @@ export function validatePlanMigrationJournal(journal) {
 
 export async function readPlanMigrationJournal(journalPath) {
   let value;
+  let content;
   try {
-    value = JSON.parse(await fsp.readFile(journalPath, 'utf8'));
+    content = await fsp.readFile(journalPath);
+    value = JSON.parse(content.toString('utf8'));
   } catch (error) {
     if (error instanceof SyntaxError) {
       fail('PLAN_MIGRATION_JOURNAL_INVALID', 'Migration journal is not valid JSON', {
@@ -1089,13 +1109,33 @@ export async function readPlanMigrationJournal(journalPath) {
     }
     throw error;
   }
-  return validatePlanMigrationJournal(normalizeLegacyJournalBinding(value));
+  const journal = validatePlanMigrationJournal(
+    normalizeLegacyJournalBinding(value),
+  );
+  JOURNAL_PERSISTED_CONTENT.set(journal, content);
+  return journal;
 }
 
-async function writeJournal(journalPath, journal, clock) {
-  journal.updatedAt = timestamp(clock);
+async function writeJournal(journalPath, journal, options) {
+  const expectedContent = JOURNAL_PERSISTED_CONTENT.get(journal);
+  if (expectedContent === undefined) {
+    fail(
+      'PLAN_MIGRATION_JOURNAL_INVALID',
+      'Migration journal write requires a previously observed journal version',
+      { journalPath },
+    );
+  }
+  journal.updatedAt = timestamp(options.clock);
   validatePlanMigrationJournal(journal);
-  await atomicWrite(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
+  const content = `${JSON.stringify(journal, null, 2)}\n`;
+  await atomicWrite(journalPath, content, {
+    expectedContent,
+    beforeAtomicCommit:
+      typeof options.beforeJournalAtomicCommit === 'function'
+        ? () => options.beforeJournalAtomicCommit(structuredClone(journal))
+        : undefined,
+  });
+  JOURNAL_PERSISTED_CONTENT.set(journal, Buffer.from(content));
 }
 
 function identityFromStat(stat) {
@@ -1225,7 +1265,7 @@ function applyPendingOperationOutcome(journal, operation) {
 async function clearPendingOperation(options, journal, operation) {
   applyPendingOperationOutcome(journal, operation);
   journal.pendingOperation = null;
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
 }
 
 async function beginPendingOperation(
@@ -1293,7 +1333,7 @@ async function beginPendingOperation(
     source,
     destination,
   };
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
   await invokeFailpoint(
     options,
     `after-file-operation-intent:${purpose}:${destinationPath}`,
@@ -1336,7 +1376,7 @@ async function settlePendingOperation(
   }
   if (beforeState && !execute) {
     journal.pendingOperation = null;
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
     return false;
   }
   if (beforeState) {
@@ -1350,7 +1390,7 @@ async function settlePendingOperation(
         : sameFileSnapshot(destination, operation.destination));
     if (!stillBefore) {
       journal.pendingOperation = null;
-      await writeJournal(options.journalPath, journal, options.clock);
+      await writeJournal(options.journalPath, journal, options);
       fail(
         'PLAN_CONCURRENT_MODIFICATION',
         'Filesystem state changed after operation intent and before the atomic operation',
@@ -1384,7 +1424,7 @@ async function settlePendingOperation(
 
   if (sameFileSnapshot(source, operation.source)) {
     journal.pendingOperation = null;
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
 
   fail(
@@ -1800,7 +1840,12 @@ export async function preparePlanMigration(options) {
   if (
     typeof options.discoveryRoot !== 'string' ||
     options.expectedActivePlanCount !== 1 ||
-    !LIVE_PLAN_STATUSES.has(options.expectedPackageStatus)
+    !LIVE_PLAN_STATUSES.has(options.expectedPackageStatus) ||
+    (options.expectedPackageStatus === 'active' &&
+      (typeof options.expectedCurrentTaskId !== 'string' ||
+        !ID_PATTERN.test(options.expectedCurrentTaskId))) ||
+    (options.expectedPackageStatus === 'blocked' &&
+      options.expectedCurrentTaskId !== null)
   ) {
     fail(
       'PLAN_MIGRATION_INVALID',
@@ -1811,6 +1856,7 @@ export async function preparePlanMigration(options) {
     discoveryRoot: options.discoveryRoot,
     expectedActivePlanCount: options.expectedActivePlanCount,
     expectedPackageStatus: options.expectedPackageStatus,
+    expectedCurrentTaskId: options.expectedCurrentTaskId,
   });
   const crosswalkPath =
     options.crosswalkPath ?? defaultCrosswalkPath(options.packagePlan);
@@ -1907,6 +1953,7 @@ export async function preparePlanMigration(options) {
       discoveryRoot: options.discoveryRoot,
       expectedActivePlanCount: options.expectedActivePlanCount,
       expectedPackageStatus: options.expectedPackageStatus,
+      expectedCurrentTaskId: options.expectedCurrentTaskId,
     },
     replacements: [],
     createdAt: initial,
@@ -1956,6 +2003,36 @@ export async function preparePlanMigration(options) {
       applied: false,
     });
   }
+  const packageReplacement = journal.replacements.find(
+    (replacement) => replacement.path === journal.packagePlan,
+  );
+  if (!packageReplacement) {
+    fail(
+      'PLAN_MIGRATION_INVALID',
+      'Migration replacements must include the Plan Package manifest',
+      { packagePlan: journal.packagePlan },
+    );
+  }
+  const reviewedTarget = await loadPlanPackage(
+    relativeToNative(repoRoot, packageReplacement.preparedPath),
+    { repoRoot, ignoreMigrationLock: true },
+  );
+  const reviewedCurrentTaskId = reviewedTarget.currentTask?.taskId ?? null;
+  if (
+    reviewedTarget.manifest.status !== journal.verification.expectedPackageStatus ||
+    reviewedCurrentTaskId !== journal.verification.expectedCurrentTaskId
+  ) {
+    fail(
+      'PLAN_MIGRATION_INVALID',
+      'Prepared Plan Package does not match the reviewed target state',
+      {
+        expectedStatus: journal.verification.expectedPackageStatus,
+        actualStatus: reviewedTarget.manifest.status,
+        expectedCurrentTaskId: journal.verification.expectedCurrentTaskId,
+        actualCurrentTaskId: reviewedCurrentTaskId,
+      },
+    );
+  }
   const declaredPaths = await readReviewedCrosswalk(repoRoot, journal);
   journal.oldPathReferences = await scanOldPathReferences(repoRoot, journal);
   assertReferenceInventory(
@@ -1964,7 +2041,9 @@ export async function preparePlanMigration(options) {
     declaredPaths,
   );
   validatePlanMigrationJournal(journal);
-  await atomicWrite(options.journalPath, `${JSON.stringify(journal, null, 2)}\n`);
+  const content = `${JSON.stringify(journal, null, 2)}\n`;
+  await atomicWrite(options.journalPath, content, { expectedAbsent: true });
+  JOURNAL_PERSISTED_CONTENT.set(journal, Buffer.from(content));
   return journal;
 }
 
@@ -2625,6 +2704,17 @@ async function validateCommittedState(repoRoot, journal, options, lease) {
       actual: packagePlan.manifest.status,
     });
   }
+  const currentTaskId = packagePlan.currentTask?.taskId ?? null;
+  if (currentTaskId !== journal.verification.expectedCurrentTaskId) {
+    fail(
+      'PLAN_MIGRATION_VERIFY_FAILED',
+      'Current Task does not match reviewed target',
+      {
+        expected: journal.verification.expectedCurrentTaskId,
+        actual: currentTaskId,
+      },
+    );
+  }
   if (await exists(relativeToNative(repoRoot, journal.legacyPlan))) {
     fail('PLAN_MIGRATION_VERIFY_FAILED', 'Legacy plan remains live after migration');
   }
@@ -2673,7 +2763,7 @@ async function completeMigration(options, journal, lease) {
 
   if (journal.phase === 'PREPARED') {
     journal.phase = 'LOCKED';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
     await invokeFailpoint(options, 'after-lock', journal);
   }
   await verifyPreparedState(repoRoot, journal);
@@ -2685,7 +2775,7 @@ async function completeMigration(options, journal, lease) {
     });
     await verifyLegacyPlanIntegrity(repoRoot, journal);
     journal.phase = 'APPLYING';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
   if (journal.phase === 'APPLYING') {
     for (const [replacementIndex, replacement] of journal.replacements.entries()) {
@@ -2698,7 +2788,7 @@ async function completeMigration(options, journal, lease) {
           options,
           journal,
         );
-        await writeJournal(options.journalPath, journal, options.clock);
+        await writeJournal(options.journalPath, journal, options);
         await invokeFailpoint(options, `after-replacement:${replacement.path}`, journal);
       } else {
         const targetPath = relativeToNative(repoRoot, replacement.path);
@@ -2713,14 +2803,14 @@ async function completeMigration(options, journal, lease) {
     await assertActiveWorkProjection(options, journal);
     if (!journal.activeWorkProjection.applied) {
       journal.activeWorkProjection.applied = true;
-      await writeJournal(options.journalPath, journal, options.clock);
+      await writeJournal(options.journalPath, journal, options);
       await invokeFailpoint(options, 'after-active-work-projection', journal);
     }
     await invokeFailpoint(options, 'before-legacy-removal', journal);
     await assertLockOwned(lease);
     await removeLegacyPlan(repoRoot, journal, options);
     journal.phase = 'VERIFYING';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
     await invokeFailpoint(options, 'after-legacy-removal', journal);
   }
   if (journal.phase === 'VERIFYING') {
@@ -2728,7 +2818,7 @@ async function completeMigration(options, journal, lease) {
     await validateCommittedState(repoRoot, journal, options, lease);
     await verifyArchiveIntegrity(repoRoot, journal);
     journal.phase = 'COMMITTED';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
     await invokeFailpoint(options, 'after-commit-journal', journal);
   }
   return journal;
@@ -2893,7 +2983,7 @@ async function rollbackMigration(options, journal, lease) {
     });
   }
   journal.phase = 'ROLLING_BACK';
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
   await invokeFailpoint(options, 'rollback-started', journal);
 
   for (const replacementIndex of [...journal.replacements.keys()].reverse()) {
@@ -2906,7 +2996,7 @@ async function rollbackMigration(options, journal, lease) {
       options,
       journal,
     );
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
     await invokeFailpoint(options, `after-rollback:${replacement.path}`, journal);
   }
   const legacyPath = relativeToNative(repoRoot, journal.legacyPlan);
@@ -2954,7 +3044,7 @@ async function rollbackMigration(options, journal, lease) {
   await validateRolledBackState(repoRoot, journal);
   journal.activeWorkProjection.applied = false;
   journal.phase = 'ROLLED_BACK';
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
   return journal;
 }
 
@@ -3189,7 +3279,7 @@ async function initializeCleanupBatch(
     fence,
     captures,
   };
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
 }
 
 function cleanupCaptureFailpoint(journal, mode, capture) {
@@ -3288,10 +3378,10 @@ async function captureCleanupBackups(
     }
     capture.snapshot = captured;
     capture.state = 'captured';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
   journal.cleanup.state = 'CAPTURED';
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
   await invokeFailpoint(
     options,
     `after-cleanup-backups-captured:${journal.cleanup.mode}`,
@@ -3391,7 +3481,7 @@ async function restoreCleanupBackups(
     }
     capture.state =
       capture.snapshot === null ? 'absent' : 'restored';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
   if (stranded.length > 0) {
     fail(
@@ -3401,7 +3491,7 @@ async function restoreCleanupBackups(
     );
   }
   journal.cleanup = null;
-  await writeJournal(options.journalPath, journal, options.clock);
+  await writeJournal(options.journalPath, journal, options);
 }
 
 async function deleteValidatedCleanupCaptures(
@@ -3463,7 +3553,7 @@ async function deleteValidatedCleanupCaptures(
     }
     if (deletion === null) {
       capture.state = 'deleted';
-      await writeJournal(options.journalPath, journal, options.clock);
+      await writeJournal(options.journalPath, journal, options);
       continue;
     }
     if (!sameFileObject(deletion, capture.snapshot)) {
@@ -3490,7 +3580,7 @@ async function deleteValidatedCleanupCaptures(
     await fsp.unlink(deletePath);
     await fsyncDirectory(path.dirname(deletePath));
     capture.state = 'deleted';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
 }
 
@@ -3572,7 +3662,7 @@ async function cleanupTerminalBackups(
         journal,
       );
       journal.cleanup.state = 'VALIDATED';
-      await writeJournal(options.journalPath, journal, options.clock);
+      await writeJournal(options.journalPath, journal, options);
     }
   } catch (error) {
     if (
@@ -3581,7 +3671,7 @@ async function cleanupTerminalBackups(
       new Set(['CAPTURING', 'CAPTURED']).has(journal.cleanup.state)
     ) {
       journal.cleanup.state = 'RESTORING';
-      await writeJournal(options.journalPath, journal, options.clock);
+      await writeJournal(options.journalPath, journal, options);
       await restoreCleanupBackups(repoRoot, journal, options, lease);
     }
     throw error;
@@ -3595,7 +3685,7 @@ async function cleanupTerminalBackups(
       lease,
     );
     journal.cleanup.state = 'DONE';
-    await writeJournal(options.journalPath, journal, options.clock);
+    await writeJournal(options.journalPath, journal, options);
   }
 }
 

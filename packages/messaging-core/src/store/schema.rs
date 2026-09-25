@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS messaging_conversation_members (
     conversation_id TEXT NOT NULL,
     ptid TEXT NOT NULL,
     role INTEGER NOT NULL,
+    home_station_peer_id TEXT NOT NULL DEFAULT '',
+    muted INTEGER NOT NULL DEFAULT 0,
+    muted_until_unix_ms INTEGER,
     active INTEGER NOT NULL,
     PRIMARY KEY(conversation_id, ptid),
     FOREIGN KEY(conversation_id)
@@ -177,6 +180,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_messaging_membership_intents_active_conve
 CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     conversation_id TEXT NOT NULL,
     conversation_kind INTEGER NOT NULL,
+    command_kind INTEGER NOT NULL DEFAULT 1,
     message_id TEXT NOT NULL,
     sender_ptid TEXT NOT NULL,
     sender_device_id TEXT NOT NULL,
@@ -273,6 +277,9 @@ CREATE TABLE IF NOT EXISTS messaging_message_projections (
     edited_text TEXT,
     edited_at_unix_ms INTEGER,
     retracted INTEGER NOT NULL DEFAULT 0,
+    hidden_for_actor INTEGER NOT NULL DEFAULT 0,
+    moderated INTEGER NOT NULL DEFAULT 0,
+    moderation_reason_code TEXT,
     PRIMARY KEY(conversation_id, event_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
@@ -334,6 +341,7 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_drafts (
     mime_type TEXT NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
     descriptor_bytes BLOB,
+    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     created_at_unix_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_attachment_drafts_message
@@ -351,6 +359,7 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     object_key BLOB NOT NULL CHECK(length(object_key) = 32),
     base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
     descriptor_bytes BLOB NOT NULL,
+    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     availability_state TEXT NOT NULL,
     local_cache_path TEXT,
     PRIMARY KEY(message_id, attachment_id)
@@ -409,6 +418,21 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
     },
     RequiredColumn {
         table: "messaging_conversation_members",
+        column: "home_station_peer_id",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
+        table: "messaging_conversation_members",
+        column: "muted",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_conversation_members",
+        column: "muted_until_unix_ms",
+        definition: "INTEGER",
+    },
+    RequiredColumn {
+        table: "messaging_conversation_members",
         column: "active",
         definition: "INTEGER NOT NULL DEFAULT 1",
     },
@@ -451,6 +475,11 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         table: "messaging_pending_messages",
         column: "last_error_code",
         definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
+        table: "messaging_pending_messages",
+        column: "command_kind",
+        definition: "INTEGER NOT NULL DEFAULT 1",
     },
     RequiredColumn {
         table: "messaging_pending_messages",
@@ -498,9 +527,34 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         definition: "INTEGER NOT NULL DEFAULT 0",
     },
     RequiredColumn {
+        table: "messaging_message_projections",
+        column: "hidden_for_actor",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_message_projections",
+        column: "moderated",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_message_projections",
+        column: "moderation_reason_code",
+        definition: "TEXT",
+    },
+    RequiredColumn {
         table: "messaging_interaction_intents",
         column: "edited_text",
         definition: "TEXT",
+    },
+    RequiredColumn {
+        table: "messaging_attachment_drafts",
+        column: "voice_note_bytes",
+        definition: "BLOB NOT NULL DEFAULT X''",
+    },
+    RequiredColumn {
+        table: "messaging_attachment_projections",
+        column: "voice_note_bytes",
+        definition: "BLOB NOT NULL DEFAULT X''",
     },
     RequiredColumn {
         table: "messaging_prekey_bundle",

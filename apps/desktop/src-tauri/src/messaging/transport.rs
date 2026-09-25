@@ -476,6 +476,7 @@ fn build_remote_command_proposal(
         actor_device_id: sender.device_id.clone(),
         actor_signing_key_id: identity.signing_key_id.clone(),
         command: Some(command.clone()),
+        member_authority_command: None,
         command_sha256,
         actor_signature: identity
             .signing_key
@@ -492,6 +493,11 @@ fn command_kind(command: &ChatCommand) -> Option<ConversationCommandKind> {
         chat_command::Payload::SendMessage(_) => Some(ConversationCommandKind::SendMessage),
         chat_command::Payload::EditMessage(_) => Some(ConversationCommandKind::EditMessage),
         chat_command::Payload::RetractMessage(_) => Some(ConversationCommandKind::RetractMessage),
+        chat_command::Payload::HideMessageForActor(_) => {
+            Some(ConversationCommandKind::HideMessageForActor)
+        }
+        chat_command::Payload::ModerateMessage(_) => Some(ConversationCommandKind::ModerateMessage),
+        chat_command::Payload::ForwardMessage(_) => Some(ConversationCommandKind::ForwardMessage),
         chat_command::Payload::Reaction(_) => Some(ConversationCommandKind::React),
         chat_command::Payload::PinMessage(_) => Some(ConversationCommandKind::PinMessage),
         chat_command::Payload::UpdateConversation(_) => {
@@ -692,7 +698,8 @@ mod tests {
     use super::*;
     use crate::model::chat::{
         chat_command, Conversation, ConversationEvent, ConversationPublicHead, CryptoEndpoint,
-        MembershipTransitionIntent, SendMessageIntent,
+        ForwardMessageIntent, HideMessageForActorIntent, MembershipTransitionIntent,
+        ModerateMessageIntent, SendMessageIntent,
     };
     use ed25519_dalek::{Signature, Verifier};
 
@@ -763,6 +770,26 @@ mod tests {
             command_submission_route(&command).path(),
             "/conversation/command"
         );
+    }
+
+    #[test]
+    fn message_policy_commands_use_their_canonical_command_kinds() {
+        for (payload, expected) in [
+            (
+                chat_command::Payload::HideMessageForActor(HideMessageForActorIntent::default()),
+                ConversationCommandKind::HideMessageForActor,
+            ),
+            (
+                chat_command::Payload::ModerateMessage(ModerateMessageIntent::default()),
+                ConversationCommandKind::ModerateMessage,
+            ),
+            (
+                chat_command::Payload::ForwardMessage(ForwardMessageIntent::default()),
+                ConversationCommandKind::ForwardMessage,
+            ),
+        ] {
+            assert_eq!(command_kind(&command(payload)), Some(expected));
+        }
     }
 
     #[test]

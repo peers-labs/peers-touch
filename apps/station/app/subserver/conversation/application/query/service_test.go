@@ -154,6 +154,47 @@ func TestPendingLeaveIntentsRequiresMembershipAndDelegatesBoundedQuery(
 	}
 }
 
+func TestResolveRouteDoesNotRequireCurrentMembership(t *testing.T) {
+	snapshot := aggregate.Snapshot{
+		ID:               "conversation-1",
+		FederationID:     "federation-1",
+		AuthorityStation: "station:authority",
+		AuthorityEpoch:   3,
+		Members: []entity.Member{{
+			Actor:  "ptid:bob",
+			Status: valueobject.MemberStatusRemoved,
+		}},
+	}
+	service, err := NewService(&queryUnitOfWork{transaction: ports.Transaction{
+		Repositories: repository.Repositories{
+			Authority: &queryAuthorityRepository{snapshot: snapshot},
+			Followers: &queryFollowerRepository{},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	route, err := service.ResolveRoute(context.Background(), snapshot.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.ConversationID != snapshot.ID ||
+		route.Source != SourceAuthority ||
+		route.FederationID != snapshot.FederationID ||
+		route.AuthorityStation != snapshot.AuthorityStation ||
+		route.AuthorityEpoch != snapshot.AuthorityEpoch {
+		t.Fatalf("ResolveRoute() = %+v", route)
+	}
+	if _, err := service.Get(
+		context.Background(),
+		snapshot.ID,
+		"ptid:bob",
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("Get() error = %v, want unauthorized", err)
+	}
+}
+
 func newMessageQueryService(
 	t *testing.T,
 	member valueobject.PTID,

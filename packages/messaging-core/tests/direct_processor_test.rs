@@ -16,7 +16,7 @@ use messaging_core::proto::actor_device_from_chat_endpoint;
 use messaging_core::proto::chat::{
     conversation_event, ConversationEvent, CryptoEndpoint as ProtoCryptoEndpoint,
     DeviceEventDelivery, DeviceInboxPayloadType, DirectDeviceCiphertext, DoubleRatchetCiphertext,
-    DurableDeviceInboxItem, MessageCommittedFact, MessagingContentKind,
+    DurableDeviceInboxItem, MessageCommittedFact, MessageForwardedFact, MessagingContentKind,
     PreparedEndpointPayloadKind,
 };
 use messaging_core::store::MessagingRepository;
@@ -201,8 +201,7 @@ fn test_clock() -> i64 {
     1000
 }
 
-#[test]
-fn direct_processor_decrypts_and_commits_message_via_repository() {
+fn assert_direct_processor_decrypts_and_commits_message(forwarded: bool) {
     let bob_spk = X25519KeyPair::generate();
     let shared_secret = [42u8; 32];
     let session_id = "test-session-1";
@@ -296,14 +295,21 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
         membership_epoch: 1,
         mls_epoch: 0,
         authority_station_peer_id: "station-1".to_string(),
-        payload: Some(conversation_event::Payload::MessageCommitted(
-            MessageCommittedFact {
+        payload: Some(if forwarded {
+            conversation_event::Payload::MessageForwarded(MessageForwardedFact {
+                destination_message_id: "msg-1".to_string(),
+                sender: Some(sender_proto.clone()),
+                content_kind: MessagingContentKind::Text as i32,
+                ..Default::default()
+            })
+        } else {
+            conversation_event::Payload::MessageCommitted(MessageCommittedFact {
                 message_id: "msg-1".to_string(),
                 sender: Some(sender_proto.clone()),
                 content_kind: MessagingContentKind::Text as i32,
                 ..Default::default()
-            },
-        )),
+            })
+        }),
     };
     let commitment = delivery_commitment(
         "conv-1",
@@ -352,4 +358,14 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
     let session = repo.session.lock().unwrap();
     let s = session.as_ref().unwrap();
     assert_eq!(s.ratchet.n_recv, 1);
+}
+
+#[test]
+fn direct_processor_decrypts_and_commits_message_via_repository() {
+    assert_direct_processor_decrypts_and_commits_message(false);
+}
+
+#[test]
+fn direct_processor_decrypts_and_commits_forwarded_message_as_destination_message() {
+    assert_direct_processor_decrypts_and_commits_message(true);
 }

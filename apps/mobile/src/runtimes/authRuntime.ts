@@ -1,22 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
-import {
-  isAccessGranted,
-  normalizeDecision,
-  registerOAuthAccessGrantFinalizer,
-  revokeStationSession,
-  restoreAuthSession,
-  startStationAccessAttempt,
-  type AccessDecision,
-  type MobileAuthSession,
-} from '../features/auth/authSession';
-import { useAuthStore } from '../features/auth/authStore';
-import { verifyStationIdentity } from '../features/station/stationConnection';
-import {
-  activeStationEntry,
-  loadStationRegistry,
-  requireMatchingStationIdentity,
-} from '../features/station/stationRegistry';
+import type {
+  MobileRuntimeDescriptor,
+  RuntimeOperationResult,
+} from '../app/lifecycle/types';
+import { registerOAuthAccessGrantFinalizer } from '../features/auth/authSession';
+import { activeStationEntry } from '../features/station/stationRegistry';
 import {
   oauthCancel,
   oauthProjection,
@@ -25,13 +14,12 @@ import {
   oauthStart,
   oauthStatus,
   type MobileOAuthProvider,
-  type OAuthAccessDecisionProjection,
   type OAuthPublicPhase,
   type OAuthPublicProjection,
   type OAuthScopeInput,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
-import { getRecoveryProjection } from './recoveryProjection';
+import { readStationRegistryProjection } from './stationRuntime';
 
 export type { MobileOAuthProvider, OAuthPublicPhase, OAuthPublicProjection };
 
@@ -48,33 +36,12 @@ export interface AuthRuntimeSnapshot extends OAuthPublicProjection {
   recovery: AuthRuntimeRecovery;
 }
 
-export interface AccessRuntimePublicProjection {
-  decision: AccessDecision | null;
-  session: {
-    stationPeerId: string;
-    actorPtid: string;
-    expiresAt?: string;
-  } | null;
-  loading: boolean;
-  errorKey: string | null;
-  restored: boolean;
-}
-
-export interface AuthRuntimeLogoutResult {
-  readonly remoteRevocation:
-    | 'confirmed'
-    | 'unconfirmed'
-    | 'not-required';
-}
-
 interface StartOAuthInput {
   provider: MobileOAuthProvider;
   stationUrl: string;
   accessAttemptId: string;
   gateId: string;
 }
-
-type StartAccessAttempt = (sessionId?: string) => Promise<AccessDecision>;
 
 const PUBLIC_PHASES: readonly OAuthPublicPhase[] = [
   'idle',
@@ -94,202 +61,19 @@ const listeners = new Set<() => void>();
 let snapshot: AuthRuntimeSnapshot = snapshotFromProjection(emptyProjection());
 
 export function useAuthRuntime(): AuthRuntimeSnapshot {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(
+    subscribeAuthRuntimeSnapshot,
+    getSnapshot,
+    getSnapshot,
+  );
 }
 
 export function readAuthRuntimeSnapshot(): AuthRuntimeSnapshot {
   return snapshotFromProjection(sanitizeProjection(snapshot));
 }
 
-export function readActiveAuthSession(): MobileAuthSession | null {
-  const state = useAuthStore.getState();
-  return isAccessGranted(state.accessDecision) ? state.session : null;
-}
-
-export function readAccessRuntimeProjection(): AccessRuntimePublicProjection {
-  const state = useAuthStore.getState();
-  return {
-    decision: state.accessDecision ? {
-      ...state.accessDecision,
-      gates: state.accessDecision.gates.map((gate) => ({ ...gate })),
-    } : null,
-    session: state.session ? {
-      stationPeerId: state.session.stationPeerId,
-      actorPtid: state.session.actorRef.ptid,
-      expiresAt: state.session.expiresAt,
-    } : null,
-    loading: state.loading,
-    errorKey: state.error?.startsWith('mobile.') ? state.error : null,
-    restored: state.restored,
-  };
-}
-
-export function applyAccessGateRuntimeResult(
-  decision: AccessDecision,
-  session?: MobileAuthSession,
-): void {
-  const state = useAuthStore.getState();
-  state.setAccessDecision(decision);
-  if (session) state.setSession(session);
-}
-
-export async function startAccessAttemptForActiveStation(): Promise<AccessDecision> {
-  const station = activeStationEntry(await loadStationRegistry());
-  if (!station) throw new Error('mobile.auth.activeStationRequired');
-
-  const state = useAuthStore.getState();
-  state.setLoading(true);
-  state.setError(null);
-  try {
-    const decision = await startStationAccessAttemptWithRecovery(
-      station.stationPeerId,
-      station.url,
-      state.session,
-    );
-    applyAccessGateRuntimeResult(decision);
-    return decision;
-  } catch (error) {
-    const message = readableErrorMessage(error);
-    state.setError(message);
-    throw error;
-  } finally {
-    state.setLoading(false);
-  }
-}
-
-export async function startStationAccessAttemptWithRecovery(
-  stationPeerId: string,
-  stationUrl: string,
-  session?: MobileAuthSession | null,
-): Promise<AccessDecision> {
-  return startAccessAttemptWithInvalidSessionRecovery(
-    session?.sessionId,
-    (sessionId) => startStationAccessAttempt(
-      stationPeerId,
-      stationUrl,
-      sessionId,
-    ),
-    clearAuthRuntimeSession,
-  );
-}
-
-export async function clearAuthRuntimeSession(): Promise<void> {
-  await useAuthStore.getState().clearSession();
-  setSnapshot(snapshotFromProjection(emptyProjection()));
-}
-
-export async function logoutAuthRuntimeSession(): Promise<AuthRuntimeLogoutResult> {
-  const session = useAuthStore.getState().session;
-  await cancelOAuth();
-
-  let remoteRevocation: AuthRuntimeLogoutResult['remoteRevocation'] =
-    session ? 'unconfirmed' : 'not-required';
-  try {
-    if (session) {
-      remoteRevocation = await revokeStationSession(session)
-        ? 'confirmed'
-        : 'unconfirmed';
-    }
-  } finally {
-    await clearAuthRuntimeSession();
-  }
-
-  return { remoteRevocation };
-}
-
 export function fenceAuthRuntimeProjection(): void {
-  useAuthStore.getState().hideSessionProjection();
   setSnapshot(snapshotFromProjection(emptyProjection()));
-}
-
-export async function restoreAndRevalidateAuthRuntime(): Promise<MobileAuthSession | null> {
-  const state = useAuthStore.getState();
-  state.hideSessionProjection();
-  state.setRestored(false);
-  state.setLoading(true);
-
-  try {
-    const station = activeStationEntry(await loadStationRegistry());
-    const restoredSession = await restoreAuthSession();
-
-    if (!station) {
-      if (restoredSession) {
-        await clearAuthRuntimeSession();
-      } else {
-        state.setAccessDecision(null);
-      }
-      return null;
-    }
-
-    const verifiedStation = await verifyStationIdentity(station.url);
-    if (verifiedStation.stationPeerId !== station.stationPeerId) {
-      getRecoveryProjection().reportSessionMismatch(
-        station.stationPeerId,
-        verifiedStation.stationPeerId,
-      );
-    }
-    requireMatchingStationIdentity(station, verifiedStation.stationPeerId);
-    getRecoveryProjection().clearSessionMismatch();
-
-    if (!restoredSession) {
-      await restoreAuthRuntimeProjection();
-      return null;
-    }
-
-    if (restoredSession.stationPeerId !== station.stationPeerId) {
-      await clearAuthRuntimeSession();
-      return null;
-    }
-
-    let invalidSessionCleared = false;
-    const decision = await startAccessAttemptWithInvalidSessionRecovery(
-      restoredSession.sessionId,
-      (sessionId) => startStationAccessAttempt(
-        station.stationPeerId,
-        station.url,
-        sessionId,
-      ),
-      async () => {
-        invalidSessionCleared = true;
-        await clearAuthRuntimeSession();
-      },
-    );
-    applyAccessGateRuntimeResult(
-      decision,
-      invalidSessionCleared ? undefined : restoredSession,
-    );
-    await restoreAuthRuntimeProjection();
-    return invalidSessionCleared ? null : restoredSession;
-  } catch (error) {
-    const message = readableErrorMessage(error);
-    state.setError(message);
-    throw error;
-  } finally {
-    state.setRestored(true);
-    state.setLoading(false);
-  }
-}
-
-async function startAccessAttemptWithInvalidSessionRecovery(
-  sessionId: string | undefined,
-  startAttempt: StartAccessAttempt,
-  clearSession: () => Promise<void>,
-): Promise<AccessDecision> {
-  try {
-    return await startAttempt(sessionId);
-  } catch (error) {
-    if (!sessionId || !isRevokedSessionError(readableErrorMessage(error))) {
-      throw error;
-    }
-    await clearSession();
-    return startAttempt();
-  }
-}
-
-function isRevokedSessionError(message: string): boolean {
-  return /session\s+(invalid|revoked|expired)|invalid\s+session|revoked/i.test(
-    message,
-  );
 }
 
 export async function startOAuth(input: StartOAuthInput): Promise<void> {
@@ -324,15 +108,21 @@ export async function retryOAuthBrowser(): Promise<void> {
 
 export async function cancelOAuth(): Promise<void> {
   try {
-    applyAuthRuntimeProjection(await oauthCancel(await activeOAuthScope()));
+    await cancelOAuthForScope(await activeOAuthScope());
   } catch (error) {
     applyIntentFailure(error, 'restart');
   }
 }
 
+export async function cancelOAuthForScope(scope: OAuthScopeInput): Promise<void> {
+  applyAuthRuntimeProjection(await oauthCancel(scope));
+}
+
 export async function restoreAuthRuntimeProjection(): Promise<void> {
   try {
-    const station = activeStationEntry(await loadStationRegistry());
+    const station = activeStationEntry(
+      await readStationRegistryProjection(),
+    );
     if (!station) return;
     const scope = {
       stationOrigin: station.url,
@@ -347,13 +137,7 @@ export async function restoreAuthRuntimeProjection(): Promise<void> {
 }
 
 export function applyAuthRuntimeProjection(projection: OAuthPublicProjection): void {
-  const sanitized = sanitizeProjection(projection);
-  if (sanitized.accessDecision) {
-    useAuthStore.getState().setAccessDecision(
-      sanitizeAccessDecision(sanitized.accessDecision),
-    );
-  }
-  setSnapshot(snapshotFromProjection(sanitized));
+  setSnapshot(snapshotFromProjection(sanitizeProjection(projection)));
 }
 
 function sanitizeProjection(projection: OAuthPublicProjection): OAuthPublicProjection {
@@ -397,7 +181,12 @@ function sanitizeProjection(projection: OAuthPublicProjection): OAuthPublicProje
           actionId: action.actionId,
           actionType: action.actionType,
           submitAction: action.submitAction,
+          schemaRevision: action.schemaRevision,
+          schemaDigest: action.schemaDigest,
         })),
+        actionId: gate.actionId,
+        schemaRevision: gate.schemaRevision,
+        schemaDigest: gate.schemaDigest,
       })),
     } : undefined,
     session: projection.session ? {
@@ -406,28 +195,6 @@ function sanitizeProjection(projection: OAuthPublicProjection): OAuthPublicProje
       expiresAt: projection.session.expiresAt,
     } : undefined,
   };
-}
-
-function sanitizeAccessDecision(
-  projection: OAuthAccessDecisionProjection,
-): AccessDecision {
-  return normalizeDecision({
-    state: projection.state,
-    attemptId: projection.attemptId,
-    currentGateId: projection.currentGateId,
-    accessGrantId: projection.accessGrantId,
-    message: projection.message,
-    gates: projection.gates.map((gate) => ({
-      gateId: gate.gateId,
-      type: gate.gateType,
-      state: gate.state,
-      title: gate.title,
-      description: gate.description,
-      blockingReason: gate.blockingReason,
-      submitAction: gate.submitAction,
-      inputSchemaJson: gate.inputSchemaJson,
-    })),
-  });
 }
 
 function snapshotFromProjection(projection: OAuthPublicProjection): AuthRuntimeSnapshot {
@@ -485,7 +252,9 @@ export function oauthPhaseMessageKey(phase: OAuthPublicPhase): string {
 }
 
 async function activeOAuthScope(expectedOrigin?: string): Promise<OAuthScopeInput> {
-  const station = activeStationEntry(await loadStationRegistry());
+  const station = activeStationEntry(
+    await readStationRegistryProjection(),
+  );
   const normalizedExpectedOrigin = expectedOrigin?.replace(/\/+$/, '');
   if (!station || (normalizedExpectedOrigin && station.url !== normalizedExpectedOrigin)) {
     throw new Error('mobile.auth.oauthStationMismatch');
@@ -515,7 +284,7 @@ function emptyProjection(): OAuthPublicProjection {
   return { phase: 'idle' };
 }
 
-function subscribe(listener: () => void): () => void {
+export function subscribeAuthRuntimeSnapshot(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
@@ -529,6 +298,38 @@ function setSnapshot(next: AuthRuntimeSnapshot): void {
   listeners.forEach((listener) => listener());
 }
 
+export function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
+  return {
+    id: 'auth',
+    title: 'Auth Runtime',
+    responsibility:
+      'Owns Station-scoped credential attempts, OAuth callbacks, candidate isolation, cancellation, and typed recovery.',
+    dependsOn: ['secure-storage', 'station'],
+
+    async bootstrap(): Promise<void> {
+      await restoreAuthRuntimeProjection();
+    },
+
+    async suspend(): Promise<void> {
+      // Attempt material is persisted by Rust and has no Web producer to pause.
+    },
+
+    async resume(): Promise<void> {
+      await restoreAuthRuntimeProjection();
+    },
+
+    async teardown(): Promise<RuntimeOperationResult> {
+      const start = performance.now();
+      fenceAuthRuntimeProjection();
+      return {
+        runtimeId: 'auth',
+        success: true,
+        durationMs: performance.now() - start,
+      };
+    },
+  };
+}
+
 registerOAuthAccessGrantFinalizer(async () => {
   if (snapshot.phase !== 'following_gate') return;
   await refreshOAuthStatus();
@@ -538,13 +339,9 @@ registerOAuthAccessGrantFinalizer(async () => {
 });
 
 export const authRuntimeTestContract = {
-  isRevokedSessionError,
   oauthPhaseMessageKey,
   projectionErrorKey,
   projectionRecovery,
-  sanitizeAccessDecision,
   sanitizeProjection,
   snapshotFromProjection,
-  startAccessAttemptWithInvalidSessionRecovery,
-  revokeStationSession,
 };

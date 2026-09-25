@@ -722,7 +722,12 @@ class EphemeralCapabilityHandler:
   endpoint address。
 - 携带launch context时runner必须使用明确argv和隔离Python bootstrap；bootstrap以
   `python -I -S`启动，在导入或执行任何Gate代码前恢复descriptor的
-  non-inheritable属性，再在同一进程内执行catalog声明的Python module/script。
+  non-inheritable属性。Catalog中的portable `python3`解释器由runner绑定为当前
+  Acceptance runner的exact executable，禁止再次经`PATH`解析；显式解释器路径保持
+  原值。若绑定结果为virtual-environment解释器，bootstrap只可校验并直接追加该
+  解释器venv根目录内、与当前Python版本匹配的`site-packages`；不得调用`site`、
+  处理`.pth`或加载`sitecustomize`/`usercustomize`，随后才在同一进程内执行catalog
+  声明的Python module/script。
   parent使用`subprocess.Popen(..., shell=False, close_fds=True, pass_fds=...)`，
   spawn结束后立即关闭其child endpoint副本，再以bounded
   `communicate(timeout=...)`等待。任意可执行文件、shell wrapper、字符串插值和
@@ -730,8 +735,11 @@ class EphemeralCapabilityHandler:
 - handshake必须精确匹配`workspaceId + gateId + evidenceRunId +
   provisioningRunId`。capability和operation由Provisioner显式注册；未知、重复冲突
   或越权请求fail closed。
-- frame有固定byte上限；每次请求有deadline；同一`requestId + requestDigest`
-  可返回缓存结果，不同digest复用requestId是protocol conflict。
+- frame有固定byte上限；broker在两个完整request之间以stop-aware方式等待，不把Gate
+  的合法本地工作时间误判为channel timeout；收到frame首字节后必须在固定deadline内
+  完成长度前缀和payload。每次请求另有独立deadline；同一
+  `requestId + requestDigest`可返回缓存结果，不同digest复用requestId是protocol
+  conflict。
 - raw-handle-bound操作必须完全在parent handler内执行。Gate只能获得opaque session
   reference、脱敏structured result或ArtifactRef，不能获得UDID、serial、provider
   subject、token或correlation key。

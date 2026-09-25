@@ -3,6 +3,7 @@ import { Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
+import './responsive.css';
 
 const DEFAULT_SITE: PrototypeSite = normalizeSite(import.meta.env.VITE_PROTOTYPE_SITE);
 
@@ -56,11 +57,11 @@ export function PrototypePortal() {
   }, [entryPrototypes, selectedPrototypeId]);
 
   return (
-    <div style={styles.page}>
-      <header style={styles.header}>
+    <div className="prototype-portal" style={styles.page}>
+      <header className="prototype-portal-header" style={styles.header}>
         <div style={styles.brand}>Peers Touch Prototype Portal</div>
-        <div style={styles.headerControls}>
-          <label style={styles.targetPicker}>
+        <div className="prototype-portal-controls" style={styles.headerControls}>
+          <label className="prototype-portal-target" style={styles.targetPicker}>
             <span>Worktree</span>
             <select value={target.id} onChange={(event) => setTargetId(event.target.value)} style={styles.select}>
               {WORKTREE_TARGETS.map((item) => (
@@ -74,8 +75,8 @@ export function PrototypePortal() {
         </div>
       </header>
 
-      <main style={styles.main}>
-        <aside style={styles.sidebar}>
+      <main className="prototype-portal-main" style={styles.main}>
+        <aside className="prototype-portal-sidebar" style={styles.sidebar}>
           {(Object.keys(SITE_META) as PrototypeSite[]).map((key) => {
             const item = SITE_META[key];
             const active = key === site;
@@ -97,8 +98,8 @@ export function PrototypePortal() {
           })}
         </aside>
 
-        <section style={styles.content}>
-          <div style={styles.hero}>
+        <section className="prototype-portal-content" style={styles.content}>
+          <div className="prototype-portal-heading" style={styles.hero}>
             <div>
               <h1 style={styles.h1}>{meta.title}</h1>
               <p style={styles.p}>{meta.subtitle}</p>
@@ -148,7 +149,7 @@ function isEntryPrototype(prototype: PrototypeManifest): boolean {
 
 function CurrentWorktreeBadge({ target }: { target: PrototypeWorktreeTarget }) {
   return (
-    <div style={styles.worktreeBadge}>
+    <div className="prototype-portal-worktree" style={styles.worktreeBadge}>
       <div style={styles.worktreeBadgeTitle}>Serving worktree</div>
       <div style={styles.worktreeBadgeBranch}>{target.branch}</div>
       <div style={styles.worktreeBadgePath} title={target.worktreePath}>

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-scheduleReconcile"
+description = "Enables the scheduleReconcile command without any pre-configured scope."
+commands.allow = ["scheduleReconcile"]
+
+[[permission]]
+identifier = "deny-scheduleReconcile"
+description = "Denies the scheduleReconcile command without any pre-configured scope."
+commands.deny = ["scheduleReconcile"]

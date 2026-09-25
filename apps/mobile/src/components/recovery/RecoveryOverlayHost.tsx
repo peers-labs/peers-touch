@@ -9,8 +9,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { useLifecycleKernel } from '../../app/lifecycle';
+import {
+  getMobileLifecycleKernel,
+  useLifecycleKernel,
+  type MobileLaunchState,
+} from '../../app/lifecycle';
 import { useMobileI18n } from '../../app/mobileI18n';
+import {
+  applyReliabilityCommandRecoveryAction,
+  applyLegacyReliabilityDisposition,
+  resetAllLocalReliabilityData,
+  type ReliabilityCommandRecoveryAction,
+} from '../../runtimes/commandRuntime';
 import {
   getRecoveryProjection,
   type DeviceLocalFlagState,
@@ -20,7 +30,14 @@ import {
 } from '../../runtimes/recoveryProjection';
 
 import { DraftRestoreOverlay } from './DraftRestoreOverlay';
-import { UnknownOutcomeBar } from './UnknownOutcomeBar';
+import {
+  CommandRecoveryPanel,
+} from './CommandRecoveryPanel';
+import {
+  LegacyReliabilityRecoveryOverlay,
+  type LegacyReliabilityRecoveryAction,
+} from './LegacyReliabilityRecoveryOverlay';
+import { ReliabilityResetRecoveryOverlay } from './ReliabilityResetRecoveryOverlay';
 import { CapacityWarning } from './CapacityWarning';
 import { SessionMismatchOverlay } from './SessionMismatchOverlay';
 import { OverflowReconcileBar } from './OverflowReconcileBar';
@@ -36,6 +53,17 @@ interface RecoveryOverlayHostProps {
   readonly onRetryDeviceLocal: (
     state: DeviceLocalFlagState,
   ) => Promise<void>;
+}
+
+export function visibleRecoveryStates(
+  states: readonly RecoveryState[],
+  launchState: MobileLaunchState,
+): readonly RecoveryState[] {
+  if (launchState !== 'access-gate-chain') return states;
+  return states.filter((state) => !(
+    state.kind === 'device-local-flag'
+    && state.reason === 'session-expired'
+  ));
 }
 
 export function RecoveryOverlayHost({
@@ -62,13 +90,90 @@ export function RecoveryOverlayHost({
     getRecoveryProjection().reportDeferredCapabilities(lifecycle);
   }, [lifecycle]);
 
+  const handleLegacyReliabilityAction = useCallback(
+    async (action: LegacyReliabilityRecoveryAction) => {
+      const projection = getRecoveryProjection();
+      if (action === 'retain') {
+        const result = await applyLegacyReliabilityDisposition('retain');
+        projection.reportLegacyReliabilityRecovery(
+          result.archivedLegacyFiles,
+          true,
+        );
+        return;
+      }
+
+      if (action === 'discard-legacy') {
+        await applyLegacyReliabilityDisposition('discard-legacy');
+      } else {
+        await resetAllLocalReliabilityData();
+      }
+      projection.clearLegacyReliabilityRecovery();
+      await getMobileLifecycleKernel().restartRuntimeGraph(
+        'reliability-recovery',
+      );
+    },
+    [],
+  );
+
+  const retryInterruptedReliabilityReset = useCallback(async () => {
+    await resetAllLocalReliabilityData();
+    const projection = getRecoveryProjection();
+    projection.clearReliabilityResetRecovery();
+    projection.clearLegacyReliabilityRecovery();
+    await getMobileLifecycleKernel().restartRuntimeGraph(
+      'reliability-recovery',
+    );
+  }, []);
+
+  const handleCommandRecoveryAction = useCallback(
+    async (
+      state: Extract<RecoveryState, { kind: 'command-recovery' }>,
+      action: ReliabilityCommandRecoveryAction,
+    ) => {
+      await applyReliabilityCommandRecoveryAction(action, state.commands);
+    },
+    [],
+  );
+
+  const retryDeferredCapabilities = useCallback(async () => {
+    const kernel = getMobileLifecycleKernel();
+    if (kernel.getPhase() !== 'ACTIVE') {
+      throw new Error('mobile.recovery.actionFailed');
+    }
+    await kernel.restartRuntimeGraph('app-resume');
+  }, []);
+
   const renderState = useCallback(
     (state: RecoveryState) => {
       switch (state.kind) {
+        case 'legacy-reliability-recovery':
+          return (
+            <LegacyReliabilityRecoveryOverlay
+              key={state.kind}
+              state={state}
+              t={t}
+              onAction={handleLegacyReliabilityAction}
+            />
+          );
+        case 'reliability-reset-recovery':
+          return (
+            <ReliabilityResetRecoveryOverlay
+              key={state.kind}
+              t={t}
+              onRetry={retryInterruptedReliabilityReset}
+            />
+          );
         case 'draft-restore-pending':
           return <DraftRestoreOverlay key={state.kind} state={state} t={t} />;
-        case 'unknown-outcome':
-          return <UnknownOutcomeBar key={state.kind} state={state} t={t} />;
+        case 'command-recovery':
+          return (
+            <CommandRecoveryPanel
+              key={state.kind}
+              state={state}
+              t={t}
+              onAction={(action) => handleCommandRecoveryAction(state, action)}
+            />
+          );
         case 'capacity-read-only':
           return <CapacityWarning key={state.kind} state={state} t={t} />;
         case 'session-mismatch':
@@ -84,7 +189,15 @@ export function RecoveryOverlayHost({
         case 'event-overflow-reconcile':
           return <OverflowReconcileBar key={state.kind} state={state} t={t} />;
         case 'deferred-capability':
-          return <DeferredCapabilityNotice key={state.kind} state={state} t={t} />;
+          return (
+            <DeferredCapabilityNotice
+              key={state.kind}
+              state={state}
+              t={t}
+              canRetry={lifecycle.phase === 'ACTIVE'}
+              onRetry={retryDeferredCapabilities}
+            />
+          );
         case 'device-local-flag':
           return (
             <DeviceLocalBar
@@ -101,17 +214,31 @@ export function RecoveryOverlayHost({
           return null;
       }
     },
-    [onReAuthenticate, onRetryDeviceLocal, onSwitchStation, t],
+    [
+      handleLegacyReliabilityAction,
+      handleCommandRecoveryAction,
+      lifecycle.phase,
+      onReAuthenticate,
+      onRetryDeviceLocal,
+      onSwitchStation,
+      retryInterruptedReliabilityReset,
+      retryDeferredCapabilities,
+      t,
+    ],
   );
 
-  if (!snapshot.hasActiveRecovery) return null;
+  const visibleStates = visibleRecoveryStates(
+    snapshot.states,
+    lifecycle.launchState,
+  );
+  if (visibleStates.length === 0) return null;
 
   return (
     <div
       className="recovery-overlay-host"
       data-launch-state={lifecycle.launchState}
     >
-      {snapshot.states.map(renderState)}
+      {visibleStates.map(renderState)}
     </div>
   );
 }

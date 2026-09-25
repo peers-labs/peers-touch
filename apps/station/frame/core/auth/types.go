@@ -78,6 +78,13 @@ type SessionDeviceTypeResolver interface {
 	ResolveSessionDeviceType(ctx context.Context, sessionID string) string
 }
 
+// SessionDeviceIDResolver resolves the exact device persisted with a session.
+// Security-sensitive device routes must compare this value with the caller's
+// device assertion instead of trusting a header by itself.
+type SessionDeviceIDResolver interface {
+	ResolveSessionDeviceID(ctx context.Context, sessionID string) string
+}
+
 type Token struct {
 	Value     string
 	ExpiresAt time.Time

@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -56,8 +56,9 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
 9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
 10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
-11. 每个 profile 明确声明 `human-gated`、`managed` 或 `disposable`
-    Agent 控制模式，避免重复授权和名称推断。
+11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感包含
+    `stable` 的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
+    Agent 在完整声明、能力、精确 scope 和 lease 约束下选择 reset。
 12. 在 `apps/dev/` 提供 Peers Dev 自开发管理应用，以 worktree 为主视图、
     profile 占用为辅助视图，不复制控制面真源。
 13. 所有 worktree 通过固定的 `127.0.0.1:4177` 复用同一个 Peers Dev
@@ -65,6 +66,8 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 14. Peers Dev 通过显式 Plan locator 展示 Task closure 进度，并将工作状态与
     环境健康分开；stale 声明可见但不拥有资源。
 15. 同一仓库或 PR 可同步多个 Plan，但每个 workspace 只解析自己的不可变绑定。
+16. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
+    与 reset 都不得因内部能力刷新或执行边界重复询问。
 
 ## 4. Runtime Authority
 

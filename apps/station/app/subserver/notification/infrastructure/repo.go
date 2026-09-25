@@ -1,14 +1,17 @@
 package infrastructure
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/peers-labs/peers-touch/station/app/subserver/notification/domain"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ============================================================================
@@ -58,6 +61,62 @@ type PreferenceModel struct {
 
 func (PreferenceModel) TableName() string { return "notification_preferences" }
 
+type PreferenceRevisionModel struct {
+	ActorPTID string `gorm:"column:actor_ptid;size:255;primaryKey"`
+	Revision  uint64 `gorm:"column:revision;default:1;not null"`
+	UpdatedAt time.Time
+}
+
+func (PreferenceRevisionModel) TableName() string {
+	return "notification_preference_revisions"
+}
+
+type PushRegistrationModel struct {
+	RegistrationID        string `gorm:"column:registration_id;size:64;primaryKey"`
+	ActorPTID             string `gorm:"column:actor_ptid;size:255;not null;index:idx_push_registration_actor;uniqueIndex:uidx_push_registration_owner,priority:1"`
+	DeviceID              string `gorm:"column:device_id;size:128;not null;uniqueIndex:uidx_push_registration_owner,priority:2"`
+	Channel               int32  `gorm:"column:channel;not null;uniqueIndex:uidx_push_registration_owner,priority:3"`
+	Environment           int32  `gorm:"column:environment;not null;uniqueIndex:uidx_push_registration_owner,priority:4"`
+	AppInstallEpochSHA256 []byte `gorm:"column:app_install_epoch_sha256;not null"`
+	ProviderBindingHMAC   []byte `gorm:"column:provider_binding_hmac;not null;uniqueIndex:uidx_push_registration_binding"`
+	ProviderCiphertext    []byte `gorm:"column:provider_binding_ciphertext;not null"`
+	ProviderNonce         []byte `gorm:"column:provider_binding_nonce;not null"`
+	CredentialKeyVersion  uint32 `gorm:"column:credential_key_version;not null"`
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	LastSuccessAt         *time.Time
+}
+
+func (PushRegistrationModel) TableName() string {
+	return "notification_push_registrations"
+}
+
+type PushMutationReceiptModel struct {
+	ActorPTID     string `gorm:"column:actor_ptid;size:255;primaryKey"`
+	DeviceID      string `gorm:"column:device_id;size:128;primaryKey"`
+	RequestID     string `gorm:"column:request_id;size:64;primaryKey"`
+	Operation     string `gorm:"column:operation;size:32;not null"`
+	RequestSHA256 []byte `gorm:"column:request_sha256;not null"`
+	ResponseBytes []byte `gorm:"column:response_bytes;not null"`
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
+}
+
+func (PushMutationReceiptModel) TableName() string {
+	return "notification_push_mutation_receipts"
+}
+
+type PushCredentialKeyModel struct {
+	SingletonID uint8  `gorm:"column:singleton_id;primaryKey"`
+	KeyVersion  uint32 `gorm:"column:key_version;not null"`
+	KeyIdentity []byte `gorm:"column:key_identity;not null"`
+	UpdatedAt   time.Time
+}
+
+func (PushCredentialKeyModel) TableName() string {
+	return "notification_push_credential_key"
+}
+
 // ============================================================================
 // Repository
 // ============================================================================
@@ -74,7 +133,59 @@ func (r *GormRepo) AutoMigrate() error {
 	if err := migrateNotificationPTIDColumns(r.db); err != nil {
 		return err
 	}
-	return r.db.AutoMigrate(&NotificationModel{}, &UnreadCountModel{}, &PreferenceModel{})
+	return r.db.AutoMigrate(
+		&NotificationModel{},
+		&UnreadCountModel{},
+		&PreferenceModel{},
+		&PreferenceRevisionModel{},
+		&PushRegistrationModel{},
+		&PushMutationReceiptModel{},
+		&PushCredentialKeyModel{},
+	)
+}
+
+func (r *GormRepo) ActivatePushCredentialKey(
+	keyVersion uint32,
+	keyIdentity []byte,
+) error {
+	if keyVersion == 0 || len(keyIdentity) == 0 {
+		return ErrPushCredentialKeyUnavailable
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var current PushCredentialKeyModel
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("singleton_id = ?", 1).
+			First(&current).Error
+		now := time.Now().UTC()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(&PushCredentialKeyModel{
+				SingletonID: 1,
+				KeyVersion:  keyVersion,
+				KeyIdentity: append([]byte(nil), keyIdentity...),
+				UpdatedAt:   now,
+			}).Error
+		}
+		if err != nil {
+			return err
+		}
+		if current.KeyVersion == keyVersion &&
+			bytes.Equal(current.KeyIdentity, keyIdentity) {
+			return nil
+		}
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).
+			Delete(&PushRegistrationModel{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).
+			Delete(&PushMutationReceiptModel{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&current).Updates(map[string]interface{}{
+			"key_version":  keyVersion,
+			"key_identity": append([]byte(nil), keyIdentity...),
+			"updated_at":   now,
+		}).Error
+	})
 }
 
 // ============================================================================
@@ -291,23 +402,27 @@ func (r *GormRepo) GetUnreadCounts(recipientPTID string) (domain.UnreadCounts, e
 // Preferences
 // ============================================================================
 
-func (r *GormRepo) GetPreferences(actorPTID string) ([]domain.NotificationPreference, error) {
+const initialPreferenceRevision uint64 = 1
+
+var preferenceCategories = [...]int32{
+	domain.CategorySocial,
+	domain.CategoryChat,
+	domain.CategorySystem,
+	domain.CategoryTask,
+}
+
+func (r *GormRepo) GetPreferencesSnapshot(actorPTID string) (domain.NotificationPreferencesSnapshot, error) {
 	var items []PreferenceModel
-	if err := r.db.Where("actor_ptid = ?", actorPTID).Find(&items).Error; err != nil {
-		return nil, err
+	if err := r.db.Where("actor_ptid = ?", actorPTID).Order("category ASC").Find(&items).Error; err != nil {
+		return domain.NotificationPreferencesSnapshot{}, err
 	}
-	out := make([]domain.NotificationPreference, 0, len(items))
-	for _, item := range items {
-		out = append(out, domain.NotificationPreference{
-			ActorPTID:    item.ActorPTID,
-			Category:     item.Category,
-			Enabled:      item.Enabled,
-			PushEnabled:  item.PushEnabled,
-			SoundEnabled: item.SoundEnabled,
-			UpdatedAt:    item.UpdatedAt,
-		})
+
+	var revision PreferenceRevisionModel
+	err := r.db.Where("actor_ptid = ?", actorPTID).First(&revision).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.NotificationPreferencesSnapshot{}, err
 	}
-	return out, nil
+	return preferenceSnapshot(actorPTID, items, canonicalPreferenceRevision(revision.Revision)), nil
 }
 
 func (r *GormRepo) GetPreference(actorPTID string, category int32) (*domain.NotificationPreference, error) {
@@ -330,20 +445,440 @@ func (r *GormRepo) GetPreference(actorPTID string, category int32) (*domain.Noti
 	return &p, nil
 }
 
-func (r *GormRepo) UpsertPreference(pref domain.NotificationPreference) (domain.NotificationPreference, error) {
-	now := time.Now()
-	err := r.db.Exec(`
-		INSERT INTO notification_preferences (actor_ptid, category, enabled, push_enabled, sound_enabled, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT (actor_ptid, category) DO UPDATE
-		SET enabled = ?, push_enabled = ?, sound_enabled = ?, updated_at = ?
-	`, pref.ActorPTID, pref.Category, pref.Enabled, pref.PushEnabled, pref.SoundEnabled, now,
-		pref.Enabled, pref.PushEnabled, pref.SoundEnabled, now).Error
+func (r *GormRepo) UpdatePreferences(
+	actorPTID string,
+	observedRevision uint64,
+	updates []domain.NotificationPreferencePatch,
+) (domain.NotificationPreferencesUpdateResult, error) {
+	var result domain.NotificationPreferencesUpdateResult
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		revision, err := lockPreferenceRevision(tx, actorPTID)
+		if err != nil {
+			return err
+		}
+		items, err := loadPreferenceModels(tx, actorPTID)
+		if err != nil {
+			return err
+		}
+		current := preferenceSnapshot(actorPTID, items, revision.Revision)
+		if observedRevision != revision.Revision {
+			result = domain.NotificationPreferencesUpdateResult{
+				Outcome:  domain.NotificationPreferencesUpdateOutcomeConflict,
+				Snapshot: current,
+			}
+			return nil
+		}
+
+		byCategory := make(map[int32]domain.NotificationPreference, len(current.Preferences))
+		for _, preference := range current.Preferences {
+			byCategory[preference.Category] = preference
+		}
+		changed := make([]domain.NotificationPreferencePatch, 0, len(updates))
+		for _, update := range updates {
+			existing := byCategory[update.Category]
+			if existing.Enabled == update.Enabled &&
+				existing.PushEnabled == update.PushEnabled &&
+				existing.SoundEnabled == update.SoundEnabled {
+				continue
+			}
+			changed = append(changed, update)
+		}
+		if len(changed) == 0 {
+			result = domain.NotificationPreferencesUpdateResult{
+				Outcome:  domain.NotificationPreferencesUpdateOutcomeUnchanged,
+				Snapshot: current,
+			}
+			return nil
+		}
+
+		now := time.Now().UTC()
+		for _, update := range changed {
+			if err := tx.Exec(`
+				INSERT INTO notification_preferences
+					(actor_ptid, category, enabled, push_enabled, sound_enabled, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT (actor_ptid, category) DO UPDATE
+				SET enabled = ?, push_enabled = ?, sound_enabled = ?, updated_at = ?
+			`, actorPTID, update.Category, update.Enabled, update.PushEnabled, update.SoundEnabled, now,
+				update.Enabled, update.PushEnabled, update.SoundEnabled, now).Error; err != nil {
+				return err
+			}
+		}
+
+		nextRevision := revision.Revision + 1
+		updateResult := tx.Model(&PreferenceRevisionModel{}).
+			Where("actor_ptid = ? AND revision = ?", actorPTID, revision.Revision).
+			Updates(map[string]interface{}{
+				"revision":   nextRevision,
+				"updated_at": now,
+			})
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if updateResult.RowsAffected != 1 {
+			return fmt.Errorf("notification preference revision changed during update")
+		}
+
+		nextItems, err := loadPreferenceModels(tx, actorPTID)
+		if err != nil {
+			return err
+		}
+		result = domain.NotificationPreferencesUpdateResult{
+			Outcome:  domain.NotificationPreferencesUpdateOutcomeApplied,
+			Snapshot: preferenceSnapshot(actorPTID, nextItems, nextRevision),
+		}
+		return nil
+	})
 	if err != nil {
-		return domain.NotificationPreference{}, err
+		return domain.NotificationPreferencesUpdateResult{}, err
 	}
-	pref.UpdatedAt = now
-	return pref, nil
+	return result, nil
+}
+
+func lockPreferenceRevision(tx *gorm.DB, actorPTID string) (PreferenceRevisionModel, error) {
+	record := PreferenceRevisionModel{
+		ActorPTID: actorPTID,
+		Revision:  initialPreferenceRevision,
+	}
+	if err := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "actor_ptid"}},
+		DoNothing: true,
+	}).Create(&record).Error; err != nil {
+		return PreferenceRevisionModel{}, err
+	}
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("actor_ptid = ?", actorPTID).
+		First(&record).Error; err != nil {
+		return PreferenceRevisionModel{}, err
+	}
+	record.Revision = canonicalPreferenceRevision(record.Revision)
+	return record, nil
+}
+
+func loadPreferenceModels(tx *gorm.DB, actorPTID string) ([]PreferenceModel, error) {
+	var items []PreferenceModel
+	if err := tx.Where("actor_ptid = ?", actorPTID).Order("category ASC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func canonicalPreferenceRevision(revision uint64) uint64 {
+	if revision == 0 {
+		return initialPreferenceRevision
+	}
+	return revision
+}
+
+func preferenceSnapshot(
+	actorPTID string,
+	items []PreferenceModel,
+	revision uint64,
+) domain.NotificationPreferencesSnapshot {
+	byCategory := make(map[int32]PreferenceModel, len(items))
+	for _, item := range items {
+		byCategory[item.Category] = item
+	}
+	preferences := make([]domain.NotificationPreference, 0, len(preferenceCategories))
+	for _, category := range preferenceCategories {
+		item, exists := byCategory[category]
+		preference := domain.NotificationPreference{
+			ActorPTID:    actorPTID,
+			Category:     category,
+			Enabled:      true,
+			PushEnabled:  true,
+			SoundEnabled: true,
+		}
+		if exists {
+			preference.Enabled = item.Enabled
+			preference.PushEnabled = item.PushEnabled
+			preference.SoundEnabled = item.SoundEnabled
+			preference.UpdatedAt = item.UpdatedAt
+		}
+		preferences = append(preferences, preference)
+	}
+	return domain.NotificationPreferencesSnapshot{
+		Preferences: preferences,
+		Revision:    canonicalPreferenceRevision(revision),
+	}
+}
+
+// ============================================================================
+// Push registrations
+// ============================================================================
+
+const pushMutationReceiptTTL = 7 * 24 * time.Hour
+
+func (r *GormRepo) RegisterPush(
+	input domain.RegisterPushDeviceInput,
+	protected domain.ProtectedPushBinding,
+	requestSHA256 []byte,
+) (domain.RegisterPushDeviceResult, error) {
+	var result domain.RegisterPushDeviceResult
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		replayed, found, err := loadPushReceipt[domain.RegisterPushDeviceResult](
+			tx,
+			input.ActorPTID,
+			input.DeviceID,
+			input.RequestID,
+			"register",
+			requestSHA256,
+		)
+		if err != nil {
+			return err
+		}
+		if found {
+			result = replayed
+			return nil
+		}
+
+		var conflicting int64
+		if err := tx.Model(&PushRegistrationModel{}).
+			Where("provider_binding_hmac = ?", protected.Fingerprint).
+			Where(
+				"NOT (actor_ptid = ? AND device_id = ? AND channel = ? AND environment = ?)",
+				input.ActorPTID,
+				input.DeviceID,
+				input.Binding.Channel,
+				input.Environment,
+			).
+			Count(&conflicting).Error; err != nil {
+			return err
+		}
+		if conflicting > 0 {
+			return domain.ErrPushProviderConflict
+		}
+
+		var record PushRegistrationModel
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"actor_ptid = ? AND device_id = ? AND channel = ? AND environment = ?",
+				input.ActorPTID,
+				input.DeviceID,
+				input.Binding.Channel,
+				input.Environment,
+			).
+			First(&record).Error
+		now := time.Now().UTC()
+		outcome := domain.RegisterPushDeviceOutcomeCreated
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			record = PushRegistrationModel{
+				RegistrationID:        ulid.Make().String(),
+				ActorPTID:             input.ActorPTID,
+				DeviceID:              input.DeviceID,
+				Channel:               int32(input.Binding.Channel),
+				Environment:           int32(input.Environment),
+				AppInstallEpochSHA256: append([]byte(nil), input.AppInstallEpochSHA256...),
+				ProviderBindingHMAC:   append([]byte(nil), protected.Fingerprint...),
+				ProviderCiphertext:    append([]byte(nil), protected.Ciphertext...),
+				ProviderNonce:         append([]byte(nil), protected.Nonce...),
+				CredentialKeyVersion:  protected.KeyVersion,
+				CreatedAt:             now,
+				UpdatedAt:             now,
+			}
+			if err := tx.Create(&record).Error; err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case bytes.Equal(record.ProviderBindingHMAC, protected.Fingerprint) &&
+			bytes.Equal(record.AppInstallEpochSHA256, input.AppInstallEpochSHA256):
+			outcome = domain.RegisterPushDeviceOutcomeUnchanged
+		default:
+			outcome = domain.RegisterPushDeviceOutcomeRotated
+			updates := map[string]interface{}{
+				"app_install_epoch_sha256":    append([]byte(nil), input.AppInstallEpochSHA256...),
+				"provider_binding_hmac":       append([]byte(nil), protected.Fingerprint...),
+				"provider_binding_ciphertext": append([]byte(nil), protected.Ciphertext...),
+				"provider_binding_nonce":      append([]byte(nil), protected.Nonce...),
+				"credential_key_version":      protected.KeyVersion,
+				"updated_at":                  now,
+			}
+			if err := tx.Model(&record).Updates(updates).Error; err != nil {
+				return err
+			}
+			if err := tx.First(&record, "registration_id = ?", record.RegistrationID).Error; err != nil {
+				return err
+			}
+		}
+
+		result = domain.RegisterPushDeviceResult{
+			RequestID:    input.RequestID,
+			Outcome:      outcome,
+			Registration: pushRegistrationToDomain(record),
+		}
+		return savePushReceipt(
+			tx,
+			input.ActorPTID,
+			input.DeviceID,
+			input.RequestID,
+			"register",
+			requestSHA256,
+			result,
+		)
+	})
+	if err != nil {
+		return domain.RegisterPushDeviceResult{}, err
+	}
+	return result, nil
+}
+
+func (r *GormRepo) UnregisterPush(
+	input domain.UnregisterPushDeviceInput,
+	requestSHA256 []byte,
+) (domain.UnregisterPushDeviceResult, error) {
+	var result domain.UnregisterPushDeviceResult
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		replayed, found, err := loadPushReceipt[domain.UnregisterPushDeviceResult](
+			tx,
+			input.ActorPTID,
+			input.DeviceID,
+			input.RequestID,
+			"unregister",
+			requestSHA256,
+		)
+		if err != nil {
+			return err
+		}
+		if found {
+			result = replayed
+			return nil
+		}
+
+		result = domain.UnregisterPushDeviceResult{
+			RequestID: input.RequestID,
+			Outcome:   domain.UnregisterPushDeviceOutcomeAlreadyAbsent,
+		}
+		var record PushRegistrationModel
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"registration_id = ? AND actor_ptid = ? AND device_id = ?",
+				input.RegistrationID,
+				input.ActorPTID,
+				input.DeviceID,
+			).
+			First(&record).Error
+		if err == nil {
+			if !bytes.Equal(record.AppInstallEpochSHA256, input.AppInstallEpochSHA256) {
+				return domain.ErrPushInstallConflict
+			}
+			if err := tx.Delete(&record).Error; err != nil {
+				return err
+			}
+			result.Outcome = domain.UnregisterPushDeviceOutcomeRemoved
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		return savePushReceipt(
+			tx,
+			input.ActorPTID,
+			input.DeviceID,
+			input.RequestID,
+			"unregister",
+			requestSHA256,
+			result,
+		)
+	})
+	if err != nil {
+		return domain.UnregisterPushDeviceResult{}, err
+	}
+	return result, nil
+}
+
+func (r *GormRepo) ListPushRegistrations(actorPTID string) ([]domain.PushRegistration, error) {
+	var records []PushRegistrationModel
+	if err := r.db.
+		Where("actor_ptid = ?", actorPTID).
+		Order("device_id ASC, channel ASC, environment ASC").
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	result := make([]domain.PushRegistration, 0, len(records))
+	for _, record := range records {
+		result = append(result, pushRegistrationToDomain(record))
+	}
+	return result, nil
+}
+
+func loadPushReceipt[T any](
+	tx *gorm.DB,
+	actorPTID string,
+	deviceID string,
+	requestID string,
+	operation string,
+	requestSHA256 []byte,
+) (T, bool, error) {
+	var zero T
+	var receipt PushMutationReceiptModel
+	err := tx.Where(
+		"actor_ptid = ? AND device_id = ? AND request_id = ?",
+		actorPTID,
+		deviceID,
+		requestID,
+	).First(&receipt).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return zero, false, nil
+	}
+	if err != nil {
+		return zero, false, err
+	}
+	if !receipt.ExpiresAt.After(time.Now().UTC()) {
+		if err := tx.Delete(&receipt).Error; err != nil {
+			return zero, false, err
+		}
+		return zero, false, nil
+	}
+	if receipt.Operation != operation || !bytes.Equal(receipt.RequestSHA256, requestSHA256) {
+		return zero, false, domain.ErrPushIdempotencyConflict
+	}
+	var result T
+	if err := json.Unmarshal(receipt.ResponseBytes, &result); err != nil {
+		return zero, false, err
+	}
+	return result, true, nil
+}
+
+func savePushReceipt(
+	tx *gorm.DB,
+	actorPTID string,
+	deviceID string,
+	requestID string,
+	operation string,
+	requestSHA256 []byte,
+	response interface{},
+) error {
+	responseBytes, err := json.Marshal(response)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	return tx.Create(&PushMutationReceiptModel{
+		ActorPTID:     actorPTID,
+		DeviceID:      deviceID,
+		RequestID:     requestID,
+		Operation:     operation,
+		RequestSHA256: append([]byte(nil), requestSHA256...),
+		ResponseBytes: responseBytes,
+		ExpiresAt:     now.Add(pushMutationReceiptTTL),
+		CreatedAt:     now,
+	}).Error
+}
+
+func pushRegistrationToDomain(record PushRegistrationModel) domain.PushRegistration {
+	return domain.PushRegistration{
+		RegistrationID:        record.RegistrationID,
+		ActorPTID:             record.ActorPTID,
+		DeviceID:              record.DeviceID,
+		Channel:               domain.PushChannel(record.Channel),
+		Environment:           domain.PushEnvironment(record.Environment),
+		AppInstallEpochSHA256: append([]byte(nil), record.AppInstallEpochSHA256...),
+		ProviderBindingSHA256: append([]byte(nil), record.ProviderBindingHMAC...),
+		CreatedAt:             record.CreatedAt,
+		UpdatedAt:             record.UpdatedAt,
+		LastSuccessAt:         record.LastSuccessAt,
+	}
 }
 
 // ============================================================================
@@ -351,6 +886,9 @@ func (r *GormRepo) UpsertPreference(pref domain.NotificationPreference) (domain.
 // ============================================================================
 
 func (r *GormRepo) CleanupOlderThan(cutoff time.Time) (int64, error) {
+	if err := r.db.Where("expires_at < ?", time.Now().UTC()).Delete(&PushMutationReceiptModel{}).Error; err != nil {
+		return 0, err
+	}
 	result := r.db.Where("status = ? AND created_at < ?", domain.StatusRead, cutoff).Delete(&NotificationModel{})
 	return result.RowsAffected, result.Error
 }

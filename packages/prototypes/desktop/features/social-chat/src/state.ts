@@ -182,7 +182,7 @@ export function useChatState() {
       [id]: [{
         id: `system-${Date.now()}`,
         senderId: 'system',
-        content: 'Friend chat session is ready. Production maps this to /friend-chat/create before messaging.',
+        content: 'Direct conversation is ready. Production uses /conversation/direct before messaging.',
         timestamp: Date.now(),
         type: 'system',
       }],

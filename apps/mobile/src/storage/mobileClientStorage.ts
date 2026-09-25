@@ -21,6 +21,7 @@ export interface MobileClientStorageRuntime {
     readonly chatPreferences: DomainCacheRepository<Record<string, unknown>>;
     readonly conversationSettings: DomainCacheRepository<unknown>;
     readonly identityTrust: DomainCacheRepository<unknown>;
+    readonly messageFlags: DomainCacheRepository<unknown>;
     readonly messages: DomainCacheRepository<unknown>;
     readonly peerProfiles: DomainCacheRepository<unknown>;
     readonly runtimeProjection: DomainCacheRepository<unknown>;
@@ -83,6 +84,7 @@ function createMobileClientStorageRuntimeFromKernel(kernel: ClientStorageKernel)
       chatPreferences: kernel.repository<Record<string, unknown>>('config.preference'),
       conversationSettings: kernel.repository<unknown>('chat.conversation-settings'),
       identityTrust: kernel.repository<unknown>('identity.trust'),
+      messageFlags: kernel.repository<unknown>('chat.message-flag'),
       messages: kernel.repository<unknown>('chat.message'),
       peerProfiles: kernel.repository<unknown>('profile.peer'),
       runtimeProjection: kernel.repository<unknown>('runtime.projection'),

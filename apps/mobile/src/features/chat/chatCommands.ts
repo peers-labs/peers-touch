@@ -1,55 +1,70 @@
-/**
- * chatCommands.ts — Typed command dispatchers for chat interactions.
- *
- * Pages dispatch commands through these functions instead of calling
- * store actions directly. Messaging commands delegate to the native
- * Messaging Engine, which owns durable command/outbox state. Non-messaging
- * social administration continues to use InteractionAdmission.
- */
-
-import { getInteractionAdmission, type CommandEnvelope } from '../../runtimes/commandRuntime';
 import { useSocialStore } from '../social/socialStore';
-import { useGroupStore } from '../group/groupStore';
 import type { UpdateFriendConversationSettingsInput } from '../social/socialApiTypes';
 import type {
   MessagingAttachmentStageProjection,
+  MessagingPendingCommandResult,
   MessagingSubmitCommandResult,
 } from '../../services/mobileCommands';
-import type { ChatActionState } from './chatActionState';
-import { chatActionKey, defaultChatActionState, saveChatActionStates } from './chatActionState';
+import {
+  messagingForwardMessage,
+  messagingSearchMessages,
+} from '../../services/mobileCommands';
 import type { MobileAuthSession } from '../auth/authSession';
+import type { ChatActionState } from './chatActionState';
+import { projectMessagingMessage } from './messageProjection';
 
-// ---------------------------------------------------------------------------
-// Command type constants
-// ---------------------------------------------------------------------------
+export type ChatConversationKind = 'friend' | 'group';
 
-const CMD_BLOCK_USER = 'social.block-user';
-const CMD_UNBLOCK_USER = 'social.unblock-user';
-const CMD_GROUP_UPDATE = 'group.update';
-const CMD_GROUP_INVITE = 'group.invite';
-const CMD_GROUP_LEAVE = 'group.leave';
-const CMD_GROUP_REMOVE_MEMBER = 'group.remove-member';
-const CMD_GROUP_UPDATE_MEMBER = 'group.update-member';
-const CMD_GROUP_TRANSFER = 'group.transfer-ownership';
-const CMD_GROUP_DISSOLVE = 'group.dissolve';
-
-// ---------------------------------------------------------------------------
-// Command admission helper
-// ---------------------------------------------------------------------------
-
-async function admitCommand(envelope: CommandEnvelope): Promise<string> {
-  const admission = getInteractionAdmission();
-  return admission.admit(envelope);
+export interface ChatMessageSendContext {
+  replyToMessageId?: string;
+  threadRootMessageId?: string;
 }
 
-async function markCommitted(commandId: string): Promise<void> {
-  const admission = getInteractionAdmission();
-  await admission.markCommitted(commandId);
+export interface ChatSearchCursor {
+  readonly beforeTimestampUnixMs: number;
+  readonly beforeMessageId: string;
 }
 
-async function markFailed(commandId: string, reason: string): Promise<void> {
-  const admission = getInteractionAdmission();
-  await admission.markFailed(commandId, reason);
+export async function dispatchSearchMessages(
+  session: MobileAuthSession,
+  _kind: ChatConversationKind,
+  conversationId: string,
+  query: string,
+  cursor?: ChatSearchCursor,
+) {
+  const current = () => useSocialStore.getState().authSession === session;
+  if (!current()) throw new Error('mobile.social.notAuthenticated');
+  const rows = await messagingSearchMessages({
+    stationPeerId: session.stationPeerId,
+    actorPtid: session.actorRef.ptid,
+    conversationId,
+    query,
+    limit: 100,
+    ...cursor,
+  });
+  if (!current()) throw new Error('mobile.social.notAuthenticated');
+  const last = rows.at(-1);
+  const nextCursor = rows.length === 100 && last ? {
+    beforeTimestampUnixMs: last.timestampUnixMs,
+    beforeMessageId: last.messageId,
+  } : null;
+  if (nextCursor && cursor
+    && (nextCursor.beforeTimestampUnixMs > cursor.beforeTimestampUnixMs
+      || (nextCursor.beforeTimestampUnixMs === cursor.beforeTimestampUnixMs
+        && nextCursor.beforeMessageId >= cursor.beforeMessageId))) {
+    throw new Error('mobile.chat.searchFailed');
+  }
+  return {
+    messages: rows.map((message) => projectMessagingMessage(conversationId, message)),
+    nextCursor,
+  };
+}
+
+export async function dispatchLoadConversationHistory(
+  _kind: ChatConversationKind,
+  conversationId: string,
+): Promise<void> {
+  await useSocialStore.getState().loadMessages(conversationId);
 }
 
 // ---------------------------------------------------------------------------
@@ -60,219 +75,169 @@ export async function dispatchSendMessage(
   sessionUlid: string,
   content: string,
   attachments: MessagingAttachmentStageProjection[],
+  context?: ChatMessageSendContext,
 ): Promise<MessagingSubmitCommandResult | null> {
-  return useSocialStore.getState().sendMessage(sessionUlid, content, attachments);
+  return useSocialStore.getState().sendMessage(
+    sessionUlid,
+    content,
+    attachments,
+    context,
+  );
 }
 
 export async function dispatchEditMessage(
   sessionUlid: string,
   messageUlid: string,
   newContent: string,
-): Promise<void> {
-  await useSocialStore.getState().editMessage(sessionUlid, messageUlid, newContent);
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().editMessage(
+    sessionUlid,
+    messageUlid,
+    newContent,
+  );
 }
 
 export async function dispatchRecallMessage(
   sessionUlid: string,
   messageUlid: string,
-): Promise<void> {
-  await useSocialStore.getState().recallMessage(sessionUlid, messageUlid);
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().recallMessage(sessionUlid, messageUlid);
+}
+
+export async function dispatchForwardMessage(
+  session: MobileAuthSession,
+  kind: ChatConversationKind,
+  sourceConversationId: string,
+  sourceMessageId: string,
+  destinationConversationId: string,
+): Promise<MessagingSubmitCommandResult> {
+  return messagingForwardMessage({
+    stationPeerId: session.stationPeerId,
+    actorPtid: session.actorRef.ptid,
+    admissionDomain: kind === 'group' ? 'group' : 'social',
+    sourceConversationId,
+    sourceMessageId,
+    destinationConversationId,
+  });
+}
+
+export async function dispatchHideMessageForMe(
+  _kind: ChatConversationKind,
+  conversationId: string,
+  messageId: string,
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().hideMessageForActor(conversationId, messageId);
+}
+
+export async function dispatchModerateMessage(
+  conversationId: string,
+  messageId: string,
+  reasonCode: string,
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().moderateMessage(
+    conversationId,
+    messageId,
+    reasonCode,
+  );
 }
 
 export async function dispatchBlockUser(targetPtid: string): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_BLOCK_USER,
-    category: 'social',
-    orderingKey: `block:${targetPtid}`,
-    payloadJson: JSON.stringify({ targetPtid }),
-  });
-
-  try {
-    await useSocialStore.getState().blockUser(targetPtid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'block_failed');
-    throw error;
-  }
+  await useSocialStore.getState().blockUser(targetPtid);
 }
 
 export async function dispatchUnblockUser(targetPtid: string): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_UNBLOCK_USER,
-    category: 'social',
-    orderingKey: `block:${targetPtid}`,
-    payloadJson: JSON.stringify({ targetPtid }),
-  });
-
-  try {
-    await useSocialStore.getState().unblockUser(targetPtid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'unblock_failed');
-    throw error;
-  }
+  await useSocialStore.getState().unblockUser(targetPtid);
 }
 
 // ---------------------------------------------------------------------------
-// Group chat commands
+// Shared message metadata commands
 // ---------------------------------------------------------------------------
 
-export async function dispatchGroupSendMessage(
-  groupUlid: string,
-  plaintext: string,
-  attachments: MessagingAttachmentStageProjection[],
-): Promise<MessagingSubmitCommandResult> {
-  return useGroupStore.getState().sendMessage(groupUlid, plaintext, attachments);
+export async function dispatchMessageReaction(
+  _kind: ChatConversationKind,
+  conversationId: string,
+  messageId: string,
+  reaction: string,
+  remove: boolean,
+  threadRootMessageId?: string,
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().setMessageReaction(
+    conversationId,
+    messageId,
+    reaction,
+    remove,
+    threadRootMessageId,
+  );
 }
 
-export async function dispatchGroupEditMessage(
-  groupUlid: string,
-  messageUlid: string,
-  plaintext: string,
-): Promise<void> {
-  await useGroupStore.getState().editMessage(groupUlid, messageUlid, plaintext);
+export async function dispatchMessagePin(
+  _kind: ChatConversationKind,
+  conversationId: string,
+  messageId: string,
+  remove: boolean,
+  threadRootMessageId?: string,
+): Promise<MessagingPendingCommandResult> {
+  return useSocialStore.getState().setMessagePinned(
+    conversationId,
+    messageId,
+    remove,
+    threadRootMessageId,
+  );
 }
 
-export async function dispatchGroupRecallMessage(
-  groupUlid: string,
-  messageUlid: string,
-): Promise<void> {
-  await useGroupStore.getState().recallMessage(groupUlid, messageUlid);
-}
+// ---------------------------------------------------------------------------
+// Group conversation commands
+// ---------------------------------------------------------------------------
 
 export async function dispatchGroupUpdate(
-  groupUlid: string,
-  input: { name?: string; description?: string; muted?: boolean },
+  conversationId: string,
+  input: { name?: string; description?: string },
 ): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_UPDATE,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid, ...input }),
-  });
-
-  try {
-    await useGroupStore.getState().updateGroup(groupUlid, input);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'update_failed');
-    throw error;
-  }
+  await useSocialStore.getState().updateGroupConversation(conversationId, input);
 }
 
-export async function dispatchGroupInviteMembers(
-  groupUlid: string,
-  inviteePtids: string[],
+export async function dispatchGroupInviteMember(
+  conversationId: string,
+  targetPtid: string,
 ): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_INVITE,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid, inviteePtids }),
-  });
-
-  try {
-    await useGroupStore.getState().inviteMembers(groupUlid, inviteePtids);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'invite_failed');
-    throw error;
-  }
-}
-
-export async function dispatchGroupLeave(groupUlid: string): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_LEAVE,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid }),
-  });
-
-  try {
-    await useGroupStore.getState().leaveGroup(groupUlid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'leave_failed');
-    throw error;
-  }
+  await useSocialStore.getState().addGroupMember(conversationId, targetPtid);
 }
 
 export async function dispatchGroupRemoveMember(
-  groupUlid: string,
-  actorPtid: string,
+  conversationId: string,
+  targetPtid: string,
 ): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_REMOVE_MEMBER,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid, actorPtid }),
-  });
-
-  try {
-    await useGroupStore.getState().removeMember(groupUlid, actorPtid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'remove_failed');
-    throw error;
-  }
+  await useSocialStore.getState().removeGroupMember(conversationId, targetPtid);
 }
 
 export async function dispatchGroupUpdateMember(
-  groupUlid: string,
-  actorPtid: string,
-  input: { role?: number; muted?: boolean },
+  conversationId: string,
+  targetPtid: string,
+  input: { role?: 'member' | 'admin'; muted?: boolean },
 ): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_UPDATE_MEMBER,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid, actorPtid, ...input }),
-  });
-
-  try {
-    await useGroupStore.getState().updateMember(groupUlid, actorPtid, input);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'update_member_failed');
-    throw error;
-  }
+  await useSocialStore.getState().updateGroupMemberAuthority(
+    conversationId,
+    targetPtid,
+    input,
+  );
 }
 
 export async function dispatchGroupTransferOwnership(
-  groupUlid: string,
+  conversationId: string,
   nextOwnerPtid: string,
 ): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_TRANSFER,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid, nextOwnerPtid }),
-  });
-
-  try {
-    await useGroupStore.getState().transferOwnership(groupUlid, nextOwnerPtid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'transfer_failed');
-    throw error;
-  }
+  await useSocialStore.getState().transferGroupOwnership(
+    conversationId,
+    nextOwnerPtid,
+  );
 }
 
-export async function dispatchGroupDissolve(groupUlid: string): Promise<void> {
-  const commandId = await admitCommand({
-    commandType: CMD_GROUP_DISSOLVE,
-    category: 'social',
-    orderingKey: `group:${groupUlid}`,
-    payloadJson: JSON.stringify({ groupUlid }),
-  });
+export async function dispatchGroupLeave(conversationId: string): Promise<void> {
+  await useSocialStore.getState().leaveGroup(conversationId);
+}
 
-  try {
-    await useGroupStore.getState().dissolveGroup(groupUlid);
-    await markCommitted(commandId);
-  } catch (error) {
-    await markFailed(commandId, error instanceof Error ? error.message : 'dissolve_failed');
-    throw error;
-  }
+export async function dispatchGroupDissolve(conversationId: string): Promise<void> {
+  await useSocialStore.getState().dissolveGroup(conversationId);
 }
 
 // ---------------------------------------------------------------------------
@@ -280,16 +245,6 @@ export async function dispatchGroupDissolve(groupUlid: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function friendPatchFromActionPatch(patch: Partial<ChatActionState>): UpdateFriendConversationSettingsInput {
-  return {
-    ...(patch.muted !== undefined ? { isMuted: patch.muted } : {}),
-    ...(patch.sticky !== undefined ? { isPinned: patch.sticky } : {}),
-    ...(patch.alertEnabled !== undefined ? { alertEnabled: patch.alertEnabled } : {}),
-    ...(patch.background !== undefined ? { background: patch.background } : {}),
-    ...(patch.clearedAt !== undefined ? { clearedAt: patch.clearedAt } : {}),
-  };
-}
-
-export function groupPatchFromActionPatch(patch: Partial<ChatActionState>) {
   return {
     ...(patch.muted !== undefined ? { isMuted: patch.muted } : {}),
     ...(patch.sticky !== undefined ? { isPinned: patch.sticky } : {}),

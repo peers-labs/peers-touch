@@ -437,7 +437,7 @@ async function waitForMessage(
   await activate(client)
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const projection = (await imServiceV1.messaging.listMessages(conversationId))
-      .find(message => message.messageId === messageId)
+      .messages.find(message => message.messageId === messageId)
     if (projection?.plaintext === plaintext) return projection
     await sleep(500)
   }
@@ -458,8 +458,8 @@ async function expectMessageNotObserved(
   }
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      const messages = await imServiceV1.messaging.listMessages(conversationId)
-      if (messages.some(message => message.messageId === messageId)) {
+      const page = await imServiceV1.messaging.listMessages(conversationId)
+      if (page.messages.some(message => message.messageId === messageId)) {
         throw new Error(
           `${client.name} observed removed-scope message ${messageId}`,
         )

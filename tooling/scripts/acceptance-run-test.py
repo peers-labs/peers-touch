@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -51,6 +53,259 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_allocates_a_preflight_run_id_without_creating_evidence(self) -> None:
+        module = load_module()
+        output = io.StringIO()
+        with mock.patch.object(
+            sys,
+            "argv",
+            ["acceptance-run.py", "--allocate-run-id"],
+        ), contextlib.redirect_stdout(output):
+            self.assertEqual(module.main(), 0)
+
+        run_id = json.loads(output.getvalue())["runId"]
+        self.assertRegex(
+            run_id,
+            r"^\d{8}T\d{12}Z-[0-9a-f]{32}$",
+        )
+
+    def test_formal_single_gate_uses_the_preallocated_run_id(self) -> None:
+        module = load_module()
+        run_id = "20260916T120000000000Z-" + ("a" * 32)
+        source = {
+            "commit": "a" * 40,
+            "workspaceDigest": "sha256:source",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "acceptance"
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-gate": {
+                                "command": "synthetic-command",
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root)},
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-gate",
+                    "--run-id",
+                    run_id,
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                return_value=source,
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+                return_value=completed,
+            ) as run:
+                self.assertEqual(module.main(), 0)
+
+            store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+            latest = store.latest("synthetic-gate")
+
+        self.assertEqual(latest["runId"], run_id)
+        gate_call = next(
+            call for call in run.call_args_list if call.kwargs.get("shell")
+        )
+        self.assertEqual(
+            gate_call.kwargs["env"]["PT_ACCEPTANCE_RUN_ID"],
+            run_id,
+        )
+
+    def test_preallocated_run_id_rejects_invalid_or_multi_gate_use(self) -> None:
+        module = load_module()
+        for argv in (
+            [
+                "acceptance-run.py",
+                "--gate",
+                "synthetic-gate",
+                "--run-id",
+                "invalid",
+            ],
+            [
+                "acceptance-run.py",
+                "--gate",
+                "gate-a",
+                "--gate",
+                "gate-b",
+                "--run-id",
+                "20260916T120000000000Z-" + ("b" * 32),
+            ],
+        ):
+            with self.subTest(argv=argv), mock.patch.object(sys, "argv", argv):
+                with self.assertRaises(SystemExit):
+                    module.main()
+
+    def test_preallocated_run_id_collision_does_not_fall_back(self) -> None:
+        module = load_module()
+        run_id = "20260916T120000000000Z-" + ("c" * 32)
+        source = {
+            "commit": "a" * 40,
+            "workspaceDigest": "sha256:source",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_root = root / "acceptance"
+            store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+            existing = store.begin_run(
+                "synthetic-gate",
+                source=source,
+                run_id=run_id,
+            )
+            existing.close()
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-gate": {
+                                "command": "synthetic-command",
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root)},
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-gate",
+                    "--run-id",
+                    run_id,
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                return_value=source,
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+            ) as run:
+                self.assertEqual(module.main(), 1)
+
+            gate_dir = store.workspace_dir / "synthetic-gate"
+            run_directories = [
+                child.name for child in gate_dir.iterdir() if child.is_dir()
+            ]
+
+        run.assert_not_called()
+        self.assertEqual(run_directories, [run_id])
+
+    def test_development_policy_writes_manifests_without_latest(self) -> None:
+        module = load_module()
+        source = {
+            "commit": "a" * 40,
+            "workspaceDigest": "sha256:source",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        completed = mock.Mock(returncode=0, stdout="journey passed\n", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-gate": {
+                                "command": "synthetic-command",
+                                "environment": "local",
+                                "tier": "ci-cheap",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HOME": str(root / "home"),
+                    "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "formal"),
+                },
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-gate",
+                    "--execution-policy",
+                    "development",
+                    "--work-item",
+                    "dwf-test",
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                return_value=source,
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+                return_value=completed,
+            ):
+                self.assertEqual(module.main(), 0)
+
+            development_root = (
+                root
+                / "home"
+                / ".peers-touch"
+                / "dev"
+                / "workspaces"
+                / "b0a926025d2b25b9"
+                / "workflow"
+                / "dwf-test"
+                / "artifacts"
+            )
+            result_paths = list(
+                development_root.rglob("development/result.json")
+            )
+            reports = list(development_root.rglob("reports/run.json"))
+            manifests = list(development_root.rglob("manifest.json"))
+            latest = list(development_root.rglob("latest*.json"))
+            self.assertEqual(len(result_paths), 1)
+            self.assertEqual(len(reports), 1)
+            self.assertEqual(len(manifests), 2)
+            self.assertEqual(latest, [])
+            result = json.loads(result_paths[0].read_text(encoding="utf-8"))
+
+        self.assertEqual(result["verificationClass"], "FUNCTIONAL_CHECK")
+        self.assertEqual(result["proofStatus"], "NOT_APPLICABLE")
+
     def test_station_profiles_are_explicit_runtime_bindings(self) -> None:
         module = load_module()
 
@@ -1912,6 +2167,167 @@ class AcceptanceRunTest(unittest.TestCase):
 
         self.assertEqual(result["completionStatus"], "PARTIAL")
         self.assertEqual(result["proofStatus"], "UNPROVEN")
+
+    def test_development_result_preserves_declared_partial_state(self) -> None:
+        module = load_module()
+        result = module.standardize_result(
+            {
+                "id": "development-gate",
+                "status": "passed",
+                "completionStatus": "PARTIAL",
+                "proofStatus": "UNPROVEN",
+                "tier": "env-evidence",
+                "sourceArtifact": {"path": "reports/development-gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "evidenceGateId": "development-gate",
+                "evidenceStatus": "PASS",
+                "manifest": {
+                    "state": "FIXTURE_READY",
+                    "runId": "runtime-run",
+                },
+                "traceability": {"status": "complete"},
+            },
+            "/tmp/acceptance-plan.json",
+            execution_policy="development",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+
+    def test_development_static_result_keeps_not_required_traceability(
+        self,
+    ) -> None:
+        module = load_module()
+        result = module.standardize_result(
+            {
+                "id": "development-static",
+                "status": "passed",
+                "cleanupStatus": "not-required",
+            },
+            "/tmp/acceptance-plan.json",
+            execution_policy="development",
+        )
+
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "NOT_APPLICABLE")
+        self.assertEqual(result["traceability"]["status"], "not-required")
+
+    def test_development_result_emits_a_durable_runner_manifest(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("development-gate", source={})
+            result = module.record_development_result(
+                {
+                    "id": "development-gate",
+                    "status": "passed",
+                    "verificationClass": "FUNCTIONAL_CHECK",
+                },
+                run,
+                {"kind": "manual"},
+                "WORK-01",
+            )
+            manifest_ref = ArtifactRef.from_dict(result["developmentManifest"])
+            manifest = json.loads(
+                (run.run_dir / manifest_ref.path).read_text(encoding="utf-8")
+            )
+            run.close()
+
+        self.assertEqual(manifest["artifactKind"], "acceptance-run-manifest")
+        self.assertEqual(manifest["state"], "DURABLE")
+        self.assertEqual(manifest["result"]["workItemId"], "WORK-01")
+        self.assertEqual(
+            manifest["result"]["developmentArtifact"]["path"],
+            "development/result.json",
+        )
+        self.assertEqual(
+            manifest["result"]["developmentArtifact"]["sha256"],
+            result["developmentArtifact"]["sha256"],
+        )
+
+    def test_development_artifacts_follow_machine_root_override(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"PT_MACHINE_DEV_ROOT": tmp},
+            clear=False,
+        ):
+            self.assertEqual(
+                module.development_artifact_root("WORK-01", "workspace"),
+                Path(tmp) / "workspaces/workspace/workflow/WORK-01/artifacts",
+            )
+
+    def test_development_run_finalizes_complete_closure_context(self) -> None:
+        module = load_module()
+        from tooling.acceptance.core import source_identity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = EvidenceStore(root / "artifacts", worktree=module.REPO_ROOT)
+            source = source_identity(module.REPO_ROOT)
+            gate_run = store.begin_run("development-gate", source=source)
+            gate_run.finalize(
+                result={"status": "passed"},
+                runtime={},
+            )
+            gate_manifest = gate_run.manifest_ref
+            gate_run.close()
+            aggregate = store.begin_run("development-run", source=source)
+            report = {
+                "artifactKind": "development-functional-run",
+                "executionPolicy": "development",
+                "source": source,
+                "completionStatus": "DONE",
+                "proofStatus": "NOT_APPLICABLE",
+                "results": [
+                    {
+                        "id": "development-gate",
+                        "developmentManifest": gate_manifest.to_dict(),
+                    }
+                ],
+            }
+            report_ref = aggregate.write_json(
+                "reports/run.json",
+                report,
+                role="run",
+            )
+            manifest_ref = module.finalize_development_run(
+                report,
+                aggregate,
+                report_ref,
+                {
+                    "execution": {
+                        "formalPlan": "docs/plan.md",
+                        "planId": "PLAN-01",
+                        "currentTaskId": "TASK-01",
+                        "closure": "closure-01",
+                    }
+                },
+                "docs/plan.md",
+                "WORK-01",
+                "JOURNEY-01",
+            )
+            manifest = json.loads(
+                (aggregate.run_dir / manifest_ref.path).read_text(encoding="utf-8")
+            )
+            context_ref = ArtifactRef.from_dict(
+                manifest["artifacts"]["development-run-manifest"]
+            )
+            context = json.loads(
+                (aggregate.run_dir / context_ref.path).read_text(encoding="utf-8")
+            )
+            aggregate.close()
+
+        self.assertEqual(manifest["artifactKind"], "acceptance-run-manifest")
+        self.assertEqual(context["schemaVersion"], 2)
+        self.assertEqual(context["planId"], "PLAN-01")
+        self.assertEqual(context["taskId"], "TASK-01")
+        self.assertEqual(context["closureId"], "closure-01")
+        self.assertEqual(context["journeyId"], "JOURNEY-01")
+        self.assertEqual(context["gateIds"], ["development-gate"])
 
     def test_environment_report_without_phase_bom_spec_is_unproven(self) -> None:
         module = load_module()

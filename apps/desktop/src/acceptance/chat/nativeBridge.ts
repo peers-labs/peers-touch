@@ -309,7 +309,7 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
   resumeMessagingLifecycle: (actorPtid) =>
     api.messagingAcceptanceResumeLifecycle(actorPtid),
   readMessages: (conversationId) =>
-    imServiceV1.messaging.listMessages(conversationId),
+    imServiceV1.messaging.listMessages(conversationId).then(page => page.messages),
   readConversations: () =>
     imServiceV1.messaging.listConversations(),
   readMemberSettings: (conversationId) =>

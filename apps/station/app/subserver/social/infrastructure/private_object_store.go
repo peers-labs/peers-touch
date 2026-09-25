@@ -1653,10 +1653,10 @@ func authorizePrivateRelationship(
 		return ErrPrivateContentNotFound
 	}
 	var blockCount int64
-	if err := tx.Model(&friendshipModel{}).
+	if err := tx.Model(&socialDirectionalRelationshipModel{}).
 		Where(
-			"status = ? AND ((actor_ptid = ? AND peer_ptid = ?) OR (actor_ptid = ? AND peer_ptid = ?))",
-			friendshipStatusBlocked,
+			"blocked = ? AND ((actor_ptid = ? AND target_actor_ptid = ?) OR (actor_ptid = ? AND target_actor_ptid = ?))",
+			true,
 			ownerPTID,
 			viewerPTID,
 			viewerPTID,

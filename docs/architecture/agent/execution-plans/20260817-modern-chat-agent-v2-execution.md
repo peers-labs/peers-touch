@@ -6325,7 +6325,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   remain unclaimed.
 - The owner authorized destructive Fixture reset on 2026-09-03. The protected
   `station-two:18080` guard remains intact; execution moved to canonical
-  disposable profile `chat-native-disposable` at `10.37.94.156:18132`.
+  disposable profile `chat-native-disposable` at `10.0.0.40:18132`.
   Disposable database recreation removed an obsolete schema that prevented
   Station startup, and exact source
   `92f7b5090ffc22e4218a18f7a0de5cde09ae3c4d` then reached

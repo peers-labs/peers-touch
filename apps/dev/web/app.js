@@ -100,10 +100,14 @@ function planLines(plan) {
   if (!plan) return [];
   if (plan.status === 'available') {
     const progress = plan.progress;
+    const projected = progress?.nextProgressBoundary;
     return [
       `Task ${plan.taskId}`,
       progress
         ? `${progress.completed} / ${progress.total} · ${progress.percentage}%`
+        : null,
+      projected
+        ? `After Next ${projected.completedAfter} / ${progress.total} · ${projected.percentageAfter}%`
         : null,
     ];
   }
@@ -159,8 +163,8 @@ function renderWorktrees(snapshot) {
       item.environment.slot !== null
         ? `slot: ${item.environment.slot}`
         : null,
-      item.environment.agentControlMode
-        ? `control: ${item.environment.agentControlMode}`
+      item.environment.resetPolicy
+        ? `reset: ${item.environment.resetPolicy}`
         : null,
       item.environment.sourceState
         ? `source: ${item.environment.sourceState}`
@@ -225,7 +229,7 @@ function renderOccupancy(snapshot) {
     row.append(
       profileCell,
       stateCell,
-      makeCell(item.agentControlMode),
+      makeCell(item.resetPolicy),
       makeCell(profile?.stationUrl),
       makeCell(profile?.relayUrl),
       makeCell(profile?.sourceState),

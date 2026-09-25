@@ -37,7 +37,7 @@ import {
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
-import { imServiceV1 } from '../../services/im-service';
+import { messagingCommands } from '../../messaging/runtime';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import { log } from '../../utils/logger';
 
@@ -76,7 +76,7 @@ export function useMessagingAttachmentUrl(
     if (!attachmentId) return null;
     setOpenState('pending');
     try {
-      const localPath = await imServiceV1.messaging.openAttachment(attachmentId);
+      const localPath = await messagingCommands.openAttachment(attachmentId);
       const next = convertFileSrc(localPath);
       setSrc(next);
       setOpenState('ready');
@@ -341,7 +341,12 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const typeLabel = attachmentTypeLabel(attachmentKind, attachment, t);
   const sizeLabel = formatChatAttachmentSize(attachment.size);
   const audioDurationLabel = audioDuration || formatMediaDurationSeconds(Number(
-    (attachment as Attachment & { durationSeconds?: number }).durationSeconds ?? 0,
+    (attachment as Attachment & {
+      durationSeconds?: number;
+      voiceNote?: { durationMs?: number };
+    }).voiceNote?.durationMs
+      ? (attachment as Attachment & { voiceNote: { durationMs: number } }).voiceNote.durationMs / 1000
+      : (attachment as Attachment & { durationSeconds?: number }).durationSeconds ?? 0,
   ));
   const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');

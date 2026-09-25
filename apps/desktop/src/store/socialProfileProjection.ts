@@ -1,5 +1,4 @@
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import type { FriendChatSession, GroupMember } from './socialProjection';
 import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
 import type { AccountProfile } from '../services/desktop_api';
 
@@ -60,6 +59,7 @@ export function accountProfileFromFederationResolve(
   }
   return {
     id: profile.id,
+    profile_revision: Number(profile.profileRevision),
     username: profile.username,
     acct: profile.acct,
     display_name: profile.displayName,

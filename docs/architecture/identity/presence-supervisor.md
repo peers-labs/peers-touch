@@ -42,8 +42,8 @@ These were not three bugs to patch — they were one missing layer.
                             ▼
       ┌──────────────────────────────────────────────┐
       │  Station HTTP: /presence/heartbeat ·          │   infrastructure
-      │  /presence/offline · /pending · /ack +         │   (existing helpers)
-      │  friend_chat_sync_from_station                 │
+      │  /presence/offline + Messaging runtime         │   (resource owners)
+      │  reconciliation through Device Inbox           │
       └──────────────────────────────────────────────┘
 ```
 
@@ -59,7 +59,7 @@ PresenceTrigger ::= AppLaunch
                   | IdentityRestored | IdentitySwitched | IdentityLoggedOut
                   | NetworkOnline | NetworkOffline
                   | Heartbeat | Manual
-PresenceTransition { actor_id, from, to, trigger,
+PresenceTransition { actor_ptid, from, to, trigger,
                      reconciled_count, affected_sessions }
 ```
 
@@ -75,16 +75,11 @@ caller never blocks the UI:
 1. `POST /presence/heartbeat` — renews the actor/session presence lease;
    failure
    short-circuits the rest (kept Offline).
-2. `GET /friend-chat/pending` — drains the in-memory queue station kept
-   for us while we were offline.
-3. For each unique `session_ulid` in the pending payload, run
-   `friend_chat_sync_from_station` (page-limit 50, 1 page) to bring those
-   sessions' local cursor up to date.
-4. `POST /friend-chat/message/ack` with the union of pulled ulids.
-   Failure is logged but does not roll back state — the next `/pending`
-   re-serves the same messages, which is fine because step 3 is
-   idempotent (cursor-aware).
-5. Emit `presence.transition` Tauri event with `reconciled_count` and
+2. Notify the Messaging runtime to reconcile the canonical Conversation
+   projection through Device Inbox claim/ack.
+3. The Messaging runtime applies ordered events idempotently and advances its
+   device-lane cursor only after durable local commit.
+4. Emit `presence.transition` Tauri event with `reconciled_count` and
    `affected_sessions`.
 
 `Online → Offline` is symmetric and trivial: `POST /presence/offline`,
@@ -94,7 +89,7 @@ the best-effort offline request arrives.
 
 ### 2.4 Invariants
 
-- **Per-actor, not per-window.** The supervisor keys by `actor_id`. Two
+- **Per-actor, not per-window.** The supervisor keys by canonical PTID. Two
   windows hosting the same actor share one presence; two windows hosting
   different actors are independent. Pending queues at station are
   actor-scoped — anything else would double-pull.
@@ -146,8 +141,8 @@ loading path handles them when the user clicks in.
 | Old mechanism                                        | After PR-presence-1                            |
 |------------------------------------------------------|------------------------------------------------|
 | 60 s `setInterval` polling in `SocialChatPage`       | Kept as last-resort safety net (no longer the primary delivery mechanism). |
-| Per-component `friend_chat_sync` calls on focus      | Funnels into a single supervisor entry point. |
-| Hand-rolled `/pending` calls in two unrelated places | One reconcile pipeline; sole owner of `/online`/`/pending`/`/ack`. |
+| Per-component message sync calls on focus            | Funnels into the Messaging runtime reconcile entry point. |
+| Hand-rolled pending queue calls in unrelated places  | Device Inbox claim/ack remains owned by the Messaging runtime. |
 | "Did the user just unlock?" inferred from N stores   | Single `identity_restored` trigger.            |
 
 ## 4. Non-goals

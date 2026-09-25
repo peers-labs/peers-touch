@@ -1,0 +1,156 @@
+{
+  "id": "chat-mixed-native",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-secondary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "chat-mixed-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "target_assertion": "both Stations are approved disposable targets",
+      "initial_assertion": "Alice, Bob, and Carol have canonical identities on their assigned Stations"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "desktop-alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "desktop-bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios",
+      "actor": "bob",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios-peer",
+      "actor": "charlie",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "lifecycle.suspend",
+      "lifecycle.resume",
+      "lifecycle.restart",
+      "lifecycle.scope.read",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.attachment.stage",
+      "messaging.attachment.open",
+      "messaging.send",
+      "messaging.interact",
+      "messaging.read",
+      "messaging.typing",
+      "messaging.reconcile",
+      "messaging.command.read",
+      "messaging.search",
+      "messaging.projection.read",
+      "recovery.snapshot",
+      "social.reconcile",
+      "social.projection.read",
+      "getRealtimeDevice",
+      "initiateCall",
+      "callResolutionState",
+      "acceptCall",
+      "rejectCall",
+      "cleanup"
+    ],
+    "policy": "Chat production actions only; Station endpoints and Appium authority remain parent-owned"
+  },
+  "proof_scope": {
+    "proves": [
+      "macOS Desktop and iOS simulator mixed-client Chat convergence",
+      "same-Station and cross-Station Direct and Group receiver behavior",
+      "same-actor Desktop and Mobile continuity",
+      "cross-device durable call resolution"
+    ],
+    "does_not_prove": [
+      "Linux or Windows Desktop behavior",
+      "Android Mobile behavior",
+      "physical-device behavior",
+      "group live calls"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "desktop-processes",
+      "desktop-ports",
+      "desktop-storage",
+      "appium-sessions",
+      "appium-process",
+      "app-installations",
+      "simulator-ports",
+      "simulator-storage",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

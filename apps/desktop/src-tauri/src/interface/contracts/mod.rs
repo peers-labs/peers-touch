@@ -57,6 +57,7 @@ pub struct ProfileUpdateInput {
     pub timezone: Option<String>,
     pub tags: Option<Vec<String>>,
     pub links: Option<Vec<ProfileLinkInput>>,
+    pub observed_revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -779,36 +780,6 @@ pub struct FriendChatSyncInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListMessagesInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub before_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatUnreadInput {
-    pub group_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatMarkReadInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSyncInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatKeyRotateInput {
     pub next_version: i32,
 }
@@ -880,9 +851,15 @@ pub struct NotificationDeleteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationPreferenceUpdateInput {
+pub struct NotificationPreferencePatchInput {
     pub category: i32,
     pub enabled: bool,
     pub push_enabled: bool,
     pub sound_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferencesUpdateInput {
+    pub updates: Vec<NotificationPreferencePatchInput>,
+    pub observed_revision: u64,
 }

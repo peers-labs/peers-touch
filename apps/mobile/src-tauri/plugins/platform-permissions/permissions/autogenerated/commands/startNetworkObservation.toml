@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-startNetworkObservation"
+description = "Enables the startNetworkObservation command without any pre-configured scope."
+commands.allow = ["startNetworkObservation"]
+
+[[permission]]
+identifier = "deny-startNetworkObservation"
+description = "Denies the startNetworkObservation command without any pre-configured scope."
+commands.deny = ["startNetworkObservation"]

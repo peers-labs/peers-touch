@@ -1,13 +1,16 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
-import type { MobileRuntimeDescriptor, RuntimeOperationResult } from '../app/lifecycle/types';
+import type {
+  MobileRuntimeContext,
+  MobileRuntimeDescriptor,
+  RuntimeOperationResult,
+} from '../app/lifecycle/types';
 import {
   isAccessGranted,
   type MobileAuthSession,
 } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import { useGroupStore } from '../features/group/groupStore';
 import { useSocialStore } from '../features/social/socialStore';
 import {
   messagingActivate,
@@ -18,6 +21,7 @@ import {
   type MessagingReconcileResult,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import { runRuntimeSessionTransition } from './runtimeSessionTransition';
 
 export const MOBILE_MESSAGING_RECONCILED_EVENT = 'mobile:messaging-reconciled';
 export const MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT = 'mobile:messaging-projection-changed';
@@ -39,12 +43,32 @@ interface MessagingProjectionScope extends MessagingAccountInput {
   activationGeneration: number;
 }
 
+interface MessagingRuntimeErrorEventDetail {
+  readonly operation: string;
+  readonly message: string;
+}
+
+interface MessagingRuntimeReadinessPort {
+  fail(operation: string): void;
+  recover(operation: string): void;
+  recoverAll(): void;
+  observeReady(): void;
+}
+
+const MESSAGING_READINESS_FAILURE_OPERATIONS = new Set([
+  'projection-delivery',
+  'session-transition',
+  'worker-cycle',
+]);
+
 let activeScope: MessagingAccountInput | null = null;
 let activeProfileId: string | null = null;
+let activeSessionScopeKey = '';
 let activeGeneration = 0;
 let lastDeliveredLaneSequence = 0;
 let transition: Promise<void> = Promise.resolve();
 let projectionDelivery: Promise<void> = Promise.resolve();
+let activeRuntimeReadinessPort: MessagingRuntimeReadinessPort | null = null;
 let reconcileInFlight: {
   key: string;
   promise: Promise<MessagingReconcileResult | null>;
@@ -53,15 +77,66 @@ let reconcileInFlight: {
 export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribe: (() => void) | null = null;
   let unlistenProjection: UnlistenFn | null = null;
+  let runtimeContext: MobileRuntimeContext | null = null;
+  const readinessFailures = new Set<string>();
+
+  const readinessPort: MessagingRuntimeReadinessPort = {
+    fail(operation): void {
+      if (!runtimeContext || readinessFailures.has(operation)) return;
+      if (readinessFailures.size > 0) {
+        readinessFailures.add(operation);
+        return;
+      }
+      const update = runtimeContext.beginReadinessUpdate();
+      if (!update.isCurrent()) return;
+      readinessFailures.add(operation);
+      update.fail(new Error('mobile.lifecycle.runtimeFailed'));
+    },
+    recover(operation): void {
+      if (!runtimeContext || !readinessFailures.has(operation)) return;
+      if (readinessFailures.size > 1) {
+        readinessFailures.delete(operation);
+        return;
+      }
+      const update = runtimeContext.beginReadinessUpdate();
+      if (!update.isCurrent()) return;
+      readinessFailures.delete(operation);
+      update.ready();
+    },
+    recoverAll(): void {
+      if (!runtimeContext || readinessFailures.size === 0) return;
+      const update = runtimeContext.beginReadinessUpdate();
+      if (!update.isCurrent()) return;
+      readinessFailures.clear();
+      update.ready();
+    },
+    observeReady(): void {
+      readinessFailures.clear();
+    },
+  };
+  const onRuntimeError = (event: Event) => {
+    const detail = (event as CustomEvent<MessagingRuntimeErrorEventDetail>).detail;
+    if (
+      !detail?.message
+      || !MESSAGING_READINESS_FAILURE_OPERATIONS.has(detail.operation)
+    ) {
+      return;
+    }
+    readinessPort.fail(detail.operation);
+  };
 
   return {
     id: 'messaging',
     title: 'Messaging Runtime',
     responsibility:
       'Owns the authenticated Device Messaging Engine lifecycle, reconciliation, and durable Chat command path.',
-    dependsOn: ['auth', 'secure-storage', 'native-event-bridge'],
+    dependsOn: ['session', 'secure-storage', 'native-event-bridge'],
 
-    async bootstrap(): Promise<void> {
+    async bootstrap(context): Promise<void> {
+      readinessFailures.clear();
+      runtimeContext = context;
+      activeRuntimeReadinessPort = readinessPort;
+      window.addEventListener(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, onRuntimeError);
       unlistenProjection = await listen<MessagingProjectionEvent>(
         MOBILE_MESSAGING_PROJECTION_CHANGED_EVENT,
         (event) => enqueueProjectionDelivery(event.payload),
@@ -70,9 +145,15 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
         const session = admittedSession(state);
         const previousSession = admittedSession(previous);
         if (sessionKey(session) === sessionKey(previousSession)) return;
-        enqueueSessionTransition(session);
+        if (runtimeContext) {
+          enqueueSessionTransition(session, runtimeContext, readinessPort);
+        }
       });
-      await synchronizeSession(admittedSession(useAuthStore.getState()));
+      await enqueueSessionTransition(
+        admittedSession(useAuthStore.getState()),
+        context,
+        readinessPort,
+      );
     },
 
     async suspend(): Promise<void> {
@@ -80,16 +161,27 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
       await invoke<void>('messaging_suspend');
     },
 
-    async resume(): Promise<void> {
+    async resume(context): Promise<void> {
+      runtimeContext = context;
       await transition;
       const scope = activeScope;
       if (!scope) return;
       await invoke('messaging_resume', { input: scope });
-      await reconcileActiveMessagingSession();
+      await enqueueSessionTransition(
+        admittedSession(useAuthStore.getState()),
+        context,
+        readinessPort,
+      );
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
       const start = performance.now();
+      window.removeEventListener(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, onRuntimeError);
+      if (activeRuntimeReadinessPort === readinessPort) {
+        activeRuntimeReadinessPort = null;
+      }
+      readinessFailures.clear();
+      runtimeContext = null;
       unsubscribe?.();
       unsubscribe = null;
       unlistenProjection?.();
@@ -111,9 +203,12 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
 }
 
 export async function wakeActiveMessagingSession(): Promise<void> {
-  const scope = activeScope;
-  if (!scope) return;
-  await invoke('messaging_wake', { input: scope });
+  try {
+    await reconcileActiveMessagingSession();
+  } catch (error) {
+    reportRuntimeError('worker-cycle', error);
+    throw error;
+  }
 }
 
 export function reconcileActiveMessagingSession(): Promise<MessagingReconcileResult | null> {
@@ -134,6 +229,7 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
       window.dispatchEvent(
         new CustomEvent(MOBILE_MESSAGING_RECONCILED_EVENT, { detail: result }),
       );
+      activeRuntimeReadinessPort?.recoverAll();
       return result;
     })
     .finally(() => {
@@ -143,31 +239,49 @@ export function reconcileActiveMessagingSession(): Promise<MessagingReconcileRes
   return promise;
 }
 
-function enqueueSessionTransition(session: MobileAuthSession | null): void {
-  transition = transition
-    .then(() => synchronizeSession(session))
-    .catch((error) => {
-      reportRuntimeError('session-transition', error);
-    });
+function enqueueSessionTransition(
+  session: MobileAuthSession | null,
+  context: MobileRuntimeContext,
+  readinessPort: MessagingRuntimeReadinessPort,
+): Promise<void> {
+  const task = runRuntimeSessionTransition({
+    previous: transition,
+    context,
+    isScopeCurrent: () => sessionKey(admittedSession(useAuthStore.getState())) === sessionKey(session),
+    run: async (isCurrent) => {
+      await synchronizeSession(session, isCurrent);
+      if (isCurrent()) readinessPort.observeReady();
+    },
+    onError: (error) => reportRuntimeError('session-transition', error),
+  });
+  transition = task.catch(() => undefined);
+  return task;
 }
 
-async function synchronizeSession(session: MobileAuthSession | null): Promise<void> {
+async function synchronizeSession(
+  session: MobileAuthSession | null,
+  isCurrent: () => boolean,
+): Promise<void> {
   const nextScope = session ? accountInput(session) : null;
   if (activeScope && !sameAccount(activeScope, nextScope)) {
     const previousScope = activeScope;
     clearActiveProjectionScope();
     await messagingDeactivate(previousScope);
   }
-  if (!session) return;
+  if (!session || !isCurrent()) return;
   const scope = accountInput(session);
   const status = await messagingActivate({
     ...scope,
-    stationOrigin: session.stationUrl,
-    accessToken: session.accessToken,
+    sessionId: session.sessionId,
+  }).catch((error: unknown) => {
+    throw error;
   });
   if (!status.profileId) throw new Error('mobile.messaging.runtimeProfileMissing');
+  // Retain the native scope for cleanup even when activation was superseded.
   activeScope = scope;
+  if (!isCurrent()) return;
   activeProfileId = status.profileId;
+  activeSessionScopeKey = sessionKey(session);
   activeGeneration = status.activationGeneration;
   lastDeliveredLaneSequence = status.laneSequence;
   await reconcileActiveMessagingSession();
@@ -216,7 +330,7 @@ function accountInput(session: MobileAuthSession): MessagingAccountInput {
 
 function sessionKey(session: MobileAuthSession | null): string {
   return session
-    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.accessToken}`
+    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.sessionId}`
     : '';
 }
 
@@ -254,43 +368,43 @@ function projectionScopeKey(scope: MessagingProjectionScope | null): string {
 
 async function refreshKnownMessageProjections(): Promise<void> {
   const social = useSocialStore.getState();
-  const group = useGroupStore.getState();
-  await Promise.all([
-    social.authSession ? social.refreshSessions() : Promise.resolve(),
-    group.authSession ? group.refreshGroups() : Promise.resolve(),
-  ]);
+  const socialHistory = new Set(Object.keys(social.messages));
+  if (social.activeSessionUlid) socialHistory.add(social.activeSessionUlid);
+  if (social.authSession) await social.refreshSessions();
+  if (social.authSession && useSocialStore.getState().authSession === social.authSession) {
+    const currentIds = new Set(
+      useSocialStore.getState().messagingConversations.map(
+        (conversation) => conversation.conversationId,
+      ),
+    );
+    for (const id of socialHistory) {
+      if (useSocialStore.getState().authSession !== social.authSession) break;
+      if (currentIds.has(id)) await social.loadMessages(id);
+    }
+  }
 }
 
 async function refreshMessageProjection(conversationId: string): Promise<void> {
   const scope = activeScope;
   if (!scope || !conversationId.trim()) return;
+  const projectionKey = projectionScopeKey(currentProjectionScope());
   const conversation = (await messagingListConversations(scope))
     .find((item) => item.conversationId === conversationId);
-  if (!conversation) return;
-  if (conversation.kind === 1) {
-    const social = useSocialStore.getState();
-    if (!social.authSession) return;
-    if (!social.sessions.some((item) => item.ulid === conversationId)) {
-      await social.refreshSessions();
-      return;
-    }
+  if (!conversation || projectionScopeKey(currentProjectionScope()) !== projectionKey) return;
+  const social = useSocialStore.getState();
+  if (!social.authSession || !sameAccount(scope, accountInput(social.authSession))) return;
+  if (social.activeSessionUlid === conversationId || conversationId in social.messages) {
     await social.loadMessages(conversationId);
-    return;
   }
-  if (conversation.kind === 2) {
-    const group = useGroupStore.getState();
-    if (!group.authSession) return;
-    if (!group.groups.some((item) => item.ulid === conversationId)) {
-      await group.refreshGroups();
-      return;
-    }
-    await group.loadMessages(conversationId);
+  if (useSocialStore.getState().authSession === social.authSession) {
+    await social.refreshSessions();
   }
 }
 
 function clearActiveProjectionScope(): void {
   activeScope = null;
   activeProfileId = null;
+  activeSessionScopeKey = '';
   activeGeneration = 0;
   lastDeliveredLaneSequence = 0;
   reconcileInFlight = null;

@@ -11,6 +11,9 @@ import (
 // Corresponds to "touch_actor_meta" table
 type ActorTouchMeta struct {
 	ActorID uint64 `gorm:"column:actor_id;primary_key;autoIncrement:false"` // Foreign key to Actor (1:1)
+	// ProfileRevision covers editable profile/privacy fields only. Denormalized
+	// counters and activity timestamps must not advance it.
+	ProfileRevision uint64 `gorm:"column:profile_revision;default:1;not null"`
 
 	// Extension Fields (TODO: Mastodon compatibility fields moved to todo)
 	Discoverable              bool   `gorm:"column:discoverable;default:true"`

@@ -1,46 +1,29 @@
 import { createDesktopStore } from './createDesktopStore';
-import { create as createProto, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
+import { type Timestamp, timestampDate, timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
-  CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
   chatUnreadForParticipant,
-  encryptedChatTransportMessageType,
 } from '@peers-touch/client-chat-core';
 
 import {
   api,
   isUnauthorizedError,
   type AccountProfile,
-  type ChatAttachmentInput,
   type ChatThreadCount,
 } from '../services/desktop_api';
-import {
-  EncryptedMessageSchema,
-  FriendMessageStatus,
-  type FriendChatSession,
-  type FriendChatMessage,
-} from '../gen/proto/domain/chat/friend_chat_pb';
-import {
-  ChatEncryptedMessagePayloadSchema,
-  GroupMemberSchema,
-  GroupRole,
-  GroupMessageAttachmentSchema,
-  type ChatEncryptedMessagePayload,
-  type Group,
-  type GroupMessage,
-  type GroupMember,
-} from '../gen/proto/domain/chat/group_chat_pb';
-import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
+import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import type {
   Conversation,
   ConversationMember,
 } from '../gen/proto/domain/chat/conversation_pb';
 import {
   ConversationStatus,
-  MemberRole,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
-import { imServiceV1 } from '../services/im-service';
+import {
+  messagingCommands,
+  messagingConversations,
+  messagingInteractions,
+} from '../messaging/runtime';
 import type {
   MessagingLocalAttachmentIntent,
   MessagingProjection,
@@ -62,6 +45,7 @@ import {
   applyTypingStateToMap,
   conversationKey,
   filterClearedMessages,
+  mergeConversationMessages,
   messageGroupSeq,
   messageSentMs,
   normalizeChatBackgroundId,
@@ -75,6 +59,9 @@ import {
   type DesktopIMConversationProjection,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
+  type FriendChatSession,
+  type Group,
+  type GroupMember,
   type GroupSecurityState,
   type MessagePreview,
   type SocialMessage,
@@ -186,6 +173,7 @@ function projectMessagingProjection(
       plaintextSize: attachment.plaintextSize,
       ciphertextSize: attachment.ciphertextSize,
       availabilityState: attachment.availabilityState,
+      voiceNote: attachment.voiceNote,
     })),
     replyToUlid: projection.replyToMessageId ?? '',
     threadRootUlid: projection.threadRootMessageId ?? '',
@@ -199,136 +187,33 @@ function projectMessagingProjection(
       : undefined,
     groupSeq: BigInt(projection.eventSequence ?? 0),
     readByPtids: projection.readByPtids,
+    deliveryState: projection.state,
   };
   if (kind === 'friend') {
     const status = projection.state === 'failed'
-      ? FriendMessageStatus.FAILED
+      ? MessageStatus.FAILED
       : projection.state === 'read'
-        ? FriendMessageStatus.READ
+        ? MessageStatus.READ
         : projection.state === 'delivered'
-          ? FriendMessageStatus.DELIVERED
+          ? MessageStatus.DELIVERED
           : projection.eventId
-            ? FriendMessageStatus.SENT
-            : FriendMessageStatus.SENDING;
+            ? MessageStatus.SENT
+            : MessageStatus.SENDING;
     return {
       ...common,
-      $typeName: 'peers_touch.model.chat.v1.FriendChatMessage',
       sessionUlid: conversationId,
       receiverPtid: '',
       status,
       deliveredAt: undefined,
       readAt: undefined,
-    } as unknown as FriendChatMessage;
+    };
   }
   return {
     ...common,
-    $typeName: 'peers_touch.model.chat.v1.GroupMessage',
     groupUlid: conversationId,
     mentionedPtids: [],
     mentionAll: false,
-  } as unknown as GroupMessage;
-}
-
-function bytesToB64(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-interface FriendEncryptedEnvelope {
-  version: 1;
-  ciphertext: string;
-  counter: number;
-  ratchetPub?: string;
-  prevCounter?: number;
-  nonce?: string;
-}
-
-export function decodeFriendEncryptedEnvelope(bytes: Uint8Array): FriendEncryptedEnvelope | null {
-  try {
-    const wire = fromBinary(EncryptedMessageSchema, bytes);
-    if (
-      wire.version !== 1
-      || !wire.ciphertext.byteLength
-      || wire.ratchetPub.byteLength !== 32
-      || wire.nonce.byteLength !== 12
-    ) {
-      return null;
-    }
-    return {
-      version: 1,
-      ciphertext: bytesToB64(wire.ciphertext),
-      counter: wire.counter,
-      ratchetPub: bytesToB64(wire.ratchetPub),
-      prevCounter: wire.prevCounter,
-      nonce: bytesToB64(wire.nonce),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function encryptedMediaDescriptorFromInput(attachment: ChatAttachmentInput) {
-  if (!attachment.encryption_suite || !attachment.encryption_key_b64 || !attachment.encryption_nonce_b64) return undefined;
-  return createProto(EncryptedMediaDescriptorSchema, {
-    encrypted: true,
-    version: attachment.encryption_suite === 'AES-256-GCM-CHUNKED' ? 2 : CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
-    suite: attachment.encryption_suite,
-    keyB64: attachment.encryption_key_b64,
-    nonceB64: attachment.encryption_nonce_b64,
-    plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
-    ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
-    plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
-    ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
-    chunking: attachment.chunking ?? '',
-    chunkSize: attachment.chunk_size ?? 0,
-    chunkCount: attachment.chunk_count ?? 0,
-    tagSize: attachment.tag_size ?? 0,
-    nonceStrategy: attachment.nonce_strategy ?? '',
-  });
-}
-
-function groupAttachmentFromInput(attachment: ChatAttachmentInput) {
-  const mediaEncryption = encryptedMediaDescriptorFromInput(attachment);
-  return createProto(GroupMessageAttachmentSchema, {
-    cid: attachment.cid,
-    filename: attachment.filename,
-    mimeType: attachment.mime_type,
-    size: BigInt(attachment.size),
-    thumbnailCid: attachment.thumbnail_cid ?? '',
-    visibility: attachment.visibility ?? '',
-    mediaEncryption,
-    encryptionSuite: '',
-    encryptionKeyB64: '',
-    encryptionNonceB64: '',
-    plaintextSha256B64: attachment.plaintext_sha256_b64 ?? '',
-    ciphertextSha256B64: attachment.ciphertext_sha256_b64 ?? '',
-    plaintextSize: BigInt(attachment.plaintext_size ?? attachment.size),
-    ciphertextSize: BigInt(attachment.ciphertext_size ?? attachment.size),
-  });
-}
-
-export function createEncryptedChatPayloadBytes(
-  text: string,
-  attachments: readonly ChatAttachmentInput[] = [],
-  messageType?: number,
-): Uint8Array {
-  return toBinary(ChatEncryptedMessagePayloadSchema, createProto(ChatEncryptedMessagePayloadSchema, {
-    version: CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION,
-    text,
-    attachments: attachments.map(groupAttachmentFromInput),
-    messageType: messageType ?? encryptedChatTransportMessageType(),
-  }));
-}
-
-export function decodeEncryptedChatPayloadBytes(bytes: Uint8Array): ChatEncryptedMessagePayload | null {
-  try {
-    const payload = fromBinary(ChatEncryptedMessagePayloadSchema, bytes);
-    if (payload.version === CHAT_ENCRYPTED_MESSAGE_PAYLOAD_VERSION) return payload;
-  } catch {
-    return null;
-  }
-  return null;
+  };
 }
 
 export interface UnifiedConversation {
@@ -422,6 +307,7 @@ interface SocialChatState {
   threadHasMore: Record<string, boolean>;
   threadNextCursor: Record<string, string | null>;
   messageHasMore: Record<string, boolean>;
+  messageNextBeforeSequence: Record<string, number | null>;
   messageLoadingMore: Record<string, boolean>;
   groupMembers: Record<string, GroupMember[]>;
   loading: boolean;
@@ -567,6 +453,11 @@ interface SocialChatState {
   selectGroup: (ulid: string) => void;
   loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  retryMessage: (
+    ulid: string,
+    messageUlid: string,
+    kind?: 'friend' | 'group',
+  ) => Promise<void>;
   loadThreadMessages: (
     ulid: string,
     rootUlid: string,
@@ -597,16 +488,10 @@ interface SocialChatState {
   setShowDetail: (show: boolean) => void;
   deleteMessage: (ulid: string, messageUlid: string, kind?: 'friend' | 'group') => Promise<void>;
   /**
-   * Recall a previously-sent friend chat message. Hits the
-   * `/friend-chat/message/recall` endpoint; on success the server
-   * fans out a `MessageMutation` event over SSE which this store's
-   * `applyMessageMutation` handler folds into the local cache —
-   * we deliberately do NOT mutate optimistically so all clients
-   * (including the sender's other devices) converge through the
-   * same realtime pipeline.
-   *
-   * For group chat use `recallGroupMessage` — same realtime
-   * convergence semantics, different RPC + container key.
+   * Recall a previously sent direct message through the canonical
+   * Conversation command path. The resulting projection invalidation is
+   * reconciled by the Messaging runtime, so the store does not mutate
+   * optimistically.
    */
   recallFriendMessage: (sessionUlid: string, messageUlid: string) => Promise<void>;
   /**
@@ -672,7 +557,7 @@ interface SocialChatState {
    * Apply a realtime MessageReceipt to the local message store.
    *
    * Idempotent: status flips are forward-only (SENT < DELIVERED < READ
-   * in FriendMessageStatus enum) so a stale DELIVERED receipt arriving
+   * in MessageStatus enum) so a stale DELIVERED receipt arriving
    * after a READ will not downgrade the UI tick. Called from the
    * SocialChatPage SSE subscription, which already filters out
    * self-emitted receipts (multi-device READ echoes are *kept* — the
@@ -718,17 +603,19 @@ interface SocialChatState {
   initEncryption: () => Promise<void>;
   /** Clear actor-scoped in-memory data (used by the identity pipeline). */
   reset: () => void;
+  /** Clear only the Messaging-owned projection before a scope handoff. */
+  resetMessagingProjection: () => void;
   hydrate: (actorPtid: string) => Promise<void>;
 }
 
 function activityFromSession(s: FriendChatSession): Date {
   const ts = s.lastMessageAt ?? s.updatedAt ?? s.createdAt;
-  return ts ? timestampDate(ts) : new Date(0);
+  return ts ? timestampDate(ts as Timestamp) : new Date(0);
 }
 
 function activityFromGroup(g: Group): Date {
   const ts = g.updatedAt ?? g.createdAt;
-  return ts ? timestampDate(ts) : new Date(0);
+  return ts ? timestampDate(ts as Timestamp) : new Date(0);
 }
 
 function friendUnreadForViewer(s: FriendChatSession, viewerDid: string | null): number {
@@ -819,32 +706,19 @@ export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): s
   return '';
 }
 
-function projectGroupRole(role: MemberRole): GroupRole {
-  switch (role) {
-    case MemberRole.OWNER:
-      return GroupRole.OWNER;
-    case MemberRole.ADMIN:
-      return GroupRole.ADMIN;
-    case MemberRole.MEMBER:
-      return GroupRole.MEMBER;
-    default:
-      return GroupRole.UNSPECIFIED;
-  }
-}
-
 function projectConversationGroupMember(member: ConversationMember): GroupMember {
-  return createProto(GroupMemberSchema, {
+  return {
     groupUlid: member.conversationId,
     ptid: member.ptid,
-    role: projectGroupRole(member.role),
+    role: member.role,
     nickname: member.nickname,
     muted: member.muted,
     mutedUntil: member.mutedUntil,
     joinedAt: member.joinedAt,
-    invitedBy: member.invitedByPtid,
+    invitedBy: member.invitedByPtid ?? '',
     actorHomeStationPeerId: member.actorHomeStationPeerId,
     actorHomeStationDomain: member.actorHomeStationDomain,
-  });
+  };
 }
 
 function activeConversationMembers(
@@ -915,6 +789,7 @@ const initialSocialState: Pick<
   | 'threadHasMore'
   | 'threadNextCursor'
   | 'messageHasMore'
+  | 'messageNextBeforeSequence'
   | 'messageLoadingMore'
   | 'groupMembers'
   | 'loading'
@@ -969,6 +844,7 @@ const initialSocialState: Pick<
   threadHasMore: {},
   threadNextCursor: {},
   messageHasMore: {},
+  messageNextBeforeSequence: {},
   messageLoadingMore: {},
   groupMembers: {},
   loading: false,
@@ -1014,6 +890,54 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   ...initialSocialState,
 
   reset: () => set({ ...initialSocialState }),
+  resetMessagingProjection: () => {
+    loadSessionsGeneration += 1;
+    set({
+      conversations: [],
+      conversationMembers: {},
+      sessions: [],
+      groups: [],
+      activeTab: 'friend',
+      activeSessionUlid: null,
+      activeGroupUlid: null,
+      messages: {},
+      threadMessages: {},
+      threadCounts: {},
+      threadLoading: {},
+      threadLoadingMore: {},
+      threadError: {},
+      threadHasMore: {},
+      threadNextCursor: {},
+      messageHasMore: {},
+      messageNextBeforeSequence: {},
+      messageLoadingMore: {},
+      groupMembers: {},
+      loading: false,
+      loadError: null,
+      showDetail: false,
+      groupUnreadCounts: {},
+      lastPreviews: {},
+      conversationLocalState: {},
+      conversationBackgroundPreviews: {},
+      searchQuery: '',
+      searchResults: [],
+      searchLoading: false,
+      scrollToMessageUlid: null,
+      openThreadRootUlid: null,
+      reactions: {},
+      pinnedMessages: {},
+      sendOutcomes: {},
+      encryptionEnabled: false,
+      ownFingerprint: null,
+      sessionEncrypted: {},
+      sessionSecurityState: {},
+      sessionCryptoVersion: {},
+      groupSecurityState: {},
+      pendingGroupCreations: {},
+      friendP2pStatus: {},
+      typingPeers: {},
+    });
+  },
   setSessionSecurityState: (sessionUlid, securityState, version) =>
     set((state) => ({
       sessionSecurityState: {
@@ -1111,7 +1035,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const requestGeneration = ++loadSessionsGeneration;
     set({ loading: true });
     try {
-      const projections = await imServiceV1.messaging.listConversations();
+      const projections = await messagingCommands.listConversations();
       const projectedConversationIds = new Set(
         projections.map(conversation => conversation.conversationId),
       );
@@ -1121,7 +1045,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .filter(([conversationId]) => !projectedConversationIds.has(conversationId))
           .map(async ([conversationId, pending]) => {
             try {
-              const status = await imServiceV1.messaging.getCommandStatus(pending.commandId);
+              const status = await messagingCommands.getCommandStatus(pending.commandId);
               if (
                 status.commandId !== pending.commandId
                 || status.conversationId !== conversationId
@@ -1142,7 +1066,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       );
       const conversationSnapshots = await Promise.all(projections.map(async (conversation) => {
         const settings: MemberSettingsResult =
-          await imServiceV1.messaging.getMemberSettings(conversation.conversationId);
+          await messagingCommands.getMemberSettings(conversation.conversationId);
 
         const groupSecurityState = conversation.kind === 2 && conversation.mlsStatus
           ? projectGroupSecurityState(conversation.mlsStatus)
@@ -1160,7 +1084,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         status: conversation.active ? 1 : 0,
         name: conversation.name,
         owner_ptid: conversation.ownerPtid,
-        updated_at: new Date(conversation.updatedAtUnixMs).toISOString(),
+        updated_at: new Date(Math.max(
+          conversation.updatedAtUnixMs,
+          conversation.summary.latestMessage?.timestampUnixMs ?? 0,
+        )).toISOString(),
       })));
       const directConversations = allConversations.filter((c) => c.kind === 1);
       const memberMap: Record<string, ConversationMember[]> = {};
@@ -1221,12 +1148,37 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...projectConversationMemberSettings(settings),
         };
       }
+      const nextUnreadCounts: Record<string, number> = {};
+      const nextPreviews: Record<string, MessagePreview> = {};
+      for (const projection of projections) {
+        nextUnreadCounts[projection.conversationId] = projection.summary.unreadCount;
+        const latest = projection.summary.latestMessage;
+        if (!latest) continue;
+        const kind = projection.kind === 1 ? 'friend' : 'group';
+        const projected = projectMessagingProjection(
+          kind,
+          projection.conversationId,
+          latest,
+        );
+        if (
+          filterClearedMessages(
+            [projected],
+            nextConversationLocalState,
+            kind,
+            projection.conversationId,
+          ).length > 0
+        ) {
+          nextPreviews[projection.conversationId] = previewFromMessage(projected);
+        }
+      }
       saveConversationLocalState(actorPtid, nextConversationLocalState);
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
         groupMembers: groupMembersUpdate,
         conversationLocalState: nextConversationLocalState,
+        groupUnreadCounts: nextUnreadCounts,
+        lastPreviews: nextPreviews,
         groupSecurityState: nextGroupSecurityState,
         pendingGroupCreations: nextPendingGroupCreations,
         sessions: [],
@@ -1300,6 +1252,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         activeSessionUlid: ulid,
         activeTab: 'friend' as const,
         openThreadRootUlid: null,
+        groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
         sessions: did
           ? prev.sessions.map((s) => {
               if (s.ulid !== ulid) return s;
@@ -1335,15 +1288,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     // in the background, not a visible spinner on every tab click.
     set({ loading: false });
     try {
-      const projections = await imServiceV1.messaging.listMessages(ulid);
-      const msgs = projections.map(projection =>
+      const page = await messagingCommands.listMessages(ulid);
+      const projections = page.messages;
+      const pageMessages = projections.map(projection =>
         projectMessagingProjection(activeTab, ulid, projection),
-      );
-      const visibleMsgs = filterClearedMessages(
-        msgs,
-        get().conversationLocalState,
-        activeTab,
-        ulid,
       );
       const projectionReactions = Object.fromEntries(
         projections.map(projection => [
@@ -1368,24 +1316,49 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set((state) => {
         const reactions = { ...state.reactions };
         const pinnedMessages = { ...state.pinnedMessages };
-        for (const message of state.messages[ulid] ?? []) {
+        for (const message of pageMessages) {
           delete reactions[message.ulid];
           delete pinnedMessages[message.ulid];
         }
         Object.assign(reactions, projectionReactions);
         Object.assign(pinnedMessages, projectionPins);
+        const mergedMessages = pageMessages.reduce(
+          (messages, message) => mergeConversationMessages(messages, message),
+          state.messages[ulid] ?? [],
+        );
+        const visibleMessages = filterClearedMessages(
+          mergedMessages,
+          state.conversationLocalState,
+          activeTab,
+          ulid,
+        );
+        const mainMessages = visibleMessages
+          .filter(message => !socialMessageExplicitThreadRootUlid(message));
+        const latestMainMessage = mainMessages[mainMessages.length - 1];
         return {
-          messages: { ...state.messages, [ulid]: visibleMsgs },
+          messages: { ...state.messages, [ulid]: visibleMessages },
           reactions,
           pinnedMessages,
+          ...(latestMainMessage
+            ? {
+                lastPreviews: {
+                  ...state.lastPreviews,
+                  [ulid]: previewFromMessage(latestMainMessage),
+                },
+              }
+            : {}),
           messageHasMore: {
             ...state.messageHasMore,
-            [ulid]: false,
+            [ulid]: page.hasMore,
+          },
+          messageNextBeforeSequence: {
+            ...state.messageNextBeforeSequence,
+            [ulid]: page.nextBeforeSequence ?? null,
           },
           loading: false,
         };
       });
-      const rootUlids = visibleMsgs
+      const rootUlids = pageMessages
         .filter((msg) => !socialMessageExplicitThreadRootUlid(msg))
         .map((msg) => msg.ulid)
         .filter(Boolean);
@@ -1405,10 +1378,74 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadOlderMessages: async (ulid, kind) => {
     const activeKind = kind ?? get().activeTab;
+    const beforeSequence = get().messageNextBeforeSequence[ulid];
+    if (!beforeSequence || !get().messageHasMore[ulid]) return;
     set((state) => ({
-      messageHasMore: { ...state.messageHasMore, [ulid]: false },
-      messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+      messageLoadingMore: { ...state.messageLoadingMore, [ulid]: true },
     }));
+    try {
+      const page = await messagingCommands.listMessages(ulid, {
+        beforeSequence,
+      });
+      const projections = page.messages;
+      const olderMessages = projections.map(projection =>
+        projectMessagingProjection(activeKind, ulid, projection),
+      );
+      set((state) => {
+        const mergedMessages = olderMessages.reduce(
+          (messages, message) => mergeConversationMessages(messages, message),
+          state.messages[ulid] ?? [],
+        );
+        const reactions = { ...state.reactions };
+        const pinnedMessages = { ...state.pinnedMessages };
+        for (const projection of projections) {
+          reactions[projection.messageId] = projection.reactions.map(reaction => ({
+            actorPtid: reaction.actorPtid,
+            emoji: reaction.reaction,
+          }));
+          if (projection.pinnedByPtid && projection.pinnedAtUnixMs) {
+            pinnedMessages[projection.messageId] = {
+              actorPtid: projection.pinnedByPtid,
+              pinnedAt: projection.pinnedAtUnixMs,
+            };
+          }
+        }
+        return {
+          messages: {
+            ...state.messages,
+            [ulid]: filterClearedMessages(
+              mergedMessages,
+              state.conversationLocalState,
+              activeKind,
+              ulid,
+            ),
+          },
+          reactions,
+          pinnedMessages,
+          messageHasMore: { ...state.messageHasMore, [ulid]: page.hasMore },
+          messageNextBeforeSequence: {
+            ...state.messageNextBeforeSequence,
+            [ulid]: page.nextBeforeSequence ?? null,
+          },
+          messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+        };
+      });
+      const rootUlids = olderMessages.map(message => message.ulid).filter(Boolean);
+      if (rootUlids.length > 0) {
+        await get().refreshThreadCounts(ulid, rootUlids, activeKind);
+      }
+    } catch (error) {
+      set((state) => ({
+        messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+      }));
+      log.error('socialChat', 'loadOlderMessages failed', error);
+      throw error;
+    }
+  },
+
+  retryMessage: async (ulid, messageUlid, kind) => {
+    const activeKind = kind ?? get().activeTab;
+    await messagingCommands.retryMessage(ulid, messageUlid);
     await get().loadMessages(ulid, activeKind);
   },
 
@@ -1423,7 +1460,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       threadError: { ...state.threadError, [key]: null },
     }));
     try {
-      const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
+      const projections = await messagingCommands.listThreadMessages(ulid, rootUlid);
       const nextMessages = projections.map(projection =>
         projectMessagingProjection(activeKind, ulid, projection),
       );
@@ -1459,7 +1496,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const activeKind = kind ?? get().activeTab;
     const uniqueRootUlids = Array.from(new Set(rootUlids.filter(Boolean)));
     if (uniqueRootUlids.length === 0) return;
-    const data = await imServiceV1.messaging.threadCounts(ulid, uniqueRootUlids);
+    const data = await messagingCommands.threadCounts(ulid, uniqueRootUlids);
     const counts = data.counts;
     set((state) => {
       const next = { ...state.threadCounts };
@@ -1478,7 +1515,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const lastReadSeq = messages.find((message) => message.ulid === lastReadUlid)
         ? messageGroupSeq(messages.find((message) => message.ulid === lastReadUlid)!)
         : messages.reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
-      await api.messagingReadCursor(ulid, lastReadSeq);
+      await messagingInteractions.markRead(ulid, lastReadSeq);
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
       log.warn('socialChat', 'markThreadRead failed', error);
@@ -1499,7 +1536,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         replyToUlid,
         explicitThreadRootUlid,
       );
-      const outcome = await imServiceV1.messaging.sendMessage(sessionUlid, 'direct', content, attachments, {
+      const outcome = await messagingCommands.sendMessage(sessionUlid, 'direct', content, attachments, {
         replyToMessageId: replyToUlid,
         threadRootMessageId: threadRootUlid,
       });
@@ -1543,7 +1580,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         _replyToUlid,
         explicitThreadRootUlid,
       );
-      const outcome = await imServiceV1.messaging.sendMessage(groupUlid, 'group', content, attachments, {
+      const outcome = await messagingCommands.sendMessage(groupUlid, 'group', content, attachments, {
         replyToMessageId: _replyToUlid,
         threadRootMessageId: threadRootUlid,
       });
@@ -1670,7 +1707,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   recallFriendMessage: async (sessionUlid, messageUlid) => {
     try {
-      await api.messagingMetadataInteraction(sessionUlid, messageUlid, 'retract');
+      await messagingInteractions.mutateMetadata(sessionUlid, messageUlid, 'retract');
     } catch (error) {
       log.error('socialChat', 'recallFriendMessage failed', error);
       throw error;
@@ -1680,7 +1717,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   editFriendMessage: async (sessionUlid, messageUlid, newContent) => {
     if (!newContent.trim()) throw new Error('editFriendMessage: newContent is required');
     try {
-      await api.messagingEditMessage(sessionUlid, messageUlid, newContent.trim());
+      await messagingInteractions.editMessage(sessionUlid, messageUlid, newContent.trim());
     } catch (error) {
       log.error('socialChat', 'editFriendMessage failed', error);
       throw error;
@@ -1689,7 +1726,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   recallGroupMessage: async (groupUlid, messageUlid) => {
     try {
-      await api.messagingMetadataInteraction(groupUlid, messageUlid, 'retract');
+      await messagingInteractions.mutateMetadata(groupUlid, messageUlid, 'retract');
     } catch (error) {
       log.error('socialChat', 'recallGroupMessage failed', error);
       throw error;
@@ -1699,7 +1736,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   editGroupMessage: async (groupUlid, messageUlid, newContent) => {
     if (!newContent?.trim()) throw new Error('editGroupMessage: newContent is required');
     try {
-      await api.messagingEditMessage(groupUlid, messageUlid, newContent.trim());
+      await messagingInteractions.editMessage(groupUlid, messageUlid, newContent.trim());
     } catch (error) {
       log.error('socialChat', 'editGroupMessage failed', error);
       throw error;
@@ -1715,7 +1752,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   reactToMessage: async (conversationId, messageId, emoji, remove = false) => {
     try {
-      await api.messagingMetadataInteraction(
+      await messagingInteractions.mutateMetadata(
         conversationId,
         messageId,
         'reaction',
@@ -1729,7 +1766,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   pinMessage: async (conversationId, messageId, remove = false) => {
     try {
-      await api.messagingMetadataInteraction(
+      await messagingInteractions.mutateMetadata(
         conversationId,
         messageId,
         'pin',
@@ -1860,109 +1897,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     message,
   ) => {
     try {
-      // #region debug-point A-D:friend-request-retry-command
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'A-D',
-          location: 'socialChat.ts:sendFriendRequest:command',
-          msg: '[DEBUG] Sending friend request command',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            receiverPtid,
-            receiverHomeStationPeerId,
-            federationId,
-            matchingRequests: get().friendRequests
-              .filter((request) => (
-                request.senderPtid === receiverPtid
-                || request.receiverPtid === receiverPtid
-              ))
-              .map((request) => ({
-                id: request.id,
-                senderPtid: request.senderPtid,
-                receiverPtid: request.receiverPtid,
-                status: request.status,
-              })),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
-      const response = await api.socialFriendRequestSend({
+      await api.socialFriendRequestSend({
         receiverPtid,
         receiverHomeStationPeerId,
         federationId,
         message,
       });
-      // #region debug-point A:friend-request-retry-command-response
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'A',
-          location: 'socialChat.ts:sendFriendRequest:response',
-          msg: '[DEBUG] Friend request command returned',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            receiverPtid,
-            responseRequestId: (
-              response as unknown as { request?: { requestId?: string } }
-            ).request?.requestId ?? '',
-            responseStatus: (
-              response as unknown as { request?: { status?: number } }
-            ).request?.status ?? null,
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       await get().loadFriendRequests();
-      // #region debug-point C-E:friend-request-retry-projection
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'C-E',
-          location: 'socialChat.ts:sendFriendRequest:projection',
-          msg: '[DEBUG] Friend request projection refreshed',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            receiverPtid,
-            matchingRequests: get().friendRequests
-              .filter((request) => (
-                request.senderPtid === receiverPtid
-                || request.receiverPtid === receiverPtid
-              ))
-              .map((request) => ({
-                id: request.id,
-                senderPtid: request.senderPtid,
-                receiverPtid: request.receiverPtid,
-                status: request.status,
-              })),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
     } catch (error) {
-      // #region debug-point A-C:friend-request-retry-command-error
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'A-C',
-          location: 'socialChat.ts:sendFriendRequest:error',
-          msg: '[DEBUG] Friend request command failed',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            receiverPtid,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('socialChat', 'sendFriendRequest failed', error);
       throw error;
     }
@@ -1971,30 +1913,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   acceptFriendRequest: async (request) => {
     try {
       const requestId = request.id;
-      // #region debug-point C:friend-request-accept-command
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'C',
-          location: 'socialChat.ts:acceptFriendRequest:command',
-          msg: '[DEBUG] Sending friend request accept command',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            request: {
-              id: request.id,
-              senderPtid: request.senderPtid,
-              receiverPtid: request.receiverPtid,
-              senderHomeStationPeerId: request.senderHomeStationPeerId,
-              receiverHomeStationPeerId: request.receiverHomeStationPeerId,
-              federationId: request.federationId,
-              status: request.status,
-            },
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       const data = await api.socialFriendRequestAccept({
         requestId,
         senderPtid: request.senderPtid,
@@ -2003,24 +1921,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         message: request.message,
       });
       const acceptedRequest = normalizeFriendRequestData(data?.request);
-      // #region debug-point C-D:friend-request-accept-response
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'C-D',
-          location: 'socialChat.ts:acceptFriendRequest:response',
-          msg: '[DEBUG] Friend request accept command returned',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            requestId,
-            responseRequestId: acceptedRequest?.id ?? '',
-            responseStatus: acceptedRequest?.status ?? null,
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       set((state) => ({
         friendRequests: state.friendRequests.map((candidate) =>
           candidate.id === requestId
@@ -2033,54 +1933,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
       await get().loadFriendRequests();
-      // #region debug-point D-E:friend-request-accept-projection
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'D-E',
-          location: 'socialChat.ts:acceptFriendRequest:projection',
-          msg: '[DEBUG] Friend request accept projection refreshed',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            requestId,
-            matchingRequests: get().friendRequests
-              .filter((candidate) => (
-                candidate.senderPtid === request.senderPtid
-                && candidate.receiverPtid === request.receiverPtid
-              ))
-              .map((candidate) => ({
-                id: candidate.id,
-                status: candidate.status,
-                federationId: candidate.federationId,
-              })),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       await get().loadSessions();
       // Retry loadSessions after a short delay to catch the DM conversation
       // that Station creates asynchronously upon friend acceptance.
       setTimeout(() => { get().loadSessions().catch(() => {}); }, 1500);
     } catch (error) {
-      // #region debug-point C-D:friend-request-accept-error
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'C-D',
-          location: 'socialChat.ts:acceptFriendRequest:error',
-          msg: '[DEBUG] Friend request accept failed',
-          data: {
-            currentUserPtid: get().currentUserPtid,
-            requestId: request.id,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('socialChat', 'acceptFriendRequest failed', error);
       throw error;
     }
@@ -2116,16 +1973,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadGroupUnreadCounts: async () => {
-    // Unread counts are tracked via the envelope resume system (imRuntime).
-    // No dedicated conversation subserver endpoint — counts accumulate from events.
     if (!hasAuthenticatedActor()) return;
+    await get().loadSessions();
   },
 
   loadConversationPreviews: async () => {
-    // Previews are populated from real-time envelope events after decryption.
-    // The conversation subserver stores encrypted payloads only — plaintext
-    // previews come from the client's local decryption cache or live stream.
     if (!hasAuthenticatedActor()) return;
+    await get().loadSessions();
   },
 
   applyMessageReceipt: (sessionUlid, messageUlid, kind) => {
@@ -2152,6 +2006,33 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   ingestRealtimeMessage: async (kind, conversationUlid, message) => {
     if (!conversationUlid || !message.ulid) return;
+    set((state) => {
+      const existing = state.messages[conversationUlid] ?? [];
+      const duplicate = existing.some(candidate => candidate.ulid === message.ulid);
+      const active = kind === 'friend'
+        ? state.activeTab === 'friend' && state.activeSessionUlid === conversationUlid
+        : state.activeTab === 'group' && state.activeGroupUlid === conversationUlid;
+      const incoming = message.senderPtid !== state.currentUserPtid;
+      return {
+        messages: {
+          ...state.messages,
+          [conversationUlid]: mergeConversationMessages(existing, message),
+        },
+        lastPreviews: {
+          ...state.lastPreviews,
+          [conversationUlid]: previewFromMessage(message),
+        },
+        ...(!duplicate && incoming && !active
+          ? {
+              groupUnreadCounts: {
+                ...state.groupUnreadCounts,
+                [conversationUlid]:
+                  (state.groupUnreadCounts[conversationUlid] ?? 0) + 1,
+              },
+            }
+          : {}),
+      };
+    });
     await get().loadMessages(conversationUlid, kind);
   },
 
@@ -2160,7 +2041,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const lastReadSequence = (get().messages[sessionUlid] ?? [])
         .reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
       if (lastReadSequence <= 0) return;
-      await api.messagingReadCursor(sessionUlid, lastReadSequence);
+      await messagingInteractions.markRead(sessionUlid, lastReadSequence);
     } catch (error) {
       log.error('socialChat', 'markFriendRead failed', error);
       throw error;
@@ -2172,7 +2053,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const lastReadSeq = (get().messages[groupUlid] ?? [])
         .reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
       if (lastReadSeq <= 0) return;
-      await api.messagingReadCursor(groupUlid, lastReadSeq);
+      await messagingInteractions.markRead(groupUlid, lastReadSeq);
       set((state) => ({
         groupUnreadCounts: { ...state.groupUnreadCounts, [groupUlid]: 0 },
       }));
@@ -2185,9 +2066,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
     let committedPatch = patch;
-    // #region debug-point B-E:conversation-settings-command
-    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:start', msg: '[DEBUG] Conversation settings command started', data: { kind, conversationId: ulid, patch: { background: patch.background, backgroundImage: patch.backgroundImage, clearedAt: patch.clearedAt } }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     try {
       const settingsPatch: Partial<MemberSettingsResult> = {
         muted: patch.muted,
@@ -2198,19 +2076,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         clearedAtUnixMs: patch.clearedAt,
       };
       if (Object.values(settingsPatch).some(value => value !== undefined)) {
-        const settings = await imServiceV1.messaging.updateMemberSettings(ulid, settingsPatch);
+        const settings = await messagingCommands.updateMemberSettings(ulid, settingsPatch);
         committedPatch = {
           ...patch,
           ...projectConversationMemberSettings(settings),
         };
-        // #region debug-point B-E:conversation-settings-result
-        void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:result', msg: '[DEBUG] Conversation settings command returned', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, returnedClearedAt: settings.clearedAtUnixMs, returnedBackgroundImage: settings.backgroundImage }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
       }
     } catch (error) {
-      // #region debug-point B-E:conversation-settings-error
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: patch.clearedAt !== undefined ? 'E' : 'B', location: 'socialChat.ts:updateConversationLocalState:error', msg: '[DEBUG] Conversation settings command failed', data: { kind, conversationId: ulid, requestedClearedAt: patch.clearedAt, error: String(error) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
       throw error;
     }
@@ -2282,10 +2154,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   deleteGroupContact: async (groupUlid) => {
     try {
       const [conversation, federationSelf] = await Promise.all([
-        imServiceV1.conversation.getConversation(groupUlid),
+        messagingConversations.getConversation(groupUlid),
         api.federationGetSelf(),
       ]);
-      await imServiceV1.messaging.requestLeaveIntent({
+      await messagingCommands.requestLeaveIntent({
         federationId: conversation.federationId,
         authorityStationPeerId: conversation.authorityStationPeerId,
         authorityEpoch: Number(conversation.authorityEpoch),
@@ -2534,12 +2406,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         scope,
         conversationId,
       );
-      // #region debug-point C:message-search-targets
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:targets', msg: '[DEBUG] Message search targets resolved', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', targetCount: targets.length, targetIds: targets.map(target => target.conversationId) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       const projected = await Promise.all(targets.map(async target => ({
         ...target,
-        messages: await imServiceV1.messaging.searchMessages(
+        messages: await messagingCommands.searchMessages(
           target.conversationId,
           trimmedQuery,
           { limit: 50 },
@@ -2582,14 +2451,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }).sort((left, right) => (
         right.sentAt - left.sentAt || right.messageId.localeCompare(left.messageId)
       )).slice(0, 100);
-      // #region debug-point C:message-search-results
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:results', msg: '[DEBUG] Message search completed', data: { queryLength: trimmedQuery.length, rawCounts: projected.map(item => ({ conversationId: item.conversationId, count: item.messages.length })), visibleResultCount: results.length, clearedAtByConversation: Object.fromEntries(projected.map(item => [item.conversationId, state.conversationLocalState[conversationKey(item.scope, item.conversationId)]?.clearedAt ?? 0])) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       set({ searchResults: results, searchLoading: false });
     } catch (error) {
-      // #region debug-point C:message-search-error
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'C', location: 'socialChat.ts:searchMessages:error', msg: '[DEBUG] Message search failed', data: { queryLength: trimmedQuery.length, requestedScope: scope || '', requestedConversationId: conversationId || '', error: String(error) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       log.error('socialChat', 'searchMessages failed', error);
       if (get().searchQuery === trimmedQuery) {
         set({ searchLoading: false });

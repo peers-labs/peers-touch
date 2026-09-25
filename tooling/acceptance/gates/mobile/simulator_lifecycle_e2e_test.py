@@ -17,6 +17,7 @@ from tooling.acceptance.gates.mobile.simulator_lifecycle_e2e import (
     REQUIRED_HARNESS_ACTIONS,
     SimulatorRuntimeLifecycleGate,
     validate_lifecycle_snapshot,
+    validate_navigation_projection,
 )
 
 
@@ -71,10 +72,16 @@ class FakeArtifacts:
 
 
 class FakeSession:
-    client_id = "sim-android"
+    client_id = "sim-ios-peer"
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.action_payloads: list[tuple[str, dict[str, Any]]] = []
+        self.navigation = {
+            "primaryRouteId": "tab:chat",
+            "detailKeys": [],
+            "overlayRouteId": None,
+        }
         self.snapshots = iter(
             (
                 lifecycle_snapshot("ACTIVE", 3),
@@ -91,10 +98,16 @@ class FakeSession:
     def stop(self) -> None:
         self.calls.append("stop")
 
-    def wait_for_ready(self) -> None:
+    def wait_for_ready(self, *, timeout: float | None = None) -> None:
+        del timeout
         self.calls.append("wait")
 
-    def switch_to_app_webview(self) -> str:
+    def switch_to_app_webview(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> str:
+        del timeout
         self.calls.append("webview")
         return "WEBVIEW_com.peers.touch.mobile"
 
@@ -105,9 +118,60 @@ class FakeSession:
         self.calls.append("harness:" + ",".join(actions))
         return actions
 
-    def call_action(self, action: str) -> Any:
+    def call_action(
+        self,
+        action: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
         self.calls.append(f"action:{action}")
+        self.action_payloads.append((action, dict(payload or {})))
+        if action == "navigation.snapshot":
+            return dict(self.navigation)
+        if action == "navigation.apply":
+            return self._apply_navigation(payload or {})
         return next(self.snapshots)
+
+    def _apply_navigation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        kind = payload["kind"]
+        if kind == "primary":
+            self.navigation = {
+                "primaryRouteId": payload["routeId"],
+                "detailKeys": [],
+                "overlayRouteId": None,
+            }
+        elif kind == "overlay.open":
+            self.navigation["overlayRouteId"] = payload["route"]["routeId"]
+        elif kind == "overlay.close":
+            self.navigation["overlayRouteId"] = None
+        elif kind == "detail.push":
+            route = payload["route"]
+            route_id = route["routeId"]
+            suffix_field = {
+                "detail:contact-profile": "actorPtid",
+                "detail:moment": "postId",
+                "detail:setting": "settingId",
+            }[route_id]
+            key = f"{route_id}:{route[suffix_field]}"
+            current = [
+                item
+                for item in self.navigation["detailKeys"]
+                if item != key
+            ]
+            self.navigation["detailKeys"] = [*current, key]
+            self.navigation["overlayRouteId"] = None
+        elif kind == "detail.pop":
+            self.navigation["detailKeys"] = self.navigation["detailKeys"][:-1]
+        elif kind == "reset":
+            self.navigation = {
+                "primaryRouteId": "tab:chat",
+                "detailKeys": [],
+                "overlayRouteId": None,
+            }
+        return {
+            "primaryRouteId": self.navigation["primaryRouteId"],
+            "detailKeys": list(self.navigation["detailKeys"]),
+            "overlayRouteId": self.navigation["overlayRouteId"],
+        }
 
     def get_page_source(self) -> str:
         return "<AppiumAUT />"
@@ -117,6 +181,19 @@ class FakeSession:
 
     def contexts(self) -> list[str]:
         return ["NATIVE_APP", "WEBVIEW_com.peers.touch.mobile"]
+
+    def is_alive(self) -> bool:
+        return True
+
+    def execute_script(self, script: str) -> dict[str, str]:
+        self.calls.append(f"script:{script}")
+        return {"bundleId": "com.peers.touch.mobile"}
+
+    def get_current_url(self) -> str:
+        return "peers-touch://mobile"
+
+    def get_webview_source(self) -> str:
+        return "<main>ready</main>"
 
 
 class LifecycleSnapshotTests(unittest.TestCase):
@@ -155,6 +232,45 @@ class LifecycleSnapshotTests(unittest.TestCase):
                 snapshot,
                 expected_phase="ACTIVE",
                 expected_launch_state="station-selection",
+            )
+
+class NavigationProjectionTests(unittest.TestCase):
+    def test_accepts_exact_descriptor_navigation_state(self) -> None:
+        projection = validate_navigation_projection(
+            {
+                "primaryRouteId": "tab:contacts",
+                "detailKeys": ["detail:contact-profile:ptid:alice"],
+                "overlayRouteId": None,
+            },
+            primary_route_id="tab:contacts",
+            detail_keys=["detail:contact-profile:ptid:alice"],
+            overlay_route_id=None,
+        )
+
+        self.assertEqual(projection["primaryRouteId"], "tab:contacts")
+
+    def test_rejects_navigation_shape_or_state_drift(self) -> None:
+        with self.assertRaisesRegex(GateError, "invalid shape"):
+            validate_navigation_projection(
+                {
+                    "primaryRouteId": "tab:chat",
+                    "detailKeys": [],
+                },
+                primary_route_id="tab:chat",
+                detail_keys=[],
+                overlay_route_id=None,
+            )
+
+        with self.assertRaisesRegex(GateError, "overlay"):
+            validate_navigation_projection(
+                {
+                    "primaryRouteId": "tab:contacts",
+                    "detailKeys": [],
+                    "overlayRouteId": "overlay:add-friend",
+                },
+                primary_route_id="tab:contacts",
+                detail_keys=[],
+                overlay_route_id=None,
             )
 
 
@@ -204,23 +320,23 @@ class SimulatorRuntimeLifecycleGateTests(unittest.TestCase):
         session = FakeSession()
         artifacts = FakeArtifacts()
         spec = SimulatorClientSpec(
-            client_id="sim-android",
-            platform="android",
-            automation_name="UiAutomator2",
+            client_id="sim-ios-peer",
+            platform="ios",
+            automation_name="XCUITest",
             device=SimulatorDeviceTarget(
-                platform="android",
-                identifier="emulator-5554",
-                role="android-emulator",
+                platform="ios",
+                identifier="ios-peer-simulator-udid",
+                role="peer-ios-simulator",
             ),
             build=SimulatorBuildTarget(
-                platform="android",
-                artifact=Path("/tmp/mobile.apk"),
+                platform="ios",
+                artifact=Path("/tmp/mobile.app"),
                 application_id="com.peers.touch.mobile",
             ),
             callback_scheme="peers-touch",
-            ports={"system": 8201, "mjpeg": 9201, "webview": 9512},
+            ports={"wda-local": 8102, "mjpeg": 9201, "webview": 9512},
             required_harness_actions=REQUIRED_HARNESS_ACTIONS,
-            chromedriver_executable="/tmp/chromedriver",
+            chromedriver_executable="",
         )
 
         result = gate._exercise_lifecycle(  # type: ignore[arg-type]
@@ -234,12 +350,40 @@ class SimulatorRuntimeLifecycleGateTests(unittest.TestCase):
         self.assertEqual(result["restarted"]["generation"], 5)
         self.assertEqual(
             [
+                payload
+                for action, payload in session.action_payloads
+                if action == "lifecycle.waitReady"
+            ],
+            [{}],
+        )
+        self.assertEqual(
+            result["navigation"]["reset"],
+            {
+                "primaryRouteId": "tab:chat",
+                "detailKeys": [],
+                "overlayRouteId": None,
+            },
+        )
+        self.assertEqual(
+            [
                 call
                 for call in session.calls
                 if call.startswith("action:")
             ],
             [
-                "action:lifecycle.snapshot",
+                "action:lifecycle.waitReady",
+                "action:navigation.snapshot",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
+                "action:navigation.apply",
                 "action:lifecycle.suspend",
                 "action:lifecycle.resume",
                 "action:lifecycle.restart",

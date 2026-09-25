@@ -211,6 +211,12 @@
 - Chat 全生命周期：`architecture/chat-lifecycle/README.md`（active；定义从找人、
   好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
+- Station 接入生命周期：`architecture/station-access-lifecycle/README.md`
+  （draft；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
+  Federation context 与 Relay 客户端边界，独立 prepared Plan 待 Owner 审核）
+- Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
+  （draft；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、会话清理
+  与物理回收，独立 prepared Plan 待 Owner 审核）
 - Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
@@ -223,7 +229,7 @@
   （active；W2-E2 physical OAuth proof amendment 见
   `architecture/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
   MOP-D03-A/MOP-D04-A 均已于 2026-08-29 接受）
-- 群生命周期业务真源：`architecture/social-runtime/group-lifecycle.md`（draft；定义建群、加人、发消息、撤回/编辑/删除、退群、踢人、解散、历史可见性、Realtime 事件与 Sender Key 轮换边界）
+- 群生命周期历史设计：`architecture/social-runtime/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）

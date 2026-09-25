@@ -49,6 +49,7 @@ interface ChatMessageTimelineProps {
   onReact: (message: ChatMessage, emoji: string) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
+  onRetryMessage: (message: ChatMessage) => void;
   onRetryReaction: (message: ChatMessage) => void;
   reactionMutationFor: (message: ChatMessage) => {
     emoji: string;
@@ -121,6 +122,7 @@ export function ChatMessageTimeline({
   onReact,
   onRecall,
   onReply,
+  onRetryMessage,
   onRetryReaction,
   reactionMutationFor,
   resolveReactions,
@@ -272,6 +274,7 @@ export function ChatMessageTimeline({
                 onOpenThread={onOpenThread}
                 onPin={onPin}
                 onReact={onReact}
+                onRetryMessage={onRetryMessage}
                 onRetryReaction={onRetryReaction}
                 pinned={isPinned(message)}
                 reactionMutationEmoji={reactionMutation?.emoji}

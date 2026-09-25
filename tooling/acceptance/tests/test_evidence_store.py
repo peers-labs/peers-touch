@@ -760,9 +760,19 @@ class EvidenceStoreTests(unittest.TestCase):
         run.close()
 
     def test_duplicate_run_id_fails(self) -> None:
-        run = self.store.begin_run("unit-gate", source={})
+        run_id = "20260916T120000000000Z-" + ("a" * 32)
+        run = self.store.begin_run("unit-gate", source={}, run_id=run_id)
+        self.assertEqual(run.run_id, run_id)
         with self.assertRaises(EvidenceConflict):
-            self.store.begin_run("unit-gate", source={}, run_id=run.run_id)
+            self.store.begin_run("unit-gate", source={}, run_id=run_id)
+        self.assertEqual(
+            [
+                path.name
+                for path in run.run_dir.parent.iterdir()
+                if path.is_dir()
+            ],
+            [run_id],
+        )
         run.close()
 
     def test_artifact_ref_rejects_wrong_workspace_and_hash(self) -> None:

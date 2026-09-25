@@ -5,6 +5,7 @@ import {
   existsSync,
   fsyncSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -12,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +57,51 @@ const LEDGER_KEYS = new Set([
   'declarations',
 ]);
 const LOCK_KEYS = new Set(['pid', 'processStart', 'createdAt']);
+const RECOVERY_KEYS = new Set([
+  'pid',
+  'processStart',
+  'createdAt',
+  'lockDev',
+  'lockIno',
+]);
+const ATOMIC_RENAME_SCRIPT = [
+  'import ctypes, errno, json, os, sys',
+  'source, destination = sys.argv[1:3]',
+  'reported_code = None',
+  'try:',
+  '    if sys.platform == "win32":',
+  '        function = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW',
+  '        function.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]',
+  '        function.restype = ctypes.c_int',
+  '        result = function(source, destination, 0x00000008)',
+  '        if result == 0:',
+  '            error_number = ctypes.get_last_error()',
+  '            reported_code = "EEXIST" if error_number in (80, 183) else "ENOENT" if error_number in (2, 3) else "WINERROR_" + str(error_number)',
+  '            raise OSError(error_number, reported_code)',
+  '        result = 0',
+  '    elif sys.platform == "darwin":',
+  '        libc = ctypes.CDLL(None, use_errno=True)',
+  '        function = libc.renamex_np',
+  '        function.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]',
+  '        function.restype = ctypes.c_int',
+  '        result = function(os.fsencode(source), os.fsencode(destination), 0x00000004)',
+  '    elif sys.platform.startswith("linux"):',
+  '        libc = ctypes.CDLL(None, use_errno=True)',
+  '        function = libc.renameat2',
+  '        function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]',
+  '        function.restype = ctypes.c_int',
+  '        result = function(-100, os.fsencode(source), -100, os.fsencode(destination), 0x00000001)',
+  '    else:',
+  '        raise OSError(errno.ENOTSUP, "atomic rename primitive is unavailable")',
+  '    if result != 0:',
+  '        error_number = ctypes.get_errno()',
+  '        raise OSError(error_number, os.strerror(error_number))',
+  '    sys.stdout.write(json.dumps({"ok": True}) + "\\n")',
+  'except (AttributeError, OSError) as error:',
+  '    error_number = getattr(error, "errno", None) or errno.ENOTSUP',
+  '    code = reported_code or errno.errorcode.get(error_number, "UNKNOWN")',
+  '    sys.stdout.write(json.dumps({"ok": False, "code": code, "message": str(error)}) + "\\n")',
+].join('\n');
 
 function exactKeys(value, keys) {
   const actual = Object.keys(value);
@@ -268,6 +314,215 @@ function publishLockAtomic(lockFile, metadata) {
   }
 }
 
+function staleRecoveryPath(lockFile) {
+  return `${lockFile}.recovery`;
+}
+
+function readRecoveryMetadata(recoveryFile) {
+  let raw;
+  try {
+    raw = readFileSync(recoveryFile, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'work ledger recovery metadata cannot be read',
+      { cause: String(error) },
+    );
+  }
+  let metadata;
+  try {
+    metadata = JSON.parse(raw);
+  } catch (error) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'work ledger recovery metadata is invalid',
+      { cause: String(error) },
+    );
+  }
+  const createdAt = Date.parse(metadata?.createdAt);
+  if (
+    !isObject(metadata) ||
+    !exactKeys(metadata, RECOVERY_KEYS) ||
+    !Number.isInteger(metadata.pid) ||
+    metadata.pid <= 0 ||
+    typeof metadata.processStart !== 'string' ||
+    metadata.processStart.trim() !== metadata.processStart ||
+    metadata.processStart === '' ||
+    !Number.isFinite(createdAt) ||
+    new Date(createdAt).toISOString() !== metadata.createdAt ||
+    !Number.isInteger(metadata.lockDev) ||
+    metadata.lockDev < 0 ||
+    !Number.isInteger(metadata.lockIno) ||
+    metadata.lockIno < 0
+  ) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'work ledger recovery metadata schema is invalid',
+    );
+  }
+  return metadata;
+}
+
+function publishRecoveryAtomic(recoveryFile, metadata) {
+  publishLockAtomic(recoveryFile, metadata);
+}
+
+function atomicMoveFileNoReplace(sourceFile, destinationFile) {
+  const result = spawnSync(
+    'python3',
+    [
+      '-c',
+      ATOMIC_RENAME_SCRIPT,
+      path.resolve(sourceFile),
+      path.resolve(destinationFile),
+    ],
+    {
+      encoding: 'utf8',
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'atomic lock capture helper failed',
+      {
+        status: result.status,
+        stderr: result.stderr?.trim() || null,
+      },
+    );
+  }
+  let payload;
+  try {
+    payload = JSON.parse(result.stdout);
+  } catch {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'atomic lock capture helper returned invalid output',
+    );
+  }
+  if (payload.ok === true) return true;
+  if (['EEXIST', 'ENOENT'].includes(payload.code)) return false;
+  fail(
+    'MACHINE_WORK_LEDGER_LOCK_INVALID',
+    'required atomic lock capture primitive is unavailable',
+    { cause: payload.code, message: payload.message },
+  );
+}
+
+function removeOwnedMetadataFile(file, expected, reader) {
+  const capture = `${file}.capture.${process.pid}.${randomBytes(16).toString('hex')}`;
+  if (!atomicMoveFileNoReplace(file, capture)) return false;
+  const captured = reader(capture);
+  if (
+    captured !== null &&
+    JSON.stringify(captured) === JSON.stringify(expected)
+  ) {
+    unlinkSync(capture);
+    syncDirectory(path.dirname(file));
+    return true;
+  }
+  if (!atomicMoveFileNoReplace(capture, file)) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'metadata owner changed during atomic capture',
+      { file, capture },
+    );
+  }
+  return false;
+}
+
+function clearStaleRecovery(recoveryFile) {
+  const metadata = readRecoveryMetadata(recoveryFile);
+  if (metadata === null) return true;
+  const live = processIsAlive(metadata.pid);
+  const actualStart = processStartIdentity(metadata.pid);
+  if (live && actualStart === null) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'live work ledger recovery owner has no verifiable process identity',
+    );
+  }
+  if (live && actualStart === metadata.processStart) {
+    return false;
+  }
+  return removeOwnedMetadataFile(
+    recoveryFile,
+    metadata,
+    readRecoveryMetadata,
+  );
+}
+
+function claimAndRemoveStaleLock(lockFile, expectedMetadata) {
+  const recoveryFile = staleRecoveryPath(lockFile);
+  let lockStat;
+  try {
+    lockStat = lstatSync(lockFile);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+  const processStart = processStartIdentity();
+  if (!processStart) {
+    fail(
+      'MACHINE_WORK_LEDGER_LOCK_INVALID',
+      'cannot establish recovery process identity',
+    );
+  }
+  const recoveryMetadata = {
+    pid: process.pid,
+    processStart,
+    createdAt: new Date().toISOString(),
+    lockDev: lockStat.dev,
+    lockIno: lockStat.ino,
+  };
+  try {
+    publishRecoveryAtomic(recoveryFile, recoveryMetadata);
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
+  }
+  try {
+    const current = readLockMetadata(lockFile);
+    if (
+      current === null ||
+      JSON.stringify(current) !== JSON.stringify(expectedMetadata)
+    ) {
+      return false;
+    }
+    let currentStat;
+    try {
+      currentStat = lstatSync(lockFile);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    }
+    if (
+      recoveryMetadata.lockDev !== currentStat.dev ||
+      recoveryMetadata.lockIno !== currentStat.ino
+    ) {
+      return false;
+    }
+    const live = processIsAlive(current.pid);
+    const actualStart = processStartIdentity(current.pid);
+    if (live && actualStart === current.processStart) {
+      return false;
+    }
+    return removeOwnedMetadataFile(
+      lockFile,
+      expectedMetadata,
+      readLockMetadata,
+    );
+  } finally {
+    removeOwnedMetadataFile(
+      recoveryFile,
+      recoveryMetadata,
+      readRecoveryMetadata,
+    );
+  }
+}
+
 function acquireLock(
   lockFile,
   timeoutMs = LOCK_TIMEOUT_MS,
@@ -277,6 +532,19 @@ function acquireLock(
   let ownedMetadata;
   while (true) {
     try {
+      const recoveryFile = staleRecoveryPath(lockFile);
+      if (existsSync(recoveryFile)) {
+        const cleared = clearStaleRecovery(recoveryFile);
+        if (cleared) continue;
+        if (Date.now() >= deadline) {
+          fail(
+            'MACHINE_WORK_LEDGER_LOCKED',
+            'timed out while stale lock recovery is in progress',
+          );
+        }
+        sleep(50);
+        continue;
+      }
       const processStart = processStartIdentity();
       if (!processStart) {
         fail(
@@ -290,6 +558,21 @@ function acquireLock(
         createdAt: lockTime.toISOString(),
       };
       publishLockAtomic(lockFile, ownedMetadata);
+      if (existsSync(recoveryFile)) {
+        if (
+          !removeOwnedMetadataFile(
+            lockFile,
+            ownedMetadata,
+            readLockMetadata,
+          )
+        ) {
+          fail(
+            'MACHINE_WORK_LEDGER_LOCK_INVALID',
+            'work ledger lock ownership changed during recovery exclusion',
+          );
+        }
+        continue;
+      }
       return () => {
         const current = readLockMetadata(lockFile);
         if (
@@ -301,11 +584,18 @@ function acquireLock(
             'work ledger lock ownership changed',
           );
         }
-        try {
-          unlinkSync(lockFile);
-          syncDirectory(path.dirname(lockFile));
-        } catch (error) {
-          if (error?.code !== 'ENOENT') throw error;
+        if (
+          current !== null &&
+          !removeOwnedMetadataFile(
+            lockFile,
+            ownedMetadata,
+            readLockMetadata,
+          )
+        ) {
+          fail(
+            'MACHINE_WORK_LEDGER_LOCK_INVALID',
+            'work ledger lock ownership changed during release',
+          );
         }
       };
     } catch (error) {
@@ -321,12 +611,7 @@ function acquireLock(
         );
       }
       if (!live || actualStart !== metadata.processStart) {
-        try {
-          unlinkSync(lockFile);
-          syncDirectory(path.dirname(lockFile));
-        } catch (unlinkError) {
-          if (unlinkError?.code !== 'ENOENT') throw unlinkError;
-        }
+        claimAndRemoveStaleLock(lockFile, metadata);
         continue;
       }
       if (Date.now() >= deadline) {

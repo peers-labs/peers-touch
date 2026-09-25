@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "DWF-IMMUTABLE-PLAN-BINDING-20260918",
   "taskId": "DWF-PLAN-BINDING-HARD-CUT",
@@ -17,22 +16,18 @@
   "journeyId": "DWF-J18-immutable-plan-binding",
   "runtimeClass": "source-only",
   "writeSet": [
-    ".github/PULL_REQUEST_TEMPLATE.md",
-    ".github/workflows/review.yml",
-    "apps/desktop/src/acceptance/agent/harness.ts",
-    "apps/dev",
+    ".gitignore",
     "AGENTS.md",
-    "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+    "apps/dev",
     "docs/architecture/acceptance-framework/decisions.md",
-    "docs/architecture/chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md",
     "docs/architecture/developer-toolchain",
-    "docs/architecture/development-workflow",
+    "docs/architecture",
+    "docs/global/workflow.md",
     "docs/architecture/local-dev-control-plane",
     "docs/global/local-dev-environment.md",
     "docs/knowledge",
     "Makefile",
     "tooling/acceptance",
-    "tooling/devctl",
     "tooling/make",
     "tooling/scripts",
     "tooling/skills"
@@ -51,7 +46,7 @@
     },
     {
       "id": "advancing-head-ownership-node",
-      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs apps/dev/server/status.test.mjs",
+      "command": "node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/plan/planctl.test.mjs apps/dev/server/status.test.mjs",
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
@@ -60,8 +55,18 @@
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "pr-plan-input-python",
-      "command": "python3 tooling/scripts/review/pr-plan-input-test.py",
+      "id": "skill-rollout-python",
+      "command": "python3 -m unittest tooling/scripts/skill-rollout-audit-test.py",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "skill-overlay-python",
+      "command": "python3 -m unittest tooling/scripts/skill-overlay-control-test.py",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "skill-governance",
+      "command": "tooling/scripts/review/skill-check.sh",
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
@@ -74,6 +79,14 @@
     "Each workspace resolves only its immutable Plan binding",
     "Plan Packages retain immutable initial HEAD without owning advancing source identity",
     "Declaration and Session checks bind current source to the live Git HEAD",
+    "Each workspace owns one atomic active-work record under its machine workflow root",
+    "No runtime writer rewrites a shared project_memory active_work table",
+    "Peers Dev and Context Anchor aggregate workspace records read-only",
+    "peers-dev-workflow distributes implementation but owns no consuming worktree runtime state",
+    "Rollout tests prove two consuming worktrees derive disjoint active-work paths",
+    "Goal scheduling, Plan Run continuation, runtime verification and Skill rollout are host-neutral",
+    "User-specific interaction policy is installed through a machine-local digest-verified Overlay and cannot change project execution semantics",
+    "User and formal Plan authorization is reused without repeat confirmation",
     "Foreign synchronized Plans are ignored",
     "Rebind and missing-binding paths fail closed",
     "CI requires an explicit Plan input"
@@ -83,27 +96,32 @@
     "Do not add an unbind or rebind compatibility path",
     "Return typed binding errors without changing the binding"
   ],
-  "updatedAt": "2026-09-18T03:08:00.000Z",
+  "updatedAt": "2026-09-21T07:52:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "STRUCTURAL_CHECK",
       "result": "PASS",
-      "ref": "Plan, binding, declaration, Session and Peers Dev Node suites (166/166); PR Plan input parser (2/2)"
+      "ref": "active-work/Peers Dev 20/20; Development declaration 19/19; Session 34/34; PlanCTL/binding 117/117; Peers Dev server 16/16"
     },
     {
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "PASS",
-      "ref": "execution-plan Python suite (11/11), same-branch two-worktree isolation and explicit CI input"
+      "ref": "Acceptance runner 78/78; execution Plan adapter 12/12; worktree binding 18/18; rollout 19/19"
     },
     {
       "verificationClass": "ACCEPTANCE_PROOF",
       "result": "PASS",
-      "ref": "acceptance-workflow-contract run 20260918T020021966818Z-0e2bc0b6b20a576ec4a070698b2d1757"
+      "ref": "pre-final acceptance-workflow-contract run 20260919T084143787015Z-8e4bf6a5251004060e181f26c528f1e6"
     },
     {
-      "verificationClass": "ACCEPTANCE_PROOF",
+      "verificationClass": "STRUCTURAL_CHECK",
       "result": "PASS",
-      "ref": "acceptance-plan-self, acceptance-infra-validation and acceptance-runtime-provisioning-self runs completed on the same source"
+      "ref": "skill-check and source rollout audit PASS; final source-bound results remain in their Session and Evidence Store owners"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "user Skill Overlay control 9/9; real install, resolve, disable and enable lifecycle PASS"
     }
   ]
 }
@@ -111,12 +129,42 @@
 
 ## Current Snapshot
 
-- State: verified; ready for atomic Plan completion
+- State: implementing the accepted machine-local user Overlay amendment.
 - Accepted owner correction: repository/PR may contain multiple Plans, while
   each workspace binds one Plan and cannot switch that binding.
-- Source closure: Plan Packages retain immutable `initialHead`; declarations,
-  Sessions and `active_work` own advancing source identity.
-- Consumer closure: Acceptance, Development declarations/Sessions and Peers
-  Dev resolve only the immutable workspace binding.
-- Formal proof: all four completion Gates passed before Plan closure; a final
-  exact-source rerun follows the metadata transition.
+- Source implementation: unversioned Plan/Task/rollout contracts, immutable Plan
+  binding, workspace-owned active-work,
+  continuous Plan Run, host-neutral scheduler/adapters, owner-run functional
+  result commit, and rollout audit are integrated.
+- Verification: focused suites and the preliminary workflow Gate pass; the
+  final exact-worktree Gate result is reported at handoff without rewriting
+  source after proof.
+- Owner correction: mutable tracked-work continuation is workspace-owned machine
+  state. `project_memory.md`, Peers Dev and Context Anchor are read-only
+  projections and never rewrite another workspace's record.
+- Source/runtime boundary: `peers-dev-workflow` versions and distributes the
+  implementation. The installed copy executes in each consuming worktree and
+  derives that worktree's machine-state path; the source repository is not a
+  central runtime-state owner.
+- Authorization boundary: an exact user or accepted Plan grant executes
+  directly across Task/Goal/context boundaries; only out-of-envelope actions
+  or actual external permission failures may trigger an authorization question.
+- Overlay boundary: canonical `pt-ew` hosts optional interaction policy from a
+  digest-verified machine-local registry; English coaching no longer exists in
+  shared project Skill policy.
+- Focused verification: Overlay 9/9, rollout 19/19, workspace binding 6/6,
+  Development control-plane Node 194/194 and execution-plan adapter 12/12.
+- Exact-source Development and formal Acceptance results remain outside this
+  tracked snapshot and are not back-written after the checkpoint.
+
+## Concurrency Decision
+
+- Mode: hybrid.
+- Integrator-owned serial write set: Plan/Task, `AGENTS.md`, architecture and
+  knowledge contracts, machine path/store/CLI, Make targets, Peers Dev
+  aggregation, shared Skills, rollout scripts and final Gates.
+- Parallel lanes: read-only source semantic inventory and read-only legacy
+  `active_work` reference audit.
+- Reason: the replacement store defines interfaces consumed by every writer and
+  projection; parallel writers would recreate the ownership conflict this Task
+  removes.

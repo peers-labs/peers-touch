@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-07
+> **Created**: 2026-09-06 | **Updated**: 2026-09-18
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -67,6 +67,8 @@ machine ownership registry and regression fixtures.
 | [execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md](./execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md) | Independent plan review prompt |
 | [CA-W5 canonical wire amendment](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md) | Accepted command identity, authority scope, event truth, and exact-replay contract required to finish CA-W5 |
 | [CA-W5 canonical wire review prompt](./proposals/20260907-ca-w5-canonical-wire-contract-review-prompt.md) | Review checklist for AO-D07 |
+| [AO-D10A remote member-authority routing amendment](./proposals/20260918-conversation-member-authority-remote-routing-amendment.md) | Accepted signed, durable Home-to-authority routing contract for member administration after ownership moves across Stations |
+| [AO-D10A review prompt](./proposals/20260918-conversation-member-authority-remote-routing-review-prompt.md) | Owner review checklist for the proposed remote member-authority trust boundary |
 
 ## 5. Review Status
 
@@ -84,3 +86,11 @@ runtime convergence remains explicitly unproven until CA-W6. The Owner accepted
 AO-D07 on 2026-09-07 after CA-W5 exposed incomplete creation, command, event,
 and destructive-read wire semantics. Proto-first CA-W5 execution has resumed;
 production cutover remains incomplete until the source Gates pass.
+
+Mobile W5-OWNER implementation exposed a separate AO-D10 remote-routing gap:
+the canonical member-authority handlers currently require a local authority,
+while the accepted signed Conversation proposal carries only `ChatCommand`.
+The Owner accepted AO-D10A.1 through AO-D10A.6 on 2026-09-19. W5-OWNER may
+implement the generalized signed proposal and existing durable
+`AUTHORITY_COMMAND` path. Cross-Station runtime convergence remains unproven
+until the owning Mobile proof Tasks execute.

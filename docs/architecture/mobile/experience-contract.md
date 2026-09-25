@@ -1,8 +1,8 @@
 # Mobile Shell — 体验合同
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Version**: v1.1
+> **Created**: 2026-08-27 | **Updated**: 2026-09-19
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -106,15 +106,18 @@ Optimistic reaction/comment state rolls back to Station readback on rejection.
 
 1. User opens Me and sees identity, Station, trust, and profile summary.
 2. User opens a settings detail; only that detail surface mounts.
-3. Account-level preferences persist through Station; device-level preferences
-   remain local.
+3. Actor Profile/privacy, Notification preferences, and Social blocked users
+   persist through their Station owners; device preferences remain local.
 4. User changes Station or logs out.
 5. System tears down session runtimes, clears actor-scoped projections and
    credentials, preserves the Station registry, and restarts the gate flow.
 
 Language, notification, privacy, storage, and blocked-user surfaces distinguish
 saved, unsaved, saving, permission-required, failed, and externally changed
-states. Leaving an unsaved detail requires save, discard, or stay.
+states. A save targets only the currently selected owner; Settings never
+attempts a cross-owner transaction. Leaving an unsaved detail requires save,
+discard, or stay. A stale revision preserves the draft and exposes reload,
+discard, or a new explicit save after reconciliation.
 
 ## 8. MS-J07 Interrupted Work And Degraded Recovery
 

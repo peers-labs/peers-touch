@@ -1,28 +1,27 @@
 /**
- * profileProjectionDescriptor.ts — Profile projection runtime descriptor
+ * profileProjectionDescriptor.ts — Profile and Notification preference projections
  *
- * Owns profile and account-preference projection state. Receives profile
- * events from the shared social ingress.
- *
- * MS-P05: The account preference contract surface lives in the profile
- * gateway; this projection caches and projects preference state.
- *
- * Failure closure: module failure renders unavailable state, never
- * fabricated empty data.
+ * Profile and Notification preferences share the Social ingress lifecycle but
+ * keep independent availability and readback state. The absent account-wide
+ * preference contract must never make the authoritative Profile unavailable.
  */
 
-import type { SocialEventIngressController, ProfileDataEvent } from './socialEventIngress';
-import type { AccountPreference } from '../services/gateways/profileGateway';
-
-// ---------------------------------------------------------------------------
-// Profile projection descriptor metadata
-// ---------------------------------------------------------------------------
+import { create } from '@bufbuild/protobuf';
+import {
+  UpdateNotificationPreferencesRequestSchema,
+  type NotificationPreferencePatch,
+  type NotificationPreferencesSnapshot,
+} from '../gen/proto/domain/notification/notification_pb';
+import type { PeerProfile } from '../features/social/socialTypes';
+import type {
+  NotificationPreferenceGateway,
+  NotificationPreferencesUpdateResult,
+  ProfileGateway,
+} from '../services/gateways/profileGateway';
+import type { CommandOutcome } from '../services/gateways/gatewayTypes';
+import type { ProfileDataEvent } from './socialEventIngress';
 
 export const PROFILE_PROJECTION_ID = 'profile-projection' as const;
-
-// ---------------------------------------------------------------------------
-// Projection state
-// ---------------------------------------------------------------------------
 
 export type ProfileAvailability =
   | { readonly available: true }
@@ -30,102 +29,257 @@ export type ProfileAvailability =
 
 export interface ProfileProjectionState {
   readonly availability: ProfileAvailability;
-  readonly cachedPreference: AccountPreference | null;
+  readonly currentProfile: PeerProfile | null;
   readonly lastProfileCursor: string;
 }
 
-// ---------------------------------------------------------------------------
-// Projection controller
-// ---------------------------------------------------------------------------
+export interface NotificationPreferenceProjectionState {
+  readonly availability: ProfileAvailability;
+  readonly snapshot: NotificationPreferencesSnapshot | null;
+}
 
 export interface ProfileProjectionController {
-  /** Current projection state */
   state: () => ProfileProjectionState;
-
-  /** Ingest a profile data event from the shared ingress */
+  subscribe: (listener: () => void) => () => void;
+  reconcile: () => Promise<CommandOutcome<PeerProfile>>;
   ingestEvent: (event: ProfileDataEvent) => void;
-
-  /** Update cached account preferences (from gateway readback) */
-  applyPreference: (preference: AccountPreference) => void;
-
-  /** Mark the projection as unavailable (module failure) */
   markUnavailable: (reason: string) => void;
-
-  /** Restore availability after successful reconciliation */
   markAvailable: () => void;
-
-  /** Teardown */
   teardown: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
+export interface NotificationPreferenceProjectionController {
+  state: () => NotificationPreferenceProjectionState;
+  subscribe: (listener: () => void) => () => void;
+  reconcile: () => Promise<CommandOutcome<NotificationPreferencesSnapshot>>;
+  updatePreferences: (
+    updates: readonly NotificationPreferencePatch[],
+  ) => Promise<CommandOutcome<NotificationPreferencesUpdateResult>>;
+  markUnavailable: (reason: string) => void;
+  teardown: () => void;
+}
 
 export function createProfileProjection(
-  ingress: SocialEventIngressController,
+  gateway: Pick<ProfileGateway, 'getCurrentProfile'>,
 ): ProfileProjectionController {
-  let availability: ProfileAvailability = { available: true };
-  let cachedPreference: AccountPreference | null = null;
-  let lastProfileCursor = '';
+  let snapshot: ProfileProjectionState = {
+    availability: {
+      available: false,
+      reason: 'mobile.settings.profileUnavailable',
+    },
+    currentProfile: null,
+    lastProfileCursor: '',
+  };
   let torn = false;
+  const listeners = new Set<() => void>();
+
+  function emit(): void {
+    listeners.forEach((listener) => listener());
+  }
+
+  function replace(next: ProfileProjectionState): void {
+    snapshot = next;
+    emit();
+  }
 
   function state(): ProfileProjectionState {
-    return { availability, cachedPreference, lastProfileCursor };
+    return snapshot;
+  }
+
+  function subscribe(listener: () => void): () => void {
+    if (torn) return () => undefined;
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
+  async function reconcile(): Promise<CommandOutcome<PeerProfile>> {
+    if (torn) return tornDownOutcome('/actor/profile');
+    const result = await gateway.getCurrentProfile();
+    if (torn) return tornDownOutcome('/actor/profile');
+    if (!result.ok) {
+      publishUnavailable(result.error.message);
+      return result;
+    }
+    replace({
+      ...snapshot,
+      availability: { available: true },
+      currentProfile: result.data,
+    });
+    return result;
   }
 
   function ingestEvent(event: ProfileDataEvent): void {
     if (torn) return;
-    if (!availability.available) return;
-
-    lastProfileCursor = event.cursor;
-
-    if (event.kind === 'preference-changed') {
-      // Preference events carry the full preference in payload
-      const preference = event.payload as unknown;
-      if (isAccountPreference(preference)) {
-        cachedPreference = preference;
-      }
-    }
-  }
-
-  function applyPreference(preference: AccountPreference): void {
-    if (torn) return;
-    cachedPreference = preference;
+    replace({
+      ...snapshot,
+      lastProfileCursor: event.cursor,
+    });
   }
 
   function markUnavailable(reason: string): void {
     if (torn) return;
-    availability = { available: false, reason };
+    publishUnavailable(reason);
+  }
+
+  function publishUnavailable(reason: string): void {
+    replace({
+      ...snapshot,
+      availability: { available: false, reason },
+    });
   }
 
   function markAvailable(): void {
     if (torn) return;
-    availability = { available: true };
+    replace({
+      ...snapshot,
+      availability: { available: true },
+    });
   }
 
   function teardown(): void {
     torn = true;
-    cachedPreference = null;
+    snapshot = {
+      availability: {
+        available: false,
+        reason: 'mobile.settings.profileUnavailable',
+      },
+      currentProfile: null,
+      lastProfileCursor: '',
+    };
+    listeners.clear();
   }
 
   return {
     state,
+    subscribe,
+    reconcile,
     ingestEvent,
-    applyPreference,
     markUnavailable,
     markAvailable,
     teardown,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Type guard
-// ---------------------------------------------------------------------------
+export function createNotificationPreferenceProjection(
+  gateway: NotificationPreferenceGateway,
+): NotificationPreferenceProjectionController {
+  let snapshot: NotificationPreferenceProjectionState = {
+    availability: {
+      available: false,
+      reason: 'mobile.launch.unavailable',
+    },
+    snapshot: null,
+  };
+  let torn = false;
+  const listeners = new Set<() => void>();
 
-function isAccountPreference(value: unknown): value is AccountPreference {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.actorPtid === 'string'
-    && typeof record.notificationEnabled === 'boolean';
+  function emit(): void {
+    listeners.forEach((listener) => listener());
+  }
+
+  function replace(next: NotificationPreferenceProjectionState): void {
+    snapshot = next;
+    emit();
+  }
+
+  function state(): NotificationPreferenceProjectionState {
+    return snapshot;
+  }
+
+  function subscribe(listener: () => void): () => void {
+    if (torn) return () => undefined;
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
+  async function reconcile(): Promise<CommandOutcome<NotificationPreferencesSnapshot>> {
+    if (torn) return tornDownOutcome('/notification/preferences');
+    const result = await gateway.getNotificationPreferences();
+    if (torn) return tornDownOutcome('/notification/preferences');
+    if (!result.ok) {
+      publishUnavailable(result.error.message);
+      return result;
+    }
+    replace({
+      availability: { available: true },
+      snapshot: result.data,
+    });
+    return result;
+  }
+
+  async function updatePreferences(
+    updates: readonly NotificationPreferencePatch[],
+  ): Promise<CommandOutcome<NotificationPreferencesUpdateResult>> {
+    if (torn) return tornDownOutcome('/notification/preferences');
+    if (!snapshot.snapshot || updates.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: updates.length === 0
+            ? 'NOTIFICATION_PREFERENCE_BATCH_EMPTY'
+            : 'NOTIFICATION_PREFERENCE_SNAPSHOT_UNAVAILABLE',
+          message: 'mobile.launch.unavailable',
+          method: 'POST',
+          path: '/notification/preferences',
+        },
+      };
+    }
+    const result = await gateway.updateNotificationPreferences(
+      create(UpdateNotificationPreferencesRequestSchema, {
+        updates: [...updates],
+        observedRevision: snapshot.snapshot.notificationPreferencesRevision,
+      }),
+    );
+    if (!result.ok) return result;
+    replace({
+      availability: { available: true },
+      snapshot: result.data.snapshot,
+    });
+    return result;
+  }
+
+  function markUnavailable(reason: string): void {
+    if (torn) return;
+    publishUnavailable(reason);
+  }
+
+  function publishUnavailable(reason: string): void {
+    replace({
+      ...snapshot,
+      availability: { available: false, reason },
+    });
+  }
+
+  function teardown(): void {
+    torn = true;
+    snapshot = {
+      availability: {
+        available: false,
+        reason: 'mobile.launch.unavailable',
+      },
+      snapshot: null,
+    };
+    listeners.clear();
+  }
+
+  return {
+    state,
+    subscribe,
+    reconcile,
+    updatePreferences,
+    markUnavailable,
+    teardown,
+  };
+}
+
+function tornDownOutcome<T>(path: string): CommandOutcome<T> {
+  return {
+    ok: false,
+    error: {
+      code: 'RUNTIME_TORN_DOWN',
+      message: 'mobile.social.runtimeUnavailable',
+      method: 'GET',
+      path,
+    },
+  };
 }

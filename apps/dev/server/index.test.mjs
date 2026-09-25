@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEV_SERVER_KIND,
-  DEV_SERVER_PROTOCOL_VERSION,
   PeersDevError,
   buildServerIdentity,
   createDevHttpServer,
@@ -48,9 +47,7 @@ async function freePort() {
 
 function identity(port, workspaceId = '0123456789abcdef') {
   return {
-    schemaVersion: 1,
     kind: DEV_SERVER_KIND,
-    protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
     endpoint: `http://127.0.0.1:${port}`,
     startedAt: '2026-09-17T00:00:00.000Z',
     source: {
@@ -209,7 +206,6 @@ test('identity probe stays responsive while a status snapshot is pending', async
     assert.equal(probe.state, 'compatible');
 
     releaseSnapshot({
-      schemaVersion: 1,
       kind: 'peers-touch-dev-snapshot',
     });
     assert.equal((await statusRequest).status, 200);
@@ -277,9 +273,7 @@ test('incomplete Peers Dev identity is treated as a foreign listener', async () 
     response.writeHead(200, { 'Content-Type': 'application/json' });
     response.end(
       `${JSON.stringify({
-        schemaVersion: 1,
         kind: DEV_SERVER_KIND,
-        protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
       })}\n`,
     );
   });
@@ -301,6 +295,27 @@ test('incomplete Peers Dev identity is treated as a foreign listener', async () 
   }
 });
 
+test('versioned Peers Dev identity is rejected as a foreign listener', async () => {
+  let port;
+  const foreign = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(
+      `${JSON.stringify({
+        ...identity(port),
+        schemaVersion: 1,
+        protocolVersion: 2,
+      })}\n`,
+    );
+  });
+  port = await listen(foreign);
+  try {
+    const probe = await probeDevServer({ port });
+    assert.equal(probe.state, 'foreign');
+  } finally {
+    await close(foreign);
+  }
+});
+
 test('public CLI rejects host and port overrides', async () => {
   await assert.rejects(
     runCli(['serve', '--port', '9999']),
@@ -319,5 +334,7 @@ test('browser renderer consumes split work and environment state', () => {
   );
   assert.match(app, /item\.workState/);
   assert.match(app, /item\.environmentHealth\.state/);
+  assert.match(app, /projected\.completedAfter/);
+  assert.match(app, /projected\.percentageAfter/);
   assert.doesNotMatch(app, /item\.issues/);
 });

@@ -126,8 +126,11 @@ def _acceptance_contract(text: str, path: Path) -> dict[str, Any]:
             PLAN_INVALID,
             f"invalid Acceptance Execution JSON in {path}: {error}",
         ) from error
-    if value.get("schemaVersion") != 1:
-        raise ExecutionPlanError(PLAN_INVALID, "unsupported Acceptance Execution schema")
+    if "schemaVersion" in value or "workflowVersion" in value:
+        raise ExecutionPlanError(
+            PLAN_INVALID,
+            "Acceptance Execution must not declare a workflow version",
+        )
     closures = value.get("closures")
     if not isinstance(closures, dict) or not closures:
         raise ExecutionPlanError(PLAN_INVALID, "Acceptance closures must be non-empty")
@@ -252,7 +255,6 @@ def _load_package_plan(path: Path) -> FormalExecutionPlan:
     acceptance = payload.get("acceptance")
     if not isinstance(acceptance, dict):
         acceptance = {
-            "schemaVersion": 1,
             "closures": payload.get("closures"),
             "completion": payload.get("completion"),
             "full": payload.get("full"),

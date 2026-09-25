@@ -16,7 +16,7 @@ use station_identity_proto::StationIdentityStatement;
 
 const STATION_IDENTITY_CHALLENGE_SIZE: usize = 32;
 const STATION_IDENTITY_MAX_LIFETIME_MS: i64 = 60_000;
-const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 30_000;
+const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 60_000;
 const STATION_IDENTITY_DOMAIN: &[u8] = b"peers-touch/station-identity/v1\0";
 
 #[derive(Debug, Serialize)]
@@ -123,8 +123,10 @@ fn verify_station_identity_proof(
     if canonical_origin != statement.canonical_origin {
         return Err(identity_error("nonCanonicalOrigin"));
     }
-    if normalize_station_origin(&input.requested_origin, origin_policy).is_err() {
-        return Err(identity_error("invalidRequestedOrigin"));
+    let requested_origin = normalize_station_origin(&input.requested_origin, origin_policy)
+        .map_err(|_| identity_error("invalidRequestedOrigin"))?;
+    if canonical_origin != requested_origin {
+        return Err(identity_error("canonicalOriginMismatch"));
     }
 
     if statement
@@ -300,6 +302,14 @@ mod tests {
         let now = 1_800_000_000_000;
         let (mut input, _) = signed_input(now);
         input.required_capabilities = vec!["unsupported-capability".to_string()];
+        assert!(verify_station_identity_proof(input, now).is_err());
+    }
+
+    #[test]
+    fn rejects_a_valid_proof_for_another_origin() {
+        let now = 1_800_000_000_000;
+        let (mut input, _) = signed_input(now);
+        input.requested_origin = "https://other.example".to_string();
         assert!(verify_station_identity_proof(input, now).is_err());
     }
 }

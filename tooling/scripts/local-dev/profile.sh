@@ -150,7 +150,6 @@ case "$cmd" in
 
 PT_DEV_PROFILE=$name
 PT_DEV_SLOT=$slot
-PT_AGENT_CONTROL_MODE=human-gated
 
 # Station
 PT_STATION_MODE=compose

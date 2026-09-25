@@ -40,7 +40,6 @@ function initializeRepository(root, branch = 'feat/shared-pr') {
 
 function planDocument({ branch, head, planId, workspaceId }) {
   const manifest = {
-    schemaVersion: 2,
     kind: 'peers-touch-plan-package',
     planId,
     status: 'active',
@@ -93,7 +92,6 @@ function planDocument({ branch, head, planId, workspaceId }) {
     },
   };
   const acceptance = {
-    schemaVersion: 1,
     closures: {
       C1: [],
     },
@@ -125,7 +123,6 @@ function planDocument({ branch, head, planId, workspaceId }) {
 
 function taskDocument(planId) {
   const task = {
-    schemaVersion: 1,
     kind: 'peers-touch-task-slice',
     planId,
     taskId: 'T1',

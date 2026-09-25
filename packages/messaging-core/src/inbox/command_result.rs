@@ -5,7 +5,8 @@ use crate::inbox::ClaimedItemConsumer;
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, ChatCommand, ConversationCommandRejectCode, ConversationCommandResultDelivery,
-    ConversationCommandSubmissionState, DeviceInboxPayloadType, DurableDeviceInboxItem,
+    ConversationCommandSubmissionState, ConversationMemberAuthorityCommand, DeviceInboxPayloadType,
+    DurableDeviceInboxItem,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -133,17 +134,42 @@ impl<R: CommandResultRepository, L: CommandResultLifecycle> CommandResultProcess
         let command_bytes = self
             .store
             .command_bytes(&delivery.conversation_id, &delivery.command_id)?;
-        let command = ChatCommand::decode(command_bytes.as_slice())
-            .map_err(|error| format!("decode local messaging command: {error}"))?;
-        if command.encode_to_vec() != command_bytes
-            || command.command_id != delivery.command_id
-            || command.conversation_id != delivery.conversation_id
-            || command.sender.as_ref().map(|sender| sender.ptid.as_str())
-                != Some(self.endpoint.ptid.as_str())
-            || command
-                .sender
-                .as_ref()
-                .map(|sender| sender.device_id.as_str())
+        let (command_id, conversation_id, authority_station_id, actor, terminal_transition_id) =
+            if let Ok(command) = ChatCommand::decode(command_bytes.as_slice()) {
+                if command.encode_to_vec() != command_bytes {
+                    return Err("messaging local command bytes are not canonical".to_string());
+                }
+                let terminal_transition_id = match command.payload.as_ref() {
+                    Some(chat_command::Payload::MembershipTransition(transition)) => {
+                        Some(transition.transition_id.clone())
+                    }
+                    _ => None,
+                };
+                (
+                    command.command_id,
+                    command.conversation_id,
+                    command.authority_station_peer_id,
+                    command.sender,
+                    terminal_transition_id,
+                )
+            } else {
+                let command = ConversationMemberAuthorityCommand::decode(command_bytes.as_slice())
+                    .map_err(|error| format!("decode local member-authority command: {error}"))?;
+                if command.encode_to_vec() != command_bytes {
+                    return Err("messaging local command bytes are not canonical".to_string());
+                }
+                (
+                    command.command_id,
+                    command.conversation_id,
+                    command.authority_station_peer_id,
+                    command.operator,
+                    None,
+                )
+            };
+        if command_id != delivery.command_id
+            || conversation_id != delivery.conversation_id
+            || actor.as_ref().map(|actor| actor.ptid.as_str()) != Some(self.endpoint.ptid.as_str())
+            || actor.as_ref().map(|actor| actor.device_id.as_str())
                 != Some(self.endpoint.device_id.as_str())
         {
             return Err("messaging command result does not match local command".to_string());
@@ -153,17 +179,10 @@ impl<R: CommandResultRepository, L: CommandResultLifecycle> CommandResultProcess
             .map_err(|_| "messaging command result state is invalid".to_string())?;
         let reject_code = ConversationCommandRejectCode::try_from(result.reject_code)
             .map_err(|_| "messaging command result reject code is invalid".to_string())?;
-        let terminal_transition_id =
-            if state == ConversationCommandSubmissionState::TerminalRejected {
-                match command.payload.as_ref() {
-                    Some(chat_command::Payload::MembershipTransition(transition)) => {
-                        Some(transition.transition_id.as_str())
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            };
+        let terminal_transition_id = (state
+            == ConversationCommandSubmissionState::TerminalRejected)
+            .then_some(terminal_transition_id)
+            .flatten();
         let disposition = match state {
             ConversationCommandSubmissionState::Accepted => {
                 let event = result.event.as_ref().ok_or_else(|| {
@@ -175,10 +194,10 @@ impl<R: CommandResultRepository, L: CommandResultLifecycle> CommandResultProcess
                     || item.event_id != event.event_id
                     || result.authority_sequence != event.sequence
                     || result.authority_event_hash != event.event_hash
-                    || event.command_id != command.command_id
-                    || event.conversation_id != command.conversation_id
-                    || event.authority_station_peer_id != command.authority_station_peer_id
-                    || event.actor != command.sender
+                    || event.command_id != command_id
+                    || event.conversation_id != conversation_id
+                    || event.authority_station_peer_id != authority_station_id
+                    || event.actor != actor
                     || event.sequence <= 0
                     || event.event_hash.len() != 32
                 {
@@ -227,7 +246,7 @@ impl<R: CommandResultRepository, L: CommandResultLifecycle> CommandResultProcess
                 disposition,
                 consumed_at_unix_ms: now,
             })?;
-        if let Some(transition_id) = terminal_transition_id {
+        if let Some(transition_id) = terminal_transition_id.as_deref() {
             self.lifecycle
                 .discard_pending_transition(&delivery.conversation_id, transition_id);
         }
@@ -270,6 +289,7 @@ mod tests {
     use crate::proto::actor_device_ref;
     use crate::proto::chat::{
         chat_command, ConversationCommandProposalResult, ConversationEvent,
+        ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
         CryptoEndpoint as ProtoCryptoEndpoint, MembershipTransitionIntent, ReactionIntent,
     };
     use std::sync::Mutex;
@@ -466,6 +486,87 @@ mod tests {
             }]
         );
         assert!(lifecycle.discarded.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn accepted_member_authority_result_uses_the_exact_local_command_identity() {
+        let command = ConversationMemberAuthorityCommand {
+            version: 1,
+            command_id: "member-authority-command".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            operator: Some(ProtoCryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            target_ptid: "ptid:bob".to_string(),
+            action: ConversationMemberAuthorityAction::UpdateMember as i32,
+            authority_station_peer_id: "station-authority".to_string(),
+            ..Default::default()
+        };
+        let event_hash = vec![8; 32];
+        let event = ConversationEvent {
+            event_id: "member-authority-event".to_string(),
+            conversation_id: command.conversation_id.clone(),
+            sequence: 4,
+            command_id: command.command_id.clone(),
+            actor: command.operator.clone(),
+            authority_station_peer_id: command.authority_station_peer_id.clone(),
+            event_hash: event_hash.clone(),
+            ..Default::default()
+        };
+        let delivery = ConversationCommandResultDelivery {
+            conversation_id: command.conversation_id.clone(),
+            command_id: command.command_id.clone(),
+            state: ConversationCommandSubmissionState::Accepted as i32,
+            result: Some(ConversationCommandProposalResult {
+                command_id: command.command_id.clone(),
+                accepted: true,
+                event: Some(event),
+                authority_sequence: 4,
+                authority_event_hash: event_hash,
+                ..Default::default()
+            }),
+        };
+        let opaque_payload = delivery.encode_to_vec();
+        let payload_sha256 = Sha256::digest(&opaque_payload).to_vec();
+        let item = DurableDeviceInboxItem {
+            item_id: command_result_item_id(
+                &CryptoEndpoint::new("ptid:alice", "alice-device").unwrap(),
+                &command.conversation_id,
+                &command.command_id,
+            ),
+            recipient: Some(actor_device_ref("ptid:alice", "alice-device")),
+            lane_sequence: 4,
+            event_id: "member-authority-event".to_string(),
+            conversation_id: command.conversation_id.clone(),
+            payload_type: DeviceInboxPayloadType::CommandResult as i32,
+            opaque_payload,
+            payload_sha256,
+            ..Default::default()
+        };
+        let repository = Arc::new(Repository {
+            command_bytes: command.encode_to_vec(),
+            commits: Mutex::new(Vec::new()),
+        });
+        let processor = CommandResultProcessor::new(
+            repository.clone(),
+            Arc::new(Lifecycle::default()),
+            CryptoEndpoint::new("ptid:alice", "alice-device").unwrap(),
+            || 20,
+        )
+        .unwrap();
+
+        processor.consume(&item, 7).unwrap();
+
+        assert_eq!(
+            repository.commits.lock().unwrap().as_slice(),
+            &[RecordedCommit {
+                command_id: command.command_id,
+                disposition: CommandResultDisposition::Accepted,
+                lane_sequence: 4,
+                consumer_epoch: 7,
+            }]
+        );
     }
 
     #[test]

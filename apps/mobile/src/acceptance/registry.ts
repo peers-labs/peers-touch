@@ -24,6 +24,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'runtime.prepareActorIdentity',
+    mobileAcceptanceActions['runtime.prepareActorIdentity'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'station.add',
     mobileAcceptanceActions['station.add'],
     registry,
@@ -74,6 +79,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'lifecycle.waitReady',
+    mobileAcceptanceActions['lifecycle.waitReady'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'lifecycle.suspend',
     mobileAcceptanceActions['lifecycle.suspend'],
     registry,
@@ -89,8 +99,28 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'lifecycle.nativeBridgeDiagnostic',
+    mobileAcceptanceActions['lifecycle.nativeBridgeDiagnostic'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.secureStorageDeleteFailure',
+    mobileAcceptanceActions['lifecycle.secureStorageDeleteFailure'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'lifecycle.scope.read',
     mobileAcceptanceActions['lifecycle.scope.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'navigation.snapshot',
+    mobileAcceptanceActions['navigation.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'navigation.apply',
+    mobileAcceptanceActions['navigation.apply'],
     registry,
   );
   registerMobileAcceptanceAction(
@@ -194,6 +224,56 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'reliability.fixture.configure',
+    mobileAcceptanceActions['reliability.fixture.configure'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.friendRequest.submit',
+    mobileAcceptanceActions['reliability.friendRequest.submit'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.snapshot',
+    mobileAcceptanceActions['reliability.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.reconcile',
+    mobileAcceptanceActions['reliability.reconcile'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.command.action',
+    mobileAcceptanceActions['reliability.command.action'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.draft.write',
+    mobileAcceptanceActions['reliability.draft.write'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.draft.read',
+    mobileAcceptanceActions['reliability.draft.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.draft.action',
+    mobileAcceptanceActions['reliability.draft.action'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'reliability.reset',
+    mobileAcceptanceActions['reliability.reset'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'recovery.snapshot',
+    mobileAcceptanceActions['recovery.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'social.request.send',
     mobileAcceptanceActions['social.request.send'],
     registry,
@@ -204,6 +284,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'social.contact.open',
+    mobileAcceptanceActions['social.contact.open'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'social.reconcile',
     mobileAcceptanceActions['social.reconcile'],
     registry,
@@ -211,6 +296,86 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
   registerMobileAcceptanceAction(
     'social.projection.read',
     mobileAcceptanceActions['social.projection.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.feed.read',
+    mobileAcceptanceActions['moments.feed.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.publish',
+    mobileAcceptanceActions['moments.publish'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.react',
+    mobileAcceptanceActions['moments.react'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.comment',
+    mobileAcceptanceActions['moments.comment'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.comments.read',
+    mobileAcceptanceActions['moments.comments.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.profile.read',
+    mobileAcceptanceActions['settings.profile.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.profile.update',
+    mobileAcceptanceActions['settings.profile.update'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.notifications.read',
+    mobileAcceptanceActions['settings.notifications.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.notifications.update',
+    mobileAcceptanceActions['settings.notifications.update'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.device.read',
+    mobileAcceptanceActions['settings.device.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.device.update',
+    mobileAcceptanceActions['settings.device.update'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'getRealtimeDevice',
+    mobileAcceptanceActions.getRealtimeDevice,
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'initiateCall',
+    mobileAcceptanceActions.initiateCall,
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'callResolutionState',
+    mobileAcceptanceActions.callResolutionState,
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'acceptCall',
+    mobileAcceptanceActions.acceptCall,
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'rejectCall',
+    mobileAcceptanceActions.rejectCall,
     registry,
   );
   registerMobileAcceptanceAction(

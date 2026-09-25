@@ -188,5 +188,5 @@ Feature / Gate closure，并 fail closed：
 | `federation` | `active` | `project_validation_domain` | 首个复杂验证域，用于双边互验证 |
 | `station-dashboard` | `active` | `managed_domain` | 首个普通产品域，验证 onboarding 标准可泛化 |
 | `chat` | `active` | `managed_domain` | 首个用户主路径 domain，覆盖 persistence / Station runtime message flow / live realtime delivery / realtime typed contract / Desktop typed surface |
-| `mobile` | `active` | `managed_domain` | 结构接入完成；iOS/Android native product proof 在对应 environment Gates 通过前保持 `UNPROVEN` |
+| `mobile` | `active` | `managed_domain` | 结构接入完成；iOS Simulator/Android Emulator product proof 在对应 required Gates 通过前保持 `UNPROVEN`，真机仅为可选诊断 |
 | `applet` | `active` | `managed_domain` | Domain 契约和 local lifecycle Gate 已接入；Python Core wrapper、原生可见流程和 Mobile 仍为未完成/未证明范围 |

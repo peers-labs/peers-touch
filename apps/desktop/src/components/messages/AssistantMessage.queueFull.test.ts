@@ -16,7 +16,7 @@ describe('queue-full component recovery wiring', () => {
       "if (message.resolution!.type === 'editQueue')",
     );
     const actionEnd = assistantMessageSource.indexOf(
-      "if (message.resolution!.type === 'switchAccount')",
+      "if (message.resolution!.type === 'selectRuntime')",
       actionStart,
     );
     const actionBranch = assistantMessageSource.slice(actionStart, actionEnd);

@@ -198,6 +198,10 @@ func (r *Receiver) receiveAuthorityCommand(
 	if err := validateCanonicalFramePayload(frame, proposal); err != nil {
 		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
 	}
+	proposalCommand, err := ParseProposalCommand(proposal)
+	if err != nil {
+		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
+	}
 	commandKind, rejection := validateAuthorityProposalShape(
 		proposal,
 		frame,
@@ -270,7 +274,7 @@ func (r *Receiver) receiveAuthorityCommand(
 	if rejection != nil {
 		return r.deliverProposalRejection(ctx, transaction, proposal, frame, *rejection)
 	}
-	commandBytes, err := canonicalPayloadBytes(proposal.GetCommand())
+	commandBytes, err := canonicalPayloadBytes(proposalCommand.Message)
 	if err != nil {
 		return federationdelivery.Result{}, err
 	}
@@ -340,6 +344,7 @@ func (r *Receiver) deliverProposalRejection(
 			fmt.Errorf("transaction-bound database and outbox are required"),
 		)
 	}
+	command, commandErr := ParseProposalCommand(proposal)
 	if rejection.retryable {
 		// Preserve the original transport identity; a replacement frame would
 		// be suppressed by the delivered-row idempotency and lane constraints.
@@ -348,10 +353,9 @@ func (r *Receiver) deliverProposalRejection(
 		), nil
 	}
 	if frame == nil ||
-		proposal == nil ||
-		proposal.GetCommand() == nil ||
-		proposal.GetCommand().GetCommandId() == "" ||
-		proposal.GetCommand().GetConversationId() == "" ||
+		commandErr != nil ||
+		command.CommandID == "" ||
+		command.ConversationID == "" ||
 		proposal.GetHomeStationPeerId() == "" ||
 		proposal.GetAuthorityStationPeerId() == "" ||
 		proposal.GetHomeStationPeerId() != frame.GetSourceStationPeerId() ||
@@ -366,7 +370,7 @@ func (r *Receiver) deliverProposalRejection(
 		return federationdelivery.TerminalResult(federationdelivery.FrameErrorInvalidFrame), nil
 	}
 	result := &chatmodel.ConversationCommandProposalResult{
-		CommandId:  proposal.GetCommand().GetCommandId(),
+		CommandId:  command.CommandID,
 		RejectCode: rejection.code,
 		Retryable:  rejection.retryable,
 	}
@@ -621,19 +625,20 @@ func validateAuthorityProposalShape(
 	localStationPeerID string,
 	now time.Time,
 ) (chatmodel.ConversationCommandKind, *commandRejection) {
+	command, err := ParseProposalCommand(proposal)
 	if proposal == nil ||
+		err != nil ||
 		proposal.GetVersion() != conversationCommandProposalVersion ||
-		proposal.GetCommand() == nil ||
 		proposal.GetFederationId() == "" ||
 		proposal.GetAuthorityStationPeerId() == "" ||
 		proposal.GetHomeStationPeerId() == "" ||
 		proposal.GetActorPtid() == "" ||
 		proposal.GetActorDeviceId() == "" ||
 		proposal.GetActorSigningKeyId() == "" ||
-		proposal.GetCommand().GetSender() == nil ||
-		proposal.GetCommand().GetCommandId() == "" ||
-		proposal.GetCommand().GetConversationId() == "" ||
-		proposal.GetCommand().GetAuthorityStationPeerId() == "" ||
+		command.Actor == nil ||
+		command.CommandID == "" ||
+		command.ConversationID == "" ||
+		command.AuthorityStationPeerID == "" ||
 		len(proposal.GetCommandSha256()) != sha256.Size ||
 		len(proposal.GetActorSignature()) != ed25519.SignatureSize {
 		return 0, &commandRejection{
@@ -643,8 +648,8 @@ func validateAuthorityProposalShape(
 	if frame.GetSourceStationPeerId() != proposal.GetHomeStationPeerId() ||
 		frame.GetTargetStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		proposal.GetAuthorityStationPeerId() != localStationPeerID ||
-		proposal.GetCommand().GetAuthorityStationPeerId() != proposal.GetAuthorityStationPeerId() ||
-		frame.GetPayloadId() != proposal.GetCommand().GetCommandId() {
+		command.AuthorityStationPeerID != proposal.GetAuthorityStationPeerId() ||
+		frame.GetPayloadId() != command.CommandID {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
 		}
@@ -664,23 +669,37 @@ func validateAuthorityProposalShape(
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_EXPIRED,
 		}
 	}
-	commandKind := authorityCommandKind(proposal.GetCommand())
+	commandKind := command.Kind
 	if commandKind == chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSUPPORTED_COMMAND,
 		}
 	}
-	commandBytes, err := canonicalPayloadBytes(proposal.GetCommand())
+	commandBytes, err := canonicalPayloadBytes(command.Message)
 	if err != nil ||
 		!bytes.Equal(proposal.GetCommandSha256(), federationdelivery.PayloadSHA256(commandBytes)) {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_HASH_MISMATCH,
 		}
 	}
-	if proposal.GetCommand().GetSender().GetPtid() != proposal.GetActorPtid() ||
-		proposal.GetCommand().GetSender().GetDeviceId() != proposal.GetActorDeviceId() {
+	if command.Actor.GetPtid() != proposal.GetActorPtid() ||
+		command.Actor.GetDeviceId() != proposal.GetActorDeviceId() {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
+		}
+	}
+	if member := command.MemberAuthority; member != nil {
+		clientTimestamp := member.GetClientTimestamp()
+		deadline := member.GetDeadline()
+		if member.GetFederationId() != proposal.GetFederationId() ||
+			member.GetAuthorityEpoch() != proposal.GetAuthorityEpoch() ||
+			clientTimestamp == nil ||
+			deadline == nil ||
+			clientTimestamp.AsTime().UTC().UnixMilli() != proposal.GetCreatedAtUnixMs() ||
+			deadline.AsTime().UTC().UnixMilli() != proposal.GetExpiresAtUnixMs() {
+			return 0, &commandRejection{
+				code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
+			}
 		}
 	}
 	return commandKind, nil
@@ -694,6 +713,12 @@ func verifyProposalActorIdentity(
 	localStationPeerID string,
 	now time.Time,
 ) ([]byte, bool, *commandRejection) {
+	command, err := ParseProposalCommand(proposal)
+	if err != nil {
+		return nil, false, &commandRejection{
+			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_INVALID_PROPOSAL,
+		}
+	}
 	if key.GetActorPtid() != proposal.GetActorPtid() ||
 		key.GetActorDeviceId() != proposal.GetActorDeviceId() ||
 		key.GetHomeStationPeerId() != proposal.GetHomeStationPeerId() ||
@@ -748,8 +773,8 @@ func verifyProposalActorIdentity(
 		AuthorityStationPeerId: proposal.GetAuthorityStationPeerId(),
 		AuthorityEpoch:         proposal.GetAuthorityEpoch(),
 		HomeStationPeerId:      proposal.GetHomeStationPeerId(),
-		ConversationId:         proposal.GetCommand().GetConversationId(),
-		CommandId:              proposal.GetCommand().GetCommandId(),
+		ConversationId:         command.ConversationID,
+		CommandId:              command.CommandID,
 		CommandKind:            commandKind,
 		ActorPtid:              proposal.GetActorPtid(),
 		ActorDeviceId:          proposal.GetActorDeviceId(),
@@ -780,8 +805,16 @@ func validateAuthorityOutcome(
 	proposal *chatmodel.ConversationCommandProposal,
 	outcome AuthorityCommandOutcome,
 ) error {
+	command, err := ParseProposalCommand(proposal)
+	if err != nil {
+		return federationdelivery.NewError(
+			federationdelivery.FailureDomainDispatch,
+			"validate Conversation authority outcome",
+			err,
+		)
+	}
 	if outcome.Result == nil ||
-		outcome.Result.GetCommandId() != proposal.GetCommand().GetCommandId() {
+		outcome.Result.GetCommandId() != command.CommandID {
 		return federationdelivery.NewError(
 			federationdelivery.FailureDomainDispatch,
 			"validate Conversation authority outcome",
@@ -795,8 +828,8 @@ func validateAuthorityOutcome(
 		if result.GetRetryable() ||
 			result.GetRejectCode() != chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED ||
 			event == nil ||
-			event.GetConversationId() != proposal.GetCommand().GetConversationId() ||
-			event.GetCommandId() != proposal.GetCommand().GetCommandId() ||
+			event.GetConversationId() != command.ConversationID ||
+			event.GetCommandId() != command.CommandID ||
 			event.GetSequence() <= 0 ||
 			result.GetAuthoritySequence() != event.GetSequence() ||
 			!bytes.Equal(result.GetAuthorityEventHash(), event.GetEventHash()) {
@@ -1317,6 +1350,12 @@ func authorityCommandKind(
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE
 	case *chatmodel.ChatCommand_RetractMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE
+	case *chatmodel.ChatCommand_HideMessageForActor:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR
+	case *chatmodel.ChatCommand_ModerateMessage:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE
+	case *chatmodel.ChatCommand_ForwardMessage:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE
 	case *chatmodel.ChatCommand_DissolveConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE
 	case *chatmodel.ChatCommand_UpdateConversation:

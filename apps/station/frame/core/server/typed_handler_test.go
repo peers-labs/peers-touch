@@ -281,16 +281,16 @@ func TestStrictTypedHandlerRejectsUnknownJSONFields(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ActorReadCursor,
+		) (*chat.ActorReadCursor, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ActorReadCursor{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
 		headers: map[string]string{"Content-Type": "application/json"},
 		body: []byte(
-			`{"ulid":"01TEST000000000000TEST","unknown_field":"forbidden"}`,
+			`{"conversation_id":"01TEST000000000000TEST","unknown_field":"forbidden"}`,
 		),
 	}
 	response := &typedHandlerTestResponse{headers: map[string]string{}}
@@ -318,14 +318,14 @@ func TestStrictTypedHandlerRejectsUnknownProtobufFields(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ActorReadCursor,
+		) (*chat.ActorReadCursor, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ActorReadCursor{}, nil
 		},
 	)
-	body, err := proto.Marshal(&chat.FriendChatMessage{
-		Ulid: "01TEST000000000000TEST",
+	body, err := proto.Marshal(&chat.ActorReadCursor{
+		ConversationId: "01TEST000000000000TEST",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -361,14 +361,14 @@ func TestStrictTypedHandlerRejectsUnknownQueryFields(t *testing.T) {
 		GET,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ActorReadCursor,
+		) (*chat.ActorReadCursor, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ActorReadCursor{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
-		path: "/test?ulid=01TEST000000000000TEST&unknown_field=forbidden",
+		path: "/test?conversation_id=01TEST000000000000TEST&unknown_field=forbidden",
 	}
 	response := &typedHandlerTestResponse{headers: map[string]string{}}
 
@@ -395,15 +395,15 @@ func TestStrictTypedHandlerRejectsQueryAlongsideBody(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ActorReadCursor,
+		) (*chat.ActorReadCursor, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ActorReadCursor{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
 		headers: map[string]string{"Content-Type": "application/json"},
-		body:    []byte(`{"ulid":"01TEST000000000000TEST"}`),
+		body:    []byte(`{"conversation_id":"01TEST000000000000TEST"}`),
 		path:    "/test?unknown_field=forbidden",
 	}
 	response := &typedHandlerTestResponse{headers: map[string]string{}}
@@ -431,14 +431,14 @@ func TestStrictTypedHandlerRejectsQueryOnlyPost(t *testing.T) {
 		POST,
 		func(
 			context.Context,
-			*chat.FriendChatMessage,
-		) (*chat.FriendChatMessage, error) {
+			*chat.ActorReadCursor,
+		) (*chat.ActorReadCursor, error) {
 			called = true
-			return &chat.FriendChatMessage{}, nil
+			return &chat.ActorReadCursor{}, nil
 		},
 	)
 	request := &typedHandlerTestRequest{
-		path: "/test?ulid=01TEST000000000000TEST",
+		path: "/test?conversation_id=01TEST000000000000TEST",
 	}
 	response := &typedHandlerTestResponse{headers: map[string]string{}}
 

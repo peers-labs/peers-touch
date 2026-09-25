@@ -12,7 +12,7 @@
 //     bespoke JSON shapes (the StubPayload route used by older modules)
 //     creates a parallel schema that drifts. Proto bytes preserve the
 //     contract exactly.
-//   - Matches the chat / group_chat module pattern that
+//   - Matches the messaging module pattern that
 //     the desktop frontend has already standardised on for typed wire
 //     responses.
 //

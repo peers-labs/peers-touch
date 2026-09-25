@@ -98,26 +98,52 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging Direct delivery has no event".to_string())?;
-        let (message_id, is_edit, committed_fact) = match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageCommitted(message)) => {
-                if MessagingContentKind::try_from(message.content_kind)
-                    .map_err(|_| "messaging Direct content kind is invalid".to_string())?
-                    != MessagingContentKind::Text
-                {
-                    return Err(
-                        "messaging Direct processor only accepts text projections".to_string()
-                    );
+        let (message_id, is_edit, message_sender, reply_to_message_id, thread_root_message_id) =
+            match event.payload.as_ref() {
+                Some(conversation_event::Payload::MessageCommitted(message)) => {
+                    if MessagingContentKind::try_from(message.content_kind)
+                        .map_err(|_| "messaging Direct content kind is invalid".to_string())?
+                        != MessagingContentKind::Text
+                    {
+                        return Err(
+                            "messaging Direct processor only accepts text projections".to_string()
+                        );
+                    }
+                    (
+                        message.message_id.as_str(),
+                        false,
+                        message.sender.as_ref(),
+                        (!message.reply_to_message_id.is_empty())
+                            .then_some(message.reply_to_message_id.as_str()),
+                        (!message.thread_root_message_id.is_empty())
+                            .then_some(message.thread_root_message_id.as_str()),
+                    )
                 }
-                (message.message_id.as_str(), false, Some(message))
-            }
-            Some(conversation_event::Payload::MessageEdited(fact)) => {
-                if fact.message_id.trim().is_empty() {
-                    return Err("messaging Direct edit has no message ID".to_string());
+                Some(conversation_event::Payload::MessageForwarded(message)) => {
+                    if MessagingContentKind::try_from(message.content_kind).map_err(|_| {
+                        "messaging Direct forward content kind is invalid".to_string()
+                    })? != MessagingContentKind::Text
+                    {
+                        return Err(
+                            "messaging Direct processor only accepts text projections".to_string()
+                        );
+                    }
+                    (
+                        message.destination_message_id.as_str(),
+                        false,
+                        message.sender.as_ref(),
+                        None,
+                        None,
+                    )
                 }
-                (fact.message_id.as_str(), true, None)
-            }
-            _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
-        };
+                Some(conversation_event::Payload::MessageEdited(fact)) => {
+                    if fact.message_id.trim().is_empty() {
+                        return Err("messaging Direct edit has no message ID".to_string());
+                    }
+                    (fact.message_id.as_str(), true, None, None, None)
+                }
+                _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
+            };
         let direct = DirectDeviceCiphertext::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging Direct ciphertext payload is invalid".to_string())?;
         if let Some(init) = direct.session_init.as_ref() {
@@ -127,8 +153,10 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                 return Err("messaging Direct sender identity is not authority-bound".to_string());
             }
         }
-        if let Some(message) = committed_fact {
-            validate_direct_bindings(event, message, &direct, &self.endpoint)?;
+        if !is_edit {
+            let sender = message_sender
+                .ok_or_else(|| "messaging Direct event has no message sender".to_string())?;
+            validate_direct_bindings(event, message_id, sender, &direct, &self.endpoint)?;
         }
 
         let ratchet = direct
@@ -251,20 +279,6 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
             };
             self.store.commit_direct_edit(&input)?;
         } else {
-            let reply_to = committed_fact.and_then(|fact| {
-                if fact.reply_to_message_id.is_empty() {
-                    None
-                } else {
-                    Some(fact.reply_to_message_id.clone())
-                }
-            });
-            let thread_root = committed_fact.and_then(|fact| {
-                if fact.thread_root_message_id.is_empty() {
-                    None
-                } else {
-                    Some(fact.thread_root_message_id.clone())
-                }
-            });
             let projection = DirectMessageContent {
                 conversation_id: event.conversation_id.clone(),
                 event_id: event.event_id.clone(),
@@ -283,8 +297,8 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                 plaintext: private_content.text,
                 attachments: private_content.attachments,
                 committed_at_unix_ms,
-                reply_to_message_id: reply_to.clone(),
-                thread_root_message_id: thread_root.clone(),
+                reply_to_message_id: reply_to_message_id.map(str::to_string),
+                thread_root_message_id: thread_root_message_id.map(str::to_string),
             };
             let input = DirectReceiveCommit {
                 item_id: &item.item_id,
@@ -407,7 +421,8 @@ pub fn encode_direct_ciphertext_aad(
 
 fn validate_direct_bindings(
     event: &crate::proto::chat::ConversationEvent,
-    message: &crate::proto::chat::MessageCommittedFact,
+    message_id: &str,
+    message_sender: &ProtoCryptoEndpoint,
     direct: &DirectDeviceCiphertext,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
@@ -416,9 +431,10 @@ fn validate_direct_bindings(
         device_id: endpoint.device_id.clone(),
     };
     if direct.command_id != event.command_id
-        || direct.message_id != message.message_id
+        || message_id.trim().is_empty()
+        || direct.message_id != message_id
         || direct.sender.is_none()
-        || direct.sender != message.sender
+        || direct.sender.as_ref() != Some(message_sender)
         || direct.sender != event.actor
         || direct.recipient.as_ref() != Some(&local)
         || direct.session_id.trim().is_empty()

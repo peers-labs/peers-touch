@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/ecosystem.proto.
  */
 export const file_domain_agent_ecosystem: GenFile = /*@__PURE__*/
-  fileDesc("Chxkb21haW4vYWdlbnQvZWNvc3lzdGVtLnByb3RvEgxkb21haW4uYWdlbnQimQEKCkFnZW50R3JvdXASCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIYChBtZW1iZXJfYWdlbnRfaWRzGAQgAygJEhoKEm9yY2hlc3RyYXRpb25fbW9kZRgFIAEoCRISCgpjcmVhdGVkX2F0GAYgASgJEhIKCnVwZGF0ZWRfYXQYByABKAkiWAoXQ3JlYXRlQWdlbnRHcm91cFJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIaChJvcmNoZXN0cmF0aW9uX21vZGUYAyABKAkiQwoYQ3JlYXRlQWdlbnRHcm91cFJlc3BvbnNlEicKBWdyb3VwGAEgASgLMhguZG9tYWluLmFnZW50LkFnZW50R3JvdXAifgoXVXBkYXRlQWdlbnRHcm91cFJlcXVlc3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIaChJvcmNoZXN0cmF0aW9uX21vZGUYBCABKAkSGAoQbWVtYmVyX2FnZW50X2lkcxgFIAMoCSJDChhVcGRhdGVBZ2VudEdyb3VwUmVzcG9uc2USJwoFZ3JvdXAYASABKAsyGC5kb21haW4uYWdlbnQuQWdlbnRHcm91cCIlChdEZWxldGVBZ2VudEdyb3VwUmVxdWVzdBIKCgJpZBgBIAEoCSIaChhEZWxldGVBZ2VudEdyb3VwUmVzcG9uc2UiGAoWTGlzdEFnZW50R3JvdXBzUmVxdWVzdCJDChdMaXN0QWdlbnRHcm91cHNSZXNwb25zZRIoCgZncm91cHMYASADKAsyGC5kb21haW4uYWdlbnQuQWdlbnRHcm91cCJyCgxUb3BpY0NvbW1lbnQSCgoCaWQYASABKAkSEQoJdG9waWNfa2V5GAIgASgJEg8KB2NvbnRlbnQYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRITCgthdXRob3JfcHRpZBgFIAEoCVIJYXV0aG9yX2lkIj8KGUNyZWF0ZVRvcGljQ29tbWVudFJlcXVlc3QSEQoJdG9waWNfa2V5GAEgASgJEg8KB2NvbnRlbnQYAiABKAkiSQoaQ3JlYXRlVG9waWNDb21tZW50UmVzcG9uc2USKwoHY29tbWVudBgBIAEoCzIaLmRvbWFpbi5hZ2VudC5Ub3BpY0NvbW1lbnQiQgoZRGVsZXRlVG9waWNDb21tZW50UmVxdWVzdBIRCgl0b3BpY19rZXkYASABKAkSEgoKY29tbWVudF9pZBgCIAEoCSIcChpEZWxldGVUb3BpY0NvbW1lbnRSZXNwb25zZSItChhMaXN0VG9waWNDb21tZW50c1JlcXVlc3QSEQoJdG9waWNfa2V5GAEgASgJIkkKGUxpc3RUb3BpY0NvbW1lbnRzUmVzcG9uc2USLAoIY29tbWVudHMYASADKAsyGi5kb21haW4uYWdlbnQuVG9waWNDb21tZW50IlMKD0V2YWxEYXRhc2V0SXRlbRIKCgJpZBgBIAEoCRINCgVpbnB1dBgCIAEoCRIXCg9leHBlY3RlZF9vdXRwdXQYAyABKAkSDAoEdGFncxgEIAMoCSJ+CgtFdmFsRGF0YXNldBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEiwKBWl0ZW1zGAQgAygLMh0uZG9tYWluLmFnZW50LkV2YWxEYXRhc2V0SXRlbRISCgpjcmVhdGVkX2F0GAUgASgJImsKGENyZWF0ZUV2YWxEYXRhc2V0UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEiwKBWl0ZW1zGAMgAygLMh0uZG9tYWluLmFnZW50LkV2YWxEYXRhc2V0SXRlbSJHChlDcmVhdGVFdmFsRGF0YXNldFJlc3BvbnNlEioKB2RhdGFzZXQYASABKAsyGS5kb21haW4uYWdlbnQuRXZhbERhdGFzZXQidwoYVXBkYXRlRXZhbERhdGFzZXRSZXF1ZXN0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSLAoFaXRlbXMYBCADKAsyHS5kb21haW4uYWdlbnQuRXZhbERhdGFzZXRJdGVtIkcKGVVwZGF0ZUV2YWxEYXRhc2V0UmVzcG9uc2USKgoHZGF0YXNldBgBIAEoCzIZLmRvbWFpbi5hZ2VudC5FdmFsRGF0YXNldCImChhEZWxldGVFdmFsRGF0YXNldFJlcXVlc3QSCgoCaWQYASABKAkiGwoZRGVsZXRlRXZhbERhdGFzZXRSZXNwb25zZSIZChdMaXN0RXZhbERhdGFzZXRzUmVxdWVzdCJHChhMaXN0RXZhbERhdGFzZXRzUmVzcG9uc2USKwoIZGF0YXNldHMYASADKAsyGS5kb21haW4uYWdlbnQuRXZhbERhdGFzZXQixAEKDEN1c3RvbVBsdWdpbhIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGVuZHBvaW50GAQgASgJEg4KBm1ldGhvZBgFIAEoCRIRCglhdXRoX3R5cGUYBiABKAkSFAoMaW5wdXRfc2NoZW1hGAcgASgJEhUKDW91dHB1dF9zY2hlbWEYCCABKAkSDwoHZW5hYmxlZBgJIAEoCBISCgpjcmVhdGVkX2F0GAogASgJIqABChlDcmVhdGVDdXN0b21QbHVnaW5SZXF1ZXN0EgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSEAoIZW5kcG9pbnQYAyABKAkSDgoGbWV0aG9kGAQgASgJEhEKCWF1dGhfdHlwZRgFIAEoCRIUCgxpbnB1dF9zY2hlbWEYBiABKAkSFQoNb3V0cHV0X3NjaGVtYRgHIAEoCSJIChpDcmVhdGVDdXN0b21QbHVnaW5SZXNwb25zZRIqCgZwbHVnaW4YASABKAsyGi5kb21haW4uYWdlbnQuQ3VzdG9tUGx1Z2luIr0BChlVcGRhdGVDdXN0b21QbHVnaW5SZXF1ZXN0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIZW5kcG9pbnQYBCABKAkSDgoGbWV0aG9kGAUgASgJEhEKCWF1dGhfdHlwZRgGIAEoCRIUCgxpbnB1dF9zY2hlbWEYByABKAkSFQoNb3V0cHV0X3NjaGVtYRgIIAEoCRIPCgdlbmFibGVkGAkgASgIIkgKGlVwZGF0ZUN1c3RvbVBsdWdpblJlc3BvbnNlEioKBnBsdWdpbhgBIAEoCzIaLmRvbWFpbi5hZ2VudC5DdXN0b21QbHVnaW4iJwoZRGVsZXRlQ3VzdG9tUGx1Z2luUmVxdWVzdBIKCgJpZBgBIAEoCSIcChpEZWxldGVDdXN0b21QbHVnaW5SZXNwb25zZSIaChhMaXN0Q3VzdG9tUGx1Z2luc1JlcXVlc3QiSAoZTGlzdEN1c3RvbVBsdWdpbnNSZXNwb25zZRIrCgdwbHVnaW5zGAEgAygLMhouZG9tYWluLmFnZW50LkN1c3RvbVBsdWdpbkJFWkNnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsYgZwcm90bzM");
+  fileDesc("Chxkb21haW4vYWdlbnQvZWNvc3lzdGVtLnByb3RvEgxkb21haW4uYWdlbnQimQEKCkFnZW50R3JvdXASCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIYChBtZW1iZXJfYWdlbnRfaWRzGAQgAygJEhoKEm9yY2hlc3RyYXRpb25fbW9kZRgFIAEoCRISCgpjcmVhdGVkX2F0GAYgASgJEhIKCnVwZGF0ZWRfYXQYByABKAkiWAoXQ3JlYXRlQWdlbnRHcm91cFJlcXVlc3QSDAoEbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIaChJvcmNoZXN0cmF0aW9uX21vZGUYAyABKAkiQwoYQ3JlYXRlQWdlbnRHcm91cFJlc3BvbnNlEicKBWdyb3VwGAEgASgLMhguZG9tYWluLmFnZW50LkFnZW50R3JvdXAifgoXVXBkYXRlQWdlbnRHcm91cFJlcXVlc3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIaChJvcmNoZXN0cmF0aW9uX21vZGUYBCABKAkSGAoQbWVtYmVyX2FnZW50X2lkcxgFIAMoCSJDChhVcGRhdGVBZ2VudEdyb3VwUmVzcG9uc2USJwoFZ3JvdXAYASABKAsyGC5kb21haW4uYWdlbnQuQWdlbnRHcm91cCIlChdEZWxldGVBZ2VudEdyb3VwUmVxdWVzdBIKCgJpZBgBIAEoCSIaChhEZWxldGVBZ2VudEdyb3VwUmVzcG9uc2UiGAoWTGlzdEFnZW50R3JvdXBzUmVxdWVzdCJDChdMaXN0QWdlbnRHcm91cHNSZXNwb25zZRIoCgZncm91cHMYASADKAsyGC5kb21haW4uYWdlbnQuQWdlbnRHcm91cCJyCgxUb3BpY0NvbW1lbnQSCgoCaWQYASABKAkSEQoJdG9waWNfa2V5GAIgASgJEg8KB2NvbnRlbnQYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoCRITCgthdXRob3JfcHRpZBgFIAEoCVIJYXV0aG9yX2lkIj8KGUNyZWF0ZVRvcGljQ29tbWVudFJlcXVlc3QSEQoJdG9waWNfa2V5GAEgASgJEg8KB2NvbnRlbnQYAiABKAkiSQoaQ3JlYXRlVG9waWNDb21tZW50UmVzcG9uc2USKwoHY29tbWVudBgBIAEoCzIaLmRvbWFpbi5hZ2VudC5Ub3BpY0NvbW1lbnQiQgoZRGVsZXRlVG9waWNDb21tZW50UmVxdWVzdBIRCgl0b3BpY19rZXkYASABKAkSEgoKY29tbWVudF9pZBgCIAEoCSIcChpEZWxldGVUb3BpY0NvbW1lbnRSZXNwb25zZSItChhMaXN0VG9waWNDb21tZW50c1JlcXVlc3QSEQoJdG9waWNfa2V5GAEgASgJIkkKGUxpc3RUb3BpY0NvbW1lbnRzUmVzcG9uc2USLAoIY29tbWVudHMYASADKAsyGi5kb21haW4uYWdlbnQuVG9waWNDb21tZW50IsQBCgxDdXN0b21QbHVnaW4SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIQCghlbmRwb2ludBgEIAEoCRIOCgZtZXRob2QYBSABKAkSEQoJYXV0aF90eXBlGAYgASgJEhQKDGlucHV0X3NjaGVtYRgHIAEoCRIVCg1vdXRwdXRfc2NoZW1hGAggASgJEg8KB2VuYWJsZWQYCSABKAgSEgoKY3JlYXRlZF9hdBgKIAEoCSKgAQoZQ3JlYXRlQ3VzdG9tUGx1Z2luUmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhAKCGVuZHBvaW50GAMgASgJEg4KBm1ldGhvZBgEIAEoCRIRCglhdXRoX3R5cGUYBSABKAkSFAoMaW5wdXRfc2NoZW1hGAYgASgJEhUKDW91dHB1dF9zY2hlbWEYByABKAkiSAoaQ3JlYXRlQ3VzdG9tUGx1Z2luUmVzcG9uc2USKgoGcGx1Z2luGAEgASgLMhouZG9tYWluLmFnZW50LkN1c3RvbVBsdWdpbiK9AQoZVXBkYXRlQ3VzdG9tUGx1Z2luUmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCGVuZHBvaW50GAQgASgJEg4KBm1ldGhvZBgFIAEoCRIRCglhdXRoX3R5cGUYBiABKAkSFAoMaW5wdXRfc2NoZW1hGAcgASgJEhUKDW91dHB1dF9zY2hlbWEYCCABKAkSDwoHZW5hYmxlZBgJIAEoCCJIChpVcGRhdGVDdXN0b21QbHVnaW5SZXNwb25zZRIqCgZwbHVnaW4YASABKAsyGi5kb21haW4uYWdlbnQuQ3VzdG9tUGx1Z2luIicKGURlbGV0ZUN1c3RvbVBsdWdpblJlcXVlc3QSCgoCaWQYASABKAkiHAoaRGVsZXRlQ3VzdG9tUGx1Z2luUmVzcG9uc2UiGgoYTGlzdEN1c3RvbVBsdWdpbnNSZXF1ZXN0IkgKGUxpc3RDdXN0b21QbHVnaW5zUmVzcG9uc2USKwoHcGx1Z2lucxgBIAMoCzIaLmRvbWFpbi5hZ2VudC5DdXN0b21QbHVnaW5CRVpDZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbGIGcHJvdG8z");
 
 /**
  * @generated from message domain.agent.AgentGroup
@@ -365,228 +365,6 @@ export const ListTopicCommentsResponseSchema: GenMessage<ListTopicCommentsRespon
   messageDesc(file_domain_agent_ecosystem, 15);
 
 /**
- * @generated from message domain.agent.EvalDatasetItem
- */
-export type EvalDatasetItem = Message<"domain.agent.EvalDatasetItem"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string input = 2;
-   */
-  input: string;
-
-  /**
-   * @generated from field: string expected_output = 3;
-   */
-  expectedOutput: string;
-
-  /**
-   * @generated from field: repeated string tags = 4;
-   */
-  tags: string[];
-};
-
-/**
- * Describes the message domain.agent.EvalDatasetItem.
- * Use `create(EvalDatasetItemSchema)` to create a new message.
- */
-export const EvalDatasetItemSchema: GenMessage<EvalDatasetItem> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 16);
-
-/**
- * @generated from message domain.agent.EvalDataset
- */
-export type EvalDataset = Message<"domain.agent.EvalDataset"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string description = 3;
-   */
-  description: string;
-
-  /**
-   * @generated from field: repeated domain.agent.EvalDatasetItem items = 4;
-   */
-  items: EvalDatasetItem[];
-
-  /**
-   * @generated from field: string created_at = 5;
-   */
-  createdAt: string;
-};
-
-/**
- * Describes the message domain.agent.EvalDataset.
- * Use `create(EvalDatasetSchema)` to create a new message.
- */
-export const EvalDatasetSchema: GenMessage<EvalDataset> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 17);
-
-/**
- * @generated from message domain.agent.CreateEvalDatasetRequest
- */
-export type CreateEvalDatasetRequest = Message<"domain.agent.CreateEvalDatasetRequest"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string description = 2;
-   */
-  description: string;
-
-  /**
-   * @generated from field: repeated domain.agent.EvalDatasetItem items = 3;
-   */
-  items: EvalDatasetItem[];
-};
-
-/**
- * Describes the message domain.agent.CreateEvalDatasetRequest.
- * Use `create(CreateEvalDatasetRequestSchema)` to create a new message.
- */
-export const CreateEvalDatasetRequestSchema: GenMessage<CreateEvalDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 18);
-
-/**
- * @generated from message domain.agent.CreateEvalDatasetResponse
- */
-export type CreateEvalDatasetResponse = Message<"domain.agent.CreateEvalDatasetResponse"> & {
-  /**
-   * @generated from field: domain.agent.EvalDataset dataset = 1;
-   */
-  dataset?: EvalDataset | undefined;
-};
-
-/**
- * Describes the message domain.agent.CreateEvalDatasetResponse.
- * Use `create(CreateEvalDatasetResponseSchema)` to create a new message.
- */
-export const CreateEvalDatasetResponseSchema: GenMessage<CreateEvalDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 19);
-
-/**
- * @generated from message domain.agent.UpdateEvalDatasetRequest
- */
-export type UpdateEvalDatasetRequest = Message<"domain.agent.UpdateEvalDatasetRequest"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string name = 2;
-   */
-  name: string;
-
-  /**
-   * @generated from field: string description = 3;
-   */
-  description: string;
-
-  /**
-   * @generated from field: repeated domain.agent.EvalDatasetItem items = 4;
-   */
-  items: EvalDatasetItem[];
-};
-
-/**
- * Describes the message domain.agent.UpdateEvalDatasetRequest.
- * Use `create(UpdateEvalDatasetRequestSchema)` to create a new message.
- */
-export const UpdateEvalDatasetRequestSchema: GenMessage<UpdateEvalDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 20);
-
-/**
- * @generated from message domain.agent.UpdateEvalDatasetResponse
- */
-export type UpdateEvalDatasetResponse = Message<"domain.agent.UpdateEvalDatasetResponse"> & {
-  /**
-   * @generated from field: domain.agent.EvalDataset dataset = 1;
-   */
-  dataset?: EvalDataset | undefined;
-};
-
-/**
- * Describes the message domain.agent.UpdateEvalDatasetResponse.
- * Use `create(UpdateEvalDatasetResponseSchema)` to create a new message.
- */
-export const UpdateEvalDatasetResponseSchema: GenMessage<UpdateEvalDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 21);
-
-/**
- * @generated from message domain.agent.DeleteEvalDatasetRequest
- */
-export type DeleteEvalDatasetRequest = Message<"domain.agent.DeleteEvalDatasetRequest"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-};
-
-/**
- * Describes the message domain.agent.DeleteEvalDatasetRequest.
- * Use `create(DeleteEvalDatasetRequestSchema)` to create a new message.
- */
-export const DeleteEvalDatasetRequestSchema: GenMessage<DeleteEvalDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 22);
-
-/**
- * @generated from message domain.agent.DeleteEvalDatasetResponse
- */
-export type DeleteEvalDatasetResponse = Message<"domain.agent.DeleteEvalDatasetResponse"> & {
-};
-
-/**
- * Describes the message domain.agent.DeleteEvalDatasetResponse.
- * Use `create(DeleteEvalDatasetResponseSchema)` to create a new message.
- */
-export const DeleteEvalDatasetResponseSchema: GenMessage<DeleteEvalDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 23);
-
-/**
- * @generated from message domain.agent.ListEvalDatasetsRequest
- */
-export type ListEvalDatasetsRequest = Message<"domain.agent.ListEvalDatasetsRequest"> & {
-};
-
-/**
- * Describes the message domain.agent.ListEvalDatasetsRequest.
- * Use `create(ListEvalDatasetsRequestSchema)` to create a new message.
- */
-export const ListEvalDatasetsRequestSchema: GenMessage<ListEvalDatasetsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 24);
-
-/**
- * @generated from message domain.agent.ListEvalDatasetsResponse
- */
-export type ListEvalDatasetsResponse = Message<"domain.agent.ListEvalDatasetsResponse"> & {
-  /**
-   * @generated from field: repeated domain.agent.EvalDataset datasets = 1;
-   */
-  datasets: EvalDataset[];
-};
-
-/**
- * Describes the message domain.agent.ListEvalDatasetsResponse.
- * Use `create(ListEvalDatasetsResponseSchema)` to create a new message.
- */
-export const ListEvalDatasetsResponseSchema: GenMessage<ListEvalDatasetsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 25);
-
-/**
  * @generated from message domain.agent.CustomPlugin
  */
 export type CustomPlugin = Message<"domain.agent.CustomPlugin"> & {
@@ -652,7 +430,7 @@ export type CustomPlugin = Message<"domain.agent.CustomPlugin"> & {
  * Use `create(CustomPluginSchema)` to create a new message.
  */
 export const CustomPluginSchema: GenMessage<CustomPlugin> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 26);
+  messageDesc(file_domain_agent_ecosystem, 16);
 
 /**
  * @generated from message domain.agent.CreateCustomPluginRequest
@@ -699,7 +477,7 @@ export type CreateCustomPluginRequest = Message<"domain.agent.CreateCustomPlugin
  * Use `create(CreateCustomPluginRequestSchema)` to create a new message.
  */
 export const CreateCustomPluginRequestSchema: GenMessage<CreateCustomPluginRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 27);
+  messageDesc(file_domain_agent_ecosystem, 17);
 
 /**
  * @generated from message domain.agent.CreateCustomPluginResponse
@@ -716,7 +494,7 @@ export type CreateCustomPluginResponse = Message<"domain.agent.CreateCustomPlugi
  * Use `create(CreateCustomPluginResponseSchema)` to create a new message.
  */
 export const CreateCustomPluginResponseSchema: GenMessage<CreateCustomPluginResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 28);
+  messageDesc(file_domain_agent_ecosystem, 18);
 
 /**
  * @generated from message domain.agent.UpdateCustomPluginRequest
@@ -773,7 +551,7 @@ export type UpdateCustomPluginRequest = Message<"domain.agent.UpdateCustomPlugin
  * Use `create(UpdateCustomPluginRequestSchema)` to create a new message.
  */
 export const UpdateCustomPluginRequestSchema: GenMessage<UpdateCustomPluginRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 29);
+  messageDesc(file_domain_agent_ecosystem, 19);
 
 /**
  * @generated from message domain.agent.UpdateCustomPluginResponse
@@ -790,7 +568,7 @@ export type UpdateCustomPluginResponse = Message<"domain.agent.UpdateCustomPlugi
  * Use `create(UpdateCustomPluginResponseSchema)` to create a new message.
  */
 export const UpdateCustomPluginResponseSchema: GenMessage<UpdateCustomPluginResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 30);
+  messageDesc(file_domain_agent_ecosystem, 20);
 
 /**
  * @generated from message domain.agent.DeleteCustomPluginRequest
@@ -807,7 +585,7 @@ export type DeleteCustomPluginRequest = Message<"domain.agent.DeleteCustomPlugin
  * Use `create(DeleteCustomPluginRequestSchema)` to create a new message.
  */
 export const DeleteCustomPluginRequestSchema: GenMessage<DeleteCustomPluginRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 31);
+  messageDesc(file_domain_agent_ecosystem, 21);
 
 /**
  * @generated from message domain.agent.DeleteCustomPluginResponse
@@ -820,7 +598,7 @@ export type DeleteCustomPluginResponse = Message<"domain.agent.DeleteCustomPlugi
  * Use `create(DeleteCustomPluginResponseSchema)` to create a new message.
  */
 export const DeleteCustomPluginResponseSchema: GenMessage<DeleteCustomPluginResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 32);
+  messageDesc(file_domain_agent_ecosystem, 22);
 
 /**
  * @generated from message domain.agent.ListCustomPluginsRequest
@@ -833,7 +611,7 @@ export type ListCustomPluginsRequest = Message<"domain.agent.ListCustomPluginsRe
  * Use `create(ListCustomPluginsRequestSchema)` to create a new message.
  */
 export const ListCustomPluginsRequestSchema: GenMessage<ListCustomPluginsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 33);
+  messageDesc(file_domain_agent_ecosystem, 23);
 
 /**
  * @generated from message domain.agent.ListCustomPluginsResponse
@@ -850,4 +628,4 @@ export type ListCustomPluginsResponse = Message<"domain.agent.ListCustomPluginsR
  * Use `create(ListCustomPluginsResponseSchema)` to create a new message.
  */
 export const ListCustomPluginsResponseSchema: GenMessage<ListCustomPluginsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_ecosystem, 34);
+  messageDesc(file_domain_agent_ecosystem, 24);

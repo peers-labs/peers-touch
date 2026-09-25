@@ -1,0 +1,154 @@
+{
+  "kind": "peers-touch-legacy-inventory",
+  "projectId": "SAL-20260926",
+  "status": "complete-for-plan-baseline",
+  "updatedAt": "2026-09-26",
+  "dimensions": [
+    "production-source",
+    "client-command-wrapper",
+    "station-route-handler",
+    "proto-generated",
+    "schema-backfill",
+    "test-fixture-mock",
+    "acceptance-runner",
+    "docs-locales-prototype",
+    "build-runtime-registration"
+  ],
+  "scanRoots": [
+    "apps/desktop",
+    "apps/mobile",
+    "apps/station/frame/touch",
+    "apps/station/app/subserver/federation",
+    "model/domain/access_gate",
+    "model/domain/federation",
+    "model/domain/peer",
+    "packages",
+    "tooling/acceptance",
+    "tooling/scripts",
+    "docs/architecture/access-gates",
+    "docs/architecture/api-ownership",
+    "docs/architecture/federation",
+    "docs/architecture/identity",
+    "docs/client",
+    "Makefile",
+    "Cargo.toml",
+    "go.mod",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml"
+  ],
+  "ownerTasks": {
+    "SAL-L01": "SAL-01-access-hard-cut",
+    "SAL-L02": "SAL-01-access-hard-cut",
+    "SAL-L03": "SAL-02-federation-relay-boundary",
+    "SAL-L04": "SAL-02-federation-relay-boundary",
+    "SAL-L05": "SAL-02-federation-relay-boundary",
+    "SAL-L06": "SAL-01-access-hard-cut",
+    "SAL-L07": "SAL-01-access-hard-cut"
+  },
+  "matchContract": "Case-sensitive symbols and routes are searched across every scanRoot. seedPaths are starting evidence, not an allowlist. Every match must be deleted by its owner Task; new matches expand evidence.",
+  "rule": "Every entry must reach zero references across all nine dimensions before its owner Task completes.",
+  "entries": [
+    {
+      "id": "SAL-L01",
+      "concern": "desktop direct login fallback",
+      "symbols": ["auth_login", "direct_login_fallback"],
+      "routes": ["/actor/login"],
+      "seedPaths": [
+        "apps/desktop/src-tauri/src/application/auth/service.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+        "apps/desktop/src/services/desktop_api.ts"
+      ],
+      "target": "delete"
+    },
+    {
+      "id": "SAL-L02",
+      "concern": "unscoped mobile account-history compatibility",
+      "symbols": [
+        "LEGACY_AUTH_ACCOUNT_HISTORY_KEY",
+        "purgeLegacyMobileIdentityStorage",
+        "MOBILE_IDENTITY_SCOPE_CUTOVER_KEY"
+      ],
+      "routes": [],
+      "seedPaths": [
+        "apps/mobile/src/features/auth/authSession.ts",
+        "apps/mobile/src/storage/mobileClientStorage.ts"
+      ],
+      "target": "delete"
+    },
+    {
+      "id": "SAL-L03",
+      "concern": "desktop end-user federation governance",
+      "symbols": [
+        "federation_create",
+        "federation_join",
+        "federation_leave",
+        "federation_delete",
+        "federation_list_member_stations"
+      ],
+      "routes": [],
+      "seedPaths": [
+        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/desktop/src/store/federation.ts",
+        "apps/desktop/src-tauri/src/application/federation/mod.rs"
+      ],
+      "target": "remove-client-consumers"
+    },
+    {
+      "id": "SAL-L04",
+      "concern": "duplicate actor federation profile surface",
+      "symbols": ["FederationSelfView", "FederationVisibilityRequest"],
+      "routes": ["/actor/federation/me", "/actor/federation/visibility"],
+      "seedPaths": [
+        "model/domain/federation/federation_self.proto",
+        "apps/desktop/src-tauri/src/application/federation/mod.rs"
+      ],
+      "target": "merge-into-actor-profile-and-delete"
+    },
+    {
+      "id": "SAL-L05",
+      "concern": "relay topology in ordinary onboarding",
+      "symbols": ["StationNetworkIntro", "RelayReveal"],
+      "routes": [],
+      "seedPaths": [
+        "apps/desktop/src/components/common/StationNetworkIntro.tsx",
+        "apps/mobile/src/components/StationNetworkIntro.tsx"
+      ],
+      "target": "replace-with-trust-and-connection-status"
+    },
+    {
+      "id": "SAL-L06",
+      "concern": "client-side Access Gate wire compatibility",
+      "symbols": [
+        "normalizeDecision",
+        "RawAccessDecision",
+        "RawAccessGate",
+        "RawAccessGateAction"
+      ],
+      "routes": [],
+      "seedPaths": [
+        "apps/desktop/src/services/accessGate.ts",
+        "apps/mobile/src/features/auth/authSession.ts",
+        "docs/knowledge/invariants/access-gate-wire-contract.md"
+      ],
+      "target": "replace-with-protobuf-only"
+    },
+    {
+      "id": "SAL-L07",
+      "concern": "station Access Gate legacy submission",
+      "symbols": [
+        "ValidateLegacySubmission",
+        "validateLegacyActionInput",
+        "submitLegacyAccessLogin",
+        "submitLegacyAccessInviteCode"
+      ],
+      "routes": [],
+      "seedPaths": [
+        "apps/station/frame/touch/accessgate/submission.go",
+        "apps/station/frame/touch/actor_handler.go"
+      ],
+      "target": "delete"
+    }
+  ]
+}

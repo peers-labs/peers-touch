@@ -428,6 +428,97 @@
           "Mobile typing parity remains unproven until MP-W09 Native cells pass"
         ]
       }
+    },
+    {
+      "id": "chat-mixed-client-convergence",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-mixed-client-convergence"],
+      "required_gates": [
+        "chat-lifecycle-mixed-client-same-station-e2e",
+        "chat-lifecycle-mixed-client-cross-station-e2e",
+        "chat-lifecycle-mixed-client-multi-device-e2e",
+        "chat-lifecycle-call-resolution-e2e",
+        "chat-lifecycle-mixed-client-group-mls-e2e"
+      ],
+      "synthetic_paths": [
+        "tooling/acceptance/environments/chat-mixed-native.yaml",
+        "tooling/acceptance/provisioners/mobile_simulator.py",
+        "tooling/acceptance/gates/mobile/simulator_runtime_binding.py",
+        "tooling/acceptance/gates/chat/mixed_native_runtime.py",
+        "tooling/acceptance/gates/chat/lifecycle_call_resolution.py",
+        "tooling/acceptance/gates/chat/lifecycle_mixed_client_*.py",
+        "apps/desktop/src/acceptance/chat/harness.ts",
+        "apps/mobile/src/acceptance/**"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Conversation and Realtime control planes",
+          "Desktop Device Messaging Engine",
+          "Mobile Messaging runtime",
+          "durable call-resolution store"
+        ],
+        "surfaces": [
+          "native macOS Desktop Chat",
+          "native iOS simulator Chat",
+          "same-actor Desktop and Mobile call surfaces"
+        ],
+        "proven_by": [
+          "chat-lifecycle-mixed-client-same-station-e2e",
+          "chat-lifecycle-mixed-client-cross-station-e2e",
+          "chat-lifecycle-mixed-client-multi-device-e2e",
+          "chat-lifecycle-call-resolution-e2e",
+          "chat-lifecycle-mixed-client-group-mls-e2e"
+        ],
+        "proven_scope": [
+          "Same-Station and cross-Station Desktop-Mobile message convergence",
+          "Same-actor Desktop-Mobile continuity and durable call arbitration",
+          "Three-actor mixed-client Group membership and MLS epoch convergence"
+        ],
+        "unproven_scope": [
+          "Linux or Windows Desktop mixed-client cells without current source-bound evidence",
+          "Android Mobile mixed-client cells without current source-bound evidence",
+          "Physical-device behavior"
+        ]
+      }
+    },
+    {
+      "id": "chat-client-unification-integrity",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-client-unification-integrity"],
+      "required_gates": ["chat-lifecycle-tree-zero-reference-e2e"],
+      "synthetic_paths": [
+        "docs/architecture/chat-lifecycle/legacy-inventory.json",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+        "apps/mobile/src/features/chat/**",
+        "apps/mobile/src/runtimes/messagingRuntime.ts",
+        "apps/station/app/subserver/conversation/**",
+        "model/domain/chat/**",
+        "packages/messaging-core/**",
+        "tooling/acceptance/gates/chat/**"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Conversation resource-owner APIs",
+          "Desktop and Mobile Device Messaging Engine projections",
+          "CCU legacy inventory"
+        ],
+        "surfaces": [
+          "Desktop Chat",
+          "Mobile Chat",
+          "/conversation/*"
+        ],
+        "proven_by": ["chat-lifecycle-tree-zero-reference-e2e"],
+        "proven_scope": [
+          "Inventory-declared deleted paths remain absent",
+          "All nine CCU zero-reference dimensions reject executable legacy Chat references"
+        ],
+        "unproven_scope": [
+          "Runtime behavior is proven by the separate mixed-client and native receiver Gates"
+        ]
+      }
     }
   ]
 }

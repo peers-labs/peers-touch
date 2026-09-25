@@ -121,6 +121,9 @@ CREATE TABLE friend_chat_friendships (
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
 	}
+	if err := infrastructure.MigrateIdentitySchema(gdb); err != nil {
+		t.Fatalf("migrate Social relationship authority: %v", err)
+	}
 	bindApplicationActorStore(t, gdb)
 	seedFixtureActors(t, gdb)
 
@@ -193,10 +196,17 @@ func seedFollow(t *testing.T, f *fixture, follower, following uint64) {
 
 func seedBlock(t *testing.T, f *fixture, actorID, peerID uint64) {
 	t.Helper()
+	actorPTID := fixturePTID(actorID)
+	peerPTID := fixturePTID(peerID)
 	if err := f.gdb.Exec(
-		"INSERT INTO friend_chat_friendships (actor_ptid, peer_ptid, status) VALUES (?, ?, 3)",
-		fixturePTID(actorID),
-		fixturePTID(peerID),
+		"INSERT INTO social_directional_relationships "+
+			"(actor_ptid, target_actor_ptid, actor_home_station_peer_id, "+
+			"target_home_station_peer_id, blocked, revision, updated_at) "+
+			"VALUES (?, ?, '', '', ?, ?, CURRENT_TIMESTAMP)",
+		actorPTID,
+		peerPTID,
+		true,
+		1,
 	).Error; err != nil {
 		t.Fatalf("seed block %d->%d: %v", actorID, peerID, err)
 	}
@@ -385,6 +395,141 @@ func TestRead_BlockCannotBeBypassedByAudienceKinds(t *testing.T) {
 				t.Fatalf("blocked viewer must not read %s post", tc.name)
 			}
 		})
+	}
+}
+
+func TestRead_DetailOutcomesRemainDistinctAndPayloadFree(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	available, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("available"),
+	}, fixturePTID(100))
+	if err != nil {
+		t.Fatalf("create available: %v", err)
+	}
+	hidden, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Content:  textBody("hidden"),
+	}, fixturePTID(100))
+	if err != nil {
+		t.Fatalf("create hidden: %v", err)
+	}
+	deleted, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("deleted"),
+	}, fixturePTID(100))
+	if err != nil {
+		t.Fatalf("create deleted: %v", err)
+	}
+	if err := f.moments.DeleteMoment(ctx, deleted.Id, fixturePTID(100)); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		postID     string
+		viewerPTID string
+		want       model.PostDetailOutcome
+		wantPost   bool
+	}{
+		{
+			name:       "available",
+			postID:     available.Id,
+			viewerPTID: fixturePTID(200),
+			want:       model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE,
+			wantPost:   true,
+		},
+		{
+			name:       "hidden",
+			postID:     hidden.Id,
+			viewerPTID: fixturePTID(200),
+			want:       model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN,
+		},
+		{
+			name:       "deleted",
+			postID:     deleted.Id,
+			viewerPTID: fixturePTID(100),
+			want:       model.PostDetailOutcome_POST_DETAIL_OUTCOME_DELETED,
+		},
+		{
+			name:       "unavailable",
+			postID:     "999999999999",
+			viewerPTID: fixturePTID(200),
+			want:       model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			post, outcome, err := f.moments.GetMomentDetail(
+				ctx,
+				tc.postID,
+				tc.viewerPTID,
+			)
+			if err != nil {
+				t.Fatalf("get detail: %v", err)
+			}
+			if outcome != tc.want {
+				t.Fatalf("outcome = %s, want %s", outcome, tc.want)
+			}
+			if (post != nil) != tc.wantPost {
+				t.Fatalf("post present = %t, want %t", post != nil, tc.wantPost)
+			}
+		})
+	}
+}
+
+func TestTimeline_ReportsTrueEmptyAndFilteredEmpty(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	empty, err := f.timeline.GetTimeline(
+		ctx,
+		&model.GetTimelineRequest{
+			Type:  model.TimelineType_TIMELINE_PUBLIC,
+			Limit: 20,
+		},
+		fixturePTID(200),
+	)
+	if err != nil {
+		t.Fatalf("empty timeline: %v", err)
+	}
+	if empty.GetOutcome() != model.TimelinePageOutcome_TIMELINE_PAGE_OUTCOME_EMPTY ||
+		empty.GetPolicySummary().GetScannedCount() != 0 ||
+		empty.GetPolicySummary().GetFilteredCount() != 0 {
+		t.Fatalf("unexpected true-empty projection: %+v", empty)
+	}
+
+	if _, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type:     model.PostType_TEXT,
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  textBody("policy filtered"),
+	}, fixturePTID(100)); err != nil {
+		t.Fatalf("create filtered post: %v", err)
+	}
+	seedBlock(t, f, 100, 200)
+
+	filtered, err := f.timeline.GetTimeline(
+		ctx,
+		&model.GetTimelineRequest{
+			Type:  model.TimelineType_TIMELINE_PUBLIC,
+			Limit: 20,
+		},
+		fixturePTID(200),
+	)
+	if err != nil {
+		t.Fatalf("filtered timeline: %v", err)
+	}
+	if filtered.GetOutcome() !=
+		model.TimelinePageOutcome_TIMELINE_PAGE_OUTCOME_FILTERED_EMPTY ||
+		filtered.GetPolicySummary().GetScannedCount() != 1 ||
+		filtered.GetPolicySummary().GetFilteredCount() != 1 ||
+		len(filtered.GetPosts()) != 0 {
+		t.Fatalf("unexpected filtered-empty projection: %+v", filtered)
 	}
 }
 

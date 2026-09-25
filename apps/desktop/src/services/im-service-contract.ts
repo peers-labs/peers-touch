@@ -129,6 +129,13 @@ export interface MessagingAttachmentProjection {
   storageRef: string
   ciphertextSize: number
   availabilityState: 'uploading' | 'remote' | 'local' | 'failed'
+  voiceNote?: MessagingVoiceNoteMetadata
+}
+
+export interface MessagingVoiceNoteMetadata {
+  durationMs: number
+  codec: string
+  waveform: number[]
 }
 
 export interface MessagingLocalAttachmentIntent {
@@ -136,6 +143,7 @@ export interface MessagingLocalAttachmentIntent {
   filename: string
   mimeType: string
   size?: number
+  voiceNote?: MessagingVoiceNoteMetadata
 }
 
 export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed'
@@ -171,6 +179,18 @@ export interface MessagingConversationProjection {
   mlsStatus: 'idle' | 'active' | 'establishing' | 'crypto_desynced' | null
   active: boolean
   updatedAtUnixMs: number
+  summary: MessagingConversationSummary
+}
+
+export interface MessagingConversationSummary {
+  unreadCount: number
+  latestMessage?: MessagingProjection
+}
+
+export interface MessagingMessagePage {
+  messages: MessagingProjection[]
+  hasMore: boolean
+  nextBeforeSequence?: number
 }
 
 export interface MessagingCommandStatus {
@@ -223,7 +243,14 @@ export interface MessagingServiceContract {
       threadRootMessageId?: string
     },
   ): Promise<MessagingSendOutcome>
-  listMessages(conversationId: string): Promise<MessagingProjection[]>
+  listMessages(
+    conversationId: string,
+    options?: { beforeSequence?: number; limit?: number },
+  ): Promise<MessagingMessagePage>
+  retryMessage(
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ commandId?: string; messageId: string; state: 'pending' | 'retrying' }>
   listThreadMessages(
     conversationId: string,
     threadRootMessageId: string,

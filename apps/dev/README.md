@@ -37,5 +37,8 @@ make dev-ui-snapshot
 - The sibling `env` repository remains the profile and deploy-topology owner.
 - `~/.peers-touch/dev/` remains machine-local state.
 
+For tracked Plans, the UI displays both current Task-closure progress and the
+machine-derived progress expected after the current Next Progress Slice.
+
 Peers Dev is read-only in this version. Future write operations must use
 guarded `devctl` application services instead of editing authority files.

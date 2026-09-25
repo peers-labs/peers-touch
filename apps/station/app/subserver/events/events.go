@@ -11,17 +11,27 @@ package events
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
+const callResolutionSweepInterval = time.Second
+
 type eventsSubServer struct {
-	mu     sync.RWMutex
-	status server.Status
-	addrs  []string
-	bus    EventBus
+	mu                   sync.RWMutex
+	status               server.Status
+	addrs                []string
+	bus                  EventBus
+	callResolution       *callResolutionStore
+	federation           realtimeFederationRuntime
+	actorHomes           actorHomeStationResolver
+	federatedCallSignals *federatedCallSignalSender
+	localStationPeerID   string
+	callResolutionCancel context.CancelFunc
+	callResolutionDone   chan struct{}
 }
 
 func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -37,7 +47,12 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 	if err := eventStore.AutoMigrate(); err != nil {
 		return err
 	}
+	callResolution := newCallResolutionStore(rds)
+	if err := callResolution.AutoMigrate(); err != nil {
+		return err
+	}
 	s.bus = NewEventBus(WithDurableStore(eventStore))
+	s.callResolution = callResolution
 	setGlobalBus(s.bus)
 	return nil
 }
@@ -45,6 +60,20 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 func (s *eventsSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.bindFederation(); err != nil {
+		s.status = server.StatusError
+		return err
+	}
+	if s.callResolution != nil && s.callResolutionCancel == nil {
+		reaperContext, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		s.callResolutionCancel = cancel
+		s.callResolutionDone = done
+		go func() {
+			defer close(done)
+			s.reapCallResolutions(reaperContext)
+		}()
+	}
 	s.status = server.StatusRunning
 	return nil
 }
@@ -55,6 +84,12 @@ func (s *eventsSubServer) Stop(ctx context.Context) error {
 
 	if s.bus != nil {
 		s.bus.Close()
+	}
+	if s.callResolutionCancel != nil {
+		s.callResolutionCancel()
+		<-s.callResolutionDone
+		s.callResolutionCancel = nil
+		s.callResolutionDone = nil
 	}
 	setGlobalBus(nil)
 	s.status = server.StatusStopped
@@ -67,6 +102,25 @@ func (s *eventsSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
 func (s *eventsSubServer) Status() server.Status { return s.status }
+
+func (s *eventsSubServer) reapCallResolutions(ctx context.Context) {
+	ticker := time.NewTicker(callResolutionSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			expired, err := s.callResolution.sweep(ctx)
+			if err != nil {
+				continue
+			}
+			for index := range expired {
+				s.fanOutNoAnswer(ctx, expired[index])
+			}
+		}
+	}
+}
 
 // NewEventsSubServer constructs the realtime events subserver. It is
 // registered on Station boot via app/main.go.

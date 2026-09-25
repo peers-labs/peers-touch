@@ -339,16 +339,20 @@ def write_ipa(
     path: Path,
     payload: bytes = b"controlled-binary",
     *,
+    include_callback_url_types: bool = True,
     info_values: Mapping[str, Any] | None = None,
     extra_entries: Mapping[str, bytes] | None = None,
 ) -> None:
-    info = plistlib.dumps(
-        {
-            "CFBundleExecutable": "Peers",
-            "CFBundleIdentifier": APPLICATION_ID,
-            **dict(info_values or {}),
-        }
-    )
+    values: dict[str, Any] = {
+        "CFBundleExecutable": "Peers",
+        "CFBundleIdentifier": APPLICATION_ID,
+    }
+    if include_callback_url_types:
+        values["CFBundleURLTypes"] = [
+            {"CFBundleURLSchemes": ["peers-touch"]}
+        ]
+    values.update(info_values or {})
+    info = plistlib.dumps(values)
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("Payload/Peers.app/Info.plist", info)
         archive.writestr("Payload/Peers.app/Peers", payload)
@@ -706,6 +710,7 @@ class MobileNativeBuildTest(unittest.TestCase):
             "packages/client-storage/package.json",
             "packages/locales/package.json",
             "packages/messaging-core/Cargo.toml",
+            "packages/prototypes/mobile/chat/package.json",
         }
         self.assertTrue(expected.issubset(paths), expected - paths)
         self.assertFalse(any("/build/" in path or "/.gradle/" in path for path in paths))
@@ -1842,6 +1847,115 @@ time.sleep(60)
             )
             with self.assertRaises(MobileNativeBuildError):
                 inspect_ios_ipa(ipa, ios_runner(profile_certificate=b"other"))
+
+    def test_ipa_inspection_accepts_exact_declared_callback_scheme_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            ipa = Path(temporary) / "mobile.ipa"
+            write_ipa(
+                ipa,
+                info_values={
+                    "CFBundleURLTypes": [
+                        {
+                            "CFBundleURLSchemes": [
+                                "peers-touch",
+                                "peers-touch-preview",
+                            ]
+                        }
+                    ]
+                },
+            )
+
+            inspect_ios_ipa(
+                ipa,
+                ios_runner(),
+                expected_callback_schemes={
+                    "peers-touch",
+                    "peers-touch-preview",
+                },
+            )
+
+    def test_ipa_inspection_rejects_missing_and_wrong_callback_schemes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = {
+                "missing": {
+                    "include_callback_url_types": False,
+                    "info_values": None,
+                },
+                "wrong": {
+                    "include_callback_url_types": True,
+                    "info_values": {
+                        "CFBundleURLTypes": [
+                            {"CFBundleURLSchemes": ["other-app"]}
+                        ]
+                    },
+                },
+                "unexpected": {
+                    "include_callback_url_types": True,
+                    "info_values": {
+                        "CFBundleURLTypes": [
+                            {
+                                "CFBundleURLSchemes": [
+                                    "peers-touch",
+                                    "unexpected-app",
+                                ]
+                            }
+                        ]
+                    },
+                },
+            }
+            for name, fixture in fixtures.items():
+                with self.subTest(name=name):
+                    ipa = root / f"{name}.ipa"
+                    write_ipa(ipa, **fixture)
+                    runner = ios_runner()
+                    with self.assertRaises(MobileNativeBuildError):
+                        inspect_ios_ipa(ipa, runner)
+                    self.assertEqual(runner.commands, [])
+
+    def test_ipa_inspection_rejects_malformed_callback_schemes(self) -> None:
+        malformed_values = {
+            "url-types-not-list": "peers-touch",
+            "url-type-not-object": ["peers-touch"],
+            "schemes-missing": [{}],
+            "schemes-not-list": [{"CFBundleURLSchemes": "peers-touch"}],
+            "scheme-not-string": [{"CFBundleURLSchemes": [7]}],
+            "scheme-invalid": [{"CFBundleURLSchemes": ["peers-touch://oauth"]}],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name, url_types in malformed_values.items():
+                with self.subTest(name=name):
+                    ipa = root / f"{name}.ipa"
+                    write_ipa(
+                        ipa,
+                        info_values={"CFBundleURLTypes": url_types},
+                    )
+                    runner = ios_runner()
+                    with self.assertRaises(MobileNativeBuildError):
+                        inspect_ios_ipa(ipa, runner)
+                    self.assertEqual(runner.commands, [])
+
+    def test_ipa_inspection_rejects_duplicate_callback_schemes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            ipa = Path(temporary) / "mobile.ipa"
+            write_ipa(
+                ipa,
+                info_values={
+                    "CFBundleURLTypes": [
+                        {"CFBundleURLSchemes": ["peers-touch"]},
+                        {"CFBundleURLSchemes": ["PEERS-TOUCH"]},
+                    ]
+                },
+            )
+            runner = ios_runner()
+
+            with self.assertRaisesRegex(
+                MobileNativeBuildError,
+                "duplicated",
+            ):
+                inspect_ios_ipa(ipa, runner)
+            self.assertEqual(runner.commands, [])
 
     def test_attestation_and_release_scan_require_same_opaque_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

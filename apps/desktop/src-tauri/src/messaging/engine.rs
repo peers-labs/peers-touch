@@ -5,8 +5,9 @@ use super::{
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
     AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker,
     CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
-    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
-    DirectSessionBootstrapper, DrainProgress, EditTextIntent, MessagingItemConsumer,
+    ConversationMemberProjection, ConversationMessagePage, ConversationMessageProjection,
+    ConversationProjection, ConversationSummaryProjection, DirectSessionBootstrapper,
+    DrainProgress, EditTextIntent, MessageRetryDisposition, MessagingItemConsumer,
     MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
     StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
@@ -20,14 +21,15 @@ use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
-    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationEvent, ConversationKind,
-    CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
+    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationCommandKind,
+    ConversationEvent, ConversationKind, CreateDirectConversationRequest,
+    CreateDirectConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
+    DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
     ListConversationEventsRequest, ListConversationEventsResponse, MemberRole,
-    MessagingMembershipAction, MlsLeaveIntent, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, PreparedEndpointPayloadKind,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest,
+    MessagingMembershipAction, MessagingProjectionKind, MlsLeaveIntent,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest, VoiceNoteMetadata,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
@@ -76,9 +78,13 @@ const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment sour
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
     pub profile_id: String,
+    pub actor_ptid: String,
+    pub home_station_peer_id: String,
+    pub device_id: String,
     pub conversation_id: String,
     pub event_id: String,
     pub lane_sequence: i64,
+    pub kind: MessagingProjectionKind,
 }
 
 pub type MessagingProjectionNotifier = Arc<dyn Fn(MessagingProjectionChange) + Send + Sync>;
@@ -103,6 +109,13 @@ pub struct SubmitMessageOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryMessageOutcome {
+    pub command_id: Option<String>,
+    pub message_id: String,
+    pub state: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedGroupConversation {
     pub conversation_id: String,
     pub command_id: String,
@@ -113,6 +126,7 @@ pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
     pub mime_type: String,
+    pub voice_note: Option<VoiceNoteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -938,12 +952,22 @@ impl MessagingEngine {
             .clone();
         if let Some(notifier) = notifier {
             let profile_id = self.profile_id.clone();
+            let actor_ptid = self.endpoint.ptid.clone();
+            let device_id = self.endpoint.device_id.clone();
+            let home_station_peer_id =
+                station_client::active_station_peer_id().ok_or_else(|| {
+                    "messaging projection Home Station identity is unavailable".to_string()
+                })?;
             drain = drain.with_acknowledged_item_observer(Arc::new(move |item| {
                 notifier(MessagingProjectionChange {
                     profile_id: profile_id.clone(),
+                    actor_ptid: actor_ptid.clone(),
+                    home_station_peer_id: home_station_peer_id.clone(),
+                    device_id: device_id.clone(),
                     conversation_id: item.conversation_id.clone(),
                     event_id: item.event_id.clone(),
                     lane_sequence: item.lane_sequence,
+                    kind: MessagingProjectionKind::Conversation,
                 });
             }));
         }
@@ -1044,6 +1068,15 @@ impl MessagingEngine {
         token: &str,
         conversation_id: &str,
     ) -> Result<PrepareConversationCommandResponse, String> {
+        self.prepare_command_plan(token, conversation_id, ConversationCommandKind::SendMessage)
+    }
+
+    fn prepare_command_plan(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        command_kind: ConversationCommandKind,
+    ) -> Result<PrepareConversationCommandResponse, String> {
         if conversation_id.trim().is_empty() {
             return Err("messaging send plan requires conversation ID".to_string());
         }
@@ -1058,6 +1091,7 @@ impl MessagingEngine {
                     &self.endpoint.device_id,
                 )),
                 authority_station_peer_id: authority_station_id,
+                command_kind: command_kind as i32,
             })
     }
 
@@ -1403,11 +1437,85 @@ impl MessagingEngine {
         )
     }
 
+    pub fn retry_message(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        message_id: &str,
+    ) -> Result<RetryMessageOutcome, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        let now = now_unix_ms();
+        match self
+            .store
+            .prepare_message_retry(conversation_id, message_id, now)?
+        {
+            MessageRetryDisposition::ExactCommand { command_id } => Ok(RetryMessageOutcome {
+                command_id: Some(command_id),
+                message_id: message_id.to_string(),
+                state: "retrying",
+            }),
+            MessageRetryDisposition::DraftReady => {
+                let draft = self
+                    .store
+                    .message_draft(message_id)?
+                    .ok_or_else(|| "messaging retry draft is unavailable".to_string())?;
+                if draft.conversation_id != conversation_id
+                    || draft.sender_ptid != self.endpoint.ptid
+                    || draft.sender_device_id != self.endpoint.device_id
+                {
+                    return Err("messaging retry draft identity mismatch".to_string());
+                }
+                match self.prepare_message_draft(token, &draft) {
+                    Ok(command_id) => Ok(RetryMessageOutcome {
+                        command_id: Some(command_id),
+                        message_id: message_id.to_string(),
+                        state: "pending",
+                    }),
+                    Err(error) => {
+                        tracing::warn!(
+                            conversation_id,
+                            message_id,
+                            error = %error,
+                            "messaging manual retry preparation deferred"
+                        );
+                        self.schedule_message_draft_retry(&draft, now)?;
+                        Ok(RetryMessageOutcome {
+                            command_id: None,
+                            message_id: message_id.to_string(),
+                            state: "retrying",
+                        })
+                    }
+                }
+            }
+        }
+    }
+
     pub fn conversation_messages(
         &self,
         conversation_id: &str,
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store.conversation_message_projections(conversation_id)
+    }
+
+    pub fn conversation_message_page(
+        &self,
+        conversation_id: &str,
+        before_sequence: Option<i64>,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        self.store
+            .conversation_message_page(conversation_id, before_sequence, limit)
+    }
+
+    pub fn conversation_summary(
+        &self,
+        conversation_id: &str,
+    ) -> Result<ConversationSummaryProjection, String> {
+        self.store
+            .conversation_summary_projection(conversation_id, &self.endpoint.ptid)
     }
 
     pub fn thread_messages(
@@ -1528,7 +1636,11 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
-        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let plan = self.prepare_command_plan(
+            token,
+            conversation_id,
+            ConversationCommandKind::EditMessage,
+        )?;
         let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
         let command_id = Ulid::new().to_string();
@@ -1590,7 +1702,14 @@ impl MessagingEngine {
             return Err("messaging interaction target is required".to_string());
         }
         self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let command_kind = match interaction {
+            MetadataInteraction::HideForActor => ConversationCommandKind::HideMessageForActor,
+            MetadataInteraction::Moderate { .. } => ConversationCommandKind::ModerateMessage,
+            MetadataInteraction::Retract => ConversationCommandKind::RetractMessage,
+            MetadataInteraction::Reaction { .. } => ConversationCommandKind::React,
+            MetadataInteraction::Pin { .. } => ConversationCommandKind::PinMessage,
+        };
+        let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
         let command_id = Ulid::new().to_string();
         let now = now_unix_ms();
         MetadataInteractionPreparer::new(
@@ -1935,6 +2054,21 @@ impl MessagingEngine {
             label,
             &StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
         )
+    }
+
+    pub fn ensure_current_device_enrolled(
+        &self,
+        token: &str,
+        label: String,
+    ) -> Result<ActorDevice, String> {
+        let manager = DeviceEnrollmentManager::new(
+            self.store.clone(),
+            self.endpoint.ptid.clone(),
+            self.endpoint.device_id.clone(),
+        )?;
+        let transport =
+            StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
+        manager.enroll_current(label, &transport)
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> bool {
@@ -2460,6 +2594,10 @@ fn prepare_local_attachment_upload(
     {
         return Err("messaging local attachment intent is incomplete".to_string());
     }
+    messaging_core::codec::private_content::validate_voice_note_metadata(
+        &intent.mime_type,
+        intent.voice_note.as_ref(),
+    )?;
     let source = std::fs::canonicalize(Path::new(&intent.source_local_ref))
         .map_err(|error| format!("resolve messaging attachment source: {error}"))?;
     let metadata = source
@@ -2511,6 +2649,7 @@ fn prepare_local_attachment_upload(
         filename: intent.filename.clone(),
         mime_type: intent.mime_type.clone(),
         plaintext_sha256: hasher.finalize().to_vec(),
+        voice_note: intent.voice_note.clone(),
     })
 }
 
@@ -2699,11 +2838,15 @@ mod tests {
                 ptid: alice.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                muted: false,
+                muted_until: None,
             },
             ConversationAuthorityMember {
                 ptid: bob.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                muted: false,
+                muted_until: None,
             },
         ];
         let mut event = ConversationEvent {

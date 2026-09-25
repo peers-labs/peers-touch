@@ -13,6 +13,7 @@ from tooling.acceptance.core import (
     BindingProofRecord,
     ClientRuntimeIdentity,
 )
+from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native.base import MouseAction, NativeKey
 from tooling.acceptance.drivers.native.runtime import (
@@ -682,6 +683,46 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 [call.args[0] for call in run.call_args_list],
             )
             self.assertFalse(runtime_profile_root.exists())
+
+    def test_make_launcher_reads_machine_workspace_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "peers-group-chat"
+            root.mkdir()
+            home = Path(temp_dir) / "home"
+            state_path = (
+                home
+                / ".peers-touch"
+                / "dev"
+                / "workspaces"
+                / workspace_id(root)
+                / "runtime"
+                / "four-app"
+                / "desktop-app-tauri.json"
+            )
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "service": "desktop-app-tauri",
+                        "profile": "four-app",
+                        "worktreeId": "peers-group-chat",
+                        "pid": 5678,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launcher = MakeDesktopLauncher(
+                worktree=root,
+                port=4447,
+                gateway_port=3140,
+                renderer_port=3410,
+                profile="four-app",
+                storage_root=str(root / "storage"),
+                environment={"HOME": str(home)},
+            )
+            launcher._launch_environment = {"HOME": str(home)}
+
+            self.assertEqual(launcher._managed_process_pid(), 5678)
 
     def test_macos_cleanup_retains_persistent_client_storage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

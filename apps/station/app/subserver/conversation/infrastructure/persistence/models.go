@@ -35,7 +35,7 @@ type ConversationMemberModel struct {
 	HomeStation    string     `gorm:"column:actor_home_station_peer_id;size:255;not null"`
 	JoinedSequence uint64     `gorm:"column:joined_sequence;not null"`
 	LeftSequence   uint64     `gorm:"column:left_sequence;not null"`
-	Muted          bool       `gorm:"column:muted;not null"`
+	Muted          bool       `gorm:"column:muted;not null;default:false"`
 	MutedUntil     *time.Time `gorm:"column:muted_until"`
 }
 

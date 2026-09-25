@@ -200,6 +200,11 @@ export interface ChatAttachmentLike {
   readonly tag_size?: number | string | bigint;
   readonly nonceStrategy?: string;
   readonly nonce_strategy?: string;
+  readonly voiceNote?: {
+    readonly durationMs?: number;
+    readonly codec?: string;
+    readonly waveform?: readonly number[];
+  };
 }
 
 export interface ChatEncryptedMessagePayload<Attachment extends ChatAttachmentLike = ChatAttachmentLike> {
@@ -491,6 +496,7 @@ export const CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN: ResolvedChatComposerCapabil
   ...EMPTY_COMPOSER_CAPABILITIES,
   emoji: true,
   file: true,
+  voice: true,
 };
 
 export const CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD: ResolvedChatComposerCapabilities = {

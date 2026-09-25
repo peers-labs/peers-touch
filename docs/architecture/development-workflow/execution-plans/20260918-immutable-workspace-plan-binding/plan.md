@@ -1,6 +1,6 @@
 # Immutable Workspace Plan Binding
 
-> **Status**: completed
+> **Status**: active
 > **Branch**: peers-dev-workflow
 > **Workspace ID**: dbd1913c8dd24d52
 > **Initial HEAD**: ba6d87f7aec177b6783289e2b498209407f547b5
@@ -9,10 +9,9 @@
 
 ```json
 {
-  "schemaVersion": 2,
   "kind": "peers-touch-plan-package",
   "planId": "DWF-IMMUTABLE-PLAN-BINDING-20260918",
-  "status": "completed",
+  "status": "active",
   "binding": {
     "branch": "peers-dev-workflow",
     "workspaceId": "dbd1913c8dd24d52",
@@ -31,25 +30,18 @@
       "DWF-D16",
       "DWF-D17",
       "DWF-D18",
-      "DWF-D19"
+      "DWF-D19",
+      "DWF-D20",
+      "DWF-D21",
+      "DWF-D22",
+      "DWF-D23",
+      "DWF-D25"
     ]
   },
   "scope": {
     "sourceClaims": [
       {
-        "pathPrefix": ".github/PULL_REQUEST_TEMPLATE.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": ".github/workflows/review.yml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/desktop/src/acceptance/agent/harness.ts",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/dev",
+        "pathPrefix": ".gitignore",
         "mode": "exclusive-write"
       },
       {
@@ -57,19 +49,15 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "docs/architecture/development-workflow",
+        "pathPrefix": "apps/dev",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/architecture",
         "mode": "exclusive-write"
       },
       {
         "pathPrefix": "docs/architecture/acceptance-framework/decisions.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/architecture/chat-lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md",
         "mode": "exclusive-write"
       },
       {
@@ -85,6 +73,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/global/workflow.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/knowledge",
         "mode": "exclusive-write"
       },
@@ -94,10 +86,6 @@
       },
       {
         "pathPrefix": "tooling/acceptance",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/devctl",
         "mode": "exclusive-write"
       },
       {
@@ -117,6 +105,8 @@
       "Change product behavior",
       "Serialize independent worktrees that synchronize through one PR",
       "Infer Plan ownership from branch names or repository contents",
+      "Treat peers-dev-workflow as a central runtime-state owner",
+      "Maintain a shared mutable active_work table in project memory",
       "Provide a Plan unbind or rebind operation"
     ]
   },
@@ -126,7 +116,7 @@
       "workstreamId": "DWF-PLAN-BINDING",
       "path": "tasks/DWF-PLAN-BINDING-HARD-CUT.md",
       "dependsOn": [],
-      "status": "done",
+      "status": "in_progress",
       "blocker": null
     }
   ],
@@ -155,7 +145,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "closures": {
     "immutable-workspace-plan-binding": [
       "acceptance-workflow-contract",
@@ -181,9 +170,13 @@
 
 ## Goal
 
-Allow many synchronized Plan Packages in one repository or PR while every
-workspace resolves exactly one machine-local, immutable Plan binding and live
-source identity advances outside tracked Plan content.
+Allow many synchronized Plan Packages and concurrent Goals in one repository or
+PR while every workspace resolves one machine-local immutable Plan binding,
+owns one atomic active-work continuation record, and advances live source
+identity outside tracked Plan content. Cross-workspace dashboards, memory and
+chat projections are read-only aggregation. `peers-dev-workflow` owns the
+canonical implementation and rollout contract only; each consuming worktree
+runs the distributed implementation against its own workspace machine state.
 
 ## Completion
 
@@ -195,5 +188,15 @@ source identity advances outside tracked Plan content.
 - Group Chat and Agent worktrees resolve their own Plans from the same
   synchronized repository history.
 - Plan Packages retain only the immutable initial HEAD; Git, the public
-  declaration, Development Session checkpoint, and `active_work` own advancing
-  source identity.
+  declaration and Development Session own advancing source identity, while the
+  workspace-owned active-work record carries the resumable locator projection.
+- Project memory, Peers Dev and Context Anchor enumerate workspace records
+  read-only; no workflow action rewrites a shared cross-workspace table.
+- Rollout proves that each consuming worktree derives its own `workspaceId` and
+  state path after distribution; the source repository never becomes a central
+  mutable runtime-state service.
+- Continuous Plan Run, Goal scheduling, runtime verification and host Skill
+  projection remain project-owned and host-neutral.
+- User-specific interaction policy resolves from a machine-local,
+  digest-verified Overlay registry without entering canonical Skill rollout or
+  changing project execution semantics.

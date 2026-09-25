@@ -20,6 +20,6 @@ export function registerSocialChatPage(): void {
     factory: () => <SocialChatPage />,
     preload: 'idle',
     keepAlive: 'forever',
-    runtimes: ['social'],
+    runtimes: ['social', 'messaging', 'call'],
   });
 }

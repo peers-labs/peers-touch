@@ -3,7 +3,7 @@ use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
     ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberSettings,
     MemberStatus, MessagingMembershipAction, MlsLeaveIntent, UpdateMemberSettingsRequest,
-    UpdateMemberSettingsResponse,
+    UpdateMemberSettingsResponse, VoiceNoteMetadata,
 };
 use crate::state::AppState;
 use reqwest::Method;
@@ -18,6 +18,16 @@ pub struct MessagingLocalAttachmentInput {
     pub file_path: String,
     pub filename: String,
     pub mime_type: String,
+    #[serde(default)]
+    pub voice_note: Option<MessagingVoiceNoteInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingVoiceNoteInput {
+    pub duration_ms: u32,
+    pub codec: String,
+    #[serde(default)]
+    pub waveform: Vec<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +57,20 @@ pub struct MessagingSendMessageInput {
 #[derive(Debug, Deserialize)]
 pub struct MessagingListMessagesInput {
     pub conversation_id: String,
+    #[serde(default)]
+    pub before_sequence: Option<i64>,
+    #[serde(default = "default_message_page_limit")]
+    pub limit: usize,
+}
+
+fn default_message_page_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingRetryMessageInput {
+    pub conversation_id: String,
+    pub message_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,6 +316,37 @@ fn conversation_member_json(
     })
 }
 
+fn message_projection_json(message: &crate::messaging::ConversationMessageProjection) -> Value {
+    json!({
+        "event_id": message.event_id,
+        "event_sequence": message.event_sequence,
+        "message_id": message.message_id,
+        "sender_ptid": message.sender_ptid,
+        "sender_device_id": message.sender_device_id,
+        "plaintext": message.plaintext,
+        "attachments": message.attachments.iter()
+            .map(attachment_projection_json)
+            .collect::<Vec<_>>(),
+        "state": message.state,
+        "timestamp_unix_ms": message.timestamp_unix_ms,
+        "reply_to_message_id": message.reply_to_message_id,
+        "thread_root_message_id": message.thread_root_message_id,
+        "edited_text": message.edited_text,
+        "edited_at_unix_ms": message.edited_at_unix_ms,
+        "retracted": message.retracted,
+        "reactions": message.reactions.iter().map(
+            |(actor_ptid, reaction, created_at_unix_ms)| json!({
+                "actor_ptid": actor_ptid,
+                "reaction": reaction,
+                "created_at_unix_ms": created_at_unix_ms,
+            })
+        ).collect::<Vec<_>>(),
+        "pinned_by_ptid": message.pinned_by_ptid,
+        "pinned_at_unix_ms": message.pinned_at_unix_ms,
+        "read_by_ptids": message.read_by_ptids,
+    })
+}
+
 pub(crate) fn conversation_projection_json(
     engine: &crate::messaging::MessagingEngine,
     conversation: &crate::messaging::ConversationProjection,
@@ -306,6 +361,7 @@ pub(crate) fn conversation_projection_json(
         .iter()
         .map(|member| conversation_member_json(&conversation.conversation_id, member))
         .collect::<Vec<_>>();
+    let summary = engine.conversation_summary(&conversation.conversation_id)?;
     Ok(json!({
         "conversation_id": conversation.conversation_id,
         "authority_station_id": conversation.authority_station_id,
@@ -319,6 +375,10 @@ pub(crate) fn conversation_projection_json(
         "mls_status": mls_status,
         "active": conversation.active,
         "updated_at_unix_ms": conversation.updated_at_unix_ms,
+        "summary": {
+            "unread_count": summary.unread_count,
+            "latest_message": summary.latest_message.as_ref().map(message_projection_json),
+        },
     }))
 }
 
@@ -690,6 +750,11 @@ fn attachment_projection_json(
         "storage_ref": object.map(|value| value.storage_ref.as_str()).unwrap_or_default(),
         "ciphertext_size": object.map(|value| value.ciphertext_size).unwrap_or_default(),
         "availability_state": if object.is_some() { "remote" } else { "uploading" },
+        "voice_note": attachment.voice_note.as_ref().map(|voice_note| json!({
+            "duration_ms": voice_note.duration_ms,
+            "codec": voice_note.codec,
+            "waveform": voice_note.waveform,
+        })),
     })
 }
 
@@ -923,11 +988,13 @@ pub async fn messaging_acceptance_create_restorable_command(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> Result<AppResult<Value>, String> {
-    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
+    let recovery_fixture = std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
         .ok()
         .as_deref()
-        != Some("1")
-    {
+        == Some("1");
+    let direct_retry_fixture =
+        std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref() == Some("chat-lifecycle-direct-e2e");
+    if !recovery_fixture && !direct_retry_fixture {
         return Ok(AppResult::fail(
             ErrorCode::Forbidden,
             "acceptance.chat.submittedCommandFixtureUnauthorized",
@@ -1468,6 +1535,11 @@ pub async fn messaging_send_message(
             source_local_ref: attachment.file_path,
             filename: attachment.filename,
             mime_type: attachment.mime_type,
+            voice_note: attachment.voice_note.map(|voice_note| VoiceNoteMetadata {
+                duration_ms: voice_note.duration_ms,
+                codec: voice_note.codec,
+                waveform: voice_note.waveform,
+            }),
         })
         .collect::<Vec<_>>();
     let outcome = match tauri::async_runtime::spawn_blocking(move || {
@@ -1500,6 +1572,50 @@ pub async fn messaging_send_message(
         "command_id": outcome.command_id.unwrap_or_default(),
         "message_id": outcome.message_id,
         "attachment_ids": outcome.attachment_ids,
+        "state": outcome.state,
+    })))
+}
+
+#[tauri::command]
+pub async fn messaging_retry_message(
+    input: MessagingRetryMessageInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> Result<AppResult<Value>, String> {
+    if input.conversation_id.trim().is_empty() || input.message_id.trim().is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and message_id are required",
+            None,
+        ));
+    }
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
+    let conversation_id = input.conversation_id;
+    let message_id = input.message_id;
+    let outcome = match tauri::async_runtime::spawn_blocking(move || {
+        engine.retry_message(&token, &conversation_id, &message_id)
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("messaging retry worker failed: {error}"),
+                None,
+            ))
+        }
+    };
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
+    Ok(AppResult::success(json!({
+        "command_id": outcome.command_id.unwrap_or_default(),
+        "message_id": outcome.message_id,
         "state": outcome.state,
     })))
 }
@@ -1759,39 +1875,18 @@ pub(crate) fn messaging_list_messages_result(
             None,
         );
     }
-    let messages = match engine.conversation_messages(&input.conversation_id) {
-        Ok(messages) => messages,
+    let page = match engine.conversation_message_page(
+        &input.conversation_id,
+        input.before_sequence,
+        input.limit,
+    ) {
+        Ok(page) => page,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     AppResult::success(json!({
-        "messages": messages.into_iter().map(|message| json!({
-            "event_id": message.event_id,
-            "event_sequence": message.event_sequence,
-            "message_id": message.message_id,
-            "sender_ptid": message.sender_ptid,
-            "sender_device_id": message.sender_device_id,
-            "plaintext": message.plaintext,
-            "attachments": message.attachments.iter()
-                .map(attachment_projection_json)
-                .collect::<Vec<_>>(),
-            "state": message.state,
-            "timestamp_unix_ms": message.timestamp_unix_ms,
-            "reply_to_message_id": message.reply_to_message_id,
-            "thread_root_message_id": message.thread_root_message_id,
-            "edited_text": message.edited_text,
-            "edited_at_unix_ms": message.edited_at_unix_ms,
-            "retracted": message.retracted,
-            "reactions": message.reactions.into_iter().map(
-                |(actor_ptid, reaction, created_at_unix_ms)| json!({
-                    "actor_ptid": actor_ptid,
-                    "reaction": reaction,
-                    "created_at_unix_ms": created_at_unix_ms,
-                })
-            ).collect::<Vec<_>>(),
-            "pinned_by_ptid": message.pinned_by_ptid,
-            "pinned_at_unix_ms": message.pinned_at_unix_ms,
-            "read_by_ptids": message.read_by_ptids,
-        })).collect::<Vec<_>>()
+        "messages": page.messages.iter().map(message_projection_json).collect::<Vec<_>>(),
+        "has_more": page.has_more,
+        "next_before_sequence": page.next_before_sequence,
     }))
 }
 

@@ -10,12 +10,18 @@ export {
   isValidPhaseTransition,
 } from './lifecycleReducer';
 export { topologicalSortRuntimes, reverseTeardownOrder } from './topologicalSort';
+export { readRuntimeAvailability } from './runtimeAvailability';
 export type {
   LifecyclePhase,
   LifecycleTransitionReason,
+  DraftDisposition,
+  RuntimeTeardownContext,
   MobileLaunchState,
   RuntimeBootstrapStatus,
   MobileRuntimeDescriptor,
+  MobileRuntimeContext,
+  RuntimeReadiness,
+  RuntimeReadinessUpdate,
   RuntimeOperationResult,
   AggregateTeardownResult,
   LifecycleKernelSnapshot,

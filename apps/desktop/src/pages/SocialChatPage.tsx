@@ -9,7 +9,6 @@ import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPa
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
-import { CallSurface } from '../components/chat/CallSurface';
 import {
   beginDirectConversationOpen,
   failDirectConversationOpen,
@@ -21,7 +20,7 @@ import {
 import { api } from '../services/desktop_api';
 import { mapChatError } from '../services/errorMappings/chatErrorMapping';
 import { presentError } from '../services/errorPresenter';
-import { imServiceV1 } from '../services/im-service';
+import { messagingCommands } from '../messaging/runtime';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
 import { currentAuthenticatedActorPtid } from '../store/session';
@@ -43,11 +42,9 @@ function reportDirectOpenDebug(detail: Record<string, unknown>): void {
 // #endregion
 
 // Page contract:
-//   • All projection state (sessions, groups, friend requests, conversation
-//     previews, unread counts, current user profile, encryption keys) is
-//     OWNED by `runtimes/socialRuntime.ts` (which adapts
-//     `services/socialRealtime.ts`). This page is a pure renderer over
-//     that store.
+//   • Messaging projection state is owned by `runtimes/messagingRuntime.ts`;
+//     friendship/profile/presence state is owned by `socialRuntime.ts`. This
+//     page is a pure renderer over their typed projection store.
 //   • The only page-bound side-effects are P2P transport subscriptions
 //     (which depend on the active session/peer in this view) and the
 //     opt-in crypto telemetry tick. Both are explicitly view-bound, so
@@ -147,7 +144,7 @@ export function SocialChatPage() {
     });
     // #endregion
 
-    void imServiceV1.messaging.createDirect({
+    void messagingCommands.createDirect({
       peerPtid: contact.peerPtid,
       federationId: contact.federationId,
     }).then((conversation) => {
@@ -243,7 +240,6 @@ export function SocialChatPage() {
       setFriendP2pStatus(sid, status.state, status.detail, status.transport);
     });
 
-    callP2p.ensurePeerRegistered(currentUserPtid).catch(() => {});
     return () => {
       callP2p.setOnStatus(null);
     };
@@ -270,13 +266,6 @@ export function SocialChatPage() {
       callP2p.closeIdleConnections();
     };
   }, [currentUserPtid, activePeerDid, setFriendP2pStatus]);
-
-  // --- Page unmount: full teardown of every connection and any live call ---
-  useEffect(() => {
-    return () => {
-      callP2p.closeAll();
-    };
-  }, []);
 
   const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
     { key: 'chats', icon: MessageCircle, label: t('chat.social.subNav.chats') },
@@ -410,9 +399,6 @@ export function SocialChatPage() {
           onMessage={handleContactMessage}
         />
       )}
-      {/* Voice / video call surface — page-level so a ringing call
-          stays visible regardless of which conversation is open. */}
-      <CallSurface />
     </Flexbox>
   );
 }

@@ -10,6 +10,7 @@ export function WriteRevocationNotice({
   return (
     <section
       className="recovery-notice recovery-write-revocation"
+      data-acceptance-id="recovery-write-revocation"
       role="status"
       aria-label={t('mobile.recovery.writeRevocation.title')}
     >

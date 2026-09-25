@@ -1,6 +1,6 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
+.PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
@@ -68,6 +68,9 @@ acceptance-cell-stop:
 
 acceptance-plan:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+
+acceptance-plan-self:
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)

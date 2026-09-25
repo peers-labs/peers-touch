@@ -27,8 +27,9 @@ constraints only; do not answer by saying they were read.
    the response.
 4. **Fail closed on missing evidence** - invalid diff ranges, unavailable CI,
    failed knowledge matching, or missing acceptance plans are review findings.
-5. **Escalate precisely** - humans handle owner intent, product tradeoffs,
-   security posture, rollout risk, and hard-rule waivers.
+5. **Escalate precisely** - humans handle only owner intent, product/security/
+   privacy/compatibility/rollout tradeoffs that accepted sources cannot resolve,
+   destructive/irreversible authorization, and hard-rule waivers.
 
 ## Review Workflow
 
@@ -84,7 +85,7 @@ under `## Execution Plans / 执行计划`; CI passes each path through `--plan` 
 must not infer a Plan from the PR branch.
 Reject Plan Packages that retain mutable `expectedHead`; current source
 identity belongs to the Development declaration, Session checkpoint, and
-`active_work` projection rather than tracked Plan content.
+the workspace active-work projection rather than tracked Plan content.
 
 If the PR touches review or skill infrastructure, also run:
 
@@ -128,11 +129,19 @@ verify:
 - only live, backend-addressable agents with the same Goal identity block new
   work;
 - stale agent metadata is not converted into a persistent no-subagent rule;
-- Context Anchors report completed delta, ready queue, execution mode and
-  lanes, conflict controls, critical path, and an evidence-backed ETA or
-  `unknown`;
+- Context Anchors report the machine-derived post-Next completed count and
+  percentage, completed delta, ready queue, execution mode and lanes, conflict
+  controls, critical path, Plan Run queue/mandate/autonomous horizon/stop
+  conditions, and an evidence-backed ETA or `unknown`;
+- Anchor and dashboard consumers copy post-Next progress from
+  `planctl status.progress.nextProgressBoundary`; reject local rounded
+  percentage addition or counting newly unlocked Tasks as complete;
 - resume-time Anchor synchronization does not pause already-authorized
   execution.
+- Goal Slice completion returns a legal successor frontier to Dev Workflow
+  instead of asking the user whether to continue.
+- routine stage/code review findings are remediated and re-reviewed inside the
+  Plan Run.
 
 ### 4. Decide
 
@@ -142,8 +151,13 @@ Use the evidence, but decide from code and project contracts:
 - Does it violate a matched invariant or repeat a pitfall?
 - Does acceptance evidence actually prove the claimed product scope?
 - Are unproven scopes acceptable for this PR, or must they block?
-- Is human owner approval required for architecture, security, federation,
-  persistence, rollout, or product behavior?
+- Does one precise DWF-D20 hard-boundary decision require human owner approval,
+  or can accepted sources and project Review Skills decide it?
+
+When this review runs inside an authorized Plan Run, return actionable findings
+to `pt-dev-workflow`. The workflow fixes source-backed findings, reruns affected
+checks, and invokes this review again. `hold` is not automatically a user
+handoff.
 
 ### 5. Run Review Learning Check
 
@@ -338,6 +352,14 @@ concurrency decisions, identity-based live-agent conflict detection, reserved
 write sets, integrator-owned reconciliation, and non-blocking Context Anchor
 projection.
 
+For Local Dev Profile changes, reject any stored reset-policy field or
+compatibility reader. The verified canonical Profile ID is the sole policy
+source: case-insensitive `stable` means reset-protected; all other reviewed
+Profiles are Agent-resettable only inside the exact binding capability,
+declaration, scope, topology/source identity, and OS-lease guards. Missing
+capability or scope must remain a typed control-plane failure, not a request for
+human authorization.
+
 ### Acceptance Review
 
 Check domain, capability, feature, gate, report, and onboarding consistency.
@@ -389,7 +411,7 @@ Overall: merge | hold | reject
 
 - Must fix before merge:
 - Can follow up:
-- Human owner review needed:
+- Human owner hard-boundary decision needed:
 
 ### Framework Growth Opportunities
 

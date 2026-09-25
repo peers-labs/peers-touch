@@ -7,11 +7,13 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import (
+    AcceptanceGate,
     ArtifactRef,
     ArtifactSession,
     DriverError,
@@ -36,22 +38,51 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
 )
 
 
-ENVIRONMENT_ID = "mobile-social-simulator"
+ENVIRONMENT_ID = "mobile-direct-simulator"
 SCENARIO_GATES = {
     "social-convergence": "mobile-simulator-social-convergence-e2e",
     "chat-contacts": "mobile-simulator-chat-contacts-e2e",
+    "recovery": "mobile-simulator-recovery-e2e",
+    "recovery-ui": "mobile-simulator-recovery-ui-e2e",
+    "moments": "mobile-simulator-moments-e2e",
 }
 CLIENT_ASSIGNMENTS = {
-    "sim-ios": ("station-primary", "alice"),
-    "sim-android": ("station-secondary", "bob"),
+    "sim-ios": ("station", "alice"),
+    "sim-ios-peer": ("station", "bob"),
 }
-UNPROVEN_SCOPE = (
-    "physical-device behavior",
-    "authoritative Station history readback",
-    "forced event-loss recovery",
-    "native background and foreground lifecycle",
-    "tab-remount interaction timing",
-    "full MS-AG04 and MS-AG06",
+SCENARIO_METADATA = {
+    "social-convergence": {
+        "phase": "W5 Simulator Social Convergence",
+        "bom": ["W5", "W5-OWNER"],
+        "spec": ["MS-AG06"],
+    },
+    "chat-contacts": {
+        "phase": "W6A Simulator Chat Contacts And Groups",
+        "bom": ["W5", "W5-OWNER", "W6A"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG09"],
+    },
+    "recovery": {
+        "phase": "W4 Simulator Command And Draft Recovery",
+        "bom": ["W4"],
+        "spec": ["MS-AG04", "MS-AG09", "MS-AG10"],
+    },
+    "recovery-ui": {
+        "phase": "W6D Simulator Recovery UI",
+        "bom": ["W4", "W6D"],
+        "spec": ["MS-AG04", "MS-AG08", "MS-AG09", "MS-AG10", "MS-AG11"],
+    },
+    "moments": {
+        "phase": "W6B Simulator Moments Participation",
+        "bom": ["W5", "W5-OWNER", "W6B"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG10"],
+    },
+}
+OPTIONAL_DIAGNOSTIC_SCOPE = (
+    "physical-device hardware behavior",
+    "live provider browser authorization",
+    "physical Keychain or AndroidKeyStore characteristics",
+    "VoiceOver or TalkBack traversal",
+    "OEM scheduler, picker, and pinned-hardware performance",
 )
 
 
@@ -81,6 +112,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 manifest = self._load_social_manifest()
                 result = self._run_social_journey(artifacts, manifest)
                 status = "PASS"
+                completion_status = "DONE"
+                proof_status = "PROVEN"
                 exit_code = 0
             except SimulatorGateBlocked as error:
                 status = "BLOCKED"
@@ -164,25 +197,23 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         if not manifest_path:
             raise SimulatorGateBlocked(
                 "PT_ACCEPTANCE_RUNTIME_MANIFEST is required",
-                "mobile-social-simulator:manifest",
+                f"{ENVIRONMENT_ID}:manifest",
             )
         try:
             manifest = load_runtime_manifest(
                 Path(manifest_path),
                 self.gate_id,
             )
-            require_runtime_service(manifest, "station-primary", "station")
-            require_runtime_service(manifest, "station-secondary", "station")
-            require_runtime_service(manifest, "relay", "relay")
+            require_runtime_service(manifest, "station", "station")
         except ProvisioningError as error:
             raise SimulatorGateBlocked(
                 str(error),
-                "mobile-social-simulator:manifest",
+                f"{ENVIRONMENT_ID}:manifest",
             ) from error
         if manifest.get("environmentId") != ENVIRONMENT_ID:
             raise SimulatorGateBlocked(
-                "RuntimeManifest environment must be mobile-social-simulator",
-                "mobile-social-simulator:environment",
+                f"RuntimeManifest environment must be {ENVIRONMENT_ID}",
+                f"{ENVIRONMENT_ID}:environment",
             )
         return manifest
 
@@ -202,12 +233,12 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         appium = self._required_object(
             resources,
             "appium",
-            "mobile-social-simulator resources",
+            f"{ENVIRONMENT_ID} resources",
         )
         server_url = self._required_text(
             appium,
             "serverUrl",
-            "mobile-social-simulator Appium",
+            f"{ENVIRONMENT_ID} Appium",
         )
         specs = self._client_specs(resources)
         sessions = {
@@ -229,22 +260,47 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             for client_id, actor in actors.items()
         }
         sender = actors["sim-ios"]
-        receiver = actors["sim-android"]
+        receiver = actors["sim-ios-peer"]
         if self.scenario == "social-convergence":
             journey_result = journey.run_social_convergence(
                 sender_session=sessions["sim-ios"],
-                receiver_session=sessions["sim-android"],
+                receiver_session=sessions["sim-ios-peer"],
+                sender=sender,
+                receiver=receiver,
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "chat-contacts":
+            journey_result = journey.run_chat_contacts(
+                sender_session=sessions["sim-ios"],
+                receiver_session=sessions["sim-ios-peer"],
+                sender=sender,
+                receiver=receiver,
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "recovery":
+            journey_result = self._run_recovery_journey(
+                sender_session=sessions["sim-ios"],
+                receiver_session=sessions["sim-ios-peer"],
+                sender=sender,
+                receiver=receiver,
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "recovery-ui":
+            journey_result = self._run_recovery_ui_journey(
+                session=sessions["sim-ios"],
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "moments":
+            journey_result = self._run_moments_journey(
+                sender_session=sessions["sim-ios"],
+                receiver_session=sessions["sim-ios-peer"],
                 sender=sender,
                 receiver=receiver,
                 journey_id=artifacts.run_id[-12:],
             )
         else:
-            journey_result = journey.run_chat_contacts(
-                sender_session=sessions["sim-ios"],
-                receiver_session=sessions["sim-android"],
-                sender=sender,
-                receiver=receiver,
-                journey_id=artifacts.run_id[-12:],
+            raise GateError(
+                f"unsupported Mobile simulator scenario: {self.scenario}"
             )
         captures = {
             client_id: self._capture_client(
@@ -290,8 +346,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         raw_reference = manifest.get("actorManifest")
         if not isinstance(raw_reference, Mapping):
             raise SimulatorGateBlocked(
-                "Mobile social simulator actor manifest is missing",
-                "mobile-social-simulator:actor-manifest",
+                "Mobile direct simulator actor manifest is missing",
+                f"{ENVIRONMENT_ID}:actor-manifest",
             )
         try:
             reference = ArtifactRef.from_dict(raw_reference)
@@ -304,8 +360,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             payload = artifacts.store.read_json(reference)
         except Exception as error:
             raise SimulatorGateBlocked(
-                "Mobile social simulator actor manifest is invalid",
-                "mobile-social-simulator:actor-manifest",
+                "Mobile direct simulator actor manifest is invalid",
+                f"{ENVIRONMENT_ID}:actor-manifest",
             ) from error
         stations = self._required_object(
             payload,
@@ -323,8 +379,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             entries = station.get("actors")
             if not isinstance(entries, list):
                 raise SimulatorGateBlocked(
-                    f"Mobile social actor manifest {service_id} has no actors",
-                    "mobile-social-simulator:actor-manifest",
+                    f"Mobile direct actor manifest {service_id} has no actors",
+                    f"{ENVIRONMENT_ID}:actor-manifest",
                 )
             actor = next(
                 (
@@ -336,23 +392,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             if not isinstance(actor, Mapping):
                 raise SimulatorGateBlocked(
-                    f"Mobile social actor manifest has no {role}",
-                    "mobile-social-simulator:actor-manifest",
-                )
-            home_station_peer_id = self._required_text(
-                actor,
-                "homeStationPeerId",
-                f"Mobile social actor {role}",
-            )
-            service_station_peer_id = self._required_text(
-                service,
-                "runtimeIdentity",
-                f"Mobile social service {service_id}",
-            )
-            if home_station_peer_id != service_station_peer_id:
-                raise SimulatorGateBlocked(
-                    f"Mobile social actor {role} Home Station identity mismatch",
-                    "mobile-social-simulator:actor-manifest",
+                    f"Mobile direct actor manifest has no {role}",
+                    f"{ENVIRONMENT_ID}:actor-manifest",
                 )
             actors[client_id] = MessagingActor(
                 client_id=client_id,
@@ -363,9 +404,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     f"Mobile social service {service_id}",
                 ),
                 station_peer_id=self._required_text(
-                    actor,
-                    "homeStationPeerId",
-                    f"Mobile social actor {role}",
+                    service,
+                    "runtimeIdentity",
+                    f"Mobile social service {service_id}",
                 ),
                 ptid=self._required_text(
                     actor,
@@ -389,6 +430,523 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 ),
             )
         return actors
+
+    def _run_recovery_journey(
+        self,
+        *,
+        sender_session: Any,
+        receiver_session: Any,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        chat_draft = sender_session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "chat",
+                "targetId": f"recovery-{journey_id}-chat",
+                "text": f"recovery-{journey_id}-chat-draft",
+            },
+        )
+        moment_draft = sender_session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "moment",
+                "targetId": f"recovery-{journey_id}-moment",
+                "text": f"recovery-{journey_id}-moment-draft",
+                "audienceKind": 1,
+            },
+        )
+        before = self._reliability_snapshot(
+            sender_session.call_action("reliability.snapshot"),
+            "recovery snapshot before restart",
+        )
+        self._require_drafts(before, (chat_draft, moment_draft))
+        restart = sender_session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("recovery lifecycle restart was not acknowledged")
+        restored = sender_session.call_action("reliability.draft.read", {})
+        self._require_drafts({"drafts": restored}, (chat_draft, moment_draft))
+
+        sender_session.call_action(
+            "reliability.fixture.configure",
+            {"mode": "lose-dispatch-response-and-readback"},
+        )
+        try:
+            submission = self._mapping(
+                sender_session.call_action(
+                    "reliability.friendRequest.submit",
+                    {
+                        "receiverPtid": receiver.ptid,
+                        "receiverHomeStationPeerId": (
+                            receiver.station_peer_id
+                        ),
+                        "federationId": sender.federation_id,
+                        "message": f"recovery-{journey_id}",
+                    },
+                ),
+                "recovery submission",
+            )
+            command = self._mapping(
+                submission.get("command"),
+                "recovery command",
+            )
+            command_id = self._text(
+                command.get("commandId"),
+                "recovery command ID",
+            )
+            request_id = self._text(
+                command.get("requestId"),
+                "recovery request ID",
+            )
+            payload_sha256 = self._sha256(
+                command.get("payloadSha256"),
+                "recovery payload digest",
+            )
+            if command.get("state") not in {
+                "unknown-outcome",
+                "reconciling",
+            }:
+                raise GateError(
+                    "response-loss fixture did not preserve unknown outcome"
+                )
+            unresolved = self._reliability_snapshot(
+                sender_session.call_action("reliability.snapshot"),
+                "unresolved recovery snapshot",
+            )
+            self._require_command(
+                unresolved,
+                command_id,
+                payload_sha256,
+                {"unknown-outcome", "reconciling"},
+            )
+            recovery_ui = self._wait_for_recovery_kind(
+                sender_session,
+                "command-recovery",
+            )
+        finally:
+            sender_session.call_action(
+                "reliability.fixture.configure",
+                {"mode": "none"},
+            )
+
+        reconciled = self._mapping(
+            sender_session.call_action("reliability.reconcile"),
+            "recovery reconcile",
+        )
+        commands = reconciled.get("commands")
+        if (
+            not isinstance(commands, list)
+            or not any(
+                isinstance(item, Mapping)
+                and item.get("commandId") == command_id
+                and item.get("payloadSha256") == payload_sha256
+                and item.get("checkpointReady") is True
+                for item in commands
+            )
+            or not isinstance(reconciled.get("appliedCheckpoints"), int)
+            or int(reconciled["appliedCheckpoints"]) < 1
+        ):
+            raise GateError("recovery checkpoint was not applied")
+        relationship = self._wait_for_friend_request(
+            receiver_session,
+            request_id=request_id,
+            sender_ptid=sender.ptid,
+            receiver_ptid=receiver.ptid,
+        )
+        retained = self._reliability_snapshot(
+            sender_session.call_action(
+                "reliability.draft.action",
+                {"action": "restore"},
+            ),
+            "restored draft snapshot",
+        )
+        self._require_drafts(retained, (chat_draft, moment_draft))
+        discarded = self._reliability_snapshot(
+            sender_session.call_action(
+                "reliability.draft.action",
+                {"action": "discard"},
+            ),
+            "discarded draft snapshot",
+        )
+        if discarded["drafts"]:
+            raise GateError("recovery draft discard did not remove all rows")
+        return {
+            "scenario": "recovery",
+            "commandId": command_id,
+            "requestId": request_id,
+            "payloadSha256": payload_sha256,
+            "checkpointApplied": True,
+            "receiverReadback": relationship,
+            "draftRestartReadback": True,
+            "draftDiscarded": True,
+            "recoveryProjection": recovery_ui,
+        }
+
+    def _run_recovery_ui_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        draft = session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "chat",
+                "targetId": f"recovery-ui-{journey_id}",
+                "text": f"recovery-ui-{journey_id}-draft",
+            },
+        )
+        restart = session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("recovery UI restart was not acknowledged")
+        snapshot = self._wait_for_recovery_kind(
+            session,
+            "draft-restore-pending",
+        )
+        self._require_drafts(
+            self._reliability_snapshot(
+                session.call_action("reliability.snapshot"),
+                "recovery UI reliability snapshot",
+            ),
+            (draft,),
+        )
+        return {
+            "scenario": "recovery-ui",
+            "visibleState": "draft-restore-pending",
+            "actions": ["restore", "discard"],
+            "snapshot": snapshot,
+        }
+
+    def _run_moments_journey(
+        self,
+        *,
+        sender_session: Any,
+        receiver_session: Any,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        text = f"mobile-moment-{journey_id}"
+        published = self._mapping(
+            sender_session.call_action(
+                "moments.publish",
+                {"text": text, "audienceKind": 1},
+            ),
+            "published Moment",
+        )
+        post_id = self._text(published.get("postId"), "published Moment ID")
+        if (
+            published.get("authorPtid") != sender.ptid
+            or published.get("text") != text
+        ):
+            raise GateError("published Moment identity or content changed")
+
+        receiver_post = self._wait_for_moment(
+            receiver_session,
+            post_id,
+            text,
+        )
+        reactions = receiver_session.call_action(
+            "moments.react",
+            {"postId": post_id, "reactionKind": 1, "active": True},
+        )
+        if not self._reaction_active(reactions, 1):
+            raise GateError("Moment reaction readback is incomplete")
+        comment = self._mapping(
+            receiver_session.call_action(
+                "moments.comment",
+                {
+                    "postId": post_id,
+                    "content": f"comment-{journey_id}",
+                },
+            ),
+            "Moment comment",
+        )
+        comment_id = self._text(
+            comment.get("commentId"),
+            "Moment comment ID",
+        )
+        reply = self._mapping(
+            sender_session.call_action(
+                "moments.comment",
+                {
+                    "postId": post_id,
+                    "content": f"reply-{journey_id}",
+                    "replyToCommentId": comment_id,
+                },
+            ),
+            "Moment reply",
+        )
+        reply_id = self._text(reply.get("commentId"), "Moment reply ID")
+        comments = self._wait_for_comments(
+            receiver_session,
+            post_id,
+            {comment_id, reply_id},
+        )
+        unreacted = receiver_session.call_action(
+            "moments.react",
+            {"postId": post_id, "reactionKind": 1, "active": False},
+        )
+        if self._reaction_active(unreacted, 1):
+            raise GateError("Moment reaction rollback did not converge")
+
+        draft = sender_session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "moment",
+                "targetId": f"moment-compose-{journey_id}",
+                "text": f"moment-draft-{journey_id}",
+                "audienceKind": 1,
+            },
+        )
+        sender_session.call_action("lifecycle.restart")
+        self._require_drafts(
+            {
+                "drafts": sender_session.call_action(
+                    "reliability.draft.read",
+                    {"kind": "moment"},
+                )
+            },
+            (draft,),
+        )
+        sender_session.call_action(
+            "reliability.draft.action",
+            {"kind": "moment", "action": "discard"},
+        )
+        return {
+            "scenario": "moments",
+            "post": receiver_post,
+            "reactionCommitted": True,
+            "reactionRolledBack": True,
+            "commentId": comment_id,
+            "replyId": reply_id,
+            "commentCount": len(comments),
+            "draftRestartReadback": True,
+            "senderPtid": sender.ptid,
+            "receiverPtid": receiver.ptid,
+        }
+
+    def _wait_for_friend_request(
+        self,
+        session: Any,
+        *,
+        request_id: str,
+        sender_ptid: str,
+        receiver_ptid: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            projection = self._mapping(
+                session.call_action("social.reconcile"),
+                "receiver Social projection",
+            )
+            requests = projection.get("friendRequests")
+            if not isinstance(requests, list):
+                return None
+            return next(
+                (
+                    dict(item)
+                    for item in requests
+                    if isinstance(item, Mapping)
+                    and item.get("requestId") == request_id
+                    and item.get("senderPtid") == sender_ptid
+                    and item.get("receiverPtid") == receiver_ptid
+                ),
+                None,
+            )
+
+        return self._wait_for_value(read, "receiver Friend Request")
+
+    def _wait_for_moment(
+        self,
+        session: Any,
+        post_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            feed = self._mapping(
+                session.call_action("moments.feed.read"),
+                "receiver Moments feed",
+            )
+            posts = feed.get("posts")
+            if not isinstance(posts, list):
+                return None
+            return next(
+                (
+                    dict(item)
+                    for item in posts
+                    if isinstance(item, Mapping)
+                    and item.get("postId") == post_id
+                    and item.get("text") == text
+                ),
+                None,
+            )
+
+        return self._wait_for_value(read, "receiver Moment")
+
+    def _wait_for_comments(
+        self,
+        session: Any,
+        post_id: str,
+        expected_ids: set[str],
+    ) -> list[dict[str, Any]]:
+        def read() -> list[dict[str, Any]] | None:
+            raw = session.call_action(
+                "moments.comments.read",
+                {"postId": post_id},
+            )
+            if not isinstance(raw, list):
+                return None
+            comments = [
+                dict(item) for item in raw if isinstance(item, Mapping)
+            ]
+            actual = {
+                str(item.get("commentId", "")) for item in comments
+            }
+            return comments if expected_ids.issubset(actual) else None
+
+        return self._wait_for_value(read, "Moment comments")
+
+    def _wait_for_recovery_kind(
+        self,
+        session: Any,
+        kind: str,
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any] | None:
+            snapshot = self._mapping(
+                session.call_action("recovery.snapshot"),
+                "recovery projection",
+            )
+            states = snapshot.get("states")
+            if not isinstance(states, list):
+                return None
+            return snapshot if any(
+                isinstance(item, Mapping) and item.get("kind") == kind
+                for item in states
+            ) else None
+
+        return self._wait_for_value(read, f"recovery state {kind}")
+
+    @staticmethod
+    def _wait_for_value(
+        read: Any,
+        label: str,
+        timeout_seconds: float = 30.0,
+    ) -> Any:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            value = read()
+            if value is not None:
+                return value
+            time.sleep(0.25)
+        raise GateError(f"{label} did not converge")
+
+    @staticmethod
+    def _reliability_snapshot(
+        value: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        snapshot = SimulatorSocialGate._mapping(value, label)
+        if (
+            not isinstance(snapshot.get("runtime"), Mapping)
+            or not isinstance(snapshot.get("commands"), list)
+            or not isinstance(snapshot.get("drafts"), list)
+            or not isinstance(snapshot.get("checkpoints"), list)
+        ):
+            raise GateError(f"{label} is incomplete")
+        return snapshot
+
+    @staticmethod
+    def _require_drafts(
+        snapshot: Mapping[str, Any],
+        expected: tuple[Any, ...],
+    ) -> None:
+        drafts = snapshot.get("drafts")
+        if not isinstance(drafts, list):
+            raise GateError("reliability draft projection is unavailable")
+        expected_rows = {
+            (
+                item.get("kind"),
+                item.get("targetId"),
+                item.get("payloadSha256"),
+            )
+            for item in expected
+            if isinstance(item, Mapping)
+        }
+        actual_rows = {
+            (
+                item.get("kind"),
+                item.get("targetId"),
+                item.get("payloadSha256"),
+            )
+            for item in drafts
+            if isinstance(item, Mapping)
+        }
+        if len(expected_rows) != len(expected) or not expected_rows.issubset(
+            actual_rows
+        ):
+            raise GateError("reliability drafts changed identity")
+
+    @staticmethod
+    def _require_command(
+        snapshot: Mapping[str, Any],
+        command_id: str,
+        payload_sha256: str,
+        allowed_states: set[str],
+    ) -> None:
+        commands = snapshot.get("commands")
+        if not isinstance(commands, list) or not any(
+            isinstance(item, Mapping)
+            and item.get("commandId") == command_id
+            and item.get("payloadSha256") == payload_sha256
+            and item.get("state") in allowed_states
+            for item in commands
+        ):
+            raise GateError("recovery command identity changed")
+
+    @staticmethod
+    def _reaction_active(
+        value: Any,
+        reaction_kind: int,
+    ) -> bool:
+        if not isinstance(value, list):
+            return False
+        matched = next(
+            (
+                item
+                for item in value
+                if isinstance(item, Mapping)
+                and item.get("kind") == reaction_kind
+            ),
+            None,
+        )
+        return bool(
+            matched
+            and matched.get("reactedByViewer") is True
+            and int(str(matched.get("count", "0"))) >= 1
+        )
+
+    @staticmethod
+    def _mapping(value: Any, label: str) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise GateError(f"{label} must be an object")
+        return dict(value)
+
+    @staticmethod
+    def _text(value: Any, label: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise GateError(f"{label} must be non-empty")
+        return value
+
+    @staticmethod
+    def _sha256(value: Any, label: str) -> str:
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise GateError(f"{label} must be lowercase SHA-256")
+        return value
 
     def _capture_client(
         self,
@@ -426,7 +984,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         if not isinstance(value, dict):
             raise SimulatorGateBlocked(
                 f"{resource} requires object {name}",
-                f"mobile-social-simulator:{name}",
+                f"{ENVIRONMENT_ID}:{name}",
             )
         return value
 
@@ -440,11 +998,12 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         if not isinstance(value, str) or not value.strip():
             raise SimulatorGateBlocked(
                 f"{resource} requires {name}",
-                f"mobile-social-simulator:{name}",
+                f"{ENVIRONMENT_ID}:{name}",
             )
         return value.strip()
 
     def _result_base(self, status: str) -> dict[str, Any]:
+        metadata = SCENARIO_METADATA[self.scenario]
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": self.gate_id,
@@ -453,17 +1012,23 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "runtimeCell": self.gate_id,
             "scenario": self.scenario,
             "status": status,
-            "completionStatus": "PARTIAL",
-            "proofStatus": "UNPROVEN",
-            "phase": "W9-D Social",
-            "bom": ["W5", "W6A", "W9-D"],
-            "spec": ["MS-AG04", "MS-AG06"],
+            "completionStatus": (
+                "DONE"
+                if status == "PASS"
+                else "BLOCKED"
+                if status == "BLOCKED"
+                else "PARTIAL"
+            ),
+            "proofStatus": "PROVEN" if status == "PASS" else "UNPROVEN",
+            "phase": metadata["phase"],
+            "bom": list(metadata["bom"]),
+            "spec": list(metadata["spec"]),
             "observedScope": [
                 "two isolated simulator clients",
-                "two Station bindings",
+                "two actors bound to one source-attested Station",
                 "production Mobile Harness actions",
             ],
-            "unprovenScope": list(UNPROVEN_SCOPE),
+            "unprovenScope": list(OPTIONAL_DIAGNOSTIC_SCOPE),
             "physicalDeviceClaimed": False,
             "stationMocksUsed": False,
         }
@@ -477,7 +1042,8 @@ def main() -> int:
         required=True,
     )
     args = parser.parse_args()
-    return SimulatorSocialGate(args.scenario).execute()
+    gate: AcceptanceGate = SimulatorSocialGate(args.scenario)
+    return gate.execute()
 
 
 if __name__ == "__main__":

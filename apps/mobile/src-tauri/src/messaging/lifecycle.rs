@@ -124,11 +124,13 @@ impl MobileMessagingRuntime {
         station_peer_id: String,
         station_origin: String,
         actor_ptid: String,
+        device_id: String,
         access_token: String,
     ) -> MobileResult<MessagingRuntimeStatus> {
         let station_peer_id = station_peer_id.trim().to_string();
         let station_origin = station_origin.trim_end_matches('/').to_string();
         let actor_ptid = actor_ptid.trim().to_string();
+        let device_id = device_id.trim().to_string();
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)
             .map_err(MobileError::messaging)?;
         let user_scope = format!("{station_peer_id}|{actor_ptid}");
@@ -137,8 +139,10 @@ impl MobileMessagingRuntime {
         let profile_id = profile_id(&station_peer_id, &actor_ptid);
         let database_key = load_or_create_database_key(storage, &profile_id)?;
         let database_path = database_path(data_root, &profile_id)?;
+        let projection_app = app.clone();
         let event_sink: ProjectionEventSink = Arc::new(move |event| {
-            app.emit(MOBILE_MESSAGING_PROJECTION_EVENT, event)
+            projection_app
+                .emit(MOBILE_MESSAGING_PROJECTION_EVENT, event)
                 .map_err(|error| format!("emit mobile messaging projection event: {error}"))
         });
         let wake_station_peer_id = station_peer_id.clone();
@@ -150,6 +154,7 @@ impl MobileMessagingRuntime {
                 station_peer_id,
                 station_origin,
                 actor_ptid,
+                device_id,
                 &database_key,
                 actor_identity_seed,
                 access_token,
@@ -167,6 +172,7 @@ impl MobileMessagingRuntime {
         station_peer_id: String,
         station_origin: String,
         actor_ptid: String,
+        device_id: String,
         database_key: &[u8; 32],
         actor_identity_seed: [u8; 32],
         access_token: String,
@@ -181,6 +187,7 @@ impl MobileMessagingRuntime {
             if runtime.engine.profile_id() != profile_id
                 || runtime.engine.scope().station_peer_id != station_peer_id
                 || runtime.engine.scope().actor_ptid != actor_ptid
+                || runtime.engine.scope().device_id != device_id
             {
                 return Err(
                     "mobile messaging runtime is already bound to another account".to_string(),
@@ -204,6 +211,7 @@ impl MobileMessagingRuntime {
             station_peer_id,
             station_origin,
             actor_ptid,
+            device_id,
             database_key,
             actor_identity_seed,
             access_token,
@@ -679,7 +687,8 @@ fn run_engine_cycle(
     cycle_id: u64,
     event_sink: &ProjectionEventSink,
 ) -> Result<Option<(MessagingWorkerCycleResult, bool, Option<Instant>)>, String> {
-    let enrolled_now = engine.enroll_pending_device()?.is_some();
+    let enrollment = engine.enroll_pending_device();
+    let enrolled_now = enrollment?.is_some();
     if !worker_is_running(state) {
         return Ok(None);
     }
@@ -697,6 +706,10 @@ fn run_engine_cycle(
         return Ok(None);
     }
     engine.publish_mls_key_packages()?;
+    if !worker_is_running(state) {
+        return Ok(None);
+    }
+    let membership_reprepared = engine.resume_membership_intent_once()?;
     if !worker_is_running(state) {
         return Ok(None);
     }
@@ -764,6 +777,7 @@ fn run_engine_cycle(
         || attachment_download_progressed
         || attachment_sources_cleaned > 0
         || matches!(draft, MessageDraftResumeProgress::Prepared)
+        || membership_reprepared
         || interaction_reprepared
         || !matches!(
             command,
@@ -1012,6 +1026,7 @@ mod tests {
                 "station-1".to_string(),
                 "https://station.example".to_string(),
                 "ptid:alice".to_string(),
+                "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
                 "token-1".to_string(),
@@ -1020,6 +1035,7 @@ mod tests {
             .unwrap();
         assert!(first.active);
         assert_eq!(first.actor_ptid.as_deref(), Some("ptid:alice"));
+        assert_eq!(first.device_id.as_deref(), Some("mobile-device-1"));
 
         let repeated = runtime
             .activate_with_material(
@@ -1028,6 +1044,7 @@ mod tests {
                 "station-1".to_string(),
                 "https://station.example".to_string(),
                 "ptid:alice".to_string(),
+                "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
                 "token-2".to_string(),
@@ -1044,6 +1061,7 @@ mod tests {
                 "station-1".to_string(),
                 "https://station-new.example".to_string(),
                 "ptid:alice".to_string(),
+                "mobile-device-1".to_string(),
                 &[7; 32],
                 [8; 32],
                 "token-3".to_string(),
@@ -1065,6 +1083,7 @@ mod tests {
                 "station-1".to_string(),
                 "https://station.example".to_string(),
                 "ptid:bob".to_string(),
+                "mobile-device-2".to_string(),
                 &[9; 32],
                 [10; 32],
                 "token-4".to_string(),
@@ -1091,6 +1110,7 @@ mod tests {
             "station-1".to_string(),
             "https://station.example".to_string(),
             "ptid:alice".to_string(),
+            "mobile-device-1".to_string(),
             &key,
             [12; 32],
             "token-1".to_string(),
@@ -1106,6 +1126,7 @@ mod tests {
             "station-1".to_string(),
             "https://station.example".to_string(),
             "ptid:alice".to_string(),
+            "mobile-device-1".to_string(),
             &key,
             [12; 32],
             "token-2".to_string(),
@@ -1121,6 +1142,19 @@ mod tests {
                 .2,
             first_identity_state
         );
+        drop(reopened);
+        assert!(MobileMessagingEngine::open(
+            &path,
+            "profile-1".to_string(),
+            "station-1".to_string(),
+            "https://station.example".to_string(),
+            "ptid:alice".to_string(),
+            "mobile-device-2".to_string(),
+            &key,
+            [12; 32],
+            "token-3".to_string(),
+        )
+        .is_err());
         let _ = std::fs::remove_file(path);
     }
 }

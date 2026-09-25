@@ -8,7 +8,7 @@
  * fabricated empty data.
  */
 
-import type { SocialEventIngressController, MomentsDataEvent } from './socialEventIngress';
+import type { MomentsDataEvent } from './socialEventIngress';
 
 // ---------------------------------------------------------------------------
 // Moments projection descriptor metadata
@@ -38,6 +38,9 @@ export interface MomentsProjectionController {
   /** Current projection state */
   state: () => MomentsProjectionState;
 
+  /** Subscribe to projection metadata changes. */
+  subscribe: (listener: () => void) => () => void;
+
   /** Ingest a moments data event from the shared ingress */
   ingestEvent: (event: MomentsDataEvent) => void;
 
@@ -56,15 +59,25 @@ export interface MomentsProjectionController {
 // ---------------------------------------------------------------------------
 
 export function createMomentsProjection(
-  ingress: SocialEventIngressController,
 ): MomentsProjectionController {
   let availability: MomentsAvailability = { available: true };
   let lastCursor = '';
   let postCount = 0;
   let torn = false;
+  const listeners = new Set<() => void>();
+
+  function emit(): void {
+    listeners.forEach((listener) => listener());
+  }
 
   function state(): MomentsProjectionState {
     return { availability, lastCursor, postCount };
+  }
+
+  function subscribe(listener: () => void): () => void {
+    if (torn) return () => undefined;
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   }
 
   function ingestEvent(event: MomentsDataEvent): void {
@@ -74,25 +87,30 @@ export function createMomentsProjection(
     // Track cursor for pagination continuity
     lastCursor = event.cursor;
     postCount += 1;
+    emit();
   }
 
   function markUnavailable(reason: string): void {
     if (torn) return;
     // Failure closure: render unavailable state, never fabricated empty data
     availability = { available: false, reason };
+    emit();
   }
 
   function markAvailable(): void {
     if (torn) return;
     availability = { available: true };
+    emit();
   }
 
   function teardown(): void {
     torn = true;
+    listeners.clear();
   }
 
   return {
     state,
+    subscribe,
     ingestEvent,
     markUnavailable,
     markAvailable,

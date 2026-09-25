@@ -2,10 +2,19 @@
   "id": "mobile-profile-settings",
   "status": "active",
   "product_area": "mobile",
-  "owners": ["model/domain/actor/preferences.proto", "apps/mobile/src/pages/SettingsPage.tsx"],
+  "owners": [
+    "model/domain/actor/preferences.proto",
+    "apps/mobile/src/runtimes/socialEventIngress.ts",
+    "apps/mobile/src/runtimes/socialProjectionRuntime.ts",
+    "apps/mobile/src/runtimes/profileProjectionDescriptor.ts",
+    "apps/mobile/src/runtimes/deviceSettingsRuntime.ts",
+    "apps/mobile/src/app/mobileI18n.tsx",
+    "apps/mobile/src/pages/SettingsPage.tsx",
+    "apps/mobile/src/pages/settings/**"
+  ],
   "truth_sources": ["Station account preferences", "typed Mobile device preferences"],
   "visible_surfaces": [{"type": "mobile", "route": "me"}, {"type": "mobile", "route": "settings"}],
-  "required_gates": ["mobile-native-social-convergence-e2e", "mobile-native-settings-e2e"],
+  "required_gates": ["mobile-contract-static", "mobile-simulator-social-convergence-e2e", "mobile-simulator-settings-e2e"],
   "acceptance": {
     "product_assertions": ["MS-PA12", "MS-PA13", "MS-PA21", "MS-PA24"],
     "visible": ["account settings converge across devices while device settings remain local and conflicts stay explicit"]

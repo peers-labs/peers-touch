@@ -6,7 +6,7 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EncryptedObjectDescriptor } from "./attachment_pb";
 import { file_domain_chat_attachment } from "./attachment_pb";
-import type { ConversationCommandKind, GroupVisibilityV1 } from "./conversation_pb";
+import type { ConversationCommandKind, GroupVisibilityV1, MemberRole } from "./conversation_pb";
 import { file_domain_chat_conversation } from "./conversation_pb";
 import type { CryptoEndpoint } from "./endpoint_pb";
 import { file_domain_chat_endpoint } from "./endpoint_pb";
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/command.proto.
  */
 export const file_domain_chat_command: GenFile = /*@__PURE__*/
-  fileDesc("Chlkb21haW4vY2hhdC9jb21tYW5kLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIs0BChdQcmVwYXJlZEVuZHBvaW50UGF5bG9hZBI8CglyZWNpcGllbnQYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EkQKBGtpbmQYAiABKA4yNi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkS2luZBIWCg5vcGFxdWVfcGF5bG9hZBgDIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgEIAEoDCKMAwoRU2VuZE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJFCgxjb250ZW50X2tpbmQYAiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0NvbnRlbnRLaW5kEhsKE3JlcGx5X3RvX21lc3NhZ2VfaWQYAyABKAkSHgoWdGhyZWFkX3Jvb3RfbWVzc2FnZV9pZBgEIAEoCRJJCgthdHRhY2htZW50cxgFIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJLCg9kaXJlY3RfcGF5bG9hZHMYBiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAcgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgIIAEoDCK9AQoRRWRpdE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJLCg9kaXJlY3RfcGF5bG9hZHMYAiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAMgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgEIAEoDCIqChRSZXRyYWN0TWVzc2FnZUludGVudBISCgptZXNzYWdlX2lkGAEgASgJIkYKDlJlYWN0aW9uSW50ZW50EhIKCm1lc3NhZ2VfaWQYASABKAkSEAoIcmVhY3Rpb24YAiABKAkSDgoGcmVtb3ZlGAMgASgIIjYKEFBpbk1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRIOCgZyZW1vdmUYAiABKAgirAIKGFVwZGF0ZUNvbnZlcnNhdGlvbkludGVudBIRCgRuYW1lGAEgASgJSACIAQESGAoLZGVzY3JpcHRpb24YAiABKAlIAYgBARIdChBhdmF0YXJfb2JqZWN0X2lkGAMgASgJSAKIAQESJAoXZGlzYXBwZWFyX3RpbWVyX3NlY29uZHMYBCABKA1IA4gBARJFCgp2aXNpYmlsaXR5GAUgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFZpc2liaWxpdHlWMUgEiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkITChFfYXZhdGFyX29iamVjdF9pZEIaChhfZGlzYXBwZWFyX3RpbWVyX3NlY29uZHNCDQoLX3Zpc2liaWxpdHkirQEKH01lc3NhZ2luZ01lbWJlcnNoaXBDaGFuZ2VJbnRlbnQSRAoGYWN0aW9uGAEgASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZXNzYWdpbmdNZW1iZXJzaGlwQWN0aW9uEgwKBHB0aWQYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEgwKBHJvbGUYBSABKAlKBAgEEAVSD2hvbWVfc3RhdGlvbl9pZCKdAwoaTWVtYmVyc2hpcFRyYW5zaXRpb25JbnRlbnQSFQoNdHJhbnNpdGlvbl9pZBgBIAEoCRIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYAiABKAMSFgoOZnJvbV9tbHNfZXBvY2gYAyABKAMSFAoMdG9fbWxzX2Vwb2NoGAQgASgDEksKB2NoYW5nZXMYBSADKAsyOi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ01lbWJlcnNoaXBDaGFuZ2VJbnRlbnQSEgoKbWxzX2NvbW1pdBgGIAEoDBIZChFtbHNfY29tbWl0X3NoYTI1NhgHIAEoDBJMChB3ZWxjb21lX3BheWxvYWRzGAggAygLMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5QcmVwYXJlZEVuZHBvaW50UGF5bG9hZBIXCg9sZWF2ZV9pbnRlbnRfaWQYCSABKAkSGQoRYXV0aG9yaXR5X3BsYW5faWQYCiABKAkSHQoVYXV0aG9yaXR5X3BsYW5fc2hhMjU2GAsgASgMIhwKGkRpc3NvbHZlQ29udmVyc2F0aW9uSW50ZW50IpUHCgtDaGF0Q29tbWFuZBISCgpjb21tYW5kX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRI5CgZzZW5kZXIYAyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EiEKGW9ic2VydmVkX21lbWJlcnNoaXBfZXBvY2gYBCABKAMSGgoSb2JzZXJ2ZWRfbWxzX2Vwb2NoGAUgASgDEjQKEGNsaWVudF90aW1lc3RhbXAYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKFGRlbGl2ZXJ5X3BsYW5fc2hhMjU2GAcgASgMEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYCCABKAkSRAoMc2VuZF9tZXNzYWdlGBQgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TZW5kTWVzc2FnZUludGVudEgAEkQKDGVkaXRfbWVzc2FnZRgVIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRWRpdE1lc3NhZ2VJbnRlbnRIABJKCg9yZXRyYWN0X21lc3NhZ2UYFiABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJldHJhY3RNZXNzYWdlSW50ZW50SAASPQoIcmVhY3Rpb24YFyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJlYWN0aW9uSW50ZW50SAASQgoLcGluX21lc3NhZ2UYGCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlBpbk1lc3NhZ2VJbnRlbnRIABJSChN1cGRhdGVfY29udmVyc2F0aW9uGBkgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5VcGRhdGVDb252ZXJzYXRpb25JbnRlbnRIABJWChVtZW1iZXJzaGlwX3RyYW5zaXRpb24YGiABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lbWJlcnNoaXBUcmFuc2l0aW9uSW50ZW50SAASVgoVZGlzc29sdmVfY29udmVyc2F0aW9uGBsgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EaXNzb2x2ZUNvbnZlcnNhdGlvbkludGVudEgAQgkKB3BheWxvYWQijAMKG0NvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbBIPCgd2ZXJzaW9uGAEgASgNEhUKDWZlZGVyYXRpb25faWQYAiABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBCABKAMSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSEgoKYWN0b3JfcHRpZBgGIAEoCRIXCg9hY3Rvcl9kZXZpY2VfaWQYByABKAkSHAoUYWN0b3Jfc2lnbmluZ19rZXlfaWQYCCABKAkSNwoHY29tbWFuZBgJIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ2hhdENvbW1hbmQSFgoOY29tbWFuZF9zaGEyNTYYCiABKAwSFwoPYWN0b3Jfc2lnbmF0dXJlGAsgASgMEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgMIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYDSABKAMivQMKJ0NvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbFNpZ25pbmdJbnB1dBIPCgd2ZXJzaW9uGAEgASgNEhUKDWZlZGVyYXRpb25faWQYAiABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBCABKAMSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSFwoPY29udmVyc2F0aW9uX2lkGAYgASgJEhIKCmNvbW1hbmRfaWQYByABKAkSSAoMY29tbWFuZF9raW5kGAggASgOMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25Db21tYW5kS2luZBISCgphY3Rvcl9wdGlkGAkgASgJEhcKD2FjdG9yX2RldmljZV9pZBgKIAEoCRIcChRhY3Rvcl9zaWduaW5nX2tleV9pZBgLIAEoCRIWCg5jb21tYW5kX3NoYTI1NhgMIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYDSABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGA4gASgDKokCChRNZXNzYWdpbmdDb250ZW50S2luZBImCiJNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASHwobTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9URVhUEAESIAocTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9JTUFHRRACEh8KG01FU1NBR0lOR19DT05URU5UX0tJTkRfRklMRRADEiAKHE1FU1NBR0lOR19DT05URU5UX0tJTkRfQVVESU8QBBIgChxNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1ZJREVPEAUSIQodTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9TWVNURU0QBiqxAwobUHJlcGFyZWRFbmRwb2ludFBheWxvYWRLaW5kEi4KKlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9VTlNQRUNJRklFRBAAEjQKMFBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9ESVJFQ1RfQ0lQSEVSVEVYVBABEjIKLlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfQVBQTElDQVRJT04QAhItCilQUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfTUxTX0NPTU1JVBADEi4KKlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfV0VMQ09NRRAEEi8KK1BSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9QVUJMSUNfRVZFTlQQBRI1CjFQUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfQ09OVkVSU0FUSU9OX1NUQVRFEAYSMQotUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19SRVRJUkVNRU5UEAcq0AIKGU1lc3NhZ2luZ01lbWJlcnNoaXBBY3Rpb24SKwonTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1VOU1BFQ0lGSUVEEAASKQolTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX0FERF9BQ1RPUhABEiwKKE1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9SRU1PVkVfQUNUT1IQAhIlCiFNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fTEVBVkUQAxIrCidNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQ0hBTkdFX1JPTEUQBBIqCiZNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQUREX0RFVklDRRAFEi0KKU1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9SRU1PVkVfREVWSUNFEAZCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_attachment, file_domain_chat_conversation, file_domain_chat_endpoint, file_google_protobuf_timestamp]);
+  fileDesc("Chlkb21haW4vY2hhdC9jb21tYW5kLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIs0BChdQcmVwYXJlZEVuZHBvaW50UGF5bG9hZBI8CglyZWNpcGllbnQYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EkQKBGtpbmQYAiABKA4yNi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkS2luZBIWCg5vcGFxdWVfcGF5bG9hZBgDIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgEIAEoDCKMAwoRU2VuZE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJFCgxjb250ZW50X2tpbmQYAiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0NvbnRlbnRLaW5kEhsKE3JlcGx5X3RvX21lc3NhZ2VfaWQYAyABKAkSHgoWdGhyZWFkX3Jvb3RfbWVzc2FnZV9pZBgEIAEoCRJJCgthdHRhY2htZW50cxgFIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJLCg9kaXJlY3RfcGF5bG9hZHMYBiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAcgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgIIAEoDCK9AQoRRWRpdE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJLCg9kaXJlY3RfcGF5bG9hZHMYAiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAMgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgEIAEoDCIqChRSZXRyYWN0TWVzc2FnZUludGVudBISCgptZXNzYWdlX2lkGAEgASgJIi8KGUhpZGVNZXNzYWdlRm9yQWN0b3JJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCSJAChVNb2RlcmF0ZU1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRITCgtyZWFzb25fY29kZRgCIAEoCSLvAgoURm9yd2FyZE1lc3NhZ2VJbnRlbnQSHgoWZGVzdGluYXRpb25fbWVzc2FnZV9pZBgBIAEoCRJFCgxjb250ZW50X2tpbmQYAiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0NvbnRlbnRLaW5kElUKF2Rlc3RpbmF0aW9uX2F0dGFjaG1lbnRzGAMgAygLMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5FbmNyeXB0ZWRPYmplY3REZXNjcmlwdG9yElAKFGRlc3RpbmF0aW9uX3BheWxvYWRzGAQgAygLMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5QcmVwYXJlZEVuZHBvaW50UGF5bG9hZBIfChdtbHNfYXBwbGljYXRpb25fcGF5bG9hZBgFIAEoDBImCh5tbHNfYXBwbGljYXRpb25fcGF5bG9hZF9zaGEyNTYYBiABKAwiRgoOUmVhY3Rpb25JbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRIQCghyZWFjdGlvbhgCIAEoCRIOCgZyZW1vdmUYAyABKAgiNgoQUGluTWVzc2FnZUludGVudBISCgptZXNzYWdlX2lkGAEgASgJEg4KBnJlbW92ZRgCIAEoCCKsAgoYVXBkYXRlQ29udmVyc2F0aW9uSW50ZW50EhEKBG5hbWUYASABKAlIAIgBARIYCgtkZXNjcmlwdGlvbhgCIAEoCUgBiAEBEh0KEGF2YXRhcl9vYmplY3RfaWQYAyABKAlIAogBARIkChdkaXNhcHBlYXJfdGltZXJfc2Vjb25kcxgEIAEoDUgDiAEBEkUKCnZpc2liaWxpdHkYBSABKA4yLC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkdyb3VwVmlzaWJpbGl0eVYxSASIAQFCBwoFX25hbWVCDgoMX2Rlc2NyaXB0aW9uQhMKEV9hdmF0YXJfb2JqZWN0X2lkQhoKGF9kaXNhcHBlYXJfdGltZXJfc2Vjb25kc0INCgtfdmlzaWJpbGl0eSKtAQofTWVzc2FnaW5nTWVtYmVyc2hpcENoYW5nZUludGVudBJECgZhY3Rpb24YASABKA4yNC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ01lbWJlcnNoaXBBY3Rpb24SDAoEcHRpZBgCIAEoCRIRCglkZXZpY2VfaWQYAyABKAkSDAoEcm9sZRgFIAEoCUoECAQQBVIPaG9tZV9zdGF0aW9uX2lkIp0DChpNZW1iZXJzaGlwVHJhbnNpdGlvbkludGVudBIVCg10cmFuc2l0aW9uX2lkGAEgASgJEh0KFWZyb21fbWVtYmVyc2hpcF9lcG9jaBgCIAEoAxIWCg5mcm9tX21sc19lcG9jaBgDIAEoAxIUCgx0b19tbHNfZXBvY2gYBCABKAMSSwoHY2hhbmdlcxgFIAMoCzI6LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVzc2FnaW5nTWVtYmVyc2hpcENoYW5nZUludGVudBISCgptbHNfY29tbWl0GAYgASgMEhkKEW1sc19jb21taXRfc2hhMjU2GAcgASgMEkwKEHdlbGNvbWVfcGF5bG9hZHMYCCADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEhcKD2xlYXZlX2ludGVudF9pZBgJIAEoCRIZChFhdXRob3JpdHlfcGxhbl9pZBgKIAEoCRIdChVhdXRob3JpdHlfcGxhbl9zaGEyNTYYCyABKAwiHAoaRGlzc29sdmVDb252ZXJzYXRpb25JbnRlbnQivgUKIkNvbnZlcnNhdGlvbk1lbWJlckF1dGhvcml0eUNvbW1hbmQSDwoHdmVyc2lvbhgBIAEoDRISCgpjb21tYW5kX2lkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRI7CghvcGVyYXRvchgEIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3J5cHRvRW5kcG9pbnQSEwoLdGFyZ2V0X3B0aWQYBSABKAkSTAoGYWN0aW9uGAYgASgOMjwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25NZW1iZXJBdXRob3JpdHlBY3Rpb24SOAoEcm9sZRgHIAEoDjIlLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVtYmVyUm9sZUgAiAEBEhIKBW11dGVkGAggASgISAGIAQESLwoLbXV0ZWRfdW50aWwYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhUKDWZlZGVyYXRpb25faWQYCiABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgLIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYDCABKAMSGgoSYXV0aG9yaXR5X3NlcXVlbmNlGA0gASgDEhYKDmF1dGhvcml0eV9oYXNoGA4gASgMEiEKGW9ic2VydmVkX21lbWJlcnNoaXBfZXBvY2gYDyABKAMSGgoSb2JzZXJ2ZWRfbWxzX2Vwb2NoGBAgASgDEjQKEGNsaWVudF90aW1lc3RhbXAYESABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGRlYWRsaW5lGBIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIHCgVfcm9sZUIICgZfbXV0ZWQihwkKC0NoYXRDb21tYW5kEhIKCmNvbW1hbmRfaWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEjkKBnNlbmRlchgDIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3J5cHRvRW5kcG9pbnQSIQoZb2JzZXJ2ZWRfbWVtYmVyc2hpcF9lcG9jaBgEIAEoAxIaChJvYnNlcnZlZF9tbHNfZXBvY2gYBSABKAMSNAoQY2xpZW50X3RpbWVzdGFtcBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUZGVsaXZlcnlfcGxhbl9zaGEyNTYYByABKAwSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgIIAEoCRJECgxzZW5kX21lc3NhZ2UYFCABKAsyLC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlNlbmRNZXNzYWdlSW50ZW50SAASRAoMZWRpdF9tZXNzYWdlGBUgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5FZGl0TWVzc2FnZUludGVudEgAEkoKD3JldHJhY3RfbWVzc2FnZRgWIAEoCzIvLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuUmV0cmFjdE1lc3NhZ2VJbnRlbnRIABI9CghyZWFjdGlvbhgXIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuUmVhY3Rpb25JbnRlbnRIABJCCgtwaW5fbWVzc2FnZRgYIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuUGluTWVzc2FnZUludGVudEgAElIKE3VwZGF0ZV9jb252ZXJzYXRpb24YGSABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlVwZGF0ZUNvbnZlcnNhdGlvbkludGVudEgAElYKFW1lbWJlcnNoaXBfdHJhbnNpdGlvbhgaIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVtYmVyc2hpcFRyYW5zaXRpb25JbnRlbnRIABJWChVkaXNzb2x2ZV9jb252ZXJzYXRpb24YGyABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRpc3NvbHZlQ29udmVyc2F0aW9uSW50ZW50SAASVgoWaGlkZV9tZXNzYWdlX2Zvcl9hY3RvchgcIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuSGlkZU1lc3NhZ2VGb3JBY3RvckludGVudEgAEkwKEG1vZGVyYXRlX21lc3NhZ2UYHSABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1vZGVyYXRlTWVzc2FnZUludGVudEgAEkoKD2ZvcndhcmRfbWVzc2FnZRgeIAEoCzIvLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRm9yd2FyZE1lc3NhZ2VJbnRlbnRIAEIJCgdwYXlsb2FkIu0DChtDb252ZXJzYXRpb25Db21tYW5kUHJvcG9zYWwSDwoHdmVyc2lvbhgBIAEoDRIVCg1mZWRlcmF0aW9uX2lkGAIgASgJEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSFwoPYXV0aG9yaXR5X2Vwb2NoGAQgASgDEhwKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAUgASgJEhIKCmFjdG9yX3B0aWQYBiABKAkSFwoPYWN0b3JfZGV2aWNlX2lkGAcgASgJEhwKFGFjdG9yX3NpZ25pbmdfa2V5X2lkGAggASgJEjcKB2NvbW1hbmQYCSABKAsyJi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNoYXRDb21tYW5kEhYKDmNvbW1hbmRfc2hhMjU2GAogASgMEhcKD2FjdG9yX3NpZ25hdHVyZRgLIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYDCABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGA0gASgDEl8KGG1lbWJlcl9hdXRob3JpdHlfY29tbWFuZBgOIAEoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ29udmVyc2F0aW9uTWVtYmVyQXV0aG9yaXR5Q29tbWFuZCK9AwonQ29udmVyc2F0aW9uQ29tbWFuZFByb3Bvc2FsU2lnbmluZ0lucHV0Eg8KB3ZlcnNpb24YASABKA0SFQoNZmVkZXJhdGlvbl9pZBgCIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAMgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgEIAEoAxIcChRob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBiABKAkSEgoKY29tbWFuZF9pZBgHIAEoCRJICgxjb21tYW5kX2tpbmQYCCABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNvbnZlcnNhdGlvbkNvbW1hbmRLaW5kEhIKCmFjdG9yX3B0aWQYCSABKAkSFwoPYWN0b3JfZGV2aWNlX2lkGAogASgJEhwKFGFjdG9yX3NpZ25pbmdfa2V5X2lkGAsgASgJEhYKDmNvbW1hbmRfc2hhMjU2GAwgASgMEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgNIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYDiABKAMqiQIKFE1lc3NhZ2luZ0NvbnRlbnRLaW5kEiYKIk1FU1NBR0lOR19DT05URU5UX0tJTkRfVU5TUEVDSUZJRUQQABIfChtNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1RFWFQQARIgChxNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX0lNQUdFEAISHwobTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9GSUxFEAMSIAocTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9BVURJTxAEEiAKHE1FU1NBR0lOR19DT05URU5UX0tJTkRfVklERU8QBRIhCh1NRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1NZU1RFTRAGKrEDChtQcmVwYXJlZEVuZHBvaW50UGF5bG9hZEtpbmQSLgoqUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX1VOU1BFQ0lGSUVEEAASNAowUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX0RJUkVDVF9DSVBIRVJURVhUEAESMgouUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19BUFBMSUNBVElPThACEi0KKVBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfQ09NTUlUEAMSLgoqUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19XRUxDT01FEAQSLworUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX1BVQkxJQ19FVkVOVBAFEjUKMVBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9DT05WRVJTQVRJT05fU1RBVEUQBhIxCi1QUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfTUxTX1JFVElSRU1FTlQQByrQAgoZTWVzc2FnaW5nTWVtYmVyc2hpcEFjdGlvbhIrCidNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fVU5TUEVDSUZJRUQQABIpCiVNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQUREX0FDVE9SEAESLAooTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1JFTU9WRV9BQ1RPUhACEiUKIU1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9MRUFWRRADEisKJ01FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9DSEFOR0VfUk9MRRAEEioKJk1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9BRERfREVWSUNFEAUSLQopTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1JFTU9WRV9ERVZJQ0UQBirOAQohQ29udmVyc2F0aW9uTWVtYmVyQXV0aG9yaXR5QWN0aW9uEjQKMENPTlZFUlNBVElPTl9NRU1CRVJfQVVUSE9SSVRZX0FDVElPTl9VTlNQRUNJRklFRBAAEjYKMkNPTlZFUlNBVElPTl9NRU1CRVJfQVVUSE9SSVRZX0FDVElPTl9VUERBVEVfTUVNQkVSEAESOwo3Q09OVkVSU0FUSU9OX01FTUJFUl9BVVRIT1JJVFlfQUNUSU9OX1RSQU5TRkVSX09XTkVSU0hJUBACQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2NoYXQ7Y2hhdGIGcHJvdG8z", [file_domain_chat_attachment, file_domain_chat_conversation, file_domain_chat_endpoint, file_google_protobuf_timestamp]);
 
 /**
  * A command payload prepared for exactly one endpoint. The authority validates
@@ -157,6 +157,87 @@ export const RetractMessageIntentSchema: GenMessage<RetractMessageIntent> = /*@_
   messageDesc(file_domain_chat_command, 3);
 
 /**
+ * @generated from message peers_touch.model.chat.v1.HideMessageForActorIntent
+ */
+export type HideMessageForActorIntent = Message<"peers_touch.model.chat.v1.HideMessageForActorIntent"> & {
+  /**
+   * @generated from field: string message_id = 1;
+   */
+  messageId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.HideMessageForActorIntent.
+ * Use `create(HideMessageForActorIntentSchema)` to create a new message.
+ */
+export const HideMessageForActorIntentSchema: GenMessage<HideMessageForActorIntent> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 4);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ModerateMessageIntent
+ */
+export type ModerateMessageIntent = Message<"peers_touch.model.chat.v1.ModerateMessageIntent"> & {
+  /**
+   * @generated from field: string message_id = 1;
+   */
+  messageId: string;
+
+  /**
+   * @generated from field: string reason_code = 2;
+   */
+  reasonCode: string;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ModerateMessageIntent.
+ * Use `create(ModerateMessageIntentSchema)` to create a new message.
+ */
+export const ModerateMessageIntentSchema: GenMessage<ModerateMessageIntent> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 5);
+
+/**
+ * @generated from message peers_touch.model.chat.v1.ForwardMessageIntent
+ */
+export type ForwardMessageIntent = Message<"peers_touch.model.chat.v1.ForwardMessageIntent"> & {
+  /**
+   * @generated from field: string destination_message_id = 1;
+   */
+  destinationMessageId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.MessagingContentKind content_kind = 2;
+   */
+  contentKind: MessagingContentKind;
+
+  /**
+   * @generated from field: repeated peers_touch.model.chat.v1.EncryptedObjectDescriptor destination_attachments = 3;
+   */
+  destinationAttachments: EncryptedObjectDescriptor[];
+
+  /**
+   * @generated from field: repeated peers_touch.model.chat.v1.PreparedEndpointPayload destination_payloads = 4;
+   */
+  destinationPayloads: PreparedEndpointPayload[];
+
+  /**
+   * @generated from field: bytes mls_application_payload = 5;
+   */
+  mlsApplicationPayload: Uint8Array;
+
+  /**
+   * @generated from field: bytes mls_application_payload_sha256 = 6;
+   */
+  mlsApplicationPayloadSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ForwardMessageIntent.
+ * Use `create(ForwardMessageIntentSchema)` to create a new message.
+ */
+export const ForwardMessageIntentSchema: GenMessage<ForwardMessageIntent> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 6);
+
+/**
  * @generated from message peers_touch.model.chat.v1.ReactionIntent
  */
 export type ReactionIntent = Message<"peers_touch.model.chat.v1.ReactionIntent"> & {
@@ -181,7 +262,7 @@ export type ReactionIntent = Message<"peers_touch.model.chat.v1.ReactionIntent">
  * Use `create(ReactionIntentSchema)` to create a new message.
  */
 export const ReactionIntentSchema: GenMessage<ReactionIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 4);
+  messageDesc(file_domain_chat_command, 7);
 
 /**
  * @generated from message peers_touch.model.chat.v1.PinMessageIntent
@@ -203,7 +284,7 @@ export type PinMessageIntent = Message<"peers_touch.model.chat.v1.PinMessageInte
  * Use `create(PinMessageIntentSchema)` to create a new message.
  */
 export const PinMessageIntentSchema: GenMessage<PinMessageIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 5);
+  messageDesc(file_domain_chat_command, 8);
 
 /**
  * @generated from message peers_touch.model.chat.v1.UpdateConversationIntent
@@ -240,7 +321,7 @@ export type UpdateConversationIntent = Message<"peers_touch.model.chat.v1.Update
  * Use `create(UpdateConversationIntentSchema)` to create a new message.
  */
 export const UpdateConversationIntentSchema: GenMessage<UpdateConversationIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 6);
+  messageDesc(file_domain_chat_command, 9);
 
 /**
  * @generated from message peers_touch.model.chat.v1.MessagingMembershipChangeIntent
@@ -272,7 +353,7 @@ export type MessagingMembershipChangeIntent = Message<"peers_touch.model.chat.v1
  * Use `create(MessagingMembershipChangeIntentSchema)` to create a new message.
  */
 export const MessagingMembershipChangeIntentSchema: GenMessage<MessagingMembershipChangeIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 7);
+  messageDesc(file_domain_chat_command, 10);
 
 /**
  * @generated from message peers_touch.model.chat.v1.MembershipTransitionIntent
@@ -339,7 +420,7 @@ export type MembershipTransitionIntent = Message<"peers_touch.model.chat.v1.Memb
  * Use `create(MembershipTransitionIntentSchema)` to create a new message.
  */
 export const MembershipTransitionIntentSchema: GenMessage<MembershipTransitionIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 8);
+  messageDesc(file_domain_chat_command, 11);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DissolveConversationIntent
@@ -352,7 +433,112 @@ export type DissolveConversationIntent = Message<"peers_touch.model.chat.v1.Diss
  * Use `create(DissolveConversationIntentSchema)` to create a new message.
  */
 export const DissolveConversationIntentSchema: GenMessage<DissolveConversationIntent> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 9);
+  messageDesc(file_domain_chat_command, 12);
+
+/**
+ * Exact authority command for target-member administration. This command is
+ * intentionally separate from actor-local MemberSettings.
+ *
+ * @generated from message peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+ */
+export type ConversationMemberAuthorityCommand = Message<"peers_touch.model.chat.v1.ConversationMemberAuthorityCommand"> & {
+  /**
+   * @generated from field: uint32 version = 1;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: string conversation_id = 3;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint operator = 4;
+   */
+  operator?: CryptoEndpoint | undefined;
+
+  /**
+   * @generated from field: string target_ptid = 5;
+   */
+  targetPtid: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationMemberAuthorityAction action = 6;
+   */
+  action: ConversationMemberAuthorityAction;
+
+  /**
+   * @generated from field: optional peers_touch.model.chat.v1.MemberRole role = 7;
+   */
+  role?: MemberRole | undefined;
+
+  /**
+   * @generated from field: optional bool muted = 8;
+   */
+  muted?: boolean | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp muted_until = 9;
+   */
+  mutedUntil?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string federation_id = 10;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 11;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: int64 authority_epoch = 12;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: int64 authority_sequence = 13;
+   */
+  authoritySequence: bigint;
+
+  /**
+   * @generated from field: bytes authority_hash = 14;
+   */
+  authorityHash: Uint8Array;
+
+  /**
+   * @generated from field: int64 observed_membership_epoch = 15;
+   */
+  observedMembershipEpoch: bigint;
+
+  /**
+   * @generated from field: int64 observed_mls_epoch = 16;
+   */
+  observedMlsEpoch: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp client_timestamp = 17;
+   */
+  clientTimestamp?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp deadline = 18;
+   */
+  deadline?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.
+ * Use `create(ConversationMemberAuthorityCommandSchema)` to create a new message.
+ */
+export const ConversationMemberAuthorityCommandSchema: GenMessage<ConversationMemberAuthorityCommand> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 13);
 
 /**
  * Durable client intent. The exact deterministic bytes are replayed until the
@@ -452,6 +638,24 @@ export type ChatCommand = Message<"peers_touch.model.chat.v1.ChatCommand"> & {
      */
     value: DissolveConversationIntent;
     case: "dissolveConversation";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.chat.v1.HideMessageForActorIntent hide_message_for_actor = 28;
+     */
+    value: HideMessageForActorIntent;
+    case: "hideMessageForActor";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.chat.v1.ModerateMessageIntent moderate_message = 29;
+     */
+    value: ModerateMessageIntent;
+    case: "moderateMessage";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.chat.v1.ForwardMessageIntent forward_message = 30;
+     */
+    value: ForwardMessageIntent;
+    case: "forwardMessage";
   } | { case: undefined; value?: undefined };
 };
 
@@ -460,7 +664,7 @@ export type ChatCommand = Message<"peers_touch.model.chat.v1.ChatCommand"> & {
  * Use `create(ChatCommandSchema)` to create a new message.
  */
 export const ChatCommandSchema: GenMessage<ChatCommand> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 10);
+  messageDesc(file_domain_chat_command, 14);
 
 /**
  * The only remote durable command wrapper. command_id is both the proposal
@@ -533,6 +737,11 @@ export type ConversationCommandProposal = Message<"peers_touch.model.chat.v1.Con
    * @generated from field: int64 expires_at_unix_ms = 13;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand member_authority_command = 14;
+   */
+  memberAuthorityCommand?: ConversationMemberAuthorityCommand | undefined;
 };
 
 /**
@@ -540,7 +749,7 @@ export type ConversationCommandProposal = Message<"peers_touch.model.chat.v1.Con
  * Use `create(ConversationCommandProposalSchema)` to create a new message.
  */
 export const ConversationCommandProposalSchema: GenMessage<ConversationCommandProposal> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 11);
+  messageDesc(file_domain_chat_command, 15);
 
 /**
  * Exact deterministic protobuf input signed by the actor device.
@@ -624,7 +833,7 @@ export type ConversationCommandProposalSigningInput = Message<"peers_touch.model
  * Use `create(ConversationCommandProposalSigningInputSchema)` to create a new message.
  */
 export const ConversationCommandProposalSigningInputSchema: GenMessage<ConversationCommandProposalSigningInput> = /*@__PURE__*/
-  messageDesc(file_domain_chat_command, 12);
+  messageDesc(file_domain_chat_command, 16);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.MessagingContentKind
@@ -768,3 +977,29 @@ export enum MessagingMembershipAction {
  */
 export const MessagingMembershipActionSchema: GenEnum<MessagingMembershipAction> = /*@__PURE__*/
   enumDesc(file_domain_chat_command, 2);
+
+/**
+ * @generated from enum peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+ */
+export enum ConversationMemberAuthorityAction {
+  /**
+   * @generated from enum value: CONVERSATION_MEMBER_AUTHORITY_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER = 1;
+   */
+  UPDATE_MEMBER = 1,
+
+  /**
+   * @generated from enum value: CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP = 2;
+   */
+  TRANSFER_OWNERSHIP = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.chat.v1.ConversationMemberAuthorityAction.
+ */
+export const ConversationMemberAuthorityActionSchema: GenEnum<ConversationMemberAuthorityAction> = /*@__PURE__*/
+  enumDesc(file_domain_chat_command, 3);

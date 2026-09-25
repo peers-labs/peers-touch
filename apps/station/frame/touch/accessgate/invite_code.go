@@ -108,10 +108,10 @@ func RevokeInviteCode(ctx context.Context, id string) (*dbmodel.AccessInviteCode
 	return &row, nil
 }
 
-// redeemInviteCode validates and atomically consumes one use of a code. It is
-// the only place that increments usage, run inside a transaction with a row lock
-// so concurrent redemptions of a single-use code cannot both succeed.
-func redeemInviteCode(ctx context.Context, rawCode string) error {
+// redeemInviteCode validates and atomically consumes one use of a code while
+// marking the bound attempt passed. Retrying an already-committed attempt does
+// not consume another use.
+func redeemInviteCode(ctx context.Context, attemptID, rawCode string) error {
 	code := normalizeCode(rawCode)
 	if code == "" {
 		return errInviteCodeInvalid
@@ -122,7 +122,24 @@ func redeemInviteCode(ctx context.Context, rawCode string) error {
 		return err
 	}
 
+	return redeemInviteCodeWithDB(ctx, rds, attemptID, code)
+}
+
+func redeemInviteCodeWithDB(
+	ctx context.Context,
+	rds *gorm.DB,
+	attemptID, code string,
+) error {
 	return rds.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var attempt dbmodel.AccessAttempt
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", attemptID).First(&attempt).Error; err != nil {
+			return err
+		}
+		if attempt.InvitePassed {
+			return nil
+		}
+
 		var row dbmodel.AccessInviteCode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&row).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -140,8 +157,12 @@ func redeemInviteCode(ctx context.Context, rawCode string) error {
 			"used_count":   row.UsedCount + 1,
 			"last_used_at": &now,
 		}
-		return tx.Model(&dbmodel.AccessInviteCode{}).
-			Where("id = ?", row.ID).Updates(updates).Error
+		if err := tx.Model(&dbmodel.AccessInviteCode{}).
+			Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Model(&dbmodel.AccessAttempt{}).
+			Where("id = ?", attempt.ID).Update("invite_passed", true).Error
 	})
 }
 

@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
+
+from tooling.acceptance.core import AcceptanceGate, GateError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -113,12 +114,11 @@ FORBIDDEN_DID_ALIAS = re.compile(
 )
 
 
-def fail(message: str) -> int:
-    sys.stderr.write(f"mobile identity contract failed: {message}\n")
-    return 1
+def fail(message: str) -> None:
+    raise GateError(f"mobile identity contract failed: {message}")
 
 
-def main() -> int:
+def validate_identity_contract() -> None:
     actor_proto = ACTOR_PROTO.read_text(encoding="utf-8")
     actor_ref = re.search(
         r"message ActorRef \{(?P<body>.*?)\n\}",
@@ -249,8 +249,31 @@ def main() -> int:
             + ", ".join(missing_verifier_tokens)
         )
 
-    sys.stdout.write("mobile identity contract: PASS\n")
-    return 0
+class MobileIdentityContractGate(AcceptanceGate):
+    gate_id = "mobile-identity-contract"
+    phase = "W1 Unified ActorRef identity and Station trust"
+    bom = ("W1",)
+    spec = ("MS-AG01", "MS-AG02")
+
+    def run(self) -> dict[str, object]:
+        validate_identity_contract()
+        self.assert_condition(
+            "mobile_identity_contract",
+            True,
+            "PTID-only ActorRef and signed Station identity contracts are valid",
+        )
+        return {
+            "proven_scope": [
+                "PTID-only ActorRef and signed Station identity contract structure",
+            ],
+            "unproven_scope": [
+                "native Station and session behavior",
+            ],
+        }
+
+
+def main() -> int:
+    return MobileIdentityContractGate().execute()
 
 
 if __name__ == "__main__":

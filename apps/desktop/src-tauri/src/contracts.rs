@@ -218,45 +218,6 @@ pub struct KeyExchangeFetchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListMessagesInput {
-    pub group_ulid: String,
-    pub before_ulid: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadInput {
-    pub group_ulid: String,
-    pub root_ulid: String,
-    pub after_ulid: Option<String>,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatUnreadInput {
-    pub group_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatMarkReadInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSyncInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatLocalSearchInput {
     pub query: String,
     pub limit: Option<u32>,
@@ -288,6 +249,7 @@ pub struct ProfileUpdateInput {
     pub timezone: Option<String>,
     pub tags: Option<Vec<String>>,
     pub links: Option<Vec<ProfileLinkInput>>,
+    pub observed_revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1579,126 +1541,6 @@ pub struct ProviderModelToggleAllInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupCreateInput {
-    pub name: String,
-    pub description: Option<String>,
-    pub member_ptids: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUlidInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateInput {
-    pub group_ulid: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub avatar_cid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupInviteInput {
-    pub group_ulid: String,
-    pub member_ptids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupAddFederatedMemberInput {
-    pub group_ulid: String,
-    pub member: GroupChatFederatedActorInput,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupRemoveMemberInput {
-    pub group_ulid: String,
-    pub member_ptid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupTransferOwnershipInput {
-    pub group_ulid: String,
-    pub next_owner_ptid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateMemberInput {
-    pub group_ulid: String,
-    pub member_ptid: String,
-    pub role: Option<i32>,
-    pub muted: Option<bool>,
-    pub muted_until_unix_ms: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupMessageActionInput {
-    pub group_ulid: String,
-    pub message_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatEditInput {
-    pub group_ulid: String,
-    pub message_ulid: String,
-    /// Plaintext replacement body. Mutually optional with
-    /// `new_encrypted_payload`; at least one must be non-empty.
-    pub new_content: Option<String>,
-    /// E2EE replacement body. Decoded from base64 by the TS layer
-    /// before reaching this contract.
-    pub new_encrypted_payload: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupSearchMessagesInput {
-    pub group_ulid: String,
-    pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateNicknameInput {
-    pub group_ulid: String,
-    pub nickname: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateMySettingsInput {
-    pub group_ulid: String,
-    pub is_muted: Option<bool>,
-    pub is_pinned: Option<bool>,
-    pub show_member_nickname: Option<bool>,
-    pub alert_enabled: Option<bool>,
-    pub background: Option<String>,
-    pub cleared_at_unix_ms: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupAckOfflineInput {
-    pub group_ulid: String,
-    pub message_ulids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupJoinInput {
-    pub group_ulid: String,
-    pub invitation_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupMembersInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupOfflineMessagesInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrontendLogInput {
     pub level: String,
     pub tag: String,
@@ -1732,32 +1574,6 @@ pub struct WizardExecuteApiInput {
 pub struct ActorSearchUsersInput {
     pub q: String,
     pub limit: Option<u32>,
-}
-
-// --- Group chat create / leave contracts ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatFederatedActorInput {
-    pub actor_ptid: String,
-    pub home_station_peer_id: String,
-    pub home_station_domain: Option<String>,
-    pub federated_handle: Option<String>,
-    pub actor_identity_public_key: Option<Vec<u8>>,
-    pub profile_version: Option<i64>,
-    pub federation_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatCreateGroupInput {
-    pub name: String,
-    pub description: Option<String>,
-    pub member_ptids: Option<Vec<String>>,
-    pub initial_federated_members: Option<Vec<GroupChatFederatedActorInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatLeaveGroupInput {
-    pub group_ulid: String,
 }
 
 // --- Friend Request contracts ---
@@ -1811,11 +1627,17 @@ pub struct NotificationDeleteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationPreferenceUpdateInput {
+pub struct NotificationPreferencePatchInput {
     pub category: i32,
     pub enabled: bool,
     pub push_enabled: bool,
     pub sound_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferencesUpdateInput {
+    pub updates: Vec<NotificationPreferencePatchInput>,
+    pub observed_revision: u64,
 }
 
 // ===========================================================================

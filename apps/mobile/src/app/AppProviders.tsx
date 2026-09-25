@@ -36,7 +36,7 @@ export function AppProviders({ children }: AppProvidersProps) {
       createDescriptors: createMobileRuntimeDescriptors,
       readGeneration: fetchLifecycleGeneration,
       advanceGeneration: advanceLifecycleGeneration,
-      resolveLaunchState: resolveMobileLaunchState,
+      resolveLaunchState: () => resolveMobileLaunchState(kernel.getSnapshot()),
       fenceProjections: fenceMobileRuntimeProjections,
     });
     void kernel.startRuntimeGraph();

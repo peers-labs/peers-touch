@@ -104,6 +104,38 @@ function writeAtomic(file, content) {
   }
 }
 
+export function writeDurableFileAtomic(file, content) {
+  const directory = path.dirname(file);
+  ensurePrivateDirectory(directory);
+  const temp = path.join(
+    directory,
+    `.${path.basename(file)}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`,
+  );
+  let fd;
+  try {
+    fd = openSync(temp, 'wx', 0o600);
+    writeFileSync(fd, content);
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    try {
+      linkSync(temp, file);
+      chmodSync(file, 0o600);
+      syncDirectory(directory);
+    } catch (error) {
+      if (
+        error?.code !== 'EEXIST' ||
+        !readFileSync(file).equals(Buffer.from(content))
+      ) {
+        throw error;
+      }
+    }
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    if (existsSync(temp)) unlinkSync(temp);
+  }
+}
+
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -511,8 +543,9 @@ function boundedEvents(events, newEvent, options) {
   return [baseline];
 }
 
-function writeSessionFiles(paths, events) {
+function writeSessionFiles(paths, events, hooks = {}) {
   const session = materialize(events);
+  hooks.beforeCommit?.(paths);
   writeAtomic(paths.events, serializeEvents(events));
   writeAtomic(
     paths.session,
@@ -557,6 +590,32 @@ export function loadSessionStore(options) {
   });
 }
 
+export function loadSessionStoreFromPath(sessionPath, options = {}) {
+  const session = path.resolve(sessionPath);
+  if (path.basename(session) !== 'session.json') {
+    sessionFail(
+      'SESSION_UNAVAILABLE',
+      'Session handoff path must name session.json',
+    );
+  }
+  const paths = {
+    directory: path.dirname(session),
+    session,
+    events: path.join(path.dirname(session), 'events.ndjson'),
+    lock: path.join(path.dirname(session), 'session.lock'),
+  };
+  const now = operationDate(options);
+  ensurePrivateDirectory(paths.directory);
+  const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
+  try {
+    const { session: stored } = readAndRepair(paths);
+    assertIdentity(stored, options.expected);
+    return stored;
+  } finally {
+    release();
+  }
+}
+
 export function readSessionJournal(options) {
   return withSessionLock(options, (paths) => {
     const { events, session } = readAndRepair(paths);
@@ -588,6 +647,61 @@ export function transitionSessionStore(options) {
       snapshot: nextState,
     });
     const bounded = boundedEvents(events, event, options);
-    return writeSessionFiles(paths, bounded);
+    return writeSessionFiles(paths, bounded, {
+      beforeCommit: options.beforeCommit,
+    });
+  });
+}
+
+export function transitionSessionSequenceStore(options) {
+  return withSessionLock(options, (paths, now) => {
+    const { events, session } = readAndRepair(paths);
+    assertIdentity(session, options.expected);
+    if (
+      options.expectedEventDigest !== undefined &&
+      session.eventDigest !== options.expectedEventDigest
+    ) {
+      sessionFail(
+        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+        'Session changed after the owner runner started',
+        {
+          expectedEventDigest: options.expectedEventDigest,
+          actualEventDigest: session.eventDigest,
+        },
+      );
+    }
+    const transitions = options.transitions(session.state);
+    if (!Array.isArray(transitions) || transitions.length === 0) {
+      return session;
+    }
+
+    let bounded = events;
+    let current = session.state;
+    for (const [index, transition] of transitions.entries()) {
+      const at = new Date(now.getTime() + index).toISOString();
+      const nextState = transitionSessionState(
+        current,
+        transition.to,
+        transition.updates ?? {},
+        options.context,
+        at,
+      );
+      const latest = bounded.at(-1);
+      const event = createTransitionEvent({
+        kind: 'TRANSITIONED',
+        sequence: latest.sequence + 1,
+        sessionId: nextState.sessionId,
+        at: nextState.updatedAt,
+        reason: transition.reason ?? options.reason,
+        previousDigest: latest.eventDigest,
+        compactedThrough: null,
+        snapshot: nextState,
+      });
+      bounded = boundedEvents(bounded, event, options);
+      current = nextState;
+    }
+    return writeSessionFiles(paths, bounded, {
+      beforeCommit: options.beforeCommit,
+    });
   });
 }

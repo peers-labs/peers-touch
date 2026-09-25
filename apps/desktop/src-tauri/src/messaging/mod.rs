@@ -96,7 +96,7 @@ pub(crate) use engine::now_unix_ms;
 pub use engine::{
     EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
     MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
-    PreparedGroupConversation, SubmitMessageOutcome,
+    PreparedGroupConversation, RetryMessageOutcome, SubmitMessageOutcome,
 };
 pub use group_genesis::StationGroupGenesisTransport;
 pub use inbox::{InboxWorker, QueueAcknowledger};
@@ -126,9 +126,10 @@ pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
     CommandReconciliation, CommandReconciliationDisposition, CommandResultDisposition,
     CommandResultReceiveCommit, CommandStatusProjection, ConversationMemberProjection,
-    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
-    InteractionCommandCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
+    ConversationMessagePage, ConversationMessageProjection, ConversationProjection,
+    ConversationStateReceiveCommit, ConversationSummaryProjection, DeliveryReceiptReceiveCommit,
+    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit,
+    MessageProjection, MessageRetryDisposition, MessagingStore, MlsReceiveCommit,
     MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,

@@ -252,6 +252,7 @@ message ActorProfile {
   string message_permission = 26 [json_name = "message_permission"];
   int32 auto_expire_days = 27 [json_name = "auto_expire_days"];
   ActorRef ref = 28 [json_name = "ref"];
+  uint64 profile_revision = 29 [json_name = "profile_revision"];
 }
 
 message UpdateProfileRequest {
@@ -267,6 +268,19 @@ message UpdateProfileRequest {
   optional bool manually_approves_followers = 10 [json_name = "manually_approves_followers"];
   optional string message_permission = 11 [json_name = "message_permission"];
   optional int32 auto_expire_days = 12 [json_name = "auto_expire_days"];
+  uint64 observed_revision = 13 [json_name = "observed_revision"];
+}
+
+enum ProfileUpdateOutcome {
+  PROFILE_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  PROFILE_UPDATE_OUTCOME_APPLIED = 1;
+  PROFILE_UPDATE_OUTCOME_UNCHANGED = 2;
+  PROFILE_UPDATE_OUTCOME_CONFLICT = 3;
+}
+
+message UpdateProfileResponse {
+  ProfileUpdateOutcome outcome = 1;
+  ActorProfile profile = 2;
 }
 
 message ActorList {

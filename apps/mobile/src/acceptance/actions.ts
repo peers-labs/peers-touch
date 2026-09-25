@@ -1,50 +1,133 @@
+import { create, toBinary } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
+
 import {
+  currentAccessGate,
   isAccessGranted,
   submitStationInviteCodeGate,
   submitStationLoginGate,
   type AccessDecision,
 } from '../features/auth/authSession';
-import { getMobileLifecycleKernel } from '../app/lifecycle';
+import {
+  getMobileLifecycleKernel,
+  type DraftDisposition,
+} from '../app/lifecycle';
+import {
+  applyMobileNavigationIntent,
+  readMobileNavigationProjection,
+  type MobileDetailRoute,
+  type MobileNavigationIntent,
+  type MobileOverlayRoute,
+  type MobilePrimaryRouteId,
+  type MobileSettingDetailId,
+} from '../app/navigation';
 import { verifyStationIdentity } from '../features/station/stationConnection';
 import {
   activeStationEntry,
   activateStationEntry,
   addStationEntry,
   emptyStationRegistry,
-  loadStationRegistry,
-  persistStationRegistry,
   removeStationEntry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import {
-  applyAccessGateRuntimeResult,
   cancelOAuth,
-  logoutAuthRuntimeSession,
-  readActiveAuthSession,
-  readAccessRuntimeProjection,
   readAuthRuntimeSnapshot,
   refreshOAuthStatus,
-  startAccessAttemptForActiveStation,
   startOAuth,
 } from '../runtimes/authRuntime';
+import {
+  applyAccessGateRuntimeResult,
+  readAccessRuntimeProjection,
+  startAccessAttemptForActiveStation,
+} from '../runtimes/accessRuntime';
+import {
+  activateNativeSessionRuntime,
+  logoutSessionRuntime,
+  purgeAllNativeSessionState,
+  readActiveSessionProjection,
+  readSessionRuntimeSnapshot,
+} from '../runtimes/sessionRuntime';
 import {
   readMobileRuntimeScopeProjection,
 } from '../runtimes/runtimeRegistry';
 import {
+  readStationRegistryProjection,
+  replaceStationRegistryProjection,
+} from '../runtimes/stationRuntime';
+import {
   checkAllPermissions,
   checkPermission,
   fetchNetworkState,
+  readNativeLifecycleBridgeDiagnostic,
   requestPermission,
   type PermissionKind,
 } from '../runtimes/nativeLifecycleBridge';
 import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
+import { dispatchOpenContactChat } from '../features/social/contactCommands';
+import { mobileCallManager } from '../features/call/callState';
 import {
   acceptSocialFriendRequest,
+  applySocialFriendRequestProjectionCheckpoints,
   readSocialRuntimeProjection,
+  readCurrentSocialProfile,
   reconcileSocialRuntime,
   searchSocialPeople,
   sendSocialFriendRequest,
+  submitSocialFriendRequest,
+  updateCurrentSocialProfile,
 } from '../features/social/socialRuntime';
+import type { PeerProfile } from '../features/social/socialTypes';
+import {
+  ChatDraftPayloadSchema,
+  MobileDraftEnvelopeV2Schema,
+  MobileDraftSurfaceKind,
+  MomentDraftPayloadSchema,
+} from '../gen/proto/domain/mobile/reliability_pb';
+import {
+  AudienceSchema,
+  ReactionKind,
+  type Audience_Kind,
+  type Post,
+} from '../gen/proto/domain/social/post_pb';
+import type { Comment } from '../gen/proto/domain/social/comment_pb';
+import {
+  NotificationPreferencePatchSchema,
+  type NotificationPreferencesSnapshot,
+} from '../gen/proto/domain/notification/notification_pb';
+import {
+  applyReliabilityCommandRecoveryAction,
+  discardReliabilityDrafts,
+  getDraftRestorationPort,
+  listReliabilityCommands,
+  listReliabilityProjectionCheckpoints,
+  readReliabilityRuntimeStatus,
+  reconcileReliableFriendRequests,
+  reliabilityCommandRecoveryActions,
+  resetAllLocalReliabilityData,
+  restoreReliabilityDrafts,
+  type CommandProjection,
+  type DraftProjection,
+} from '../runtimes/commandRuntime';
+import {
+  getRecoveryProjection,
+  type RecoveryState,
+} from '../runtimes/recoveryProjection';
+import {
+  MobileMutationAdmissionError,
+  mobileMutationScopeKey,
+  requireMobileMutationAdmission,
+} from '../runtimes/mutationAdmission';
+import {
+  loadDevicePreferences,
+  persistDevicePreferences,
+  readDeviceSettingsRuntimeSnapshot,
+  type DevicePreferences,
+} from '../runtimes/deviceSettingsRuntime';
+import {
+  readCurrentActiveMomentsRuntime,
+  readCurrentActiveProfileRuntime,
+} from '../runtimes/socialProjectionRuntime';
 import {
   messagingCommandStatus,
   messagingCreateDirect,
@@ -60,48 +143,89 @@ import {
   messagingSubmitMetadataInteraction,
   messagingSubmitReadCursor,
   messagingSubmitTyping,
+  getSecureStorageValue,
+  setSecureStorageValue,
   type MessagingAccountInput,
 } from '../services/mobileCommands';
+import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
-import type { MobileAcceptanceNamespace } from './contracts';
+import type {
+  LifecycleWaitReadyInput,
+  MobileAcceptanceNamespace,
+  PublicRecoveryState,
+  PublicReliabilityDraft,
+  PublicReliabilitySnapshot,
+  ReliabilityDraftReadInput,
+} from './contracts';
 import {
+  configureOAuthSecureStorageFault,
   purgeNativeOAuth,
   requestCallbackReplayHandle,
   submitNegativeOAuthCallback,
 } from './negativeOAuth';
+import {
+  configureReliabilityAcceptanceFault,
+  type ReliabilityAcceptanceFaultMode,
+} from './reliabilityFixture';
 import {
   sanitizeAccessDecision,
   sanitizeMessagingMessages,
   sanitizeMessagingProjection,
   sanitizeMobileProjection,
   sanitizeOAuthProjection,
+  sanitizeSessionRevocation,
   sanitizeStationRegistry,
 } from './projection';
 
 export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'build.identity': async () => readSharedBuildIdentity(),
 
+  'runtime.prepareActorIdentity': async (input) => {
+    const storageKey = requireString(
+      input?.storageKey,
+      'runtime.prepareActorIdentity.storageKey',
+    );
+    const seedBase64 = requireString(
+      input?.seedBase64,
+      'runtime.prepareActorIdentity.seedBase64',
+    );
+    if (
+      !/^mobile-crypto-identity\.v1\.identity\.[0-9a-f]{32}$/.test(storageKey)
+      || !/^[A-Za-z0-9+/]{43}=$/.test(seedBase64)
+    ) {
+      throw new Error(
+        'acceptance.mobile.invalidInput:runtime.prepareActorIdentity',
+      );
+    }
+    await setSecureStorageValue(storageKey, seedBase64);
+    if (await getSecureStorageValue(storageKey) !== seedBase64) {
+      throw new Error('acceptance.mobile.actorIdentityPreparationFailed');
+    }
+    return { prepared: true };
+  },
+
   'station.add': async (input) => {
     const requestedUrl = requireString(input?.url, 'station.add.url');
     const verified = await verifyStationIdentity(requestedUrl);
-    const current = await loadStationRegistry();
+    const current = await readStationRegistryProjection();
     const next = addVerifiedStation(current, verified);
     if (current.activeStationPeerId !== verified.stationPeerId) {
       const sessionRevocation = await getMobileLifecycleKernel().transitionScope(
         'station-replace',
         async () => {
           const logout = await cancelAndClearCurrentAuthScope();
-          await persistStationRegistry(next);
+          await replaceStationRegistryProjection(next);
           return logout;
         },
+        scopeTransitionOptions(input.draftDisposition),
       );
       return {
         ...stationMutationOutput(next, verified),
-        sessionRevocation,
+        sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
       };
     }
 
-    await persistStationRegistry(next);
+    await replaceStationRegistryProjection(next);
     return stationMutationOutput(next, verified);
   },
 
@@ -111,7 +235,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       'station.replace.stationPeerId',
     );
     const requestedUrl = requireString(input?.url, 'station.replace.url');
-    const current = await loadStationRegistry();
+    const current = await readStationRegistryProjection();
     if (!current.entries.some(
       (entry) => entry.stationPeerId === currentStationPeerId,
     )) {
@@ -128,13 +252,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       'station-replace',
       async () => {
         const logout = await cancelAndClearCurrentAuthScope();
-        await persistStationRegistry(next);
+        await replaceStationRegistryProjection(next);
         return logout;
       },
+      scopeTransitionOptions(input.draftDisposition),
     );
     return {
       ...stationMutationOutput(next, verified),
-      sessionRevocation,
+      sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
     };
   },
 
@@ -143,7 +268,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       input?.stationPeerId,
       'station.select.stationPeerId',
     );
-    const current = await loadStationRegistry();
+    const current = await readStationRegistryProjection();
     if (!current.entries.some((entry) => entry.stationPeerId === stationPeerId)) {
       throw new Error('acceptance.mobile.stationNotFound');
     }
@@ -152,29 +277,32 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       ? await getMobileLifecycleKernel().transitionScope(
         'station-replace',
         async () => {
-          const logout = await logoutAuthRuntimeSession();
-          await persistStationRegistry(next);
+          const logout = await logoutSessionRuntime();
+          await replaceStationRegistryProjection(next);
           return logout;
         },
+        scopeTransitionOptions(input.draftDisposition),
       )
-      : { remoteRevocation: 'not-required' as const };
+      : { remoteRevocation: 'not-required' as const, nativePurge: null };
     return {
       ...sanitizeStationRegistry(next),
-      sessionRevocation,
+      sessionRevocation: sanitizeSessionRevocation(sessionRevocation),
     };
   },
 
   'access.submit': async (input) => {
     if (!input) throw new Error('acceptance.mobile.invalidAccessSubmitInput');
-    const station = requireActiveStation(await loadStationRegistry());
+    const station = requireActiveStation(
+      await readStationRegistryProjection(),
+    );
 
     if (input.kind === 'start') {
       beginAccessGateLaunch();
       const decision = await startAccessAttemptForActiveStation();
-      completeAccessGateLaunch(decision);
+      await completeAccessGateLaunch(decision);
       return {
         decision: requirePublicDecision(decision),
-        session: readAccessRuntimeProjection().session,
+        session: readSessionRuntimeSnapshot().session,
       };
     }
 
@@ -184,38 +312,47 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     );
 
     if (input.kind === 'login') {
+      const gate = currentAccessGate(readAccessRuntimeProjection().decision);
+      if (!gate) throw new Error('acceptance.mobile.accessGateNotReady');
       const result = await submitStationLoginGate({
         stationPeerId: station.stationPeerId,
         stationUrl: station.url,
         attemptId,
+        gate,
         email: requireString(input.email, 'access.submit.email'),
         password: requireString(input.password, 'access.submit.password'),
       });
-      applyAccessGateRuntimeResult(result.decision, result.session);
-      completeAccessGateLaunch(result.decision);
+      applyAccessGateRuntimeResult(result.decision);
+      if (isAccessGranted(result.decision)) {
+        await activateNativeSessionRuntime(station, result.decision);
+      }
+      await completeAccessGateLaunch(result.decision);
       return {
         decision: requirePublicDecision(result.decision),
-        session: {
-          stationPeerId: result.session.stationPeerId,
-          actorPtid: result.session.actorRef.ptid,
-          expiresAt: result.session.expiresAt,
-        },
+        session: readSessionRuntimeSnapshot().session,
       };
     }
 
     if (input.kind === 'invite-code') {
-      const decision = await submitStationInviteCodeGate({
+      const gate = currentAccessGate(readAccessRuntimeProjection().decision);
+      if (!gate) throw new Error('acceptance.mobile.accessGateNotReady');
+      const result = await submitStationInviteCodeGate({
+        stationPeerId: station.stationPeerId,
         stationUrl: station.url,
         attemptId,
+        gate,
         inviteCode: requireString(
           input.inviteCode,
           'access.submit.inviteCode',
         ),
       });
-      applyAccessGateRuntimeResult(decision);
+      applyAccessGateRuntimeResult(result.decision);
+      if (isAccessGranted(result.decision)) {
+        await activateNativeSessionRuntime(station, result.decision);
+      }
       return {
-        decision: requirePublicDecision(decision),
-        session: readAccessRuntimeProjection().session,
+        decision: requirePublicDecision(result.decision),
+        session: readSessionRuntimeSnapshot().session,
       };
     }
 
@@ -224,7 +361,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'oauth.start': async (input) => {
     if (!input) throw new Error('acceptance.mobile.invalidOAuthStartInput');
-    const station = requireActiveStation(await loadStationRegistry());
+    const station = requireActiveStation(
+      await readStationRegistryProjection(),
+    );
     const provider = input?.provider;
     if (provider !== 'github' && provider !== 'google') {
       throw new Error('acceptance.mobile.invalidOAuthProvider');
@@ -261,6 +400,8 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     getMobileLifecycleKernel().getSnapshot()
   ),
 
+  'lifecycle.waitReady': async (input) => waitForLifecycleReady(input),
+
   'lifecycle.suspend': async () => ({
     snapshot: await getMobileLifecycleKernel().suspend('acceptance-suspend'),
   }),
@@ -277,8 +418,49 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     };
   },
 
+  'lifecycle.nativeBridgeDiagnostic': async () => (
+    readNativeLifecycleBridgeDiagnostic()
+  ),
+
+  'lifecycle.secureStorageDeleteFailure': async () => {
+    const kernel = getMobileLifecycleKernel();
+    await configureOAuthSecureStorageFault('fail-next-remove');
+    let errorCode: 'MOBILE_SECURE_STORAGE' | null = null;
+    try {
+      await kernel.transitionScope(
+        'logout',
+        purgeAllNativeSessionState,
+        { restart: false, draftDisposition: 'discard' },
+      );
+    } catch (error) {
+      if (mobileErrorCode(error) !== 'MOBILE_SECURE_STORAGE') throw error;
+      errorCode = 'MOBILE_SECURE_STORAGE';
+    } finally {
+      await configureOAuthSecureStorageFault('none');
+    }
+    if (!errorCode) {
+      throw new Error('acceptance.mobile.secureStorageDeleteFailureNotObserved');
+    }
+
+    const blocked = kernel.getSnapshot();
+    if (blocked.phase !== 'COLD' || blocked.launchState === 'shell') {
+      throw new Error('acceptance.mobile.secureStorageDeleteFailureDidNotBlock');
+    }
+    await kernel.transitionScope(
+      'logout',
+      purgeAllNativeSessionState,
+      { draftDisposition: 'discard' },
+    );
+    return {
+      outcome: 'blocked',
+      errorCode,
+      blocked,
+      recovered: kernel.getSnapshot(),
+    };
+  },
+
   'lifecycle.scope.read': async () => {
-    const stationRegistry = await loadStationRegistry();
+    const stationRegistry = await readStationRegistryProjection();
     const lifecycle = getMobileLifecycleKernel().getSnapshot();
     const runtime = readMobileRuntimeScopeProjection();
     return {
@@ -289,10 +471,15 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       activeActorPtid: runtime.activeActorPtid,
       runtimeStationPeerId: runtime.activeStationPeerId,
       social: runtime.social,
-      group: runtime.group,
       navigation: runtime.navigation,
     };
   },
+
+  'navigation.snapshot': async () => readMobileNavigationProjection(),
+
+  'navigation.apply': async (input) => applyMobileNavigationIntent(
+    requireNavigationIntent(input),
+  ),
 
   'platform.permission.check': async (input) => (
     checkPermission(requirePermissionKind(input?.kind))
@@ -306,16 +493,17 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'platform.network.read': async () => fetchNetworkState(),
 
-  'session.logout': async () => {
+  'session.logout': async (input) => {
     const logout = await getMobileLifecycleKernel().transitionScope(
       'logout',
-      logoutAuthRuntimeSession,
+      logoutSessionRuntime,
+      scopeTransitionOptions(input?.draftDisposition),
     );
     beginAccessGateLaunch();
     const decision = await startAccessAttemptForActiveStation();
-    completeAccessGateLaunch(decision);
+    await completeAccessGateLaunch(decision);
     return {
-      logout,
+      logout: sanitizeSessionRevocation(logout),
       decision: requirePublicDecision(decision),
       lifecycle: getMobileLifecycleKernel().getSnapshot(),
       runtime: readMobileRuntimeScopeProjection(),
@@ -332,8 +520,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   'projection.read': async () => sanitizeMobileProjection({
-    stationRegistry: await loadStationRegistry(),
+    stationRegistry: await readStationRegistryProjection(),
     access: readAccessRuntimeProjection(),
+    session: readSessionRuntimeSnapshot(),
     oauth: readAuthRuntimeSnapshot(),
   }),
 
@@ -566,15 +755,256 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return sanitizeMessagingProjection({ runtime, conversations, messages });
   },
 
-  'social.people.search': async (input) => {
+  'social.people.search': async ({ query }) => {
     const results = await searchSocialPeople(
-      requireString(input?.query, 'social.people.search.query'),
+      requireString(query, 'social.people.search.query'),
     );
-    return results.map((result) => ({
-      ptid: result.ptid,
-      federationId: result.federationId,
-      homeStationPeerId: result.homeStationPeerId,
-    }));
+    return results.map((searchResult) => {
+      const result = {
+        ...searchResult,
+        federationId: searchResult.federation?.handle ?? '',
+      };
+      return {
+        ptid: result.ptid,
+        federationId: result.federationId,
+        homeStationPeerId: result.homeStationPeerId,
+      };
+    });
+  },
+
+  'reliability.fixture.configure': async (input) => (
+    configureReliabilityAcceptanceFault(
+      requireReliabilityAcceptanceFaultMode(input?.mode),
+    )
+  ),
+
+  'reliability.friendRequest.submit': async (input) => {
+    const submission = await submitSocialFriendRequest(
+      requirePtid(
+        input?.receiverPtid,
+        'reliability.friendRequest.submit.receiverPtid',
+      ),
+      requireString(
+        input?.receiverHomeStationPeerId,
+        'reliability.friendRequest.submit.receiverHomeStationPeerId',
+      ),
+      requireString(
+        input?.federationId,
+        'reliability.friendRequest.submit.federationId',
+      ),
+      input?.message?.trim() || undefined,
+    );
+    return {
+      command: {
+        commandId: submission.command.commandId,
+        requestId: submission.command.requestId,
+        payloadSha256: hexBytes(submission.command.payloadSha256),
+        state: submission.command.state,
+        checkpointReady: submission.command.checkpointReady,
+      },
+      projection: submission.projection,
+    };
+  },
+
+  'reliability.snapshot': async () => readPublicReliabilitySnapshot(),
+
+  'reliability.reconcile': async () => {
+    const account = requireMessagingAccount();
+    const commands = await reconcileReliableFriendRequests(
+      account.stationPeerId,
+      account.actorPtid,
+    );
+    const status = await readReliabilityRuntimeStatus();
+    const appliedCheckpoints =
+      await applySocialFriendRequestProjectionCheckpoints(
+        account.stationPeerId,
+        account.actorPtid,
+        status.runtimeGeneration,
+      );
+    return {
+      commands: commands.map((command) => ({
+        commandId: command.commandId,
+        requestId: command.requestId,
+        payloadSha256: hexBytes(command.payloadSha256),
+        state: command.state,
+        checkpointReady: command.checkpointReady,
+      })),
+      appliedCheckpoints,
+      snapshot: await readPublicReliabilitySnapshot(),
+    };
+  },
+
+  'reliability.command.action': async (input) => {
+    const commandId = requireString(
+      input?.commandId,
+      'reliability.command.action.commandId',
+    );
+    const action = input?.action;
+    if (
+      action !== 'reconcile'
+      && action !== 'cancel'
+      && action !== 'acknowledge'
+      && action !== 'discard-tracking'
+    ) {
+      throw new Error(
+        'acceptance.mobile.invalidInput:reliability.command.action',
+      );
+    }
+    const snapshot = await readReliabilityOwnerState();
+    const command = snapshot.commands.find(
+      (candidate) => candidate.commandId === commandId,
+    );
+    if (!command) {
+      throw new Error('acceptance.mobile.reliabilityCommandNotFound');
+    }
+    if (!reliabilityCommandRecoveryActions(command).includes(action)) {
+      throw new Error('acceptance.mobile.reliabilityCommandActionUnavailable');
+    }
+    await applyReliabilityCommandRecoveryAction(action, [command]);
+    return readPublicReliabilitySnapshot();
+  },
+
+  'reliability.draft.write': async (input) => {
+    const account = requireMessagingAccount();
+    const targetId = requireString(
+      input?.targetId,
+      'reliability.draft.write.targetId',
+    );
+    const text = requireString(
+      input?.text,
+      'reliability.draft.write.text',
+    );
+    const now = Date.now();
+    const envelope = input.kind === 'chat'
+      ? create(MobileDraftEnvelopeV2Schema, {
+          schemaRevision: 2,
+          stationPeerId: account.stationPeerId,
+          actorPtid: account.actorPtid,
+          surfaceKind: MobileDraftSurfaceKind.CHAT_COMPOSER,
+          targetId,
+          updatedAt: timestampFromMs(now),
+          payload: {
+            case: 'chat',
+            value: create(ChatDraftPayloadSchema, {
+              text,
+              replyToMessageId: input.replyToMessageId?.trim() ?? '',
+              attachmentRefs: [],
+            }),
+          },
+        })
+      : input.kind === 'moment'
+        ? create(MobileDraftEnvelopeV2Schema, {
+            schemaRevision: 2,
+            stationPeerId: account.stationPeerId,
+            actorPtid: account.actorPtid,
+            surfaceKind: MobileDraftSurfaceKind.MOMENT_COMPOSER,
+            targetId,
+            updatedAt: timestampFromMs(now),
+            payload: {
+              case: 'moment',
+              value: create(MomentDraftPayloadSchema, {
+                text,
+                audience: create(AudienceSchema, {
+                  kind: requirePositiveInteger(
+                    input.audienceKind,
+                    'reliability.draft.write.audienceKind',
+                  ) as Audience_Kind,
+                }),
+                mediaRefs: [],
+              }),
+            },
+          })
+        : null;
+    if (!envelope) {
+      throw new Error('acceptance.mobile.invalidInput:reliability.draft.write.kind');
+    }
+    const port = getDraftRestorationPort();
+    await port.save(envelope);
+    const persisted = await port.load(
+      account.stationPeerId,
+      account.actorPtid,
+      envelope.surfaceKind,
+      targetId,
+    );
+    if (!persisted) {
+      throw new Error('acceptance.mobile.reliabilityDraftWriteMissing');
+    }
+    return publicReliabilityDraft({
+      key: `${persisted.surfaceKind}:${persisted.targetId}`,
+      kind: input.kind === 'chat' ? 'chat' : 'moments',
+      surfaceKind: input.kind,
+      targetId: persisted.targetId,
+      updatedAtMs: now,
+      envelope: persisted,
+    });
+  },
+
+  'reliability.draft.read': async (input) => {
+    const snapshot = await readReliabilityOwnerState();
+    return publicReliabilityDrafts(
+      filterReliabilityDrafts(snapshot.drafts, input),
+    );
+  },
+
+  'reliability.draft.action': async (input) => {
+    const snapshot = await readReliabilityOwnerState();
+    const drafts = filterReliabilityDrafts(snapshot.drafts, input);
+    if (drafts.length === 0) {
+      throw new Error('acceptance.mobile.reliabilityDraftNotFound');
+    }
+    if (input.action === 'restore') {
+      await restoreReliabilityDrafts(drafts);
+    } else if (input.action === 'discard') {
+      await discardReliabilityDrafts(drafts);
+      getRecoveryProjection().clearDraftRestore();
+    } else {
+      throw new Error(
+        'acceptance.mobile.invalidInput:reliability.draft.action',
+      );
+    }
+    return readPublicReliabilitySnapshot();
+  },
+
+  'reliability.reset': async (input) => {
+    if (input?.confirmation !== 'reset-all-local-reliability-data') {
+      throw new Error('acceptance.mobile.invalidInput:reliability.reset');
+    }
+    return resetAllLocalReliabilityData();
+  },
+
+  'recovery.snapshot': async () => {
+    const snapshot = getRecoveryProjection().getSnapshot();
+    const session = readSessionRuntimeSnapshot();
+    let writeAdmission: {
+      open: boolean;
+      reason: string | null;
+    };
+    if (!session.session) {
+      writeAdmission = {
+        open: false,
+        reason: `session_${session.phase}`,
+      };
+    } else {
+      try {
+        requireMobileMutationAdmission(
+          mobileMutationScopeKey(
+            session.session.stationPeerId,
+            session.session.actorPtid,
+          ),
+        );
+        writeAdmission = { open: true, reason: null };
+      } catch (error) {
+        if (!(error instanceof MobileMutationAdmissionError)) throw error;
+        writeAdmission = { open: false, reason: error.reason };
+      }
+    }
+    return {
+      hasActiveRecovery: snapshot.hasActiveRecovery,
+      isWriteBlocked: snapshot.isWriteBlocked,
+      writeAdmission,
+      updatedAtMs: snapshot.updatedAtMs,
+      states: snapshot.states.map(publicRecoveryState),
+    };
   },
 
   'social.request.send': async (input) => sendSocialFriendRequest(
@@ -591,26 +1021,260 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     requireString(input?.requestId, 'social.request.accept.requestId'),
   ),
 
+  'social.contact.open': async (input) => {
+    requireMessagingAccount();
+    const conversationId = await dispatchOpenContactChat(
+      requirePtid(input?.peerPtid, 'social.contact.open.peerPtid'),
+      requireString(input?.federationId, 'social.contact.open.federationId'),
+    );
+    return { conversationId };
+  },
+
   'social.reconcile': async () => reconcileSocialRuntime(),
 
   'social.projection.read': async () => readSocialRuntimeProjection(),
 
+  'moments.feed.read': async () => {
+    const runtime = requireMomentsRuntime();
+    if (!await runtime.feed.refresh()) {
+      throw new Error('acceptance.mobile.momentsFeedUnavailable');
+    }
+    const snapshot = runtime.feed.state();
+    return {
+      outcome: snapshot.pageOutcome,
+      hasMore: snapshot.hasMore,
+      nextCursor: snapshot.cursor,
+      posts: snapshot.posts.map(publicMoment),
+    };
+  },
+
+  'moments.publish': async (input) => {
+    const runtime = requireMomentsRuntime();
+    const result = await runtime.gateway.createMoment({
+      kind: 'text',
+      text: requireString(input?.text, 'moments.publish.text'),
+      audience: create(AudienceSchema, {
+        kind: requireAudienceKind(input?.audienceKind),
+      }),
+    });
+    const created = requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.momentsPublishFailed',
+    );
+    if (!created.post) {
+      throw new Error('acceptance.mobile.momentsPublishMissingPost');
+    }
+    await runtime.feed.refresh();
+    return publicMoment(created.post);
+  },
+
+  'moments.react': async (input) => {
+    const runtime = requireMomentsRuntime();
+    const postId = requireString(input?.postId, 'moments.react.postId');
+    const reactionKind = requireReactionKind(input?.reactionKind);
+    const result = input?.active
+      ? await runtime.gateway.reactToPost(postId, reactionKind)
+      : await runtime.gateway.unreactToPost(postId, reactionKind);
+    const updated = requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.momentsReactionFailed',
+    );
+    runtime.feed.updateReaction(postId, updated.reactions);
+    return updated.reactions.map((reaction) => ({
+      kind: reaction.kind,
+      count: reaction.count.toString(),
+      reactedByViewer: reaction.reactedByViewer,
+    }));
+  },
+
+  'moments.comment': async (input) => {
+    const runtime = requireMomentsRuntime();
+    const result = await runtime.gateway.createComment(
+      requireString(input?.postId, 'moments.comment.postId'),
+      requireString(input?.content, 'moments.comment.content'),
+      input?.replyToCommentId?.trim() || undefined,
+    );
+    const created = requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.momentsCommentFailed',
+    );
+    if (!created.comment) {
+      throw new Error('acceptance.mobile.momentsCommentMissing');
+    }
+    return publicMomentComment(created.comment);
+  },
+
+  'moments.comments.read': async (input) => {
+    const runtime = requireMomentsRuntime();
+    const result = await runtime.gateway.fetchComments(
+      requireString(input?.postId, 'moments.comments.read.postId'),
+      '',
+      50,
+    );
+    return requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.momentsCommentsUnavailable',
+    ).comments.map(publicMomentComment);
+  },
+
+  'settings.profile.read': async () => {
+    const current = await readCurrentSocialProfile(true);
+    return publicProfile(current.actorPtid, current.profile);
+  },
+
+  'settings.profile.update': async (input) => {
+    const updated = await updateCurrentSocialProfile({
+      displayName: optionalText(input?.displayName),
+      note: optionalText(input?.note),
+      region: optionalText(input?.region),
+      timezone: optionalText(input?.timezone),
+      defaultVisibility: optionalText(input?.defaultVisibility),
+      manuallyApprovesFollowers: optionalBoolean(
+        input?.manuallyApprovesFollowers,
+      ),
+      messagePermission: optionalText(input?.messagePermission),
+      autoExpireDays: optionalNonNegativeInteger(input?.autoExpireDays),
+    });
+    return {
+      outcome: updated.result.outcome,
+      profile: publicProfile(updated.actorPtid, updated.result.profile),
+    };
+  },
+
+  'settings.notifications.read': async () => {
+    const runtime = requireProfileRuntime();
+    const result = await runtime.refreshNotificationPreferences();
+    return publicNotificationPreferences(requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.notificationPreferencesUnavailable',
+    ));
+  },
+
+  'settings.notifications.update': async (input) => {
+    const runtime = requireProfileRuntime();
+    const result = await runtime.updateNotificationPreferences([
+      create(NotificationPreferencePatchSchema, {
+        category: requirePositiveInteger(
+          input?.category,
+          'settings.notifications.update.category',
+        ),
+        enabled: requireBoolean(
+          input?.enabled,
+          'settings.notifications.update.enabled',
+        ),
+        pushEnabled: requireBoolean(
+          input?.pushEnabled,
+          'settings.notifications.update.pushEnabled',
+        ),
+        soundEnabled: requireBoolean(
+          input?.soundEnabled,
+          'settings.notifications.update.soundEnabled',
+        ),
+      }),
+    ]);
+    const updated = requireAcceptanceOutcome(
+      result,
+      'acceptance.mobile.notificationPreferencesUpdateFailed',
+    );
+    return {
+      outcome: updated.outcome,
+      snapshot: publicNotificationPreferences(updated.snapshot),
+    };
+  },
+
+  'settings.device.read': async () => {
+    await loadDevicePreferences();
+    const snapshot = readDeviceSettingsRuntimeSnapshot();
+    if (snapshot.status !== 'ready') {
+      throw new Error('acceptance.mobile.deviceSettingsUnavailable');
+    }
+    return { ...snapshot.preferences };
+  },
+
+  'settings.device.update': async (input) => {
+    const preferences = requireDevicePreferences(input);
+    await persistDevicePreferences(preferences);
+    const snapshot = readDeviceSettingsRuntimeSnapshot();
+    if (snapshot.status !== 'ready') {
+      throw new Error('acceptance.mobile.deviceSettingsUnavailable');
+    }
+    return { ...snapshot.preferences };
+  },
+
+  getRealtimeDevice: async () => {
+    const runtime = await messagingStatus();
+    return {
+      actorPtid: runtime.actorPtid ?? '',
+      deviceId: runtime.deviceId ?? '',
+      active: runtime.active && runtime.deviceEnrolled,
+    };
+  },
+
+  initiateCall: async (input) => {
+    const runtime = await messagingStatus();
+    if (
+      input.callerDeviceId
+      && input.callerDeviceId !== runtime.deviceId
+    ) {
+      throw new Error('acceptance.mobile.callDeviceMismatch');
+    }
+    return publicCallSnapshot(await mobileCallManager.startOutgoingCall(
+      requirePtid(input.calleePtid, 'call.calleePtid'),
+      'audio',
+    ));
+  },
+
+  callResolutionState: async (input) => {
+    const snapshot = await mobileCallManager.readResolution(
+      requireString(input.callId, 'call.callId'),
+    );
+    return snapshot ? publicCallSnapshot(snapshot) : null;
+  },
+
+  acceptCall: async (input) => {
+    const callId = requireString(input.callId, 'call.callId');
+    const current = mobileCallManager.getSnapshot();
+    if (current?.callId !== callId) {
+      throw new Error('acceptance.mobile.callNotFound');
+    }
+    try {
+      return publicCallSnapshot(
+        await mobileCallManager.acceptCall() ?? current,
+      );
+    } catch (error) {
+      const snapshot = await mobileCallManager.readResolution(callId);
+      if (!snapshot) throw error;
+      return { ...publicCallSnapshot(snapshot), conflict: true };
+    }
+  },
+
+  rejectCall: async (input) => {
+    const callId = requireString(input.callId, 'call.callId');
+    const current = mobileCallManager.getSnapshot();
+    if (current?.callId !== callId) {
+      throw new Error('acceptance.mobile.callNotFound');
+    }
+    try {
+      return publicCallSnapshot(
+        await mobileCallManager.rejectCall() ?? current,
+      );
+    } catch (error) {
+      const snapshot = await mobileCallManager.readResolution(callId);
+      if (!snapshot) throw error;
+      return { ...publicCallSnapshot(snapshot), conflict: true };
+    }
+  },
+
   cleanup: async () => {
-    const station = activeStationEntry(await loadStationRegistry());
     let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
     await getMobileLifecycleKernel().transitionScope(
       'logout',
       async () => {
-        oauthPurge = await purgeNativeOAuth(station
-          ? {
-            stationOrigin: station.url,
-            stationPeerId: station.stationPeerId,
-          }
-          : undefined);
-        await logoutAuthRuntimeSession();
-        await persistStationRegistry(emptyStationRegistry());
+        const logout = await logoutSessionRuntime();
+        oauthPurge = logout.nativePurge ?? await purgeNativeOAuth();
+        await replaceStationRegistryProjection(emptyStationRegistry());
       },
-      { restart: false },
+      { restart: false, draftDisposition: 'discard' },
     );
     if (!oauthPurge) throw new Error('acceptance.mobile.oauthPurgeMissing');
     return {
@@ -620,6 +1284,25 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     };
   },
 };
+
+export function publicCallSnapshot(snapshot: {
+  callId: string;
+  state: string;
+  endReason?: string;
+  winningDeviceId?: string;
+}) {
+  const state = snapshot.state === 'ended'
+    && (snapshot.endReason === 'rejected' || snapshot.endReason === 'busy')
+    ? 'rejected'
+    : snapshot.state === 'ended' && snapshot.endReason === 'no-answer'
+      ? 'no_answer'
+      : snapshot.state;
+  return {
+    callId: snapshot.callId,
+    state,
+    winningDeviceId: snapshot.winningDeviceId,
+  };
+}
 
 function addVerifiedStation(
   registry: StoredStationRegistry,
@@ -649,6 +1332,217 @@ function stationMutationOutput(
     verifiedStationPeerId: verified.stationPeerId,
     canonicalOrigin: verified.canonicalOrigin,
   };
+}
+
+async function readReliabilityOwnerState() {
+  const account = requireMessagingAccount();
+  const status = await readReliabilityRuntimeStatus();
+  if (
+    !status.active
+    || status.stationPeerId !== account.stationPeerId
+    || status.actorPtid !== account.actorPtid
+  ) {
+    throw new Error('acceptance.mobile.reliabilityScopeUnavailable');
+  }
+  const [commands, drafts, checkpoints] = await Promise.all([
+    listReliabilityCommands(
+      account.stationPeerId,
+      account.actorPtid,
+      status.runtimeGeneration,
+    ),
+    getDraftRestorationPort().list(
+      account.stationPeerId,
+      account.actorPtid,
+    ),
+    listReliabilityProjectionCheckpoints(
+      account.stationPeerId,
+      account.actorPtid,
+      status.runtimeGeneration,
+    ),
+  ]);
+  return { status, commands, drafts, checkpoints };
+}
+
+async function readPublicReliabilitySnapshot(): Promise<PublicReliabilitySnapshot> {
+  const { status, commands, drafts, checkpoints } =
+    await readReliabilityOwnerState();
+  return {
+    runtime: { ...status },
+    commands: commands.map((command) => ({
+      commandId: command.commandId,
+      orderingKey: command.orderingKey,
+      payloadSha256: hexBytes(command.envelope.payloadSha256),
+      state: command.state,
+      attemptCount: command.attemptCount,
+      typedLastError: command.typedLastError,
+      createdAtMs: command.createdAtMs,
+      updatedAtMs: command.updatedAtMs,
+      nextAttemptAtMs: command.nextAttemptAtMs,
+    })),
+    drafts: await publicReliabilityDrafts(drafts),
+    checkpoints: await Promise.all(checkpoints.map(async (checkpoint) => ({
+      commandId: checkpoint.commandId,
+      payloadSha256: hexBytes(checkpoint.payloadSha256),
+      authoritativeLookupSha256: await sha256Hex(
+        Uint8Array.from(checkpoint.authoritativeLookupBytes),
+      ),
+      createdAtMs: checkpoint.createdAtMs,
+    }))),
+  };
+}
+
+function filterReliabilityDrafts(
+  drafts: readonly DraftProjection[],
+  input: ReliabilityDraftReadInput | undefined,
+): DraftProjection[] {
+  if (
+    input?.kind !== undefined
+    && input.kind !== 'chat'
+    && input.kind !== 'moment'
+  ) {
+    throw new Error('acceptance.mobile.invalidInput:reliability.draft.kind');
+  }
+  const targetId = input?.targetId?.trim() ?? '';
+  return drafts.filter((draft) => (
+    (!input?.kind || draft.surfaceKind === input.kind)
+    && (!targetId || draft.targetId === targetId)
+  ));
+}
+
+async function publicReliabilityDrafts(
+  drafts: readonly DraftProjection[],
+): Promise<PublicReliabilityDraft[]> {
+  return Promise.all(drafts.map(publicReliabilityDraft));
+}
+
+async function publicReliabilityDraft(
+  draft: DraftProjection,
+): Promise<PublicReliabilityDraft> {
+  return {
+    key: draft.key,
+    kind: draft.kind,
+    surfaceKind: draft.surfaceKind,
+    targetId: draft.targetId,
+    updatedAtMs: draft.updatedAtMs,
+    payloadSha256: await sha256Hex(
+      Uint8Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft.envelope)),
+    ),
+  };
+}
+
+function publicRecoveryState(state: RecoveryState): PublicRecoveryState {
+  switch (state.kind) {
+    case 'draft-restore-pending':
+      return {
+        kind: state.kind,
+        count: state.drafts.length,
+        actions: ['restore', 'discard'],
+        detail: {
+          draftKeys: state.drafts.map((draft) => draft.key),
+        },
+      };
+    case 'command-recovery':
+      return {
+        kind: state.kind,
+        count: state.commands.length,
+        actions: [...new Set(state.commands.flatMap(
+          reliabilityCommandRecoveryActions,
+        ))],
+        detail: {
+          commandIds: state.commands.map((command) => command.commandId),
+        },
+      };
+    case 'capacity-read-only':
+      return {
+        kind: state.kind,
+        detail: {
+          currentDepth: state.currentDepth,
+          maxCapacity: state.maxCapacity,
+        },
+      };
+    case 'legacy-reliability-recovery':
+      return {
+        kind: state.kind,
+        actions: ['retain', 'discard-legacy', 'reset-all'],
+        detail: {
+          archivedLegacyFiles: state.archivedLegacyFiles,
+          retainedReadOnly: state.retainedReadOnly,
+        },
+      };
+    case 'reliability-reset-recovery':
+      return {
+        kind: state.kind,
+        actions: ['finish-reset'],
+      };
+    case 'write-revocation':
+      return {
+        kind: state.kind,
+        detail: state.admission.open
+          ? {}
+          : {
+              reason: state.admission.reason,
+              closedAt: state.admission.closedAt,
+            },
+      };
+    case 'session-mismatch':
+      return {
+        kind: state.kind,
+        actions: ['re-authenticate', 'switch-station'],
+        detail: {
+          expectedStationPeerId: state.expectedStationPeerId,
+          actualStationPeerId: state.actualStationPeerId,
+          detectedAtMs: state.detectedAtMs,
+        },
+      };
+    case 'event-overflow-reconcile':
+      return {
+        kind: state.kind,
+        detail: {
+          staleDomains: state.staleDomains.map((entry) => entry.domain),
+        },
+      };
+    case 'deferred-capability':
+      return {
+        kind: state.kind,
+        detail: {
+          runtimeIds: state.unavailableRuntimes.map(
+            (runtime) => runtime.runtimeId,
+          ),
+        },
+      };
+    case 'device-local-flag':
+      return {
+        kind: state.kind,
+        actions: ['retry', 'switch-station'],
+        detail: {
+          reason: state.reason,
+          since: state.since,
+        },
+      };
+  }
+}
+
+function hexBytes(value: ArrayLike<number>): string {
+  return Array.from(
+    value,
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+function requireReliabilityAcceptanceFaultMode(
+  value: unknown,
+): ReliabilityAcceptanceFaultMode {
+  if (
+    value === 'none'
+    || value === 'hold-before-dispatch'
+    || value === 'lose-dispatch-response-and-readback'
+    || value === 'fail-checkpoint-acknowledgement'
+  ) {
+    return value;
+  }
+  throw new Error(
+    'acceptance.mobile.invalidInput:reliability.fixture.mode',
+  );
 }
 
 function requireActiveStation(registry: StoredStationRegistry) {
@@ -706,6 +1600,126 @@ function requirePermissionKind(value: unknown): PermissionKind {
   throw new Error('acceptance.mobile.invalidInput:platform.permission.kind');
 }
 
+function requireNavigationIntent(value: unknown): MobileNavigationIntent {
+  if (!value || typeof value !== 'object') {
+    throw new Error('acceptance.mobile.invalidInput:navigation.intent');
+  }
+  const input = value as Record<string, unknown>;
+  switch (input.kind) {
+    case 'primary':
+      return {
+        kind: 'primary',
+        routeId: requirePrimaryRouteId(input.routeId),
+      };
+    case 'detail.push':
+      return {
+        kind: 'detail.push',
+        route: requireDetailRoute(input.route),
+      };
+    case 'detail.pop':
+    case 'overlay.close':
+    case 'reset':
+      return { kind: input.kind };
+    case 'overlay.open':
+      return {
+        kind: 'overlay.open',
+        route: requireOverlayRoute(input.route),
+      };
+    default:
+      throw new Error('acceptance.mobile.invalidInput:navigation.intent.kind');
+  }
+}
+
+function requirePrimaryRouteId(value: unknown): MobilePrimaryRouteId {
+  if (
+    value === 'tab:chat'
+    || value === 'tab:moments'
+    || value === 'tab:contacts'
+    || value === 'tab:settings'
+  ) {
+    return value;
+  }
+  throw new Error('acceptance.mobile.invalidInput:navigation.primary.routeId');
+}
+
+function requireDetailRoute(value: unknown): MobileDetailRoute {
+  if (!value || typeof value !== 'object') {
+    throw new Error('acceptance.mobile.invalidInput:navigation.detail.route');
+  }
+  const route = value as Record<string, unknown>;
+  switch (route.routeId) {
+    case 'detail:chat-conversation':
+      return {
+        routeId: route.routeId,
+        sessionUlid: requireString(
+          route.sessionUlid,
+          'navigation.detail.sessionUlid',
+        ),
+      };
+    case 'detail:group-conversation':
+      return {
+        routeId: route.routeId,
+        groupUlid: requireString(
+          route.groupUlid,
+          'navigation.detail.groupUlid',
+        ),
+      };
+    case 'detail:contact-profile':
+      return {
+        routeId: route.routeId,
+        actorPtid: requirePtid(
+          route.actorPtid,
+          'navigation.detail.actorPtid',
+        ),
+      };
+    case 'detail:moment':
+      return {
+        routeId: route.routeId,
+        postId: requireString(
+          route.postId,
+          'navigation.detail.postId',
+        ),
+      };
+    case 'detail:setting':
+      return {
+        routeId: route.routeId,
+        settingId: requireSettingDetailId(route.settingId),
+      };
+    default:
+      throw new Error('acceptance.mobile.invalidInput:navigation.detail.routeId');
+  }
+}
+
+function requireOverlayRoute(value: unknown): MobileOverlayRoute {
+  if (!value || typeof value !== 'object') {
+    throw new Error('acceptance.mobile.invalidInput:navigation.overlay.route');
+  }
+  const routeId = (value as Record<string, unknown>).routeId;
+  if (routeId === 'overlay:add-friend' || routeId === 'overlay:create-group') {
+    return { routeId };
+  }
+  throw new Error('acceptance.mobile.invalidInput:navigation.overlay.routeId');
+}
+
+function requireSettingDetailId(value: unknown): MobileSettingDetailId {
+  if (
+    value === 'account-info'
+    || value === 'notifications'
+    || value === 'privacy-security'
+    || value === 'safety-number'
+    || value === 'blocked-users'
+    || value === 'chat-settings'
+    || value === 'chat-background'
+    || value === 'station-connection'
+    || value === 'encryption'
+    || value === 'language'
+    || value === 'about'
+  ) {
+    return value;
+  }
+  throw new Error('acceptance.mobile.invalidInput:navigation.detail.settingId');
+}
+
 function decodeBoundedBase64(value: unknown, field: string): Uint8Array<ArrayBuffer> {
   const encoded = requireString(value, field);
   if (encoded.length > 1_398_104) {
@@ -729,14 +1743,216 @@ async function sha256Hex(value: Uint8Array<ArrayBuffer>): Promise<string> {
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function mobileErrorCode(error: unknown): string | null {
+  if (error && typeof error === 'object' && !Array.isArray(error)) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return message.match(/\bMOBILE_[A-Z_]+\b/)?.[0] ?? null;
+}
+
+async function waitForLifecycleReady(
+  input: LifecycleWaitReadyInput | undefined,
+  timeoutMs = 10_000,
+) {
+  const kernel = getMobileLifecycleKernel();
+  const minimumGeneration = input?.minimumGeneration ?? 0;
+  if (!Number.isSafeInteger(minimumGeneration) || minimumGeneration < 0) {
+    throw new Error('acceptance.mobile.invalidLifecycleGeneration');
+  }
+  const settled = () => {
+    const snapshot = kernel.getSnapshot();
+    return snapshot.phase === 'ACTIVE'
+      && snapshot.generation >= minimumGeneration
+      && snapshot.runtimes.every(
+        (runtime) => runtime.status === 'ready' || runtime.status === 'failed',
+      )
+      ? snapshot
+      : null;
+  };
+  const current = settled();
+  if (current) return Promise.resolve(current);
+
+  return new Promise<ReturnType<typeof kernel.getSnapshot>>((resolve) => {
+    let unsubscribe: () => void = () => undefined;
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(kernel.getSnapshot());
+    }, timeoutMs);
+    const check = () => {
+      const snapshot = settled();
+      if (!snapshot) return;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(snapshot);
+    };
+    unsubscribe = kernel.subscribe(check);
+    check();
+  });
+}
+
+function requireMomentsRuntime() {
+  const runtime = readCurrentActiveMomentsRuntime();
+  if (!runtime) {
+    throw new Error('acceptance.mobile.activeMomentsRuntimeRequired');
+  }
+  return runtime;
+}
+
+function requireProfileRuntime() {
+  const runtime = readCurrentActiveProfileRuntime();
+  if (!runtime) {
+    throw new Error('acceptance.mobile.activeProfileRuntimeRequired');
+  }
+  return runtime;
+}
+
+function requireAcceptanceOutcome<T>(
+  result: CommandOutcome<T>,
+  errorKey: string,
+): T {
+  if (!result.ok) throw new Error(`${errorKey}:${result.error.code}`);
+  return result.data;
+}
+
+function publicMoment(post: Post) {
+  const text = post.content.case === 'textPost'
+    || post.content.case === 'imagePost'
+    || post.content.case === 'videoPost'
+    || post.content.case === 'locationPost'
+    ? post.content.value.text
+    : post.content.case === 'repostPost'
+      ? post.content.value.comment
+      : '';
+  return {
+    postId: post.id,
+    authorPtid: post.authorPtid,
+    text,
+    deleted: post.isDeleted,
+    reactions: post.reactions.map((reaction) => ({
+      kind: reaction.kind,
+      count: reaction.count.toString(),
+      reactedByViewer: reaction.reactedByViewer,
+    })),
+  };
+}
+
+function publicMomentComment(comment: Comment) {
+  return {
+    commentId: comment.id,
+    postId: comment.postId,
+    authorPtid: comment.authorPtid,
+    content: comment.content,
+    replyToCommentId: comment.replyToCommentId,
+    deleted: comment.isDeleted,
+  };
+}
+
+function publicProfile(actorPtid: string, profile: PeerProfile) {
+  return {
+    actorPtid,
+    profileRevision: profile.profileRevision.toString(),
+    displayName: profile.displayName,
+    note: profile.note,
+    region: profile.region,
+    timezone: profile.timezone,
+    defaultVisibility: profile.defaultVisibility,
+    manuallyApprovesFollowers: profile.manuallyApprovesFollowers,
+    messagePermission: profile.messagePermission,
+    autoExpireDays: profile.autoExpireDays,
+  };
+}
+
+function publicNotificationPreferences(
+  snapshot: NotificationPreferencesSnapshot,
+) {
+  return {
+    revision: snapshot.notificationPreferencesRevision.toString(),
+    preferences: snapshot.preferences.map((preference) => ({
+      category: preference.category,
+      enabled: preference.enabled,
+      pushEnabled: preference.pushEnabled,
+      soundEnabled: preference.soundEnabled,
+    })),
+  };
+}
+
+function requireAudienceKind(value: unknown): Audience_Kind {
+  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > 8) {
+    throw new Error('acceptance.mobile.invalidInput:moments.publish.audienceKind');
+  }
+  return Number(value) as Audience_Kind;
+}
+
+function requireReactionKind(value: unknown): ReactionKind {
+  if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > 5) {
+    throw new Error('acceptance.mobile.invalidInput:moments.react.reactionKind');
+  }
+  return Number(value) as ReactionKind;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  return value;
+}
+
+function optionalText(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') {
+    throw new Error('acceptance.mobile.invalidInput:settings.profile.text');
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  return requireBoolean(value, 'settings.profile.boolean');
+}
+
+function optionalNonNegativeInteger(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error('acceptance.mobile.invalidInput:settings.profile.integer');
+  }
+  return Number(value);
+}
+
+function requireDevicePreferences(value: unknown): DevicePreferences {
+  if (!value || typeof value !== 'object') {
+    throw new Error('acceptance.mobile.invalidInput:settings.device');
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    !['system', 'light', 'dark'].includes(String(input.theme))
+    || !['small', 'medium', 'large'].includes(String(input.fontSize))
+  ) {
+    throw new Error('acceptance.mobile.invalidInput:settings.device');
+  }
+  return {
+    theme: input.theme as DevicePreferences['theme'],
+    fontSize: input.fontSize as DevicePreferences['fontSize'],
+    compactMode: requireBoolean(
+      input.compactMode,
+      'settings.device.compactMode',
+    ),
+    mediaAutoDownload: requireBoolean(
+      input.mediaAutoDownload,
+      'settings.device.mediaAutoDownload',
+    ),
+  };
+}
+
 function requireMessagingAccount(): MessagingAccountInput {
-  const session = readActiveAuthSession();
-  if (!session?.stationPeerId || !session.actorRef.ptid) {
+  const session = readActiveSessionProjection();
+  if (!session?.stationPeerId || !session.actorPtid) {
     throw new Error('acceptance.mobile.activeMessagingSessionRequired');
   }
   return {
     stationPeerId: session.stationPeerId,
-    actorPtid: session.actorRef.ptid,
+    actorPtid: session.actorPtid,
   };
 }
 
@@ -749,7 +1965,17 @@ function requirePublicDecision(
 }
 
 async function cancelAndClearCurrentAuthScope() {
-  return logoutAuthRuntimeSession();
+  return logoutSessionRuntime();
+}
+
+function scopeTransitionOptions(
+  value: unknown,
+): { readonly draftDisposition?: DraftDisposition } {
+  if (value === undefined) return {};
+  if (value === 'retain' || value === 'discard') {
+    return { draftDisposition: value };
+  }
+  throw new Error('acceptance.mobile.invalidInput:draftDisposition');
 }
 
 function beginAccessGateLaunch(): void {
@@ -759,15 +1985,12 @@ function beginAccessGateLaunch(): void {
   }
 }
 
-function completeAccessGateLaunch(
+async function completeAccessGateLaunch(
   decision: AccessDecision,
-): void {
+): Promise<void> {
   const kernel = getMobileLifecycleKernel();
   if (isAccessGranted(decision)) {
-    if (kernel.getSnapshot().launchState !== 'runtime-critical') {
-      kernel.transitionLaunchState('runtime-critical');
-    }
-    kernel.transitionLaunchState('shell');
+    await kernel.reconcileLaunchState('access-granted');
     return;
   }
   if (kernel.getSnapshot().launchState === 'station-handshake') {

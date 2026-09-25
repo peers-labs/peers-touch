@@ -43,7 +43,11 @@ fn validate_key(key: &str) -> MobileResult<()> {
             "secure storage key may only contain ASCII letters, digits, dash, underscore, and dot",
         ));
     }
-    if key.starts_with("oauth.") {
+    if key.starts_with("oauth.")
+        || key.starts_with("peers-touch.mobile.auth-session.")
+        || key == "peers-touch.mobile.auth-active-scope.v1"
+        || key.starts_with("peers-touch.mobile.reliability.")
+    {
         return Err(crate::error::MobileError::invalid_input(
             "secure storage key belongs to a Rust-owned namespace",
         ));
@@ -61,5 +65,10 @@ mod tests {
         assert!(validate_key("mobile.storage.smoke").is_ok());
         assert!(validate_key("oauth.active.index").is_err());
         assert!(validate_key("oauth.session.scope").is_err());
+        assert!(validate_key("peers-touch.mobile.auth-session.v1").is_err());
+        assert!(validate_key("peers-touch.mobile.auth-session.v1.station.actor").is_err());
+        assert!(validate_key("peers-touch.mobile.auth-active-scope.v1").is_err());
+        assert!(validate_key("peers-touch.mobile.reliability.install-kek.v1").is_err());
+        assert!(validate_key("peers-touch.mobile.reliability.scope-key-inventory.v1").is_err());
     }
 }

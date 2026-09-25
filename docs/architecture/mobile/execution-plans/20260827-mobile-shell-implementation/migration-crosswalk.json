@@ -1,0 +1,991 @@
+{
+  "schemaVersion": 1,
+  "kind": "peers-touch-plan-migration-crosswalk",
+  "migrationId": "mobile-shell-dwf-d13-20260916",
+  "legacyPlan": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation.md",
+  "archivePlan": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md",
+  "packagePlan": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md",
+  "legacySha256": "a8e092cbda8e7846b38d318cfec9ba14c82f33f1fb3c963c091a9e3b80934b52",
+  "archiveSha256": "a8e092cbda8e7846b38d318cfec9ba14c82f33f1fb3c963c091a9e3b80934b52",
+  "legacyDag": {
+    "anchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L131-L164",
+    "dependsOn": {
+      "DWF-B": [],
+      "W-1": [],
+      "W0": [
+        "W-1"
+      ],
+      "W1": [
+        "W0"
+      ],
+      "W2": [
+        "W1"
+      ],
+      "W3": [
+        "W1"
+      ],
+      "W4": [
+        "W1"
+      ],
+      "CA-HC": [],
+      "W5": [
+        "W3",
+        "W4",
+        "CA-HC"
+      ],
+      "W6A": [
+        "W2",
+        "W5",
+        "CA-HC"
+      ],
+      "W6B": [
+        "W2",
+        "W5"
+      ],
+      "W6C": [
+        "W2",
+        "W5"
+      ],
+      "W6D": [
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "W7": [
+        "W2",
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "W8": [
+        "CA-HC",
+        "W6A",
+        "W6B",
+        "W6C",
+        "W6D",
+        "W7"
+      ],
+      "W9": [
+        "W0",
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "CA-HC",
+        "W5",
+        "W6A",
+        "W6B",
+        "W6C",
+        "W6D",
+        "W7",
+        "W8"
+      ]
+    },
+    "decompositionRule": "Source successors depend on predecessor source Tasks; proof successors depend on their own source Task and retain predecessor proof dependencies. DWF-B has no Mobile dependency edge."
+  },
+  "preparedState": {
+    "packageStatus": "prepared",
+    "currentTaskId": null,
+    "currentTaskPath": null,
+    "readyTaskIds": [
+      "DWF-B",
+      "W5"
+    ],
+    "activeWorkDisposition": {
+      "packagePointer": "absent",
+      "currentTaskId": "NONE",
+      "currentTaskPath": "NONE",
+      "devState": "NONE",
+      "externalUpdate": "absent"
+    },
+    "claim": "The legacy plan remains authoritative; DWF-B3 normalization is complete and DWF-B4 independent re-review remains open. W5 is dependency-ready in the reviewed source/proof graph but cannot become current before B5."
+  },
+  "postCutoverState": {
+    "packageStatus": "active",
+    "currentTaskId": "DWF-B",
+    "currentTaskPath": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/DWF-B.md",
+    "taskTransitions": [
+      {
+        "taskId": "DWF-B",
+        "from": "pending",
+        "to": "in_progress"
+      }
+    ],
+    "exhaustion": null,
+    "activeWorkDisposition": {
+      "currentTaskId": "DWF-B",
+      "currentTaskPath": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/DWF-B.md",
+      "devState": "NONE",
+      "blocked": false,
+      "externalUpdate": "register-after-cutover"
+    }
+  },
+  "handoffState": {
+    "packageStatus": "active",
+    "currentTaskId": "W5",
+    "currentTaskPath": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/W5.md",
+    "taskTransitions": [
+      {
+        "taskId": "DWF-B",
+        "from": "in_progress",
+        "to": "done"
+      },
+      {
+        "taskId": "W5",
+        "from": "pending",
+        "to": "in_progress"
+      }
+    ],
+    "activeWorkDisposition": {
+      "currentTaskId": "W5",
+      "currentTaskPath": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/W5.md",
+      "devState": "NONE",
+      "blocked": false,
+      "externalUpdate": "mirror-after-planctl-advance"
+    }
+  },
+  "workstreams": [
+    {
+      "id": "DWF-B",
+      "legacyDependsOn": [],
+      "legacyStatus": "in progress / DWF-B1 through DWF-B3 passed; DWF-B4 independent re-review pending",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3036",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L1722-L1802",
+      "legacyClosure": {
+        "id": "DWF-B",
+        "gateIds": [
+          "development-workflow-control-plane"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "DWF-B",
+          "role": "control-plane",
+          "closureId": "DWF-B",
+          "gateIds": [
+            "development-workflow-control-plane"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "in_progress",
+          "completionClass": "functional",
+          "runtimeClass": "source-only"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "acceptance://development-workflow-control-plane/20260916T130523369357Z-236b04fb2e493d336b373ea904c95f97",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3036"
+      ]
+    },
+    {
+      "id": "W-1",
+      "legacyDependsOn": [],
+      "legacyStatus": "completed / latest-master fast-forward verified",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3037",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2591",
+      "legacyClosure": {
+        "id": "W-1",
+        "gateIds": []
+      },
+      "taskMappings": [
+        {
+          "taskId": "W-1",
+          "role": "source",
+          "closureId": "W-1",
+          "gateIds": [],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "functional",
+          "runtimeClass": "source-only"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3037"
+      ]
+    },
+    {
+      "id": "W0",
+      "legacyDependsOn": [
+        "W-1"
+      ],
+      "legacyStatus": "completed",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3038",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2592",
+      "legacyClosure": {
+        "id": "W0",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W0",
+          "role": "source",
+          "closureId": "W0",
+          "gateIds": [
+            "mobile-contract-static"
+          ],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "functional",
+          "runtimeClass": "source-only"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3038"
+      ]
+    },
+    {
+      "id": "W1",
+      "legacyDependsOn": [
+        "W0"
+      ],
+      "legacyStatus": "completed",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3039",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2593",
+      "legacyClosure": {
+        "id": "W1",
+        "gateIds": [
+          "mobile-identity-contract"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W1",
+          "role": "source",
+          "closureId": "W1",
+          "gateIds": [
+            "mobile-identity-contract"
+          ],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "functional",
+          "runtimeClass": "service"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3039"
+      ]
+    },
+    {
+      "id": "W2",
+      "legacyDependsOn": [
+        "W1"
+      ],
+      "legacyStatus": "partial / OAuth core and shared Auth visual identity source complete; generic gate UI and physical proof open",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3040",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2594",
+      "legacyClosure": {
+        "id": "W2",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W2",
+          "role": "source",
+          "closureId": "W2-source",
+          "gateIds": [],
+          "preparedStatus": "blocked",
+          "postCutoverStatus": "blocked",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W2-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W2-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-simulator-access-e2e",
+            "mobile-native-access-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/native-oauth-proof/README.md",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3040"
+      ]
+    },
+    {
+      "id": "W3",
+      "legacyDependsOn": [
+        "W1"
+      ],
+      "legacyStatus": "partial / source and Station-bound simulator closure complete",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3041",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2595",
+      "legacyClosure": {
+        "id": "W3",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W3",
+          "role": "source",
+          "closureId": "W3-source",
+          "gateIds": [],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W3-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W3-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-simulator-runtime-lifecycle-e2e",
+            "mobile-simulator-station-lifecycle-e2e",
+            "mobile-ios-simulator-layout-accessibility-e2e",
+            "mobile-native-lifecycle-e2e"
+          ],
+          "preparedStatus": "blocked",
+          "postCutoverStatus": "blocked",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "acceptance://mobile-simulator-station-lifecycle-e2e/20260911T035616890352Z-60057e97ce9dd6c0cd61fe00a972859c",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3041"
+      ]
+    },
+    {
+      "id": "W4",
+      "legacyDependsOn": [
+        "W1"
+      ],
+      "legacyStatus": "source complete / physical recovery proof blocked by Appium and devices",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3042",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2596",
+      "legacyClosure": {
+        "id": "W4",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W4",
+          "role": "source",
+          "closureId": "W4-source",
+          "gateIds": [],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W4-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W4-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-native-recovery-e2e"
+          ],
+          "preparedStatus": "blocked",
+          "postCutoverStatus": "blocked",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "acceptance://mobile-contract-static/20260911T121322623066Z-8f3aef1d19e67fc6ccbf1fe409d7042f",
+        "acceptance://mobile-native-recovery-e2e/20260911T121858889011Z-e7dc01479775a5b3adee374fcda1b45a",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3042"
+      ]
+    },
+    {
+      "id": "CA-HC",
+      "legacyDependsOn": [],
+      "legacyStatus": "source integrated / CA-W6 and CA-W7 remain open",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3043",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2597",
+      "legacyClosure": {
+        "id": "CA-HC",
+        "gateIds": []
+      },
+      "taskMappings": [
+        {
+          "taskId": "CA-HC",
+          "role": "source",
+          "closureId": "CA-HC-source",
+          "gateIds": [],
+          "preparedStatus": "done",
+          "postCutoverStatus": "done",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "CA-HC-PROOF",
+          "role": "runtime-proof",
+          "closureId": "CA-HC-proof",
+          "gateIds": [
+            "mobile-simulator-social-convergence-e2e",
+            "mobile-simulator-chat-contacts-e2e",
+            "mobile-native-chat-contacts-e2e"
+          ],
+          "preparedStatus": "blocked",
+          "postCutoverStatus": "blocked",
+          "completionClass": "functional",
+          "runtimeClass": "service"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3043"
+      ]
+    },
+    {
+      "id": "W5",
+      "legacyDependsOn": [
+        "W3",
+        "W4",
+        "CA-HC"
+      ],
+      "legacyStatus": "partial / W5-A plus Mobile write-admission source complete; remaining owner gaps and W5-C evidence parked",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3044",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2598",
+      "legacyClosure": {
+        "id": "W5",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W5",
+          "role": "source",
+          "closureId": "W5-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W5-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W5-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-simulator-social-convergence-e2e",
+            "mobile-native-social-convergence-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2370-L2375",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3044"
+      ]
+    },
+    {
+      "id": "W6A",
+      "legacyDependsOn": [
+        "W2",
+        "W5",
+        "CA-HC"
+      ],
+      "legacyStatus": "partial / dependency-ready Mobile source, native delivery, and seven-Gate local closure complete; receiver proof open; paused behind DWF-B",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3045",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2599",
+      "legacyClosure": {
+        "id": "W6A",
+        "gateIds": [
+          "mobile-contract-static",
+          "station-dashboard-unit",
+          "station-dashboard-web-check",
+          "acceptance-plan-self",
+          "acceptance-infra-validation",
+          "acceptance-workflow-contract",
+          "acceptance-runtime-provisioning-self"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W6A",
+          "role": "source",
+          "closureId": "W6A-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W6A-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W6A-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "station-dashboard-unit",
+            "station-dashboard-web-check",
+            "acceptance-plan-self",
+            "acceptance-infra-validation",
+            "acceptance-workflow-contract",
+            "acceptance-runtime-provisioning-self",
+            "mobile-simulator-chat-contacts-e2e",
+            "mobile-native-chat-contacts-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L1540-L1548",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3045"
+      ]
+    },
+    {
+      "id": "W6B",
+      "legacyDependsOn": [
+        "W2",
+        "W5"
+      ],
+      "legacyStatus": "source partial / current-schema Mobile-owned corrections verified and delivered",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3046",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2600",
+      "legacyClosure": {
+        "id": "W6B",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W6B",
+          "role": "source",
+          "closureId": "W6B-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W6B-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W6B-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-native-moments-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3046"
+      ]
+    },
+    {
+      "id": "W6C",
+      "legacyDependsOn": [
+        "W2",
+        "W5"
+      ],
+      "legacyStatus": "source partial / owner-backed Mobile product frontier frozen",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3047",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2601",
+      "legacyClosure": {
+        "id": "W6C",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W6C",
+          "role": "source",
+          "closureId": "W6C-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W6C-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W6C-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-native-settings-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3047"
+      ]
+    },
+    {
+      "id": "W6D",
+      "legacyDependsOn": [
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "legacyStatus": "source partial / Auth expired-session composition closed; W5-trigger and physical UI proof remain",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3048",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2602",
+      "legacyClosure": {
+        "id": "W6D",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W6D",
+          "role": "source",
+          "closureId": "W6D-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W6D-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W6D-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-native-recovery-ui-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "acceptance://mobile-native-recovery-ui-e2e/20260911T121856462246Z-4ca3c0e41645f54919932f2f0d240a58",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3048"
+      ]
+    },
+    {
+      "id": "W7",
+      "legacyDependsOn": [
+        "W2",
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "legacyStatus": "source partial / dependency-ready iOS integration complete",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3049",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2603",
+      "legacyClosure": {
+        "id": "W7",
+        "gateIds": [
+          "mobile-contract-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W7",
+          "role": "source",
+          "closureId": "W7-source",
+          "gateIds": [],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "source",
+          "runtimeClass": "source-only"
+        },
+        {
+          "taskId": "W7-PROOF",
+          "role": "runtime-proof",
+          "closureId": "W7-proof",
+          "gateIds": [
+            "mobile-contract-static",
+            "mobile-native-platform-e2e"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3049"
+      ]
+    },
+    {
+      "id": "W8",
+      "legacyDependsOn": [
+        "CA-HC",
+        "W6A",
+        "W6B",
+        "W6C",
+        "W6D",
+        "W7"
+      ],
+      "legacyStatus": "caller inventory exhausted / hard cut blocked by six owner contracts",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3050",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2604",
+      "legacyClosure": {
+        "id": "W8",
+        "gateIds": [
+          "mobile-hard-cut-static"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W8",
+          "role": "source",
+          "closureId": "W8",
+          "gateIds": [
+            "mobile-hard-cut-static"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "functional",
+          "runtimeClass": "source-only"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "acceptance://mobile-hard-cut-static/20260911T121857501436Z-0839ef186e6e585823b17b98f91a8a61",
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3050"
+      ]
+    },
+    {
+      "id": "W9",
+      "legacyDependsOn": [
+        "W0",
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "CA-HC",
+        "W5",
+        "W6A",
+        "W6B",
+        "W6C",
+        "W6D",
+        "W7",
+        "W8"
+      ],
+      "legacyStatus": "partial / final current-source native delivery and local W6A gate closure complete; broader proof open",
+      "statusAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3051",
+      "executionContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2605",
+      "legacyClosure": {
+        "id": "W9",
+        "gateIds": [
+          "mobile-domain-validation"
+        ]
+      },
+      "taskMappings": [
+        {
+          "taskId": "W9",
+          "role": "readiness-proof",
+          "closureId": "W9",
+          "gateIds": [
+            "mobile-domain-validation"
+          ],
+          "preparedStatus": "pending",
+          "postCutoverStatus": "pending",
+          "completionClass": "acceptance-aggregate",
+          "runtimeClass": "native-mobile"
+        }
+      ],
+      "durableEvidenceRefs": [
+        "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3051"
+      ]
+    }
+  ],
+  "acceptanceMapping": {
+    "legacyContractAnchor": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2843-L3012",
+    "sourceProofAssignments": {
+      "CA-HC-proof": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-native-chat-contacts-e2e"
+      ],
+      "W2-proof": [
+        "mobile-contract-static",
+        "mobile-simulator-access-e2e",
+        "mobile-native-access-e2e"
+      ],
+      "W3-proof": [
+        "mobile-contract-static",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-simulator-station-lifecycle-e2e",
+        "mobile-ios-simulator-layout-accessibility-e2e",
+        "mobile-native-lifecycle-e2e"
+      ],
+      "W4-proof": [
+        "mobile-contract-static",
+        "mobile-native-recovery-e2e"
+      ],
+      "W5-proof": [
+        "mobile-contract-static",
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-native-social-convergence-e2e"
+      ],
+      "W6A-proof": [
+        "mobile-contract-static",
+        "station-dashboard-unit",
+        "station-dashboard-web-check",
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-native-chat-contacts-e2e"
+      ],
+      "W6B-proof": [
+        "mobile-contract-static",
+        "mobile-native-moments-e2e"
+      ],
+      "W6C-proof": [
+        "mobile-contract-static",
+        "mobile-native-settings-e2e"
+      ],
+      "W6D-proof": [
+        "mobile-contract-static",
+        "mobile-native-recovery-ui-e2e"
+      ],
+      "W7-proof": [
+        "mobile-contract-static",
+        "mobile-native-platform-e2e"
+      ]
+    },
+    "addedToCompletionAndFull": [
+      "station-dashboard-unit",
+      "station-dashboard-web-check"
+    ],
+    "normalizationReason": "The legacy W6A closure already requires these Gates; DWF-D13 validation requires every closure Gate in completion and full. No Gate ID or product assertion is added."
+  },
+  "evidenceMappings": [
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/<run-id>/W-1/",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2591"
+    },
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/20260827/W-1/source-baseline.md",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3037"
+    },
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/20260827/W0/coverage-gap-matrix.md",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3038"
+    },
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/20260827/W1/progress.md",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3039"
+    },
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/20260827/W2/progress.md",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3040"
+    },
+    {
+      "legacyRef": "tmp/evidence/mobile-shell/<run-id>/W0..W9/",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L2583-L2605"
+    },
+    {
+      "legacyRef": "tmp/evidence/api-ownership/<run-id>/CA-W0..CA-W7/",
+      "durableRef": "docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md#L450-L462"
+    },
+    {
+      "legacyRef": "legacy Acceptance runs and diagnostics",
+      "durableRef": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/archive/legacy-plan.md#L3036-L3051"
+    }
+  ],
+  "liveReferences": [
+    {
+      "path": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md",
+      "replacement": "publish the reviewed active manifest with DWF-B current for recoverable handoff"
+    },
+    {
+      "path": "docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/DWF-B.md",
+      "replacement": "retain a cutover-neutral terminal snapshot"
+    },
+    {
+      "path": "AGENTS.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    },
+    {
+      "path": "apps/mobile/scripts/check-chat-history-search.mjs",
+      "replacement": "tasks/W6A.md"
+    },
+    {
+      "path": "debug-mobile-list-history.md",
+      "replacement": "tasks/W6A.md"
+    },
+    {
+      "path": "docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md",
+      "replacement": "tasks/CA-HC.md and tasks/CA-HC-PROOF.md"
+    },
+    {
+      "path": "docs/architecture/development-workflow/README.md",
+      "replacement": "plan.md"
+    },
+    {
+      "path": "docs/architecture/development-workflow/design.md",
+      "replacement": "archive/legacy-plan.md"
+    },
+    {
+      "path": "docs/architecture/development-workflow/integration.md",
+      "replacement": "package/archive terminology"
+    },
+    {
+      "path": "docs/architecture/mobile/README.md",
+      "replacement": "plan.md"
+    },
+    {
+      "path": "docs/architecture/mobile/execution-plans/20260829-mobile-native-oauth-proof.md",
+      "replacement": "tasks/W2-PROOF.md"
+    },
+    {
+      "path": "tooling/acceptance/plans/mobile-shell.json",
+      "replacement": "plan.md"
+    },
+    {
+      "path": "tooling/scripts/review/skill-check.sh",
+      "replacement": "remove temporary DWF-B bootstrap markers"
+    },
+    {
+      "path": "tooling/skills/pt-context-anchor/SKILL.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    },
+    {
+      "path": "tooling/skills/pt-dev-workflow/SKILL.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    },
+    {
+      "path": "tooling/skills/pt-execution-plan-guardian/SKILL.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    },
+    {
+      "path": "tooling/skills/pt-github-review/FRESHNESS.md",
+      "replacement": "refresh AGENTS.md covered-doc hash"
+    },
+    {
+      "path": "tooling/skills/pt-god-view/SKILL.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    },
+    {
+      "path": "tooling/skills/pt-trae-goal-orchestrator/SKILL.md",
+      "replacement": "remove DWF-B bootstrap exception"
+    }
+  ]
+}

@@ -11,7 +11,8 @@
   "selectors": {
     "ios": {
       "preferred_runtime": "iOS 17.4",
-      "preferred_device_name": "iPhone 15 Pro"
+      "preferred_device_name": "iPhone 15 Pro",
+      "peer_device_name": "iPhone 15 Pro Max"
     },
     "android": {
       "avd_name": "peers_touch_applet_l3_e2e",
@@ -140,7 +141,7 @@
     {
       "id": "sim-ios",
       "platform": "ios",
-      "role": "simulator",
+      "role": "primary-simulator",
       "runtime": "tauri-ios-simulator",
       "port_roles": [
         "wda-local",
@@ -150,16 +151,16 @@
       "storage_root": "<runtime-home>/acceptance/mobile-simulator/<run-id>/sim-ios"
     },
     {
-      "id": "sim-android",
-      "platform": "android",
-      "role": "emulator",
-      "runtime": "tauri-android-emulator",
+      "id": "sim-ios-peer",
+      "platform": "ios",
+      "role": "peer-simulator",
+      "runtime": "tauri-ios-simulator",
       "port_roles": [
-        "system",
+        "wda-local",
         "mjpeg",
         "webview"
       ],
-      "storage_root": "<runtime-home>/acceptance/mobile-simulator/<run-id>/sim-android"
+      "storage_root": "<runtime-home>/acceptance/mobile-simulator/<run-id>/sim-ios-peer"
     }
   ],
   "harness": {
@@ -167,9 +168,16 @@
     "build_flag": "VITE_ACCEPTANCE_HARNESS=1",
     "required_actions": [
       "lifecycle.snapshot",
+      "lifecycle.waitReady",
       "lifecycle.suspend",
       "lifecycle.resume",
       "lifecycle.restart",
+      "navigation.snapshot",
+      "navigation.apply",
+      "platform.permission.check",
+      "platform.permission.request",
+      "platform.permission.checkAll",
+      "platform.network.read",
       "native.deliverDeepLink",
       "projection.read",
       "cleanup"
@@ -178,16 +186,19 @@
   },
   "proof_scope": {
     "proves": [
-      "simulator and emulator launch",
+      "two isolated iOS Simulator launches",
       "native callback routing",
       "runtime-graph suspend, resume, restart, and monotonic generation behavior",
+      "descriptor-owned primary, detail, and overlay navigation state",
       "fail-closed behavior"
     ],
     "does_not_prove": [
       "physical-device MS-AG03",
       "provider authorization success",
       "Station or Relay behavior",
-      "physical OS background and foreground delivery"
+      "visible detail or overlay layout and focus behavior",
+      "physical OS background and foreground delivery",
+      "Android runtime behavior"
     ]
   },
   "cleanup": {
@@ -196,7 +207,6 @@
       "app-installations",
       "ports",
       "storage",
-      "emulator-process",
       "simulator-boot",
       "environment-lease"
     ],
@@ -205,7 +215,6 @@
       "app-installations",
       "ports",
       "storage",
-      "emulator-process",
       "simulator-boot",
       "environment-lease"
     ],

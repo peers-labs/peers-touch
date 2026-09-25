@@ -253,3 +253,194 @@ message FriendRequestCommandResult {
   FriendRequestCommandErrorCode error_code = 6;
   bool retryable = 7;
 }
+
+enum FriendRequestCommandLookupState {
+  FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED = 0;
+  FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND = 1;
+  FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING = 2;
+  FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT = 3;
+  FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED = 4;
+}
+
+message LookupFriendRequestCommandResultRequest {
+  string command_id = 1;
+  bytes command_payload_sha256 = 2;
+}
+
+message LookupFriendRequestCommandResultResponse {
+  FriendRequestCommandLookupState state = 1;
+  string command_id = 2;
+  bytes command_payload_sha256 = 3;
+  FriendRequestCommandResult terminal_result = 4;
+}
+
+enum SocialRelationshipAction {
+  SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_ACTION_BLOCK = 1;
+  SOCIAL_RELATIONSHIP_ACTION_UNBLOCK = 2;
+}
+
+enum SocialRelationshipAllowedAction {
+  SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW = 1;
+  SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST = 2;
+  SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION = 3;
+  SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT = 4;
+}
+
+enum SocialRelationshipDeniedReason {
+  SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_DENIED_REASON_NONE = 1;
+  SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED = 2;
+}
+
+enum SocialRelationshipInvalidationClass {
+  SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW = 1;
+  SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY = 2;
+  SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT = 3;
+  SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY = 4;
+}
+
+message SocialRelationshipCommandBody {
+  uint32 format_version = 1;
+  string command_id = 2;
+  SocialRelationshipAction action = 3;
+  peers_touch.model.actor.v1.ActorRef actor = 4;
+  peers_touch.model.actor.v1.ActorRef target_actor = 5;
+  string actor_home_station_peer_id = 6;
+  string target_home_station_peer_id = 7;
+  int64 observed_revision = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  peers_touch.model.actor.v1.ActorDeviceRef authorizing_device = 11;
+}
+
+message SocialRelationshipCommandSigningInput {
+  SocialRelationshipCommandBody body = 1;
+  string signing_key_id = 2;
+}
+
+message SocialRelationshipCommand {
+  SocialRelationshipCommandBody body = 1;
+  string signing_key_id = 2;
+  bytes actor_device_signature = 3;
+}
+
+message SocialRelationshipProjection {
+  peers_touch.model.actor.v1.ActorRef target_actor = 1;
+  bool following = 2;
+  bool followed_by = 3;
+  bool blocked_by_viewer = 4;
+  bool interaction_allowed = 5;
+  SocialRelationshipDeniedReason denied_reason = 6;
+  repeated SocialRelationshipAllowedAction allowed_actions = 7;
+  int64 revision = 8;
+  string target_home_station_peer_id = 9;
+}
+
+message BlockedActorProjection {
+  peers_touch.model.actor.v1.ActorRef actor = 1;
+  int64 revision = 2;
+  google.protobuf.Timestamp blocked_at = 3;
+  string home_station_peer_id = 4;
+}
+
+message SocialRelationshipEvent {
+  string event_id = 1;
+  string command_id = 2;
+  SocialRelationshipAction action = 3;
+  peers_touch.model.actor.v1.ActorRef actor = 4;
+  peers_touch.model.actor.v1.ActorRef target_actor = 5;
+  string actor_home_station_peer_id = 6;
+  string target_home_station_peer_id = 7;
+  int64 revision = 8;
+  bool blocked = 9;
+  repeated SocialRelationshipInvalidationClass invalidation_classes = 10;
+  google.protobuf.Timestamp committed_at = 11;
+  bytes previous_hash = 12;
+  bytes event_hash = 13;
+}
+
+enum SocialRelationshipCommandResultKind {
+  SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED = 1;
+  SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE = 2;
+  SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED = 3;
+  SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT = 4;
+}
+
+enum SocialRelationshipCommandErrorCode {
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID = 1;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED = 2;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION = 3;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT = 4;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED = 5;
+  SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER = 6;
+}
+
+message SocialRelationshipCommandResult {
+  string command_id = 1;
+  bytes command_payload_sha256 = 2;
+  SocialRelationshipCommandResultKind kind = 3;
+  SocialRelationshipEvent event = 4;
+  SocialRelationshipProjection projection = 5;
+  SocialRelationshipCommandErrorCode error_code = 6;
+  bool retryable = 7;
+}
+
+enum SocialRelationshipCommandLookupState {
+  SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED = 0;
+  SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND = 1;
+  SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING = 2;
+  SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT = 3;
+  SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED = 4;
+}
+
+message BlockSocialActorRequest {
+  SocialRelationshipCommand command = 1;
+}
+
+message BlockSocialActorResponse {
+  SocialRelationshipCommandResult result = 1;
+}
+
+message UnblockSocialActorRequest {
+  SocialRelationshipCommand command = 1;
+}
+
+message UnblockSocialActorResponse {
+  SocialRelationshipCommandResult result = 1;
+}
+
+message LookupSocialRelationshipCommandResultRequest {
+  string command_id = 1;
+  bytes command_payload_sha256 = 2;
+}
+
+message LookupSocialRelationshipCommandResultResponse {
+  SocialRelationshipCommandLookupState state = 1;
+  string command_id = 2;
+  bytes command_payload_sha256 = 3;
+  SocialRelationshipCommandResult terminal_result = 4;
+}
+
+message ListBlockedActorsRequest {
+  string cursor = 1;
+  int32 limit = 2;
+}
+
+message ListBlockedActorsResponse {
+  repeated BlockedActorProjection items = 1;
+  string next_cursor = 2;
+  int64 revision = 3;
+}
+
+message GetSocialRelationshipStatusRequest {
+  string target_actor_ptid = 1;
+}
+
+message GetSocialRelationshipStatusResponse {
+  SocialRelationshipProjection relationship = 1;
+}

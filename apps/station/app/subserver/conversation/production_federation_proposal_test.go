@@ -13,6 +13,7 @@ import (
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -236,6 +237,22 @@ func TestValidateNewConversationProposalRejectsExpiredAndUnsupportedCommands(t *
 	}
 }
 
+func TestValidateNewConversationProposalAcceptsBoundMemberAuthority(t *testing.T) {
+	proposal := productionTestMemberAuthorityProposal(t)
+	if err := validateNewConversationProposal(proposal, time.UnixMilli(2_000)); err != nil {
+		t.Fatalf("valid member-authority proposal rejected: %v", err)
+	}
+
+	tampered := proto.Clone(proposal).(*chatmodel.ConversationCommandProposal)
+	tampered.MemberAuthorityCommand.AuthorityEpoch++
+	if err := validateNewConversationProposal(
+		tampered,
+		time.UnixMilli(2_000),
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalBinding) {
+		t.Fatalf("member-authority authority mismatch error = %v", err)
+	}
+}
+
 func productionTestConversationProposal(t *testing.T) *chatmodel.ConversationCommandProposal {
 	t.Helper()
 	command := &chatmodel.ChatCommand{
@@ -266,5 +283,47 @@ func productionTestConversationProposal(t *testing.T) *chatmodel.ConversationCom
 		ActorSignature:         make([]byte, 64),
 		CreatedAtUnixMs:        1_000,
 		ExpiresAtUnixMs:        301_000,
+	}
+}
+
+func productionTestMemberAuthorityProposal(
+	t *testing.T,
+) *chatmodel.ConversationCommandProposal {
+	t.Helper()
+	command := &chatmodel.ConversationMemberAuthorityCommand{
+		Version:                 1,
+		CommandId:               "member-command-1",
+		ConversationId:          "conversation-1",
+		Operator:                &chatmodel.CryptoEndpoint{Ptid: "ptid:bob", DeviceId: "bob-device"},
+		TargetPtid:              "ptid:alice",
+		Action:                  chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER,
+		FederationId:            "federation-1",
+		AuthorityStationPeerId:  "station-four",
+		AuthorityEpoch:          3,
+		AuthoritySequence:       2,
+		AuthorityHash:           make([]byte, 32),
+		ObservedMembershipEpoch: 1,
+		ObservedMlsEpoch:        1,
+		ClientTimestamp:         timestamppb.New(time.UnixMilli(1_000)),
+		Deadline:                timestamppb.New(time.UnixMilli(301_000)),
+	}
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &chatmodel.ConversationCommandProposal{
+		Version:                1,
+		FederationId:           command.GetFederationId(),
+		AuthorityStationPeerId: command.GetAuthorityStationPeerId(),
+		AuthorityEpoch:         command.GetAuthorityEpoch(),
+		HomeStationPeerId:      "station-five",
+		ActorPtid:              command.GetOperator().GetPtid(),
+		ActorDeviceId:          command.GetOperator().GetDeviceId(),
+		ActorSigningKeyId:      "signing-key-1",
+		CommandSha256:          federationdelivery.PayloadSHA256(commandBytes),
+		ActorSignature:         make([]byte, 64),
+		CreatedAtUnixMs:        command.GetClientTimestamp().AsTime().UnixMilli(),
+		ExpiresAtUnixMs:        command.GetDeadline().AsTime().UnixMilli(),
+		MemberAuthorityCommand: command,
 	}
 }

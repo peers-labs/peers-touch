@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "CHAT-LIFECYCLE-20260916",
   "taskId": "CHAT-08-continuity",
@@ -54,10 +53,11 @@
     }
   ],
   "doneWhen": [
-    "Cross-Station Direct, Group, relationship, voice-note, and live-voice journeys pass",
+    "Cross-Station Direct, Group, relationship, voice-note, one-to-one call, and group-call journeys pass",
     "Two active devices receive independent private delivery and revoked devices receive none",
     "Fresh-install recovery restores entitled history and continues with a fresh device identity",
-    "Station/client restart and network interruption preserve ordered product truth"
+    "Station/client restart and network interruption preserve ordered product truth",
+    "Group-call room and participant identity converge after reconnect without restoring access for removed or revoked endpoints"
   ],
   "failureBehavior": [
     "Fail closed on route, generation, membership, authority, or recovery mismatch",

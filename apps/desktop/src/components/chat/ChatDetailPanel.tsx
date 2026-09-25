@@ -38,12 +38,8 @@ import {
 } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
-import {
-  GroupRole,
-  type Group,
-  type GroupMember,
-} from '../../gen/proto/domain/chat/group_chat_pb';
+import type { FriendChatSession, Group, GroupMember } from '../../store/socialProjection';
+import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useMessagingAttachmentUrl } from './AttachmentItem';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
@@ -55,7 +51,10 @@ import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
-import { imServiceV1 } from '../../services/im-service';
+import {
+  messagingCommands,
+  messagingConversations,
+} from '../../messaging/runtime';
 import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache';
 import { resolveFederationStationName } from '../../store/federation';
 
@@ -92,8 +91,8 @@ function getInitial(name: string): string {
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {
-  if (role >= GroupRole.OWNER) return t('chat.social.detail.roleOwner');
-  if (role >= GroupRole.ADMIN) return t('chat.social.detail.roleAdmin');
+  if (role >= MemberRole.OWNER) return t('chat.social.detail.roleOwner');
+  if (role >= MemberRole.ADMIN) return t('chat.social.detail.roleAdmin');
   return t('chat.social.detail.roleMember');
 }
 
@@ -167,21 +166,21 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
 function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const role = Number(member.role ?? GroupRole.MEMBER);
+  const role = Number(member.role ?? MemberRole.MEMBER);
   return (
     <Flexbox data-chat-group-member={member.ptid} align="center" gap={6} style={{ width: 66, minWidth: 0 }}>
       <MemberAvatar member={member} size={42} />
       <Text ellipsis style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>
         {member.displayName}
       </Text>
-      {role >= GroupRole.ADMIN || member.muted ? (
+      {role >= MemberRole.ADMIN || member.muted ? (
         <Text
           ellipsis
           style={{
             width: '100%',
             textAlign: 'center',
             fontSize: 10,
-            color: role >= GroupRole.OWNER ? token.colorWarning : role >= GroupRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
+            color: role >= MemberRole.OWNER ? token.colorWarning : role >= MemberRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
           }}
         >
           {member.muted ? t('chat.social.detail.memberMuted') : groupRoleLabel(role, t)}
@@ -194,7 +193,7 @@ function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
 function MemberItem({ member, action, lockedReason }: { member: GroupMemberDisplay; action?: ReactNode; lockedReason?: string }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const role = Number(member.role ?? GroupRole.MEMBER);
+  const role = Number(member.role ?? MemberRole.MEMBER);
   return (
     <Flexbox horizontal align="center" gap={10} style={{ padding: '8px 0', minWidth: 0 }}>
       <MemberAvatar member={member} />
@@ -208,7 +207,7 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberDispl
           ) : null}
           <Tag
             bordered={false}
-            color={role >= GroupRole.OWNER ? 'gold' : role >= GroupRole.ADMIN ? 'blue' : 'default'}
+            color={role >= MemberRole.OWNER ? 'gold' : role >= MemberRole.ADMIN ? 'blue' : 'default'}
             style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}
           >
             {groupRoleLabel(role, t)}
@@ -606,8 +605,8 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
-    loadConversationPreviews, selectGroup,
+    setShowDetail, loadSessions, loadGroupMembers, loadMessages,
+    loadConversationPreviews,
     conversationLocalState, updateConversationLocalState,
     setConversationBackgroundPreview,
     getIMConversations,
@@ -630,10 +629,8 @@ export function ChatDetailPanel() {
     setShowDetail: s.setShowDetail,
     loadSessions: s.loadSessions,
     loadGroupMembers: s.loadGroupMembers,
-    loadGroups: s.loadGroups,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
-    selectGroup: s.selectGroup,
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     setConversationBackgroundPreview: s.setConversationBackgroundPreview,
@@ -730,7 +727,7 @@ export function ChatDetailPanel() {
         ? [{
             ptid: activeGroup.ownerPtid,
             nickname: '',
-            role: GroupRole.OWNER,
+            role: MemberRole.OWNER,
             muted: false,
           }]
         : [];
@@ -768,21 +765,21 @@ export function ChatDetailPanel() {
     [currentUserPtid, memberPtidSet, sessions],
   );
   const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
-  const myGroupRole = activeGroup?.ownerPtid === currentUserPtid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
+  const myMemberRole = activeGroup?.ownerPtid === currentUserPtid ? MemberRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
     activeGroup?.ownerPtid === currentUserPtid ||
-    myGroupRole >= GroupRole.ADMIN,
+    myMemberRole >= MemberRole.ADMIN,
   );
-  const isGroupOwner = isGroup && myGroupRole === GroupRole.OWNER;
-  const myGroupRoleLabel = groupRoleLabel(myGroupRole, t);
+  const isGroupOwner = isGroup && myMemberRole === MemberRole.OWNER;
+  const myMemberRoleLabel = groupRoleLabel(myMemberRole, t);
   const groupPermissionTitle = isGroupOwner
     ? t('chat.social.detail.permissionOwnerTitle')
-    : myGroupRole >= GroupRole.ADMIN
+    : myMemberRole >= MemberRole.ADMIN
       ? t('chat.social.detail.permissionAdminTitle')
       : t('chat.social.detail.permissionMemberTitle');
   const groupPermissionBody = isGroupOwner
     ? t('chat.social.detail.permissionOwnerBody')
-    : myGroupRole >= GroupRole.ADMIN
+    : myMemberRole >= MemberRole.ADMIN
       ? t('chat.social.detail.permissionAdminBody')
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
@@ -854,9 +851,6 @@ export function ChatDetailPanel() {
   const applyHistoryClearedAt = async (clearedAt: number) => {
     if (!activeUlid) return;
     setHistoryActionPending(true);
-    // #region debug-point E:history-clear-marker
-    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:start', msg: '[DEBUG] History marker update started', data: { kind: activeTab, conversationId: activeUlid, previousClearedAt: clearHistoryClearedAt, requestedClearedAt: clearedAt }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     try {
       await updateConversationLocalState(activeTab, activeUlid, { clearedAt });
       setHistoryNow(Date.now());
@@ -871,16 +865,10 @@ export function ChatDetailPanel() {
           clearedAt,
         });
       }
-      // #region debug-point E:history-clear-marker-result
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:success', msg: '[DEBUG] History marker update completed', data: { kind: activeTab, conversationId: activeUlid, requestedClearedAt: clearedAt }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       toast.success(clearedAt > 0
         ? t('chat.social.detail.clearHistorySuccess')
         : t('chat.social.detail.restoreHistorySuccess'));
     } catch (error) {
-      // #region debug-point E:history-clear-marker-error
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'E', location: 'ChatDetailPanel.tsx:applyHistoryClearedAt:error', msg: '[DEBUG] History marker update failed', data: { kind: activeTab, conversationId: activeUlid, previousClearedAt: clearHistoryClearedAt, requestedClearedAt: clearedAt, error: String(error) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       log.error('chat', 'conversation history action failed', { kind: activeTab, ulid: activeUlid, clearedAt, error });
       presentError(error, {
         mapper: mapChatError,
@@ -893,61 +881,17 @@ export function ChatDetailPanel() {
   };
 
   const handleSaveGroupName = async () => {
-    if (!activeUlid || !editNameValue.trim()) {
-      setEditingName(false);
-      return;
-    }
-    try {
-      await api.groupChatUpdateGroup(activeUlid, editNameValue.trim());
-      await loadGroups();
-      toast.success(t('chat.social.detail.groupNameUpdated'));
-    } catch (error) {
-      log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupNameUpdateFailed'));
-    }
     setEditingName(false);
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const handleSaveMyNickname = async () => {
-    if (!activeUlid) {
-      setEditingMyNickname(false);
-      return;
-    }
-    const nextNickname = editMyNicknameValue.trim();
-    try {
-      await api.groupChatUpdateNickname(activeUlid, nextNickname);
-      await loadGroupMembers(activeUlid);
-      toast.success(t('chat.social.detail.myNicknameUpdated'));
-    } catch (error) {
-      log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
-    }
     setEditingMyNickname(false);
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const handleGroupAvatarClick = async () => {
-    if (!activeUlid) return;
-    let filePath: string;
-    try {
-      filePath = await api.pickImageFile();
-    } catch {
-      return;
-    }
-    try {
-      const uploaded = await api.ossUploadAttachmentSocial(filePath);
-      const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
-      await api.groupChatUpdateGroup(
-        activeUlid,
-        activeGroup?.name || displayName,
-        activeGroup?.description || undefined,
-        avatarPath,
-      );
-      toast.success(t('chat.social.detail.groupAvatarUpdated'));
-      loadGroups();
-    } catch (error) {
-      log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
-    }
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const handleUploadBackgroundImage = async (filePath: string, previewUrl: string) => {
@@ -956,10 +900,6 @@ export function ChatDetailPanel() {
     setConversationBackgroundPreview(activeTab, activeUlid, previewUrl);
     setBackgroundRetryPath(filePath);
     setConversationActionPending('background-image');
-    const backgroundStartedAt = performance.now();
-    // #region debug-point B:background-selection
-    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:start', msg: '[DEBUG] Background upload started after local preview commit', data: { kind: activeTab, conversationId: activeUlid, filePathLength: filePath.length, currentBackgroundImage: activeLocalState?.backgroundImage || '' }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     try {
       const uploaded = await api.ossUploadLocalFile({
         file_path: filePath,
@@ -967,15 +907,9 @@ export function ChatDetailPanel() {
         visibility: 'private',
         chat_session_id: null,
       });
-      // #region debug-point B:background-uploaded
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:uploaded', msg: '[DEBUG] Background upload completed', data: { kind: activeTab, conversationId: activeUlid, elapsedMs: Math.round(performance.now() - backgroundStartedAt), cid: uploaded.cid }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       setCachedOssAttachmentUrl(uploaded.cid, { src: previewUrl });
       await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
       setConversationBackgroundPreview(activeTab, activeUlid, null);
-      // #region debug-point B:background-committed
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'B', location: 'ChatDetailPanel.tsx:handleUploadBackgroundImage:committed', msg: '[DEBUG] Background durable commit completed after preview', data: { kind: activeTab, conversationId: activeUlid, elapsedMs: Math.round(performance.now() - backgroundStartedAt), cid: uploaded.cid }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       setBackgroundRetryPath(null);
       toast.success(t('chat.social.detail.backgroundImageUpdated'));
     } catch (error) {
@@ -1036,7 +970,7 @@ export function ChatDetailPanel() {
     try {
       setGroupSecurityState(activeUlid, 'establishing');
       for (const did of pendingDids) {
-        await imServiceV1.messaging.submitMembershipIntent({
+        await messagingCommands.submitMembershipIntent({
           conversationId: activeUlid,
           action: 'add_actor',
           targetPtid: did,
@@ -1069,7 +1003,7 @@ export function ChatDetailPanel() {
       onOk: async () => {
         try {
           setGroupSecurityState(activeUlid, 'establishing');
-          await imServiceV1.messaging.submitMembershipIntent({
+          await messagingCommands.submitMembershipIntent({
             conversationId: activeUlid,
             action: 'remove_actor',
             targetPtid: member.ptid,
@@ -1087,27 +1021,18 @@ export function ChatDetailPanel() {
     });
   };
 
-  const updateGroupMember = async (member: GroupMember, input: { role?: number; muted?: boolean }) => {
-    if (!activeUlid || !member.ptid) return;
-    try {
-      await api.groupChatUpdateMember(activeUlid, member.ptid, input);
-      await loadGroupMembers(activeUlid);
-      toast.success(t('chat.social.detail.updateMemberSuccess'));
-    } catch (error) {
-      log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
-      toast.error(t('chat.social.detail.updateMemberFailed'));
-      throw error;
-    }
+  const updateGroupMember = async (_member: GroupMember, _input: { role?: number; muted?: boolean }) => {
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
     const memberName = getMemberDisplayName(member);
     Modal.confirm({
-      title: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
-      content: role === GroupRole.ADMIN
+      title: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
+      content: role === MemberRole.ADMIN
         ? t('chat.social.detail.promoteAdminConfirmBody', { name: memberName })
         : t('chat.social.detail.demoteAdminConfirmBody', { name: memberName }),
-      okText: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
+      okText: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
       cancelText: t('chat.social.messageArea.cancel'),
       onOk: () => updateGroupMember(member, { role }),
     });
@@ -1117,27 +1042,8 @@ export function ChatDetailPanel() {
     void updateGroupMember(member, { muted: !member.muted });
   };
 
-  const confirmTransferGroupOwnership = (member: GroupMember) => {
-    if (!activeUlid || !member.ptid) return;
-    const memberName = getMemberDisplayName(member);
-    Modal.confirm({
-      title: t('chat.social.detail.transferOwnerConfirmTitle'),
-      content: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
-      okText: t('chat.social.detail.transferOwner'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await api.groupChatTransferOwnership(activeUlid, member.ptid);
-          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
-          toast.success(t('chat.social.detail.transferOwnerSuccess'));
-        } catch (error) {
-          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
-          toast.error(t('chat.social.detail.transferOwnerFailed'));
-          throw error;
-        }
-      },
-    });
+  const confirmTransferGroupOwnership = (_member: GroupMember) => {
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const confirmLeaveGroup = () => {
@@ -1151,10 +1057,10 @@ export function ChatDetailPanel() {
       onOk: async () => {
         try {
           const [conversation, federationSelf] = await Promise.all([
-            imServiceV1.conversation.getConversation(activeUlid),
+            messagingConversations.getConversation(activeUlid),
             api.federationGetSelf(),
           ]);
-          await imServiceV1.messaging.requestLeaveIntent({
+          await messagingCommands.requestLeaveIntent({
             federationId: conversation.federationId,
             authorityStationPeerId: conversation.authorityStationPeerId,
             authorityEpoch: Number(conversation.authorityEpoch),
@@ -1175,27 +1081,7 @@ export function ChatDetailPanel() {
   };
 
   const confirmDissolveGroup = () => {
-    if (!activeUlid) return;
-    Modal.confirm({
-      title: t('chat.social.detail.dissolveGroupConfirmTitle'),
-      content: t('chat.social.detail.dissolveGroupConfirmBody'),
-      okText: t('chat.social.detail.dissolveGroup'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await api.groupChatDissolveGroup(activeUlid);
-          await loadGroups();
-          selectGroup('');
-          setShowDetail(false);
-          toast.success(t('chat.social.detail.dissolveGroupSuccess'));
-        } catch (error) {
-          log.error('chat', 'dissolve group failed', { groupUlid: activeUlid, error });
-          toast.error(t('chat.social.detail.dissolveGroupFailed'));
-          throw error;
-        }
-      },
-    });
+    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const openBackgroundModal = () => {
@@ -1497,10 +1383,10 @@ export function ChatDetailPanel() {
               </Flexbox>
               <Tag
                 bordered={false}
-                color={isGroupOwner ? 'gold' : myGroupRole >= GroupRole.ADMIN ? 'blue' : 'default'}
+                color={isGroupOwner ? 'gold' : myMemberRole >= MemberRole.ADMIN ? 'blue' : 'default'}
                 style={{ marginInlineEnd: 0, flexShrink: 0 }}
               >
-                {myGroupRoleLabel}
+                {myMemberRoleLabel}
               </Tag>
             </Flexbox>
           </DetailSection>
@@ -1793,13 +1679,13 @@ export function ChatDetailPanel() {
       >
         <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
           {displayMembers.map((member) => {
-            const memberRole = Number(member.role ?? GroupRole.MEMBER);
+            const memberRole = Number(member.role ?? MemberRole.MEMBER);
             const targetIsSelf = member.ptid === currentUserPtid;
             const controlState = getGroupMemberControlState({
               canManageGroupMembers,
               isSelf: targetIsSelf,
               membersLoaded: members.length > 0,
-              myGroupRole,
+              myMemberRole,
               targetRole: memberRole,
             });
             const managedMember = members.find((groupMember) => groupMember.ptid === member.ptid);
@@ -1811,17 +1697,17 @@ export function ChatDetailPanel() {
                 lockedReason={lockedReason}
                 action={controlState.canManageTarget && managedMember ? (
                   <>
-                    {myGroupRole === GroupRole.OWNER ? (
+                    {myMemberRole === MemberRole.OWNER ? (
                       <>
                         <Button
                           type="text"
                           size="small"
                           onClick={() => confirmUpdateGroupMemberRole(
                             managedMember,
-                            memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
+                            memberRole === MemberRole.ADMIN ? MemberRole.MEMBER : MemberRole.ADMIN,
                           )}
                         >
-                          {memberRole === GroupRole.ADMIN
+                          {memberRole === MemberRole.ADMIN
                             ? t('chat.social.detail.demoteAdmin')
                             : t('chat.social.detail.promoteAdmin')}
                         </Button>

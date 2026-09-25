@@ -78,9 +78,6 @@ export async function verifyStationIdentity(url: string): Promise<StationIdentit
     },
     body: toBinary(StationIdentityRequestSchema, request),
   });
-  if (response.status === 404) {
-    return deriveUnverifiedIdentity(requestedOrigin);
-  }
   if (!response.ok) {
     throw new Error('mobile.launch.stationIdentityUnavailable');
   }
@@ -105,18 +102,6 @@ export async function verifyStationIdentity(url: string): Promise<StationIdentit
     canonicalOrigin: verified.canonicalOrigin.replace(/\/+$/, ''),
     verifiedAt: verified.verifiedAt,
     identityVerified: true,
-  };
-}
-
-async function deriveUnverifiedIdentity(origin: string): Promise<StationIdentityResult> {
-  const encoder = new TextEncoder();
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(origin));
-  const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return {
-    stationPeerId: `unverified:${hex.slice(0, 32)}`,
-    canonicalOrigin: origin,
-    verifiedAt: Date.now(),
-    identityVerified: false,
   };
 }
 

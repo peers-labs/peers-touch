@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-completeScheduledCallback"
+description = "Enables the completeScheduledCallback command without any pre-configured scope."
+commands.allow = ["completeScheduledCallback"]
+
+[[permission]]
+identifier = "deny-completeScheduledCallback"
+description = "Denies the completeScheduledCallback command without any pre-configured scope."
+commands.deny = ["completeScheduledCallback"]

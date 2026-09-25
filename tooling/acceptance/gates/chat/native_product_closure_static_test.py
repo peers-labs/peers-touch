@@ -59,6 +59,7 @@ CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+CHAT_HARNESS = ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
 
 
 class SyntheticLinuxRuntimeBinding:
@@ -137,7 +138,22 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
+        self.chat_harness = CHAT_HARNESS.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
+
+    def test_chat_login_does_not_wait_for_deferred_app_runtimes(self) -> None:
+        self.assertNotIn(
+            "installDeferredAppRuntimeProjections",
+            self.chat_harness,
+        )
+        self.assertIn(
+            "await installAuthenticatedCriticalRuntimes(actorPtid);",
+            self.chat_harness,
+        )
+        self.assertIn(
+            "await hydrateSocialForActiveActor();",
+            self.chat_harness,
+        )
 
     def test_client_specs_are_keyed_by_stable_client_id(self) -> None:
         self.assertIn('str(client.get("id")): client', self.source)
@@ -1463,7 +1479,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
         ).read_text(encoding="utf-8")
         self.assertIn("data-chat-attachment-picker", composer)
-        self.assertIn("imServiceV1.messaging.pickAttachmentSource()", composer)
+        self.assertIn("messagingCommands.pickAttachmentSource()", composer)
+        self.assertNotIn("imServiceV1.messaging.pickAttachmentSource", composer)
         self.assertIn("appendPickedAttachment", composer)
         self.assertIn("data-chat-send-outcome-revision", composer)
         self.assertNotIn("data-chat-attachment-input", composer)

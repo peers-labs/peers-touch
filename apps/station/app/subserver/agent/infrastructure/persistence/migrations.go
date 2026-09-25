@@ -87,6 +87,10 @@ func migrateActorIdentityValues(tx *gorm.DB, migration actorIdentityColumnMigrat
 		return nil
 	}
 
+	if err := widenActorIdentityColumn(tx, migration.table, migration.targetColumn); err != nil {
+		return err
+	}
+
 	var values []sql.NullString
 	if err := tx.Table(migration.table).
 		Distinct(migration.targetColumn).
@@ -155,6 +159,31 @@ func migrateActorIdentityValues(tx *gorm.DB, migration actorIdentityColumnMigrat
 				err,
 			)
 		}
+	}
+	return nil
+}
+
+func widenActorIdentityColumn(tx *gorm.DB, table, column string) error {
+	if tx.Dialector.Name() == "sqlite" {
+		return nil
+	}
+	columnTypes, err := tx.Migrator().ColumnTypes(table)
+	if err != nil {
+		return fmt.Errorf("inspect %s columns: %w", table, err)
+	}
+	for _, ct := range columnTypes {
+		if ct.Name() != column {
+			continue
+		}
+		length, bounded := ct.Length()
+		if bounded && length < 255 {
+			if err := tx.Exec(
+				fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE TEXT", table, column),
+			).Error; err != nil {
+				return fmt.Errorf("widen %s.%s to TEXT: %w", table, column, err)
+			}
+		}
+		break
 	}
 	return nil
 }

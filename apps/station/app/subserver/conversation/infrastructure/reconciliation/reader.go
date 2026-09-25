@@ -15,6 +15,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
+	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -263,23 +264,30 @@ func (r *Reader) authorityCommandOutbox(
 	if err != nil {
 		return reconciliationapp.Resolution{}, false, err
 	}
+	proposalCommand, err := conversationfederation.ParseProposalCommand(&proposal)
+	if err != nil {
+		return reconciliationapp.Resolution{}, false, integrity(
+			"reconciliation_reader.authority_command_outbox",
+			"proposal",
+			"does not carry one canonical command",
+		)
+	}
 	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		proposal.GetCommand(),
+		proposalCommand.Message,
 	)
 	if err != nil {
 		return reconciliationapp.Resolution{}, false, err
 	}
-	if proposal.GetCommand() == nil ||
-		!bytes.Equal(canonicalProposal, frame.GetOpaquePayload()) ||
+	if !bytes.Equal(canonicalProposal, frame.GetOpaquePayload()) ||
 		proposal.GetHomeStationPeerId() != r.localStationID ||
 		proposal.GetAuthorityStationPeerId() != frame.GetTargetStationPeerId() ||
-		proposal.GetCommand().GetAuthorityStationPeerId() != frame.GetTargetStationPeerId() ||
-		proposal.GetCommand().GetConversationId() != string(reference.ConversationID) ||
-		proposal.GetCommand().GetCommandId() != string(reference.CommandID) ||
+		proposalCommand.AuthorityStationPeerID != frame.GetTargetStationPeerId() ||
+		proposalCommand.ConversationID != string(reference.ConversationID) ||
+		proposalCommand.CommandID != string(reference.CommandID) ||
 		proposal.GetActorPtid() != string(caller.Actor) ||
 		proposal.GetActorDeviceId() != string(caller.Device) ||
-		proposal.GetCommand().GetSender().GetPtid() != string(caller.Actor) ||
-		proposal.GetCommand().GetSender().GetDeviceId() != string(caller.Device) ||
+		proposalCommand.Actor.GetPtid() != string(caller.Actor) ||
+		proposalCommand.Actor.GetDeviceId() != string(caller.Device) ||
 		!bytes.Equal(proposal.GetCommandSha256(), reference.CommandHash[:]) ||
 		!bytes.Equal(
 			proposal.GetCommandSha256(),

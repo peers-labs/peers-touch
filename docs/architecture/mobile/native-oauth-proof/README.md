@@ -1,16 +1,23 @@
-# Mobile Native OAuth Proof
+# Mobile Native OAuth Diagnostics
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-08-30
+> **Status**: retained optional diagnostic architecture
+> **Created**: 2026-08-29 | **Updated**: 2026-09-20
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`, `apps/station/app/subserver/oauth/`, `tooling/acceptance/`
 
 ---
 
+> **MS-D26 supersession notice**: this subtree preserves the architecture and
+> historical evidence contract for optional physical-device and live-provider
+> diagnostics. It is not part of the required Mobile Acceptance bundle.
+> Missing devices, provider accounts, Appium resources, or an unexecuted
+> physical Gate never block W2, another Mobile Task, W8, or W9. Canonical
+> required OAuth proof runs on the source-bound iOS Simulator and Android
+> Emulator cells declared by the current Mobile Plan.
+
 ## 1. Document Scope
 
-本文档集定义 W2-E2 physical OAuth proof 缺失的四项架构契约：
+本文档集保留 W2-E2 physical OAuth diagnostic 的四项架构契约：
 
 1. 负向 OAuth Fixture 的可信权限、生命周期和允许操作；
 2. Station-owned OAuth attempt/session 权威 readback；
@@ -50,7 +57,8 @@ Station 持久化结果、provider browser 状态如何隔离，以及运行中�
    串行化和 quarantine 语义。
 4. 每个 physical client 必须证明正在运行的 app 与当前 source snapshot、构建输入
    和已检查 artifact 完全一致。
-5. 任一契约缺失、身份不匹配或 cleanup 失败时，MS-AG03 保持 `UNPROVEN`。
+5. 任一契约缺失、身份不匹配或 cleanup 失败时，只能判定该次可选物理诊断
+   `UNPROVEN`；不得影响 simulator-canonical MS-AG03 或 W2 完成状态。
 
 ## 4. Document Navigation
 
@@ -78,9 +86,9 @@ MOP-D01..MOP-D04 and this architecture module were accepted by the Owner on
 2026-08-29. MOP-D03-A and MOP-D04-A passed independent review with no P0/P1 and
 were accepted on 2026-08-29. E2-0A froze the amended contracts. D-19
 architecture and its Infra execution plan are accepted; the additions across
-this module remain target-state contracts until generic Infra lands and the
-Mobile amendment passes independent review. A later
+this module remain optional diagnostic target-state contracts. A later
 fixed-commit audit reopened W2-E2-B / E2-1 and E2-3; remediation and independent
 review have closed those source dependencies. W2-E2-D / E2-5 now remains
-blocked by active D-19 Infra landing and the later Mobile amendment. MS-AG03
-and W2 readiness remain blocked/unproven until physical evidence passes.
+incomplete within the optional diagnostic path. Under MS-D26, neither that
+source state nor unexecuted physical evidence blocks canonical MS-AG03, W2
+readiness, W8, or W9.

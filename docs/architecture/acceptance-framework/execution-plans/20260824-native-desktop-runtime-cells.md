@@ -486,8 +486,8 @@ Evidence:
 
 ### NDR-W9: Windows Cell Implementation And Proof
 
-Host: `sixwin` — `10.0.0.40`, Windows 10 Build 19045, x64, 16 GB RAM,
-2× Xeon 8336C. SSH: `operator@10.0.0.40`.
+Host: `sixwin` — `10.0.0.42`, Windows 10 Build 19045, x64, 16 GB RAM,
+2× Xeon 8336C. SSH: `administrator@10.0.0.42`.
 
 This workstream contains four dependency-ordered closures:
 
@@ -830,7 +830,7 @@ business Gate is permitted.
 
 ### AS-NDR-08: Windows runtime cell
 
-- **Precondition**: sixwin (10.0.0.40) bootstrapped with toolchain; Win32
+- **Precondition**: sixwin (10.0.0.42) bootstrapped with toolchain; Win32
   adapter and `desktop-windows-native` contract landed.
 - **Action**: Run the same Gate through WebView2 and the Win32 adapter on sixwin.
 - **Expected**: Native input, focus, window ownership, screenshot and product
@@ -1788,10 +1788,10 @@ green, but no current-source Linux runtime claim has advanced.
 
 Remote preflight exposed a same-name collision before deployment. `make config`
 read a local cache that had repurposed profile `three` for disposable Station
-`http://10.37.94.156:18132`, while the execution path correctly sourced the
+`http://10.0.0.40:18132`, while the execution path correctly sourced the
 sibling environment repository's canonical `three` profile at
-`http://10.37.94.156:18080`. The command was interrupted after exact source
-synchronization on deployment node `10.37.94.156` and during build, before
+`http://10.0.0.40:18080`. The command was interrupted after exact source
+synchronization on deployment node `10.0.0.40` and during build, before
 restart. No Gate was run and no new runtime evidence was emitted.
 
 This is an Acceptance/development-environment infrastructure blocker. The
@@ -1801,7 +1801,7 @@ pointer before resolving that canonical source. NDR-W7 remains
 `PARTIAL/UNPROVEN`.
 
 The infrastructure correction now defines canonical environment profile
-`chat-native-disposable` for deployment node `10.37.94.156` and disposable
+`chat-native-disposable` for deployment node `10.0.0.40` and disposable
 Station `18132`. Runtime and `make config` both derive the profile name from
 the worktree-specific active pointer, then resolve the sibling environment
 repository as authority. The shared selector no longer participates in
@@ -1813,8 +1813,8 @@ NDR-W7 is unblocked for exact-source deployment but remains
 ### 2026-08-31 NDR-W7 Focused Runtime Result
 
 Exact source `d20a8f91a771fe36a9595ac5e9b9ecbd7b31c4c5` was deployed to
-disposable Station `http://10.37.94.156:18132` on deployment node
-`10.37.94.156`. Focused Linux aggregate
+disposable Station `http://10.0.0.40:18132` on deployment node
+`10.0.0.40`. Focused Linux aggregate
 `20260831T060844651620Z-05ad6436b8ef2710f1319c3c90b4c63d` completed with
 5 PASS / 2 FAIL. Interactions, typing, Group MLS, two-client, and recovery
 passed with source-bound Linux evidence. Product Closure and Multi-Device
@@ -1854,7 +1854,7 @@ Retained aggregate
 completed 18 PASS / 0 FAIL at the same exact source, with aggregate
 `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing traceability, and
 successful cleanup for every provisioned Gate. The Station evidence is
-attributed to deployment node `10.37.94.156` and endpoint `18132`; Linux Native
+attributed to deployment node `10.0.0.40` and endpoint `18132`; Linux Native
 runtime-cell evidence is attributed to host `10.37.246.80`.
 
 Chat required-proven validation artifact
@@ -1878,7 +1878,7 @@ Exact-source aggregate
 `162d36a32d8bd5cb62d04f9f3c7caf83e3833b51` completed 19 PASS / 0 FAIL
 with `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing
 traceability, and successful cleanup for every provisioned Gate. Station
-evidence belongs to deployment node `10.37.94.156` and endpoint `18132`;
+evidence belongs to deployment node `10.0.0.40` and endpoint `18132`;
 Linux Native runtime-cell evidence belongs to host `10.37.246.80`.
 
 Fresh W11 forbidden-owner and duplicate-owner scans plus Chat
@@ -1913,7 +1913,7 @@ Exact-source aggregate
 `9848935196a23250142708355d604a11f437fc54` completed 19 PASS / 0 FAIL
 with `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing result
 traceability, and successful cleanup for every provisioned Gate. Station
-evidence belongs to deployment node `10.37.94.156` and endpoint `18132`;
+evidence belongs to deployment node `10.0.0.40` and endpoint `18132`;
 Linux Native runtime-cell evidence belongs to host `10.37.246.80`.
 
 Fresh W11 forbidden-owner scan
@@ -1982,7 +1982,7 @@ combined Chat/Acceptance suites pass 180 tests; Desktop passes 371 tests with
 one existing environment test skipped, and Desktop check/build, Station
 messaging packages, Chat/Infra validation, closure generation, Gap Detector,
 and skill-check pass. NDR-W7 remains `PARTIAL/UNPROVEN` until these changes are
-committed, deployed to Station node `10.37.94.156:18132`, and the complete
+committed, deployed to Station node `10.0.0.40:18132`, and the complete
 Linux closure plan runs on runtime node `10.37.246.80`.
 
 ### 2026-09-01 NDR-W7 Exact-Source Revalidation Findings
@@ -2113,7 +2113,7 @@ Implementation readiness requires:
 
 ### 2026-09-02 Windows Cell And Topology Amendment
 
-Windows host `sixwin` (10.0.0.40, Win10 x64, 2× Xeon 8336C, 16 GB) is now
+Windows host `sixwin` (10.0.0.42, Win10 x64, 2× Xeon 8336C, 16 GB) is now
 available via SSH. NDR-W9 is expanded from a stub into four dependency-ordered
 closures (W9-A through W9-D) mirroring the Linux cell pattern:
 
@@ -2138,15 +2138,15 @@ Current Desktop Acceptance physical topology:
 ```
 Orchestrator (macOS local)
 ├── Linux Cell ──────────────────────────────────────────────────
-│   ├── station-four  10.37.245.247:18080  (x86_64, healthy)
+│   ├── station-four  10.0.0.41:18080  (x86_64, healthy)
 │   ├── station-five  10.37.221.38:18080   (aarch64, healthy)
-│   ├── relay         10.37.245.247:18081  (x86_64, shared)
-│   └── Xorg cell     10.37.94.156 or 10.37.245.247  (shuxian)
+│   ├── relay         10.0.0.41:18081  (x86_64, shared)
+│   └── Xorg cell     10.0.0.40 or 10.0.0.41  (shuxian)
 │       ├── Alice → bound to station-four
 │       └── Bob   → bound to station-five
 │
 ├── Windows Cell ────────────────────────────────────────────────
-│   └── sixwin        10.0.0.40          (Win10 x64, SSH)
+│   └── sixwin        10.0.0.42          (Win10 x64, SSH)
 │       ├── Alice → WebView2 + Win32 adapter
 │       └── Bob   → WebView2 + Win32 adapter
 │       └── Station: connects to station-four or station-five
@@ -2160,15 +2160,15 @@ Orchestrator (macOS local)
 Station Fleet:
   10.37.246.80:18080     one    (x86_64)
   10.37.118.48:18080     two    (x86_64, co-located with relay)
-  10.37.94.156:18080     three  (x86_64)
-  10.37.245.247:18080    four   (x86_64, + relay :18081)
+  10.0.0.40:18080     three  (x86_64)
+  10.0.0.41:18080    four   (x86_64, + relay :18081)
   10.37.221.38:18080     five   (aarch64, + relay :18081)
-  10.0.0.10:18080   home   (x86_64, LAN edge)
+  10.0.0.50:18080   home   (x86_64, LAN edge)
 
 Client Hosts:
-  10.37.94.156           Linux Xorg cell host (shuxian)
-  10.37.245.247          Linux Xorg cell host alt (shuxian)
-  10.0.0.40            Windows sixwin (administrator)
+  10.0.0.40           Linux Xorg cell host (shuxian)
+  10.0.0.41          Linux Xorg cell host alt (shuxian)
+  10.0.0.42            Windows sixwin (administrator)
   local macOS            orchestrator (macOS W8)
 ```
 
@@ -2430,7 +2430,7 @@ Deployment remained fail-closed:
   `make station` under the canonical `fiveArm` remote profile stopped during
   source sync with `BLOCKED:dirty-remote-worktree`; build and restart did not
   run.
-- station-four (`10.37.245.247:18080`) is healthy on `ef89b11fed8a`.
+- station-four (`10.0.0.41:18080`) is healthy on `ef89b11fed8a`.
   Deployment was not attempted because canonical profile `four` declares that
   URL but resolves `PT_STATION_DEPLOY_ENV=station`, whose cached deployment host
   is station-five. The profile/deploy target mismatch is unsafe.
@@ -2451,7 +2451,7 @@ or product Gate ran. The minimum closure is:
 The supported `PT_DEV_PROFILE_FILE` override supplied a temporary,
 worktree-local remote profile whose Station URL and dedicated
 `station-four` deployment environment both resolve to
-`10.37.245.247:18080`. `make station` then completed exact source sync, build,
+`10.0.0.41:18080`. `make station` then completed exact source sync, build,
 restart, and health verification for commit
 `0b8e4bb983efdc56668d3c246dd88825c513878d`.
 
@@ -4344,7 +4344,7 @@ Profile resolution (two layers, both verified):
 - Canonical deployable profile added in the sibling env repository as
   `env/peers-touch/sixwin/profile.env.example`: `PT_DEV_PROFILE=sixwin`,
   slot 6, `PT_STATION_MODE=remote`, default Station station-four
-  `10.37.245.247:18080` with its standalone relay, local Desktop ports
+  `10.0.0.41:18080` with its standalone relay, local Desktop ports
   3160/3610 and web 3161/3611, mobile 5276, and the same actor/reset variables
   as the four/fiveArm profiles (`CHAT_NATIVE_DEMO_PASSWORD=1`,
   `CHAT_ACCEPTANCE_RESET=1`, station restart kept at 0 and exported
@@ -5258,7 +5258,7 @@ All eight selected local Gates pass, including
 `acceptance-runtime-provisioning-self` run
 `20260912T020400224162Z-40f7db21111c416a859b44e396410837`.
 Profile `four` is active and healthy at
-`http://10.37.245.247:18080`, but its deployed Station still reports
+`http://10.0.0.41:18080`, but its deployed Station still reports
 `c58ba844ba657760d91f429a7fe317c1e6de9e90`. Both development worktrees retain
 the same committed pre-fix tree
 `b2de3f8537afda2727da37b2013ec57e1254f2a8`; high-chat is clean, while the
@@ -5478,7 +5478,7 @@ Desktop processes used:
 - group-chat / Bob -> `chat-native-five`,
   `http://10.37.221.38:18132`, gateway `127.0.0.1:3220`; and
 - high-chat / Alice -> `chat-native-four`,
-  `http://10.37.245.247:18132`, gateway `127.0.0.1:3176`.
+  `http://10.0.0.41:18132`, gateway `127.0.0.1:3176`.
 
 The two client source trees were equal at tree
 `e9e84275451157529c83892261f075661377c517`. Direct functional verification
@@ -5888,7 +5888,7 @@ journeys until exact source is deployed to the authorized profiles.
 Runtime preflight on 2026-09-13:
 
 - `chat-native-four` resolves to remote Station
-  `http://10.37.245.247:18132`, deploy env `chat-native-four`, and is healthy,
+  `http://10.0.0.41:18132`, deploy env `chat-native-four`, and is healthy,
   but still runs old source `7d5137c7`.
 - `chat-native-five` resolves to remote Station
   `http://10.37.221.38:18132`, deploy env `chat-native-five`, and is healthy,

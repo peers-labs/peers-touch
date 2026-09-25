@@ -14,7 +14,6 @@ use tauri::{AppHandle, Emitter, State, Window};
 
 use crate::application::account as application_account;
 use crate::application::auth::service as auth_service;
-use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
 
 fn auth_failure_to_stub(result: AppResult<AuthSessionPayload>) -> AppResult<StubPayload> {
@@ -82,16 +81,40 @@ pub fn account_get_device_id(
             );
         }
     };
-    match device_install::get_or_create_device_id(actor_ptid.as_str()) {
-        Ok(device_id) => {
-            crate::infrastructure::station_client::set_device_id(device_id.clone());
-            AppResult::success(StubPayload {
-                command: "account_get_device_id".to_string(),
-                status: serde_json::json!({ "device_id": device_id }).to_string(),
-            })
+    let Some(session) = state.sessions.get(window.label()) else {
+        return AppResult::fail(ErrorCode::Unauthorized, "no active session", None);
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging device identity is unavailable",
+                None,
+            )
         }
-        Err(e) => AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    if engine.endpoint().ptid != actor_ptid {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "messaging device identity belongs to another actor",
+            None,
+        );
     }
+    let device_id = engine.endpoint().device_id.clone();
+    crate::infrastructure::station_client::set_device_id(device_id.clone());
+    if let Err(error) = engine.ensure_current_device_enrolled(&session.jwt, "Desktop".to_string()) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("bind messaging device session: {error}"),
+            None,
+        );
+    }
+    AppResult::success(StubPayload {
+        command: "account_get_device_id".to_string(),
+        status: serde_json::json!({ "device_id": device_id }).to_string(),
+    })
 }
 
 #[tauri::command]

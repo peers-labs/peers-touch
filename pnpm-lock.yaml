@@ -297,8 +297,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/client-storage
       '@tauri-apps/api':
-        specifier: 2.0.1
-        version: 2.0.1
+        specifier: 2.10.1
+        version: 2.10.1
       antd:
         specifier: ^6.4.3
         version: 6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -3352,6 +3352,9 @@ packages:
 
   '@tauri-apps/api@2.0.1':
     resolution: {integrity: sha512-eoQWT+Tq1qSwQpHV+nw1eNYe5B/nm1PoRjQCRiEOS12I1b+X4PUcREfXVX8dPcBT6GrzWGDtaecY0+1p0Rfqlw==}
+
+  '@tauri-apps/api@2.10.1':
+    resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
 
   '@tauri-apps/cli-darwin-arm64@2.0.1':
     resolution: {integrity: sha512-oWjCZoFbm57V0eLEkIbc6aUmB4iW65QF7J8JVh5sNzH4xHGP9rzlQarbkg7LOn89z7mFSZpaLJAWlaaZwoV2Ug==}
@@ -11349,6 +11352,8 @@ snapshots:
 
   '@tauri-apps/api@2.0.1': {}
 
+  '@tauri-apps/api@2.10.1': {}
+
   '@tauri-apps/cli-darwin-arm64@2.0.1':
     optional: true
 
@@ -11394,7 +11399,7 @@ snapshots:
 
   '@tauri-apps/plugin-deep-link@2.0.1':
     dependencies:
-      '@tauri-apps/api': 2.0.1
+      '@tauri-apps/api': 2.10.1
 
   '@tybys/wasm-util@0.10.3':
     dependencies:

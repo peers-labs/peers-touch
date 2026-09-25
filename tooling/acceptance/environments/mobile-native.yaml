@@ -1,8 +1,8 @@
 {
   "id": "mobile-native",
   "profile": {
-    "required": true,
-    "identity_match": true
+    "required": false,
+    "identity_match": false
   },
   "source_identity": {
     "commit_required": true,
@@ -110,7 +110,9 @@
       "browser_sessions": [],
       "harness_actions": [
         "lifecycle.snapshot",
-        "lifecycle.restart"
+        "lifecycle.waitReady",
+        "lifecycle.restart",
+        "lifecycle.secureStorageDeleteFailure"
       ],
       "parent_harness_actions": ["build.identity"],
       "ephemeral_capabilities": ["mobile.native.appium-session"],
@@ -136,6 +138,303 @@
         "physical-device-leases",
         "correlation-channel",
         "profile-leases"
+      ]
+    },
+    "recovery": {
+      "gate_id": "mobile-native-recovery-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [
+        "station.add",
+        "access.submit",
+        "lifecycle.restart",
+        "reliability.fixture.configure",
+        "reliability.friendRequest.submit",
+        "reliability.snapshot",
+        "reliability.reconcile",
+        "reliability.command.action",
+        "reliability.draft.write",
+        "reliability.draft.read",
+        "reliability.draft.action",
+        "reliability.reset",
+        "recovery.snapshot",
+        "social.reconcile",
+        "social.projection.read",
+        "cleanup"
+      ],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "recovery-ui": {
+      "gate_id": "mobile-native-recovery-ui-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [
+        "station.add",
+        "access.submit",
+        "lifecycle.restart",
+        "reliability.fixture.configure",
+        "reliability.snapshot",
+        "reliability.reconcile",
+        "reliability.command.action",
+        "reliability.draft.write",
+        "reliability.draft.read",
+        "reliability.draft.action",
+        "reliability.reset",
+        "recovery.snapshot",
+        "social.reconcile",
+        "social.projection.read",
+        "cleanup"
+      ],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "social-convergence": {
+      "gate_id": "mobile-native-social-convergence-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "chat-contacts": {
+      "gate_id": "mobile-native-chat-contacts-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "moments": {
+      "gate_id": "mobile-native-moments-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "settings": {
+      "gate_id": "mobile-native-settings-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
       ]
     },
     "platform": {
@@ -261,6 +560,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
       "ready_action": "station-check",
       "health_action": "station-check",
       "status_action": "station-status",
@@ -270,6 +571,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
       "ready_action": "station-check",
       "health_action": "station-check",
       "status_action": "station-status",
@@ -279,6 +582,9 @@
       "kind": "relay",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_RELAY_URL",
+      "deployment_environment_ref": "env:PT_RELAY_DEPLOY_ENV",
+      "health_endpoint_ref": "env:PT_RELAY_HEALTH_URL",
       "ready_action": "relay-check",
       "health_action": "relay-check",
       "status_action": "relay-status",
@@ -432,7 +738,6 @@
     "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"
   },
   "leases": {
-    "profile": "mobile-shell-acceptance",
     "ports": "one reserved set per client",
     "storage": "one isolated root per client and run",
     "storage_root_ref": "env:PT_MOBILE_ACCEPTANCE_RUNTIME_ROOT",

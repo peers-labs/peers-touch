@@ -32,6 +32,27 @@ message MessageRetractedFact {
   google.protobuf.Timestamp retracted_at = 3;
 }
 
+message MessageHiddenForActorFact {
+  string message_id = 1;
+  string actor_ptid = 2;
+  google.protobuf.Timestamp hidden_at = 3;
+}
+
+message MessageModeratedFact {
+  string message_id = 1;
+  CryptoEndpoint moderator = 2;
+  string reason_code = 3;
+  google.protobuf.Timestamp moderated_at = 4;
+}
+
+message MessageForwardedFact {
+  string destination_message_id = 1;
+  CryptoEndpoint sender = 2;
+  MessagingContentKind content_kind = 3;
+  repeated EncryptedObjectDescriptor destination_attachments = 4;
+  google.protobuf.Timestamp client_timestamp = 5;
+}
+
 message ReactionCommittedFact {
   string message_id = 1;
   CryptoEndpoint actor = 2;
@@ -184,6 +205,9 @@ message ConversationEvent {
     ConversationCreatedFact conversation_created = 27;
     ConversationDissolvedFact conversation_dissolved = 28;
     ConversationMemberAuthorityCommittedFact member_authority_committed = 29;
+    MessageHiddenForActorFact message_hidden_for_actor = 30;
+    MessageModeratedFact message_moderated = 31;
+    MessageForwardedFact message_forwarded = 32;
   }
 }
 
@@ -220,4 +244,29 @@ message DeviceEventDelivery {
   // Station-verified actor IK pinned during cross-signed device enrollment.
   // Direct session initialization must bind its sender identity key to this.
   bytes sender_actor_identity_public_key = 7;
+}
+
+enum MessagingProjectionKind {
+  MESSAGING_PROJECTION_KIND_UNSPECIFIED = 0;
+  MESSAGING_PROJECTION_KIND_CONVERSATION = 1;
+  MESSAGING_PROJECTION_KIND_MESSAGE = 2;
+  MESSAGING_PROJECTION_KIND_RECEIPT = 3;
+  MESSAGING_PROJECTION_KIND_TYPING = 4;
+  MESSAGING_PROJECTION_KIND_MEMBERSHIP = 5;
+  MESSAGING_PROJECTION_KIND_SETTINGS = 6;
+  MESSAGING_PROJECTION_KIND_ATTACHMENT = 7;
+  MESSAGING_PROJECTION_KIND_RESYNC = 8;
+}
+
+// Local client invalidation emitted after the native Messaging Engine commits
+// an endpoint-lane item. Business truth remains in the Engine projection.
+message MessagingProjectionInvalidation {
+  uint32 schema_version = 1;
+  string actor_ptid = 2;
+  string home_station_peer_id = 3;
+  string device_id = 4;
+  string conversation_id = 5;
+  string event_id = 6;
+  int64 lane_sequence = 7;
+  MessagingProjectionKind kind = 8;
 }

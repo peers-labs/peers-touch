@@ -76,7 +76,7 @@ Architecture source:
 ```text
 pt-god-view routes
   -> pt-dev-workflow owns one Development Run
-  -> pt-trae-goal-orchestrator schedules WHAT is ready
+  -> pt-goal-orchestrator schedules WHAT is ready
   -> pt-execution-plan-guardian decides whether one proposed action MAY run
   -> pt-dev-workflow executes and persists through owner commands
   -> pt-context-anchor renders read-only status
@@ -84,8 +84,141 @@ pt-god-view routes
 
 `pt-architecture-execution-methodology` defines the vertical dependency model;
 `pt-plan-and-document` only persists the accepted model. Router, scheduler,
-policy guard, and status projection do not write Plan/Task/Session/
-`active_work` state.
+policy guard, and status projection do not write Plan/Task/Session/workspace
+active-work state.
+
+The workflow implementation is maintained as canonical source in
+`peers-dev-workflow`, then distributed to consuming worktrees. Every installed
+copy derives the consuming worktree's canonical root and `workspaceId`; mutable
+state stays under that workspace's machine directory. Project memory and chat
+never become a shared runtime-state service.
+
+### Continuous Plan Run
+
+An explicit `continue`, `resume`, `execute the plan`, or equivalent request
+authorizes Dev Workflow to drain the accepted Plan within its recorded
+authorization envelope:
+
+```text
+Task Goal Slice
+  -> focused verification
+  -> agent review and remediation
+  -> Task closure or parking
+  -> dependency-ready successor
+  -> repeat
+```
+
+Goal Slice remains one Task and one stage. Task closure, review success,
+Context Anchor output, and context compaction are internal checkpoints, not
+requests for another user confirmation.
+
+Already-authorized operations execute directly. An exact user grant or an
+explicit allowed field in the accepted Plan authorization envelope remains
+valid across Task/Goal transitions, retries, context compaction, and host
+changes. A sensitive operation category is not a reason to ask again.
+`OPERATION_AUTHORIZATION_REQUIRED` applies only when the proposed action is
+denied or outside every explicit grant. After admission, ask about permission
+only when the attempted operation returns an actual external permission,
+credential, or scope failure.
+
+The agent runs the applicable methodology review plus `pt-quality-check`,
+`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
+and reruns the affected review. Escalate only when the next step requires an
+operation outside the accepted authorization, destructive or irreversible
+work, an external grant/resource, an unresolved material semantic choice, or
+fixed-point exhaustion.
+
+### Host-Neutral Runtime And Tool Dispatch
+
+Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
+
+```text
+pt-dev-runtime-handoff -> repository-native command / product driver
+pt-goal-orchestrator -> Host Capability Request
+  -> Guardian ACTION_ALLOWED
+  -> pt-dev-workflow
+  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
+```
+
+The generic owners define scheduling, Journey semantics, verification class,
+Session transition, and cleanup. A host adapter only invokes tools exposed by
+the detected host. It may not decide PASS, weaken required proof, run the
+repository-native fallback, or become a Task blocker when a project-owned path
+can continue. Missing capability degrades only that transport. Cleanup failure
+has one bounded quarantine and one post-expiry observation, never a recursive
+cleanup loop.
+
+### Continuous Plan Run
+
+An explicit `continue`, `resume`, `execute the plan`, or equivalent request
+authorizes Dev Workflow to drain the accepted Plan within its recorded
+authorization envelope:
+
+```text
+Task Goal Slice
+  -> focused verification
+  -> agent review and remediation
+  -> Task closure or parking
+  -> dependency-ready successor
+  -> repeat
+```
+
+Goal Slice remains one Task and one stage. Task closure, review success,
+Context Anchor output, and context compaction are internal checkpoints, not
+requests for another user confirmation.
+
+The agent runs the applicable methodology review plus `pt-quality-check`,
+`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
+and reruns the affected review. Escalate only when the next step requires:
+
+- an operation the accepted Plan authorization explicitly denies or does not
+  grant;
+- destructive or irreversible work not already authorized;
+- force push, history rewrite, merge, release, production mutation, data
+  deletion/reset, environment creation, permission expansion, version/schema
+  bump, worktree add/remove/prune, or secret access;
+- a product, architecture, security, privacy, compatibility, or rollout choice
+  that accepted sources cannot determine;
+- an unavailable external resource or credential; or
+- fixed-point exhaustion with no dependency-ready Task or legal remediation.
+
+An Anchor emitted during the Run reports the autonomous horizon and stop
+conditions. It never ends with `Continue?`.
+
+### Host-Neutral Runtime And Tool Dispatch
+
+Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
+
+```text
+pt-dev-runtime-handoff -> repository-native command / product driver
+pt-goal-orchestrator -> Host Capability Request
+  -> Guardian ACTION_ALLOWED
+  -> pt-dev-workflow
+  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
+```
+
+The generic owners define scheduling, Journey semantics, verification class,
+Session transition, and cleanup. A host adapter only invokes tools exposed by
+the detected host. It may not decide PASS, weaken a native Journey to browser
+or coordinate evidence, or become a Task blocker when a repository-native path
+can continue.
+
+The scheduler only projects the required host capability. Dev Workflow invokes
+the selected adapter after Guardian admission and owns retries, fallback,
+cleanup, parking, and durable result handling. An adapter never runs the
+repository-native fallback. Unavailable capability identity and attempted
+transports are persisted; only a new available observation can unblock the
+request. A failed cleanup has one bounded quarantine result, not a recursive
+cleanup loop; the current resource-dependent Task parks while independent ready
+Tasks continue. One post-expiry `inspect-quarantine` observation commits release
+or escalates the still-live external resource. Repeated and pre-expiry
+observations fail closed.
+
+Host identity comes from explicit runtime metadata, corroborated by tool
+inventory or host-injected environment markers. The presence of `.trae`,
+`.cursor`, `.agents`, or an installed CLI is not identity. A missing optional
+host capability returns a typed unavailable result and degrades to another
+project-owned path or serial execution.
 
 ---
 

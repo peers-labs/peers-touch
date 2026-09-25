@@ -55,7 +55,8 @@ If no target is available, ask for one. Do not produce a generic checklist.
 5. Resolve the current formal plan and run only its completion Gates that are
    deterministic and cheap. Environment availability is not authorization:
    do not run environment/full Gates unless the user explicitly requested
-   release or full Acceptance.
+   release/full Acceptance or the accepted Plan Run authorization names the
+   exact environment and Gate scope.
 6. Record every selected gate that was not run and why.
 7. Read acceptance feature/capability contracts for selected features and copy
    their proven/unproven scope into the report.
@@ -97,7 +98,7 @@ Use this shape:
 - Deterministic checks:
 - Product proven scope:
 - Product unproven scope:
-- Human/owner evidence needed:
+- Human/owner hard-boundary evidence needed:
 
 ## Evidence Gaps
 
@@ -112,4 +113,6 @@ acceptance planning, or knowledge matching could not be performed.
 ## Handoff To Review
 
 Pass the report to `pt-github-review`. That skill decides whether evidence gaps are
-blocking, acceptable follow-up, or require human owner review.
+blocking, acceptable follow-up, source-backed remediation inside the Plan Run,
+or require one precise human owner decision under DWF-D20. Never send the user
+the entire review task.

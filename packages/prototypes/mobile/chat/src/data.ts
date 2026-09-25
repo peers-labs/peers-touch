@@ -11,7 +11,7 @@ export const demoStations: StationEntry[] = [
 
 export const demoConversations: Conversation[] = [
   { key: 'alice', name: 'Alice Chen', avatar: 'AC', avatarGradient: GRADIENTS[0], lastMessage: 'See you tomorrow at the meetup!', time: '2m', unread: 2, online: true, pinned: true },
-  { key: 'dev-team', name: 'Dev Team', avatar: 'DT', avatarGradient: GRADIENTS[1], lastMessage: 'PR looks good, merging now', time: '18m', unread: 5, isGroup: true, muted: true, lastSender: 'Bob', memberCount: 12 },
+  { key: 'dev-team', name: 'Dev Team', avatar: 'DT', avatarGradient: GRADIENTS[1], lastMessage: 'PR looks good, merging now', time: '18m', unread: 5, isGroup: true, canModerate: true, muted: true, lastSender: 'Bob', memberCount: 12 },
   { key: 'carol', name: 'Carol Li', avatar: 'CL', avatarGradient: GRADIENTS[3], lastMessage: '[Photo]', time: '3h', unread: 0, online: true },
   { key: 'product', name: 'Product Design', avatar: 'PD', avatarGradient: GRADIENTS[4], lastMessage: 'design-spec-v3.pdf', time: '1d', unread: 0, isGroup: true, pinned: true, lastSender: 'Emma', memberCount: 8 },
   { key: 'bob', name: 'Bob Zhang', avatar: 'BZ', avatarGradient: GRADIENTS[2], lastMessage: 'Thanks for the feedback on the design', time: '1d', unread: 0, online: false },

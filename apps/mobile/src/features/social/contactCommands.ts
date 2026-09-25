@@ -1,22 +1,5 @@
-/**
- * contactCommands.ts — Typed command dispatchers for the Contacts page.
- *
- * All contact interactions route through InteractionAdmission so that
- * pending / failed / unknown state is tracked in the ledger.
- */
-
-import { getInteractionAdmission } from '../../runtimes/commandRuntime';
 import { useSocialStore } from '../social/socialStore';
-import { useGroupStore } from '../group/groupStore';
 
-// ---------------------------------------------------------------------------
-// Command type constants
-// ---------------------------------------------------------------------------
-
-const CMD_SEND_FRIEND_REQUEST = 'social.send-friend-request';
-const CMD_ACCEPT_FRIEND_REQUEST = 'social.accept-friend-request';
-const CMD_REJECT_FRIEND_REQUEST = 'social.reject-friend-request';
-const CMD_CREATE_GROUP = 'group.create';
 const FRIEND_REQUEST_STATUS_ACCEPTED = 2;
 
 // ---------------------------------------------------------------------------
@@ -28,67 +11,35 @@ export async function dispatchSendFriendRequest(
   receiverHomeStationPeerId: string,
   federationId: string,
   message: string,
-): Promise<void> {
-  const commandId = await getInteractionAdmission().admit({
-    commandType: CMD_SEND_FRIEND_REQUEST,
-    category: 'social',
-    orderingKey: `friend-request:${federationId}:${receiverPtid}`,
-    payloadJson: JSON.stringify({ receiverPtid, receiverHomeStationPeerId, federationId }),
-  });
+) {
+  return useSocialStore.getState().sendFriendRequest(
+    receiverPtid,
+    receiverHomeStationPeerId,
+    federationId,
+    message,
+  );
+}
 
-  try {
-    await useSocialStore.getState().sendFriendRequest(
-      receiverPtid,
-      receiverHomeStationPeerId,
-      federationId,
-      message,
-    );
-    await getInteractionAdmission().markCommitted(commandId);
-  } catch (error) {
-    await getInteractionAdmission().markFailed(commandId, error instanceof Error ? error.message : 'request_failed');
-    throw error;
-  }
+export async function dispatchOpenContactChat(
+  peerPtid: string,
+  federationId: string,
+): Promise<string> {
+  return useSocialStore.getState().openDirectConversation(peerPtid, federationId);
 }
 
 export async function dispatchAcceptFriendRequest(requestId: string): Promise<void> {
-  const commandId = await getInteractionAdmission().admit({
-    commandType: CMD_ACCEPT_FRIEND_REQUEST,
-    category: 'social',
-    orderingKey: `friend-request:${requestId}`,
-    payloadJson: JSON.stringify({ requestId }),
-  });
-
-  try {
-    await useSocialStore.getState().acceptFriendRequest(requestId);
-    await getInteractionAdmission().markCommitted(commandId);
-  } catch (error) {
-    await getInteractionAdmission().markFailed(commandId, error instanceof Error ? error.message : 'accept_failed');
-    throw error;
-  }
+  await useSocialStore.getState().acceptFriendRequest(requestId);
 }
 
 export async function dispatchRejectFriendRequest(requestId: string): Promise<void> {
-  const commandId = await getInteractionAdmission().admit({
-    commandType: CMD_REJECT_FRIEND_REQUEST,
-    category: 'social',
-    orderingKey: `friend-request:${requestId}`,
-    payloadJson: JSON.stringify({ requestId }),
-  });
-
-  try {
-    await useSocialStore.getState().rejectFriendRequest(requestId);
-    await getInteractionAdmission().markCommitted(commandId);
-  } catch (error) {
-    await getInteractionAdmission().markFailed(commandId, error instanceof Error ? error.message : 'reject_failed');
-    throw error;
-  }
+  await useSocialStore.getState().rejectFriendRequest(requestId);
 }
 
 export async function dispatchCreateGroup(input: {
   name: string;
   description: string;
   initialMemberPtids: string[];
-}): Promise<string | null> {
+}) {
   const social = useSocialStore.getState();
   const federationIds = new Set(input.initialMemberPtids.map((memberPtid) => {
     const relationship = social.friendRequests.find((request) =>
@@ -99,35 +50,17 @@ export async function dispatchCreateGroup(input: {
         || (request.receiverPtid === social.currentUserPtid && request.senderPtid === memberPtid)
       )
     );
-    if (!relationship) {
-      throw new Error('mobile.group.federationScopeRequired');
-    }
+    if (!relationship) throw new Error('mobile.group.federationScopeRequired');
     return relationship.federationId;
   }));
   if (federationIds.size !== 1) {
     throw new Error('mobile.group.federationScopeRequired');
   }
-  const federationId = [...federationIds][0];
-  const commandId = await getInteractionAdmission().admit({
-    commandType: CMD_CREATE_GROUP,
-    category: 'social',
-    orderingKey: `group:create:${federationId}:${Date.now()}`,
-    payloadJson: JSON.stringify({ name: input.name, federationId }),
+  return social.createGroup({
+    conversationId: globalThis.crypto.randomUUID(),
+    name: input.name,
+    description: input.description,
+    memberPtids: input.initialMemberPtids,
+    federationId: [...federationIds][0],
   });
-
-  try {
-    const groupUlid = await useGroupStore.getState().createGroup({
-      ...input,
-      federationId,
-    });
-    if (groupUlid) {
-      await getInteractionAdmission().markCommitted(commandId);
-    } else {
-      await getInteractionAdmission().markFailed(commandId, 'create_returned_null');
-    }
-    return groupUlid;
-  } catch (error) {
-    await getInteractionAdmission().markFailed(commandId, error instanceof Error ? error.message : 'create_failed');
-    throw error;
-  }
 }

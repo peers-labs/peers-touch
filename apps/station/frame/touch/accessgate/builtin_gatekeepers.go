@@ -43,7 +43,7 @@ func (loginGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalContext) *
 	if ec.Actor == nil {
 		state = pb.AccessGateState_ACCESS_GATE_STATE_ACTION_REQUIRED
 	}
-	return &pb.AccessGate{
+	gate := &pb.AccessGate{
 		GateId:       gateIDLogin,
 		Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
 		State:        state,
@@ -51,18 +51,21 @@ func (loginGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalContext) *
 		Description:  "Log in before entering this Station.",
 		SubmitAction: "submit_login",
 		AlternativeActions: []*pb.AccessGateAction{
-			{
-				ActionId:     "auth.password",
-				Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-				SubmitAction: "submit_login",
-			},
-			{
-				ActionId:     "auth.oauth",
-				Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
-				SubmitAction: "start_oauth",
-			},
+			accessGateAction(
+				"auth.password",
+				pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+				"submit_login",
+				"",
+			),
+			accessGateAction(
+				"auth.oauth",
+				pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
+				"start_oauth",
+				"",
+			),
 		},
 	}
+	return bindPrimaryAction(gate, "auth.password")
 }
 
 // allowlistGatekeeper enforces the administrator-managed access policy
@@ -111,7 +114,7 @@ func (inviteCodeGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalConte
 	if ec.InvitePassed {
 		state = pb.AccessGateState_ACCESS_GATE_STATE_PASSED
 	}
-	return &pb.AccessGate{
+	return bindPrimaryAction(&pb.AccessGate{
 		GateId:          gateIDInviteCode,
 		Type:            pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE,
 		State:           state,
@@ -119,10 +122,39 @@ func (inviteCodeGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalConte
 		Description:     "Enter your invite code to enter this Station.",
 		SubmitAction:    "submit_invite_code",
 		InputSchemaJson: inviteCodeInputSchema,
-	}
+	}, "invite.code")
 }
 
 // inviteCodeInputSchema describes the single field the client collects for the
 // invite.code gate. Keeping it schema-driven lets clients render the gate
 // generically without a per-gate code release.
 const inviteCodeInputSchema = `{"fields":[{"name":"invite_code","type":"text","required":true,"label":"Invite code"}]}`
+
+type termsAcceptanceGatekeeper struct{}
+
+func (termsAcceptanceGatekeeper) Type() pb.AccessGateType {
+	return pb.AccessGateType_ACCESS_GATE_TYPE_TERMS_ACCEPTANCE
+}
+
+func (termsAcceptanceGatekeeper) GateID() string { return "terms.acceptance" }
+
+func (termsAcceptanceGatekeeper) Evaluate(
+	_ context.Context,
+	ec *gatekeeper.EvalContext,
+) *pb.AccessGate {
+	state := pb.AccessGateState_ACCESS_GATE_STATE_ACTION_REQUIRED
+	if ec.CompletedActions["terms.accept"] {
+		state = pb.AccessGateState_ACCESS_GATE_STATE_PASSED
+	}
+	return bindPrimaryAction(&pb.AccessGate{
+		GateId:          "terms.acceptance",
+		Type:            pb.AccessGateType_ACCESS_GATE_TYPE_TERMS_ACCEPTANCE,
+		State:           state,
+		Title:           "Terms",
+		Description:     "Accept this Station's terms before continuing.",
+		SubmitAction:    "submit_schema_values",
+		InputSchemaJson: termsAcceptanceInputSchema,
+	}, "terms.accept")
+}
+
+const termsAcceptanceInputSchema = `{"fields":[{"name":"accepted","type":"checkbox","required":true,"label":"Accept"}]}`

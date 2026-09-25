@@ -142,7 +142,7 @@ describe('chat composer capability profiles', () => {
       emoji: true,
       file: true,
       screenshot: false,
-      voice: false,
+      voice: true,
     });
     expect(canSubmitChatComposerDraft({
       text: '',

@@ -78,11 +78,22 @@ def _scan_debug_egress(root: Path) -> list[SafetyFinding]:
     return findings
 
 
-def _action_block(source: str, action: str, next_action: str) -> tuple[str, int]:
+def _action_block(
+    source: str,
+    action: str,
+    *next_actions: str,
+) -> tuple[str, int]:
     start_token = f"'{action}':"
-    end_token = f"'{next_action}':"
     start = source.find(start_token)
-    end = source.find(end_token, start + len(start_token))
+    ends = [
+        offset
+        for next_action in next_actions
+        if (offset := source.find(
+            f"'{next_action}':",
+            start + len(start_token),
+        )) >= 0
+    ]
+    end = min(ends, default=-1)
     if start < 0 or end < 0:
         raise ValueError(f"cannot locate acceptance action block {action!r}")
     return source[start:end], _line_number(source, start)
@@ -107,6 +118,7 @@ def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
         block, start_line = _action_block(
             source,
             "social.people.search",
+            "reliability.fixture.configure",
             "social.request.send",
         )
     except ValueError as error:

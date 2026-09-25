@@ -54,15 +54,18 @@ message AccessGateClientInfo {
   string app_version = 2;
   string device_id = 3;
   string locale = 4;
+  uint64 lifecycle_generation = 5;
 }
 
-// AccessGateAction is one credential action accepted by its parent gate.
-// AUTH_LOGIN remains the ordered credential-stage gate; OAuth is advertised as
-// an alternative action rather than inserted as another mandatory gate.
+// AccessGateAction is one exact action accepted by its parent gate. The schema
+// digest binds the rendered form to the submitted action without allowing the
+// client to select an endpoint.
 message AccessGateAction {
   string action_id = 1;
   AccessGateType type = 2;
   string submit_action = 3;
+  uint32 schema_revision = 4;
+  string schema_digest = 5;
 }
 
 message AccessGate {
@@ -78,6 +81,9 @@ message AccessGate {
   // here. These actions are choices within one gate, not additional gate-chain
   // stages.
   repeated AccessGateAction alternative_actions = 9;
+  string action_id = 10;
+  uint32 schema_revision = 11;
+  string schema_digest = 12;
 }
 
 message AccessDecision {
@@ -100,15 +106,47 @@ message StartAccessAttemptRequest {
 
 message StartAccessAttemptResponse {
   AccessDecision decision = 1;
+  string station_label = 2;
+}
+
+message AccessGateScalarValue {
+  string field_name = 1;
+  oneof value {
+    string string_value = 2;
+    bool bool_value = 3;
+    sint64 integer_value = 4;
+    double number_value = 5;
+  }
+}
+
+message AccessGateGenericInput {
+  repeated AccessGateScalarValue fields = 1;
+}
+
+message AccessGateDeviceTrustInput {
+  // Opaque reference to native attestation material. Raw credentials, binary
+  // payloads, and executable data are never valid generic field values.
+  string attestation_handle = 1;
 }
 
 message SubmitAccessGateRequest {
   string attempt_id = 1;
   string gate_id = 2;
   AccessGateType type = 3;
-  peers_touch.model.auth.v1.LoginRequest login = 4;
-  string invite_code = 5;
-  string session_id = 6;
+  oneof action_input {
+    peers_touch.model.auth.v1.LoginRequest login = 4;
+    string invite_code = 5;
+    string session_id = 6;
+    AccessGateDeviceTrustInput device_trust = 14;
+    AccessGateGenericInput generic = 15;
+  }
+  string action_id = 7;
+  string station_peer_id = 8;
+  string device_id = 9;
+  uint64 lifecycle_generation = 10;
+  uint32 schema_revision = 11;
+  string schema_digest = 12;
+  string submission_id = 13;
 }
 
 message SubmitAccessGateResponse {
@@ -118,14 +156,21 @@ message SubmitAccessGateResponse {
 
 message GetAccessDecisionRequest {
   string attempt_id = 1;
+  string station_peer_id = 2;
+  string device_id = 3;
+  uint64 lifecycle_generation = 4;
 }
 
 message GetAccessDecisionResponse {
   AccessDecision decision = 1;
+  peers_touch.model.auth.v1.LoginResponse login_response = 2;
 }
 
 message CancelAccessAttemptRequest {
   string attempt_id = 1;
+  string station_peer_id = 2;
+  string device_id = 3;
+  uint64 lifecycle_generation = 4;
 }
 
 message CancelAccessAttemptResponse {

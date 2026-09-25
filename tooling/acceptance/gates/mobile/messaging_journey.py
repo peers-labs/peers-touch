@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
+import os
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import DriverError, GateError
 
 
 ATTACHMENT_BYTES = b"peers-touch mobile acceptance attachment\n"
@@ -23,12 +25,6 @@ class MessagingJourneySession(Protocol):
         action: str,
         payload: Mapping[str, Any] | None = None,
     ) -> Any:
-        ...
-
-    def refresh_webview(self) -> None:
-        ...
-
-    def switch_to_app_webview(self, timeout: float = 30.0) -> str:
         ...
 
 
@@ -451,10 +447,14 @@ class MobileMessagingJourney:
         attachments = delivered.get("attachments")
         if not isinstance(attachments, list) or len(attachments) != 1:
             raise GateError("Receiver attachment projection is incomplete")
+        received_attachment = self._mapping(attachments[0], "Receiver attachment")
+        if (
+            received_attachment.get("filename") != "acceptance.txt"
+            or received_attachment.get("mimeType") != "text/plain"
+        ):
+            raise GateError("Receiver attachment private metadata changed")
         attachment_id = self._text(
-            self._mapping(attachments[0], "Receiver attachment").get(
-                "attachmentId"
-            ),
+            received_attachment.get("attachmentId"),
             "Receiver attachment ID",
         )
         self._await_condition(
@@ -540,8 +540,6 @@ class MobileMessagingJourney:
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("Receiver lifecycle restart was not acknowledged")
-        receiver_session.refresh_webview()
-        receiver_session.switch_to_app_webview()
         self._await_authenticated_runtime_scope(
             receiver_session,
             receiver,
@@ -624,10 +622,18 @@ class MobileMessagingJourney:
         actor: MessagingActor,
     ) -> int:
         def ready() -> bool:
-            scope = self._mapping(
-                session.call_action("lifecycle.scope.read"),
-                f"{actor.client_id} lifecycle scope",
-            )
+            try:
+                scope = self._mapping(
+                    session.call_action("lifecycle.scope.read"),
+                    f"{actor.client_id} lifecycle scope",
+                )
+            except DriverError as error:
+                if self._action_unavailable(
+                    error,
+                    "lifecycle.scope.read",
+                ):
+                    return False
+                raise
             return (
                 scope.get("phase") == "ACTIVE"
                 and scope.get("activeStationPeerId")
@@ -723,9 +729,9 @@ class MobileMessagingJourney:
             raise GateError(
                 f"{actor.client_id} post-login restart was not acknowledged"
             )
-        session.refresh_webview()
-        session.switch_to_app_webview()
+
         self._await_authenticated_runtime_scope(session, actor)
+
         self._await_condition(
             lambda: self._social_runtime_active(session, actor.client_id),
             f"{actor.client_id} Social runtime activation",
@@ -736,11 +742,34 @@ class MobileMessagingJourney:
         session: MessagingJourneySession,
         client_id: str,
     ) -> bool:
-        projection = MobileMessagingJourney._mapping(
-            session.call_action("social.projection.read"),
-            f"{client_id} Social projection",
+        try:
+            projection = MobileMessagingJourney._mapping(
+                session.call_action("social.projection.read"),
+                f"{client_id} Social projection",
+            )
+        except DriverError as error:
+            if MobileMessagingJourney._action_unavailable(
+                error,
+                "social.projection.read",
+            ):
+                return False
+            raise
+        ingress = projection.get("ingress")
+
+        return (
+            projection.get("active") is True
+            and isinstance(ingress, Mapping)
+            and ingress.get("lifecycle") == "active"
+            and ingress.get("writeAdmissionOpen") is True
+            and ingress.get("staleDomains") == []
         )
-        return projection.get("active") is True
+
+    @staticmethod
+    def _action_unavailable(error: DriverError, action: str) -> bool:
+        return (
+            f"acceptance.mobile.actionUnavailable:{action}"
+            in str(error)
+        )
 
     @staticmethod
     def _station_account_email(actor: MessagingActor) -> str:

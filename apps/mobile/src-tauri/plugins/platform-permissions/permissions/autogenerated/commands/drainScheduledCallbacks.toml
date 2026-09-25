@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-drainScheduledCallbacks"
+description = "Enables the drainScheduledCallbacks command without any pre-configured scope."
+commands.allow = ["drainScheduledCallbacks"]
+
+[[permission]]
+identifier = "deny-drainScheduledCallbacks"
+description = "Denies the drainScheduledCallbacks command without any pre-configured scope."
+commands.deny = ["drainScheduledCallbacks"]

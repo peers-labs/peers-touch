@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-09-09
+> **Created**: 2026-07-01 | **Updated**: 2026-09-11
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -442,9 +442,9 @@ Layer mapping:
 - `MobileShell` plays the `NavigationShell` role and renders the active
   descriptor from `MobileNavigationStore`.
 - There is **no `PageHost` keep-alive layer**. `renderPage` returns only the active tab; inactive tabs are unmounted.
-- Conversation list ↔ thread inside the chat tab is a descriptor-owned detail
-  route. Social/Group selection fields may guide projection readback, but they
-  do not decide whether the detail tree is visible.
+- Conversation, Contact, Group, Moment, and selected Settings details are
+  descriptor-owned routes. Social/Group/Settings selections may guide
+  projection readback, but they do not decide whether a detail tree is visible.
 - `RuntimeProjection` is owned by the Mobile runtime registry and feature
   stores, so projection truth stays fresh even while a tab tree is unmounted.
 
@@ -459,6 +459,9 @@ Layer mapping:
 
 - Conversation and contextual actions must use a bottom action sheet or a dedicated page, never a desktop-style right drawer (`ChatActionSheet` returns `null` when closed).
 - Modal/sheet surfaces are `on-visit + none`; they must not retain heavy hidden trees after close.
+- Find People and Create Group use one selected-only descriptor-owned overlay
+  route; closing, replacing the primary route, or entering a detail route
+  unmounts the overlay tree.
 - Any future Mobile route stack (planned `session` runtime) must still declare each stacked page's alive category and cache bound in the registry.
 
 ### 14.4 Mobile Acceptance

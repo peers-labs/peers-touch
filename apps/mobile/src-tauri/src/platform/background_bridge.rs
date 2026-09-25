@@ -18,8 +18,7 @@ use crate::platform::lifecycle_bridge::{
     NativeLifecycleSource, NativeLifecycleState, ResumeReconciliationReport,
 };
 use crate::platform::native_events;
-use crate::runtime::command_ledger::CommandLedger;
-use crate::runtime::draft_store::DraftStore;
+use crate::runtime::reliability::ReliabilityRuntime;
 
 // ---------------------------------------------------------------------------
 // Background wakeup event
@@ -103,13 +102,27 @@ pub fn perform_reconciliation<R: Runtime>(
     app: &AppHandle<R>,
     session_valid: bool,
 ) -> MobileResult<ResumeReconciliationReport> {
-    let ledger: tauri::State<'_, CommandLedger> = app.state();
-    let draft_store: tauri::State<'_, DraftStore> = app.state();
+    let reliability: tauri::State<'_, ReliabilityRuntime> = app.state();
 
     let counts = read_reconciliation_counts(
-        || ledger.count_by_status("pending"),
-        || ledger.count_by_status("unknown"),
-        || draft_store.count_all(),
+        || {
+            reliability
+                .status()
+                .map(|status| status.pending_commands)
+                .map_err(|error| MobileError::reliability(error.to_string()))
+        },
+        || {
+            reliability
+                .status()
+                .map(|status| status.unknown_commands)
+                .map_err(|error| MobileError::reliability(error.to_string()))
+        },
+        || {
+            reliability
+                .status()
+                .map(|status| status.draft_count)
+                .map_err(|error| MobileError::reliability(error.to_string()))
+        },
     )?;
 
     let report = lifecycle_bridge::build_reconciliation_report(

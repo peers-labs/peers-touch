@@ -619,6 +619,9 @@ export function ChatSessionList({
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
                     data-chat-group-ulid={c.kind === 'group' ? c.id : undefined}
+                    data-chat-conversation-preview={c.preview?.content ?? ''}
+                    data-chat-conversation-latest-at={c.lastActivityMs}
+                    data-chat-conversation-unread={unread}
                     data-testid={`pt-context-menu-trigger-chat-${c.kind}-${c.id}`}
                     data-pt-context-menu-trigger="chat-conversation"
                     data-pt-context-menu-kind={c.kind}
