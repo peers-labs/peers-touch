@@ -33,7 +33,7 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
+use messaging_core::identity::enrollment::load_or_create_device_identity_for_device;
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
 };
@@ -446,10 +446,14 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let enrollment = load_or_create_device_identity_from_seed(
+        let device_id =
+            crate::application::key_exchange::device_install::get_or_create_device_id()
+                .map_err(|error| format!("load canonical installation device identity: {error}"))?;
+        let enrollment = load_or_create_device_identity_for_device(
             store.as_ref(),
             &ptid,
-            actor_identity_seed,
+            &device_id,
+            *actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment

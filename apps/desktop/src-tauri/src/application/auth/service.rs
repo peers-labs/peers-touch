@@ -1,6 +1,7 @@
 use crate::contracts::{
-    AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput, AuthLoginInput,
-    AuthSessionPayload, AuthValidateTokenInput,
+    AccessDecisionInput, AccessDecisionPayload, AccessDecisionProjection,
+    AccessGateActionProjection, AccessGateProjection, AccessSubmitInviteInput,
+    AccessSubmitLoginInput, AuthSessionPayload, AuthValidateTokenInput,
 };
 use crate::domain::auth::session::{
     from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession,
@@ -9,9 +10,17 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault::{self, SessionVaultError};
 use crate::infrastructure::station_client;
+use crate::model::access_gate::{
+    submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateState,
+    AccessGateType, AccessGateClientInfo, CancelAccessAttemptRequest,
+    CancelAccessAttemptResponse, GetAccessDecisionRequest, GetAccessDecisionResponse,
+    StartAccessAttemptRequest, StartAccessAttemptResponse, SubmitAccessGateRequest,
+    SubmitAccessGateResponse,
+};
 use crate::model::actor::ActorProfile;
+use crate::model::auth::{LoginRequest, LoginResponse};
 use crate::state::AppState;
-use serde_json::{json, Value};
+use serde_json::json;
 use zeroize::Zeroizing;
 
 pub(crate) fn takeover_station_session_token(
@@ -78,17 +87,6 @@ fn persist_session_if_unprotected(
         source,
     )
     .map_err(session_vault_to_app)
-}
-
-fn value_field<'a>(value: &'a Value, snake_case: &str, camel_case: &str) -> Option<&'a Value> {
-    value.get(snake_case).or_else(|| value.get(camel_case))
-}
-
-fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
-    value_field(value, snake_case, camel_case)
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string()
 }
 
 pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
@@ -164,16 +162,18 @@ pub(crate) fn deactivate_messaging_profile(
     state.messaging_engines.deactivate(account_id).map(|_| ())
 }
 
-/// Performs a no-auth POST to a Station access endpoint and returns the
-/// `data` envelope object. Network and unexpected-shape failures map to a
-/// typed `AppResult` error generic over the caller's payload type.
-fn access_post<T: serde::Serialize>(
+fn access_post<Req, Resp, T>(
     path: &str,
-    body: Value,
+    body: &Req,
     err_code: ErrorCode,
     context: &str,
-) -> Result<Value, AppResult<T>> {
-    let resp = station_client::post_json_no_auth(path, body).map_err(|error| {
+) -> Result<Resp, AppResult<T>>
+where
+    Req: prost::Message,
+    Resp: prost::Message + Default,
+    T: serde::Serialize,
+{
+    station_client::post_peers_proto_no_auth(path, body).map_err(|error| {
         use station_client::StationClientErrorKind;
         match error.kind {
             StationClientErrorKind::HttpStatus(status) => {
@@ -197,146 +197,121 @@ fn access_post<T: serde::Serialize>(
                 error.details,
             ),
         }
-    })?;
-    resp.get("data").cloned().ok_or_else(|| {
-        AppResult::fail(
-            err_code,
-            format!("{}: unexpected response from station", context),
-            Some(resp),
-        )
     })
 }
 
-/// Extract the `AccessDecision` object from a Station access envelope's `data`.
-fn decision_from_data<T: serde::Serialize>(
-    data: &Value,
-    context: &str,
-) -> Result<Value, AppResult<T>> {
-    value_field(data, "decision", "decision")
-        .cloned()
-        .ok_or_else(|| {
-            AppResult::fail(
-                ErrorCode::InternalError,
-                format!("{}: response missing decision", context),
-                Some(data.clone()),
-            )
-        })
-}
-
-/// True when a decision is in the GRANTED terminal state. The Station emits
-/// both a numeric enum (3) and a string name depending on wire encoding, so we
-/// match either.
-fn decision_is_granted(decision: &Value) -> bool {
-    let state = value_field(decision, "state", "state");
-    state.and_then(|v| v.as_i64()) == Some(3)
-        || state.and_then(|v| v.as_str()) == Some("ACCESS_DECISION_STATE_GRANTED")
-}
-
-/// Build a human-readable reason from a non-granted decision: the decision
-/// message if present, otherwise the first non-empty gate blocking reason.
-fn decision_block_reason(decision: &Value) -> String {
-    let message = string_field(decision, "message", "message");
-    if !message.is_empty() {
-        return message;
+fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResult<T>> {
+    let binding = crate::application::station_binding::service().state();
+    if binding.phase != crate::application::station_binding::StationBindingPhase::AccessGate
+        && binding.phase != crate::application::station_binding::StationBindingPhase::Bound
+    {
+        return Err(AppResult::fail(
+            ErrorCode::Conflict,
+            "Station identity has not been verified",
+            None,
+        ));
     }
-    value_field(decision, "gates", "gates")
-        .and_then(|v| v.as_array())
-        .and_then(|gates| {
-            gates
-                .iter()
-                .filter_map(|gate| value_field(gate, "blocking_reason", "blockingReason"))
-                .filter_map(|v| v.as_str())
-                .find(|v| !v.trim().is_empty())
-        })
-        .unwrap_or("Station access was not granted")
-        .to_string()
-}
-
-/// Start an access attempt and return the Station's initial decision.
-fn start_access_attempt<T: serde::Serialize>() -> Result<Value, AppResult<T>> {
+    if binding.bound_url.as_deref() != Some(station_client::station_base_url().as_str()) {
+        return Err(AppResult::fail(
+            ErrorCode::Conflict,
+            "Verified Station scope does not match the active Station",
+            None,
+        ));
+    }
     let station_peer_id = station_client::active_station_peer_id().ok_or_else(|| {
         AppResult::fail(
             ErrorCode::Unauthorized,
-            "Access gate start failed: active Station identity is unavailable",
+            "Active Station identity is unavailable",
             None,
         )
     })?;
-    let data = access_post::<T>(
-        "/actor/access/start",
-        json!({
-            "station_peer_id": station_peer_id,
-            "station_url": station_client::station_base_url(),
-            "client": {
-                "platform": "desktop",
-                "app_version": env!("CARGO_PKG_VERSION"),
-                "device_id": "",
-                "locale": ""
-            }
-        }),
-        ErrorCode::Unauthorized,
-        "Access gate start failed",
-    )?;
-    decision_from_data(&data, "Access gate start failed")
-}
-
-/// Submit the login credential gate. On a granted decision returns the
-/// embedded `login_response` object; otherwise surfaces the block reason.
-fn submit_login_gate(
-    attempt_id: &str,
-    account: &str,
-    password: &str,
-    device_type: &str,
-) -> Result<Value, AppResult<AuthSessionPayload>> {
-    let data = access_post::<AuthSessionPayload>(
-        "/actor/access/submit",
-        json!({
-            "attempt_id": attempt_id,
-            "gate_id": "auth.login",
-            "type": 2,
-            "login": {
-                "email": account,
-                "password": password,
-                "device_type": device_type
-            }
-        }),
-        ErrorCode::Unauthorized,
-        "Login failed",
-    )?;
-    let decision = decision_from_data::<AuthSessionPayload>(&data, "Login failed")?;
-    if !decision_is_granted(&decision) {
+    let device_id =
+        crate::application::key_exchange::device_install::get_or_create_device_id().map_err(
+            |error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("Canonical device identity is unavailable: {error}"),
+                    None,
+                )
+            },
+        )?;
+    station_client::set_device_id(device_id.clone());
+    let generation = binding.generation;
+    if generation == 0 {
         return Err(AppResult::fail(
-            ErrorCode::Forbidden,
-            decision_block_reason(&decision),
-            Some(json!({ "decision": decision })),
+            ErrorCode::Conflict,
+            "Station scope is not ready",
+            None,
         ));
     }
-    value_field(&data, "login_response", "loginResponse")
-        .cloned()
-        .ok_or_else(|| {
-            AppResult::fail(
-                ErrorCode::Unauthorized,
-                "Login failed: access gate response missing login session",
-                Some(data),
-            )
-        })
+    Ok((station_peer_id, device_id, generation))
 }
 
-/// Start an access attempt and hand the raw decision back to the client so it
-/// can drive the interactive gate chain (invite code, then login).
+fn start_access_attempt<T: serde::Serialize>(
+) -> Result<StartAccessAttemptResponse, AppResult<T>> {
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
+    access_post::<_, StartAccessAttemptResponse, T>(
+        "/actor/access/start",
+        &StartAccessAttemptRequest {
+            station_url: station_client::station_base_url(),
+            client: Some(AccessGateClientInfo {
+                platform: "desktop".to_string(),
+                app_version: env!("CARGO_PKG_VERSION").to_string(),
+                device_id,
+                locale: String::new(),
+                lifecycle_generation,
+            }),
+            session_id: String::new(),
+            station_peer_id,
+        },
+        ErrorCode::Unauthorized,
+        "Access gate start failed",
+    )
+}
+
+fn submit_request<T: serde::Serialize>(
+    attempt_id: String,
+    gate_id: String,
+    gate_type: i32,
+    action_id: String,
+    schema_revision: u32,
+    schema_digest: String,
+    submission_id: String,
+    action_input: submit_access_gate_request::ActionInput,
+) -> Result<SubmitAccessGateResponse, AppResult<T>> {
+    let (station_peer_id, device_id, lifecycle_generation) =
+        access_scope::<T>()?;
+    access_post::<_, SubmitAccessGateResponse, T>(
+        "/actor/access/submit",
+        &SubmitAccessGateRequest {
+            attempt_id,
+            gate_id,
+            r#type: gate_type,
+            action_input: Some(action_input),
+            action_id,
+            station_peer_id,
+            device_id,
+            lifecycle_generation,
+            schema_revision,
+            schema_digest,
+            submission_id,
+        },
+        ErrorCode::Unauthorized,
+        "Access gate submit failed",
+    )
+}
+
 pub fn access_start() -> AppResult<AccessDecisionPayload> {
     match start_access_attempt::<AccessDecisionPayload>() {
-        Ok(decision) => AppResult::success(AccessDecisionPayload {
-            command: "access_start".to_string(),
-            status: "ready".to_string(),
-            decision,
-        }),
+        Ok(response) => decision_payload(
+            "access_start",
+            "ready",
+            response.decision,
+        ),
         Err(error) => error,
     }
 }
 
-/// Redeem a self-service invite code for a live attempt and return the
-/// re-evaluated decision. This never produces a session; the chain advances to
-/// the login gate once the code passes.
 pub fn access_submit_invite_code(
     input: AccessSubmitInviteInput,
 ) -> AppResult<AccessDecisionPayload> {
@@ -344,32 +319,26 @@ pub fn access_submit_invite_code(
     if code.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "Invite code is required", None);
     }
-    let data = match access_post::<AccessDecisionPayload>(
-        "/actor/access/submit",
-        json!({
-            "attempt_id": input.attempt_id,
-            "gate_id": "invite.code",
-            "type": 5,
-            "invite_code": code
-        }),
-        ErrorCode::Forbidden,
-        "Invite code rejected",
+    let response = match submit_request::<AccessDecisionPayload>(
+        input.attempt_id,
+        input.gate_id,
+        input.gate_type,
+        input.action_id,
+        input.schema_revision,
+        input.schema_digest,
+        input.submission_id,
+        submit_access_gate_request::ActionInput::InviteCode(code.to_string()),
     ) {
-        Ok(data) => data,
+        Ok(response) => response,
         Err(error) => return error,
     };
-    match decision_from_data::<AccessDecisionPayload>(&data, "Invite code rejected") {
-        Ok(decision) => AppResult::success(AccessDecisionPayload {
-            command: "access_submit_invite_code".to_string(),
-            status: "evaluated".to_string(),
-            decision,
-        }),
-        Err(error) => error,
-    }
+    decision_payload(
+        "access_submit_invite_code",
+        "evaluated",
+        response.decision,
+    )
 }
 
-/// Submit the login credential gate for a live attempt and, on grant, land the
-/// full desktop session (token persistence, avatar download, account state).
 pub fn access_submit_login(
     input: AccessSubmitLoginInput,
     state: &AppState,
@@ -378,99 +347,230 @@ pub fn access_submit_login(
         return map_domain_error(error);
     }
     let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
-    let data = match submit_login_gate(
-        &input.attempt_id,
-        &input.account,
-        &input.password,
-        device_type,
+    let response = match submit_request::<AuthSessionPayload>(
+        input.attempt_id,
+        input.gate_id,
+        input.gate_type,
+        input.action_id,
+        input.schema_revision,
+        input.schema_digest,
+        input.submission_id,
+        submit_access_gate_request::ActionInput::Login(LoginRequest {
+            email: input.account,
+            password: input.password,
+            device_type: device_type.to_string(),
+        }),
     ) {
-        Ok(data) => data,
+        Ok(response) => response,
         Err(error) => return error,
     };
-    finish_login(data, state, "access_submit_login")
-}
-
-pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
-    if let Err(error) = validate_login_input(&input.account, &input.password) {
-        return map_domain_error(error);
-    }
-    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
-
-    let attempt = match start_access_attempt::<AuthSessionPayload>() {
-        Ok(decision) => decision,
-        Err(error) => {
-            let should_fallback = error
-                .error
-                .as_ref()
-                .is_some_and(|e| e.code == ErrorCode::NotFound);
-            if should_fallback {
-                tracing::info!(
-                    "access-gate endpoint not found (404), falling back to direct /actor/login"
-                );
-                return direct_login_fallback(&input.account, &input.password, state, device_type);
-            }
-            return error;
-        }
-    };
-    let attempt_id = string_field(&attempt, "attempt_id", "attemptId");
-    if attempt_id.is_empty() {
+    let Some(decision) = response.decision.as_ref() else {
         return AppResult::fail(
             ErrorCode::InternalError,
-            "Access gate start failed: station did not return an attempt",
-            Some(attempt),
+            "Login failed: access gate response missing decision",
+            None,
+        );
+    };
+    if decision.state != AccessDecisionState::Granted as i32 {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            decision_block_reason(decision),
+            None,
         );
     }
-    let data = match submit_login_gate(&attempt_id, &input.account, &input.password, device_type) {
-        Ok(data) => data,
-        Err(error) => return error,
+    let Some(login_response) = response.login_response else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Login failed: access gate response missing login session",
+            None,
+        );
     };
-    finish_login(data, state, "auth_login")
+    finish_login(login_response, state, "access_submit_login")
 }
 
-/// Fallback for Stations that do not implement the access-gate flow.
-/// Calls the legacy `/actor/login` endpoint directly.
-fn direct_login_fallback(
-    account: &str,
-    password: &str,
+pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+    let (station_peer_id, device_id, lifecycle_generation) =
+        match access_scope::<AccessDecisionPayload>() {
+            Ok(scope) => scope,
+            Err(error) => return error,
+        };
+    match access_post::<_, GetAccessDecisionResponse, AccessDecisionPayload>(
+        "/actor/access/decision",
+        &GetAccessDecisionRequest {
+            attempt_id: input.attempt_id,
+            station_peer_id,
+            device_id,
+            lifecycle_generation,
+        },
+        ErrorCode::Unauthorized,
+        "Access decision failed",
+    ) {
+        Ok(response) => decision_payload(
+            "access_decision",
+            "evaluated",
+            response.decision,
+        ),
+        Err(error) => error,
+    }
+}
+
+pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+    let (station_peer_id, device_id, lifecycle_generation) =
+        match access_scope::<AccessDecisionPayload>() {
+            Ok(scope) => scope,
+            Err(error) => return error,
+        };
+    match access_post::<_, CancelAccessAttemptResponse, AccessDecisionPayload>(
+        "/actor/access/cancel",
+        &CancelAccessAttemptRequest {
+            attempt_id: input.attempt_id,
+            station_peer_id,
+            device_id,
+            lifecycle_generation,
+        },
+        ErrorCode::Unauthorized,
+        "Access cancellation failed",
+    ) {
+        Ok(response) => AppResult::success(AccessDecisionPayload {
+            command: "access_cancel".to_string(),
+            status: if response.cancelled {
+                "cancelled".to_string()
+            } else {
+                "closed".to_string()
+            },
+            decision: empty_access_decision(),
+        }),
+        Err(error) => error,
+    }
+}
+
+fn decision_payload(
+    command: &str,
+    status: &str,
+    decision: Option<AccessDecision>,
+) -> AppResult<AccessDecisionPayload> {
+    let Some(decision) = decision else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Access response missing decision",
+            None,
+        );
+    };
+    match project_access_decision(&decision) {
+        Ok(decision) => AppResult::success(AccessDecisionPayload {
+            command: command.to_string(),
+            status: status.to_string(),
+            decision,
+        }),
+        Err(message) => AppResult::fail(ErrorCode::InternalError, message, None),
+    }
+}
+
+fn project_access_decision(
+    decision: &AccessDecision,
+) -> Result<AccessDecisionProjection, String> {
+    let state = AccessDecisionState::try_from(decision.state)
+        .map_err(|_| "Access decision has an unknown state".to_string())?;
+    let gates = decision
+        .gates
+        .iter()
+        .map(|gate| {
+            let gate_type = AccessGateType::try_from(gate.r#type)
+                .map_err(|_| "Access gate has an unknown type".to_string())?;
+            let gate_state = AccessGateState::try_from(gate.state)
+                .map_err(|_| "Access gate has an unknown state".to_string())?;
+            let alternative_actions = gate
+                .alternative_actions
+                .iter()
+                .map(|action| {
+                    let action_type = AccessGateType::try_from(action.r#type)
+                        .map_err(|_| "Access gate action has an unknown type".to_string())?;
+                    Ok(AccessGateActionProjection {
+                        action_id: action.action_id.clone(),
+                        action_type: action_type.as_str_name().to_string(),
+                        submit_action: action.submit_action.clone(),
+                        schema_revision: action.schema_revision,
+                        schema_digest: action.schema_digest.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok(AccessGateProjection {
+                gate_id: gate.gate_id.clone(),
+                gate_type: gate_type.as_str_name().to_string(),
+                state: gate_state.as_str_name().to_string(),
+                title: gate.title.clone(),
+                description: gate.description.clone(),
+                blocking_reason: gate.blocking_reason.clone(),
+                submit_action: gate.submit_action.clone(),
+                input_schema_json: gate.input_schema_json.clone(),
+                alternative_actions,
+                action_id: gate.action_id.clone(),
+                schema_revision: gate.schema_revision,
+                schema_digest: gate.schema_digest.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(AccessDecisionProjection {
+        state: state.as_str_name().to_string(),
+        attempt_id: decision.attempt_id.clone(),
+        current_gate_id: decision.current_gate_id.clone(),
+        gates,
+        actor_ptid: decision
+            .actor
+            .as_ref()
+            .map(|actor| actor.ptid.clone())
+            .filter(|ptid| !ptid.is_empty()),
+        access_grant_id: decision.access_grant_id.clone(),
+        expires_at_unix_ms: decision.expires_at.as_ref().and_then(|timestamp| {
+            u64::try_from(timestamp.seconds)
+                .ok()
+                .and_then(|seconds| seconds.checked_mul(1000))
+                .and_then(|millis| {
+                    u64::try_from(timestamp.nanos)
+                        .ok()
+                        .map(|nanos| millis + nanos / 1_000_000)
+                })
+        }),
+        message: decision.message.clone(),
+    })
+}
+
+fn decision_block_reason(decision: &AccessDecision) -> String {
+    if !decision.message.trim().is_empty() {
+        return decision.message.clone();
+    }
+    decision
+        .gates
+        .iter()
+        .map(|gate| gate.blocking_reason.trim())
+        .find(|reason| !reason.is_empty())
+        .unwrap_or("Station access was not granted")
+        .to_string()
+}
+
+fn empty_access_decision() -> AccessDecisionProjection {
+    AccessDecisionProjection {
+        state: AccessDecisionState::Unspecified.as_str_name().to_string(),
+        attempt_id: String::new(),
+        current_gate_id: String::new(),
+        gates: Vec::new(),
+        actor_ptid: None,
+        access_grant_id: String::new(),
+        expires_at_unix_ms: None,
+        message: String::new(),
+    }
+}
+
+fn finish_login(
+    data: LoginResponse,
     state: &AppState,
-    device_type: &str,
+    command: &str,
 ) -> AppResult<AuthSessionPayload> {
-    let body = json!({
-        "email": account,
-        "password": password,
-        "device_type": device_type
-    });
-    let resp = match station_client::post_json_no_auth("/actor/login", body) {
-        Ok(resp) => resp,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                format!("Direct login failed: {}", error),
-                None,
-            );
-        }
-    };
-    let data = match resp.get("data").cloned() {
-        Some(data) => data,
-        None => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "Direct login failed: unexpected response from station",
-                Some(resp),
-            );
-        }
-    };
-    finish_login(data, state, "auth_login_direct")
-}
-
-/// Land a granted login: extract the token + actor identity, persist the
-/// session, download the avatar, and return the rich auth payload. Shared by
-/// the one-shot `auth_login` and the interactive `access_submit_login`.
-fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthSessionPayload> {
-    let tokens = value_field(&data, "tokens", "tokens")
-        .cloned()
-        .unwrap_or(Value::Null);
-    let token = string_field(&tokens, "access_token", "accessToken");
+    let token = data
+        .tokens
+        .as_ref()
+        .map(|tokens| tokens.access_token.clone())
+        .unwrap_or_default();
     if token.is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
@@ -479,10 +579,11 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
         );
     }
 
-    let actor_ref = value_field(&data, "actor_ref", "actorRef")
-        .cloned()
-        .unwrap_or(Value::Null);
-    let actor_ptid = string_field(&actor_ref, "ptid", "ptid");
+    let actor_ptid = data
+        .actor_ref
+        .as_ref()
+        .map(|actor| actor.ptid.clone())
+        .unwrap_or_default();
     if !actor_ptid.starts_with("ptid:") {
         return AppResult::fail(
             ErrorCode::Unauthorized,

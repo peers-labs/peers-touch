@@ -1,6 +1,6 @@
 # Station 接入生命周期 - 产品定义
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access
@@ -67,9 +67,9 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 
 ## 7. 产品门
 
-当前状态：`PRODUCT_READY_FOR_OWNER_REVIEW`。
+当前状态：`accepted`。
 
-Owner 进入执行前确认：
+Owner 已确认：
 
 - 零兼容与开发数据重置；
 - Federation 普通客户端只消费 context；

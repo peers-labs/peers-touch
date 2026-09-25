@@ -387,59 +387,6 @@ pub(crate) fn post_json_with_auth(
     Ok(result)
 }
 
-// JSON POST without auth — used for login where no token exists yet.
-pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, StationClientError> {
-    let url = format!("{}{}", station_base_url(), path);
-    tracing::debug!(path = %path, "→ station (json, no-auth)");
-
-    let start = std::time::Instant::now();
-    let client = build_client()?;
-
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send()
-        .map_err(|e| {
-            let elapsed = start.elapsed().as_millis();
-            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
-        })?;
-
-    let status = resp.status();
-    let elapsed = start.elapsed().as_millis();
-
-    let body_text = resp.text().unwrap_or_default();
-
-    if !status.is_success() {
-        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, body = %body_text, "← station FAIL");
-        let parsed: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
-        let msg = parsed
-            .get("message")
-            .or_else(|| parsed.get("msg"))
-            .and_then(|v| v.as_str())
-            .unwrap_or(&body_text);
-        return Err(StationClientError::new(
-            StationClientErrorKind::HttpStatus(status.as_u16()),
-            format!("station returned {}: {}", status.as_u16(), msg),
-            Some(serde_json::json!({ "status": status.as_u16(), "body": parsed })),
-        ));
-    }
-
-    let result: Value = serde_json::from_str(&body_text).map_err(|e| {
-        tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
-        StationClientError::new(
-            StationClientErrorKind::Decode,
-            format!("decode json response failed: {}", e),
-            None,
-        )
-    })?;
-
-    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
-    Ok(result)
-}
-
 /// Decode Touch `SuccessResponse` protobuf (`PeersResponse` with `google.protobuf.Any` data).
 fn decode_peers_envelope<Payload: Message + Default>(
     raw: &[u8],

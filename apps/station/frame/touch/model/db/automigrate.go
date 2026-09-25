@@ -22,10 +22,6 @@ func init() {
 			panic(fmt.Errorf("migrate social identity columns: %w", err))
 		}
 
-		if err := MigrateAccessGateIdentity(rds); err != nil {
-			panic(fmt.Errorf("migrate Access Gate identities: %w", err))
-		}
-
 		err := rds.AutoMigrate(
 			// Actor models
 			&Actor{}, &ActorTouchMeta{}, &PeerAddress{}, &ActorStatus{},

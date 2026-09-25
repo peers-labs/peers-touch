@@ -29,6 +29,8 @@ function nativeProjection(
     stationPeerId: 'station-a',
     sessionId: 'session-a',
     actorPtid: 'ptid:alice',
+    deviceId: 'device-a',
+    lifecycleGeneration: 1,
     expiresAt: '2026-09-17T00:10:00.000Z',
     ...overrides,
   };
@@ -149,6 +151,8 @@ describe('sessionRuntime', () => {
       session: {
         sessionId: 'session-a',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-a',
+        lifecycleGeneration: 1,
         expiresAt: '2026-09-17T00:10:00.000Z',
       },
     };
@@ -166,6 +170,8 @@ describe('sessionRuntime', () => {
       session: {
         stationPeerId: 'station-a',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-a',
+        lifecycleGeneration: 1,
         credentialOwner: 'native-oauth',
       },
     });

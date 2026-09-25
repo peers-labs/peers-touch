@@ -37,10 +37,18 @@ GATES_FILE = ACCEPTANCE_ROOT / "gates.yaml"
 OUTPUT_PATH = REPO_ROOT / "docs" / "architecture" / "acceptance-framework" / "coverage-report.md"
 
 # Domain display order and mapping
-DOMAIN_ORDER = ["chat", "mobile", "federation", "applet", "station-dashboard"]
+DOMAIN_ORDER = [
+    "chat",
+    "mobile",
+    "station-access",
+    "federation",
+    "applet",
+    "station-dashboard",
+]
 DOMAIN_DISPLAY = {
     "chat": "Chat",
     "mobile": "Mobile",
+    "station-access": "Station Access",
     "federation": "Federation",
     "applet": "Applet",
     "station-dashboard": "Station Dashboard",

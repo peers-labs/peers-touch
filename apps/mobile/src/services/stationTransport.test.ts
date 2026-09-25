@@ -5,6 +5,8 @@ const ports = vi.hoisted(() => ({
     stationPeerId: 'station-a',
     actorPtid: 'ptid:alice',
     sessionId: 'session-a',
+    deviceId: 'device-a',
+    lifecycleGeneration: 1,
   },
   invoke: vi.fn(),
   readAdmission: vi.fn(),
@@ -46,6 +48,8 @@ const session = {
   stationPeerId: 'station-a',
   stationUrl: 'https://station.example',
   sessionId: 'session-a',
+  deviceId: 'device-a',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 };
@@ -56,6 +60,8 @@ describe('Rust-owned Station transport bridge', () => {
     ports.active.stationPeerId = 'station-a';
     ports.active.actorPtid = 'ptid:alice';
     ports.active.sessionId = 'session-a';
+    ports.active.deviceId = 'device-a';
+    ports.active.lifecycleGeneration = 1;
   });
 
   it('sends only the fixed operation and public session scope to Rust', async () => {
@@ -134,6 +140,14 @@ describe('Rust-owned Station transport bridge', () => {
   it('rejects a stale Web scope before invoking Rust', async () => {
     await expect(executeStationOperation(
       { ...session, actorRef: { ptid: 'ptid:bob' } },
+      { operationId: 'actor_profile_get' },
+    )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
+    await expect(executeStationOperation(
+      { ...session, deviceId: 'device-b' },
+      { operationId: 'actor_profile_get' },
+    )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
+    await expect(executeStationOperation(
+      { ...session, lifecycleGeneration: 2 },
       { operationId: 'actor_profile_get' },
     )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
     expect(ports.invoke).not.toHaveBeenCalled();

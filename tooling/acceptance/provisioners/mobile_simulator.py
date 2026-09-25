@@ -50,7 +50,10 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.provisioner import (
+    load_env_file,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_text,
@@ -83,6 +86,7 @@ IOS_LAYOUT_ENVIRONMENT_ID = "mobile-ios-layout-simulator"
 STATION_LIFECYCLE_ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 DIRECT_SIMULATOR_ENVIRONMENT_ID = "mobile-direct-simulator"
 CHAT_MIXED_NATIVE_ENVIRONMENT_ID = "chat-mixed-native"
+STATION_ACCESS_NATIVE_ENVIRONMENT_ID = "station-access-native"
 STATION_LIFECYCLE_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 STATION_SETTINGS_GATE_ID = "mobile-simulator-settings-e2e"
 STATION_BOUND_SIMULATOR_GATE_IDS = frozenset(
@@ -5423,6 +5427,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     service_profile_keys: Mapping[str, tuple[str, str]] = {}
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
+    requires_actor_reset = True
     actor_manifest_kind = ""
     actor_manifest_path = ""
 
@@ -5454,7 +5459,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 profile_name=self.environment_id,
                 slot=0,
             )
-            if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
+            if (
+                self.requires_actor_reset
+                and os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1"
+            ):
                 raise BlockedError(
                     reason=(
                         f"{self.environment_id} actor reset requires "
@@ -5490,10 +5498,11 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             for binding in service_bindings.values():
                 if binding.kind != "station":
                     continue
-                verify_reset_target(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                )
+                if self.requires_actor_reset:
+                    verify_reset_target(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                    )
             services = self._attest_services(
                 manifest.run_id,
                 service_bindings,
@@ -5922,7 +5931,10 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         service_bindings: Mapping[str, MobileServiceBinding],
         overlay: Mapping[str, Any],
     ) -> dict[str, Any]:
-        if os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1":
+        if (
+            self.requires_actor_reset
+            and os.environ.get("MOBILE_ACCEPTANCE_RESET") != "1"
+        ):
             raise BlockedError(
                 reason=(
                     f"{self.environment_id} actor reset requires "
@@ -5947,25 +5959,26 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         resolved_actors: dict[str, dict[str, Any]] = {}
         for service_id in station_service_ids:
             binding = service_bindings[service_id]
-            verify_reset_target(
-                binding.endpoint,
-                binding.deployment_environment,
-            )
-            reset_fixture(
-                binding.deployment_environment,
-                fixture_roles,
-                reset_authorized=True,
-            )
-            self.register_cleanup(
-                f"actor-fixture:{service_id}",
-                lambda binding=binding, roles=fixture_roles: (
-                    self._reset_actor_fixture_target(
-                        binding.endpoint,
-                        binding.deployment_environment,
-                        roles,
-                    )
-                ),
-            )
+            if self.requires_actor_reset:
+                verify_reset_target(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                )
+                reset_fixture(
+                    binding.deployment_environment,
+                    fixture_roles,
+                    reset_authorized=True,
+                )
+                self.register_cleanup(
+                    f"actor-fixture:{service_id}",
+                    lambda binding=binding, roles=fixture_roles: (
+                        self._reset_actor_fixture_target(
+                            binding.endpoint,
+                            binding.deployment_environment,
+                            roles,
+                        )
+                    ),
+                )
             actors = [
                 resolve_actor_identity(
                     binding.endpoint,
@@ -5978,7 +5991,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 actor.role: actor for actor in actors
             }
             stations[service_id] = {
-                "targetVerified": True,
+                "targetVerified": self.requires_actor_reset,
+                "existingActorsVerified": not self.requires_actor_reset,
                 "actors": [
                     {
                         "role": actor.role,
@@ -6051,8 +6065,8 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 for client in self.contract.clients
             ],
             "reset": {
-                "authorized": True,
-                "targetVerified": True,
+                "authorized": self.requires_actor_reset,
+                "targetVerified": self.requires_actor_reset,
             },
             "proofScope": dict(overlay["proof_scope"]),
         }
@@ -6105,6 +6119,8 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
     prepare_cross_station_friendships = True
     actor_manifest_kind = "chat-mixed-native-actor-manifest"
     actor_manifest_path = "runtime/chat-mixed-native-actors.json"
+    gate_ids = CHAT_MIXED_NATIVE_GATE_IDS
+    child_harness_actions = CHAT_MIXED_NATIVE_HARNESS_ACTIONS
 
     def __init__(
         self,
@@ -6130,7 +6146,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         self._appium_cleanup_registered = False
 
     def provision(self, gate_id: str) -> RuntimeManifest:
-        if gate_id not in CHAT_MIXED_NATIVE_GATE_IDS:
+        if gate_id not in self.gate_ids:
             self._manifest = self._new_base_manifest(gate_id)
             return self._blocked(
                 self._manifest,
@@ -6221,7 +6237,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         required_capabilities: tuple[str, ...],
     ) -> EphemeralGateLaunchContext:
         if (
-            gate_id not in CHAT_MIXED_NATIVE_GATE_IDS
+            gate_id not in self.gate_ids
             or required_capabilities != (SIMULATOR_APPIUM_CAPABILITY_ID,)
         ):
             raise BlockedError(
@@ -6259,7 +6275,7 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
                 self.session_factory or self._new_appium_session
             ),
             harness_actions=overlay["harness"]["required_actions"],
-            child_harness_actions=CHAT_MIXED_NATIVE_HARNESS_ACTIONS,
+            child_harness_actions=self.child_harness_actions,
             harness_result_projector=self._project_chat_harness_result,
             actor_manifest=actor_manifest,
             sensitive_values=self._raw_authority_values(),
@@ -6392,3 +6408,76 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             MobileStationLifecycleSimulatorProvisioner
             ._new_appium_session(self, client_id)
         )
+
+
+class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
+    environment_id = STATION_ACCESS_NATIVE_ENVIRONMENT_ID
+    overlay_filename = "station-access-native.yaml"
+    station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
+    service_profile_keys = {}
+    require_distinct_station_profiles = False
+    prepare_cross_station_friendships = False
+    requires_actor_reset = False
+    actor_manifest_kind = "station-access-native-actor-manifest"
+    actor_manifest_path = "runtime/station-access-native-actors.json"
+    gate_ids = frozenset(
+        {
+            "station-access-auth-e2e",
+            "station-access-scope-isolation-e2e",
+        }
+    )
+    child_harness_actions = frozenset(
+        {
+            "cleanup",
+            "getRealtimeDevice",
+            "lifecycle.restart",
+            "lifecycle.scope.read",
+            "messaging.reconcile",
+            "session.logout",
+        }
+    )
+
+    def _inject_station_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        requested = self._required_station_profiles()
+        profile_name = requested.get("station")
+        if not profile_name:
+            return dict(profile_env)
+        resolved_name, _, _, station_env = (
+            resolve_machine_profile_environment(REPO_ROOT)
+        )
+        if resolved_name != profile_name:
+            raise BlockedError(
+                reason=(
+                    "Station Access profile binding does not match the "
+                    f"active reviewed profile: requested={profile_name!r} "
+                    f"active={resolved_name!r}"
+                ),
+                resource="service-profile:station",
+            )
+        if station_env.get("PT_STATION_MODE", "").strip() != "remote":
+            raise BlockedError(
+                reason="Station Access requires a remote Station profile",
+                resource="service-profile:station",
+            )
+        station_url = station_env.get("PT_STATION_URL", "").rstrip("/")
+        deployment_environment = station_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        if not station_url or not deployment_environment:
+            raise BlockedError(
+                reason=(
+                    "Station Access active profile has no complete "
+                    "endpoint/deployment binding"
+                ),
+                resource="service-profile:station",
+            )
+        url_key, deployment_key = self.station_profile_keys["station"]
+        return {
+            **profile_env,
+            url_key: station_url,
+            deployment_key: deployment_environment,
+        }

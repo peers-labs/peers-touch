@@ -41,6 +41,13 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 
 
 ENVIRONMENT_ID = "chat-mixed-native"
+STATION_ACCESS_ENVIRONMENT_ID = "station-access-native"
+STATION_ACCESS_GATE_IDS = frozenset(
+    {
+        "station-access-auth-e2e",
+        "station-access-scope-isolation-e2e",
+    }
+)
 DESKTOP_RUNTIME = "native-tauri"
 MOBILE_RUNTIME = "tauri-ios-simulator"
 POLL_INTERVAL_SECONDS = 0.25
@@ -113,9 +120,14 @@ def load_mixed_runtime_manifest(
     if not raw_path:
         raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
     manifest = load_runtime_manifest(Path(raw_path), gate_id)
-    if manifest.get("environmentId") != ENVIRONMENT_ID:
+    environment_id = (
+        STATION_ACCESS_ENVIRONMENT_ID
+        if gate_id in STATION_ACCESS_GATE_IDS
+        else ENVIRONMENT_ID
+    )
+    if manifest.get("environmentId") != environment_id:
         raise GateError(
-            "Mixed Chat Gate requires the chat-mixed-native environment"
+            f"Mixed native Gate requires the {environment_id} environment"
         )
     actor_ref = manifest.get("actorManifest")
     if not isinstance(actor_ref, dict):
@@ -124,9 +136,34 @@ def load_mixed_runtime_manifest(
         repo_root=REPO_ROOT,
         worktree=REPO_ROOT,
     ).read_json(ArtifactRef.from_dict(actor_ref))
-    if actor_manifest.get("artifactKind") != "chat-mixed-native-actor-manifest":
+    actor_manifest_kind = (
+        "station-access-native-actor-manifest"
+        if gate_id in STATION_ACCESS_GATE_IDS
+        else "chat-mixed-native-actor-manifest"
+    )
+    if actor_manifest.get("artifactKind") != actor_manifest_kind:
         raise GateError("Mixed Chat actor manifest has an invalid artifact kind")
-    verify_runtime_fixture_ready(manifest, actor_manifest)
+    if gate_id in STATION_ACCESS_GATE_IDS:
+        reset = actor_manifest.get("reset")
+        stations = actor_manifest.get("stations")
+        if (
+            manifest.get("state") != "FIXTURE_READY"
+            or not isinstance(reset, Mapping)
+            or reset.get("authorized") is not False
+            or reset.get("targetVerified") is not False
+            or not isinstance(stations, Mapping)
+            or not stations
+            or any(
+                not isinstance(station, Mapping)
+                or station.get("existingActorsVerified") is not True
+                for station in stations.values()
+            )
+        ):
+            raise GateError(
+                "Station Access existing-actor fixture is not verified"
+            )
+    else:
+        verify_runtime_fixture_ready(manifest, actor_manifest)
     return manifest, actor_manifest
 
 
@@ -140,7 +177,12 @@ class MixedNativeRuntime:
         desktop_binding: LocalMacOSRuntimeBinding | None = None,
         mobile_binding: MobileSimulatorRuntimeBinding | None = None,
     ) -> None:
-        if manifest.get("environmentId") != ENVIRONMENT_ID:
+        expected_environment = (
+            STATION_ACCESS_ENVIRONMENT_ID
+            if gate_id in STATION_ACCESS_GATE_IDS
+            else ENVIRONMENT_ID
+        )
+        if manifest.get("environmentId") != expected_environment:
             raise GateError("Mixed runtime manifest has the wrong environment")
         self.gate_id = gate_id
         self.manifest = manifest
@@ -160,6 +202,7 @@ class MixedNativeRuntime:
         self.desktop_lifecycles = NativeClientLifecycleLedger()
         self.mobile_clients: list[str] = []
         self.identities: dict[str, MixedClientIdentity] = {}
+        self.access_evidence: dict[str, dict[str, Any]] = {}
 
     @classmethod
     def from_environment(cls, gate_id: str) -> "MixedNativeRuntime":
@@ -478,6 +521,134 @@ class MixedNativeRuntime:
             operation="restart",
             timeout_seconds=timeout_seconds,
         )
+
+    def restart_desktop_session(
+        self,
+        client_id: str,
+        *,
+        window_slot: int,
+        window_count: int,
+        timeout_seconds: float = 60.0,
+    ) -> dict[str, Any]:
+        spec = self._client_spec(client_id)
+        if spec.get("runtime") != DESKTOP_RUNTIME:
+            raise GateError(
+                f"Mixed client {client_id!r} is not a Desktop runtime"
+            )
+        predecessor = self.desktop_sessions.get(client_id)
+        identity = self.identities.get(client_id)
+        if predecessor is None or identity is None:
+            raise GateError(
+                f"Desktop client {client_id!r} is not active"
+            )
+
+        self.desktop_lifecycles.stop_preserving_session(predecessor)
+        successor = self.desktop_binding.create_bound_session(
+            client_id,
+            NativeLaunchOptions(
+                window_slot=window_slot,
+                window_count=window_count,
+            ),
+        )
+        self.desktop_instances.append(successor)
+        self.desktop_lifecycles.register(successor, identity.ptid)
+        self.desktop_lifecycles.transfer_preserved_session(
+            predecessor,
+            successor,
+        )
+        self.desktop_lifecycles.mark_live(successor)
+        self.desktop_sessions[client_id] = successor
+
+        state = self.wait_until(
+            lambda: (
+                candidate
+                if (
+                    isinstance(
+                        candidate := async_harness(
+                            successor,
+                            "identityState",
+                            {},
+                            timeout=10,
+                        ),
+                        Mapping,
+                    )
+                    and candidate.get("authenticated") is True
+                    and candidate.get("actorPtid") == identity.ptid
+                )
+                else None
+            ),
+            f"{client_id} restored Desktop identity",
+            timeout_seconds=timeout_seconds,
+        )
+        self.desktop_lifecycles.mark_authenticated(successor)
+        restored = self._identity_with_device(
+            client_id,
+            self._actor_for_client(client_id),
+            runtime="desktop-macos-native",
+        )
+        if restored != identity:
+            raise GateError(
+                f"Desktop client {client_id!r} scope changed across restart"
+            )
+        return {
+            "identity": dict(state),
+            "stationPeerId": restored.station_peer_id,
+            "actorPtid": restored.ptid,
+            "deviceIdentityDigest": restored.device_id,
+        }
+
+    def access_snapshot(self, client_id: str) -> dict[str, Any]:
+        evidence = self.access_evidence.get(client_id)
+        if evidence is None:
+            raise GateError(
+                f"Mixed client {client_id!r} has no Access evidence"
+            )
+        return json.loads(json.dumps(evidence))
+
+    def scope_snapshot(self, client_id: str) -> dict[str, Any]:
+        identity = self.identities.get(client_id)
+        if identity is None:
+            raise GateError(
+                f"Mixed client {client_id!r} has no active identity"
+            )
+        if self._is_desktop(client_id):
+            state = self._mapping(
+                self.call_action(client_id, "identityState", {}),
+                "Desktop identity state",
+            )
+            device = self._mapping(
+                self.call_action(client_id, "getRealtimeDevice", {}),
+                "Desktop realtime device",
+            )
+            return {
+                "phase": state.get("phase"),
+                "authenticated": state.get("authenticated"),
+                "stationPeerId": identity.station_peer_id,
+                "actorPtid": state.get("actorPtid"),
+                "deviceIdentityDigest": (
+                    device.get("deviceIdentityDigest")
+                    or self._identity_digest(device.get("deviceId"))
+                ),
+            }
+        scope = self._mapping(
+            self.call_action(client_id, "lifecycle.scope.read", {}),
+            "Mobile lifecycle scope",
+        )
+        device: dict[str, Any] = {}
+        if scope.get("activeActorPtid") is not None:
+            device = self._mapping(
+                self.call_action(client_id, "getRealtimeDevice", {}),
+                "Mobile realtime device",
+            )
+        return {
+            "phase": scope.get("phase"),
+            "launchState": scope.get("launchState"),
+            "generation": scope.get("generation"),
+            "stationPeerId": scope.get("activeStationPeerId"),
+            "runtimeStationPeerId": scope.get("runtimeStationPeerId"),
+            "actorPtid": scope.get("activeActorPtid"),
+            "deviceIdentityDigest": device.get("deviceIdentityDigest"),
+        }
 
     def _wait_for_mobile_active_identity(
         self,
@@ -1220,6 +1391,23 @@ class MixedNativeRuntime:
                 window_count=window_count,
             ),
         )
+        pre_authentication = self._mapping(
+            async_harness(
+                session,
+                "identityState",
+                {},
+                timeout=10,
+            ),
+            "Desktop pre-authentication identity state",
+        )
+        access_evidence = getattr(self, "access_evidence", None)
+        if access_evidence is None:
+            access_evidence = {}
+            self.access_evidence = access_evidence
+        access_evidence[client_id] = {
+            "preAuthentication": pre_authentication,
+            "bindingProofRefs": list(self.desktop_binding.proof_refs()),
+        }
         expected_ptid = str(expected.get("ptid") or "")
         self.desktop_instances.append(session)
         self.desktop_lifecycles.register(session, expected_ptid)
@@ -1270,6 +1458,25 @@ class MixedNativeRuntime:
         authentication = self.mobile_binding.authenticate_fixture_actor(
             client_id
         )
+        raw_pre_authentication = authentication.get(
+            "preAuthenticationScope"
+        )
+        access_evidence = getattr(self, "access_evidence", None)
+        if access_evidence is None:
+            access_evidence = {}
+            self.access_evidence = access_evidence
+        raw_binding_proofs = getattr(activation, "binding_proofs", {})
+        access_evidence[client_id] = {
+            "preAuthentication": (
+                dict(raw_pre_authentication)
+                if isinstance(raw_pre_authentication, Mapping)
+                else {}
+            ),
+            "bindingProofRefs": [
+                proof.to_dict()
+                for proof in raw_binding_proofs.values()
+            ],
+        }
         raw_login = authentication.get("login")
         login = dict(raw_login) if isinstance(raw_login, Mapping) else {}
         raw_session = login.get("session")

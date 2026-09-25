@@ -10,6 +10,7 @@ import {
   isAccessGranted,
   type MobileAuthSession,
 } from '../features/auth/authSession';
+import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import { useAuthStore } from '../features/auth/authStore';
 import { useSocialStore } from '../features/social/socialStore';
 import {
@@ -330,7 +331,7 @@ function accountInput(session: MobileAuthSession): MessagingAccountInput {
 
 function sessionKey(session: MobileAuthSession | null): string {
   return session
-    ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.sessionId}`
+    ? `${mobileAuthScopeKey(session)}\u001f${session.sessionId}`
     : '';
 }
 

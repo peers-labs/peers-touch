@@ -310,7 +310,30 @@ async function loginAndReadEndpoint(
   password: string,
   expectedActorPtid?: string,
 ): Promise<EndpointIdentity> {
-  const login = await gatewayJson(gateway, 'auth_login', {
+  const started = await gatewayJson(gateway, 'access_start', {})
+  const decision = (started.data as { decision?: {
+    attemptId?: string
+    currentGateId?: string
+    gates?: Array<{
+      gateId?: string
+      gateType?: string
+      actionId?: string
+      schemaRevision?: number
+      schemaDigest?: string
+    }>
+  } }).decision
+  const gate = decision?.gates?.find(item => item.gateId === decision.currentGateId)
+  if (!decision?.attemptId || gate?.gateType !== 'ACCESS_GATE_TYPE_AUTH_LOGIN') {
+    throw new Error('canonical login gate is unavailable')
+  }
+  const login = await gatewayJson(gateway, 'access_submit_login', {
+    attempt_id: decision.attemptId,
+    gate_id: gate.gateId,
+    gate_type: 2,
+    action_id: gate.actionId,
+    schema_revision: gate.schemaRevision,
+    schema_digest: gate.schemaDigest,
+    submission_id: crypto.randomUUID(),
     account: email,
     password,
   })

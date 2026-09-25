@@ -192,6 +192,8 @@ function sanitizeProjection(projection: OAuthPublicProjection): OAuthPublicProje
     session: projection.session ? {
       sessionId: projection.session.sessionId,
       actorPtid: projection.session.actorPtid,
+      deviceId: projection.session.deviceId,
+      lifecycleGeneration: projection.session.lifecycleGeneration,
       expiresAt: projection.session.expiresAt,
     } : undefined,
   };

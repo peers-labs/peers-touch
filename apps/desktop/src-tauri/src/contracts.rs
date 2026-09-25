@@ -28,17 +28,6 @@ pub struct AuthSessionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthLoginInput {
-    pub account: String,
-    pub password: String,
-    pub base_url: Option<String>,
-    /// Device type sent to Station for session scoping.
-    /// When omitted, callers inject a transport-specific default:
-    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
-    pub device_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
@@ -46,33 +35,85 @@ pub struct AuthValidateTokenInput {
 // --- Access gate (interactive chain) contracts ---
 //
 // The Station owns the access policy and emits an ordered gate chain. The
-// desktop client drives the chain interactively: it starts an attempt, then
-// submits the gate the Station marks `action_required` (invite code first,
-// then login credentials). `AccessDecisionPayload.decision` carries the raw
-// Station decision JSON unchanged so the TS layer can normalize the
-// snake_case / string-enum wire shape with the same logic mobile uses.
+// desktop client drives the chain interactively through one generated Proto
+// decoder. Tauri exposes one stable camelCase projection to the renderer.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessDecisionInput {
+    pub attempt_id: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitInviteInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub invite_code: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitLoginInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub account: String,
     pub password: String,
     pub device_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateActionProjection {
+    pub action_id: String,
+    pub action_type: String,
+    pub submit_action: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateProjection {
+    pub gate_id: String,
+    pub gate_type: String,
+    pub state: String,
+    pub title: String,
+    pub description: String,
+    pub blocking_reason: String,
+    pub submit_action: String,
+    pub input_schema_json: String,
+    pub alternative_actions: Vec<AccessGateActionProjection>,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessDecisionProjection {
+    pub state: String,
+    pub attempt_id: String,
+    pub current_gate_id: String,
+    pub gates: Vec<AccessGateProjection>,
+    pub actor_ptid: Option<String>,
+    pub access_grant_id: String,
+    pub expires_at_unix_ms: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessDecisionPayload {
     pub command: String,
     pub status: String,
-    /// Raw Station `AccessDecision` JSON. Passed through verbatim so the
-    /// frontend normalizes the wire shape (snake_case keys, string enums).
-    pub decision: serde_json::Value,
+    pub decision: AccessDecisionProjection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

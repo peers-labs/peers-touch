@@ -227,6 +227,50 @@
       "tier": "ci-structure",
       "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
     },
+    "station-access-capability-contract": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.capability_contract",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate signed Station identity ownership, the four generated-protobuf Access endpoints, shared Desktop/Mobile typed outcomes, scope fields, and retired direct-login absence."
+    },
+    "station-access-auth-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.auth_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 2400,
+      "environment": "station-access-native",
+      "provisioner": "station-access-native",
+      "tier": "env-evidence",
+      "description": "Prove source-bound native macOS Desktop and iOS Simulator clients bind signed Station identity before authenticating through the canonical Access Gate."
+    },
+    "station-access-scope-isolation-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.scope_isolation_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 2400,
+      "environment": "station-access-native",
+      "provisioner": "station-access-native",
+      "tier": "env-evidence",
+      "description": "Prove native macOS Desktop and iOS Simulator restart, logout, actor/device separation, lifecycle fencing, and old-scope absence on one source-attested Station."
+    },
+    "station-access-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain station-access --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Station Access managed domain against ownership, native authentication, scope isolation, and explicit unproven-scope contracts."
+    },
     "station-messaging-unit": {
       "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/app/subserver/key_exchange/... ./apps/station/frame/core/federation/...",
       "timeout_seconds": 600,

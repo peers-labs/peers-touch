@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "station-access-authentication",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/desktop/src/pages/login/**",
+    "apps/desktop/src/services/accessGate.ts",
+    "apps/desktop/src-tauri/src/application/station_binding/**",
+    "apps/desktop/src-tauri/src/application/auth/**",
+    "apps/mobile/src/features/station/**",
+    "apps/mobile/src/features/auth/**",
+    "apps/mobile/src-tauri/src/commands/station.rs",
+    "apps/mobile/src-tauri/src/runtime/oauth/**"
+  ],
+  "truth_sources": [
+    "signed Station identity verification",
+    "Station AccessDecision",
+    "native client binding proof"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "access-gate"},
+    {"type": "native-mobile", "route": "access-gate"}
+  ],
+  "required_gates": [
+    "station-access-capability-contract",
+    "station-access-auth-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "each native client verifies its bound Station before submitting credentials",
+      "a granted decision activates exactly the actor and Station named by the bound runtime"
+    ],
+    "surface": [
+      "Desktop and Mobile leave the Access Gate only after the canonical decision is granted"
+    ]
+  },
+  "negative": [
+    "reachability metadata must not substitute for signed Station identity",
+    "unknown gate, identity mismatch, and expired attempt must fail closed",
+    "authentication failure must not invoke a direct-login fallback"
+  ]
+}

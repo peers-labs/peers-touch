@@ -23,6 +23,108 @@
       ]
     },
     {
+      "id": "station-access-wire-contract",
+      "features": [
+        "station-access-wire-contract"
+      ],
+      "when": {
+        "paths": [
+          "docs/architecture/api-ownership/station-api-capabilities.yaml",
+          "model/domain/access_gate/**",
+          "model/domain/peer/station_identity.proto",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/station_identity.go",
+          "apps/station/frame/core/plugin/native/subserver/bootstrap/bootstrap.go",
+          "apps/station/frame/touch/accessgate/**",
+          "apps/station/frame/touch/actor_handler.go",
+          "apps/station/frame/touch/actor_router.go",
+          "apps/station/frame/touch/router.go",
+          "apps/station/app/cmd/station_api_ownership/**"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "station-access-capability-contract"
+      ]
+    },
+    {
+      "id": "station-access-desktop-runtime",
+      "features": [
+        "station-access-authentication",
+        "station-access-scope-isolation"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/kernel/identityLifecycle.ts",
+          "apps/desktop/src/kernel/identityRuntime.ts",
+          "apps/desktop/src/pages/login/**",
+          "apps/desktop/src/services/accessGate.ts",
+          "apps/desktop/src/store/session.ts",
+          "apps/desktop/src-tauri/src/application/auth/**",
+          "apps/desktop/src-tauri/src/application/key_exchange/device_install.rs",
+          "apps/desktop/src-tauri/src/application/station_binding/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs"
+        ]
+      },
+      "require": [
+        "station-access-capability-contract",
+        "station-access-auth-e2e",
+        "station-access-scope-isolation-e2e"
+      ]
+    },
+    {
+      "id": "station-access-mobile-runtime",
+      "features": [
+        "station-access-authentication",
+        "station-access-scope-isolation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/features/auth/**",
+          "apps/mobile/src/features/station/**",
+          "apps/mobile/src/runtimes/accessRuntime.ts",
+          "apps/mobile/src/runtimes/authRuntime.ts",
+          "apps/mobile/src/runtimes/messagingRuntime.ts",
+          "apps/mobile/src/runtimes/sessionRuntime.ts",
+          "apps/mobile/src/runtimes/stationRuntime.ts",
+          "apps/mobile/src/storage/mobileClientStorage.ts",
+          "apps/mobile/src-tauri/src/commands/station.rs",
+          "apps/mobile/src-tauri/src/runtime/oauth/**"
+        ]
+      },
+      "require": [
+        "station-access-capability-contract",
+        "station-access-auth-e2e",
+        "station-access-scope-isolation-e2e"
+      ]
+    },
+    {
+      "id": "station-access-acceptance",
+      "features": [
+        "station-access-wire-contract",
+        "station-access-authentication",
+        "station-access-scope-isolation"
+      ],
+      "when": {
+        "paths": [
+          "docs/architecture/station-access-lifecycle/**",
+          "tooling/acceptance/domains/station-access.yaml",
+          "tooling/acceptance/capabilities/station-access.yaml",
+          "tooling/acceptance/features/station-access-*.yaml",
+          "tooling/acceptance/environments/station-access-native.yaml",
+          "tooling/acceptance/gates/station_access/**"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "station-access-capability-contract",
+        "station-access-auth-e2e",
+        "station-access-scope-isolation-e2e"
+      ]
+    },
+    {
       "id": "chat-proto",
       "features": [
         "chat-service-contract"

@@ -29,6 +29,7 @@ from _acceptance_artifacts import (
     latest_artifact,
     replace_resolved_artifact_paths,
 )
+from tooling.acceptance.gates.station_access.gateway import gateway_access_login
 
 
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
@@ -55,16 +56,14 @@ EXPECTED_STEPS = [
     "runtime.closure",
     "preflight.gateway_station",
     "station.create_temp_account",
-    "gateway.auth_login",
+    "gateway.access_login",
     "gateway.frontend_telemetry_upload",
-    "station.auth_login",
     "station.telemetry_routes",
-    "station.raw_query",
-    "station.rollup_query",
+    "gateway.frontend_telemetry_query",
+    "gateway.frontend_telemetry_rollup_query",
     "dev_mirror",
 ]
 TEMP_ACCOUNT_PASSWORD_PREFIX = "Telemetry1!"
-STATION_LOGIN_DEVICE_TYPE = "telemetry-live-gate"
 FRONTEND_TELEMETRY_INGEST_PATH = "/telemetry/frontend/events/batch"
 FRONTEND_TELEMETRY_QUERY_PATH = "/telemetry/frontend/events/query"
 FRONTEND_TELEMETRY_ROLLUP_PATH = "/telemetry/frontend/rollups/query"
@@ -129,7 +128,7 @@ def gateway_status(gateway: str, command: str, args: dict[str, Any] | None = Non
     return json.loads(status)
 
 
-def station_post(station: str, path: str, token: str, payload: dict[str, Any]) -> dict[str, Any]:
+def station_post_probe(station: str, path: str, payload: dict[str, Any]) -> tuple[int, str]:
     url = station.rstrip("/") + path
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -137,30 +136,6 @@ def station_post(station: str, path: str, token: str, payload: dict[str, Any]) -
         data=data,
         method="POST",
         headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise GateError(f"Station {path} failed status={exc.code} body={body}") from exc
-    except urllib.error.URLError as exc:
-        raise GateError(f"Station {path} failed: {exc.reason}") from exc
-
-
-def station_post_probe(station: str, path: str, token: str, payload: dict[str, Any]) -> tuple[int, str]:
-    url = station.rstrip("/") + path
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
@@ -295,26 +270,11 @@ def assert_runtime_closure(path: Path) -> dict[str, Any]:
     return evidence
 
 
-def actor_token_from_auth(data: dict[str, Any]) -> str:
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
-    token = tokens.get("access_token")
-    if token:
-        return str(token)
-    raw_token = data.get("token") or data.get("access_token")
-    if raw_token:
-        return str(raw_token)
-    raise GateError(f"auth response missing token fields={sorted(data.keys())}")
-
-
-def station_login_token(station: str, account: str, password: str) -> str:
-    response = data_or_self(
-        station_post_no_auth(
-            station,
-            "/actor/login",
-            {"email": account, "password": password, "device_type": STATION_LOGIN_DEVICE_TYPE},
-        )
-    )
-    return actor_token_from_auth(response)
+def canonical_gateway_login(gateway: str, account: str, password: str) -> dict[str, Any]:
+    try:
+        return gateway_access_login(gateway_command, gateway, account, password)
+    except RuntimeError as exc:
+        raise GateError(f"canonical Gateway access login failed: {exc}") from exc
 
 
 def gateway_stub_status(data: dict[str, Any]) -> dict[str, Any]:
@@ -568,25 +528,25 @@ def assert_gateway_station(gateway: str, station: str) -> None:
         raise GateError(f"gateway active station mismatch got={active or 'empty'} want={station.rstrip('/')}")
 
 
-def assert_station_telemetry_routes(station: str, token: str) -> dict[str, Any]:
+def assert_station_telemetry_routes(station: str) -> dict[str, Any]:
     route_results: list[dict[str, Any]] = []
 
-    ingest_status, ingest_body = station_post_probe(station, FRONTEND_TELEMETRY_INGEST_PATH, token, {"events": []})
+    ingest_status, ingest_body = station_post_probe(station, FRONTEND_TELEMETRY_INGEST_PATH, {"events": []})
     route_results.append({"path": FRONTEND_TELEMETRY_INGEST_PATH, "status": ingest_status, "body": ingest_body[:200]})
     if ingest_status == 404:
         raise GateError(f"Station telemetry route missing path={FRONTEND_TELEMETRY_INGEST_PATH} status=404 body={ingest_body}")
-    if ingest_status not in {200, 400}:
+    if ingest_status not in {200, 400, 401, 403}:
         raise GateError(f"Station telemetry ingest route probe failed status={ingest_status} body={ingest_body}")
 
     for path, payload in [
         (FRONTEND_TELEMETRY_QUERY_PATH, {"limit": 1}),
         (FRONTEND_TELEMETRY_ROLLUP_PATH, {"limit": 1}),
     ]:
-        status, body = station_post_probe(station, path, token, payload)
+        status, body = station_post_probe(station, path, payload)
         route_results.append({"path": path, "status": status, "body": body[:200]})
         if status == 404:
             raise GateError(f"Station telemetry route missing path={path} status=404 body={body}")
-        if status != 200:
+        if status not in {200, 400, 401, 403}:
             raise GateError(f"Station telemetry route probe failed path={path} status={status} body={body}")
 
     return {"routes": route_results}
@@ -643,12 +603,11 @@ def blocked_dependencies_for_issue(issue: dict[str, Any]) -> list[dict[str, Any]
                 "blockedByCategory": category,
                 "blockedDownstreamSteps": [
                     "preflight.gateway_station",
-                    "gateway.auth_login",
-                    "station.auth_login",
+                    "gateway.access_login",
                     "station.telemetry_routes",
                     "gateway.frontend_telemetry_upload",
-                    "station.raw_query",
-                    "station.rollup_query",
+                    "gateway.frontend_telemetry_query",
+                    "gateway.frontend_telemetry_rollup_query",
                     "dev_mirror",
                 ],
                 "reason": "Live telemetry sample emission cannot start until a managed Station+Postgres runtime closure is proven.",
@@ -667,7 +626,11 @@ def blocked_dependencies_for_issue(issue: dict[str, Any]) -> list[dict[str, Any]
                 "blockedByPhase": "P0a-4",
                 "blockedByGate": "Station frontend telemetry route availability",
                 "blockedByCategory": category,
-                "blockedDownstreamSteps": ["station.raw_query", "station.rollup_query", "dev_mirror"],
+                "blockedDownstreamSteps": [
+                    "gateway.frontend_telemetry_query",
+                    "gateway.frontend_telemetry_rollup_query",
+                    "dev_mirror",
+                ],
                 "reason": "Gateway upload cannot emit a proven sample until the selected Station runtime proves frontend telemetry ingest/query/rollup routes.",
             }
         ]
@@ -937,19 +900,12 @@ def classify_failure(failed_step: str, error: str) -> dict[str, Any]:
             "summary": summary,
             "proofImpact": "P0a live telemetry loop remains PARTIAL/UNPROVEN and sample emission stays disabled.",
         }
-    if failed_step == "gateway.auth_login":
+    if failed_step == "gateway.access_login":
         return {
             "category": "gateway-auth",
             "failedStep": failed_step,
-            "summary": "Desktop Gateway did not establish an authenticated telemetry upload session.",
+            "summary": "Desktop Gateway did not establish a canonical Access Gate session.",
             "proofImpact": "Gateway upload proof cannot start.",
-        }
-    if failed_step == "station.auth_login":
-        return {
-            "category": "station-auth",
-            "failedStep": failed_step,
-            "summary": "Station direct login did not return a query token for raw/rollup evidence.",
-            "proofImpact": "Station raw/rollup query proof cannot start.",
         }
     if failed_step == "station.telemetry_routes":
         return {
@@ -963,7 +919,7 @@ def classify_failure(failed_step: str, error: str) -> dict[str, Any]:
             "category": "station-temp-account",
             "failedStep": failed_step,
             "summary": "Station did not create a temporary telemetry gate account.",
-            "proofImpact": "Gateway auth and Station raw/rollup query proof cannot start.",
+            "proofImpact": "Gateway Access and telemetry query proof cannot start.",
         }
     if failed_step == "gateway.frontend_telemetry_upload":
         if is_station_telemetry_route_missing(error):
@@ -979,11 +935,14 @@ def classify_failure(failed_step: str, error: str) -> dict[str, Any]:
             "summary": "Desktop Gateway did not accept the synthetic frontend telemetry event.",
             "proofImpact": "P0a upload proof is missing.",
         }
-    if failed_step in {"station.raw_query", "station.rollup_query"}:
+    if failed_step in {
+        "gateway.frontend_telemetry_query",
+        "gateway.frontend_telemetry_rollup_query",
+    }:
         return {
-            "category": "station-telemetry-query",
+            "category": "gateway-telemetry-query",
             "failedStep": failed_step,
-            "summary": "Station did not return the expected persisted telemetry evidence.",
+            "summary": "Desktop Gateway did not return the expected Station telemetry evidence.",
             "proofImpact": "Station-managed sink proof remains unproven.",
         }
     if failed_step == "dev_mirror":
@@ -1164,8 +1123,9 @@ def record_failure(report: dict[str, Any], exc: GateError) -> dict[str, Any]:
 
 def run_mirror(
     station: str,
-    token: str,
     interaction_id: str,
+    events: list[dict[str, Any]],
+    rollups: list[dict[str, Any]],
     output_prefix: str | None,
 ) -> tuple[dict[str, Any], str]:
     with tempfile.TemporaryDirectory(prefix="desktop-telemetry-mirror-") as tmp:
@@ -1174,14 +1134,25 @@ def run_mirror(
             if output_prefix
             else Path(tmp) / "desktop-performance-latest"
         )
+        source_input = Path(tmp) / "gateway-telemetry-query.json"
+        source_input.write_text(
+            json.dumps(
+                {
+                    "filters": {"interactionId": interaction_id},
+                    "events": events,
+                    "rollups": rollups,
+                }
+            ),
+            encoding="utf-8",
+        )
         subprocess.run(
             [
                 sys.executable,
                 "tooling/scripts/desktop-telemetry-mirror.py",
                 "--station-url",
                 station,
-                "--token",
-                token,
+                "--source-input",
+                str(source_input),
                 "--interaction-id",
                 interaction_id,
                 "--output-prefix",
@@ -1283,10 +1254,10 @@ def main() -> int:
             account, password = create_temp_account(args.station)
             step("station.create_temp_account", "pass", {"account": account})
 
-        auth = data_or_self(gateway_command(args.gateway, "auth_login", {"account": account, "password": password}))
+        auth = canonical_gateway_login(args.gateway, account, password)
         if auth.get("status") != "authenticated":
-            raise GateError(f"gateway auth did not report authenticated status: {auth}")
-        step("gateway.auth_login", "pass", {"actorId": auth.get("actor_id") or auth.get("actorId")})
+            raise GateError(f"Gateway access login did not report authenticated status: {auth}")
+        step("gateway.access_login", "pass", {"actorPtid": auth.get("actor_ptid") or auth.get("actorPtid")})
 
         interaction_id = f"p0a-live-{int(time.time() * 1000)}"
         event = build_event(interaction_id)
@@ -1296,30 +1267,33 @@ def main() -> int:
             raise GateError(f"telemetry upload did not report uploaded=true: {upload}")
         step("gateway.frontend_telemetry_upload", "pass", upload_status)
 
-        # Direct Station auth is intentionally delayed until Gateway upload is
-        # complete. The shared test account has exclusive sessions, so logging
-        # in to Station before upload can revoke the Gateway session under test.
-        token = station_login_token(args.station, account, password)
-        step("station.auth_login", "pass", {"tokenSource": "/actor/login"})
-
-        route_probe = assert_station_telemetry_routes(args.station, token)
+        route_probe = assert_station_telemetry_routes(args.station)
         step("station.telemetry_routes", "pass", route_probe)
 
-        raw = data_or_self(station_post(args.station, FRONTEND_TELEMETRY_QUERY_PATH, token, {"interactionId": interaction_id, "limit": 10}))
+        raw = gateway_stub_status(gateway_command(
+            args.gateway,
+            "frontend_telemetry_query",
+            {"interactionId": interaction_id, "limit": 10},
+        ))
         events = raw.get("events")
         if not isinstance(events, list) or not any(event.get("interactionId") == interaction_id for event in events if isinstance(event, dict)):
-            raise GateError(f"Station raw query did not return interactionId={interaction_id}: {raw}")
-        step("station.raw_query", "pass", {"count": len(events), "interactionId": interaction_id})
+            raise GateError(f"Gateway telemetry query did not return interactionId={interaction_id}: {raw}")
+        step("gateway.frontend_telemetry_query", "pass", {"count": len(events), "interactionId": interaction_id})
 
-        rollups = data_or_self(station_post(args.station, FRONTEND_TELEMETRY_ROLLUP_PATH, token, {"module": "desktop-telemetry-live-gate", "limit": 10}))
+        rollups = gateway_stub_status(gateway_command(
+            args.gateway,
+            "frontend_telemetry_rollup_query",
+            {"module": "desktop-telemetry-live-gate", "limit": 10},
+        ))
         if not isinstance(rollups.get("rollups"), list) or not rollups["rollups"]:
-            raise GateError(f"Station rollup query did not return telemetry rollups: {rollups}")
-        step("station.rollup_query", "pass", {"count": len(rollups["rollups"])})
+            raise GateError(f"Gateway telemetry rollup query did not return telemetry rollups: {rollups}")
+        step("gateway.frontend_telemetry_rollup_query", "pass", {"count": len(rollups["rollups"])})
 
         mirror_report, mirror_markdown = run_mirror(
             args.station,
-            token,
             interaction_id,
+            events,
+            rollups["rollups"],
             args.mirror_prefix,
         )
         step("dev_mirror", "pass", {"role": "mirror-report"})

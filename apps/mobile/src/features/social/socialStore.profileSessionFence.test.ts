@@ -334,6 +334,8 @@ function session(stationPeerId: string, ptid: string): MobileAuthSession {
     stationPeerId,
     stationUrl: `https://${stationPeerId}.example`,
     sessionId: `${stationPeerId}-${ptid}`,
+    deviceId: `${stationPeerId}-device`,
+    lifecycleGeneration: 1,
     actorRef: { ptid },
     authenticatedAt: 1,
   };

@@ -12,6 +12,7 @@ vi.mock('../../services/mobileCommands', async (original) => ({
 const session: MobileAuthSession = {
   stationPeerId: 'station', stationUrl: 'https://station.example',
   sessionId: 'session', actorRef: { ptid: 'ptid:alice' },
+  deviceId: 'device-a', lifecycleGeneration: 1,
   authenticatedAt: 1,
 };
 

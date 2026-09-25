@@ -19,6 +19,8 @@
     "model/domain/access_gate",
     "model/domain/peer/station_identity.proto",
     "apps/station/frame/touch",
+    "apps/station/app/cmd/station_api_ownership",
+    "apps/station/app/tests",
     "apps/desktop",
     "apps/mobile",
     "docs/architecture/access-gates",
@@ -26,7 +28,8 @@
     "docs/client/desktop",
     "docs/client/mobile",
     "docs/knowledge",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts"
   ],
   "readSet": [
     "docs/architecture/station-access-lifecycle",
@@ -76,9 +79,24 @@
   "updatedAt": "2026-09-26T00:00:00.000Z",
   "durableEvidence": [
     {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "proto-build run 20260925T201403338500Z-52d9f82849c9bd42e244398e0199f3b6"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "station-api-ownership run 20260925T200919649856Z-7618a7f139440ed266c011095fbf9ec8"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "station-access-capability-contract run 20260925T200924807557Z-ea50e91f9167aba9b2f30103d806d491"
+    },
+    {
       "verificationClass": "ACCEPTANCE_PROOF",
       "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "ref": "Exact-source native runtime requires committed checkpoint"
     }
   ]
 }
@@ -86,8 +104,13 @@
 
 ## Current Snapshot
 
-- State: pending；未修改接入代码。
-- Next: Owner 批准并在新 worktree 建立 Plan binding 后执行。
+- State: in progress。
+- Canonical Station identity、四个 protobuf Access Gate endpoints、双端 scope
+  tuple 和共享 typed outcomes 已落地。
+- `station-access` Acceptance Domain、Capability、Feature、Registry、Gate Catalog
+  与无服务端 reset 的双端原生环境已接入。
+- Next: 提交当前 exact-source checkpoint，部署已批准的远端 Station，运行两个
+  native Gates 后完成本 Task。
 
 ## Closure
 

@@ -1402,13 +1402,12 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLivePassedSteps": [
                                 "preflight.gateway_station",
                                 "station.create_temp_account",
-                                "gateway.auth_login",
-                                "station.auth_login",
+                                "gateway.access_login",
                             ],
                             "browserGatewayLivePendingSteps": [
                                 "gateway.frontend_telemetry_upload",
-                                "station.raw_query",
-                                "station.rollup_query",
+                                "gateway.frontend_telemetry_query",
+                                "gateway.frontend_telemetry_rollup_query",
                                 "dev_mirror",
                             ],
                             "browserGatewayLiveEnvironmentClassification": "target-station-handler-missing-while-local-source-registers-routes",
@@ -1417,7 +1416,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLiveBlockedByStep": "station.telemetry_routes",
                             "browserGatewayLiveBlockedByPhase": "P0a-4",
                             "browserGatewayLiveBlockedByGate": "Station frontend telemetry route availability",
-                            "browserGatewayLiveBlockedDownstreamSteps": ["station.raw_query", "station.rollup_query", "dev_mirror"],
+                            "browserGatewayLiveBlockedDownstreamSteps": ["gateway.frontend_telemetry_query", "gateway.frontend_telemetry_rollup_query", "dev_mirror"],
                               "browserGatewayLiveRuntimeClosureStatus": "diagnostic incomplete",
                               "browserGatewayLiveRuntimeClosureProofStatus": "UNPROVEN",
                               "browserGatewayLiveRuntimeClosureSampleEmissionAllowed": False,
@@ -1929,13 +1928,12 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLivePassedSteps": [
                                 "preflight.gateway_station",
                                 "station.create_temp_account",
-                                "gateway.auth_login",
-                                "station.auth_login",
+                                "gateway.access_login",
                             ],
                             "browserGatewayLivePendingSteps": [
                                 "gateway.frontend_telemetry_upload",
-                                "station.raw_query",
-                                "station.rollup_query",
+                                "gateway.frontend_telemetry_query",
+                                "gateway.frontend_telemetry_rollup_query",
                                 "dev_mirror",
                             ],
                             "browserGatewayLiveEnvironmentClassification": "target-station-handler-missing-while-local-source-registers-routes",
@@ -1944,7 +1942,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLiveBlockedByStep": "station.telemetry_routes",
                             "browserGatewayLiveBlockedByPhase": "P0a-4",
                             "browserGatewayLiveBlockedByGate": "Station frontend telemetry route availability",
-                            "browserGatewayLiveBlockedDownstreamSteps": ["station.raw_query", "station.rollup_query", "dev_mirror"],
+                            "browserGatewayLiveBlockedDownstreamSteps": ["gateway.frontend_telemetry_query", "gateway.frontend_telemetry_rollup_query", "dev_mirror"],
                               "browserGatewayLiveRuntimeClosureStatus": "diagnostic incomplete",
                               "browserGatewayLiveRuntimeClosureProofStatus": "UNPROVEN",
                               "browserGatewayLiveRuntimeClosureSampleEmissionAllowed": False,
@@ -2235,13 +2233,12 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLivePassedSteps": [
                                 "preflight.gateway_station",
                                 "station.create_temp_account",
-                                "gateway.auth_login",
-                                "station.auth_login",
+                                "gateway.access_login",
                             ],
                             "browserGatewayLivePendingSteps": [
                                 "gateway.frontend_telemetry_upload",
-                                "station.raw_query",
-                                "station.rollup_query",
+                                "gateway.frontend_telemetry_query",
+                                "gateway.frontend_telemetry_rollup_query",
                                 "dev_mirror",
                             ],
                             "browserGatewayLiveEnvironmentClassification": "target-station-handler-missing-while-local-source-registers-routes",
@@ -2250,7 +2247,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "browserGatewayLiveBlockedByStep": "station.telemetry_routes",
                             "browserGatewayLiveBlockedByPhase": "P0a-4",
                             "browserGatewayLiveBlockedByGate": "Station frontend telemetry route availability",
-                            "browserGatewayLiveBlockedDownstreamSteps": ["station.raw_query", "station.rollup_query", "dev_mirror"],
+                            "browserGatewayLiveBlockedDownstreamSteps": ["gateway.frontend_telemetry_query", "gateway.frontend_telemetry_rollup_query", "dev_mirror"],
                               "browserGatewayLiveRuntimeClosureStatus": "diagnostic incomplete",
                               "browserGatewayLiveRuntimeClosureProofStatus": "UNPROVEN",
                               "browserGatewayLiveRuntimeClosureSampleEmissionAllowed": False,
@@ -2745,7 +2742,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertEqual(report["summary"]["browserGatewayLiveBlockedPhase"], "P0a-3")
         self.assertEqual(report["summary"]["browserGatewayLiveBlockedByStep"], "station.telemetry_routes")
         self.assertEqual(report["summary"]["browserGatewayLiveBlockedByPhase"], "P0a-4")
-        self.assertEqual(report["summary"]["browserGatewayLiveBlockedDownstreamSteps"], ["station.raw_query", "station.rollup_query", "dev_mirror"])
+        self.assertEqual(report["summary"]["browserGatewayLiveBlockedDownstreamSteps"], ["gateway.frontend_telemetry_query", "gateway.frontend_telemetry_rollup_query", "dev_mirror"])
         self.assertEqual(report["summary"]["browserGatewayLiveTargetRuntimeVersionProofStatus"], "PROVEN")
         self.assertEqual(report["summary"]["browserGatewayLiveTargetRuntimeBuildCommit"], "unknown")
         self.assertEqual(report["summary"]["browserGatewayLiveTargetRuntimeBuildLabel"], "dev")
@@ -3011,7 +3008,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
         self.assertIn("- Browser gateway live blocked phase: `P0a-3`", markdown)
         self.assertIn("- Browser gateway live blocked by step: `station.telemetry_routes`", markdown)
         self.assertIn("- Browser gateway live blocked by phase: `P0a-4`", markdown)
-        self.assertIn("- Browser gateway live blocked downstream steps: `station.raw_query,station.rollup_query,dev_mirror`", markdown)
+        self.assertIn("- Browser gateway live blocked downstream steps: `gateway.frontend_telemetry_query,gateway.frontend_telemetry_rollup_query,dev_mirror`", markdown)
         self.assertIn("- Browser gateway live runtime closure proof: `UNPROVEN`", markdown)
         self.assertIn("- Browser gateway live runtime closure sample emission allowed: `False`", markdown)
         self.assertIn("- Browser gateway live runtime closure Docker daemon proof: `UNPROVEN`", markdown)
@@ -4273,12 +4270,11 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "blockedByStep": "runtime.closure",
                             "blockedDownstreamSteps": [
                                 "preflight.gateway_station",
-                                "gateway.auth_login",
-                                "station.auth_login",
+                                "gateway.access_login",
                                 "station.telemetry_routes",
                                 "gateway.frontend_telemetry_upload",
-                                "station.raw_query",
-                                "station.rollup_query",
+                                "gateway.frontend_telemetry_query",
+                                "gateway.frontend_telemetry_rollup_query",
                                 "dev_mirror",
                             ],
                               "blockedDownstreamProofs": [
@@ -4384,7 +4380,7 @@ class DesktopPerformanceReportTest(unittest.TestCase):
                             "sampleEmissionAllowed": False,
                             "reason": "managed Station+Postgres runtime closure is not proven",
                             "failedStep": "runtime.closure",
-                            "blockedDownstreamSteps": ["station.telemetry_routes", "station.raw_query"],
+                            "blockedDownstreamSteps": ["station.telemetry_routes", "gateway.frontend_telemetry_query"],
                             "failedCheckReasons": {"docker-daemon": "command exited 1"},
                             "localRuntimeClosure": {"proofStatus": "UNPROVEN", "sampleEmissionAllowed": False},
                             "composeRuntimeClosure": {

@@ -1462,6 +1462,32 @@ fn frontend_telemetry_upload_with_token(token: &str, args: Value) -> Value {
     }
 }
 
+fn frontend_telemetry_query_with_token(token: &str, args: Value) -> Value {
+    match station_request_json(
+        Method::POST,
+        "/telemetry/frontend/events/query",
+        token,
+        None,
+        Some(args),
+    ) {
+        Ok(data) => to_json(to_stub("frontend_telemetry_query", data)),
+        Err(error) => error,
+    }
+}
+
+fn frontend_telemetry_rollup_query_with_token(token: &str, args: Value) -> Value {
+    match station_request_json(
+        Method::POST,
+        "/telemetry/frontend/rollups/query",
+        token,
+        None,
+        Some(args),
+    ) {
+        Ok(data) => to_json(to_stub("frontend_telemetry_rollup_query", data)),
+        Err(error) => error,
+    }
+}
+
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: command.to_string(),
@@ -1644,7 +1670,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
+            let device_id = match device_install::get_or_create_device_id() {
                 Ok(id) => id,
                 Err(e) => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -1710,7 +1736,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let device_id = match device_install::get_or_create_device_id(&actor_ptid) {
+            let device_id = match device_install::get_or_create_device_id() {
                 Ok(device_id) => device_id,
                 Err(error) => {
                     return to_json(AppResult::<StubPayload>::fail(
@@ -2595,19 +2621,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Auth (state-dependent)
         // =================================================================
-        "auth_login" => {
-            let mut input = match parse_args::<AuthLoginInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.device_type.is_none() {
-                input.device_type = Some("desktop-browser".to_string());
-            }
-            bind_gateway_auth_result(state, app_auth::auth_login(input, state))
-        }
-        // Interactive access-gate login chain (Email Login path). These mirror
-        // the one-shot `auth_login` but drive the Station's pre-login gate
-        // chain (invite-code, etc.) before landing a session.
         "access_start" => to_json(app_auth::access_start()),
         "access_submit_invite_code" => {
             let input = match parse_args::<AccessSubmitInviteInput>(args) {
@@ -2615,6 +2628,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_auth::access_submit_invite_code(input))
+        }
+        "access_decision" => {
+            let input = match parse_args::<AccessDecisionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_decision(input))
+        }
+        "access_cancel" => {
+            let input = match parse_args::<AccessDecisionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_auth::access_cancel(input))
         }
         "access_submit_login" => {
             let mut input = match parse_args::<AccessSubmitLoginInput>(args) {
@@ -5545,7 +5572,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            match device_install::get_or_create_device_id(actor_ptid.as_str()) {
+            match device_install::get_or_create_device_id() {
                 Ok(device_id) => {
                     crate::infrastructure::station_client::set_device_id(device_id.clone());
                     to_json(AppResult::success(StubPayload {
@@ -6604,6 +6631,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             frontend_telemetry_upload_with_token(&token, args)
+        }
+        "frontend_telemetry_query" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            frontend_telemetry_query_with_token(&token, args)
+        }
+        "frontend_telemetry_rollup_query" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            frontend_telemetry_rollup_query_with_token(&token, args)
         }
 
         // =================================================================

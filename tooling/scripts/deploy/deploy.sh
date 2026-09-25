@@ -167,7 +167,7 @@ case "$cmd" in
 
     if [[ "${PT_SOURCE_LEASE_HELD:-0}" != "1" ]]; then
       echo "[0/4] Synchronizing exact Git source ..."
-      exec /bin/bash "$SOURCE_SYNC_SCRIPT" \
+      exec env PT_DEPLOY_ENV_FILE="$ENV_FILE" /bin/bash "$SOURCE_SYNC_SCRIPT" \
         "$env_name" \
         --branch "$BRANCH" \
         -- \

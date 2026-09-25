@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "station-access",
+  "description": "Station Access is the managed product domain for signed Station selection, canonical Access Gate admission, and Desktop/Mobile session scope isolation.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "station-access-wire-contract",
+    "station-access-authentication",
+    "station-access-scope-isolation"
+  ],
+  "validation_gate_id": "station-access-domain-validation"
+}
