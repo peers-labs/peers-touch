@@ -1,9 +1,15 @@
 import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 
-import { ChatStorageSnapshotSchema } from '../gen/proto/domain/chat/storage_pb';
 import {
+  ChatStorageOperationState,
+  ChatStorageResultSchema,
+  ChatStorageSnapshotSchema,
+} from '../gen/proto/domain/chat/storage_pb';
+import {
+  chatStorageReleasedBytes,
   chatStorageScopeRevision,
+  isChatStorageResultForScope,
   isChatStorageSnapshotForScope,
   shouldRefreshChatStorageForPage,
 } from './chatStorageRuntime';
@@ -43,5 +49,36 @@ describe('chat storage runtime scope fencing', () => {
     expect(shouldRefreshChatStorageForPage('settings', 'activate')).toBe(true);
     expect(shouldRefreshChatStorageForPage('settings', 'prewarm')).toBe(false);
     expect(shouldRefreshChatStorageForPage('chat', 'activate')).toBe(false);
+  });
+
+  it('accepts cleanup results only for the exact scope and reports released bytes', () => {
+    const result = create(ChatStorageResultSchema, {
+      snapshot: {
+        scope: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          deviceId: scope.endpointId,
+        },
+        revision: chatStorageScopeRevision(scope),
+      },
+      operation: {
+        scope: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          deviceId: scope.endpointId,
+        },
+        scopeRevision: chatStorageScopeRevision(scope),
+        state: ChatStorageOperationState.SUCCEEDED,
+        physicalBytesBefore: 12_000n,
+        physicalBytesAfter: 4_500n,
+      },
+    });
+
+    expect(isChatStorageResultForScope(scope, result)).toBe(true);
+    expect(isChatStorageResultForScope(
+      { ...scope, activationGeneration: 8 },
+      result,
+    )).toBe(false);
+    expect(chatStorageReleasedBytes(result)).toBe(7_500n);
   });
 });

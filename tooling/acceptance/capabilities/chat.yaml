@@ -558,7 +558,47 @@
         ],
         "unproven_scope": [
           "Native Mobile visible accounting remains unproven until its required storage governance closure runs",
-          "Cache cleanup, retention, redaction, conversation clear and physical reclaim are owned by later CSG closures"
+          "Retention, redaction, conversation clear and their physical reclaim are owned by later CSG closures"
+        ]
+      }
+    },
+    {
+      "id": "chat-storage-cache-cleanup",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-cache-cleanup"],
+      "required_gates": ["chat-storage-cache-clear-e2e"],
+      "synthetic_paths": [
+        "packages/messaging-core/src/storage_governance/cache.rs",
+        "packages/messaging-core/src/store/schema.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx",
+        "apps/mobile/src/acceptance/actions.ts",
+        "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Device Messaging Engine cache cleanup journal",
+          "Engine-managed cache files",
+          "post-cleanup physical storage snapshot"
+        ],
+        "surfaces": [
+          "Desktop Settings > Data > Storage > Clear Chat cache",
+          "Mobile Me > Chat Settings > Storage > Clear Chat cache"
+        ],
+        "proven_by": ["chat-storage-cache-clear-e2e"],
+        "proven_scope": [
+          "Shared Core freezes and resumes cache cleanup from immutable journal items",
+          "Desktop and Mobile adapters use the same protected storage classes and post-cleanup measurement contract",
+          "Native Mobile confirmation reports actual released bytes while preserving the active messaging identity and local draft"
+        ],
+        "unproven_scope": [
+          "Desktop native visible cache cleanup remains scheduled for the final CSG aggregate closure",
+          "Retention, redaction, conversation clear and full Recovery remain owned by later CSG closures"
         ]
       }
     }

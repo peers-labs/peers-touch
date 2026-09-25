@@ -85,6 +85,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.react',
   'moments.comment',
   'moments.comments.read',
+  'storage.cache.seed',
   'settings.profile.read',
   'settings.profile.update',
   'settings.notifications.read',
@@ -1269,6 +1270,10 @@ export interface MobileAcceptanceActionContract {
   'moments.comments.read': {
     input: MomentsCommentsReadActionInput;
     output: PublicMomentCommentProjection[];
+  };
+  'storage.cache.seed': {
+    input: { sizeBytes: number };
+    output: { sizeBytes: number };
   };
   'settings.profile.read': {
     input: undefined;

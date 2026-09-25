@@ -24,8 +24,10 @@ import {
   type ImageAttachment,
 } from '../gen/proto/domain/social/post_pb';
 import {
+  ChatStorageResultSchema,
   ChatStorageSnapshotRequestSchema,
   ChatStorageSnapshotSchema,
+  type ChatStorageResult,
   type ChatStorageSnapshot,
 } from '../gen/proto/domain/chat/storage_pb';
 import {
@@ -141,6 +143,28 @@ export async function chatStorageSnapshot(
     },
   });
   return fromBinary(ChatStorageSnapshotSchema, Uint8Array.from(response));
+}
+
+export async function chatStorageClearCache(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+  },
+): Promise<ChatStorageResult> {
+  const request = create(ChatStorageSnapshotRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+  });
+  const response = await invoke<number[]>('chat_storage_clear_cache', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageSnapshotRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
 }
 
 export interface MessagingConversationMutationInput extends MessagingAccountInput {

@@ -8,11 +8,13 @@ import {
   HardDrive,
   MessageSquare,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import {
   chatStorageProjectionRuntime,
+  chatStorageReleasedBytes,
   useChatStorageProjection,
 } from '../../runtimes/chatStorageRuntime';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
@@ -27,7 +29,12 @@ export function ChatStorageSettings() {
   const projection = useChatStorageProjection();
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('size');
+  const [clearConfirmationRevision, setClearConfirmationRevision] = useState<string | null>(null);
   const snapshot = projection.snapshot;
+  const confirmingClearCache = clearConfirmationRevision === snapshot?.revision;
+  const releasedBytes = chatStorageReleasedBytes(projection.cleanup.result);
+  const cleanupRunning = projection.cleanup.status === 'clearing';
+
   const conversations = useMemo(() => {
     if (!snapshot) return [];
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -169,6 +176,81 @@ export function ChatStorageSettings() {
           </Flexbox>
         ))}
       </div>
+
+      <SettingsSection
+        title={t('settings.storage.clearCacheTitle')}
+        subtitle={t('settings.storage.clearCacheDescription')}
+      >
+        {confirmingClearCache ? (
+          <Flexbox
+            gap={12}
+            data-chat-storage-clear-confirm
+            style={{
+              padding: 16,
+              borderRadius: 8,
+              background: token.colorFillQuaternary,
+            }}
+          >
+            <Text>{t('settings.storage.clearCacheConfirm')}</Text>
+            <Flexbox horizontal justify="end" gap={8}>
+              <Button
+                disabled={cleanupRunning}
+                onClick={() => setClearConfirmationRevision(null)}
+              >
+                {t('settings.storage.clearCacheCancel')}
+              </Button>
+              <Button
+                danger
+                type="primary"
+                data-chat-storage-clear-confirm-apply
+                icon={<Trash2 size={14} />}
+                loading={cleanupRunning}
+                onClick={() => {
+                  void chatStorageProjectionRuntime.clearCache().then(() => {
+                    setClearConfirmationRevision(null);
+                  });
+                }}
+              >
+                {t('settings.storage.clearCacheConfirmAction')}
+              </Button>
+            </Flexbox>
+          </Flexbox>
+        ) : (
+          <Button
+            data-chat-storage-clear-cache
+            icon={<Trash2 size={14} />}
+            disabled={cleanupRunning}
+            onClick={() => setClearConfirmationRevision(snapshot.revision)}
+          >
+            {t('settings.storage.clearCacheAction')}
+          </Button>
+        )}
+        {projection.cleanup.status === 'succeeded' && releasedBytes !== null ? (
+          <Text
+            type="success"
+            role="status"
+            data-chat-storage-clear-result="succeeded"
+            data-chat-storage-released-bytes={String(releasedBytes)}
+          >
+            {t('settings.storage.clearCacheReleased', {
+              bytes: formatBytes(releasedBytes),
+            })}
+          </Text>
+        ) : null}
+        {projection.cleanup.status === 'failed' ? (
+          <Text
+            type="danger"
+            role="alert"
+            data-chat-storage-clear-result="failed"
+          >
+            {releasedBytes === null
+              ? t('settings.storage.clearCacheFailed')
+              : t('settings.storage.clearCacheFailedWithReleased', {
+                  bytes: formatBytes(releasedBytes),
+                })}
+          </Text>
+        ) : null}
+      </SettingsSection>
 
       <SettingsSection
         title={t('settings.storage.conversations')}
