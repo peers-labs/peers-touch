@@ -2,7 +2,10 @@ import { useSyncExternalStore } from 'react';
 
 import type { ChatStorageSnapshot } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
-import type { RuntimeDescriptor } from '../kernel/runtime';
+import type {
+  RuntimeDescriptor,
+  RuntimePageAcquireReason,
+} from '../kernel/runtime';
 import {
   messagingDomainRuntime,
   type MessagingRuntimeScope,
@@ -163,6 +166,13 @@ export function isChatStorageSnapshotForScope(
   );
 }
 
+export function shouldRefreshChatStorageForPage(
+  pageId: string,
+  reason: RuntimePageAcquireReason,
+): boolean {
+  return pageId === 'settings' && reason === 'activate';
+}
+
 export const chatStorageProjectionRuntime = new DesktopChatStorageRuntime();
 
 export const chatStorageRuntime: RuntimeDescriptor = {
@@ -178,6 +188,10 @@ export const chatStorageRuntime: RuntimeDescriptor = {
     return chatStorageProjectionRuntime.bootstrap(actorPtid);
   },
   reconcile(): Promise<void> {
+    return chatStorageProjectionRuntime.refresh();
+  },
+  acquirePage(pageId, reason): Promise<void> | undefined {
+    if (!shouldRefreshChatStorageForPage(pageId, reason)) return undefined;
     return chatStorageProjectionRuntime.refresh();
   },
 };

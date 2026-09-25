@@ -1,0 +1,53 @@
+{
+  "id": "chat-storage-observability",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/storage.proto",
+    "packages/messaging-core/src/storage_governance/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+    "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+    "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "tooling/acceptance/gates/chat/storage_governance_*.py"
+  ],
+  "truth_sources": [
+    "Device Messaging Engine SQLCipher main, WAL and SHM files",
+    "Device Messaging Engine managed media and cache files",
+    "scope-fenced logical conversation projections"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Settings > Data > Storage"
+    },
+    {
+      "type": "native-mobile",
+      "route": "Me > Storage"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-contract",
+    "chat-storage-accounting-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "one Proto contract defines the storage snapshot and typed failures",
+      "shared Rust Core counts physical files without inode double counting",
+      "scope changes reject stale measurement completion"
+    ],
+    "visible": [
+      "native Desktop shows a non-zero physical total and the active conversation's logical bytes",
+      "native Desktop supports conversation search, size/recent sorting, and refresh",
+      "Desktop and Mobile use the same category and ordering semantics"
+    ]
+  },
+  "negative": [
+    "measurement failure must not fabricate a zero-byte snapshot",
+    "TypeScript must not scan SQLCipher or Engine-managed files",
+    "conversation logical bytes must not be reported as physical total",
+    "browser rendering or static tests must not substitute for native Desktop proof"
+  ]
+}

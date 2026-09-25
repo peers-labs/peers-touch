@@ -5,6 +5,7 @@ import { ChatStorageSnapshotSchema } from '../gen/proto/domain/chat/storage_pb';
 import {
   chatStorageScopeRevision,
   isChatStorageSnapshotForScope,
+  shouldRefreshChatStorageForPage,
 } from './chatStorageRuntime';
 
 const scope = {
@@ -36,5 +37,11 @@ describe('chat storage runtime scope fencing', () => {
       { ...scope, stationPeerId: 'station-two' },
       snapshot,
     )).toBe(false);
+  });
+
+  it('refreshes on active Settings visits but not idle prewarm', () => {
+    expect(shouldRefreshChatStorageForPage('settings', 'activate')).toBe(true);
+    expect(shouldRefreshChatStorageForPage('settings', 'prewarm')).toBe(false);
+    expect(shouldRefreshChatStorageForPage('chat', 'activate')).toBe(false);
   });
 });
