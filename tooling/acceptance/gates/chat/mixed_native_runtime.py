@@ -240,6 +240,29 @@ class MixedNativeRuntime:
         self.identities[client_id] = identity
         return identity
 
+    def _desktop_identity_action(
+        self,
+        session: TauriSession,
+        action: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        timeout: float = 45.0,
+    ) -> Any:
+        if self.gate_id in STATION_ACCESS_GATE_IDS:
+            return call_async_harness(
+                session,
+                action,
+                dict(payload or {}),
+                namespace="stationAccess",
+                script_timeout=timeout,
+            )
+        return async_harness(
+            session,
+            action,
+            dict(payload or {}),
+            timeout=timeout,
+        )
+
     def call_action(
         self,
         client_id: str,
@@ -565,7 +588,7 @@ class MixedNativeRuntime:
                 candidate
                 if (
                     isinstance(
-                        candidate := async_harness(
+                        candidate := self._desktop_identity_action(
                             successor,
                             "identityState",
                             {},
@@ -613,6 +636,25 @@ class MixedNativeRuntime:
                 f"Mixed client {client_id!r} has no active identity"
             )
         if self._is_desktop(client_id):
+            if self.gate_id in STATION_ACCESS_GATE_IDS:
+                scope = self._mapping(
+                    self._desktop_identity_action(
+                        self.desktop_sessions[client_id],
+                        "scopeState",
+                        {"actorPtid": identity.ptid},
+                        timeout=10,
+                    ),
+                    "Desktop Station Access scope",
+                )
+                return {
+                    "phase": scope.get("phase"),
+                    "authenticated": scope.get("authenticated"),
+                    "stationPeerId": scope.get("stationPeerId"),
+                    "actorPtid": scope.get("actorPtid"),
+                    "deviceIdentityDigest": self._identity_digest(
+                        scope.get("deviceId")
+                    ),
+                }
             state = self._mapping(
                 self.call_action(client_id, "identityState", {}),
                 "Desktop identity state",
@@ -1427,7 +1469,7 @@ class MixedNativeRuntime:
                 f"{client_id} did not verify the configured Station"
             )
         pre_authentication = self._mapping(
-            async_harness(
+            self._desktop_identity_action(
                 session,
                 "identityState",
                 {},
@@ -1449,7 +1491,7 @@ class MixedNativeRuntime:
         self.desktop_lifecycles.register(session, expected_ptid)
         self.desktop_lifecycles.mark_live(session)
         account_ref = str(expected.get("accountRef") or "")
-        login = async_harness(
+        login = self._desktop_identity_action(
             session,
             "loginWithPassword",
             {
@@ -1480,17 +1522,20 @@ class MixedNativeRuntime:
             )
         access_evidence[client_id]["postAuthentication"] = bound_station
         self.desktop_lifecycles.mark_authenticated(session)
-        hydrated = async_harness(
-            session,
-            "hydrateActiveActor",
-            {},
-            timeout=30,
-        )
-        ptid = str(
-            hydrated.get("actorPtid")
-            if isinstance(hydrated, Mapping)
-            else ""
-        )
+        if self.gate_id in STATION_ACCESS_GATE_IDS:
+            ptid = str(login.get("actorPtid") or "")
+        else:
+            hydrated = async_harness(
+                session,
+                "hydrateActiveActor",
+                {},
+                timeout=30,
+            )
+            ptid = str(
+                hydrated.get("actorPtid")
+                if isinstance(hydrated, Mapping)
+                else ""
+            )
         if ptid != expected_ptid:
             raise GateError(
                 f"{client_id} actor mismatch: expected={expected_ptid} actual={ptid}"
@@ -1598,16 +1643,36 @@ class MixedNativeRuntime:
         *,
         runtime: str,
     ) -> MixedClientIdentity:
-        device = self.call_action(client_id, "getRealtimeDevice", {})
-        if not isinstance(device, Mapping):
-            raise GateError(f"{client_id} device projection is invalid")
         expected_ptid = str(expected.get("ptid") or "")
-        device_id = str(
-            device.get("deviceIdentityDigest")
-            or self._identity_digest(device.get("deviceId"))
-        )
         if (
-            device.get("active") is not True
+            self.gate_id in STATION_ACCESS_GATE_IDS
+            and self._is_desktop(client_id)
+        ):
+            device = self._mapping(
+                self._desktop_identity_action(
+                    self.desktop_sessions[client_id],
+                    "scopeState",
+                    {"actorPtid": expected_ptid},
+                    timeout=10,
+                ),
+                f"{client_id} Station Access scope",
+            )
+            device_id = self._identity_digest(device.get("deviceId"))
+            device_active = (
+                device.get("authenticated") is True
+                and device.get("bindingPhase") == "bound"
+            )
+        else:
+            device = self.call_action(client_id, "getRealtimeDevice", {})
+            if not isinstance(device, Mapping):
+                raise GateError(f"{client_id} device projection is invalid")
+            device_id = str(
+                device.get("deviceIdentityDigest")
+                or self._identity_digest(device.get("deviceId"))
+            )
+            device_active = device.get("active") is True
+        if (
+            not device_active
             or str(device.get("actorPtid") or "") != expected_ptid
             or not device_id
         ):
