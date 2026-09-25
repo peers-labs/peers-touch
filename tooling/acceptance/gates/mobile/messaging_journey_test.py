@@ -4,8 +4,9 @@ import copy
 import unittest
 from collections.abc import Mapping
 from typing import Any
+from unittest.mock import patch
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.messaging_journey import (
     MobileMessagingJourney,
     MessagingActor,
@@ -329,6 +330,15 @@ class FakeMessagingSession:
             return {"state": "ready", "available": True}
         if action == "lifecycle.restart":
             self.lifecycle_restart_count += 1
+            self.social_runtime_active = True
+            self.scope_bootstrap_reads_remaining = (
+                self.scope_bootstrap_reads_per_refresh
+            )
+            self.runtime_phase = (
+                "BOOTSTRAPPING"
+                if self.scope_bootstrap_reads_remaining > 0
+                else "ACTIVE"
+            )
             return {"requested": True, "scope": "webview"}
         if action == "lifecycle.scope.read":
             if self.scope_bootstrap_reads_remaining > 0:
@@ -388,6 +398,14 @@ class FakeMessagingSession:
             "typingPeers": copy.deepcopy(self.network.typing),
             "peerOnline": {},
             "lastReconcileAt": 1,
+            "ingress": {
+                "lifecycle": "active",
+                "streamCursor": "event-1",
+                "writeAdmissionOpen": True,
+                "staleDomains": [],
+                "dataQueueDepth": 0,
+                "controlQueueDepth": 0,
+            },
         }
 
 
@@ -417,7 +435,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             federation_id="federation-1",
         )
         self.receiver = MessagingActor(
-            client_id="sim-android",
+            client_id="sim-ios-peer",
             role="bob",
             station_url="https://station-secondary.example",
             station_peer_id="station-secondary",
@@ -474,12 +492,78 @@ class MobileMessagingJourneyTests(unittest.TestCase):
 
         self.assertEqual(self.sender_session.login_emails, ["alice@p.t"])
         self.assertEqual(self.sender_session.lifecycle_restart_count, 1)
-        self.assertEqual(self.sender_session.refresh_count, 1)
+        self.assertEqual(self.sender_session.refresh_count, 0)
         self.assertTrue(self.sender_session.social_runtime_active)
         self.assertEqual(
             self.sender_session.lifecycle_scope_phases,
             ["BOOTSTRAPPING", "ACTIVE"],
         )
+
+    def test_post_restart_waits_for_full_harness_registration(self) -> None:
+        actor = self.sender
+
+        class Session:
+            def __init__(self) -> None:
+                self.scope_attempts = 0
+                self.social_attempts = 0
+
+            def call_action(
+                self,
+                action: str,
+                _payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "lifecycle.scope.read":
+                    self.scope_attempts += 1
+                    if self.scope_attempts == 1:
+                        raise DriverError(
+                            "acceptance.mobile.actionUnavailable:"
+                            "lifecycle.scope.read"
+                        )
+                    return {
+                        "phase": "ACTIVE",
+                        "activeStationPeerId": actor.station_peer_id,
+                        "runtimeStationPeerId": actor.station_peer_id,
+                        "activeActorPtid": actor.ptid,
+                    }
+                if action == "social.projection.read":
+                    self.social_attempts += 1
+                    if self.social_attempts == 1:
+                        raise DriverError(
+                            "acceptance.mobile.actionUnavailable:"
+                            "social.projection.read"
+                        )
+                    return {
+                        "active": True,
+                        "ingress": {
+                            "lifecycle": "active",
+                            "writeAdmissionOpen": True,
+                            "staleDomains": [],
+                        },
+                    }
+                raise AssertionError(action)
+
+            def refresh_webview(self) -> None:
+                return None
+
+            def switch_to_app_webview(
+                self,
+                timeout: float = 30.0,
+            ) -> str:
+                del timeout
+                return "WEBVIEW_peers"
+
+        session = Session()
+        journey = MobileMessagingJourney(
+            timeout_seconds=0.1,
+            poll_interval_seconds=0.001,
+        )
+
+        journey._activate_authenticated_shell(session, actor)
+
+        self.assertEqual(session.scope_attempts, 2)
+        self.assertEqual(session.social_attempts, 2)
 
     def test_authentication_rejects_non_station_account_reference(self) -> None:
         malformed = MessagingActor(
@@ -531,7 +615,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             self.assertTrue(result[kind]["searchReadback"])
             self.assertTrue(result[kind]["interactionReadback"])
             self.assertTrue(result[kind]["receiptReadback"])
-        self.assertEqual(self.receiver_session.refresh_count, 3)
+        self.assertEqual(self.receiver_session.refresh_count, 0)
         self.assertEqual(
             self.receiver_session.lifecycle_scope_phases,
             [
@@ -545,6 +629,35 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             self.receiver_session.messaging_projection_reads_while_bootstrapping,
             0,
         )
+
+    def test_attachment_journey_rejects_public_type_as_private_mime(self) -> None:
+        self.journey.authenticate(self.sender_session, self.sender, password="1")
+        self.journey.authenticate(
+            self.receiver_session, self.receiver, password="1"
+        )
+        original_call = self.receiver_session.call_action
+
+        def read_with_invalid_metadata(
+            action: str, payload: Mapping[str, Any] | None = None
+        ) -> Any:
+            result = original_call(action, payload)
+            if action == "messaging.projection.read":
+                for messages in result["messages"].values():
+                    for message in messages:
+                        for attachment in message["attachments"]:
+                            attachment["mimeType"] = "application/octet-stream"
+            return result
+
+        with patch.object(
+            self.receiver_session, "call_action", side_effect=read_with_invalid_metadata
+        ), self.assertRaisesRegex(GateError, "private metadata changed"):
+            self.journey.run_chat_contacts(
+                sender_session=self.sender_session,
+                receiver_session=self.receiver_session,
+                sender=self.sender,
+                receiver=self.receiver,
+                journey_id="private-mime",
+            )
 
     def test_authentication_rejects_wrong_fixture_identity(self) -> None:
         wrong = MessagingActor(

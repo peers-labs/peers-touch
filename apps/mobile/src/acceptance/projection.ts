@@ -1,13 +1,16 @@
 import type { AccessDecision } from '../features/auth/authSession';
 import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import type { AuthRuntimeSnapshot } from '../runtimes/authRuntime';
+import type { AccessRuntimeSnapshot } from '../runtimes/accessRuntime';
 import type {
-  AccessRuntimePublicProjection,
-  AuthRuntimeSnapshot,
-} from '../runtimes/authRuntime';
+  SessionRuntimeRevocation,
+  SessionRuntimeSnapshot,
+} from '../runtimes/sessionRuntime';
 import type {
   MobilePublicProjection,
   PublicAccessDecision,
   PublicMessagingProjection,
+  SessionRevocationProjection,
   PublicOAuthProjection,
   PublicStationEntry,
 } from './contracts';
@@ -23,6 +26,14 @@ export function sanitizeStationRegistry(
   return {
     activeStationPeerId: registry.activeStationPeerId,
     entries: registry.entries.map(toPublicStationEntry),
+  };
+}
+
+export function sanitizeSessionRevocation(
+  revocation: SessionRuntimeRevocation,
+): SessionRevocationProjection {
+  return {
+    remoteRevocation: revocation.remoteRevocation,
   };
 }
 
@@ -68,17 +79,18 @@ export function sanitizeOAuthProjection(
 
 export function sanitizeMobileProjection(input: {
   stationRegistry: StoredStationRegistry;
-  access: AccessRuntimePublicProjection;
+  access: AccessRuntimeSnapshot;
+  session: SessionRuntimeSnapshot;
   oauth: AuthRuntimeSnapshot;
 }): MobilePublicProjection {
   return {
     station: sanitizeStationRegistry(input.stationRegistry),
     access: {
       decision: sanitizeAccessDecision(input.access.decision),
-      session: input.access.session ? {
-        stationPeerId: input.access.session.stationPeerId,
-        actorPtid: input.access.session.actorPtid,
-        expiresAt: input.access.session.expiresAt,
+      session: input.session.session ? {
+        stationPeerId: input.session.session.stationPeerId,
+        actorPtid: input.session.session.actorPtid,
+        expiresAt: input.session.session.expiresAt,
       } : null,
       loading: input.access.loading,
       errorKey: input.access.errorKey,
@@ -115,6 +127,12 @@ export function sanitizeMessagingProjection(input: {
       name: conversation.name,
       ownerPtid: conversation.ownerPtid,
       memberPtids: [...conversation.memberPtids],
+      members: (conversation.members ?? conversation.memberPtids.map((ptid) => ({
+        ptid,
+        role: ptid === conversation.ownerPtid ? 3 : 1,
+        homeStationPeerId: '',
+        muted: false,
+      }))).map((member) => ({ ...member })),
       membershipEpoch: conversation.membershipEpoch,
       mlsEpoch: conversation.mlsEpoch,
       active: conversation.active,

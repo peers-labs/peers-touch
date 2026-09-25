@@ -2,7 +2,7 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: humans AND AI agents acting on this codebase.
-> Updated: 2026-09-18
+> Updated: 2026-09-19
 
 ---
 
@@ -157,11 +157,18 @@ Pick one based on intent:
 - [`invariants/desktop-chat-layout-boundaries.md`](invariants/desktop-chat-layout-boundaries.md) — Desktop Chat actions must respect conversation pane bounds and collision handling.
 - [`invariants/composite-form-control-boundaries.md`](invariants/composite-form-control-boundaries.md) — composite form controls that represent one semantic input must share one parent frame and state model.
 - [`invariants/desktop-identity-lifecycle-closure.md`](invariants/desktop-identity-lifecycle-closure.md) — Desktop identity/profile/account/avatar projections must close through the identity state machine.
+- [`invariants/mobile-session-device-identity.md`](invariants/mobile-session-device-identity.md) — Mobile 原生 Session、Messaging Actor Device、传输 Header 与 Call payload 共享同一设备身份。
+- [`invariants/call-resolution-session-identity-width.md`](invariants/call-resolution-session-identity-width.md) — Call Resolution 完整保存 canonical signaling session identity，并区分 retryable failure 与终态冲突。
 - [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
+- [`invariants/profile-id-owns-reset-policy.md`](invariants/profile-id-owns-reset-policy.md) — canonical Profile IDs containing `stable` are reset-protected; every other reviewed Profile is Agent-resettable under the normal runtime guards.
 - [`invariants/workspace-plan-binding-is-immutable.md`](invariants/workspace-plan-binding-is-immutable.md) — each workspace resolves one create-once Plan binding and ignores synchronized foreign Plans.
+- [`invariants/workspace-active-work-is-local.md`](invariants/workspace-active-work-is-local.md) — workflow code is distributed, while each consuming worktree exclusively owns its own machine-local active-work record.
+- [`invariants/continuous-plan-run.md`](invariants/continuous-plan-run.md) — one authorized Plan Run continues across Task, Goal, review, Anchor, and context boundaries until completion or a true hard stop.
+- [`invariants/host-neutral-agent-execution.md`](invariants/host-neutral-agent-execution.md) — project scheduling, runtime verification, Session, evidence, and cleanup semantics remain independent of TRAE, Cursor, Codex, or future hosts.
+- [`invariants/user-skill-overlays-are-interaction-only.md`](invariants/user-skill-overlays-are-interaction-only.md) — machine-local user overlays may shape interaction only and cannot alter project execution semantics.
 
 ### Pitfalls
 

@@ -285,6 +285,130 @@ func (s *FederatedFriendRequestService) ListFriendRequestProjections(
 	)
 }
 
+// LookupFriendRequestCommandResult returns the authoritative sender-side outcome.
+func (s *FederatedFriendRequestService) LookupFriendRequestCommandResult(
+	ctx context.Context,
+	actorPTID string,
+	request *model.LookupFriendRequestCommandResultRequest,
+) (*model.LookupFriendRequestCommandResultResponse, error) {
+	const operation = "social.lookup_friend_request_command_result"
+	if actorPTID == "" || actorPTID != strings.TrimSpace(actorPTID) {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"actor_ptid",
+			"is required and must be canonical",
+		)
+	}
+	if request == nil {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"request",
+			"is required",
+		)
+	}
+	commandID := request.GetCommandId()
+	if commandID == "" || commandID != strings.TrimSpace(commandID) {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"command_id",
+			"is required and must be canonical",
+		)
+	}
+	if len(request.GetCommandPayloadSha256()) != sha256.Size {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"command_payload_sha256",
+			"must contain exactly 32 bytes",
+		)
+	}
+
+	record, err := s.store.LoadOutgoingFriendRequestCommand(ctx, commandID)
+	if err != nil {
+		if domain.FederationErrorCodeOf(err) ==
+			domain.FederationErrorIdempotencyConflict {
+			return &model.LookupFriendRequestCommandResultResponse{
+				State:     model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED,
+				CommandId: commandID,
+				CommandPayloadSha256: append(
+					[]byte(nil),
+					request.GetCommandPayloadSha256()...,
+				),
+			}, nil
+		}
+		return nil, err
+	}
+	if record == nil {
+		return &model.LookupFriendRequestCommandResultResponse{
+			State:     model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND,
+			CommandId: commandID,
+			CommandPayloadSha256: append(
+				[]byte(nil),
+				request.GetCommandPayloadSha256()...,
+			),
+		}, nil
+	}
+
+	command := &model.FriendRequestCommand{}
+	if err := proto.Unmarshal(record.CommandBytes, command); err != nil {
+		return nil, domain.WrapFederationError(
+			domain.FederationErrorPersistence,
+			operation,
+			err,
+		)
+	}
+	authorizingActor := command.GetBody().GetAuthorizingDevice().GetActor().GetPtid()
+	if authorizingActor != actorPTID {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorUnauthorized,
+			operation,
+			"actor_ptid",
+			"does not own the requested command",
+		)
+	}
+
+	response := &model.LookupFriendRequestCommandResultResponse{
+		CommandId:            record.CommandID,
+		CommandPayloadSha256: append([]byte(nil), record.CommandPayloadSHA256...),
+	}
+	persistedHash := sha256.Sum256(record.CommandBytes)
+	if record.CommandID != command.GetBody().GetCommandId() ||
+		record.RequestID != command.GetBody().GetRequestId() ||
+		len(record.CommandPayloadSHA256) != sha256.Size ||
+		!bytes.Equal(persistedHash[:], record.CommandPayloadSHA256) ||
+		!bytes.Equal(record.CommandPayloadSHA256, request.GetCommandPayloadSha256()) {
+		response.State =
+			model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED
+		return response, nil
+	}
+
+	if len(record.ResultBytes) == 0 && record.ResolvedAt == nil {
+		response.State =
+			model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING
+		return response, nil
+	}
+	if len(record.ResultBytes) == 0 || record.ResolvedAt == nil {
+		response.State =
+			model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED
+		return response, nil
+	}
+
+	result := &model.FriendRequestCommandResult{}
+	if err := proto.Unmarshal(record.ResultBytes, result); err != nil ||
+		domain.ValidateOutgoingFriendRequestCommandResult(*record, result) != nil {
+		response.State =
+			model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED
+		return response, nil
+	}
+	response.State =
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT
+	response.TerminalResult = result
+	return response, nil
+}
+
 // ReceiveFriendRequestCommand applies one receiver-authority command transaction.
 func (s *FederatedFriendRequestService) ReceiveFriendRequestCommand(
 	ctx context.Context,

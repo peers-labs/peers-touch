@@ -208,6 +208,7 @@ type PrepareCommandRequest struct {
 	Sender            valueobject.Endpoint
 	SenderHomeStation valueobject.StationID
 	VerifiedRoutes    []ports.EndpointRoute
+	ActorScoped       bool
 }
 
 type PrepareGroupRequest struct {
@@ -1129,6 +1130,9 @@ func (s *Service) PrepareCommand(
 			return err
 		}
 		required := eligibleConversationEndpoints(conversation, routes)
+		if request.ActorScoped {
+			required = filterEndpointsForActor(required, request.Sender.Actor)
+		}
 		preparation, err = conversation.PrepareCommand(request.Sender, required)
 		return err
 	})
@@ -1687,13 +1691,17 @@ func forwardedClaimsMatch(
 func forwardableCommandKind(kind domainevent.Kind) bool {
 	switch kind {
 	case domainevent.KindMessageCommitted,
+		domainevent.KindMessageForwarded,
 		domainevent.KindMessageEdited,
 		domainevent.KindMessageRetracted,
+		domainevent.KindMessageHiddenForActor,
+		domainevent.KindMessageModerated,
 		domainevent.KindConversationDissolved,
 		domainevent.KindConversationSettings,
 		domainevent.KindReactionCommitted,
 		domainevent.KindMessagePinCommitted,
-		domainevent.KindMembershipCommitted:
+		domainevent.KindMembershipCommitted,
+		domainevent.KindMemberAuthority:
 		return true
 	default:
 		return false
@@ -2344,7 +2352,8 @@ func validateMessageCommand(
 	}
 
 	switch command.Kind {
-	case domainevent.KindMessageCommitted:
+	case domainevent.KindMessageCommitted,
+		domainevent.KindMessageForwarded:
 		if command.MessageID == "" {
 			return invalid("application.validate_message_command", "message_id", "is required")
 		}
@@ -2383,6 +2392,17 @@ func validateMessageCommand(
 				"only the original message author may edit or retract it",
 			)
 		}
+	case domainevent.KindMessageHiddenForActor,
+		domainevent.KindMessageModerated:
+		if command.MessageID == "" {
+			return invalid(
+				"application.validate_message_command",
+				"message_id",
+				"is required",
+			)
+		}
+		_, err := requireMessage(command.MessageID)
+		return err
 	case domainevent.KindReactionCommitted:
 		if command.MessageID == "" || command.Reaction == "" {
 			return invalid(
@@ -2688,13 +2708,76 @@ func canonicalizeMembershipChanges(
 		homeByActor[route.Endpoint.Actor] = route.HomeStation
 		homeByEndpoint[route.Endpoint.Key()] = route.HomeStation
 	}
+	explicitAddDevices := make(map[string]struct{}, len(changes))
+	for _, change := range changes {
+		if change.Action == entity.MembershipActionAddDevice {
+			endpoint := valueobject.Endpoint{
+				Actor:  change.Actor,
+				Device: change.Device,
+			}
+			explicitAddDevices[endpoint.Key()] = struct{}{}
+		}
+	}
 
-	canonical := append([]entity.MembershipChange(nil), changes...)
-	for index := range canonical {
-		change := &canonical[index]
+	canonical := make([]entity.MembershipChange, 0, len(changes)+len(routes))
+	for _, requested := range changes {
+		change := requested
 		switch change.Action {
-		case entity.MembershipActionAddActor,
-			entity.MembershipActionAddDevice,
+		case entity.MembershipActionAddActor:
+			var actorRoutes []ports.EndpointRoute
+			for _, route := range routes {
+				if route.Endpoint.Actor == change.Actor {
+					actorRoutes = append(actorRoutes, route)
+				}
+			}
+			if len(actorRoutes) == 0 {
+				return nil, conversationdomain.NewError(
+					conversationdomain.ErrorCodeDeviceConflict,
+					"application.canonicalize_membership_changes",
+					"endpoint",
+					"does not resolve to an active identity route",
+				)
+			}
+			primaryIndex := 0
+			if change.Device != "" {
+				primaryIndex = -1
+				for index, route := range actorRoutes {
+					if route.Endpoint.Device == change.Device {
+						primaryIndex = index
+						break
+					}
+				}
+				if primaryIndex < 0 {
+					return nil, conversationdomain.NewError(
+						conversationdomain.ErrorCodeDeviceConflict,
+						"application.canonicalize_membership_changes",
+						"endpoint",
+						"does not resolve to an active identity route",
+					)
+				}
+			}
+			for index, route := range actorRoutes {
+				if index != primaryIndex {
+					if _, explicit := explicitAddDevices[route.Endpoint.Key()]; explicit {
+						continue
+					}
+				}
+				action := entity.MembershipActionAddDevice
+				role := valueobject.MemberRole("")
+				if index == primaryIndex {
+					action = entity.MembershipActionAddActor
+					role = change.Role
+				}
+				canonical = append(canonical, entity.MembershipChange{
+					Action:      action,
+					Actor:       change.Actor,
+					Device:      route.Endpoint.Device,
+					HomeStation: route.HomeStation,
+					Role:        role,
+				})
+			}
+			continue
+		case entity.MembershipActionAddDevice,
 			entity.MembershipActionRemoveDevice:
 			endpoint := valueobject.Endpoint{Actor: change.Actor, Device: change.Device}
 			home := homeByEndpoint[endpoint.Key()]
@@ -2728,6 +2811,7 @@ func canonicalizeMembershipChanges(
 				"is not supported",
 			)
 		}
+		canonical = append(canonical, change)
 	}
 	return canonical, nil
 }
@@ -2889,6 +2973,19 @@ func eligibleConversationEndpoints(
 		endpoints = append(endpoints, route.Endpoint)
 	}
 	return valueobject.SortEndpoints(endpoints)
+}
+
+func filterEndpointsForActor(
+	endpoints []valueobject.Endpoint,
+	actor valueobject.PTID,
+) []valueobject.Endpoint {
+	filtered := make([]valueobject.Endpoint, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if endpoint.Actor == actor {
+			filtered = append(filtered, endpoint)
+		}
+	}
+	return valueobject.SortEndpoints(filtered)
 }
 
 func eligibleConversationRoutes(

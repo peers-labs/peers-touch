@@ -16,7 +16,6 @@ import {
 import { buildDevSnapshot } from './status.mjs';
 
 export const DEV_SERVER_KIND = 'peers-touch-dev-server';
-export const DEV_SERVER_PROTOCOL_VERSION = 2;
 export const DEV_SERVER_HOST = '127.0.0.1';
 export const DEV_SERVER_PORT = 4177;
 
@@ -85,9 +84,7 @@ export function buildServerIdentity(options = {}) {
   const host = options.host ?? DEV_SERVER_HOST;
   const port = options.port ?? DEV_SERVER_PORT;
   return {
-    schemaVersion: 1,
     kind: DEV_SERVER_KIND,
-    protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
     endpoint: `http://${host}:${port}`,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     source: {
@@ -264,14 +261,25 @@ function requestServerIdentity(host, port, timeoutMs) {
 }
 
 function compatibleIdentity(probe, host, port) {
-  const source = probe.payload?.source;
+  const payload = probe.payload;
+  const source = payload?.source;
+  const payloadKeys =
+    payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+      ? Object.keys(payload).sort()
+      : [];
+  const sourceKeys =
+    source !== null && typeof source === 'object' && !Array.isArray(source)
+      ? Object.keys(source).sort()
+      : [];
   return (
     probe.state === 'reachable' &&
     probe.status === 200 &&
-    probe.payload?.kind === DEV_SERVER_KIND &&
-    probe.payload?.schemaVersion === 1 &&
-    probe.payload?.protocolVersion === DEV_SERVER_PROTOCOL_VERSION &&
-    probe.payload?.endpoint === `http://${host}:${port}` &&
+    JSON.stringify(payloadKeys) ===
+      JSON.stringify(['endpoint', 'kind', 'source', 'startedAt']) &&
+    JSON.stringify(sourceKeys) ===
+      JSON.stringify(['branch', 'dirty', 'head', 'workspaceId']) &&
+    payload.kind === DEV_SERVER_KIND &&
+    payload.endpoint === `http://${host}:${port}` &&
     typeof source?.workspaceId === 'string' &&
     source.workspaceId.length > 0 &&
     typeof source.branch === 'string' &&

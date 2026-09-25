@@ -107,15 +107,36 @@ pub struct RealtimeSignalInput {
     /// base64(opaque ciphertext envelope). Station never decodes
     /// this beyond a length check.
     pub payload_b64: String,
+    /// Plaintext call identifier for Station-side first-terminal-action-wins
+    /// arbitration (CCU-D06). Populated for call-lifecycle signals only.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub call_id: String,
+    /// Device identifier so Station can stamp the winning device on
+    /// the fan-out frame.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub device_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeCallResolutionInput {
+    pub call_id: String,
+    pub peer_actor_ptid: String,
 }
 
 fn signal_request_body(input: RealtimeSignalInput) -> Value {
-    json!({
+    let mut body = json!({
         "recipient_ptid": input.recipient_actor_ptid,
         "session_ulid": input.session_ulid,
         "kind": input.kind,
         "payload_b64": input.payload_b64,
-    })
+    });
+    if !input.call_id.is_empty() {
+        body["call_id"] = Value::String(input.call_id);
+    }
+    if !input.device_id.is_empty() {
+        body["device_id"] = Value::String(input.device_id);
+    }
+    body
 }
 
 /// Publishes a single WebRTC signaling event onto the recipient's
@@ -148,6 +169,10 @@ pub fn realtime_signal_send(
             None,
         );
     }
+    let mut input = input;
+    if input.device_id.is_empty() && !input.call_id.is_empty() {
+        input.device_id = device_id_from(&window);
+    }
     let body = signal_request_body(input);
     let resp = match station_client::request_json(
         Method::POST,
@@ -165,6 +190,40 @@ pub fn realtime_signal_send(
     to_stub("realtime_signal_send", resp)
 }
 
+#[tauri::command]
+pub fn realtime_call_resolution_get(
+    input: RealtimeCallResolutionInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let call_id = input.call_id.trim();
+    let peer_actor_ptid = input.peer_actor_ptid.trim();
+    if call_id.is_empty() || peer_actor_ptid.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "call_id and peer_actor_ptid are required",
+            None,
+        );
+    }
+    match station_client::request_json(
+        Method::GET,
+        "/realtime/call-resolution",
+        &token,
+        Some(&[
+            ("call_id", call_id.to_string()),
+            ("peer_actor_ptid", peer_actor_ptid.to_string()),
+        ]),
+        None,
+    ) {
+        Ok(response) => to_stub("realtime_call_resolution_get", response),
+        Err(reason) => reason.into_app_result("Failed to read call resolution"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{signal_request_body, RealtimeSignalInput};
@@ -176,9 +235,27 @@ mod tests {
             session_ulid: "session-1".to_string(),
             kind: "OFFER".to_string(),
             payload_b64: "cGF5bG9hZA==".to_string(),
+            call_id: String::new(),
+            device_id: String::new(),
         });
 
         assert_eq!(body["recipient_ptid"], "ptid:bob");
         assert!(body.get("recipient_actor_ptid").is_none());
+        assert!(body.get("call_id").is_none());
+    }
+
+    #[test]
+    fn signal_request_includes_call_id_when_present() {
+        let body = signal_request_body(RealtimeSignalInput {
+            recipient_actor_ptid: "ptid:bob".to_string(),
+            session_ulid: "session-1".to_string(),
+            kind: "CALL_ACCEPT".to_string(),
+            payload_b64: "cGF5bG9hZA==".to_string(),
+            call_id: "01JTEST".to_string(),
+            device_id: "win-main".to_string(),
+        });
+
+        assert_eq!(body["call_id"], "01JTEST");
+        assert_eq!(body["device_id"], "win-main");
     }
 }

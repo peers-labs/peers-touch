@@ -14,7 +14,7 @@ from tooling.acceptance.core import (
 
 
 CAPABILITY_ID = "mobile.simulator.appium-session"
-GATE_ID = "mobile-simulator-station-lifecycle-e2e"
+DEFAULT_GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 CALLABLE_HARNESS_ACTIONS = frozenset(
     {
@@ -24,7 +24,33 @@ CALLABLE_HARNESS_ACTIONS = frozenset(
         "lifecycle.scope.read",
         "lifecycle.snapshot",
         "lifecycle.suspend",
+        "messaging.attachment.open",
+        "messaging.attachment.stage",
+        "messaging.command.read",
+        "messaging.createDirect",
+        "messaging.createGroup",
+        "messaging.interact",
+        "messaging.projection.read",
+        "messaging.read",
+        "messaging.reconcile",
+        "messaging.search",
+        "messaging.send",
+        "messaging.typing",
+        "recovery.snapshot",
+        "social.projection.read",
+        "social.reconcile",
         "session.logout",
+        "settings.device.read",
+        "settings.device.update",
+        "settings.notifications.read",
+        "settings.notifications.update",
+        "settings.profile.read",
+        "settings.profile.update",
+        "acceptCall",
+        "callResolutionState",
+        "getRealtimeDevice",
+        "initiateCall",
+        "rejectCall",
     }
 )
 
@@ -58,7 +84,12 @@ class MobileSimulatorBindingSelection:
 class MobileSimulatorRuntimeBinding:
     """Child facade for parent-owned simulator/Appium binding operations."""
 
-    def __init__(self, client: EphemeralGateClient) -> None:
+    def __init__(
+        self,
+        client: EphemeralGateClient,
+        *,
+        gate_id: str = DEFAULT_GATE_ID,
+    ) -> None:
         if not isinstance(client, EphemeralGateClient) and not hasattr(
             client,
             "invoke",
@@ -66,17 +97,23 @@ class MobileSimulatorRuntimeBinding:
             raise DriverError(
                 "Mobile simulator Runtime Binding requires an ephemeral client"
             )
+        self._require_identifier(gate_id, "Gate")
         self._client = client
+        self._gate_id = gate_id
         self._active_clients: list[str] = []
 
     @classmethod
-    def from_environment(cls) -> "MobileSimulatorRuntimeBinding":
+    def from_environment(
+        cls,
+        *,
+        gate_id: str = DEFAULT_GATE_ID,
+    ) -> "MobileSimulatorRuntimeBinding":
         client = EphemeralGateClient.from_environment()
         if client is None:
             raise DriverError(
                 "Mobile simulator Runtime Binding capability is unavailable"
             )
-        return cls(client)
+        return cls(client, gate_id=gate_id)
 
     def create_bound_session(
         self,
@@ -140,7 +177,7 @@ class MobileSimulatorRuntimeBinding:
                 proof = ArtifactRef.from_dict(
                     _mapping(raw_proof, "binding proof")
                 )
-                if proof.gate_id != GATE_ID:
+                if proof.gate_id != self._gate_id:
                     raise DriverError(
                         "Mobile simulator binding proof targets the wrong Gate"
                     )
@@ -211,7 +248,7 @@ class MobileSimulatorRuntimeBinding:
             raise DriverError(
                 "Mobile simulator binding proof is invalid"
             ) from error
-        if binding_proof.gate_id != GATE_ID:
+        if binding_proof.gate_id != self._gate_id:
             raise DriverError(
                 "Mobile simulator binding proof targets the wrong Gate"
             )
@@ -331,18 +368,6 @@ class MobileSimulatorRuntimeBinding:
             "scope": validate_scope_projection(value.get("scope")),
         }
 
-    def refresh_webview(self, client_id: str) -> None:
-        response = self._client.invoke(
-            CAPABILITY_ID,
-            "refresh_webview",
-            {"clientId": client_id},
-            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
-        )
-        if response != {"clientId": client_id, "refreshed": True}:
-            raise DriverError(
-                "Mobile simulator refresh response is invalid"
-            )
-
     def stop(self, client_id: str) -> None:
         if client_id not in self._active_clients:
             return
@@ -408,7 +433,6 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "activeActorPtid",
         "runtimeStationPeerId",
         "social",
-        "group",
         "navigation",
     }:
         raise DriverError("Mobile lifecycle scope has an invalid shape")
@@ -437,40 +461,21 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "messageThreadCount",
     }:
         raise DriverError("Mobile social scope has an invalid shape")
-    group = _mapping(scope.get("group"), "group scope")
-    if set(group) != {
-        "stationPeerId",
-        "actorPtid",
-        "groupCount",
-        "messageThreadCount",
-    }:
-        raise DriverError("Mobile group scope has an invalid shape")
-    for owner, fields in (
-        (social, ("stationPeerId", "actorPtid")),
-        (group, ("stationPeerId", "actorPtid")),
-    ):
-        for field in fields:
-            _optional_text(owner.get(field), field)
-    for owner, fields in (
-        (
-            social,
-            ("sessionCount", "requestCount", "messageThreadCount"),
-        ),
-        (group, ("groupCount", "messageThreadCount")),
-    ):
-        for field in fields:
-            item = owner.get(field)
-            if (
-                isinstance(item, bool)
-                or not isinstance(item, int)
-                or item < 0
-            ):
-                raise DriverError(
-                    f"Mobile lifecycle scope {field} is invalid"
-                )
+    for field in ("stationPeerId", "actorPtid"):
+        _optional_text(social.get(field), field)
+    for field in ("sessionCount", "requestCount", "messageThreadCount"):
+        item = social.get(field)
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+            raise DriverError(
+                f"Mobile lifecycle scope {field} is invalid"
+            )
 
     navigation = _mapping(scope.get("navigation"), "navigation scope")
-    if set(navigation) != {"primaryRouteId", "detailKeys"}:
+    if set(navigation) != {
+        "primaryRouteId",
+        "detailKeys",
+        "overlayRouteId",
+    }:
         raise DriverError("Mobile navigation scope has an invalid shape")
     if not isinstance(navigation.get("primaryRouteId"), str):
         raise DriverError("Mobile primary route identity is invalid")
@@ -479,6 +484,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         not isinstance(item, str) for item in detail_keys
     ):
         raise DriverError("Mobile detail scope keys are invalid")
+    _optional_text(navigation.get("overlayRouteId"), "overlayRouteId")
     return dict(scope)
 
 

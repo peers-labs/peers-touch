@@ -16,6 +16,7 @@ const (
 	ContentTypeJSON             = "application/json"
 	ContentTypeJSONUTF8         = "application/json; charset=utf-8"
 	ContentTypeProtobuf         = "application/protobuf"
+	ContentTypeXProtobuf        = "application/x-protobuf"
 	ContentTypeHTML             = "text/html"
 	ContentTypeJRD              = "application/jrd+json"
 	ContentTypeJRDUTF8          = "application/jrd+json; charset=utf-8"
@@ -25,6 +26,7 @@ const (
 	AcceptActivityJSONLD = "application/activity+json, application/ld+json"
 	AcceptJRDJSON        = "application/jrd+json, application/json"
 	AcceptProtobuf       = "application/protobuf"
+	AcceptXProtobuf      = "application/x-protobuf"
 )
 
 // router constants

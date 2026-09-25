@@ -13,7 +13,7 @@ This document defines:
 - Notification lifecycle and state machine
 - Storage schema and database design
 - Delivery architecture (SSE via EventSystem, Broker catch-up, Push Gateway)
-- Push Gateway architecture (multi-channel: Web Push, UnifiedPush, APNs, FCM)
+- Mobile Push Gateway architecture (UnifiedPush, APNs, FCM); Web Push is deferred
 - Station SubServer structure and API surface
 - Cross-platform client presentation boundary
 - Notification content rendering strategy (i18n)
@@ -98,7 +98,7 @@ In the Peers-Touch three-tier architecture (Client → Model → Station), Notif
 | Business domain state (likes, messages, follows) | Domain SubServers (social, friend_chat, etc.) | Observer — reacts to domain actions via `Produce()` |
 | Cross-station federation | Station federation layer | Consumer — federation delivers remote events locally; notification sees only local events |
 | Client UI rendering | Desktop (React/TS), Mobile (Kotlin/Swift) | Contract provider — defines data shape; client owns rendering and locale |
-| Push infrastructure credentials | Station owner | Configuration consumer — reads APNs certs, VAPID keys from config |
+| Push infrastructure credentials | Station owner | Configuration consumer — reads APNs/FCM delivery credentials and derives the registration-protection key |
 | EventSystem transport | Events SubServer / frame layer | Reuser — publishes events through existing SSE + Broker infrastructure |
 
 ### 3.3 Design Principles
@@ -110,9 +110,11 @@ These principles are derived from Notification's architectural position and gove
 | **Failure transparency** | Notification is an observer, not a participant. Its unavailability must not impact any business operation. `Produce()` returns nil when the producer is uninitialized. |
 | **Fire-and-forget production** | Business flow treats notification as a side-effect. `Produce()` is async, non-blocking, and error-tolerant from the caller's perspective. |
 | **Station as push gateway** | Peers-Touch is decentralized — no central push relay exists. Each Station instance runs its own push delivery pipeline. |
-| **Minimal push payload** | Push carries a wake-up signal with preview text only. Full content is fetched from Station after wake-up. This preserves privacy and ensures content freshness. |
+| **Reconcile-only push payload** | Push carries only bounded notification identity, category, target hint, and timing. It carries no title, body, private content, credentials, read state, or authority truth. |
+| **PTID/device-bound registration** | The authenticated PTID and verified device assertion own registration. Request bodies cannot choose actor identity or transfer provider credentials across devices. |
+| **Write-only provider credentials** | APNs/FCM/UnifiedPush credentials remain native/Rust in Mobile and AES-256-GCM ciphertext in Station. They never enter Web, readback, errors, or logs. |
 | **Client-side presentation ownership** | Rendering, locale-aware text generation, sound playback, and badge management are client concerns. Station provides structured data; clients decide how to present it. |
-| **Privacy by default** | Push payloads are encrypted (RFC 8291 for Web Push / UnifiedPush). Push servers and distributors cannot read notification content. |
+| **Privacy by default** | Provider payloads contain no notification content even when the provider transport also encrypts the envelope. Full content is always reconciled from Station. |
 | **EventSystem reuse** | Notification does not build a parallel transport. SSE delivery, offline persistence, and reconnect catch-up all flow through the existing EventSystem and Broker infrastructure. |
 
 ---
@@ -167,13 +169,13 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // ============================================================================
 
 // Notification represents a single notification entity.
-// title and body carry server-generated fallback text for push previews and
-// non-rich clients. Rich clients should render locale-aware display text from
-// the structured references (type + target_type + target_id + actor_id).
+// title and body are Station projection text and never enter provider push
+// payloads. Rich clients should render locale-aware display text from the
+// structured references (type + target_type + target_id + actor_ptid).
 message Notification {
   string id = 1;
-  string recipient_id = 2;
-  string actor_id = 3;
+  string recipient_ptid = 2;
+  string actor_ptid = 3;
   NotificationType type = 4;
   NotificationCategory category = 5;
   NotificationStatus status = 6;
@@ -197,7 +199,7 @@ message NotificationGroup {
   string title = 6;
   string body = 7;
   int32 count = 8;
-  repeated string actor_ids = 9;
+  repeated string actor_ptids = 9;
   Notification latest = 10;
   google.protobuf.Timestamp updated_at = 11;
 }
@@ -259,13 +261,18 @@ enum NotificationStatus {
 // The type field is reserved for future per-type control granularity.
 // Current implementation operates at category level only.
 message NotificationPreference {
-  string actor_id = 1;
+  string actor_ptid = 1;
   NotificationCategory category = 2;
   bool enabled = 3;
   bool push_enabled = 4;
   bool sound_enabled = 5;
   google.protobuf.Timestamp updated_at = 6;
   NotificationType type = 7; // Reserved: per-type override (future)
+}
+
+message NotificationPreferencesSnapshot {
+  repeated NotificationPreference preferences = 1;
+  uint64 notification_preferences_revision = 2;
 }
 
 // ============================================================================
@@ -338,86 +345,134 @@ message GetUnreadCountsResponse {
 message GetNotificationPreferencesRequest {}
 
 message GetNotificationPreferencesResponse {
-  repeated NotificationPreference preferences = 1;
+  reserved 1;
+  reserved "preferences";
+  NotificationPreferencesSnapshot snapshot = 2;
 }
 
-message UpdateNotificationPreferenceRequest {
+message NotificationPreferencePatch {
   NotificationCategory category = 1;
   bool enabled = 2;
   bool push_enabled = 3;
   bool sound_enabled = 4;
 }
 
-message UpdateNotificationPreferenceResponse {
-  NotificationPreference preference = 1;
+message UpdateNotificationPreferencesRequest {
+  repeated NotificationPreferencePatch updates = 1;
+  uint64 observed_revision = 2;
+}
+
+enum NotificationPreferencesUpdateOutcome {
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED = 1;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED = 2;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT = 3;
+}
+
+message UpdateNotificationPreferencesResponse {
+  NotificationPreferencesUpdateOutcome outcome = 1;
+  NotificationPreferencesSnapshot snapshot = 2;
 }
 
 // ============================================================================
-// Push Device Registration
+// Mobile Push Registration (MS-D23A)
 // ============================================================================
 
-enum PushChannelType {
+enum PushChannel {
   PUSH_CHANNEL_UNSPECIFIED = 0;
-  PUSH_CHANNEL_WEB_PUSH = 1;       // Web Push (VAPID) — Desktop
-  PUSH_CHANNEL_UNIFIED_PUSH = 2;   // UnifiedPush — Android
-  PUSH_CHANNEL_APNS = 3;           // Apple Push Notification service — iOS
-  PUSH_CHANNEL_FCM = 4;            // Firebase Cloud Messaging — Android (optional)
+  PUSH_CHANNEL_APNS = 1;
+  PUSH_CHANNEL_FCM = 2;
+  PUSH_CHANNEL_UNIFIED_PUSH = 3;
 }
 
-// PushDevice represents a registered device's push subscription.
-message PushDevice {
-  string id = 1;
-  string actor_id = 2;
-  PushChannelType channel = 3;
-
-  // Web Push / UnifiedPush: the push endpoint URL
-  string endpoint = 4;
-
-  // Web Push: p256dh key and auth secret (for encryption)
-  string p256dh_key = 5;
-  string auth_secret = 6;
-
-  // APNs: device token (hex-encoded)
-  string device_token = 7;
-
-  // FCM: registration token
-  string fcm_token = 8;
-
-  // Metadata
-  string device_name = 9;
-  string platform = 10;            // "desktop", "android", "ios"
-  google.protobuf.Timestamp created_at = 11;
-  google.protobuf.Timestamp last_active_at = 12;
+enum PushEnvironment {
+  PUSH_ENVIRONMENT_UNSPECIFIED = 0;
+  PUSH_ENVIRONMENT_DEVELOPMENT = 1;
+  PUSH_ENVIRONMENT_PRODUCTION = 2;
 }
 
-// --- Register push device ---
+message ActorDeviceRef {
+  string actor_ptid = 1;
+  string device_id = 2;
+}
+
+message ApnsPushBinding {
+  bytes token = 1;
+  string topic = 2;
+}
+
+message FcmPushBinding {
+  string token = 1;
+}
+
+message UnifiedPushBinding {
+  string endpoint = 1;
+  bytes p256dh_key = 2;
+  bytes auth_secret = 3;
+}
+
+// Provider credentials are write-only and never appear in this projection.
+message PushRegistration {
+  string registration_id = 1;
+  ActorDeviceRef actor_device = 2;
+  PushChannel channel = 3;
+  PushEnvironment environment = 4;
+  bytes app_install_epoch_sha256 = 5;
+  bytes provider_binding_sha256 = 6; // Station-scoped HMAC fingerprint
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp last_success_at = 9;
+}
+
 message RegisterPushDeviceRequest {
-  PushChannelType channel = 1;
-  string endpoint = 2;
-  string p256dh_key = 3;
-  string auth_secret = 4;
-  string device_token = 5;
-  string fcm_token = 6;
-  string device_name = 7;
-  string platform = 8;
+  string request_id = 1;
+  string device_id = 2;
+  uint64 lifecycle_generation = 3;
+  bytes app_install_epoch_sha256 = 4;
+  PushEnvironment environment = 5;
+  oneof provider_binding {
+    ApnsPushBinding apns = 6;
+    FcmPushBinding fcm = 7;
+    UnifiedPushBinding unified_push = 8;
+  }
+}
+
+enum RegisterPushDeviceOutcome {
+  REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+  REGISTER_PUSH_DEVICE_OUTCOME_CREATED = 1;
+  REGISTER_PUSH_DEVICE_OUTCOME_ROTATED = 2;
+  REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED = 3;
 }
 
 message RegisterPushDeviceResponse {
-  PushDevice device = 1;
+  string request_id = 1;
+  RegisterPushDeviceOutcome outcome = 2;
+  PushRegistration registration = 3;
 }
 
-// --- Unregister push device ---
 message UnregisterPushDeviceRequest {
-  string device_id = 1;
+  string request_id = 1;
+  string device_id = 2;
+  uint64 lifecycle_generation = 3;
+  string registration_id = 4;
+  bytes app_install_epoch_sha256 = 5;
 }
 
-message UnregisterPushDeviceResponse {}
+enum UnregisterPushDeviceOutcome {
+  UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+  UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED = 1;
+  UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT = 2;
+}
 
-// --- List push devices ---
+message UnregisterPushDeviceResponse {
+  string request_id = 1;
+  UnregisterPushDeviceOutcome outcome = 2;
+}
+
 message ListPushDevicesRequest {}
 
 message ListPushDevicesResponse {
-  repeated PushDevice devices = 1;
+  repeated PushRegistration registrations = 1;
 }
 ```
 
@@ -428,8 +483,8 @@ message ListPushDevicesResponse {
 │                    Notification                     │
 │                                                     │
 │  id ─────────────── Primary key (Snowflake)        │
-│  recipient_id ───── Who receives this notification  │
-│  actor_id ───────── Who triggered this notification │
+│  recipient_ptid ─── Who receives this notification  │
+│  actor_ptid ─────── Who triggered this notification │
 │  type ───────────── Specific notification type      │
 │  category ───────── Category grouping              │
 │  status ─────────── unread / read / archived       │
@@ -516,13 +571,21 @@ Aggregation behavior:
 
 Notification content follows a **structured reference + fallback text** model driven by the client-side presentation ownership principle (§3.3).
 
-**Structured references** (always present): `type`, `category`, `actor_id`, `target_type`, `target_id` — these carry the semantic meaning of the notification. Rich clients use these to render locale-aware, navigable display text (e.g., "Alice liked your post" in the user's language, with "Alice" and "your post" as tappable links).
+**Structured references** (always present): `type`, `category`,
+`actor_ptid`, `target_type`, `target_id` — these carry the semantic meaning of
+the notification. Rich clients use these to render locale-aware, navigable
+display text (e.g., "Alice liked your post" in the user's language, with
+"Alice" and "your post" as tappable links).
 
-**Fallback text** (`title`, `body`): server-generated English-language preview text. Used for:
+**Fallback text** (`title`, `body`): server-generated English-language
+projection text. Used for:
 
-- Push notification payload (where the client may not be fully running to render rich text)
 - Non-rich clients or degraded rendering modes
 - Notification list preview before full hydration
+
+Fallback text never enters APNs, FCM, or UnifiedPush payloads. A native client
+may display generic OS text such as "New activity" while locked or backgrounded
+and renders canonical content only after Station reconciliation.
 
 Content ownership boundary:
 
@@ -530,8 +593,8 @@ Content ownership boundary:
 |---------|-------|-----------|
 | Structured references | Station (via `Produce()` caller) | Stored in notification entity fields |
 | Fallback text | Station (via `Produce()` caller) | `title` + `body` fields |
-| Locale-aware display text | Client (Desktop/Mobile) | Client maps `type` + `actor_id` + `target` to localized template |
-| Push preview text | Station (via Push Gateway) | Truncated `title` + `body` in push payload |
+| Locale-aware display text | Client (Desktop/Mobile) | Client maps `type` + `actor_ptid` + `target` to localized template |
+| Provider push envelope | Station Push Gateway | Content-free identity/category/hint/timing envelope |
 
 ---
 
@@ -560,16 +623,14 @@ apps/station/app/subserver/notification/
 │   ├── producer.go           # NotificationProducer: global convenience for producing notifications
 │   └── converter.go          # Proto ⟷ Domain ⟷ Model conversion
 ├── infrastructure/
-│   └── repo.go               # GORM repository: CRUD + aggregation + counter ops
-└── push/
-    ├── gateway.go              # PushGateway: orchestrates channel dispatch
-    ├── channel.go              # PushChannel interface definition
-    ├── channel_webpush.go      # Web Push (VAPID) implementation
-    ├── channel_unifiedpush.go  # UnifiedPush implementation (HTTP POST)
-    ├── channel_apns.go         # APNs implementation (HTTP/2)
-    ├── channel_fcm.go          # FCM implementation (HTTP v1 API)
-    ├── crypto.go               # RFC 8291 payload encryption
-    └── device_repo.go          # Push device registration repository
+│   ├── repo.go               # Notification/preference/push registration persistence
+│   └── push_crypto.go        # AES-GCM credential protection + HMAC fingerprint
+└── push/                     # Provider dispatch adapters; later delivery slice
+    ├── gateway.go            # PushGateway orchestration
+    ├── channel.go            # PushChannel interface
+    ├── channel_unifiedpush.go
+    ├── channel_apns.go
+    └── channel_fcm.go
 ```
 
 ### 5.3 Lifecycle
@@ -579,7 +640,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
     // 1. Initialize JWT wrapper
     // 2. Get database: store.GetRDS(ctx)
     // 3. AutoMigrate notification tables (notifications, notification_counters,
-    //    notification_preferences, push_devices)
+    //    notification_preferences, notification_push_registrations,
+    //    notification_push_mutation_receipts)
     // 4. Create infrastructure.GormRepo
     // 5. Create application.Service
     // 6. Initialize PushGateway with configured channels
@@ -647,7 +709,7 @@ Source SubServer action (e.g., social.handleLikePost)
     ▼
 notification.Produce(ctx, ProduceParams{...})
     │
-    ├─ 1. Self-notification guard (actorID == recipientID → skip)
+    ├─ 1. Self-notification guard (actorPTID == recipientPTID → skip)
     ├─ 2. Preference check (category enabled? → skip if disabled)
     ├─ 3. Rate limit check (recipient rate exceeded? → skip)
     ├─ 4. Deduplication check (same actor+type+target within 1h? → skip)
@@ -739,10 +801,13 @@ Notifications that are **always produced** regardless of online status: friend r
 | `notif-unread-counts` | GET | `/notification/unread-counts` | JWT | Get unread counts (total + by category) |
 | `notif-preferences` | GET | `/notification/preferences` | JWT | Get notification preferences |
 | `notif-preferences-update` | POST | `/notification/preferences` | JWT | Update notification preferences |
-| `push-register` | POST | `/notification/push/register` | JWT | Register a push device subscription |
-| `push-unregister` | POST | `/notification/push/unregister` | JWT | Remove a push device registration |
-| `push-devices` | GET | `/notification/push/devices` | JWT | List registered push devices |
-| `push-vapid-key` | GET | `/notification/push/vapid-key` | None | Get VAPID public key for Web Push subscription |
+| `push-register` | POST | `/notification/push/register` | JWT + device assertion | Idempotently register or rotate one APNs/FCM/UnifiedPush binding |
+| `push-unregister` | POST | `/notification/push/unregister` | JWT + device assertion | Idempotently remove the exact actor/device/install registration |
+| `push-devices` | GET | `/notification/push/devices` | JWT | List redacted registrations for the authenticated PTID |
+
+Web Push/VAPID is not part of the MS-D23A contract or W7. It requires a
+separate Desktop product and architecture decision before adding a provider
+binding or public endpoint.
 
 ---
 
@@ -757,8 +822,8 @@ The notification SubServer uses its own database accessed via `store.GetRDS(ctx)
 | Column | Type | Constraint | Description |
 |--------|------|-----------|-------------|
 | `id` | `uint64` | PK, Snowflake | Notification unique ID |
-| `recipient_id` | `varchar(255)` | INDEX, NOT NULL | Target user actor ID |
-| `actor_id` | `varchar(255)` | NOT NULL | Trigger user actor ID |
+| `recipient_ptid` | `varchar(255)` | INDEX, NOT NULL | Target actor PTID |
+| `actor_ptid` | `varchar(255)` | NOT NULL | Trigger actor PTID |
 | `type` | `int32` | NOT NULL | NotificationType enum value |
 | `category` | `int32` | NOT NULL | NotificationCategory enum value |
 | `status` | `int32` | NOT NULL, DEFAULT 1 | NotificationStatus (1=UNREAD) |
@@ -775,11 +840,11 @@ The notification SubServer uses its own database accessed via `store.GetRDS(ctx)
 Indexes:
 
 ```
-idx_notifications_recipient_status  (recipient_id, status)        — List unread
-idx_notifications_recipient_cat     (recipient_id, category)      — Filter by category
+idx_notifications_recipient_status  (recipient_ptid, status)        — List unread
+idx_notifications_recipient_cat     (recipient_ptid, category)      — Filter by category
 idx_notifications_group_key         (group_key)                   — Aggregation queries
 idx_notifications_created_at        (created_at DESC)             — Cursor pagination
-idx_notifications_dedup             (recipient_id, actor_id, type, target_id)  — Deduplication
+idx_notifications_dedup             (recipient_ptid, actor_ptid, type, target_id)  — Deduplication
 ```
 
 #### Table: `notification_counters`
@@ -787,7 +852,7 @@ idx_notifications_dedup             (recipient_id, actor_id, type, target_id)  �
 | Column | Type | Constraint | Description |
 |--------|------|-----------|-------------|
 | `id` | `uint64` | PK, Snowflake | Counter ID |
-| `actor_id` | `varchar(255)` | UNIQUE INDEX, NOT NULL | User actor ID |
+| `actor_ptid` | `varchar(255)` | UNIQUE INDEX, NOT NULL | User actor PTID |
 | `total_unread` | `int32` | NOT NULL, DEFAULT 0 | Total unread count |
 | `social_unread` | `int32` | NOT NULL, DEFAULT 0 | Social category unread |
 | `chat_unread` | `int32` | NOT NULL, DEFAULT 0 | Chat category unread |
@@ -804,7 +869,7 @@ Rationale for separate counter table: Avoids `COUNT(*)` queries on the main noti
 | Column | Type | Constraint | Description |
 |--------|------|-----------|-------------|
 | `id` | `uint64` | PK, Snowflake | Preference ID |
-| `actor_id` | `varchar(255)` | NOT NULL | User actor ID |
+| `actor_ptid` | `varchar(255)` | NOT NULL | User actor PTID |
 | `category` | `int32` | NOT NULL | NotificationCategory enum value |
 | `enabled` | `bool` | NOT NULL, DEFAULT true | Whether this category is enabled |
 | `push_enabled` | `bool` | NOT NULL, DEFAULT true | Whether push notification is enabled |
@@ -814,39 +879,75 @@ Rationale for separate counter table: Avoids `COUNT(*)` queries on the main noti
 Indexes:
 
 ```
-idx_notification_prefs_actor  (actor_id, category)  — UNIQUE
+idx_notification_prefs_actor  (actor_ptid, category)  — UNIQUE
 ```
 
-#### Table: `push_devices`
+#### Table: `notification_preference_revisions`
+
+| Column | Type | Constraint | Description |
+|---|---|---|---|
+| `actor_ptid` | `varchar(255)` | PRIMARY KEY | Preference aggregate owner |
+| `revision` | `uint64` | NOT NULL, DEFAULT 1 | Monotonic aggregate preference revision |
+| `updated_at` | `timestamp` | NOT NULL | Last successful value-changing batch |
+
+Preference reads return all supported categories with effective defaults and
+one aggregate revision. A batch update validates every patch, locks the actor's
+revision row, compares `observed_revision`, applies every changed category, and
+increments the revision once in the same transaction. A stale revision returns
+typed `CONFLICT` plus the canonical snapshot without writing. An equal-value
+batch returns `UNCHANGED` without incrementing. Missing/zero revision, empty
+batch, unspecified category, or duplicate category is invalid.
+
+#### Table: `notification_push_registrations`
 
 | Column | Type | Constraint | Description |
 |--------|------|-----------|-------------|
-| `id` | `uint64` | PK, Snowflake | Device registration ID |
-| `actor_id` | `varchar(255)` | INDEX, NOT NULL | Owner actor ID |
-| `channel` | `int32` | NOT NULL | PushChannelType enum |
-| `endpoint` | `text` | | Web Push / UnifiedPush endpoint URL |
-| `p256dh_key` | `varchar(255)` | | Web Push encryption key |
-| `auth_secret` | `varchar(255)` | | Web Push auth secret |
-| `device_token` | `varchar(255)` | | APNs device token |
-| `fcm_token` | `varchar(255)` | | FCM registration token |
-| `device_name` | `varchar(255)` | | Human-readable device name |
-| `platform` | `varchar(32)` | | "desktop" / "android" / "ios" |
+| `registration_id` | `varchar(64)` | PRIMARY KEY | Public redacted registration identity |
+| `actor_ptid` | `varchar(255)` | INDEX, NOT NULL | Authenticated actor PTID |
+| `device_id` | `varchar(128)` | NOT NULL | Authenticated Actor Device |
+| `channel` | `int32` | NOT NULL | APNs, FCM, or UnifiedPush |
+| `environment` | `int32` | NOT NULL | Development or production |
+| `app_install_epoch_sha256` | `bytea` | NOT NULL | Native install-epoch commitment |
+| `provider_binding_hmac` | `bytea` | UNIQUE, NOT NULL | Station-scoped provider fingerprint |
+| `provider_binding_ciphertext` | `bytea` | NOT NULL | AES-256-GCM ciphertext |
+| `provider_binding_nonce` | `bytea` | NOT NULL | Unique GCM nonce |
+| `credential_key_version` | `int32` | NOT NULL | Versioned Notification key |
 | `created_at` | `timestamp` | NOT NULL | Registration time |
-| `last_active_at` | `timestamp` | | Last successful push time |
+| `updated_at` | `timestamp` | NOT NULL | Last create/rotation time |
+| `last_success_at` | `timestamp` | | Last successful provider delivery |
 
-Index:
+Indexes:
 
 ```
-idx_push_devices_actor  (actor_id)  — list devices for user
+uidx_push_registration_owner  (actor_ptid, device_id, channel, environment)
+uidx_push_registration_binding (provider_binding_hmac)
+idx_push_registration_actor    (actor_ptid)
 ```
+
+Provider credentials never have plaintext columns. Associated data binds the
+registration owner tuple, install epoch, and provider fingerprint. A
+deployment-root key change invalidates these rows and requires native
+re-registration; there is no plaintext or old-key fallback.
+
+#### Table: `notification_push_mutation_receipts`
+
+| Column | Type | Constraint | Description |
+|---|---|---|---|
+| `actor_ptid` | `varchar(255)` | PRIMARY KEY part | Authenticated actor PTID |
+| `device_id` | `varchar(128)` | PRIMARY KEY part | Authenticated device |
+| `request_id` | `varchar(64)` | PRIMARY KEY part | Stable mutation ULID |
+| `request_sha256` | `bytea` | NOT NULL | Canonical request commitment |
+| `response_bytes` | `bytea` | NOT NULL | Redacted deterministic response |
+| `expires_at` | `timestamp` | NOT NULL | Bounded replay retention |
+| `created_at` | `timestamp` | NOT NULL | Receipt creation time |
 
 ### 6.2 GORM Model Mapping
 
 ```go
 type NotificationModel struct {
-    ID          uint64    `gorm:"primaryKey;autoIncrement:false"`
-    RecipientID string    `gorm:"size:255;not null;index:idx_notif_recipient_status;index:idx_notif_recipient_cat;index:idx_notif_dedup"`
-    ActorID     string    `gorm:"size:255;not null;index:idx_notif_dedup"`
+    ID            uint64    `gorm:"primaryKey;autoIncrement:false"`
+    RecipientPTID string    `gorm:"column:recipient_ptid;size:255;not null;index:idx_notif_recipient_status;index:idx_notif_recipient_cat;index:idx_notif_dedup"`
+    ActorPTID     string    `gorm:"column:actor_ptid;size:255;not null;index:idx_notif_dedup"`
     Type        int32     `gorm:"not null;index:idx_notif_dedup"`
     Category    int32     `gorm:"not null;index:idx_notif_recipient_cat"`
     Status      int32     `gorm:"not null;default:1;index:idx_notif_recipient_status"`
@@ -889,7 +990,7 @@ Notification delivery is a single architectural concern that spans multiple conn
                     ─────────────────
                     Online (SSE)    Offline         Suspended
                     ──────────      ────────        ─────────
-Desktop             SSE event       Broker catch-up Web Push (VAPID)
+Desktop             SSE event       Broker catch-up Pull on open
 Android             SSE event       Broker catch-up UnifiedPush / FCM
 Android (degoogled) SSE event       Broker catch-up UnifiedPush
 iOS                 SSE event       Broker catch-up APNs
@@ -924,7 +1025,7 @@ type NotificationCreatedPayload struct {
     NotificationID string `json:"notificationId"`
     Type           int32  `json:"type"`
     Category       int32  `json:"category"`
-    ActorID        string `json:"actorId"`
+    ActorPTID      string `json:"actorPtid"`
     TargetType     string `json:"targetType,omitempty"`
     TargetID       string `json:"targetId,omitempty"`
     Title          string `json:"title"`
@@ -944,7 +1045,7 @@ type NotificationCountPayload struct {
 Following the existing `PublishChatMessage` pattern:
 
 ```go
-func PublishNotificationCreated(recipientID string, payload NotificationCreatedPayload) error {
+func PublishNotificationCreated(recipientPTID string, payload NotificationCreatedPayload) error {
     es := GetGlobalEventSystem()
     if es == nil {
         return nil
@@ -952,15 +1053,15 @@ func PublishNotificationCreated(recipientID string, payload NotificationCreatedP
     return es.Router.PublishEvent(
         context.Background(),
         EventNotificationCreated,
-        payload.ActorID,
-        recipientID,
+        payload.ActorPTID,
+        recipientPTID,
         payload.NotificationID,
         ScopeActor,
         payload,
     )
 }
 
-func PublishNotificationCountUpdated(actorID string, payload NotificationCountPayload) error {
+func PublishNotificationCountUpdated(actorPTID string, payload NotificationCountPayload) error {
     es := GetGlobalEventSystem()
     if es == nil {
         return nil
@@ -968,8 +1069,8 @@ func PublishNotificationCountUpdated(actorID string, payload NotificationCountPa
     return es.Router.PublishEvent(
         context.Background(),
         EventNotificationCountUpdated,
-        actorID,
-        actorID,
+        actorPTID,
+        actorPTID,
         "",
         ScopeActor,
         payload,
@@ -1017,7 +1118,7 @@ if r.broker != nil {
 }
 ```
 
-This means `notification.created` and `notification.count.updated` events are always persisted in `events:<recipientID>` topic.
+This means `notification.created` and `notification.count.updated` events are always persisted in `events:<recipientPTID>` topic.
 
 Two catch-up paths:
 
@@ -1088,7 +1189,7 @@ Architecture: Station as Self-Hosted Push Gateway
 │                          └────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
          │                    │                │
-    Web Push              UnifiedPush       APNs/FCM
+    Broker catch-up       UnifiedPush       APNs/FCM
     (Desktop)             (Android)         (optional)
          │                    │                │
          ▼                    ▼                ▼
@@ -1103,15 +1204,16 @@ Architecture: Station as Self-Hosted Push Gateway
 
 A user may be online on one device (e.g., Desktop with active SSE) while their phone is in their pocket. The delivery system must address this multi-device reality.
 
-**Current design (v1)**: Push dispatch checks actor-level online status via `ConnectionHub.IsActorOnline()`. If the actor has **any** active SSE connection, push is skipped for **all** devices. This is a deliberate simplification for v1:
+Push dispatch is registration-scoped, not actor-global. An online Desktop SSE
+connection cannot suppress delivery to a disconnected Mobile registration.
+The gateway evaluates the authenticated actor/device registration, channel
+availability, category preference, expiry, and device-specific online state.
+When device-specific online state is unavailable, it must prefer delivery or
+bounded pull reconciliation rather than infer that every device is online.
 
-- If a user is actively reading notifications on Desktop, sending pushes to their phone for every notification would be disruptive
-- SSE delivery already reaches all online devices simultaneously
-- Notifications are persisted and will appear when the phone reconnects
-
-**Known limitation**: If a user has Desktop open (SSE active) but their phone is in their pocket (no SSE), the phone won't receive a push until the user opens the app, at which point SSE catch-up or explicit pull delivers missed notifications.
-
-**Future evolution path**: Per-platform online awareness. This requires `ConnectionHub` to track platform metadata per SSE connection (a registration-time property from the client), enabling the push gateway to skip push only to platforms that have active SSE connections while still pushing to disconnected platforms.
+Provider invalid/unregistered responses deactivate the exact registration.
+Transient failures retain it for bounded retry. One device's provider failure
+or online state never removes or suppresses another device's registration.
 
 ### 7.6 Push Channel Strategy
 
@@ -1119,7 +1221,7 @@ A user may be online on one device (e.g., Desktop with active SSE) while their p
 
 | Platform | Primary Channel | Fallback | Notes |
 |----------|----------------|----------|-------|
-| **Desktop** | SSE (active connection) | Web Push (VAPID) | Desktop is usually open; Web Push as sleep/closed fallback |
+| **Desktop** | SSE (active connection) | Broker catch-up | Web Push is outside MS-D23A/W7 |
 | **Android** | UnifiedPush | FCM (optional) | UnifiedPush is decentralized; FCM for mainstream users |
 | **Android (degoogled)** | UnifiedPush | Polling | No Google Services; UnifiedPush via ntfy/NextPush |
 | **iOS** | APNs (via self-hosted relay) | Polling (background fetch) | APNs is the only reliable iOS push; Station owner provides own APNs cert |
@@ -1147,41 +1249,49 @@ Key design decisions:
 
 iOS fundamentally requires APNs — there is no alternative for App Store applications. Each Station owner manages their own APNs credential — fully decentralized. If no APNs configured, iOS falls back to background fetch polling.
 
-#### Web Push (VAPID): For Desktop
+#### Web Push (VAPID): Deferred
 
-Web Push (RFC 8030 + VAPID RFC 8292) allows pushing to Desktop browsers even when the app tab is closed (requires Service Worker). Station auto-generates VAPID keys on first initialization — no manual setup needed.
+Web Push requires a separate Desktop contract. The Mobile registration API
+does not accept Web Push, does not expose a VAPID endpoint, and must not be
+extended with an unreviewed compatibility variant.
 
 ### 7.7 Push Payload Strategy
 
-Push notifications carry **minimal payload** — this is critical for both privacy and reliability:
+Mobile push carries a **content-free reconcile envelope** capped at 1024
+encoded bytes:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Push Payload (encrypted via RFC 8291 or platform TLS)   │
 │                                                          │
 │  {                                                       │
-│    "t": "notification.push",        // message type      │
-│    "nid": "01HWXYZ...",             // notification ID   │
-│    "cat": 2,                        // category (CHAT)   │
-│    "title": "New message",          // display title     │
-│    "body": "Alice: Hey...",         // preview (≤80ch)   │
-│    "ts": 1713000000                 // timestamp         │
+│    "v": 1,                          // envelope version   │
+│    "kind": "notification_wakeup",   // reconcile only     │
+│    "notification_id": "01HWXYZ...", // notification ID   │
+│    "category": 2,                   // category (CHAT)    │
+│    "target_hint": "conversation",   // advisory hint      │
+│    "issued_at_ms": 1713000000000,   // timing             │
+│    "expires_at_ms": 1713000300000   // bounded validity   │
 │  }                                                       │
 └──────────────────────────────────────────────────────────┘
 ```
 
-Why minimal payload:
+The payload deliberately omits title, body, actor profile, message/Moment
+content, credentials, decryption material, read state, and authorization
+truth. Provider transport encryption remains defense in depth; privacy does
+not depend on it.
 
-1. **Privacy**: Push server/distributor cannot correlate detailed content
-2. **Reliability**: Smaller payloads have higher delivery success rate (APNs max 4KB, Web Push recommended ≤4KB)
-3. **Freshness**: Full content is fetched from Station on app wake-up, ensuring latest state
+Unknown versions/kinds, malformed identity, invalid category/hint, expired
+timing, or oversized payloads are discarded before Web delivery.
 
 Client flow after receiving a push:
 
 ```
-Push arrives → show system notification with title/body from payload
-           → if user taps: open app → SSE reconnect → full sync
-           → if app wakes: background fetch latest from Station → update badge
+Push arrives → native/Rust generation + sequence validation
+           → mark Notification/domain projection stale
+           → reconcile current Station/PTID/device scope
+           → render canonical content
+           → on tap, authorize reconciled target and then navigate
 ```
 
 ### 7.8 Push Delivery Pipeline
@@ -1198,24 +1308,20 @@ notification.Produce(ctx, params)
     └──► Push Gateway dispatch (async, non-blocking)
          │
          │  ┌─────────────────────────────────────────────┐
-         │  │ 1. Check: is recipient online via SSE?       │
-         │  │    → YES (v1): skip push                     │
-         │  │    → NO: proceed with push                   │
+         │  │ 1. Check category push preference            │
+         │  │    → disabled: skip                          │
          │  │                                              │
-         │  │ 2. Check: user preference push_enabled?      │
-         │  │    → NO: skip push                           │
+         │  │ 2. Query active registrations for PTID       │
          │  │                                              │
-         │  │ 3. Query registered devices for recipient    │
-         │  │                                              │
-         │  │ 4. For each device:                          │
-         │  │    a. Build encrypted push payload            │
-         │  │    b. Send via device's registered channel    │
-         │  │    c. Handle response:                        │
-         │  │       - 201/200: success, update last_active  │
-         │  │       - 410 Gone: device unsubscribed,        │
-         │  │         remove registration                   │
-         │  │       - 429: rate limited, retry with backoff  │
-         │  │       - 5xx: transient error, retry once      │
+         │  │ 3. For each actor/device registration:       │
+         │  │    a. Skip only this device if known online   │
+         │  │    b. Decrypt binding in channel adapter      │
+         │  │    c. Send content-free reconcile envelope    │
+         │  │    d. Zero plaintext provider binding         │
+         │  │    e. Handle response:                        │
+         │  │       - success: update last_success_at        │
+         │  │       - invalid/unregistered: deactivate row   │
+         │  │       - throttled/transient: bounded backoff   │
          │  └─────────────────────────────────────────────┘
 ```
 
@@ -1223,8 +1329,13 @@ notification.Produce(ctx, params)
 
 ```go
 type PushChannel interface {
-    Type() PushChannelType
-    Send(ctx context.Context, device *PushDevice, payload *PushPayload) error
+    Type() PushChannel
+    Send(
+        ctx context.Context,
+        registration PushRegistration,
+        binding DecryptedProviderBinding,
+        payload PushPayload,
+    ) PushDeliveryResult
     Available() bool
 }
 ```
@@ -1233,27 +1344,37 @@ type PushChannel interface {
 
 ```go
 type PushGateway struct {
-    channels   map[PushChannelType]PushChannel
-    deviceRepo DeviceRepository
-    hub        *event.ConnectionHub
+    channels      map[PushChannel]PushChannel
+    registrations PushRegistrationRepository
+    protector     ProviderBindingProtector
+    presence      DevicePresence
 }
 
-func (g *PushGateway) Dispatch(ctx context.Context, recipientID string, payload *PushPayload) error {
-    // v1: actor-level online check (see §7.5 for multi-device evolution)
-    if g.hub.IsActorOnline(recipientID) {
-        return nil
-    }
-    devices, err := g.deviceRepo.ListByActor(ctx, recipientID)
+func (g *PushGateway) Dispatch(
+    ctx context.Context,
+    recipientPTID string,
+    payload PushPayload,
+) error {
+    registrations, err := g.registrations.ListActive(ctx, recipientPTID)
     if err != nil {
         return err
     }
-    for _, device := range devices {
-        ch, ok := g.channels[device.Channel]
+    for _, registration := range registrations {
+        if g.presence.IsDeviceOnline(recipientPTID, registration.DeviceID) {
+            continue
+        }
+        ch, ok := g.channels[registration.Channel]
         if !ok || !ch.Available() {
             continue
         }
-        if err := ch.Send(ctx, device, payload); err != nil {
-            // Handle 410 Gone → remove device; log other errors
+        binding, err := g.protector.Open(registration)
+        if err != nil {
+            continue
+        }
+        result := ch.Send(ctx, registration, binding, payload)
+        binding.Zeroize()
+        if result.InvalidRegistration {
+            _ = g.registrations.Deactivate(ctx, registration.RegistrationID)
         }
     }
     return nil
@@ -1266,11 +1387,10 @@ Push channels are configured via Station config file or environment variables:
 
 ```yaml
 push:
-  # VAPID keys for Web Push — auto-generated on first boot if not set
-  vapid:
-    public_key: ""
-    private_key: ""
-    subject: "mailto:admin@your-station.example"
+  # Derived with HKDF-SHA256 into the versioned Notification credential key.
+  # Rotation invalidates registrations and requires native re-registration.
+  credential_root_secret: ""
+  credential_key_version: 1
 
   # APNs — optional, required for iOS push
   apns:
@@ -1289,7 +1409,9 @@ push:
 
 Auto-generation behavior:
 
-- **VAPID keys**: Generated automatically on first Station boot if not configured. Stored in DB for persistence across restarts.
+- **Credential root**: Required before accepting provider registrations.
+  Missing or invalid configuration returns push unavailable and never stores
+  plaintext.
 - **APNs/FCM**: Strictly opt-in. Station works without them. If not configured, those channels are simply unavailable.
 
 ### 7.10 Degradation Matrix
@@ -1299,7 +1421,7 @@ When a push channel is unavailable, the system degrades gracefully:
 ```
                        Primary         Fallback 1        Fallback 2
                        ─────────       ──────────        ──────────
-Desktop:               SSE (live)  →   Web Push      →   Pull on open
+Desktop:               SSE (live)  →   Broker catch-up → Pull on open
 Android:               SSE (live)  →   UnifiedPush   →   FCM (opt-in)  →  Poll
 Android (degoogled):   SSE (live)  →   UnifiedPush   →   Poll
 iOS:                   SSE (live)  →   APNs          →   Background fetch  →  Pull on open
@@ -1391,27 +1513,11 @@ interface NotificationSlice {
 - Notification list with grouped display
 - Notification preference settings page
 
-#### Desktop Push Integration (Web Push)
+#### Desktop Push Integration
 
-```typescript
-// 1. Register Service Worker
-const registration = await navigator.serviceWorker.register("/sw.js");
-
-// 2. Subscribe to push
-const subscription = await registration.pushManager.subscribe({
-  userVisibleOnly: true,
-  applicationServerKey: vapidPublicKey,
-});
-
-// 3. Send subscription to Station
-await stationApi.registerPushDevice({
-  channel: PushChannelType.WEB_PUSH,
-  endpoint: subscription.endpoint,
-  p256dhKey: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey("p256dh")!))),
-  authSecret: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey("auth")!))),
-  platform: "desktop",
-});
-```
+Desktop uses SSE plus Broker catch-up in the current contract. Web Push is
+deferred and cannot reuse the Mobile API without a reviewed provider-binding,
+service-worker lifecycle, device-identity, and credential-protection contract.
 
 ### 8.4 Mobile
 
@@ -1452,16 +1558,20 @@ The mobile notification plugin is extended:
 ```kotlin
 class PushReceiver : MessagingReceiver() {
     override fun onNewEndpoint(context: Context, endpoint: String, instance: String) {
-        stationApi.registerPushDevice(
-            channel = PushChannelType.UNIFIED_PUSH,
-            endpoint = endpoint,
-            platform = "android"
+        rustBridge.emitPushToken(
+            NativePushTokenCallback(
+                sequence = nextSequence(),
+                lifecycleGeneration = armedGeneration,
+                environment = currentEnvironment,
+                unifiedPush = UnifiedPushBinding(endpoint)
+            )
         )
     }
 
     override fun onMessage(context: Context, message: ByteArray, instance: String) {
-        val payload = decryptPushPayload(message)
-        showLocalNotification(context, payload)
+        rustBridge.emitPushWakeup(
+            validateBoundedWakeup(message, armedGeneration, nextSequence())
+        )
     }
 }
 ```
@@ -1471,14 +1581,21 @@ class PushReceiver : MessagingReceiver() {
 ```swift
 func application(_ application: UIApplication,
                  didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-    let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-    stationApi.registerPushDevice(
-        channel: .apns,
-        deviceToken: token,
-        platform: "ios"
+    rustBridge.emitPushToken(
+        NativePushTokenCallback(
+            sequence: nextSequence(),
+            lifecycleGeneration: armedGeneration,
+            environment: currentEnvironment,
+            apns: ApnsPushBinding(token: deviceToken, topic: bundleTopic)
+        )
     )
 }
 ```
+
+Native code never chooses Station/PTID, attaches credentials, calls the
+Notification API, or forwards provider credentials to Web. Rust resolves the
+active authenticated scope, enforces generation/sequence fencing, derives the
+install-epoch digest, and executes the typed Station operation.
 
 ### 8.5 Sound Architecture
 
@@ -1624,7 +1741,7 @@ Before creating a notification, the producer checks for duplicates:
 
 ```sql
 SELECT id FROM notifications
-WHERE recipient_id = ? AND actor_id = ? AND type = ? AND target_id = ?
+WHERE recipient_ptid = ? AND actor_ptid = ? AND type = ? AND target_id = ?
   AND created_at > NOW() - INTERVAL '1 hour'
 LIMIT 1
 ```
@@ -1666,9 +1783,14 @@ notification:
 
 ### 9.4 Preference Model
 
-User preferences control notification behavior at the category level. Preferences are only created when a user explicitly changes a setting — absent preference rows default to "all enabled".
+User preferences control notification behavior at the category level.
+Preferences are only created when a user explicitly changes a setting; absent
+rows resolve to "all enabled" in the canonical complete snapshot.
 
-Current implementation: category-level control (enabled, push_enabled, sound_enabled per category).
+The write contract is one aggregate CAS batch across category-level
+`enabled`, `push_enabled`, and `sound_enabled` values. Desktop and Mobile use
+the same generated request/response contract; the former single-category
+mutation is removed rather than retained as an optional-revision path.
 
 Future extensibility: the `NotificationType type` field in `NotificationPreference` proto (§4.2) is reserved for per-type overrides (e.g., disable `post_liked` while keeping other social notifications enabled). When implemented, per-type preferences override category-level preferences.
 
@@ -1676,11 +1798,11 @@ Future extensibility: the `NotificationType type` field in `NotificationPreferen
 
 | Query | Expected Frequency | Strategy |
 |-------|--------------------|----------|
-| List unread for user | Very High | Composite index: `(recipient_id, status)` |
+| List unread for user | Very High | Composite index: `(recipient_ptid, status)` |
 | Get unread counts | Very High | Separate counter table — O(1) read |
-| List by category | Medium | Composite index: `(recipient_id, category)` |
+| List by category | Medium | Composite index: `(recipient_ptid, category)` |
 | Aggregation by group_key | Medium | Index: `(group_key)` |
-| Deduplication check | Per notification creation | Composite index: `(recipient_id, actor_id, type, target_id)` |
+| Deduplication check | Per notification creation | Composite index: `(recipient_ptid, actor_ptid, type, target_id)` |
 
 Scalability notes:
 
@@ -1717,14 +1839,8 @@ Scalability notes:
 | `apps/station/app/subserver/notification/domain/producer.go` | Global producer |
 | `apps/station/app/subserver/notification/domain/converter.go` | Model converters |
 | `apps/station/app/subserver/notification/infrastructure/repo.go` | GORM repository |
-| `apps/station/app/subserver/notification/push/gateway.go` | Push Gateway orchestrator |
-| `apps/station/app/subserver/notification/push/channel.go` | PushChannel interface |
-| `apps/station/app/subserver/notification/push/channel_webpush.go` | Web Push (VAPID) channel |
-| `apps/station/app/subserver/notification/push/channel_unifiedpush.go` | UnifiedPush channel |
-| `apps/station/app/subserver/notification/push/channel_apns.go` | APNs channel |
-| `apps/station/app/subserver/notification/push/channel_fcm.go` | FCM channel |
-| `apps/station/app/subserver/notification/push/crypto.go` | RFC 8291 encryption |
-| `apps/station/app/subserver/notification/push/device_repo.go` | Device registration repository |
+| `apps/station/app/subserver/notification/infrastructure/push_crypto.go` | Provider credential encryption and Station-scoped fingerprinting |
+| Future `apps/station/app/subserver/notification/push/` | Provider delivery adapters; not part of W7 source closure |
 
 ### 10.3 Desktop Changes
 
@@ -1737,26 +1853,22 @@ Scalability notes:
 | New: notification settings component | UI for preferences |
 | New: `kernel/notification/sound.ts` | Sound playback module with category mapping + audio cache |
 | New: `public/sounds/*.wav` | 4 notification sound assets (social, chat, system, task) |
-| New: `public/sw.js` | Service Worker for Web Push |
-| New: push subscription module | Web Push subscribe/unsubscribe + send to Station |
+| Future Web Push files | Deferred pending a separate Desktop architecture decision |
 
 ### 10.4 Mobile Changes
 
 | File | Change |
 |------|--------|
-| iOS `NotificationBridgeModule.swift` | Extend with category channels + custom sound per category |
-| Android `NotificationBridgeModule.kt` | Extend with notification channels + per-channel sound URI |
-| iOS `Resources/Sounds/*.wav` | 4 notification sound assets |
-| Android `res/raw/notification_*.wav` | 4 notification sound assets |
-| Android `PushReceiver.kt` | UnifiedPush BroadcastReceiver + device registration |
-| iOS `AppDelegate.swift` | APNs device token registration + remote notification handling |
-| Both: Station API integration | `registerPushDevice` / `unregisterPushDevice` calls |
+| platform-permissions Swift/Kotlin plugin | Provider callback queue, scheduled reconcile, picker terminal owner |
+| Rust `push_bridge.rs` | Active scope, registration transport, generation/sequence fencing, reconcile intent |
+| Rust `media_picker.rs` | Native result verification, app-owned staging, opaque handles |
+| Rust Station transport | Native-only authenticated registration/unregister operations |
 
 ---
 
 ## 11. Verification Criteria
 
-1. **Proto compiles**: `./model/build.sh` completes without errors after adding `notification.proto`
+1. **Proto compiles**: `tooling/scripts/proto-gen-notification.sh` completes without errors
 2. **Station builds**: `cd apps/station && go build ./...` succeeds
 3. **Station tests**: `cd apps/station && go test ./...` passes
 4. **Go style**: `./tooling/scripts/check-go-style.sh` passes
@@ -1765,26 +1877,30 @@ Scalability notes:
 7. **List API**: `GET /notification/list` returns paginated notifications for the authenticated user
 8. **Unread count**: `GET /notification/unread-counts` returns correct counts from counter table
 9. **Mark read**: `POST /notification/read` updates status and decrements counter atomically
-10. **Preferences**: Disabling a category prevents new notifications from being created
+10. **Preferences**: Atomic aggregate CAS prevents partial category commits;
+    stale writes return the latest snapshot; disabling a category prevents new
+    notifications from being created
 11. **Deduplication**: Same actor+type+target within 1 hour does not create duplicate
 12. **Rate limiting**: Exceeding per-recipient rate limit silently drops notifications
 13. **Desktop SSE**: Desktop receives `notification.created` event and updates UI
 14. **Desktop badge**: Unread count badge updates in real-time when notification is created/read
 15. **Desktop sound plays**: Receiving `notification.created` triggers category-mapped sound via Web Audio API
 16. **Desktop sound respects preference**: Disabling `sound_enabled` for a category silences that category
-17. **iOS custom sound**: iOS notification displays with category-specific custom sound from bundle
-18. **Android channel sound**: Each Android notification channel plays its configured sound URI
-19. **Push device registration**: `POST /notification/push/register` stores device subscription and returns device ID
-20. **Push device list**: `GET /notification/push/devices` returns all registered devices for the authenticated user
-21. **Push dispatch (offline)**: When recipient has no SSE connection and has a registered device, push is sent via the device's channel
-22. **Push skip (online)**: When recipient is SSE-connected, push is not sent (SSE handles delivery)
-23. **Push preference**: Disabling `push_enabled` for a category prevents push dispatch for that category
-24. **Web Push**: Desktop Service Worker receives push and shows system notification
-25. **UnifiedPush**: Android app receives push via UnifiedPush distributor and shows notification
-26. **APNs**: iOS app receives remote notification when APNs is configured
-27. **Push 410 cleanup**: When push endpoint returns 410 Gone, device registration is automatically removed
-28. **VAPID auto-gen**: Station auto-generates VAPID key pair on first boot if not configured
-29. **Content rendering**: Client renders locale-aware notification text from structured references
+17. **Push registration source**: authenticated PTID/device registration,
+    exact replay, rotation, cross-device conflict, unregister, and redacted
+    readback pass focused Model/Station/Rust tests
+18. **Credential protection**: repository rows contain ciphertext and
+    Station-scoped HMAC only; provider credentials are absent from responses
+19. **Native callback source**: iOS Swift and Android Kotlin compile with
+    generation/sequence-fenced token, receipt, and tap ingress
+20. **Scheduled source**: both platforms use the two versioned identifiers and
+    exactly-once completion owner
+21. **Picker source**: both platforms return one bounded terminal result and
+    Rust verifies/moves content to opaque app-owned staging
+22. **Physical provider proof**: APNs/FCM/UnifiedPush delivery, invalid-token
+    cleanup, scheduler timing/expiration, and picker interaction remain
+    `UNPROVEN` until W7-PROOF
+23. **Content rendering**: Client renders locale-aware notification text from structured references
 
 ---
 

@@ -1,8 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-18
+> **Created**: 2026-09-16 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 
 ---
@@ -43,11 +42,23 @@ tooling/scripts/local-dev/
 ├── dev-session.mjs
 └── dev-session.test.mjs
 
+tooling/scripts/
+├── skill-overlay-control.py
+└── skill-overlay-control-test.py
+
 ~/.peers-touch/dev/
 ├── work.json
 ├── work.lock
+├── skill-overlays/
+│   ├── registry.json
+│   ├── registry.lock
+│   └── store/<name>/<digest>/
+│       ├── overlay.json
+│       └── SKILL.md
 └── workspaces/<workspaceId>/workflow/
     ├── plan-binding.json
+    ├── active-work.json
+    ├── active-work.lock
     ├── <workItemId>/
     │   ├── session.json
     │   ├── events.ndjson
@@ -67,7 +78,7 @@ tooling/scripts/local-dev/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D19 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D25 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -82,12 +93,15 @@ tooling/scripts/local-dev/
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
+| `active-work-store.mjs` | Consuming-workspace active-work schema, revision/CAS, digest, lock and atomic storage |
+| `active-work.mjs` | Owner-derived active-work sync/status/close CLI |
 | `dev-session-schema.mjs` | Session, verification, failure and transition schemas |
-| `dev-session-store.mjs` | Atomic bounded event journal, replay and snapshot materialization |
-| `dev-session.mjs` | Session `start/status/transition` CLI |
+| `dev-session-store.mjs` | Atomic bounded event journal, multi-transition result commit, replay and snapshot materialization |
+| `dev-session.mjs` | Session `start/status/transition/functional-result` CLI |
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
 | `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
 | `session.json` | Replayable current Development transition projection |
+| `active-work.json` | One consuming workspace's resumable locator projection; never shared across workspace IDs |
 | `events.ndjson` | Bounded transition transaction journal |
 | `migration.json` | Reviewed crosswalk/reference inventory, source identity, registry-backed `active_work` observation, prepared replacements and recovery state |
 | `migration.json.reviewed` | Exact B4-reviewed PREPARED journal snapshot retained for commit/recovery lineage checks |
@@ -95,6 +109,17 @@ tooling/scripts/local-dev/
 | `migration.lock.recovery` | Exclusive abandoned-lock recovery claim |
 | `checks/` | Structured check records |
 | `artifacts/` | Bounded transient diagnostics |
+| `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
+| `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
+| `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
+| `tooling/scripts/install-project-skills.sh` | Non-interactive per-host canonical `pt-*` projection and legacy Skill retirement |
+| `tooling/scripts/skill-rollout-audit.py` | Fail-closed single/fleet worktree source, registry matcher, recursive catalog, workflow identity, receipt, and host-projection audit |
+| `tooling/scripts/skill-rollout-control.py` | Work-ledger-locked installer, path-containment guard, stale-recovery exclusion, and catalog/session-bound restart receipt |
+| `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
+| `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
+| `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |
+| `skill-overlays/registry.json` | User-owned Overlay enablement and deterministic resolution source |
+| `skill-overlays/store/<name>/<digest>/` | Immutable installed Overlay copy; never a canonical project Skill projection |
 
 Development-policy artifacts use the current Session's `artifacts/` directory
 and never enter the Acceptance Evidence Store namespace. Formal Acceptance
@@ -124,6 +149,19 @@ dev-work.mjs
   -> workspace-plan-binding.mjs
   -> machine-dev-paths.mjs
 
+pt-dev-workflow
+  -> pt-goal-orchestrator
+  -> pt-execution-plan-guardian
+  -> pt-dev-runtime-handoff
+       -> repository-native driver
+  -> admitted Host Capability Request
+       -> detected pt-*-host-adapter when needed
+
+pt-ew
+  -> skill-overlay-control.py resolve
+  -> digest-verified installed SKILL.md
+  -> pt-god-view
+
 Acceptance execution_plan.py
   -> immutable workspace Plan binding
   -> bound Plan Package manifest contract
@@ -136,6 +174,11 @@ Forbidden dependencies:
 - Plan discovery -> branch/repository active-Plan scan;
 - Task Slice -> `events.ndjson`;
 - Session store -> Acceptance Evidence Store;
+- Host adapter -> Plan, Task, Session, workspace active-work, or evidence mutation;
+- Host-specific scheduler -> project work graph or progress semantics;
+- user Overlay -> Plan, Task, Session, authorization, execution, evidence, or
+  Acceptance mutation;
+- canonical Skill rollout -> user Overlay registry or installed copies;
 - archive parser -> current plan/task status;
 - Skills -> private parsing logic that bypasses `planctl`.
 

@@ -6,16 +6,16 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 
 import {
   developmentWorkLedgerPath,
   repoRoot,
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { readAllActiveWorkRecords } from '../../../tooling/scripts/local-dev/active-work-store.mjs';
 import { readLedger } from '../../../tooling/scripts/local-dev/dev-work-ledger.mjs';
 import {
-  AGENT_CONTROL_MODES,
+  resetPolicyForProfile,
   statusAll as machineStatusAll,
 } from '../../../tooling/scripts/local-dev/machine-dev-registry.mjs';
 import {
@@ -27,7 +27,6 @@ import { resolveWorkspacePlanBinding } from '../../../tooling/scripts/plan/works
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
   'PT_DEV_SLOT',
-  'PT_AGENT_CONTROL_MODE',
   'PT_STATION_MODE',
   'PT_STATION_NAME',
   'PT_STATION_URL',
@@ -269,19 +268,24 @@ export function collectProfiles(envRepo) {
           : 'tracked-clean'
         : 'untracked';
       const declaredName = values.PT_DEV_PROFILE ?? null;
-      const agentControlMode = values.PT_AGENT_CONTROL_MODE ?? null;
+      let resetPolicy = null;
       let error = null;
       if (declaredName !== entry.name) {
         error = {
           code: 'PROFILE_IDENTITY_MISMATCH',
           message: 'Profile directory and declared name differ',
         };
-      } else if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
-        error = {
-          code: 'PROFILE_AGENT_CONTROL_INVALID',
-          message: 'Agent control mode is missing or unsupported',
-        };
-      } else if (sourceState !== 'tracked-clean') {
+      } else {
+        try {
+          resetPolicy = resetPolicyForProfile(entry.name);
+        } catch {
+          error = {
+            code: 'PROFILE_IDENTITY_INVALID',
+            message: 'Profile name is not a canonical identifier',
+          };
+        }
+      }
+      if (!error && sourceState !== 'tracked-clean') {
         error = {
           code: 'PROFILE_SOURCE_UNREVIEWED',
           message: 'Profile source is not Git-tracked and clean',
@@ -293,7 +297,7 @@ export function collectProfiles(envRepo) {
         slot: Number.isInteger(Number(values.PT_DEV_SLOT))
           ? Number(values.PT_DEV_SLOT)
           : null,
-        agentControlMode: agentControlMode ?? 'invalid',
+        resetPolicy,
         stationMode: values.PT_STATION_MODE ?? null,
         stationName: values.PT_STATION_NAME ?? null,
         stationUrl: publicEndpoint(values.PT_STATION_URL),
@@ -320,7 +324,7 @@ function safeRegistration(registration) {
     purpose: registration.purpose ?? null,
     owner: registration.owner ?? null,
     activity: registration.activity ?? 'stale',
-    agentControlMode: registration.agentControlMode ?? null,
+    resetPolicy: registration.resetPolicy ?? null,
     profileState: registration.profileState ?? 'blocked',
     profileError: registration.profileError ?? null,
   };
@@ -340,6 +344,27 @@ function safeDeclaration(declaration) {
     state: declaration.state,
     expiresAt: declaration.expiresAt,
     runtimeClaims: declaration.runtimeClaims,
+  };
+}
+
+function safeActiveWork(record) {
+  return {
+    workspaceId: record.workspaceId,
+    workItemId: record.workItemId,
+    planId: record.planId,
+    planPath: record.planPath,
+    planStatus: record.planStatus,
+    currentTaskId: record.currentTaskId,
+    currentTaskPath: record.currentTaskPath,
+    taskStatus: record.taskStatus,
+    sessionId: record.sessionId,
+    journeyId: record.journeyId,
+    devState: record.devState,
+    branch: record.branch,
+    initialHead: record.initialHead,
+    expectedHead: record.expectedHead,
+    revision: record.revision,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -410,7 +435,7 @@ export function deriveOccupancy(
     return {
       profile: profile.name,
       station: profile.stationUrl,
-      agentControlMode: profile.agentControlMode,
+      resetPolicy: profile.resetPolicy,
       workspaceIds,
       slots,
       workItemIds: [
@@ -457,6 +482,7 @@ export function deriveWorktrees(
   registrations,
   declarations,
   activeLeases,
+  activeWorkRecords = [],
 ) {
   const profileByName = new Map(
     profiles.map((profile) => [profile.name, profile]),
@@ -475,6 +501,9 @@ export function deriveWorktrees(
   }
   for (const lease of activeLeases) {
     workspaceIds.add(lease.workspaceId);
+  }
+  for (const record of activeWorkRecords) {
+    workspaceIds.add(record.workspaceId);
   }
 
   const slotOwners = new Map();
@@ -497,6 +526,9 @@ export function deriveWorktrees(
       const leases = activeLeases.filter(
         (lease) => lease.workspaceId === workspaceId,
       );
+      const activeWork =
+        activeWorkRecords.find((record) => record.workspaceId === workspaceId) ??
+        null;
       const claims = projectRuntimeClaims(liveWork);
       const profileClaim = firstClaim(claims, 'profile');
       const slotClaim = firstClaim(claims, 'local.slot');
@@ -528,8 +560,13 @@ export function deriveWorktrees(
             : !registration
               ? 'unregistered'
               : 'ready';
-      const workState =
-        liveWork.length > 0
+      const workState = activeWork
+        ? activeWork.planStatus === 'blocked'
+          ? 'blocked'
+          : ['completed', 'superseded'].includes(activeWork.planStatus)
+            ? 'completed'
+            : 'in-progress'
+        : liveWork.length > 0
           ? liveWork.every(
               (declaration) => declaration.plan?.planStatus === 'blocked',
             )
@@ -542,9 +579,12 @@ export function deriveWorktrees(
       return {
         workspaceId,
         name: registration?.name ?? null,
+        activeWork: activeWork ? safeActiveWork(activeWork) : null,
         branches: [
           ...new Set(
-            work.length > 0
+            activeWork
+              ? [activeWork.branch]
+              : work.length > 0
               ? work.map((declaration) => declaration.branch)
               : [registration?.branch].filter(Boolean),
           ),
@@ -566,9 +606,9 @@ export function deriveWorktrees(
         environment: {
           profile: profileName,
           slot,
-          agentControlMode:
-            registration?.agentControlMode ??
-            profile?.agentControlMode ??
+          resetPolicy:
+            registration?.resetPolicy ??
+            profile?.resetPolicy ??
             null,
           sourceState: profile?.sourceState ?? null,
         },
@@ -617,7 +657,12 @@ export async function buildDevSnapshot(options = {}) {
     });
   const ledger =
     options.ledger ??
-    readLedger(developmentWorkLedgerPath(options.home ?? homedir()), now);
+    readLedger(developmentWorkLedgerPath(options.home), now);
+  const activeWork =
+    options.activeWork ??
+    readAllActiveWorkRecords({
+      home: options.home,
+    });
   const rawRegistrations = machine.registrations ?? [];
   const registrations = rawRegistrations.map(safeRegistration);
   const rawRegistrationByWorkspace = new Map(
@@ -649,7 +694,6 @@ export async function buildDevSnapshot(options = {}) {
   const activeLeases = (machine.activeLeases ?? []).map(safeLease);
 
   return {
-    schemaVersion: 2,
     kind: 'peers-touch-dev-snapshot',
     observedAt: now.toISOString(),
     server: options.server ?? null,
@@ -657,6 +701,10 @@ export async function buildDevSnapshot(options = {}) {
     profiles,
     registrations,
     declarations,
+    activeWork: {
+      records: activeWork.records.map(safeActiveWork),
+      errors: activeWork.errors,
+    },
     activeLeases,
     staleLeaseCount: (machine.staleLeaseMetadata ?? []).length,
     unregisteredObservationCount: machine.unregisteredObservations ? 1 : 0,
@@ -665,6 +713,7 @@ export async function buildDevSnapshot(options = {}) {
       registrations,
       declarations,
       activeLeases,
+      activeWork.records,
     ),
     occupancy: deriveOccupancy(
       profiles,

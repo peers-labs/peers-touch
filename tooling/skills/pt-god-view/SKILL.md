@@ -30,7 +30,7 @@ God View does not:
 
 - edit repository files;
 - create or amend plans;
-- update `active_work`, Task state, `session.json`, or evidence;
+- update workspace active-work, Task state, `session.json`, or evidence;
 - publish Development declarations or acquire runtime resources;
 - build Ready/Parked queues or choose concurrency lanes;
 - execute implementation, verification, Acceptance, commit, or delivery;
@@ -38,9 +38,10 @@ God View does not:
 
 For non-trivial mutation, route to `pt-dev-workflow`, the sole intake-to-close
 application service. For status projection, route to the read-only
-`pt-context-anchor`. For a TRAE `/goal`, route to
-`pt-trae-goal-orchestrator` after the owning workflow has supplied verified
-sources and binding.
+`pt-context-anchor`. For Goal authoring or scheduling, route to the
+host-neutral `pt-goal-orchestrator` after the owning workflow has supplied
+verified sources and binding. Host-specific syntax or tools are selected later
+by a detected `pt-*-host-adapter`.
 
 ## Invoke When
 
@@ -68,7 +69,7 @@ whose owner is already obvious.
    - `DESIGN`
    - `PLAN`
    - `REVIEW`
-   - `TRAE_GOAL`
+   - `GOAL`
 4. Select exactly one primary owner from the table below.
 5. Announce the route and reason in one short sentence.
 6. Invoke the owner and stop applying God View logic. The owner may dispatch
@@ -85,7 +86,7 @@ whose owner is already obvious.
 | Architecture boundary, ownership, topology, or contract | `pt-architecture-design-methodology` |
 | Accepted architecture needs an execution model | `pt-architecture-execution-methodology` |
 | Accepted plan model needs repository persistence | `pt-plan-and-document` |
-| TRAE Goal authoring/review/next slice | `pt-trae-goal-orchestrator` |
+| Goal authoring/review/next slice | `pt-goal-orchestrator` |
 | General PR review | `pt-github-review` |
 | Need to optimize/audit Acceptance Infra | `pt-acceptance-infra-engineering` |
 | Need business Domain Acceptance injection/proof | `pt-acceptance-engineering` |
@@ -99,7 +100,8 @@ before the first write or runtime acquisition.
 - `status` routes to `pt-context-anchor`; God View does not reconstruct state
   from chat or inspect plan internals itself.
 - `continue` or `resume` routes to `pt-dev-workflow`; the workflow verifies
-  physical identity, resolves durable state, and resumes the next legal action.
+  physical identity, resolves durable state, and resumes the authorized Plan
+  Run across dependency-ready Tasks and internal review gates.
 - A resume must not pause merely to print the Anchor. The workflow emits the
   read-only projection at the next meaningful report boundary.
 - Ambiguous tracked work returns `TRACKED_WORK_SELECTION_REQUIRED` with the
@@ -119,6 +121,8 @@ to the owner:
 | EXECUTE through DELIVER | `pt-dev-workflow` |
 
 God View never self-approves a stage gate and never embeds stage procedures.
+The owning workflow invokes the project's agent-led review loop; routine review
+does not route back to the user.
 
 ## Output
 
@@ -148,7 +152,7 @@ Never:
 - become a second complete-development workflow;
 - duplicate plan schemas, Task fields, verifier commands, queue algorithms, or
   execution policy;
-- update `active_work` or a Context Anchor;
+- update workspace active-work or a Context Anchor;
 - route a non-trivial mutation directly to a late-stage specialist and bypass
   `pt-dev-workflow`;
 - select a repository from a Skill source path;

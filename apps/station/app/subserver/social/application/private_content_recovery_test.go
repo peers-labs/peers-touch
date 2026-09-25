@@ -300,12 +300,14 @@ func TestPrivateContentServiceListRecoverablePrivateContent(t *testing.T) {
 				) {
 					t.Helper()
 					if err := fixture.database.Exec(`
-INSERT INTO friend_chat_friendships (
-  actor_ptid, peer_ptid, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?)`,
+INSERT INTO social_directional_relationships (
+  actor_ptid, target_actor_ptid, actor_home_station_peer_id,
+  target_home_station_peer_id, blocked, revision, blocked_at, updated_at
+) VALUES (?, ?, '', '', ?, ?, ?, ?)`,
 						"ptid:alice",
 						"ptid:bob",
-						3,
+						true,
+						1,
 						fixture.clock.now,
 						fixture.clock.now,
 					).Error; err != nil {

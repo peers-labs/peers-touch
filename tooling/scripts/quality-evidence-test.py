@@ -106,6 +106,44 @@ class ChangedPathsTests(unittest.TestCase):
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_classifies_argv_gate_with_readable_invocation(self) -> None:
+        buckets = MODULE.classify_gates(
+            [
+                {
+                    "id": "argv-gate",
+                    "tier": "env-evidence",
+                    "environment": "native",
+                    "argv": [
+                        "python3",
+                        "-m",
+                        "example.gate",
+                        "--label",
+                        "two words",
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(
+            buckets["environment_evidence_gates"][0]["command"],
+            "python3 -m example.gate --label 'two words'",
+        )
+
+    def test_classification_rejects_ambiguous_invocation(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "must contain exactly one valid command or argv",
+        ):
+            MODULE.classify_gates(
+                [
+                    {
+                        "id": "ambiguous-gate",
+                        "command": "python3 -m example.gate",
+                        "argv": ["python3", "-m", "example.gate"],
+                    }
+                ]
+            )
+
     def test_reverse_validation_scope_is_informational(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

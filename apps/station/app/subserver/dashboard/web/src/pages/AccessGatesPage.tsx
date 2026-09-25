@@ -37,16 +37,12 @@ const MODE_OPTIONS = [
   { value: ACCESS_POLICY_MODE.CLOSED, label: 'Closed — admission disabled' },
 ];
 
-// Gate types an administrator can toggle in the chain. Auth gates are always
-// part of the flow and are intentionally omitted from the toggle set.
+// Only gate types backed by a registered Station gatekeeper are configurable.
 const GATE_OPTIONS = [
   { value: ACCESS_GATE_TYPE.STATION_CAPABILITY, label: 'Station capability' },
   { value: ACCESS_GATE_TYPE.AUTH_LOGIN, label: 'Login' },
   { value: ACCESS_GATE_TYPE.INVITE_ALLOWLIST, label: 'Invite allowlist' },
   { value: ACCESS_GATE_TYPE.INVITE_CODE, label: 'Invite code' },
-  { value: ACCESS_GATE_TYPE.DEVICE_TRUST, label: 'Device trust' },
-  { value: ACCESS_GATE_TYPE.MAINTENANCE, label: 'Maintenance' },
-  { value: ACCESS_GATE_TYPE.TERMS_ACCEPTANCE, label: 'Terms acceptance' },
 ];
 
 /** Convert a newline/comma separated textarea value into a trimmed list. */

@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "CHAT-LIFECYCLE-20260916",
   "taskId": "CHAT-03-direct",

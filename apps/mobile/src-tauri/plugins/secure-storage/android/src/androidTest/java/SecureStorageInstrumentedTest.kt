@@ -40,25 +40,46 @@ class SecureStorageInstrumentedTest {
 
         assertEquals(secretValue, storage.get(logicalKey))
         val entries = storage.rawTestEntries()
-        assertEquals(1, entries.size)
-        assertFalse(entries.keys.single().contains(logicalKey))
-        assertFalse((entries.values.single() as String).contains(secretValue))
+        assertEquals(2, entries.size)
+        assertFalse(entries.keys.any { it.contains(logicalKey) })
+        assertFalse(entries.values.any { (it as String).contains(secretValue) })
+        assertEquals(listOf(logicalKey), storage.list("oauth."))
 
         storage.remove(logicalKey)
         assertNull(storage.get(logicalKey))
+        assertTrue(storage.list("oauth.").isEmpty())
         assertTrue(storage.rawTestEntries().isEmpty())
     }
 
     @Test
     fun repeatedWriteUsesFreshRandomIv() {
-        storage.set("session.refresh", "same-value")
-        val firstRecord = storage.rawTestEntries().values.single() as String
+        val logicalKey = "session.refresh"
+        val preferenceKey = SecureStorageEncoding.preferenceKey(logicalKey)
+        storage.set(logicalKey, "same-value")
+        val firstRecord = storage.rawTestEntries()[preferenceKey] as String
 
-        storage.set("session.refresh", "same-value")
-        val secondRecord = storage.rawTestEntries().values.single() as String
+        storage.set(logicalKey, "same-value")
+        val secondRecord = storage.rawTestEntries()[preferenceKey] as String
 
         assertNotEquals(firstRecord, secondRecord)
-        assertEquals("same-value", storage.get("session.refresh"))
+        assertEquals("same-value", storage.get(logicalKey))
+    }
+
+    @Test
+    fun listReturnsOnlyMatchingLogicalKeysInCanonicalOrder() {
+        storage.set("peers-touch.mobile.reliability.scope-dek.v2.z", "z")
+        storage.set("oauth.active", "oauth")
+        storage.set("peers-touch.mobile.reliability.install-kek.v1", "install")
+        storage.set("peers-touch.mobile.reliability.scope-dek.v2.a", "a")
+
+        assertEquals(
+            listOf(
+                "peers-touch.mobile.reliability.scope-dek.v2.a",
+                "peers-touch.mobile.reliability.scope-dek.v2.z",
+            ),
+            storage.list("peers-touch.mobile.reliability.scope-dek.v2."),
+        )
+        assertEquals(listOf("oauth.active"), storage.list("oauth."))
     }
 
     @Test

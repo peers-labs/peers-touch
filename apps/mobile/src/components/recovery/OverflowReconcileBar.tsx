@@ -19,6 +19,7 @@ export function OverflowReconcileBar({ state, t }: OverflowReconcileBarProps) {
   return (
     <div
       className="recovery-bar recovery-overflow-reconcile"
+      data-acceptance-id="recovery-event-overflow"
       role="status"
       aria-label={t('mobile.recovery.overflowReconcile.title')}
     >

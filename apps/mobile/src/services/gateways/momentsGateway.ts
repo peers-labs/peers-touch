@@ -11,20 +11,50 @@
  * endpoints through the gateway transport layer.
  */
 
-import { fromBinary, toBinary } from '@bufbuild/protobuf';
+import {
+  fromBinary,
+  toBinary,
+  type DescMessage,
+  type JsonValue,
+} from '@bufbuild/protobuf';
 import type { MobileAuthSession } from '../../features/auth/authSession';
+import { mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
 import {
   CreatePostRequestSchema,
   CreatePostResponseSchema,
+  GetPostResponseSchema,
+  GetTimelineResponseSchema,
+  PostDetailOutcome,
+  ReactToPostResponseSchema,
+  TimelinePageOutcome,
+  UnreactToPostResponseSchema,
+  type FeedObjectExplanation,
   type Post,
   type ReactionSummary,
+  type TimelinePolicySummary,
 } from '../../gen/proto/domain/social/post_pb';
-import type { Comment } from '../../gen/proto/domain/social/comment_pb';
+import {
+  CreateCommentResponseSchema,
+  DeleteCommentResponseSchema,
+  GetCommentsResponseSchema,
+  type Comment,
+} from '../../gen/proto/domain/social/comment_pb';
 import { readableErrorMessage } from '../../features/social/socialTypes';
 import { buildMobileCreatePostRequest, type MobileMomentDraft } from '../../features/social/socialApiTypes';
 import {
+  MobileMutationAdmissionError,
+  requireMobileMutationAdmission,
+} from '../../runtimes/mutationAdmission';
+import {
+  executeStationOperation,
+  responseBytes,
+  responseJson,
+} from '../stationTransport';
+import {
   createGatewayTransport,
+  decodeProtoJsonOutcome,
   type CommandOutcome,
+  type GatewayRequestOptions,
 } from './gatewayTypes';
 
 // ---------------------------------------------------------------------------
@@ -32,7 +62,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface MomentCreatedResult {
-  readonly post: Post | undefined;
+  readonly post?: Post;
 }
 
 /** Cursor-based feed page returned by the timeline endpoint */
@@ -40,6 +70,15 @@ export interface MomentsFeedPage {
   readonly posts: readonly Post[];
   readonly nextCursor: string;
   readonly hasMore: boolean;
+  readonly explanations: readonly FeedObjectExplanation[];
+  readonly outcome: TimelinePageOutcome;
+  readonly policySummary?: TimelinePolicySummary;
+}
+
+export interface MomentDetailResult {
+  readonly post?: Post;
+  readonly explanation?: FeedObjectExplanation;
+  readonly outcome: PostDetailOutcome;
 }
 
 /** Result of a reaction toggle (react / unreact) */
@@ -57,7 +96,7 @@ export interface CommentsPage {
 
 /** Result of creating a comment */
 export interface CommentCreatedResult {
-  readonly comment: Comment | undefined;
+  readonly comment?: Comment;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +114,7 @@ export interface MomentsGateway {
   fetchPublicFeed: (cursor: string, limit: number) => Promise<CommandOutcome<MomentsFeedPage>>;
 
   /** Get a single post by ID. */
-  getPost: (postId: string) => Promise<CommandOutcome<{ post: Post | undefined }>>;
+  getPost: (postId: string) => Promise<CommandOutcome<MomentDetailResult>>;
 
   /** React to a post. */
   reactToPost: (postId: string, reactionKind: number) => Promise<CommandOutcome<ReactionToggleResult>>;
@@ -98,35 +137,42 @@ export interface MomentsGateway {
 // ---------------------------------------------------------------------------
 
 export function createMomentsGateway(session: MobileAuthSession): MomentsGateway {
-  const { stationUrl, command } = createGatewayTransport(session);
+  const { command } = createGatewayTransport(session, 'moments');
+  const scopeKey = mobileAuthScopeKey(session);
+  const commandProtoJson = async <Desc extends DescMessage>(
+    options: GatewayRequestOptions,
+    schema: Desc,
+    message: string,
+  ) => decodeProtoJsonOutcome(
+    await command<JsonValue>(options),
+    schema,
+    {
+      code: 'INVALID_MOMENTS_RESPONSE',
+      message,
+      method: options.method,
+      path: options.path,
+    },
+  );
 
   return {
     createMoment: async (draft) => {
       const req = buildMobileCreatePostRequest(draft);
 
       try {
-        const response = await fetch(`${stationUrl}/api/v1/social/moments`, {
-          method: 'POST',
-          cache: 'no-store',
-          headers: {
-            Accept: 'application/x-protobuf',
-            Authorization: `Bearer ${session.accessToken}`,
-            'Content-Type': 'application/x-protobuf',
-          },
-          body: toBinary(CreatePostRequestSchema, req),
+        requireMobileMutationAdmission(scopeKey, 'moments');
+        const response = await executeStationOperation(session, {
+          operationId: 'moments_create',
+          body_bytes: Array.from(toBinary(CreatePostRequestSchema, req)),
         });
 
-        if (!response.ok) {
+        if (response.status < 200 || response.status >= 300) {
           // Attempt to read error as JSON (Station may respond with JSON errors)
           let errorMessage = `moment creation failed with status ${response.status}`;
-          try {
-            const text = await response.text();
-            if (text) {
-              const parsed = JSON.parse(text) as Record<string, unknown>;
-              errorMessage = String(parsed.message ?? parsed.msg ?? parsed.detail ?? errorMessage);
-            }
-          } catch {
-            // Retain default error message
+          const parsed = responseJson(response) as Record<string, unknown>;
+          if (parsed && typeof parsed === 'object') {
+            errorMessage = String(
+              parsed.message ?? parsed.msg ?? parsed.detail ?? errorMessage,
+            );
           }
           return {
             ok: false,
@@ -140,14 +186,15 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           };
         }
 
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        const created = fromBinary(CreatePostResponseSchema, bytes);
+        const created = fromBinary(CreatePostResponseSchema, responseBytes(response));
         return { ok: true, data: { post: created.post } };
       } catch (error) {
         return {
           ok: false,
           error: {
-            code: 'MOMENTS_TRANSPORT_ERROR',
+            code: error instanceof MobileMutationAdmissionError
+              ? error.code
+              : 'MOMENTS_TRANSPORT_ERROR',
             message: readableErrorMessage(error),
             method: 'POST',
             path: '/api/v1/social/moments',
@@ -156,8 +203,8 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
       }
     },
 
-    fetchFeed: (cursor, limit) =>
-      command<MomentsFeedPage>({
+    fetchFeed: async (cursor, limit) => {
+      const result = await commandProtoJson({
         method: 'GET',
         path: '/api/v1/social/timeline',
         query: {
@@ -165,10 +212,12 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           cursor: cursor || undefined,
           limit,
         },
-      }),
+      }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
+      return validateTimelineOutcome(result, '/api/v1/social/timeline');
+    },
 
-    fetchPublicFeed: (cursor, limit) =>
-      command<MomentsFeedPage>({
+    fetchPublicFeed: async (cursor, limit) => {
+      const result = await commandProtoJson({
         method: 'GET',
         path: '/api/v1/social/timeline',
         query: {
@@ -176,58 +225,124 @@ export function createMomentsGateway(session: MobileAuthSession): MomentsGateway
           cursor: cursor || undefined,
           limit,
         },
-      }),
+      }, GetTimelineResponseSchema, 'mobile.moments.feed.error');
+      return validateTimelineOutcome(result, '/api/v1/social/timeline');
+    },
 
-    getPost: (postId) =>
-      command<{ post: Post | undefined }>({
+    getPost: async (postId) => {
+      const path = `/api/v1/social/posts/${encodeURIComponent(postId)}`;
+      const result = await commandProtoJson({
         method: 'GET',
-        path: `/api/v1/social/posts/${encodeURIComponent(postId)}`,
-      }),
+        path,
+      }, GetPostResponseSchema, 'mobile.moments.feed.error');
+      return validateDetailOutcome(result, path);
+    },
 
     reactToPost: (postId, reactionKind) =>
-      command<ReactionToggleResult>({
+      commandProtoJson({
         method: 'POST',
-        path: '/api/v1/social/reactions',
+        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/react`,
         body: {
           post_id: postId,
           kind: reactionKind,
         },
-      }),
+      }, ReactToPostResponseSchema, 'mobile.moments.reaction.error'),
 
     unreactToPost: (postId, reactionKind) =>
-      command<ReactionToggleResult>({
-        method: 'DELETE',
-        path: '/api/v1/social/reactions',
+      commandProtoJson({
+        method: 'POST',
+        path: `/api/v1/social/posts/${encodeURIComponent(postId)}/unreact`,
         body: {
           post_id: postId,
           kind: reactionKind,
         },
-      }),
+      }, UnreactToPostResponseSchema, 'mobile.moments.reaction.error'),
 
     fetchComments: (postId, cursor, limit) =>
-      command<CommentsPage>({
+      commandProtoJson({
         method: 'GET',
         path: `/api/v1/social/posts/${encodeURIComponent(postId)}/comments`,
         query: {
           cursor: cursor || undefined,
           limit,
         },
-      }),
+      }, GetCommentsResponseSchema, 'mobile.moments.comment.error'),
 
     createComment: (postId, content, replyToCommentId) =>
-      command<CommentCreatedResult>({
+      commandProtoJson({
         method: 'POST',
         path: `/api/v1/social/posts/${encodeURIComponent(postId)}/comments`,
         body: {
           content,
           ...(replyToCommentId ? { reply_to_comment_id: replyToCommentId } : {}),
         },
-      }),
+      }, CreateCommentResponseSchema, 'mobile.moments.comment.sendError'),
 
     deleteComment: (commentId) =>
-      command<{ success: boolean }>({
+      commandProtoJson({
         method: 'DELETE',
         path: `/api/v1/social/comments/${encodeURIComponent(commentId)}`,
-      }),
+      }, DeleteCommentResponseSchema, 'mobile.moments.comment.error'),
+  };
+}
+
+function validateTimelineOutcome(
+  result: CommandOutcome<MomentsFeedPage>,
+  path: string,
+): CommandOutcome<MomentsFeedPage> {
+  if (!result.ok) return result;
+  const { outcome, posts, policySummary } = result.data;
+  const validOutcome = outcome === TimelinePageOutcome.ITEMS
+    || outcome === TimelinePageOutcome.EMPTY
+    || outcome === TimelinePageOutcome.FILTERED_EMPTY;
+  const validShape = outcome === TimelinePageOutcome.ITEMS
+    ? posts.length > 0
+    : posts.length === 0;
+  const validSummary = Boolean(
+    policySummary
+    && policySummary.scannedCount >= posts.length
+    && policySummary.filteredCount
+      === policySummary.scannedCount - posts.length,
+  );
+  if (validOutcome && validShape && validSummary) return result;
+  return invalidMomentsOutcome(path);
+}
+
+function validateDetailOutcome(
+  result: CommandOutcome<MomentDetailResult>,
+  path: string,
+): CommandOutcome<MomentDetailResult> {
+  if (!result.ok) return result;
+  const { outcome, post, explanation } = result.data;
+  if (
+    outcome === PostDetailOutcome.AVAILABLE
+    && post
+    && explanation
+  ) {
+    return result;
+  }
+  if (
+    (
+      outcome === PostDetailOutcome.HIDDEN
+      || outcome === PostDetailOutcome.DELETED
+      || outcome === PostDetailOutcome.UNAVAILABLE
+    )
+    && !post
+    && !explanation
+  ) {
+    return result;
+  }
+  return invalidMomentsOutcome(path);
+}
+
+function invalidMomentsOutcome<T>(path: string): CommandOutcome<T> {
+  return {
+    ok: false,
+    error: {
+      code: 'INVALID_MOMENTS_OUTCOME',
+      message: 'mobile.moments.feed.error',
+      method: 'GET',
+      path,
+    },
   };
 }

@@ -171,6 +171,16 @@ type OAuthSessionBinding struct {
 	LifecycleGeneration    uint64
 }
 
+// AccessGateSessionBinding is the immutable Station-owned scope used when a
+// non-OAuth Access Gate attempt reaches its final GRANTED decision.
+type AccessGateSessionBinding struct {
+	AccessAttemptID        string
+	StationPeerID          string
+	AccessDecisionRevision uint64
+	DeviceID               string
+	LifecycleGeneration    uint64
+}
+
 // PrepareOAuthSession creates bearer material and its inactive persistent
 // session row without writing either. The OAuth finalizer owns the surrounding
 // database transaction and encrypts the returned LoginResponse before commit.
@@ -245,6 +255,21 @@ func PrepareOAuthSession(
 }
 
 func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, userAgent, deviceType string) (*SessionLoginResult, error) {
+	user, err := AuthenticatePassword(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	return IssueTokenAndSession(ctx, user, clientIP, userAgent, deviceType, nil)
+}
+
+// AuthenticatePassword resolves a password credential to an Actor without
+// creating a token or session. Access Gate uses this to keep the identity
+// attempt-scoped until every Station-owned gate has passed.
+func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Actor, error) {
+	if credentials == nil {
+		return nil, ErrInvalidCredentials
+	}
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return nil, err
@@ -258,7 +283,109 @@ func LoginWithSession(ctx context.Context, credentials *Credentials, clientIP, u
 		return nil, ErrInvalidCredentials
 	}
 
-	return IssueTokenAndSession(ctx, &user, clientIP, userAgent, deviceType, nil)
+	return &user, nil
+}
+
+// PrepareAccessGateSession creates one active Mobile session record and its
+// credential response without persisting either. The Access Gate finalizer
+// persists both the session and the attempt binding in one transaction.
+func PrepareAccessGateSession(
+	ctx context.Context,
+	actor *db.Actor,
+	binding AccessGateSessionBinding,
+	clientIP, userAgent string,
+	now time.Time,
+) (*session.SessionRecord, *model.LoginResponse, error) {
+	if actor == nil {
+		return nil, nil, errors.New("cannot prepare Access Gate session without actor")
+	}
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, nil, fmt.Errorf("cannot prepare Access Gate session for actor without valid PTID: %w", err)
+	}
+	if strings.TrimSpace(binding.AccessAttemptID) == "" ||
+		strings.TrimSpace(binding.StationPeerID) == "" ||
+		strings.TrimSpace(binding.DeviceID) == "" ||
+		binding.LifecycleGeneration == 0 ||
+		binding.AccessDecisionRevision == 0 {
+		return nil, nil, errors.New("Access Gate session binding is incomplete")
+	}
+
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate Access Gate session ID: %w", err)
+	}
+	response, err := issueSessionCredential(ctx, actor, sessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	expiresAt := now.Add(DefaultSessionDuration)
+	return &session.SessionRecord{
+		SessionID:              sessionID,
+		UserID:                 actor.ID,
+		Email:                  actor.Email,
+		DeviceType:             session.DeviceTypeMobile,
+		IPAddress:              clientIP,
+		UserAgent:              userAgent,
+		AccessAttemptID:        binding.AccessAttemptID,
+		StationPeerID:          binding.StationPeerID,
+		AccessDecisionRevision: binding.AccessDecisionRevision,
+		DeviceID:               binding.DeviceID,
+		LifecycleGeneration:    binding.LifecycleGeneration,
+		AuthMethod:             "access_gate",
+		CreatedAt:              now,
+		ExpiresAt:              expiresAt,
+		LastActiveAt:           now,
+	}, response, nil
+}
+
+// ResumeAccessGateSession reissues bearer material for the same durable
+// session identity. It is used only for an idempotent submission replay after
+// the original Rust caller failed before persisting the credential.
+func ResumeAccessGateSession(
+	ctx context.Context,
+	actor *db.Actor,
+	record *session.SessionRecord,
+) (*model.LoginResponse, error) {
+	if actor == nil || record == nil ||
+		record.Revoked || !record.ExpiresAt.After(time.Now()) ||
+		strings.TrimSpace(record.SessionID) == "" {
+		return nil, errors.New("Access Gate session is unavailable")
+	}
+	return issueSessionCredential(ctx, actor, record.SessionID)
+}
+
+func issueSessionCredential(
+	ctx context.Context,
+	actor *db.Actor,
+	sessionID string,
+) (*model.LoginResponse, error) {
+	ptid := strings.TrimSpace(actor.PTID)
+	if _, err := actoridentity.Parse(ptid); err != nil {
+		return nil, fmt.Errorf("cannot issue session for actor without valid PTID: %w", err)
+	}
+	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
+	_, token, err := provider.Authenticate(ctx, coreauth.Credentials{
+		SubjectID:  ptid,
+		SessionID:  sessionID,
+		Attributes: map[string]string{"email": actor.Email},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("issue Access Gate session credential: %w", err)
+	}
+	return &model.LoginResponse{
+		Tokens: &model.AuthTokens{
+			Token:       token.Value,
+			AccessToken: token.Value,
+			TokenType:   token.Type,
+			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
+		},
+		SessionId: sessionID,
+		ActorRef: &model.ActorRef{
+			Ptid: ptid,
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+	}, nil
 }
 
 // IssueTokenAndSession creates a JWT token + session for an already-authenticated Actor.

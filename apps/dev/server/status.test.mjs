@@ -30,7 +30,6 @@ function addProfile(
   envRepo,
   name,
   {
-    agentControlMode,
     stationUrl,
     deployEnvironment,
     relayUrl = '',
@@ -45,7 +44,6 @@ function addProfile(
     [
       `PT_DEV_PROFILE=${name}`,
       'PT_DEV_SLOT=2',
-      `PT_AGENT_CONTROL_MODE=${agentControlMode}`,
       'PT_STATION_MODE=remote',
       `PT_STATION_NAME=${name}`,
       `PT_STATION_URL=${stationUrl}`,
@@ -115,40 +113,44 @@ function fakePlanPackage(workspaceId, head) {
 test('collectProfiles exposes only selected public fields', () => {
   const scope = fixture();
   try {
-    addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+    addProfile(scope.root, 'dev-one', {
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
       relayUrl:
-        'http://dashboard:must-not-leak@10.10.0.1:18081/path?token=secret',
+        'http://dashboard:must-not-leak@192.0.2.1:18081/path?token=secret',
       relayDeployEnvironment: 'relay-one',
     });
-    addProfile(scope.root, 'untracked-disposable', {
-      agentControlMode: 'disposable',
+    addProfile(scope.root, 'untracked-lab', {
       stationUrl: 'http://10.10.0.2:18132',
-      deployEnvironment: 'station-disposable',
+      deployEnvironment: 'station-lab',
       tracked: false,
+    });
+    addProfile(scope.root, 'bad profile', {
+      stationUrl: 'http://192.0.2.3:18132',
+      deployEnvironment: 'station-bad',
     });
 
     const profiles = collectProfiles(scope.root);
     assert.deepEqual(
       profiles.map((profile) => [
         profile.name,
-        profile.agentControlMode,
+        profile.resetPolicy,
         profile.sourceState,
         profile.status,
       ]),
       [
-        ['managed-one', 'managed', 'tracked-clean', 'available'],
+        ['bad profile', null, 'tracked-clean', 'blocked'],
+        ['dev-one', 'agent-resettable', 'tracked-clean', 'available'],
         [
-          'untracked-disposable',
-          'disposable',
+          'untracked-lab',
+          'agent-resettable',
           'untracked',
           'blocked',
         ],
       ],
     );
-    assert.equal(profiles[0].relayUrl, 'http://10.10.0.1:18081/path');
+    assert.equal(profiles[0].error.code, 'PROFILE_IDENTITY_INVALID');
+    assert.equal(profiles[1].relayUrl, 'http://192.0.2.1:18081/path');
     assert.equal(JSON.stringify(profiles).includes('must-not-leak'), false);
   } finally {
     scope.close();
@@ -205,8 +207,18 @@ test('resolveDeclarationPlan uses only declaration and immutable workspace bindi
         completed: direct.progress.completed,
         total: direct.progress.total,
         percentage: direct.progress.percentage,
+        completedAfter:
+          direct.progress.nextProgressBoundary.completedAfter,
+        percentageAfter:
+          direct.progress.nextProgressBoundary.percentageAfter,
       },
-      { completed: 1, total: 2, percentage: 50 },
+      {
+        completed: 1,
+        total: 2,
+        percentage: 50,
+        completedAfter: 2,
+        percentageAfter: 100,
+      },
     );
 
     const boundWithoutLocator = await resolveDeclarationPlan(
@@ -281,18 +293,15 @@ test('resolveDeclarationPlan uses only declaration and immutable workspace bindi
 test('buildDevSnapshot joins worktree resources and redacts authority paths', async () => {
   const scope = fixture();
   try {
-    addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+    addProfile(scope.root, 'dev-one', {
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
-      relayUrl: 'http://10.10.0.1:18081',
+      relayUrl: 'http://192.0.2.1:18081',
       relayDeployEnvironment: 'relay-one',
     });
     const workspaceId = '0123456789abcdef';
     const server = {
-      schemaVersion: 1,
       kind: 'peers-touch-dev-server',
-      protocolVersion: 2,
       endpoint: 'http://127.0.0.1:4177',
       startedAt: '2026-09-17T00:00:00.000Z',
       source: {
@@ -303,6 +312,7 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
     };
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       server,
       machineStatus: {
         authority: 'machine-control-plane',
@@ -311,13 +321,13 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
             workspaceId,
             name: 'feature-worktree',
             branch: 'feat/dev',
-            profile: 'managed-one',
+            profile: 'dev-one',
             slot: 2,
             allowedCapabilities: ['station.connect', 'station.deploy'],
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'active',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'available',
             profileError: null,
             canonicalRoot: '/private/path/must-not-leak',
@@ -351,7 +361,7 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
             runtimeClaims: [
               {
                 kind: 'profile',
-                resourceId: 'managed-one',
+                resourceId: 'dev-one',
                 mode: 'shared',
               },
               {
@@ -396,12 +406,87 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
   }
 });
 
+test('buildDevSnapshot aggregates workspace-owned active work without cross-workspace writes', async () => {
+  const scope = fixture();
+  try {
+    const workspaceId = '0123456789abcdef';
+    const activeWork = {
+      workspaceId,
+      workItemId: 'DWF-ACTIVE-WORK',
+      planId: 'DWF-PLAN',
+      planPath: 'docs/architecture/dwf/execution-plans/test/plan.md',
+      planStatus: 'active',
+      currentTaskId: 'DWF-T1',
+      currentTaskPath:
+        'docs/architecture/dwf/execution-plans/test/tasks/DWF-T1.md',
+      taskStatus: 'in_progress',
+      sessionId: 'dwf-session',
+      journeyId: 'DWF-J01',
+      devState: 'IMPLEMENTING',
+      branch: 'feature/dwf',
+      initialHead: '1'.repeat(40),
+      expectedHead: '2'.repeat(40),
+      revision: 3,
+      updatedAt: '2026-09-19T08:00:00.000Z',
+    };
+    const snapshot = await buildDevSnapshot({
+      envRepo: scope.root,
+      activeWork: {
+        records: [activeWork],
+        errors: [
+          {
+            workspaceId: 'fedcba9876543210',
+            code: 'ACTIVE_WORK_INVALID',
+            message: 'invalid record',
+          },
+        ],
+      },
+      machineStatus: {
+        authority: 'machine-control-plane',
+        registrations: [
+          {
+            workspaceId,
+            name: 'dwf-consumer',
+            branch: 'feature/dwf',
+            profile: null,
+            slot: null,
+            allowedCapabilities: [],
+            purpose: 'active-work aggregation test',
+            owner: 'peers-dev-test@example.invalid',
+            activity: 'active',
+            resetPolicy: 'agent-resettable',
+            profileState: 'available',
+            profileError: null,
+          },
+        ],
+        activeLeases: [],
+        staleLeaseMetadata: [],
+        unregisteredObservations: null,
+      },
+      ledger: { declarations: {} },
+      now: new Date('2026-09-19T08:00:00.000Z'),
+    });
+
+    assert.equal(snapshot.activeWork.records.length, 1);
+    assert.equal(snapshot.activeWork.errors.length, 1);
+    assert.equal(snapshot.worktrees[0].workState, 'in-progress');
+    assert.equal(snapshot.worktrees[0].activeWork.currentTaskId, 'DWF-T1');
+    assert.equal(
+      JSON.stringify(snapshot).includes('/Users/'),
+      false,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('declaration-only worktrees remain visible as unregistered', async () => {
   const scope = fixture();
   try {
     const workspaceId = 'fedcba9876543210';
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       machineStatus: {
         authority: 'machine-control-plane',
         registrations: [],
@@ -444,15 +529,14 @@ test('declaration-only worktrees remain visible as unregistered', async () => {
 test('work progress remains in progress while environment health is blocked and stale work stays visible', async () => {
   const scope = fixture();
   try {
-    addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+    addProfile(scope.root, 'dev-one', {
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
     });
     const profileFile = path.join(
       scope.root,
       'peers-touch',
-      'managed-one',
+      'dev-one',
       'profile.env.example',
     );
     writeFileSync(
@@ -471,6 +555,7 @@ test('work progress remains in progress while environment health is blocked and 
     };
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       machineStatus: {
         authority: 'machine-control-plane',
         registrations: [
@@ -479,13 +564,13 @@ test('work progress remains in progress while environment health is blocked and 
             canonicalRoot: scope.root,
             name: 'feature-worktree',
             branch: 'feat/dev',
-            profile: 'managed-one',
+            profile: 'dev-one',
             slot: 2,
             allowedCapabilities: [],
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'stale',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'blocked',
             profileError: {
               code: 'PROFILE_SOURCE_UNREVIEWED',

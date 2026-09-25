@@ -12,7 +12,7 @@ describe('runtime-unavailable component recovery wiring', () => {
       "if (message.resolution!.type === 'selectRuntime')",
     );
     const actionEnd = source.indexOf(
-      "if (message.resolution!.type === 'switchAccount')",
+      "if (message.resolution!.type === 'retryLater')",
       actionStart,
     );
     const actionBranch = source.slice(actionStart, actionEnd);

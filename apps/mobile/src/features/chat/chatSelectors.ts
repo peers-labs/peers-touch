@@ -1,12 +1,3 @@
-/**
- * chatSelectors.ts — Narrow selector hooks for the Chat page.
- *
- * Pages consume these selectors instead of reaching into stores directly.
- * Each selector returns the minimal projection a rendering concern needs.
- * The selector layer owns memoisation; the page does not run useMemo
- * on store-derived data.
- */
-
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/shallow';
 import {
@@ -18,19 +9,15 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useSocialStore } from '../social/socialStore';
-import { useGroupStore } from '../group/groupStore';
 import { projectConversations } from '../social/socialProjection';
-import { projectGroupConversations, projectGroupMessageDisplay, type GroupConversation, type GroupMessageDisplay } from '../group/groupProjection';
 import { timestampMillis } from '../social/socialNormalizers';
-import { timestampMillis as groupTimestampMillis } from '../group/groupNormalizers';
-import type { FriendChatMessage, SocialConversation, TypingEntry } from '../social/socialTypes';
-import { GroupRole, type GroupMember, type GroupMessage, type GroupMessageAttachment } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { FriendMessageAttachment } from '../social/socialTypes';
+import type { SocialMessage, SocialConversation, TypingEntry } from '../social/socialTypes';
+import type { SocialMessageAttachment } from '../social/socialTypes';
 import type { ChatActionState } from './chatActionState';
 import { chatActionKey, defaultChatActionState } from './chatActionState';
 import type { FriendConversationSettings, ChatBackgroundId } from '../social/socialApiTypes';
-import type { GroupGatewaySettings as GroupSettings } from '../../services/gateways';
 import type { CommandProjection } from '../../runtimes/commandRuntime';
+import type { MessagingConversationProjection } from '../../services/mobileCommands';
 
 // ---------------------------------------------------------------------------
 // Shared conversation types
@@ -38,12 +25,25 @@ import type { CommandProjection } from '../../runtimes/commandRuntime';
 
 export type MobileConversation =
   | { kind: 'friend'; key: string; conversation: SocialConversation }
-  | { kind: 'group'; key: string; conversation: GroupConversation };
+  | {
+      kind: 'group';
+      key: string;
+      conversation: {
+        projection: MessagingConversationProjection;
+        unread: number;
+        lastMessage?: SocialMessage;
+      };
+    };
 
-const EMPTY_MESSAGES: FriendChatMessage[] = [];
-const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
-const EMPTY_GROUP_MEMBERS: GroupMember[] = [];
+const EMPTY_MESSAGES: SocialMessage[] = [];
 const EMPTY_TYPING_PEERS: Record<string, TypingEntry> = {};
+
+export function selectConversationTypingPeers(
+  state: { readonly typingPeers: Record<string, Record<string, TypingEntry>> },
+  conversationId: string,
+): Record<string, TypingEntry> {
+  return state.typingPeers[conversationId] ?? EMPTY_TYPING_PEERS;
+}
 
 // ---------------------------------------------------------------------------
 // Conversation list selector
@@ -58,34 +58,44 @@ export function useConversationListProjection(
   query: string,
   chatActionStates: Record<string, ChatActionState>,
   friendSettings: Record<string, FriendConversationSettings>,
-  groupSettingsByUlid: Record<string, GroupSettings>,
 ): ConversationListProjection {
-  const { sessions, sessionMessages, currentUserPtid, peerOnline } = useSocialStore(useShallow((s) => ({
+  const {
+    sessions,
+    currentUserPtid,
+    peerOnline,
+    messagingConversations,
+    conversationSummaries,
+  } = useSocialStore(useShallow((s) => ({
     sessions: s.sessions,
-    sessionMessages: s.messages,
     currentUserPtid: s.currentUserPtid,
     peerOnline: s.peerOnline,
-  })));
-  const { groups, groupMessagesByUlid, groupUnreadCounts } = useGroupStore(useShallow((s) => ({
-    groups: s.groups,
-    groupMessagesByUlid: s.messages,
-    groupUnreadCounts: s.unreadCounts,
+    messagingConversations: s.messagingConversations,
+    conversationSummaries: s.conversationSummaries,
   })));
 
   const friendConversations = useMemo(
-    () => projectConversations({ sessions, messages: sessionMessages, currentUserPtid, peerOnline }),
-    [currentUserPtid, peerOnline, sessionMessages, sessions],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline }),
+    [currentUserPtid, peerOnline, sessions],
   );
-
   const groupConversations = useMemo(
-    () => projectGroupConversations({ groups, messages: groupMessagesByUlid, unreadCounts: groupUnreadCounts }),
-    [groupMessagesByUlid, groupUnreadCounts, groups],
+    () => messagingConversations
+      .filter((conversation) => conversation.active && conversation.kind === 2)
+      .map((projection) => ({
+        projection,
+        unread: conversationSummaries[projection.conversationId]?.unreadCount ?? 0,
+        lastMessage: conversationSummaries[projection.conversationId]?.lastMessage,
+      })),
+    [conversationSummaries, messagingConversations],
   );
 
   const all = useMemo<MobileConversation[]>(
     () => [
       ...friendConversations.map((c) => ({ kind: 'friend' as const, key: `friend:${c.session.ulid}`, conversation: c })),
-      ...groupConversations.map((c) => ({ kind: 'group' as const, key: `group:${c.group.ulid}`, conversation: c })),
+      ...groupConversations.map((c) => ({
+        kind: 'group' as const,
+        key: `group:${c.projection.conversationId}`,
+        conversation: c,
+      })),
     ],
     [friendConversations, groupConversations],
   );
@@ -95,12 +105,12 @@ export function useConversationListProjection(
       conversations: all,
       query,
       resolvePreference: (conv) =>
-        conversationPreferenceState(conv, chatActionStates, friendSettings, groupSettingsByUlid),
+        conversationPreferenceState(conv, chatActionStates, friendSettings),
       resolveSearchText: conversationSearchText,
       resolveUnread: conversationUnread,
       resolveUpdatedAt: conversationUpdatedAt,
     }),
-    [all, chatActionStates, friendSettings, groupSettingsByUlid, query],
+    [all, chatActionStates, friendSettings, query],
   );
 
   return { all, surfaceItems };
@@ -111,7 +121,7 @@ export function useConversationListProjection(
 // ---------------------------------------------------------------------------
 
 export interface ThreadProjection {
-  readonly messages: Array<FriendChatMessage | GroupMessage>;
+  readonly messages: SocialMessage[];
   readonly isGroupThread: boolean;
   readonly title: string;
   readonly subtitle: string;
@@ -125,63 +135,70 @@ export function useThreadProjection(
   activeGroupUlid: string | null,
   chatActionStates: Record<string, ChatActionState>,
   friendSettings: Record<string, FriendConversationSettings>,
-  groupSettingsByUlid: Record<string, GroupSettings>,
   stationHost: string,
   t: (key: string, params?: Record<string, string | number>) => string,
 ): ThreadProjection | null {
-  const messages = useSocialStore((s) => (activeSessionUlid ? s.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
+  const activeConversationId = activeGroupUlid || activeSessionUlid;
+  const messages = useSocialStore((s) => (
+    activeConversationId ? s.messages[activeConversationId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
+  ));
   const currentUserPtid = useSocialStore((s) => s.currentUserPtid);
   const typingPeers = useSocialStore((s) => {
-    const id = activeGroupUlid || activeSessionUlid || '';
-    return id ? s.typingPeers[id] ?? EMPTY_TYPING_PEERS : EMPTY_TYPING_PEERS;
+    const id = activeConversationId || '';
+    return selectConversationTypingPeers(s, id);
   });
   const sessions = useSocialStore((s) => s.sessions);
-  const sessionMessages = useSocialStore((s) => s.messages);
   const peerOnline = useSocialStore((s) => s.peerOnline);
-  const groupMessages = useGroupStore((s) => (activeGroupUlid ? s.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
-  const groups = useGroupStore((s) => s.groups);
-  const groupMessagesByUlid = useGroupStore((s) => s.messages);
-  const groupUnreadCounts = useGroupStore((s) => s.unreadCounts);
+  const messagingConversations = useSocialStore((s) => s.messagingConversations);
 
   const conversations = useMemo(
-    () => projectConversations({ sessions, messages: sessionMessages, currentUserPtid, peerOnline }),
-    [currentUserPtid, peerOnline, sessionMessages, sessions],
-  );
-  const groupConversations = useMemo(
-    () => projectGroupConversations({ groups, messages: groupMessagesByUlid, unreadCounts: groupUnreadCounts }),
-    [groupMessagesByUlid, groupUnreadCounts, groups],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline }),
+    [currentUserPtid, peerOnline, sessions],
   );
 
   const activeConversation = conversations.find((c) => c.session.ulid === activeSessionUlid);
-  const activeGroupConversation = groupConversations.find((c) => c.group.ulid === activeGroupUlid);
+  const activeGroupConversation = messagingConversations.find(
+    (conversation) => (
+      conversation.kind === 2
+      && conversation.active
+      && conversation.conversationId === activeGroupUlid
+    ),
+  );
 
   if (!activeConversation && !activeGroupConversation) return null;
 
   const isGroupThread = Boolean(activeGroupConversation);
-  const title = activeGroupConversation?.group.name || activeConversation?.peerName || '';
-  const activeKey = chatActionKey(isGroupThread ? 'group' : 'friend', activeGroupUlid || activeSessionUlid || '');
+  const title = activeGroupConversation?.name || activeConversation?.peerName || '';
+  const activeKey = chatActionKey(
+    isGroupThread ? 'group' : 'friend',
+    activeGroupUlid || activeSessionUlid || '',
+  );
 
-  const actionState = isGroupThread
-    ? groupSettingsToActionState(groupSettingsByUlid[activeGroupUlid || ''], chatActionStates[activeKey])
-    : friendSettingsToActionState(activeSessionUlid ? friendSettings[activeSessionUlid] : undefined, chatActionStates[activeKey]);
+  const actionState = friendSettingsToActionState(
+    activeConversationId ? friendSettings[activeConversationId] : undefined,
+    chatActionStates[activeKey],
+  );
 
   const peerTyping = activeConversation
     ? Boolean(typingPeers[activeConversation.peerPtid]?.typing)
-    : Object.entries(typingPeers).some(([ptid, entry]) => ptid !== currentUserPtid && entry.typing);
+    : Object.entries(typingPeers).some(
+      ([ptid, entry]) => ptid !== currentUserPtid && entry.typing,
+    );
 
-  const subtitle = activeGroupConversation
+  const subtitle = isGroupThread
     ? peerTyping
       ? t('mobile.chat.typing')
-      : t('mobile.group.memberCount', { count: activeGroupConversation.group.memberCount })
+      : t('mobile.group.memberCount', {
+          count: activeGroupConversation?.memberPtids.length ?? 0,
+        })
     : peerTyping
       ? t('mobile.chat.typing')
       : t('mobile.chat.peerAtStation', { station: stationHost });
 
-  const rawThreadMessages: Array<FriendChatMessage | GroupMessage> = activeGroupConversation ? groupMessages : messages;
   const threadMessages = filterChatMessagesAfterClearedAt(
-    rawThreadMessages,
+    messages,
     actionState.clearedAt,
-    (message) => messageTimestampMillis(message, isGroupThread),
+    (message) => messageTimestampMillis(message),
   );
 
   return {
@@ -193,64 +210,6 @@ export function useThreadProjection(
     actionState,
     activeKey,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Group admin selector
-// ---------------------------------------------------------------------------
-
-export interface GroupAdminProjection {
-  readonly members: GroupMember[];
-  readonly myRole: number;
-  readonly canManageMembers: boolean;
-  readonly inviteCandidates: SocialConversation[];
-  readonly groupSettings: GroupSettings | undefined;
-}
-
-export function useGroupAdminProjection(
-  activeGroupUlid: string | null,
-): GroupAdminProjection {
-  const members = useGroupStore((s) => (activeGroupUlid ? s.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
-  const groupSettings = useGroupStore((s) => activeGroupUlid ? s.settings[activeGroupUlid] : undefined);
-  const currentUserPtid = useSocialStore((s) => s.currentUserPtid);
-  const friendshipStatus = useSocialStore((s) => s.friendshipStatus);
-  const sessions = useSocialStore((s) => s.sessions);
-  const sessionMessages = useSocialStore((s) => s.messages);
-  const peerOnline = useSocialStore((s) => s.peerOnline);
-  const groups = useGroupStore((s) => s.groups);
-  const groupMessagesByUlid = useGroupStore((s) => s.messages);
-  const groupUnreadCounts = useGroupStore((s) => s.unreadCounts);
-
-  const conversations = useMemo(
-    () => projectConversations({ sessions, messages: sessionMessages, currentUserPtid, peerOnline }),
-    [currentUserPtid, peerOnline, sessionMessages, sessions],
-  );
-
-  const groupConversations = useMemo(
-    () => projectGroupConversations({ groups, messages: groupMessagesByUlid, unreadCounts: groupUnreadCounts }),
-    [groupMessagesByUlid, groupUnreadCounts, groups],
-  );
-
-  const activeGroupConversation = groupConversations.find((c) => c.group.ulid === activeGroupUlid);
-
-  const memberPtids = useMemo(() => new Set(members.map((m) => m.ptid).filter(Boolean)), [members]);
-
-  const myMember = members.find((m) => m.ptid === currentUserPtid);
-  const myRole = activeGroupConversation?.group.ownerPtid === currentUserPtid
-    ? GroupRole.OWNER
-    : Number(myMember?.role ?? 0);
-  const canManageMembers = myRole >= GroupRole.ADMIN;
-
-  const inviteCandidates = useMemo(
-    () => conversations.filter((c) =>
-      c.peerPtid &&
-      !memberPtids.has(c.peerPtid) &&
-      !friendshipStatus[c.peerPtid]?.blocked,
-    ),
-    [conversations, friendshipStatus, memberPtids],
-  );
-
-  return { members, myRole, canManageMembers, inviteCandidates, groupSettings };
 }
 
 // ---------------------------------------------------------------------------
@@ -268,58 +227,54 @@ export interface PendingCommandsProjection {
 // Pure helper functions (no hooks)
 // ---------------------------------------------------------------------------
 
-export function messageTimestampMillis(message: FriendChatMessage | GroupMessage, isGroupThread: boolean): number {
-  if (isGroupThread) return groupTimestampMillis((message as GroupMessage).sentAt ?? (message as GroupMessage).createdAt);
-  return timestampMillis((message as FriendChatMessage).sentAt ?? (message as FriendChatMessage).createdAt);
+export function messageTimestampMillis(message: SocialMessage): number {
+  return timestampMillis(message.sentAt ?? message.createdAt);
 }
 
 export function conversationTitle(conversation: MobileConversation): string {
-  return conversation.kind === 'friend' ? conversation.conversation.peerName : conversation.conversation.group.name;
+  return conversation.kind === 'friend'
+    ? conversation.conversation.peerName
+    : conversation.conversation.projection.name;
 }
 
 export function conversationAvatar(conversation: MobileConversation): string {
-  return conversation.kind === 'friend' ? conversation.conversation.peerAvatar : conversation.conversation.group.avatarCid;
+  return conversation.kind === 'friend'
+    ? conversation.conversation.peerAvatar
+    : '';
 }
 
 export function conversationUnread(conversation: MobileConversation): number {
-  return conversation.kind === 'friend' ? conversation.conversation.unread : conversation.conversation.unread;
+  return conversation.conversation.unread;
 }
 
 export function conversationUpdatedAt(conversation: MobileConversation): number {
-  if (conversation.kind === 'friend') {
-    return timestampMillis(conversation.conversation.session.lastMessageAt);
-  }
-  return groupTimestampMillis(
-    conversation.conversation.lastMessage?.sentAt
-    ?? conversation.conversation.group.updatedAt
-    ?? conversation.conversation.group.createdAt,
-  );
+  return conversation.kind === 'friend'
+    ? timestampMillis(conversation.conversation.session.lastMessageAt)
+    : conversation.conversation.lastMessage
+      ? messageTimestampMillis(conversation.conversation.lastMessage)
+      : conversation.conversation.projection.updatedAtUnixMs;
 }
 
 export function conversationSearchText(conversation: MobileConversation): string {
   if (conversation.kind === 'friend') {
     return `${conversation.conversation.peerName} ${conversation.conversation.peerPtid} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
   }
-  return `${conversation.conversation.group.name} ${conversation.conversation.group.ulid} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
+  return `${conversation.conversation.projection.name} ${conversation.conversation.projection.conversationId} ${conversation.conversation.lastMessage?.content ?? ''} ${attachmentSearchText(conversation.conversation.lastMessage)}`;
 }
 
 export function conversationPreview(
   conversation: MobileConversation,
   t: (key: string) => string,
 ): string {
-  if (conversation.kind === 'group') {
-    const lastMessage = conversation.conversation.lastMessage;
-    if (!lastMessage) return t('mobile.chat.noPreview');
-    const text = groupMessageDisplayText(projectGroupMessageDisplay(lastMessage), t);
-    if (text !== t('mobile.chat.noPreview')) return text;
-    return chatMessageAttachments(lastMessage)[0]?.filename || t('mobile.chat.noPreview');
-  }
   const lastMessage = conversation.conversation.lastMessage;
-  if (lastMessage) return friendMessageDisplayText(lastMessage, t);
-  return conversation.conversation.session.lastMessageUlid ? t('mobile.chat.latestMessage') : t('mobile.chat.noPreview');
+  if (lastMessage) return messageDisplayText(lastMessage, t);
+  return conversation.kind === 'friend' && conversation.conversation.session.lastMessageUlid
+    ? t('mobile.chat.latestMessage')
+    : t('mobile.chat.noPreview');
 }
 
-export function friendMessageDisplayText(message: FriendChatMessage, t: (key: string) => string): string {
+export function messageDisplayText(message: SocialMessage, t: (key: string) => string): string {
+  if (isModeratedChatMessage(message)) return t('mobile.chat.moderatedMessage');
   const kind = chatMessageDisplayKind({ content: message.content, recalled: message.recalled });
   if (kind === 'text') return message.content;
   if (kind === 'recalled') return t('mobile.chat.recalledMessage');
@@ -328,27 +283,21 @@ export function friendMessageDisplayText(message: FriendChatMessage, t: (key: st
   return t('mobile.chat.noPreview');
 }
 
-export function groupMessageDisplayText(display: GroupMessageDisplay, t: (key: string) => string): string {
-  const kind = chatMessageDisplayKind({
-    content: display.kind === 'text' ? display.content : '',
-    recalled: display.kind === 'recalled',
-    encrypted: display.kind === 'encrypted',
-  });
-  if (kind === 'text' && display.kind === 'text') return display.content;
-  if (kind === 'recalled') return t('mobile.chat.recalledMessage');
-  if (kind === 'encrypted') return t('mobile.group.encryptedMessage');
-  return t('mobile.chat.noPreview');
+export function isModeratedChatMessage(
+  message: SocialMessage,
+): boolean {
+  return Boolean((message as { moderated?: boolean }).moderated);
 }
 
 export function chatMessageAttachments(
-  message?: FriendChatMessage | GroupMessage,
-): Array<FriendMessageAttachment | GroupMessageAttachment> {
+  message?: SocialMessage,
+): SocialMessageAttachment[] {
   const attachments = message?.attachments;
   return Array.isArray(attachments) ? attachments : [];
 }
 
 export function isOwnChatMessage(
-  message: FriendChatMessage | GroupMessage,
+  message: SocialMessage,
   currentUserPtid: string | null,
 ): boolean {
   return Boolean(currentUserPtid && message.senderPtid === currentUserPtid);
@@ -391,7 +340,7 @@ export function stationHostFromUrl(stationUrl: string | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// Settings → ActionState converters
+// Settings -> ActionState converters
 // ---------------------------------------------------------------------------
 
 export function friendSettingsToActionState(
@@ -408,53 +357,63 @@ export function friendSettingsToActionState(
   };
 }
 
-export function groupSettingsToActionState(
-  settings: GroupSettings | undefined,
-  fallback: ChatActionState | undefined,
-): ChatActionState {
-  if (!settings) return fallback ?? defaultChatActionState();
-  return {
-    muted: settings.isMuted,
-    sticky: settings.isPinned,
-    alertEnabled: settings.alertEnabled,
-    background: settings.background,
-    clearedAt: settings.clearedAt,
-  };
-}
-
 export function conversationPreferenceState(
   conversation: MobileConversation,
   localStates: Record<string, ChatActionState>,
   friendSettings: Record<string, FriendConversationSettings>,
-  groupSettings: Record<string, GroupSettings>,
 ): ChatActionState {
-  if (conversation.kind === 'friend') {
-    return friendSettingsToActionState(friendSettings[conversation.conversation.session.ulid], localStates[conversation.key]);
-  }
-  return groupSettingsToActionState(groupSettings[conversation.conversation.group.ulid], localStates[conversation.key]);
+  const conversationId = conversation.kind === 'friend'
+    ? conversation.conversation.session.ulid
+    : conversation.conversation.projection.conversationId;
+  return friendSettingsToActionState(
+    friendSettings[conversationId],
+    localStates[conversation.key],
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Search helpers
 // ---------------------------------------------------------------------------
 
-export function localThreadSearchResults(
-  messages: Array<FriendChatMessage | GroupMessage>,
+export function useChatHistoryProjection(
+  conversationMessages: SocialMessage[],
+  loadedThreadMessages: SocialMessage[],
+  threadRoot: string,
+  clearedAt: number,
   query: string,
-  isGroupThread: boolean,
-): Array<FriendChatMessage | GroupMessage> {
+) {
+  const logical = useMemo(() => {
+    const byId = new Map(conversationMessages.map((message) => [message.ulid, message]));
+    loadedThreadMessages.forEach((message) => {
+      if (!byId.has(message.ulid)) byId.set(message.ulid, message);
+    });
+    const visible = [...byId.values()]
+      .filter((message) => (!threadRoot || message.ulid === threadRoot || message.threadRootUlid === threadRoot)
+        && messageTimestampMillis(message) > clearedAt)
+      .sort((a, b) => messageTimestampMillis(a) - messageTimestampMillis(b)
+        || a.ulid.localeCompare(b.ulid));
+    return {
+      byId, visible,
+      replyCount: threadRoot ? visible.filter((message) => message.ulid !== threadRoot).length : 0,
+    };
+  }, [conversationMessages, loadedThreadMessages, threadRoot, clearedAt]);
+  const searchResults = useMemo(
+    () => localThreadSearchResults(logical.visible, query),
+    [logical.visible, query],
+  );
+  return { ...logical, searchResults };
+}
+
+export function localThreadSearchResults(
+  messages: SocialMessage[],
+  query: string,
+): SocialMessage[] {
   return filterChatMessagesBySearchText(messages, query, (message) => (
-    isGroupThread
-      ? `${groupSearchableContent(projectGroupMessageDisplay(message as GroupMessage))} ${attachmentSearchText(message)}`
-      : `${(message as FriendChatMessage).content} ${attachmentSearchText(message)}`
+    `${message.content} ${attachmentSearchText(message)}`
   ));
 }
 
-function groupSearchableContent(display: GroupMessageDisplay): string {
-  return display.kind === 'text' ? display.content : '';
-}
-
-function attachmentSearchText(message?: FriendChatMessage | GroupMessage): string {
+function attachmentSearchText(message?: SocialMessage): string {
   return chatMessageAttachments(message)
     .map((a) => `${a.filename ?? ''} ${a.mimeType ?? ''}`)
     .join(' ');

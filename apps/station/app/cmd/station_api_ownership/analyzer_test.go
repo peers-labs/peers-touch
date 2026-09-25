@@ -85,6 +85,38 @@ message CreateResponse {}
 	}
 }
 
+func TestRouteInventoryRecognizesStrictTypedHandler(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "apps/station/app/subserver/notification/handler.go", `
+package notification
+
+import "github.com/peers-labs/peers-touch/station/frame/core/server"
+
+func handlers() {
+	_ = server.NewStrictTypedHandler(
+		"notification-push-register",
+		"/notification/push/register",
+		server.POST,
+		nil,
+	)
+}
+`)
+
+	routes, diagnostics, _ := discoverRoutes(
+		root,
+		[]string{"apps/station/app/subserver/notification"},
+	)
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+	if len(routes) != 1 ||
+		routes[0].Path != "/notification/push/register" ||
+		routes[0].Method != "POST" ||
+		routes[0].Function != "NewStrictTypedHandler" {
+		t.Fatalf("routes = %+v", routes)
+	}
+}
+
 func TestAnalyzeReportsEveryFailClosedOwnershipCondition(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, root, "docs/registry.yaml", `

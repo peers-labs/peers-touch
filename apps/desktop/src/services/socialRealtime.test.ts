@@ -1,18 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { create, toBinary } from '@bufbuild/protobuf';
 
 import { EVENT, eventBus } from '../kernel/events';
-import {
-  FriendChatMessageSchema,
-  FriendMessageType,
-} from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   installSocialRealtimeBridge,
   refreshPeerPresence,
   refreshSocialProjection,
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
-import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
 
 class TestWindow extends EventTarget {
   setInterval = globalThis.setInterval.bind(globalThis);
@@ -219,134 +213,6 @@ describe('social realtime group membership side effects', () => {
     (globalThis as any).CustomEvent = originalCustomEvent;
   });
 
-  it('clears the active group when the local actor is removed', async () => {
-    publishGroupMembership('REMOVED', 'did:peer:self');
-
-    await vi.waitFor(() => {
-      expect(mocks.selectGroup).toHaveBeenCalledWith('');
-    });
-  });
-
-  it('clears the active group when the group is dissolved', async () => {
-    publishGroupMembership('DISSOLVED', 'did:peer:self');
-
-    await vi.waitFor(() => {
-      expect(mocks.selectGroup).toHaveBeenCalledWith('');
-    });
-  });
-
-  it('refreshes group projection after a follower federation event', async () => {
-    eventBus.publish(EVENT.REALTIME_GROUP_FEDERATION_EVENT, {
-      eventId: 'stream-event-1',
-      groupUlid: 'group-1',
-      groupEventUlid: 'group-event-2',
-      seq: 2,
-      eventType: 'group.proposal.accepted',
-      authorityStationPeerId: 'station-a',
-      authorityEpoch: 1,
-      eventHash: 'hash-2',
-      messageUlid: 'message-1',
-      membershipEpoch: 1,
-      committedTsUnixMs: 123,
-      actorPtid: 'did:peer:bob',
-    });
-
-    await vi.waitFor(() => {
-      expect(mocks.loadMessages).toHaveBeenCalledWith('group-1', 'group');
-      expect(mocks.markGroupRead).toHaveBeenCalled();
-      expect(mocks.loadGroups).toHaveBeenCalled();
-      expect(mocks.loadGroupUnreadCounts).toHaveBeenCalled();
-      expect(mocks.loadConversationPreviews).toHaveBeenCalled();
-    });
-  });
-
-  it('advances the read cursor when a Direct message arrives in the visible conversation', async () => {
-    mocks.activeTab = 'friend';
-    mocks.activeSessionUlid = 'direct-1';
-
-    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
-      eventId: 'stream-event-direct-1',
-      sessionUlid: 'direct-1',
-      messageUlid: 'message-direct-1',
-      senderActorPtid: 'ptid:bob',
-      recipientActorPtid: 'did:peer:self',
-      ciphertext: toBinary(FriendChatMessageSchema, create(FriendChatMessageSchema, {
-        ulid: 'message-direct-1',
-        sessionUlid: 'direct-1',
-        senderPtid: 'ptid:bob',
-        receiverPtid: 'did:peer:self',
-        type: FriendMessageType.TEXT,
-        content: 'hello',
-      })),
-      sentTsUnixMs: 123,
-    });
-
-    await vi.waitFor(() => {
-      expect(mocks.loadMessages).toHaveBeenCalledWith('direct-1', 'friend');
-      expect(mocks.markFriendRead).toHaveBeenCalledWith('direct-1');
-    });
-  });
-
-  it('does not advance the read cursor for an inactive Direct conversation', async () => {
-    mocks.activeTab = 'friend';
-    mocks.activeSessionUlid = 'direct-active';
-
-    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
-      eventId: 'stream-event-direct-2',
-      sessionUlid: 'direct-inactive',
-      messageUlid: 'message-direct-2',
-      senderActorPtid: 'ptid:bob',
-      recipientActorPtid: 'did:peer:self',
-      ciphertext: toBinary(FriendChatMessageSchema, create(FriendChatMessageSchema, {
-        ulid: 'message-direct-2',
-        sessionUlid: 'direct-inactive',
-        senderPtid: 'ptid:bob',
-        receiverPtid: 'did:peer:self',
-        type: FriendMessageType.TEXT,
-        content: 'hello',
-      })),
-      sentTsUnixMs: 124,
-    });
-
-    await vi.waitFor(() => {
-      expect(mocks.loadConversationPreviews).toHaveBeenCalled();
-    });
-    expect(mocks.markFriendRead).not.toHaveBeenCalled();
-  });
-
-  it('coalesces overlapping realtime resync requests into a serial cold resync lane', async () => {
-    const firstColdResync = deferred<void>();
-    mocks.loadSessions.mockImplementationOnce(() => firstColdResync.promise);
-
-    eventBus.publish(EVENT.REALTIME_RESYNC, {
-      newestEventId: '',
-      reason: 'browser-dev-gateway-resync',
-    });
-
-    await vi.waitFor(() => {
-      expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
-    });
-
-    eventBus.publish(EVENT.REALTIME_RESYNC, {
-      newestEventId: 'event-2',
-      reason: 'browser-dev-gateway-resync',
-    });
-    eventBus.publish(EVENT.REALTIME_RESYNC, {
-      newestEventId: 'event-3',
-      reason: 'browser-dev-gateway-resync',
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
-
-    firstColdResync.resolve();
-
-    await vi.waitFor(() => {
-      expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
-    });
-    expect(mocks.loadGroups).toHaveBeenCalledTimes(2);
-  });
-
   it('refreshes mutual friends after friendship acceptance', async () => {
     mocks.currentActorPtid = 'ptid:self';
 
@@ -417,18 +283,21 @@ describe('social realtime group membership side effects', () => {
       username: 'bob',
     }]);
   });
-});
 
-function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorPtid: string): void {
-  eventBus.publish(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, {
-    eventId: 'stream-event-1',
-    changeEventId: 'membership-change-1',
-    groupUlid: 'group-1',
-    actorPtid,
-    kind,
-    changedTsUnixMs: 123,
+  it('does not mutate Messaging-owned projections during social reconciliation', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+
+    await refreshSocialProjection('ownership-test', true);
+
+    expect(mocks.loadFriendRequests).toHaveBeenCalledOnce();
+    expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:self', true);
+    expect(mocks.loadSessions).not.toHaveBeenCalled();
+    expect(mocks.loadGroups).not.toHaveBeenCalled();
+    expect(mocks.loadMessages).not.toHaveBeenCalled();
+    expect(mocks.loadGroupUnreadCounts).not.toHaveBeenCalled();
+    expect(mocks.loadConversationPreviews).not.toHaveBeenCalled();
   });
-}
+});
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
   let resolve!: (value: T) => void;

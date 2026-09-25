@@ -10,6 +10,8 @@
     "chat-friend-request-gateway-lifecycle",
     "chat-direct-delivery-receipt",
     "chat-native-visible-clients",
+    "chat-mixed-client-convergence",
+    "chat-client-unification-integrity",
     "chat-message-interactions",
     "chat-typing-presence"
   ],

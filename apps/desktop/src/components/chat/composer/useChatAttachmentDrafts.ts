@@ -5,7 +5,7 @@ import {
   type ChatMediaTransferStatus,
 } from '@peers-touch/client-chat-core';
 
-import { imServiceV1 } from '../../../services/im-service';
+import { messagingCommands } from '../../../messaging/runtime';
 import type { MessagingLocalAttachmentIntent } from '../../../services/im-service-contract';
 import { log } from '../../../utils/logger';
 
@@ -107,6 +107,9 @@ export function createPickedDraftAttachment(
     status: valid ? 'ready' : 'failed',
     managedSource: valid,
     attachment: valid ? attachment : undefined,
+    durationSeconds: attachment.voiceNote?.durationMs
+      ? attachment.voiceNote.durationMs / 1000
+      : undefined,
   };
 }
 
@@ -126,7 +129,7 @@ export function useChatAttachmentDrafts({
 
   const discardManagedSource = useCallback((item: ChatDraftAttachment) => {
     if (!item.managedSource || !item.attachment?.filePath) return;
-    imServiceV1.messaging.discardAttachmentSource(item.attachment.filePath).catch((error) => {
+    messagingCommands.discardAttachmentSource(item.attachment.filePath).catch((error) => {
       log.warn('chat', 'discard staged attachment source failed', error);
     });
   }, []);
@@ -153,7 +156,7 @@ export function useChatAttachmentDrafts({
       return;
     }
     try {
-      const filePath = item.filePath ?? await imServiceV1.messaging.stageAttachmentSource(
+      const filePath = item.filePath ?? await messagingCommands.stageAttachmentSource(
         item.name,
         new Uint8Array(await item.file!.arrayBuffer()),
       );
@@ -163,6 +166,13 @@ export function useChatAttachmentDrafts({
           filePath,
           filename: item.name,
           mimeType: item.mimeType,
+          voiceNote: item.durationSeconds
+            ? {
+              durationMs: Math.max(1, Math.round(item.durationSeconds * 1000)),
+              codec: item.mimeType,
+              waveform: [],
+            }
+            : undefined,
         },
         managedSource: !item.filePath,
       });
@@ -250,12 +260,16 @@ export function useChatAttachmentDrafts({
     .map((item) => item.attachment)
     .filter((item): item is MessagingLocalAttachmentIntent => Boolean(item));
   const uploading = drafts.some((item) => item.status === 'uploading');
+  const voiceUploading = drafts.some(
+    (item) => item.status === 'uploading' && item.mimeType.startsWith('audio/'),
+  );
   const failed = drafts.some((item) => item.status === 'failed');
 
   return {
     drafts,
     readyAttachments,
     uploading,
+    voiceUploading,
     failed,
     addFiles,
     appendPickedAttachment,

@@ -17,11 +17,16 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Card, Typography } from 'antd';
-import { Heart, MessageCircle, Send, Share2 } from 'lucide-react';
+import { Heart, MessageCircle, Send, Share2, ShieldAlert } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import type {
+  MomentPolicyState,
+  ReactionMutationState,
+} from '../../features/social/momentsFeedStore';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
+import { MomentImage } from './MomentImage';
 
 const { Text } = Typography;
 
@@ -68,6 +73,35 @@ interface MomentFeedItemProps {
   readonly onReact: (postId: string, reactionKind: number) => void;
   readonly onOpenComments: (postId: string) => void;
   readonly onOpenDetail: (postId: string) => void;
+  readonly onSubmitComment?: (postId: string, content: string) => Promise<boolean>;
+  readonly reactionMutation?: ReactionMutationState;
+  readonly policyState?: MomentPolicyState;
+  readonly showInlineComment?: boolean;
+}
+
+export interface InlineCommentSubmission {
+  readonly submitted: boolean;
+  readonly nextText: string;
+}
+
+export async function submitInlineMomentComment(
+  currentText: string,
+  submit: (content: string) => Promise<boolean>,
+): Promise<InlineCommentSubmission> {
+  const trimmed = currentText.trim();
+  if (!trimmed) {
+    return { submitted: false, nextText: currentText };
+  }
+
+  try {
+    const submitted = await submit(trimmed);
+    return {
+      submitted,
+      nextText: submitted ? '' : currentText,
+    };
+  } catch {
+    return { submitted: false, nextText: currentText };
+  }
 }
 
 export function MomentFeedItem({
@@ -75,12 +109,17 @@ export function MomentFeedItem({
   onReact,
   onOpenComments,
   onOpenDetail,
+  onSubmitComment,
+  reactionMutation,
+  policyState = 'visible',
+  showInlineComment = true,
 }: MomentFeedItemProps) {
   const { t } = useMobileI18n();
 
   // Local UI state for reaction picker and comment input
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [commentSending, setCommentSending] = useState(false);
 
   const createdAtMs = useMemo(() => {
     if (!post.createdAt) return 0;
@@ -145,15 +184,46 @@ export function MomentFeedItem({
     [post.id, onReact],
   );
 
-  const handleSendComment = useCallback(() => {
-    const trimmed = commentText.trim();
-    if (!trimmed) return;
-    // Open the full comments panel to type there (production flow)
-    onOpenComments(post.id);
-    setCommentText('');
-  }, [commentText, post.id, onOpenComments]);
+  const handleSendComment = useCallback(async () => {
+    if (commentSending || !commentText.trim()) return;
+    if (!onSubmitComment) {
+      onOpenComments(post.id);
+      return;
+    }
+
+    setCommentSending(true);
+    const result = await submitInlineMomentComment(
+      commentText,
+      (content) => onSubmitComment(post.id, content),
+    );
+    setCommentText(result.nextText);
+    setCommentSending(false);
+  }, [commentSending, commentText, onSubmitComment, onOpenComments, post.id]);
 
   // Policy / block states
+  if (policyState !== 'visible') {
+    const blocked = policyState === 'blocked';
+    return (
+      <Card className="moments-card moments-card--policy" variant="borderless">
+        <div className="moments-policy-inline" role="alert">
+          <ShieldAlert size={24} strokeWidth={1.5} />
+          <Text strong>
+            {blocked
+              ? t('mobile.moments.policy.blocked')
+              : t('mobile.moments.policy.violation')
+            }
+          </Text>
+          <Text type="secondary">
+            {blocked
+              ? t('mobile.moments.policy.blockedHint')
+              : t('mobile.moments.policy.violationHint')
+            }
+          </Text>
+        </div>
+      </Card>
+    );
+  }
+
   if (post.isDeleted) {
     return (
       <Card className="moments-card" variant="borderless">
@@ -168,10 +238,9 @@ export function MomentFeedItem({
     if (images.length === 1) {
       return (
         <div className="moments-image-single">
-          <img
-            src={images[0].thumbnailUrl || images[0].url}
+          <MomentImage
+            attachment={images[0]}
             alt={images[0].altText || ''}
-            loading="lazy"
           />
         </div>
       );
@@ -181,10 +250,9 @@ export function MomentFeedItem({
       <div className={gridClass}>
         {images.map((img, idx) => (
           <div className="moments-grid-image" key={img.id || idx}>
-            <img
-              src={img.thumbnailUrl || img.url}
+            <MomentImage
+              attachment={img}
               alt={img.altText || ''}
-              loading="lazy"
             />
           </div>
         ))}
@@ -238,8 +306,15 @@ export function MomentFeedItem({
         <div className="moments-action-group">
           <button
             type="button"
-            className={`moments-action ${reactionCounts.viewerReactionKind ? 'reacted' : ''}`}
+            className={[
+              'moments-action',
+              reactionCounts.viewerReactionKind ? 'reacted' : '',
+              reactionMutation?.status ?? '',
+            ].filter(Boolean).join(' ')}
             onClick={toggleReactionPicker}
+            disabled={reactionMutation?.status === 'pending'}
+            aria-busy={reactionMutation?.status === 'pending'}
+            aria-label={t('mobile.moments.reaction.reacted')}
           >
             <Heart size={18} fill={reactionCounts.viewerReactionKind ? 'currentColor' : 'none'} />
           </button>
@@ -270,6 +345,7 @@ export function MomentFeedItem({
                 type="button"
                 className={`moments-reaction-picker-btn ${reactionCounts.viewerReactionKind === kind ? 'active' : ''}`}
                 onClick={() => handlePickReaction(kind)}
+                disabled={reactionMutation?.status === 'pending'}
               >
                 {REACTION_EMOJI[kind]}
               </button>
@@ -278,29 +354,48 @@ export function MomentFeedItem({
         )}
       </div>
 
-      {/* Inline comment input with Send button */}
-      <div className="moments-comment-input-row">
-        <input
-          type="text"
-          className="moments-comment-input"
-          placeholder={t('mobile.moments.comment.placeholder')}
-          value={commentText}
-          onChange={(e) => setCommentText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleSendComment();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className={`moments-comment-send ${commentText.trim() ? 'active' : ''}`}
-          onClick={handleSendComment}
+      {reactionMutation && (
+        <Text
+          className={`moments-reaction-status moments-reaction-status--${reactionMutation.status}`}
+          type={reactionMutation.status === 'rolled-back' ? 'danger' : 'secondary'}
+          role="status"
+          aria-live="polite"
         >
-          <Send size={14} />
-        </button>
-      </div>
+          {reactionMutation.status === 'pending'
+            ? t('mobile.moments.reaction.pending')
+            : t('mobile.moments.reaction.rolledBack')
+          }
+        </Text>
+      )}
+
+      {/* Inline comment input with Send button */}
+      {showInlineComment && (
+        <div className="moments-comment-input-row" aria-busy={commentSending}>
+          <input
+            type="text"
+            className="moments-comment-input"
+            placeholder={t('mobile.moments.comment.placeholder')}
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void handleSendComment();
+              }
+            }}
+            disabled={commentSending}
+          />
+          <button
+            type="button"
+            className={`moments-comment-send ${commentText.trim() ? 'active' : ''}`}
+            onClick={() => void handleSendComment()}
+            disabled={!commentText.trim() || commentSending}
+            aria-label={t('mobile.moments.comment.send')}
+          >
+            <Send size={14} />
+          </button>
+        </div>
+      )}
     </Card>
   );
 }

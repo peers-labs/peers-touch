@@ -79,6 +79,11 @@ const (
 	routeSocialRelationship = "/api/v1/social/relationships"
 	routeSocialFollowers    = "/api/v1/social/relationships/followers"
 	routeSocialFollowing    = "/api/v1/social/relationships/following"
+	routeSocialBlock        = "/api/v1/social/relationships/block"
+	routeSocialUnblock      = "/api/v1/social/relationships/unblock"
+	routeSocialBlocked      = "/api/v1/social/relationships/blocked"
+	routeSocialStatus       = "/api/v1/social/relationships/status"
+	routeSocialResult       = "/api/v1/social/relationships/result"
 
 	// User search / me
 	routeSocialUserSearch = "/api/v1/social/users/search"
@@ -99,6 +104,7 @@ const (
 	routeSocialFriendRequestSend   = "/api/v1/social/friend-request/send"
 	routeSocialFriendRequestAccept = "/api/v1/social/friend-request/accept"
 	routeSocialFriendRequestReject = "/api/v1/social/friend-request/reject"
+	routeSocialFriendRequestResult = "/api/v1/social/friend-request/result"
 	routeSocialFriendRequests      = "/api/v1/social/friend-requests"
 )
 
@@ -158,6 +164,11 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-relationships", routeSocialRelationship, server.POST, s.handleGetRelationships, cw, jw),
 		server.NewTypedHandler("social-get-followers", routeSocialFollowers, server.GET, s.handleGetFollowers, cw, jw),
 		server.NewTypedHandler("social-get-following", routeSocialFollowing, server.GET, s.handleGetFollowing, cw, jw),
+		server.NewTypedHandler("social-block-actor", routeSocialBlock, server.POST, s.handleBlockSocialActor, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-unblock-actor", routeSocialUnblock, server.POST, s.handleUnblockSocialActor, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-list-blocked-actors", routeSocialBlocked, server.GET, s.handleListBlockedActors, cw, jw),
+		server.NewTypedHandler("social-get-relationship-status", routeSocialStatus, server.GET, s.handleGetSocialRelationshipStatus, cw, jw),
+		server.NewTypedHandler("social-lookup-relationship-result", routeSocialResult, server.POST, s.handleLookupSocialRelationshipCommandResult, cw, jw),
 
 		// User search / me
 		server.NewTypedHandler("social-search-users", routeSocialUserSearch, server.GET, s.handleSearchUsers, cw, jw),
@@ -182,6 +193,7 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-send-friend-request", routeSocialFriendRequestSend, server.POST, s.handleSendFriendRequest, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-accept-friend-request", routeSocialFriendRequestAccept, server.POST, s.handleAcceptFriendRequest, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-reject-friend-request", routeSocialFriendRequestReject, server.POST, s.handleRejectFriendRequest, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-lookup-friend-request-result", routeSocialFriendRequestResult, server.POST, s.handleLookupFriendRequestCommandResult, cw, jw),
 		server.NewTypedHandler("social-list-friend-requests", routeSocialFriendRequests, server.GET, s.handleListFriendRequests, cw, jw),
 	}
 }
@@ -1176,22 +1188,30 @@ func (s *subServer) handleGetPost(ctx context.Context, req *model.GetPostRequest
 	if ptid, ok := getActorPTID(ctx); ok {
 		viewerPTID = ptid
 	}
-	post, err := s.momentSvc.GetMoment(ctx, req.PostId, viewerPTID)
+	post, outcome, err := s.momentSvc.GetMomentDetail(ctx, req.PostId, viewerPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to get post", "error", err, "post_id", req.PostId)
 		return nil, server.InternalErrorWithCause("failed to get post", err)
 	}
+	if outcome != model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE {
+		return &model.GetPostResponse{Outcome: outcome}, nil
+	}
 	if post == nil {
-		return nil, server.NotFound("post not found")
+		return &model.GetPostResponse{
+			Outcome: model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
+		}, nil
 	}
 	if blocked, err := s.moderationSvc.IsPostAuthorStationBlocked(ctx, post); err != nil {
 		return nil, server.InternalErrorWithCause("station moderation check failed", err)
 	} else if blocked {
-		return nil, server.NotFound("post not found")
+		return &model.GetPostResponse{
+			Outcome: model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN,
+		}, nil
 	}
 	return &model.GetPostResponse{
 		Post:        post,
 		Explanation: application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
+		Outcome:     model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE,
 	}, nil
 }
 
@@ -1661,6 +1681,131 @@ func (s *subServer) handleGetFollowing(ctx context.Context, req *model.GetFollow
 	return &model.GetFollowingResponse{Following: following, NextCursor: nextCursor, Total: total}, nil
 }
 
+func (s *subServer) handleBlockSocialActor(
+	ctx context.Context,
+	req *model.BlockSocialActorRequest,
+) (*model.BlockSocialActorResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authenticated Social actor required")
+	}
+	if req == nil ||
+		req.GetCommand().GetBody().GetAction() !=
+			model.SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_BLOCK {
+		return nil, server.BadRequest("canonical block command is required")
+	}
+	result, err := s.federatedRelationshipSvc.SubmitRelationshipCommand(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req.GetCommand(),
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"block Social actor",
+			err,
+		)
+	}
+	return &model.BlockSocialActorResponse{Result: result}, nil
+}
+
+func (s *subServer) handleUnblockSocialActor(
+	ctx context.Context,
+	req *model.UnblockSocialActorRequest,
+) (*model.UnblockSocialActorResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authenticated Social actor required")
+	}
+	if req == nil ||
+		req.GetCommand().GetBody().GetAction() !=
+			model.SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_UNBLOCK {
+		return nil, server.BadRequest("canonical unblock command is required")
+	}
+	result, err := s.federatedRelationshipSvc.SubmitRelationshipCommand(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req.GetCommand(),
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"unblock Social actor",
+			err,
+		)
+	}
+	return &model.UnblockSocialActorResponse{Result: result}, nil
+}
+
+func (s *subServer) handleListBlockedActors(
+	ctx context.Context,
+	req *model.ListBlockedActorsRequest,
+) (*model.ListBlockedActorsResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authenticated Social actor required")
+	}
+	response, err := s.federatedRelationshipSvc.ListBlockedActors(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req,
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"list blocked Social actors",
+			err,
+		)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleGetSocialRelationshipStatus(
+	ctx context.Context,
+	req *model.GetSocialRelationshipStatusRequest,
+) (*model.GetSocialRelationshipStatusResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authenticated Social actor required")
+	}
+	response, err := s.federatedRelationshipSvc.RelationshipStatus(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req,
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"get Social relationship status",
+			err,
+		)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleLookupSocialRelationshipCommandResult(
+	ctx context.Context,
+	req *model.LookupSocialRelationshipCommandResultRequest,
+) (*model.LookupSocialRelationshipCommandResultResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized("authenticated Social actor required")
+	}
+	response, err := s.federatedRelationshipSvc.LookupRelationshipCommandResult(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req,
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"lookup Social relationship command result",
+			err,
+		)
+	}
+	return response, nil
+}
+
 // --- User search / me ----------------------------------------------------
 
 func (s *subServer) handleSearchUsers(ctx context.Context, req *model.SearchUsersRequest) (*model.ActorList, error) {
@@ -1897,6 +2042,11 @@ type federatedFriendRequestAPI interface {
 		context.Context,
 		*model.FriendRequestCommand,
 	) (application.SubmitFriendRequestCommandResult, error)
+	LookupFriendRequestCommandResult(
+		context.Context,
+		string,
+		*model.LookupFriendRequestCommandResultRequest,
+	) (*model.LookupFriendRequestCommandResultResponse, error)
 	ListFriendRequestProjections(
 		context.Context,
 		string,
@@ -1979,6 +2129,54 @@ func (s *subServer) handleRejectFriendRequest(
 	return &model.RejectSocialFriendRequestResponse{
 		Request: socialFriendRequestFromProjection(projection),
 	}, nil
+}
+
+func (s *subServer) handleLookupFriendRequestCommandResult(
+	ctx context.Context,
+	req *model.LookupFriendRequestCommandResultRequest,
+) (*model.LookupFriendRequestCommandResultResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized(
+			"authenticated Friend Request actor required",
+		)
+	}
+	api, err := s.canonicalFriendRequestAPI()
+	if err != nil {
+		return nil, err
+	}
+	return lookupFriendRequestCommandResultWithAPI(
+		ctx,
+		strings.TrimSpace(actorPTID),
+		req,
+		api,
+	)
+}
+
+func lookupFriendRequestCommandResultWithAPI(
+	ctx context.Context,
+	actorPTID string,
+	req *model.LookupFriendRequestCommandResultRequest,
+	api federatedFriendRequestAPI,
+) (*model.LookupFriendRequestCommandResultResponse, error) {
+	if api == nil {
+		return nil, server.InternalError(
+			"federated Friend Request service is not initialized",
+		)
+	}
+	response, err := api.LookupFriendRequestCommandResult(
+		ctx,
+		actorPTID,
+		req,
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"lookup Friend Request command result",
+			err,
+		)
+	}
+	return response, nil
 }
 
 func (s *subServer) handleListFriendRequests(

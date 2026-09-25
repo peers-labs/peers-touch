@@ -59,6 +59,8 @@ export VITE_PORT=3000
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
+| `skill-overlay-control.py` | 推荐 | 管理 machine-local 用户 Skill Overlay | 提供 install/list/enable/disable/uninstall/resolve；安装为 digest-addressed immutable copy，不写 host Skill 投影 |
+| `skill-overlay-control-test.py` | 可用 | 回归验证用户 Overlay 控制面 | 覆盖生命周期、排序、显式替换、symlink 拒绝、registry 校验和 installed-copy 篡改 |
 | `review/submit-pipeline.sh` | 推荐 | 用户请求提交 MR/PR 时的提交前质量流水线 | 通过 `make review-submit REVIEW_BASE=<base>` 调用；生成 quality evidence 并运行 review/acceptance gates |
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |

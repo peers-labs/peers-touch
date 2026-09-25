@@ -61,6 +61,13 @@ impl<R: Runtime> SecureStorage<R> {
             .run_mobile_plugin("remove", KeyRequest { key })
             .map_err(|error| Error::invoke("remove", error))
     }
+
+    pub fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        self.plugin_handle
+            .run_mobile_plugin::<ListResponse>("list", ListRequest { prefix })
+            .map(|response| response.keys)
+            .map_err(|error| Error::invoke("list", error))
+    }
 }
 
 #[derive(Serialize)]
@@ -76,10 +83,22 @@ struct KeyRequest<'a> {
     key: &'a str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListRequest<'a> {
+    prefix: &'a str,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GetResponse {
     value: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListResponse {
+    keys: Vec<String>,
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {

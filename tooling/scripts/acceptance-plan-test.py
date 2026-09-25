@@ -107,7 +107,6 @@ class ChangedPathsTests(unittest.TestCase):
 
 ```json
 {{
-  "schemaVersion": 1,
   "closures": {{"C1": ["cheap-gate"]}},
   "completion": ["cheap-gate"],
   "full": ["cheap-gate", "runtime-gate"]
@@ -408,21 +407,19 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
-                "mobile-native-social-convergence-e2e",
-                "mobile-native-chat-contacts-e2e",
             },
         )
 
     def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
         expected = {
+            "chat-lifecycle-tree-zero-reference-e2e",
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
-            "mobile-native-social-convergence-e2e",
-            "mobile-native-chat-contacts-e2e",
-            "mobile-native-moments-e2e",
-            "mobile-native-settings-e2e",
+            "mobile-simulator-moments-e2e",
+            "mobile-simulator-settings-e2e",
         }
         for path in (
             "apps/mobile/src/runtimes/socialEventIngress.ts",
@@ -441,9 +438,9 @@ class BehaviorRuleTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
-                "mobile-native-social-convergence-e2e",
-                "mobile-native-moments-e2e",
+                "mobile-simulator-moments-e2e",
             },
             self.selected_ids(
                 "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts"
@@ -451,14 +448,28 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertEqual(
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
-                "mobile-native-social-convergence-e2e",
-                "mobile-native-settings-e2e",
+                "mobile-simulator-settings-e2e",
             },
             self.selected_ids(
                 "apps/mobile/src/runtimes/profileProjectionDescriptor.ts"
             ),
         )
+
+    def test_ccu_owned_paths_select_zero_reference_gate(self) -> None:
+        for path in (
+            "apps/desktop/src/store/socialChat.ts",
+            "apps/mobile/src/features/chat/chatCommands.ts",
+            "apps/station/app/subserver/conversation/subserver.go",
+            "model/domain/chat/conversation.proto",
+            "packages/messaging-core/src/store/schema.rs",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(
+                    "chat-lifecycle-tree-zero-reference-e2e",
+                    self.selected_ids(path),
+                )
 
     def test_mobile_command_callers_select_recovery_and_product_gates(
         self,
@@ -466,18 +477,16 @@ class BehaviorRuleTests(unittest.TestCase):
         recovery_gates = {
             "mobile-contract-static",
             "mobile-hard-cut-static",
-            "mobile-native-recovery-e2e",
-            "mobile-native-recovery-ui-e2e",
+            "mobile-simulator-recovery-e2e",
+            "mobile-simulator-recovery-ui-e2e",
         }
         chat_contact_gates = {
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
-            "mobile-native-social-convergence-e2e",
-            "mobile-native-chat-contacts-e2e",
         }
         moment_gates = {
-            "mobile-native-social-convergence-e2e",
-            "mobile-native-moments-e2e",
+            "mobile-simulator-social-convergence-e2e",
+            "mobile-simulator-moments-e2e",
         }
 
         for path in (
@@ -511,13 +520,13 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertIn("mobile-contract-static", selected)
         self.assertIn("mobile-simulator-runtime-lifecycle-e2e", selected)
         self.assertIn("mobile-simulator-station-lifecycle-e2e", selected)
-        self.assertIn("mobile-native-lifecycle-e2e", selected)
+        self.assertNotIn("mobile-native-lifecycle-e2e", selected)
 
     def test_mobile_service_bindings_select_all_runtime_consumers(self) -> None:
         selected = self.selected_ids(
             "tooling/acceptance/provisioners/mobile_service_bindings.py"
         )
-        self.assertIn("mobile-native-access-e2e", selected)
+        self.assertNotIn("mobile-native-access-e2e", selected)
         self.assertIn("mobile-simulator-station-lifecycle-e2e", selected)
         self.assertIn("mobile-simulator-runtime-lifecycle-e2e", selected)
 

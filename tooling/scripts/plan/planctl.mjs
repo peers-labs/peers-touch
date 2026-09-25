@@ -9,6 +9,7 @@ import {
   machineDevRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
+import { canonicalize } from '../local-dev/dev-work-schema.mjs';
 import {
   PlanPackageError,
   atomicReplaceFile,
@@ -25,6 +26,7 @@ import {
   recoverPlanMigration,
   sha256,
 } from './plan-migration.mjs';
+import { loadSessionStoreFromPath } from '../local-dev/dev-session-store.mjs';
 
 const TERMINAL_SESSION_STATES = new Set([
   'SOURCE_READY',
@@ -114,23 +116,46 @@ function taskProjection(planPackage, task) {
   };
 }
 
-async function validateSessionTerminal(sessionPath, planPackage) {
+async function validateSessionHandoff(sessionPath, planPackage, options) {
+  const transition = options.to;
   if (typeof sessionPath !== 'string' || sessionPath.length === 0) {
     fail(
       'PLAN_ADVANCE_INVALID',
       'Task handoff requires explicit --session <path|NONE>',
     );
   }
-  if (sessionPath.toUpperCase() === 'NONE') return;
+  if (sessionPath.toUpperCase() === 'NONE') {
+    if (transition === 'blocked') {
+      fail(
+        'PLAN_ADVANCE_INVALID',
+        'Blocked Task handoff requires a journal-backed Session',
+      );
+    }
+    return;
+  }
   let session;
   try {
-    session = JSON.parse(await fsp.readFile(path.resolve(sessionPath), 'utf8'));
+    session = loadSessionStoreFromPath(sessionPath, {
+      expected: {
+        planId: planPackage.manifest.planId,
+        taskId: planPackage.currentTask?.taskId,
+        workspaceId: planPackage.manifest.binding.workspaceId,
+        branch: planPackage.manifest.binding.branch,
+      },
+    });
   } catch (error) {
-    if (error.code === 'ENOENT') return;
-    if (error instanceof SyntaxError) {
-      fail('PLAN_ADVANCE_INVALID', 'Session snapshot is not valid JSON', { sessionPath });
+    if (
+      transition !== 'blocked' &&
+      error.code === 'SESSION_UNAVAILABLE' &&
+      !fs.existsSync(path.resolve(sessionPath))
+    ) {
+      return;
     }
-    throw error;
+    fail(
+      'PLAN_ADVANCE_INVALID',
+      'Task handoff Session is unavailable or invalid',
+      { sessionPath, cause: error.code ?? error.message },
+    );
   }
   const state =
     typeof session.state === 'string'
@@ -138,13 +163,6 @@ async function validateSessionTerminal(sessionPath, planPackage) {
       : typeof session.state?.state === 'string'
         ? session.state.state
         : null;
-  if (!TERMINAL_SESSION_STATES.has(state)) {
-    fail('PLAN_ADVANCE_INVALID', 'Current Development Session is not terminal', {
-      sessionPath,
-      state,
-      terminalStates: [...TERMINAL_SESSION_STATES],
-    });
-  }
   const sessionState =
     typeof session.state === 'object' && session.state !== null
       ? session.state
@@ -158,6 +176,51 @@ async function validateSessionTerminal(sessionPath, planPackage) {
       actualPlanId: sessionState.planId ?? null,
       expectedTaskId: planPackage.currentTask?.taskId ?? null,
       actualTaskId: sessionState.taskId ?? null,
+    });
+  }
+  if (transition === 'blocked') {
+    if (
+      state !== 'BLOCKED' ||
+      typeof sessionState.currentFailure !== 'object' ||
+      sessionState.currentFailure === null
+    ) {
+      fail(
+        'PLAN_ADVANCE_INVALID',
+        'Blocked Task handoff requires a BLOCKED Session with a failure record',
+        { sessionPath, state },
+      );
+    }
+    const failure = sessionState.currentFailure;
+    const evidenceRef = failure.observationRef ?? failure.diagnosticRef;
+    if (
+      options['blocker-code'] !== failure.kind ||
+      options['blocker-owner'] !== failure.owner ||
+      options['blocker-evidence-ref'] !== evidenceRef
+    ) {
+      fail(
+        'PLAN_ADVANCE_INVALID',
+        'Blocked Task handoff metadata does not match the Session failure',
+        {
+          expected: {
+            code: failure.kind,
+            owner: failure.owner,
+            evidenceRef: evidenceRef ?? null,
+          },
+          actual: {
+            code: options['blocker-code'] ?? null,
+            owner: options['blocker-owner'] ?? null,
+            evidenceRef: options['blocker-evidence-ref'] ?? null,
+          },
+        },
+      );
+    }
+    return;
+  }
+  if (!TERMINAL_SESSION_STATES.has(state)) {
+    fail('PLAN_ADVANCE_INVALID', 'Current Development Session is not terminal', {
+      sessionPath,
+      state,
+      terminalStates: [...TERMINAL_SESSION_STATES],
     });
   }
   if (state === 'CANCELLED') return;
@@ -333,6 +396,235 @@ function applyAdvance(planPackage, options) {
   return manifest;
 }
 
+function parseSourceInvalidationPolicy(document) {
+  const match = /^## Source Invalidation Policy\s*$\n+```json\s*$\n([\s\S]*?)\n```\s*$/m.exec(
+    document,
+  );
+  if (!match) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_UNAVAILABLE',
+      'Plan does not declare a source invalidation policy',
+    );
+  }
+  let policy;
+  try {
+    policy = JSON.parse(match[1]);
+  } catch {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Source invalidation policy is not valid JSON',
+    );
+  }
+  const keys = Object.keys(policy ?? {}).sort();
+  const expectedKeys = ['kind', 'rootTaskIds', 'sourceOwnerTaskId'];
+  if (
+    keys.length !== expectedKeys.length ||
+    keys.some((key, index) => key !== expectedKeys[index]) ||
+    policy.kind !== 'peers-touch-source-invalidation-policy' ||
+    typeof policy.sourceOwnerTaskId !== 'string' ||
+    !Array.isArray(policy.rootTaskIds) ||
+    policy.rootTaskIds.length === 0 ||
+    policy.rootTaskIds.some((taskId) => typeof taskId !== 'string') ||
+    new Set(policy.rootTaskIds).size !== policy.rootTaskIds.length
+  ) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Source invalidation policy has an invalid shape',
+    );
+  }
+  return policy;
+}
+
+function sourceInvalidationClosure(manifest, policy) {
+  const tasksById = new Map(manifest.tasks.map((task) => [task.id, task]));
+  const taskIds = new Set(tasksById.keys());
+  if (
+    !taskIds.has(policy.sourceOwnerTaskId) ||
+    policy.rootTaskIds.some(
+      (taskId) =>
+        taskId === policy.sourceOwnerTaskId || !taskIds.has(taskId),
+    )
+  ) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Source invalidation policy references invalid Tasks',
+      { policy },
+    );
+  }
+  const dependsOnSourceOwner = (taskId, visited = new Set()) => {
+    if (taskId === policy.sourceOwnerTaskId) return true;
+    if (visited.has(taskId)) return false;
+    visited.add(taskId);
+    return tasksById
+      .get(taskId)
+      .dependsOn.some((dependency) =>
+        dependsOnSourceOwner(dependency, visited),
+      );
+  };
+  if (
+    policy.rootTaskIds.some(
+      (taskId) => !dependsOnSourceOwner(taskId),
+    )
+  ) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Every source invalidation root must depend on the source owner',
+      { policy },
+    );
+  }
+  const affected = new Set(policy.rootTaskIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const task of manifest.tasks) {
+      if (
+        !affected.has(task.id) &&
+        task.dependsOn.some((dependency) => affected.has(dependency))
+      ) {
+        affected.add(task.id);
+        changed = true;
+      }
+    }
+  }
+  return {
+    sourceOwnerTaskId: policy.sourceOwnerTaskId,
+    rootTaskIds: [...policy.rootTaskIds],
+    affectedTaskIds: manifest.tasks
+      .filter((task) => affected.has(task.id))
+      .map((task) => task.id),
+  };
+}
+
+function applySourceInvalidation(planPackage, options, policy) {
+  const manifest = structuredClone(planPackage.manifest);
+  if (manifest.status !== 'active') {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Source invalidation requires an active Plan',
+      { status: manifest.status },
+    );
+  }
+  const failedTaskId = requireOption(options, 'task');
+  const firstFailureRef = requireOption(options, 'first-failure-ref');
+  if (
+    path.isAbsolute(firstFailureRef) ||
+    firstFailureRef.includes('\\') ||
+    firstFailureRef.split('/').some((part) => ['', '.', '..'].includes(part))
+  ) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      '--first-failure-ref must be a repository-relative evidence reference',
+    );
+  }
+  const current = manifest.tasks.find((task) => task.status === 'in_progress');
+  if (!current || current.id !== failedTaskId) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      '--task does not identify the current functional Task',
+      { expected: current?.id ?? null, actual: failedTaskId },
+    );
+  }
+  const currentSlice = planPackage.taskSlices.get(failedTaskId);
+  if (currentSlice?.completionClass !== 'functional') {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Only a functional Task may invalidate the frozen source',
+      { taskId: failedTaskId },
+    );
+  }
+  const closure = sourceInvalidationClosure(manifest, policy);
+  if (!closure.affectedTaskIds.includes(failedTaskId)) {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Current Task is outside the Plan-declared invalidation closure',
+      { taskId: failedTaskId, rootTaskIds: closure.rootTaskIds },
+    );
+  }
+  const tasksById = new Map(manifest.tasks.map((task) => [task.id, task]));
+  const sourceOwner = tasksById.get(closure.sourceOwnerTaskId);
+  if (sourceOwner?.status !== 'done') {
+    fail(
+      'PLAN_SOURCE_INVALIDATION_INVALID',
+      'Plan-declared source owner is not complete',
+      {
+        sourceOwnerTaskId: closure.sourceOwnerTaskId,
+        status: sourceOwner?.status ?? null,
+      },
+    );
+  }
+  const invalidatedEvidence = closure.affectedTaskIds.flatMap((taskId) =>
+    (planPackage.taskSlices.get(taskId)?.durableEvidence ?? []).map((evidence) => ({
+      taskId,
+      verificationClass: evidence.verificationClass,
+      result: evidence.result,
+      ref: evidence.ref,
+    })),
+  );
+  for (const taskId of closure.affectedTaskIds) {
+    const task = tasksById.get(taskId);
+    task.status = 'pending';
+    task.blocker = null;
+  }
+  sourceOwner.status = 'in_progress';
+  sourceOwner.blocker = null;
+  manifest.status = 'active';
+  manifest.exhaustion = null;
+  return {
+    manifest,
+    proof: {
+      kind: 'peers-touch-source-invalidation-proof',
+      planId: manifest.planId,
+      workspaceId: manifest.binding.workspaceId,
+      sourceOwnerTaskId: closure.sourceOwnerTaskId,
+      rootTaskIds: closure.rootTaskIds,
+      failedTaskId,
+      invalidatedTaskIds: closure.affectedTaskIds,
+      firstFailureRef,
+      priorManifestDigest: sha256(
+        Buffer.from(JSON.stringify(canonicalize(planPackage.manifest))),
+      ),
+      invalidatedEvidence,
+    },
+  };
+}
+
+async function writeSourceInvalidationProof(proof, options = {}) {
+  const unsigned = canonicalize(proof);
+  const proofDigest = sha256(Buffer.from(JSON.stringify(unsigned)));
+  const payload = {
+    ...unsigned,
+    proofDigest,
+  };
+  const bytes = Buffer.from(`${JSON.stringify(canonicalize(payload), null, 2)}\n`);
+  const proofPath = path.join(
+    machineDevRoot(options.home),
+    'workspaces',
+    proof.workspaceId,
+    'workflow',
+    'source-invalidations',
+    proof.planId,
+    `${proofDigest}.json`,
+  );
+  await fsp.mkdir(path.dirname(proofPath), { recursive: true, mode: 0o700 });
+  try {
+    await fsp.writeFile(proofPath, bytes, { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const existing = await fsp.readFile(proofPath);
+    if (!existing.equals(bytes)) {
+      fail(
+        'PLAN_SOURCE_INVALIDATION_CONFLICT',
+        'Source invalidation proof path contains different bytes',
+        { proofPath },
+      );
+    }
+  }
+  return {
+    proofDigest,
+    proofPath,
+  };
+}
+
 async function validateCandidateDocument(planPackage, candidateDocument, options) {
   const temporaryPath = path.join(
     path.dirname(planPackage.path),
@@ -353,7 +645,7 @@ async function validateCandidateDocument(planPackage, candidateDocument, options
 
 export async function advancePlan(planPath, options) {
   const initial = await loadPlanPackage(planPath, loadOptions(options));
-  await validateSessionTerminal(options.session, initial);
+  await validateSessionHandoff(options.session, initial, options);
   return withPlanLock(initial.path, async () => {
     const current = await loadPlanPackage(initial.path, loadOptions(options));
     const originalDocument = await fsp.readFile(current.path);
@@ -364,6 +656,34 @@ export async function advancePlan(planPath, options) {
       expectedContent: originalDocument,
     });
     return loadPlanPackage(current.path, loadOptions(options));
+  });
+}
+
+export async function invalidateSourcePlan(planPath, options) {
+  const initial = await loadPlanPackage(planPath, loadOptions(options));
+  return withPlanLock(initial.path, async () => {
+    const current = await loadPlanPackage(initial.path, loadOptions(options));
+    const originalDocument = await fsp.readFile(current.path);
+    const policy = parseSourceInvalidationPolicy(
+      originalDocument.toString('utf8'),
+    );
+    const invalidation = applySourceInvalidation(current, options, policy);
+    const candidateDocument = renderPlanDocument(
+      originalDocument.toString('utf8'),
+      invalidation.manifest,
+    );
+    await validateCandidateDocument(current, candidateDocument, options);
+    const proof = await writeSourceInvalidationProof(
+      invalidation.proof,
+      options,
+    );
+    await atomicReplaceFile(current.path, candidateDocument, {
+      expectedContent: originalDocument,
+    });
+    return {
+      planPackage: await loadPlanPackage(current.path, loadOptions(options)),
+      proof,
+    };
   });
 }
 
@@ -426,6 +746,24 @@ async function advanceCommand(options) {
   ]);
   const planPackage = await advancePlan(requireOption(options, 'plan'), options);
   return summarizePlanPackage(planPackage);
+}
+
+async function invalidateSourceCommand(options) {
+  assertAllowedOptions(options, [
+    'plan',
+    'repo-root',
+    'task',
+    'first-failure-ref',
+    'home',
+  ]);
+  const result = await invalidateSourcePlan(
+    requireOption(options, 'plan'),
+    options,
+  );
+  return {
+    ...summarizePlanPackage(result.planPackage),
+    invalidationProof: result.proof,
+  };
 }
 
 function canonicalMigrationPaths(workspaceId) {
@@ -492,6 +830,7 @@ async function migrateCommand(options) {
     'discovery-root',
     'expected-active-plan-count',
     'expected-package-status',
+    'expected-current-task',
   ]);
   const action = options.action ?? 'prepare';
   const repoRoot = await fsp.realpath(
@@ -542,6 +881,10 @@ async function migrateCommand(options) {
       discoveryRoot: requireOption(options, 'discovery-root'),
       expectedActivePlanCount,
       expectedPackageStatus: requireOption(options, 'expected-package-status'),
+      expectedCurrentTaskId:
+        requireOption(options, 'expected-current-task').toUpperCase() === 'NONE'
+          ? null
+          : options['expected-current-task'],
     });
     reviewedJournalDigest = sha256(await fsp.readFile(paths.journalPath));
   } else if (action === 'commit') {
@@ -574,10 +917,19 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
   if (command === 'next') return nextCommand(options);
   if (command === 'status') return statusCommand(options);
   if (command === 'advance') return advanceCommand(options);
+  if (command === 'invalidate-source') return invalidateSourceCommand(options);
   if (command === 'migrate') return migrateCommand(options);
   fail('PLAN_CLI_USAGE', 'Unknown command', {
     command,
-    commands: ['validate', 'current', 'next', 'status', 'advance', 'migrate'],
+    commands: [
+      'validate',
+      'current',
+      'next',
+      'status',
+      'advance',
+      'invalidate-source',
+      'migrate',
+    ],
   });
 }
 

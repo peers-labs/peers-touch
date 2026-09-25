@@ -311,7 +311,6 @@ No authentication or account-session transition is owned by this plan.
 
 ```json
 {
-  "schemaVersion": 1,
   "closures": {
     "C1": [],
     "C2": [],

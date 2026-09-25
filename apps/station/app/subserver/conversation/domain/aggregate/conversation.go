@@ -82,6 +82,7 @@ type Command struct {
 	ReplyToMessageID        valueobject.MessageID
 	ThreadRootMessageID     valueobject.MessageID
 	Reaction                string
+	ReasonCode              string
 	Payload                 []byte
 	Deliveries              []valueobject.PreparedDelivery
 	RequiredEndpoints       []valueobject.Endpoint
@@ -1154,7 +1155,8 @@ func (c *Conversation) validateCommand(command Command) error {
 
 func (c *Conversation) validateOrdinaryCommand(command Command) error {
 	switch command.Kind {
-	case domainevent.KindMessageCommitted:
+	case domainevent.KindMessageCommitted,
+		domainevent.KindMessageForwarded:
 		if command.MessageID == "" ||
 			command.ReplyToMessageID == command.MessageID ||
 			command.ThreadRootMessageID == command.MessageID {
@@ -1174,9 +1176,41 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 		}
 	case domainevent.KindMessageEdited,
 		domainevent.KindMessageRetracted,
+		domainevent.KindMessageHiddenForActor,
+		domainevent.KindMessageModerated,
 		domainevent.KindMessagePinCommitted:
 		if command.MessageID == "" {
 			return invalid("aggregate.validate_command", "message_id", "is required")
+		}
+		if command.Kind == domainevent.KindMessageHiddenForActor {
+			for _, endpoint := range command.RequiredEndpoints {
+				if endpoint.Actor != command.Sender.Actor {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeDeliverySetMismatch,
+						"aggregate.validate_command",
+						"required_endpoints",
+						"actor-scoped hide may target only the requesting actor's devices",
+					)
+				}
+			}
+		}
+		if command.Kind == domainevent.KindMessageModerated {
+			if c.kind != valueobject.ConversationKindGroup ||
+				!c.members[command.Sender.Actor].Role.CanManageMembership() {
+				return conversationdomain.NewError(
+					conversationdomain.ErrorCodeUnauthorized,
+					"aggregate.validate_command",
+					"moderation",
+					"requires a group administrator",
+				)
+			}
+			if command.ReasonCode == "" {
+				return invalid(
+					"aggregate.validate_command",
+					"reason_code",
+					"is required",
+				)
+			}
 		}
 	case domainevent.KindReactionCommitted:
 		if command.MessageID == "" || command.Reaction == "" {
@@ -1197,6 +1231,7 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 	for _, delivery := range command.Deliveries {
 		expected := valueobject.DeliveryKindPublicEvent
 		if command.Kind == domainevent.KindMessageCommitted ||
+			command.Kind == domainevent.KindMessageForwarded ||
 			command.Kind == domainevent.KindMessageEdited {
 			switch {
 			case delivery.Recipient == command.Sender:
