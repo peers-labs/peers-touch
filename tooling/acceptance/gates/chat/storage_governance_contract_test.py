@@ -188,6 +188,12 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertEqual(gate["provisioner"], "mobile-direct-simulator")
         self.assertEqual(set(environment["services"]), {"station"})
         self.assertIn("storage.cache.seed", environment["harness"]["required_actions"])
+        self.assertIn(
+            "env -u PT_ACCEPTANCE_WORKSPACE_ID "
+            "-u PT_ACCEPTANCE_GATE_ID "
+            "-u PT_ACCEPTANCE_RUN_ID python3 -m unittest",
+            gate["command"],
+        )
         self.assertIn("--scenario storage-cache-cleanup", gate["command"])
 
     def test_accounting_gate_uses_single_profile_native_runtime(self) -> None:
