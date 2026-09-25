@@ -355,11 +355,12 @@
       "description": "Validate the canonical Chat storage contract, shared Core ownership, scope fencing, client registration, and fixed-zero API removal."
     },
     "chat-storage-accounting-e2e": {
-      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && pnpm --dir apps/desktop exec vitest run src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec vitest run src/runtimes/chatStorageRuntime.test.ts src/pages/settings/SettingsSections.test.tsx",
-      "timeout_seconds": 1200,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Measure real database sidecars and managed files with inode deduplication, then prove Desktop and Mobile scope fencing and storage rendering contracts."
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline && pnpm --dir apps/desktop exec vitest run src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec vitest run src/runtimes/chatStorageRuntime.test.ts src/pages/settings/SettingsSections.test.tsx && python3 -m unittest tooling.acceptance.gates.chat.storage_governance_runner_test && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_governance_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_governance_e2e",
+      "timeout_seconds": 2400,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "tier": "env-evidence",
+      "description": "Measure real database sidecars and managed files, then prove non-zero total and per-conversation usage plus search, sorting, refresh, scope fencing, and rendering through one exact-source native Desktop."
     },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
