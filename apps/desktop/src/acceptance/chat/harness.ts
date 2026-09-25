@@ -372,12 +372,12 @@ export function installAcceptanceHarness(): void {
       }, account, password);
       const actorPtid = activeActorPtid();
       // #region debug-point A-D:harness-runtime-boundary
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-start', msg: '[DEBUG] Chat Harness critical runtime install started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
+      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-start', msg: '[DEBUG] Chat Harness critical runtime install started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
       // #endregion
       await installAuthenticatedCriticalRuntimes(actorPtid);
       // #region debug-point A-D:harness-runtime-boundary
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-end', msg: '[DEBUG] Chat Harness critical runtime install completed', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'D', location: 'apps/desktop/src/acceptance/chat/harness.ts:social-hydrate-start', msg: '[DEBUG] Chat Harness social hydration started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
+      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-end', msg: '[DEBUG] Chat Harness critical runtime install completed', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
+      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'D', location: 'apps/desktop/src/acceptance/chat/harness.ts:social-hydrate-start', msg: '[DEBUG] Chat Harness social hydration started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
       // #endregion
       await hydrateSocialForActiveActor();
       return {
@@ -477,7 +477,7 @@ export function installAcceptanceHarness(): void {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'D-E',
           location: 'harness.ts:refreshOnboardingProjection',
           msg: '[DEBUG] Onboarding accept projection read back',
