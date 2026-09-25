@@ -181,6 +181,9 @@ export async function bootstrapRuntime(id: string, actorPtid: string | null): Pr
     log.info('runtime', `${id}:bootstrap`, { ms: Math.round(ms), actorPtid });
     recordRuntimeBootstrap(id, ms, actorPtid);
   } catch (err) {
+    // #region debug-point B-C:runtime-bootstrap-failure
+    await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'pre-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/kernel/runtime.ts:bootstrap-failure', msg: '[DEBUG] Runtime bootstrap failed', data: { runtimeId: id, errorType: err instanceof Error ? err.name : typeof err, errorMessage: err instanceof Error ? err.message : String(err) }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     log.error('runtime', `${id}:bootstrap failed`, err);
   }
 }
