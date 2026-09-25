@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  authLogin: vi.fn(),
+  accessStart: vi.fn(),
   accessSubmitLogin: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../services/desktop_api', () => ({
   api: {
-    authLogin: mocks.authLogin,
+    accessStart: mocks.accessStart,
     accessSubmitLogin: mocks.accessSubmitLogin,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
@@ -30,12 +30,27 @@ vi.mock('../services/identityPipeline', () => ({
 const { useSessionStore } = await import('./session');
 
 const authenticatedResponse = {
-  command: 'auth_login',
+  command: 'access_submit_login',
   status: 'authenticated',
   actor_ptid: 'ptid:person:new',
   name: 'New',
   email: '',
   login_method: 'password',
+};
+
+const loginGate = {
+  gateId: 'auth.login',
+  gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+  state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+  title: '',
+  description: '',
+  blockingReason: '',
+  submitAction: 'submit_login',
+  inputSchemaJson: '',
+  alternativeActions: [],
+  actionId: 'auth.password',
+  schemaRevision: 1,
+  schemaDigest: 'a'.repeat(64),
 };
 
 describe('session authentication convergence', () => {
@@ -55,7 +70,16 @@ describe('session authentication convergence', () => {
       useSessionStore.getState().reset();
       return { ok: true, failures: [] };
     });
-    mocks.authLogin.mockResolvedValue(authenticatedResponse);
+    mocks.accessStart.mockResolvedValue({
+      decision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attemptId: 'attempt-1',
+        currentGateId: loginGate.gateId,
+        gates: [loginGate],
+        accessGrantId: '',
+        message: '',
+      },
+    });
     mocks.accessSubmitLogin.mockResolvedValue(authenticatedResponse);
     mocks.ensureStationSession.mockResolvedValue({
       ...authenticatedResponse,
@@ -65,7 +89,7 @@ describe('session authentication convergence', () => {
 
   it.each([
     ['password login', () => useSessionStore.getState().loginWithPassword('alice@p.t', 'password')],
-    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', 'alice@p.t', 'password')],
+    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', loginGate, 'alice@p.t', 'password')],
     ['OAuth login', () => useSessionStore.getState().loginWithOAuth('github')],
   ])('activates the authenticated session before the identity pipeline for %s', async (_name, login) => {
     useSessionStore.getState().reset();

@@ -140,14 +140,18 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
+    let verified = match station_binding::verify_station_identity(&input.url) {
+        Ok(verified) => verified,
+        Err(error) => return binding_error(error),
+    };
+    let (online, label, _, peers_count) = station_client::probe_station(&input.url);
     let now = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "unknown".to_string());
     let entry = StationEntry {
         url: input.url.trim_end_matches('/').to_string(),
         label,
-        peer_id,
+        peer_id: verified.peer_id,
         peers_count,
         last_probe: Some(now),
         online,
@@ -238,8 +242,13 @@ pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
+    let (online, label, _, peers_count) = station_client::probe_station(&input.url);
     let reg = station_client::station_registry();
+    let peer_id = reg
+        .list()
+        .into_iter()
+        .find(|entry| entry.url.trim_end_matches('/') == input.url.trim_end_matches('/'))
+        .and_then(|entry| entry.peer_id);
     if let Err(error) = reg.update_probe(
         &input.url,
         label.clone(),
@@ -266,6 +275,7 @@ fn registry_error(command: &str, error: std::io::Error) -> AppResult<StubPayload
     let code = match error.kind() {
         std::io::ErrorKind::InvalidInput => ErrorCode::InvalidArgument,
         std::io::ErrorKind::NotFound => ErrorCode::NotFound,
+        std::io::ErrorKind::PermissionDenied => ErrorCode::Forbidden,
         _ => ErrorCode::InternalError,
     };
     AppResult::fail(
@@ -283,6 +293,8 @@ fn binding_error(error: StationBindingError) -> AppResult<StubPayload> {
         "station_unselected" => ErrorCode::InvalidArgument,
         "station_not_registered" => ErrorCode::NotFound,
         "station_switch_in_progress" => ErrorCode::Conflict,
+        "station_identity_invalid" | "station_identity_mismatch" => ErrorCode::Forbidden,
+        "station_identity_unavailable" | "station_unreachable" => ErrorCode::NotFound,
         _ => ErrorCode::InternalError,
     };
     AppResult::fail(

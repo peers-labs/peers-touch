@@ -134,7 +134,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                       "sourceGate": "Managed Station+Postgres runtime closure is required",
                   },
                   {
-                      "step": "station.raw_query",
+                      "step": "gateway.frontend_telemetry_query",
                       "status": "blocked",
                       "completionStatus": "PARTIAL",
                       "proofStatus": "UNPROVEN",
@@ -188,7 +188,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                 return {
                     "path": path,
                     "status": 200,
-                    "body": {"handlers": [{"Path": "/actor/login"}, {"path": "/debug/list-all-handlers"}]},
+                    "body": {"handlers": [{"Path": "/actor/sign-up"}, {"path": "/debug/list-all-handlers"}]},
                 }
             raise AssertionError(f"unexpected probe path {path}")
 
@@ -334,39 +334,33 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
 
-    def test_station_login_token_uses_direct_station_auth(self) -> None:
+    def test_canonical_gateway_login_uses_access_gate_helper(self) -> None:
         module = load_gate_module()
-        calls = []
+        expected = {"status": "authenticated", "actor_ptid": "ptid:alice"}
 
-        def fake_station_post_no_auth(station, path, payload):
-            calls.append((station, path, payload))
-            return {"data": {"tokens": {"access_token": "station-token"}}}
+        with mock.patch.object(module, "gateway_access_login", return_value=expected) as login:
+            result = module.canonical_gateway_login(
+                "http://gateway.local",
+                "u@example.test",
+                "Secret123!",
+            )
 
-        module.station_post_no_auth = fake_station_post_no_auth
-
-        token = module.station_login_token("http://station.local", "u@example.test", "Secret123!")
-
-        self.assertEqual(token, "station-token")
-        self.assertEqual(calls[0][0], "http://station.local")
-        self.assertEqual(calls[0][1], "/actor/login")
-        self.assertEqual(
-            calls[0][2],
-            {
-                "email": "u@example.test",
-                "password": "Secret123!",
-                "device_type": module.STATION_LOGIN_DEVICE_TYPE,
-            },
+        self.assertEqual(result, expected)
+        login.assert_called_once_with(
+            module.gateway_command,
+            "http://gateway.local",
+            "u@example.test",
+            "Secret123!",
         )
-        self.assertLessEqual(len(module.STATION_LOGIN_DEVICE_TYPE), 20)
 
-    def test_gateway_upload_runs_before_direct_station_auth(self) -> None:
+    def test_gateway_upload_follows_canonical_access_login(self) -> None:
         module = load_gate_module()
 
         report = {
             "steps": [
                 self.runtime_closure_step(),
                 {"name": "preflight.gateway_station", "status": "pass"},
-                {"name": "gateway.auth_login", "status": "pass", "detail": {"actorId": "1"}},
+                {"name": "gateway.access_login", "status": "pass", "detail": {"actorPtid": "ptid:alice"}},
             ]
         }
 
@@ -407,8 +401,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                 "steps": [
                     self.runtime_closure_step(),
                     {"name": "preflight.gateway_station", "status": "pass"},
-                    {"name": "gateway.auth_login", "status": "pass"},
-                    {"name": "station.auth_login", "status": "pass"},
+                    {"name": "gateway.access_login", "status": "pass"},
                     {"name": "station.telemetry_routes", "status": "pass"},
                 ],
             }
@@ -450,14 +443,14 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.stub_target_runtime_missing_routes(module)
         calls = []
 
-        def fake_station_post_probe(station, path, token, payload):
-            calls.append((station, path, token, payload))
+        def fake_station_post_probe(station, path, payload):
+            calls.append((station, path, payload))
             return 404, "404 page not found"
 
         module.station_post_probe = fake_station_post_probe
 
         with self.assertRaises(module.GateError) as raised:
-            module.assert_station_telemetry_routes("http://station.local", "token")
+            module.assert_station_telemetry_routes("http://station.local")
 
         self.assertIn(module.FRONTEND_TELEMETRY_INGEST_PATH, str(raised.exception))
         self.assertEqual(calls[0][1], module.FRONTEND_TELEMETRY_INGEST_PATH)
@@ -471,9 +464,8 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                 "steps": [
                     self.runtime_closure_step(),
                     {"name": "preflight.gateway_station", "status": "pass"},
-                    {"name": "gateway.auth_login", "status": "pass"},
+                    {"name": "gateway.access_login", "status": "pass"},
                     {"name": "gateway.frontend_telemetry_upload", "status": "pass"},
-                    {"name": "station.auth_login", "status": "pass"},
                 ],
             }
             module.record_failure(report, raised.exception)
@@ -516,7 +508,10 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertEqual(report["summary"]["blockedPhase"], "P0a-3")
         self.assertEqual(report["summary"]["blockedByStep"], "station.telemetry_routes")
         self.assertEqual(report["summary"]["blockedByPhase"], "P0a-4")
-        self.assertEqual(report["summary"]["blockedDownstreamSteps"], ["station.raw_query", "station.rollup_query", "dev_mirror"])
+        self.assertEqual(
+            report["summary"]["blockedDownstreamSteps"],
+            ["gateway.frontend_telemetry_query", "gateway.frontend_telemetry_rollup_query", "dev_mirror"],
+        )
         self.assertIn("PARTIAL/UNPROVEN", report["issueBreakdown"][0]["proofImpact"])
         self.assertTrue(
             any(
@@ -531,7 +526,10 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertIn("- Blocked phase: `P0a-3`", markdown)
         self.assertIn("- Blocked by step: `station.telemetry_routes`", markdown)
         self.assertIn("- Blocked by phase: `P0a-4`", markdown)
-        self.assertIn("- Blocked downstream steps: `station.raw_query,station.rollup_query,dev_mirror`", markdown)
+        self.assertIn(
+            "- Blocked downstream steps: `gateway.frontend_telemetry_query,gateway.frontend_telemetry_rollup_query,dev_mirror`",
+            markdown,
+        )
         self.assertIn("- Local source route contracts: `3/3`", markdown)
         self.assertIn("- Target runtime route contracts: `0/3`", markdown)
         self.assertIn("- Target runtime route contract proof: `UNPROVEN`", markdown)
@@ -540,9 +538,9 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             "- Environment classification: `target-station-handler-missing-while-local-source-registers-routes`",
             markdown,
         )
-        self.assertIn("- Passed steps: `runtime.closure,preflight.gateway_station,gateway.auth_login,gateway.frontend_telemetry_upload,station.auth_login`", markdown)
+        self.assertIn("- Passed steps: `runtime.closure,preflight.gateway_station,gateway.access_login,gateway.frontend_telemetry_upload`", markdown)
         self.assertIn("- Failed steps: `station.telemetry_routes`", markdown)
-        self.assertIn("- Pending steps: `station.raw_query,station.rollup_query,dev_mirror`", markdown)
+        self.assertIn("- Pending steps: `gateway.frontend_telemetry_query,gateway.frontend_telemetry_rollup_query,dev_mirror`", markdown)
         self.assertIn("- Local source routes: `3/3`", markdown)
         self.assertIn("- Target runtime routes: `0/3`", markdown)
         self.assertIn("- Target runtime build commit: `unknown`", markdown)
@@ -586,12 +584,12 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             module.FRONTEND_TELEMETRY_ROLLUP_PATH: (200, '{"rollups":[],"count":0}'),
         }
 
-        def fake_station_post_probe(station, path, token, payload):
+        def fake_station_post_probe(station, path, payload):
             return responses[path]
 
         module.station_post_probe = fake_station_post_probe
 
-        result = module.assert_station_telemetry_routes("http://station.local", "token")
+        result = module.assert_station_telemetry_routes("http://station.local")
 
         self.assertEqual([item["path"] for item in result["routes"]], [
             module.FRONTEND_TELEMETRY_INGEST_PATH,
@@ -645,11 +643,11 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertEqual(report["proofStatus"], "UNPROVEN")
         self.assertFalse(report["sampleEmissionAllowed"])
         self.assertEqual(report["summary"]["failedStep"], "preflight.gateway_station")
-        self.assertEqual(report["summary"]["expectedStepCount"], 9)
+        self.assertEqual(report["summary"]["expectedStepCount"], 8)
         self.assertEqual(report["summary"]["passedStepCount"], 1)
         self.assertEqual(report["summary"]["failedStepCount"], 1)
         self.assertEqual(report["summary"]["failedSteps"], ["preflight.gateway_station"])
-        self.assertIn("gateway.auth_login", report["summary"]["pendingSteps"])
+        self.assertIn("gateway.access_login", report["summary"]["pendingSteps"])
         markdown = module.render_markdown(report)
         self.assertIn("# Desktop Telemetry Live Gate", markdown)
         self.assertIn("- Status: `baseline preflight failure`", markdown)
@@ -663,9 +661,7 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
             "steps": [
                 self.runtime_closure_step(),
                 {"name": "preflight.gateway_station", "status": "pass"},
-                {"name": "gateway.auth_login", "status": "pass"},
-                {"name": "station.auth_login", "status": "pass"},
-                {"name": "station.telemetry_routes", "status": "pass"},
+                {"name": "gateway.access_login", "status": "pass"},
             ]
         }
 
@@ -706,10 +702,10 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
         self.assertEqual(report["summary"]["failedStep"], "gateway.frontend_telemetry_upload")
-        self.assertEqual(report["summary"]["expectedStepCount"], 9)
-        self.assertEqual(report["summary"]["passedStepCount"], 5)
+        self.assertEqual(report["summary"]["expectedStepCount"], 8)
+        self.assertEqual(report["summary"]["passedStepCount"], 3)
         self.assertEqual(report["summary"]["failedSteps"], ["gateway.frontend_telemetry_upload"])
-        self.assertIn("station.raw_query", report["summary"]["pendingSteps"])
+        self.assertIn("gateway.frontend_telemetry_query", report["summary"]["pendingSteps"])
 
     def test_runtime_closure_failure_blocks_live_gate_before_gateway_or_station_steps(self) -> None:
         module = load_gate_module()

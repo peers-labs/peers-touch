@@ -19,6 +19,7 @@ from .mobile_simulator import (
     MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
+    StationAccessNativeProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_desktop_macos import NativeDesktopMacOSProvisioner
@@ -48,6 +49,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     MobileStationLifecycleSimulatorProvisioner.environment_id: (
         MobileStationLifecycleSimulatorProvisioner
+    ),
+    StationAccessNativeProvisioner.environment_id: (
+        StationAccessNativeProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
@@ -84,6 +88,7 @@ def get_provisioner(
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
+        StationAccessNativeProvisioner,
     }:
         return provisioner_class(
             contract,
@@ -122,6 +127,7 @@ __all__ = [
     "MobileSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
+    "StationAccessNativeProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",

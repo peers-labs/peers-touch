@@ -9,6 +9,8 @@ const session: MobileAuthSession = {
   stationPeerId: 'station-a',
   stationUrl: 'https://station.example',
   sessionId: 'session-a',
+  deviceId: 'device-a',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 };
@@ -21,6 +23,8 @@ describe('Mobile auth session validity', () => {
       actorRef: { ptid: '' },
     }, 100)).toBe(false);
     expect(isMobileAuthSessionValid({ ...session, sessionId: '' }, 100)).toBe(false);
+    expect(isMobileAuthSessionValid({ ...session, deviceId: '' }, 100)).toBe(false);
+    expect(isMobileAuthSessionValid({ ...session, lifecycleGeneration: 0 }, 100)).toBe(false);
   });
 
   it('rejects expired or malformed explicit expiry values', () => {

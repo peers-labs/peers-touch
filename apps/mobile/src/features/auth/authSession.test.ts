@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ACCESS_GATE_TYPE_AUTH_LOGIN,
+  STATION_ACCESS_ATTEMPT_EXPIRED,
+  STATION_ACCESS_IDENTITY_MISMATCH,
+  STATION_ACCESS_UNKNOWN_GATE,
+  accessDecisionFromProjection,
   advertisedCredentialChoices,
   cancelStationAccessAttempt,
   getStationAccessDecision,
@@ -9,9 +13,10 @@ import {
   isDeviceTrustGate,
   isSchemaDrivenGate,
   isTermsAcceptanceGate,
-  normalizeDecision,
   parseGateFields,
   registerOAuthAccessGrantFinalizer,
+  stationAccessError,
+  stationAccessFailureOutcome,
   submitStationInviteCodeGate,
   submitStationLoginGate,
   type AccessGate,
@@ -82,56 +87,51 @@ describe('schema-driven Station access gates', () => {
     ]);
   });
 
-  it('recognizes numeric and string terms, device, and custom gate types', () => {
-    expect(isTermsAcceptanceGate(gate(8))).toBe(true);
+  it('recognizes canonical terms, device, and custom gate types', () => {
     expect(isTermsAcceptanceGate(gate('ACCESS_GATE_TYPE_TERMS_ACCEPTANCE'))).toBe(true);
-    expect(isDeviceTrustGate(gate(6))).toBe(true);
     expect(isDeviceTrustGate(gate('ACCESS_GATE_TYPE_DEVICE_TRUST'))).toBe(true);
-    expect(isCustomGate(gate(100))).toBe(true);
     expect(isCustomGate(gate('ACCESS_GATE_TYPE_CUSTOM'))).toBe(true);
     expect(isSchemaDrivenGate(gate('ACCESS_GATE_TYPE_AUTH_LOGIN'))).toBe(false);
   });
 });
 
 describe('Station-advertised credential actions', () => {
-  it('normalizes snake_case Station actions and camelCase Rust projections', () => {
-    const decision = normalizeDecision({
+  it('projects the canonical native Access decision', () => {
+    const decision = accessDecisionFromProjection({
       state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
-      attempt_id: 'attempt-1',
-      current_gate_id: 'auth.login',
+      attemptId: 'attempt-1',
+      currentGateId: 'auth.login',
+      accessGrantId: '',
+      message: '',
       gates: [
         {
-          gate_id: 'auth.login',
-          type: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+          gateId: 'auth.login',
+          gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
           state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
-          alternative_actions: [
+          title: '',
+          description: '',
+          blockingReason: '',
+          submitAction: 'submit_login',
+          inputSchemaJson: '',
+          actionId: 'auth.password',
+          schemaRevision: 1,
+          schemaDigest: 'a'.repeat(64),
+          alternativeActions: [
             {
-              action_id: 'auth.password',
-              type: 2,
-              submit_action: 'submit_login',
-              schema_revision: 1,
-              schema_digest: 'a'.repeat(64),
+              actionId: 'auth.password',
+              actionType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+              submitAction: 'submit_login',
+              schemaRevision: 1,
+              schemaDigest: 'a'.repeat(64),
             },
             {
-              action_id: 'future.credential',
-              type: 100,
-              submit_action: 'future_action',
-              schema_revision: 1,
-              schema_digest: 'b'.repeat(64),
+              actionId: 'future.credential',
+              actionType: 'ACCESS_GATE_TYPE_CUSTOM',
+              submitAction: 'future_action',
+              schemaRevision: 1,
+              schemaDigest: 'b'.repeat(64),
             },
           ],
-        },
-        {
-          gateId: 'auth.login.camel',
-          type: 2,
-          state: 2,
-          alternativeActions: [{
-            actionId: 'auth.oauth',
-            actionType: 'ACCESS_GATE_TYPE_AUTH_OAUTH',
-            submitAction: 'start_oauth',
-            schemaRevision: 1,
-            schemaDigest: 'c'.repeat(64),
-          }],
         },
       ],
     });
@@ -139,26 +139,19 @@ describe('Station-advertised credential actions', () => {
     expect(decision.gates[0].alternativeActions).toEqual([
       {
         actionId: 'auth.password',
-        type: 2,
+        type: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
         submitAction: 'submit_login',
         schemaRevision: 1,
         schemaDigest: 'a'.repeat(64),
       },
       {
         actionId: 'future.credential',
-        type: 100,
+        type: 'ACCESS_GATE_TYPE_CUSTOM',
         submitAction: 'future_action',
         schemaRevision: 1,
         schemaDigest: 'b'.repeat(64),
       },
     ]);
-    expect(decision.gates[1].alternativeActions).toEqual([{
-      actionId: 'auth.oauth',
-      type: 'ACCESS_GATE_TYPE_AUTH_OAUTH',
-      submitAction: 'start_oauth',
-      schemaRevision: 1,
-      schemaDigest: 'c'.repeat(64),
-    }]);
   });
 
   it('submits password credentials through the native schema-bound action', async () => {
@@ -174,6 +167,8 @@ describe('Station-advertised credential actions', () => {
       session: {
         sessionId: 'session-1',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-1',
+        lifecycleGeneration: 1,
         expiresAt: '2030-01-01T00:00:00Z',
       },
     });
@@ -222,9 +217,22 @@ describe('Station-advertised credential actions', () => {
         decision: {
           state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
           attemptId: 'attempt-retry',
-          currentGateId: 'terms.acceptance',
+          currentGateId: 'auth.login',
           accessGrantId: '',
-          gates: [],
+          gates: [{
+            gateId: 'auth.login',
+            gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+            state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+            title: '',
+            description: '',
+            blockingReason: '',
+            submitAction: 'submit_login',
+            inputSchemaJson: '',
+            alternativeActions: [],
+            actionId: 'auth.password',
+            schemaRevision: 1,
+            schemaDigest: 'a'.repeat(64),
+          }],
           message: '',
         },
       });
@@ -260,21 +268,46 @@ describe('Station-advertised credential actions', () => {
       'ACCESS_GATE_TYPE_AUTH_LOGIN',
       [
         action('auth.password', 'ACCESS_GATE_TYPE_AUTH_LOGIN', 'submit_login'),
-        action('auth.oauth', 9, 'start_oauth'),
-        action('future.credential', 100, 'future_action'),
+        action('auth.oauth', 'ACCESS_GATE_TYPE_AUTH_OAUTH', 'start_oauth'),
+        action('future.credential', 'ACCESS_GATE_TYPE_CUSTOM', 'future_action'),
       ],
     ))).toEqual({ emailPassword: true, oauth: true });
 
     expect(advertisedCredentialChoices(gate(
-      2,
+      'ACCESS_GATE_TYPE_AUTH_LOGIN',
       [
-        action('auth.oauth', 9, 'wrong_transport'),
-        action('future.credential', 100, 'future_action'),
+        action('auth.oauth', 'ACCESS_GATE_TYPE_AUTH_OAUTH', 'wrong_transport'),
+        action('future.credential', 'ACCESS_GATE_TYPE_CUSTOM', 'future_action'),
       ],
     ))).toEqual({ emailPassword: false, oauth: false });
-    expect(advertisedCredentialChoices(gate(2))).toEqual({
+    expect(advertisedCredentialChoices(gate('ACCESS_GATE_TYPE_AUTH_LOGIN'))).toEqual({
       emailPassword: false,
       oauth: false,
+    });
+  });
+});
+
+describe('canonical Station access failure outcomes', () => {
+  it('classifies unknown gates, identity mismatch, and expiry consistently', () => {
+    const unknownGate = {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'future.gate',
+      gates: [gate('ACCESS_GATE_TYPE_FUTURE')],
+    };
+    unknownGate.gates[0].gateId = 'future.gate';
+
+    expect(stationAccessFailureOutcome(unknownGate, 100)).toBe(STATION_ACCESS_UNKNOWN_GATE);
+    expect(stationAccessFailureOutcome({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'auth.login',
+      gates: [gate('ACCESS_GATE_TYPE_AUTH_LOGIN')],
+      expiresAtUnixMs: 100,
+    }, 100)).toBe(STATION_ACCESS_ATTEMPT_EXPIRED);
+    expect(stationAccessError(new Error('Station identity mismatch'))).toMatchObject({
+      code: STATION_ACCESS_IDENTITY_MISMATCH,
+      message: STATION_ACCESS_IDENTITY_MISMATCH,
     });
   });
 });
@@ -381,7 +414,7 @@ function gate(
     type,
     state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
     alternativeActions,
-    actionId: type === 2 || type === 'ACCESS_GATE_TYPE_AUTH_LOGIN'
+    actionId: type === 'ACCESS_GATE_TYPE_AUTH_LOGIN'
       ? 'auth.password'
       : 'gate.action',
     schemaRevision: 1,

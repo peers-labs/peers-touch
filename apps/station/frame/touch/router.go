@@ -3,6 +3,7 @@ package touch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -127,6 +128,21 @@ func bindProtoOrJSON(ctx *app.RequestContext, msg proto.Message) error {
 	}
 	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
 	return opts.Unmarshal(ctx.Request.Body(), msg)
+}
+
+func bindAccessProto(ctx *app.RequestContext, msg proto.Message) error {
+	contentType := strings.TrimSpace(strings.Split(
+		string(ctx.Request.Header.ContentType()),
+		";",
+	)[0])
+	accept := strings.TrimSpace(strings.Split(
+		string(ctx.GetHeader("Accept")),
+		";",
+	)[0])
+	if contentType != model.ContentTypeProtobuf || accept != model.AcceptProtobuf {
+		return fmt.Errorf("access gate requires %s request and response", model.ContentTypeProtobuf)
+	}
+	return proto.Unmarshal(ctx.Request.Body(), msg)
 }
 
 // SuccessResponse sends a success response in proto or JSON format based on Accept header

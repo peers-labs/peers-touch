@@ -1,14 +1,14 @@
 # Station 接入生命周期
 
-> **Status**: prepared
-> **Branch**: merge-social-work
-> **Workspace ID**: b0a926025d2b25b9
-> **Initial HEAD**: 80f796894ecf4a98608ba0260cc49390ecba3c97
+> **Status**: active
+> **Branch**: work/station-access-lifecycle
+> **Workspace ID**: 95620934d3348d95
+> **Initial HEAD**: 2ffb93248c8636903f6b8d24ea9cf41c4da01a39
 
 ## Plan Package
 
 ```json
-{"kind":"peers-touch-plan-package","planId":"SAL-20260926","status":"prepared","binding":{"branch":"merge-social-work","workspaceId":"b0a926025d2b25b9","initialHead":"80f796894ecf4a98608ba0260cc49390ecba3c97"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/station-access-lifecycle/product-definition.md","docs/architecture/station-access-lifecycle/experience-contract.md","docs/architecture/station-access-lifecycle/product-state-model.md","docs/architecture/station-access-lifecycle/acceptance-matrix.md","docs/architecture/station-access-lifecycle/design.md","docs/architecture/station-access-lifecycle/decisions.md","docs/architecture/station-access-lifecycle/integration.md","docs/architecture/station-access-lifecycle/legacy-inventory.json"],"decisions":["SAL-D01","SAL-D02","SAL-D03","SAL-D04","SAL-D05","SAL-D06"]},"scope":{"sourceClaims":[{"pathPrefix":"docs/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/station-access-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/access-gates","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/api-ownership","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/federation","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/identity","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/service-coordination.md","mode":"shared-read"},{"pathPrefix":"docs/client/desktop","mode":"exclusive-write"},{"pathPrefix":"docs/client/mobile","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge","mode":"exclusive-write"},{"pathPrefix":"model/domain/access_gate","mode":"exclusive-write"},{"pathPrefix":"model/domain/peer","mode":"exclusive-write"},{"pathPrefix":"model/domain/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/federation","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts","mode":"shared-read"}],"nonGoals":["Chat message, attachment or local storage governance","Browser client readiness","Federation topology or Relay implementation redesign","Dashboard or CLI product redesign","Preserve compatibility routes, aliases, fallback reads, old keys or migrations","Force Desktop and Mobile to share identical UI components"]},"tasks":[{"id":"SAL-01-access-hard-cut","workstreamId":"SAL-W01","path":"tasks/SAL-01-access-hard-cut.md","dependsOn":[],"status":"pending","blocker":null},{"id":"SAL-02-federation-relay-boundary","workstreamId":"SAL-W02","path":"tasks/SAL-02-federation-relay-boundary.md","dependsOn":["SAL-01-access-hard-cut"],"status":"pending","blocker":null},{"id":"SAL-03-zero-legacy-aggregate","workstreamId":"SAL-W03","path":"tasks/SAL-03-zero-legacy-aggregate.md","dependsOn":["SAL-02-federation-relay-boundary"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["chat-native-four","chat-native-disposable","mobile-simulator"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
+{"kind":"peers-touch-plan-package","planId":"SAL-20260926","status":"active","binding":{"branch":"work/station-access-lifecycle","workspaceId":"95620934d3348d95","initialHead":"2ffb93248c8636903f6b8d24ea9cf41c4da01a39"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/station-access-lifecycle/product-definition.md","docs/architecture/station-access-lifecycle/experience-contract.md","docs/architecture/station-access-lifecycle/product-state-model.md","docs/architecture/station-access-lifecycle/acceptance-matrix.md","docs/architecture/station-access-lifecycle/design.md","docs/architecture/station-access-lifecycle/decisions.md","docs/architecture/station-access-lifecycle/integration.md","docs/architecture/station-access-lifecycle/legacy-inventory.json"],"decisions":["SAL-D01","SAL-D02","SAL-D03","SAL-D04","SAL-D05","SAL-D06"]},"scope":{"sourceClaims":[{"pathPrefix":"docs/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/station-access-lifecycle","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/access-gates","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/api-ownership","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/federation","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/identity","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/service-coordination.md","mode":"shared-read"},{"pathPrefix":"docs/client/desktop","mode":"exclusive-write"},{"pathPrefix":"docs/client/mobile","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge","mode":"exclusive-write"},{"pathPrefix":"model/domain/access_gate","mode":"exclusive-write"},{"pathPrefix":"model/domain/peer","mode":"exclusive-write"},{"pathPrefix":"model/domain/federation","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/cmd/station_api_ownership","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/tests","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/federation","mode":"exclusive-write"},{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts","mode":"exclusive-write"}],"nonGoals":["Chat message, attachment or local storage governance","Browser client readiness","Federation topology or Relay implementation redesign","Dashboard or CLI product redesign","Preserve compatibility routes, aliases, fallback reads, old keys or migrations","Force Desktop and Mobile to share identical UI components"]},"tasks":[{"id":"SAL-01-access-hard-cut","workstreamId":"SAL-W01","path":"tasks/SAL-01-access-hard-cut.md","dependsOn":[],"status":"in_progress","blocker":null},{"id":"SAL-02-federation-relay-boundary","workstreamId":"SAL-W02","path":"tasks/SAL-02-federation-relay-boundary.md","dependsOn":["SAL-01-access-hard-cut"],"status":"pending","blocker":null},{"id":"SAL-03-zero-legacy-aggregate","workstreamId":"SAL-W03","path":"tasks/SAL-03-zero-legacy-aggregate.md","dependsOn":["SAL-02-federation-relay-boundary"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["chat-native-four","chat-native-disposable","mobile-simulator"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
@@ -17,6 +17,8 @@
 {
   "closures": {
     "sal-access-hard-cut": [
+      "proto-build",
+      "station-api-ownership",
       "station-access-capability-contract",
       "station-access-auth-e2e",
       "station-access-scope-isolation-e2e"
@@ -32,9 +34,12 @@
     ]
   },
   "completion": [
+    "proto-build",
+    "station-api-ownership",
     "station-access-capability-contract",
     "station-access-auth-e2e",
     "station-access-scope-isolation-e2e",
+    "station-access-domain-validation",
     "station-access-federation-boundary-e2e",
     "station-access-zero-legacy-e2e",
     "desktop-release-build",
@@ -48,6 +53,7 @@
     "station-access-federation-boundary-e2e",
     "station-access-zero-legacy-e2e",
     "station-access-lifecycle-aggregate-e2e",
+    "station-access-domain-validation",
     "station-api-ownership",
     "mobile-identity-contract",
     "mobile-contract-static",
