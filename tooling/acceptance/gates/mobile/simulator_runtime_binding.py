@@ -432,6 +432,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "activeStationPeerId",
         "activeActorPtid",
         "runtimeStationPeerId",
+        "deviceIdentityDigest",
         "social",
         "navigation",
     }:
@@ -449,7 +450,11 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
             raise DriverError(
                 f"Mobile lifecycle scope {field} is invalid"
             )
-    for field in ("activeActorPtid", "runtimeStationPeerId"):
+    for field in (
+        "activeActorPtid",
+        "runtimeStationPeerId",
+        "deviceIdentityDigest",
+    ):
         _optional_text(scope.get(field), field)
 
     social = _mapping(scope.get("social"), "social scope")

@@ -508,6 +508,7 @@ class FakeParentSimulatorSession:
                 "runtimeStationPeerId": (
                     self.active_station_peer_id if active else None
                 ),
+                "deviceId": "mobile-device" if active else None,
                 "social": {
                     "stationPeerId": (
                         self.active_station_peer_id if active else None

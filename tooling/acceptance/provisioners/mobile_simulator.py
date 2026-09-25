@@ -3625,11 +3625,41 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
         "social",
         "navigation",
     }
-    if set(scope) != expected_fields:
+    device_fields = {"deviceId", "deviceIdentityDigest"} & set(scope)
+    if (
+        len(device_fields) != 1
+        or set(scope) != expected_fields | device_fields
+    ):
         raise EphemeralCapabilityBlocked(
             "Mobile lifecycle scope has an invalid shape",
             resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:scope",
         )
+    raw_device_id = scope.get("deviceId")
+    raw_device_digest = scope.get("deviceIdentityDigest")
+    if "deviceId" in device_fields:
+        device_identity_digest = (
+            hashlib.sha256(raw_device_id.encode("utf-8")).hexdigest()
+            if isinstance(raw_device_id, str) and raw_device_id
+            else None
+        )
+        if raw_device_id is not None and device_identity_digest is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile lifecycle scope device identity is invalid",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:scope",
+            )
+    else:
+        device_identity_digest = _optional_scope_text(
+            raw_device_digest,
+            label="Mobile device identity digest",
+        )
+        if (
+            device_identity_digest is not None
+            and re.fullmatch(r"[0-9a-f]{64}", device_identity_digest) is None
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile lifecycle scope device digest is invalid",
+                resource=f"{SIMULATOR_APPIUM_CAPABILITY_ID}:scope",
+            )
     generation = scope.get("generation")
     if (
         isinstance(generation, bool)
@@ -3694,6 +3724,7 @@ def _sanitize_lifecycle_scope(value: object) -> dict[str, Any]:
             scope.get("runtimeStationPeerId"),
             label="Mobile runtime Station peer ID",
         ),
+        "deviceIdentityDigest": device_identity_digest,
         "social": {
             "stationPeerId": _optional_scope_text(
                 social.get("stationPeerId"),
