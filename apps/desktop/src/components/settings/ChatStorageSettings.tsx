@@ -3,6 +3,7 @@ import { Button } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
 import { Input, Segmented, Tag, Typography, theme } from 'antd';
 import {
+  Clock3,
   Database,
   FileImage,
   HardDrive,
@@ -11,6 +12,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+
+import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 
 import {
   chatStorageProjectionRuntime,
@@ -33,7 +36,11 @@ export function ChatStorageSettings() {
   const snapshot = projection.snapshot;
   const confirmingClearCache = clearConfirmationRevision === snapshot?.revision;
   const releasedBytes = chatStorageReleasedBytes(projection.cleanup.result);
+  const retentionReleasedBytes = chatStorageReleasedBytes(projection.retention.result);
   const cleanupRunning = projection.cleanup.status === 'clearing';
+  const retentionSaving = projection.retention.status === 'saving';
+  const retentionPreset = snapshot?.retentionPolicy?.retentionPreset
+    ?? ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER;
 
   const conversations = useMemo(() => {
     if (!snapshot) return [];
@@ -176,6 +183,83 @@ export function ChatStorageSettings() {
           </Flexbox>
         ))}
       </div>
+
+      <SettingsSection
+        title={t('settings.storage.retentionTitle')}
+        subtitle={t('settings.storage.retentionDescription')}
+      >
+        <Flexbox horizontal align="center" gap={10} data-chat-storage-retention>
+          <Clock3 size={18} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+          <Segmented<ChatRetentionPreset>
+            block
+            disabled={retentionSaving || cleanupRunning}
+            options={[
+              {
+                label: (
+                  <span data-chat-storage-retention-option="forever">
+                    {t('settings.storage.retentionForever')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="365">
+                    {t('settings.storage.retentionYear')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_365_DAYS,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="90">
+                    {t('settings.storage.retention90Days')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_90_DAYS,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="30">
+                    {t('settings.storage.retention30Days')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_30_DAYS,
+              },
+            ]}
+            value={retentionPreset}
+            onChange={(value) => {
+              void chatStorageProjectionRuntime.setRetention(value);
+            }}
+          />
+        </Flexbox>
+        <div data-chat-storage-retention-preset={String(retentionPreset)}>
+          {retentionSaving ? (
+            <Text type="secondary" role="status">
+              {t('settings.storage.retentionSaving')}
+            </Text>
+          ) : null}
+          {projection.retention.status === 'succeeded' ? (
+            <Text
+              type="success"
+              role="status"
+              data-chat-storage-retention-result="succeeded"
+              data-chat-storage-retention-released-bytes={String(retentionReleasedBytes ?? 0n)}
+            >
+              {t('settings.storage.retentionSaved')}
+            </Text>
+          ) : null}
+          {projection.retention.status === 'failed' ? (
+            <Text
+              type="danger"
+              role="alert"
+              data-chat-storage-retention-result="failed"
+            >
+              {t('settings.storage.retentionFailed')}
+            </Text>
+          ) : null}
+        </div>
+      </SettingsSection>
 
       <SettingsSection
         title={t('settings.storage.clearCacheTitle')}

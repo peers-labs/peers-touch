@@ -601,6 +601,47 @@
           "Retention, redaction, conversation clear and full Recovery remain owned by later CSG closures"
         ]
       }
+    },
+    {
+      "id": "chat-storage-retention",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-retention"],
+      "required_gates": ["chat-storage-retention-e2e"],
+      "synthetic_paths": [
+        "model/domain/chat/storage.proto",
+        "packages/messaging-core/src/storage_governance/retention.rs",
+        "packages/messaging-core/src/store/schema.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx",
+        "apps/mobile/src/acceptance/actions.ts",
+        "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Device Messaging Engine retention policy",
+          "authority-sequence and event-hash retention floors",
+          "Device Messaging Engine SQLCipher projections and cleanup journal"
+        ],
+        "surfaces": [
+          "Desktop Settings > Data > Storage > Keep messages",
+          "Mobile Me > Chat Settings > Storage > Keep messages"
+        ],
+        "proven_by": ["chat-storage-retention-e2e"],
+        "proven_scope": [
+          "Shared Core owns the four retention presets and fail-closed candidate selection",
+          "Desktop and Mobile adapters commit local pruning and monotonic sequence/hash floors",
+          "Native Mobile proves physical reclamation, protected-state preservation, and restart-stable policy"
+        ],
+        "unproven_scope": [
+          "Desktop native visible retention remains scheduled for the final CSG aggregate closure",
+          "Cross-device deletion is intentionally not claimed by device-local retention"
+        ]
+      }
     }
   ]
 }

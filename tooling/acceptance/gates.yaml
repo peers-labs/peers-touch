@@ -370,6 +370,14 @@
       "tier": "env-evidence",
       "description": "Prove immutable cache cleanup journals and protected-state preservation in shared Core and both adapters, then clear a real cache fixture through the native Mobile Settings UI and report physically released bytes."
     },
+    "chat-storage-retention-e2e": {
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance::retention --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop retention_ --offline && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib retention_ --offline && pnpm --dir apps/desktop exec vitest run src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec vitest run src/runtimes/chatStorageRuntime.test.ts src/pages/settings/SettingsSections.test.tsx src/acceptance/registry.test.ts && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.mobile.simulator_social_e2e_test && python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario storage-retention",
+      "timeout_seconds": 2400,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Prove scoped four-preset retention, durable-only pruning, sequence/hash floors, Recovery exclusion, physical reclamation, and restart-stable native Mobile behavior."
+    },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,

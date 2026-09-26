@@ -315,6 +315,35 @@
       ]
     },
     {
+      "id": "chat-storage-retention",
+      "features": [
+        "chat-storage-retention"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/chat/storage.proto",
+          "packages/messaging-core/src/storage_governance/retention.rs",
+          "packages/messaging-core/src/store/schema.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+          "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+          "apps/mobile/src-tauri/src/messaging/engine.rs",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs",
+          "apps/mobile/src-tauri/src/messaging/commands.rs",
+          "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+          "apps/mobile/src/pages/settings/SettingsSections.tsx",
+          "apps/mobile/src/acceptance/**",
+          "tooling/acceptance/features/chat-storage-retention.yaml",
+          "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+        ]
+      },
+      "require": [
+        "chat-storage-retention-e2e"
+      ]
+    },
+    {
       "id": "station-messaging",
       "features": [
         "chat-service-contract",
