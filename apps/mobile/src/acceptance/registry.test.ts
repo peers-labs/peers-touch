@@ -513,8 +513,9 @@ describe('Mobile Acceptance Harness', () => {
       'readSocialPeopleSearchFederations()',
     );
     expect(searchAction).toContain(
-      'federationId: searchResult.federation?.handle ?? soleFederationId',
+      'federationId: searchResult.federation?.handle ?? selectedFederationId',
     );
+    expect(searchAction).toContain('.sort()[0] ??');
     expect(searchAction).not.toContain('input?.federationId');
     expect(searchAction).not.toContain('input.federationId');
   });

@@ -782,13 +782,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       requireString(query, 'social.people.search.query'),
     );
     const activeFederations = readSocialPeopleSearchFederations();
-    const soleFederationId = activeFederations.length === 1
-      ? activeFederations[0]?.federationId ?? ''
-      : '';
+    const selectedFederationId = activeFederations
+      .map((federation) => federation.federationId.trim())
+      .filter(Boolean)
+      .sort()[0] ?? '';
     return results.map((searchResult) => {
       const result = {
         ...searchResult,
-        federationId: searchResult.federation?.handle ?? soleFederationId,
+        federationId: searchResult.federation?.handle ?? selectedFederationId,
       };
       return {
         ptid: result.ptid,
