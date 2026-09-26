@@ -25,13 +25,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 2;
+pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryMessageProjection {
     pub conversation_id: String,
     pub event_id: String,
     pub event_sequence: i64,
+    pub authority_event_hash: Vec<u8>,
     pub message_id: String,
     pub sender_ptid: String,
     pub sender_device_id: String,
@@ -86,6 +87,17 @@ impl Drop for RecoveryConversationProjection {
 impl ZeroizeOnDrop for RecoveryConversationProjection {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct RecoveryRetentionFloor {
+    pub station_peer_id: String,
+    pub conversation_id: String,
+    pub pruned_through_sequence: i64,
+    pub authority_event_hash: Vec<u8>,
+    pub policy_cutoff_unix_ms: Option<i64>,
+    pub reason: String,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryAttachmentMetadata {
     pub message_id: String,
     pub attachment_id: String,
@@ -106,6 +118,7 @@ pub struct MessagingRecoveryArchive {
     pub actor_profile_version: u64,
     pub conversations: Vec<RecoveryConversationProjection>,
     pub messages: Vec<RecoveryMessageProjection>,
+    pub retention_floors: Vec<RecoveryRetentionFloor>,
     pub attachments: Vec<RecoveryAttachmentMetadata>,
     pub trust: Vec<RecoveryTrustRecord>,
 }
@@ -145,6 +158,7 @@ struct ActorIdentitySection {
 struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
+    retention_floors: Vec<RecoveryRetentionFloor>,
 }
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -168,6 +182,7 @@ struct ActorIdentitySectionRef<'a> {
 struct MessageHistorySectionRef<'a> {
     conversations: &'a [RecoveryConversationProjection],
     messages: &'a [RecoveryMessageProjection],
+    retention_floors: &'a [RecoveryRetentionFloor],
 }
 
 #[derive(Serialize)]
@@ -225,8 +240,10 @@ pub fn encode_recovery_revision(
         &MessageHistorySectionRef {
             conversations: &archive.conversations,
             messages: &archive.messages,
+            retention_floors: &archive.retention_floors,
         },
-        (archive.conversations.len() + archive.messages.len()) as u64,
+        (archive.conversations.len() + archive.messages.len() + archive.retention_floors.len())
+            as u64,
     )?);
     sections.push(encrypt_section(
         &key,
@@ -346,6 +363,7 @@ pub fn decode_recovery_revision(
         actor_profile_version: identity.profile_version,
         conversations: std::mem::take(&mut history.conversations),
         messages: std::mem::take(&mut history.messages),
+        retention_floors: std::mem::take(&mut history.retention_floors),
         attachments: std::mem::take(&mut attachments.attachments),
         trust: std::mem::take(&mut trust.trust),
     };
@@ -447,6 +465,28 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
         .iter()
         .map(|message| message.message_id.as_str())
         .collect::<std::collections::HashSet<_>>();
+    let conversation_station_by_id = archive
+        .conversations
+        .iter()
+        .map(|conversation| {
+            (
+                conversation.conversation_id.as_str(),
+                conversation.authority_station_id.as_str(),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut retention_floor_by_conversation = std::collections::HashMap::new();
+    for floor in &archive.retention_floors {
+        if retention_floor_by_conversation
+            .insert(
+                floor.conversation_id.as_str(),
+                floor.pruned_through_sequence,
+            )
+            .is_some()
+        {
+            return Err("messaging recovery archive has duplicate retention floors".to_string());
+        }
+    }
     if archive.ptid.trim().is_empty()
         || archive.actor_profile_version == 0
         || archive.conversations.iter().any(|conversation| {
@@ -478,9 +518,25 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
             message.conversation_id.trim().is_empty()
                 || message.event_id.trim().is_empty()
                 || message.event_sequence <= 0
+                || message.authority_event_hash.len() != 32
+                || message.authority_event_hash.iter().all(|byte| *byte == 0)
+                || retention_floor_by_conversation
+                    .get(message.conversation_id.as_str())
+                    .is_some_and(|floor| message.event_sequence <= *floor)
                 || message.message_id.trim().is_empty()
                 || message.sender_ptid.trim().is_empty()
                 || message.sender_device_id.trim().is_empty()
+        })
+        || archive.retention_floors.iter().any(|floor| {
+            floor.station_peer_id.trim().is_empty()
+                || floor.conversation_id.trim().is_empty()
+                || conversation_station_by_id.get(floor.conversation_id.as_str())
+                    != Some(&floor.station_peer_id.as_str())
+                || floor.pruned_through_sequence <= 0
+                || floor.authority_event_hash.len() != 32
+                || floor.authority_event_hash.iter().all(|byte| *byte == 0)
+                || !matches!(floor.reason.as_str(), "policy" | "manual_clear")
+                || floor.updated_at_unix_ms <= 0
         })
         || archive.attachments.iter().any(|attachment| {
             attachment.message_id.trim().is_empty()
@@ -640,6 +696,7 @@ mod tests {
         fn require_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
         require_zeroize_on_drop::<RecoveryMessageProjection>();
+        require_zeroize_on_drop::<RecoveryRetentionFloor>();
         require_zeroize_on_drop::<RecoveryConversationProjection>();
         require_zeroize_on_drop::<RecoveryAttachmentMetadata>();
         require_zeroize_on_drop::<RecoveryTrustRecord>();
@@ -680,13 +737,23 @@ mod tests {
             }],
             messages: vec![RecoveryMessageProjection {
                 conversation_id: "conversation-1".to_string(),
-                event_id: "event-1".to_string(),
-                event_sequence: 1,
+                event_id: "event-7".to_string(),
+                event_sequence: 7,
+                authority_event_hash: vec![7; 32],
                 message_id: "message-1".to_string(),
                 sender_ptid: "ptid:bob".to_string(),
                 sender_device_id: "bob-device".to_string(),
                 plaintext: "exact plaintext".to_string(),
                 committed_at_unix_ms: 10,
+            }],
+            retention_floors: vec![RecoveryRetentionFloor {
+                station_peer_id: "station-local".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                pruned_through_sequence: 6,
+                authority_event_hash: vec![6; 32],
+                policy_cutoff_unix_ms: Some(60),
+                reason: "policy".to_string(),
+                updated_at_unix_ms: 70,
             }],
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "message-1".to_string(),
