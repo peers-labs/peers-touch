@@ -6422,10 +6422,10 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         return value
 
     @staticmethod
-    def _identity_digest(value: object) -> str:
+    def _identity_digest(value: object) -> str | None:
         raw = str(value or "")
         if not raw:
-            return ""
+            return None
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def _raw_authority_values(self) -> tuple[str, ...]:
