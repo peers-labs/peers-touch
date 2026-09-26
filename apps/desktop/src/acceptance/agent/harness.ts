@@ -15821,7 +15821,17 @@ async function runFoundationForbiddenActorAttempt(input: {
   const outcome = rejectedRef.current ?? errorEvent?.data ?? null;
   const sourceDelivery = errorEvent?.sourceDelivery;
   const actorPtid = authenticatedFoundationActorPtid();
-  if (!outcome) {
+  const projectedOutcome = outcome
+    ? projectAgentTypedErrorPayload(outcome)
+    : undefined;
+  const projectedRuntimeOutcome = errorEvent
+    ? projectAgentTypedErrorPayload(errorEvent.data)
+    : undefined;
+  if (
+    !outcome
+    || !projectedOutcome
+    || projectedOutcome.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
+  ) {
     throw new Error(
       'agent.acceptance.foundationForbiddenActorOutcomeMissing',
     );
@@ -15842,8 +15852,8 @@ async function runFoundationForbiddenActorAttempt(input: {
       ) !== stableJson(
         normalizeProjectedStationPayload(errorEvent.data),
       )
-      || stableJson(normalizeProjectedStationPayload(outcome))
-        !== stableJson(normalizeProjectedStationPayload(errorEvent.data))
+      || !projectedRuntimeOutcome
+      || stableJson(projectedOutcome) !== stableJson(projectedRuntimeOutcome)
     )
   ) {
     throw new Error(
@@ -15891,7 +15901,7 @@ async function runFoundationForbiddenActorAttempt(input: {
         }
       : null,
     rejectionHash: await sha256Hex(stableJson(
-      normalizeProjectedStationPayload(outcome),
+      projectedOutcome,
     )),
     foreignContentFieldCount: Object.keys(outcome)
       .filter((key) => foreignContentFields.has(key)).length,

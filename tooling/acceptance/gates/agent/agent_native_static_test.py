@@ -1768,9 +1768,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("requireRuntimeEvent: false", scenario)
         self.assertIn(
-            "normalizeProjectedStationPayload(outcome)",
+            "? projectAgentTypedErrorPayload(outcome)",
             scenario,
         )
+        self.assertIn(
+            "? projectAgentTypedErrorPayload(errorEvent.data)",
+            scenario,
+        )
+        self.assertIn(
+            "stableJson(projectedOutcome) !== stableJson(projectedRuntimeOutcome)",
+            scenario,
+        )
+        self.assertNotIn(
+            "stableJson(normalizeProjectedStationPayload(outcome))",
+            scenario,
+        )
+        self.assertIn("rejectionHash: await sha256Hex(stableJson(", scenario)
+        self.assertIn("projectedOutcome,", scenario)
         self.assertIn("sourceHash: first.rejectionHash", scenario)
         self.assertIn("replayHash: replayed.rejectionHash", scenario)
         self.assertIn(
