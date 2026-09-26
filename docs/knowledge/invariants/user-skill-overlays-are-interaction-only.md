@@ -30,9 +30,9 @@ the immutable installed copy identified by its content digest, never the
 mutable source directory. Installation rejects symlinks, malformed manifests,
 name collisions, and modified installed content.
 
-Canonical project Skill rollout and user Overlay installation are separate:
-`make skills` projects only repository-owned `tooling/skills/pt-*`; it never
-discovers or copies user Overlay sources into host Skill directories.
+Canonical project agent integration and user Overlay installation are separate:
+`make skills` projects repository-owned Skills and supported host
+hooks; it never discovers or copies user Overlay sources into host directories.
 
 ## Why this is non-negotiable
 
@@ -53,11 +53,12 @@ retargeting from changing an active Overlay silently.
   returns no personal language policy.
 - `make skill-overlay-resolve TARGET=pt-ew` returns only enabled,
   digest-verified installed copies in deterministic order.
-- `make skills IDE=<host>` continues to project only canonical
-  `tooling/skills/pt-*` directories.
+- `make skills IDE=<host>` projects only canonical
+  `tooling/skills/pt-*` plus `tooling/plugins/pt-ew-plugin`.
 
 ## Crosswalks
 
 - DWF-D21 keeps project execution semantics host-neutral.
 - DWF-D22 separates canonical distribution from consuming machine state.
 - DWF-D25 defines the user Overlay control plane.
+- DWF-D26 keeps project host hooks separate from user Overlay content.

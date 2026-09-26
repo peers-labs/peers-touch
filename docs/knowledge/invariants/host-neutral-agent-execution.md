@@ -90,9 +90,9 @@ of the project architecture.
 - TRAE diagnostics require an isolated diagnostic sidecar, while Runtime
   Handoff and Dev Workflow require the non-blocking
   `HOST_DIAGNOSTIC_RETAINED` return fields and never name a host debugger.
-- Rollout verification executes the installed copy from at least two consuming
+- Agent integration verification executes the installed copy from at least two consuming
   roots and proves distinct workspace IDs and active-work paths.
-- `make skill-rollout-audit ROOT=<worktree-root>` passes after semantic source
+- `make agent-integration-audit ROOT=<worktree-root>` passes after semantic source
   integration and `make skills IDE=<host>`; active sessions restart from
   durable state rather than hot-swapping their Skill catalog.
 
@@ -101,3 +101,5 @@ of the project architecture.
 - DWF-D21 defines the host-neutral owner and adapter boundary.
 - DWF-D20 defines the continuous Plan Run that consumes the scheduler output.
 - DWF-D22 separates workflow source distribution from runtime-state ownership.
+- DWF-D26 binds IDE enforcement to one immutable conversation execution root
+  and treats each hook target as a separate subject root.

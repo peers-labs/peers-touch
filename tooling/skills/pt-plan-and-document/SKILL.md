@@ -3,7 +3,7 @@ name: "pt-plan-and-document"
 description: "Persists an accepted product, architecture, or execution model into the correct Peers-Touch repository documents. For execution planning it renders, validates and binds the Plan Package before Dev Workflow creates runtime state."
 stage: "PLAN"
 requires: ["accepted source model", "repository documentation rules"]
-produces: ["persisted documents", "validated prepared Plan Package", "immutable workspace Plan binding", "review prompt"]
+produces: ["persisted documents", "validated prepared Plan Package", "generation-bound workspace Plan binding", "review prompt"]
 next: "pt-dev-workflow agent review loop"
 ---
 
@@ -22,7 +22,7 @@ next: "pt-dev-workflow agent review loop"
 - 创建 Plan Package / Task Slice 文件；
 - 运行结构校验；
 - 更新导航；
-- 建立 workspace 的不可变 Plan binding；
+- 建立 workspace 的首个 Plan generation，或在上一代完成并释放后显式推进；
 - 生成 review prompt。
 
 本 Skill 不负责：
@@ -145,9 +145,13 @@ make plan-current PLAN=<package-plan.md>
 ```
 
 3. 验证明确选定的 worktree binding。
-4. 运行 `make plan-bind PLAN=<package-plan.md>` 建立该 workspace 唯一且不可
-   换绑的 `planId + planPath`。同值调用幂等；若 workspace 已绑定其他 Plan，
-   返回 `WORKSPACE_PLAN_REBIND_DENIED`，新 Plan 必须使用新 worktree。
+4. 首个 Plan 运行 `make plan-bind PLAN=<package-plan.md>` 创建 generation 1。
+   同值调用幂等；不同值返回 `WORKSPACE_PLAN_REBIND_DENIED`。若 workspace
+   已绑定一个 completed Plan，先证明 declaration、active-work 与 runtime
+   lease 均已释放，再运行
+   `make plan-binding-advance PLAN=<package-plan.md>
+   EXPECTED_GENERATION=<n>` 原子推进下一 generation。不得删除绑定文件，也
+   不得由 Agent 自建 worktree 绕过该检查。
 5. prepared package 没有 current Task，因此本 Skill 不创建 active-work
    占位记录。计划评审通过后，Development Run 通过 owner command 选择
    current Task、发布 tracked declaration，再运行
@@ -198,7 +202,7 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
 - [ ] Plan Package 和所有 Task Slice 通过 `planctl validate`
-- [ ] workspace 的不可变 Plan binding 已创建且与 package 匹配
+- [ ] workspace 的当前 Plan generation 已创建且与 package 匹配
 - [ ] package 为 `prepared` 且无 current Task
 - [ ] `Acceptance Execution` 唯一且 closure 完整
 - [ ] scenario/Gate 映射来自 product state 或 concrete risk
@@ -229,6 +233,6 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - 在 current Task、declaration 和 Session owner 就绪前创建 active-work；
 - 写共享 `project_memory.md active_work` 表；
 - 从 branch、目录或 active Plan 数量推断 workspace Plan；
-- 换绑已有 workspace，或添加 unbind/rebind 兼容路径；
+- 覆盖或删除已有 binding，或把新建 worktree 当作 binding workaround；
 - 把 plan review prompt 当作用户交互停点；
 - 由本 Skill 选择 current Task、执行或宣称完成。

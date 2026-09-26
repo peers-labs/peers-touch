@@ -16,9 +16,10 @@
     </div>
     <div class="topbar-actions">
       <div class="server-meta">
-        <span id="server-source" class="server-source">Resolving server source</span>
+        <span id="server-source" class="server-source">Resolving source</span>
         <span id="observed-at" class="observed-at">Loading</span>
       </div>
+      <span id="transport" class="transport" data-state="connecting">Connecting</span>
       <button id="refresh" class="icon-button" type="button" title="Refresh" aria-label="Refresh">
         ↻
       </button>
@@ -26,59 +27,26 @@
   </header>
 
   <section class="summary" aria-label="Development summary">
-    <div class="metric">
-      <span class="metric-label">Worktrees</span>
-      <strong id="worktree-count">0</strong>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Requirements</span>
-      <strong id="requirement-count">0</strong>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Runtime Active</span>
-      <strong id="runtime-count">0</strong>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Blocked</span>
-      <strong id="blocked-count">0</strong>
-    </div>
-    <div class="metric">
-      <span class="metric-label">Profiles</span>
-      <strong id="profile-count">0</strong>
-    </div>
+    <div class="metric"><span class="metric-label">Worktrees</span><strong id="worktree-count">0</strong></div>
+    <div class="metric"><span class="metric-label">Active plans</span><strong id="plan-count">0</strong></div>
+    <div class="metric"><span class="metric-label">Working agents</span><strong id="agent-count">0</strong></div>
+    <div class="metric"><span class="metric-label">Blocked / drift</span><strong id="blocked-count">0</strong></div>
+    <div class="metric"><span class="metric-label">Profiles</span><strong id="profile-count">0</strong></div>
   </section>
 
   <p id="status-message" class="status-message" role="status"></p>
 
-  <section class="section">
+  <section class="section" aria-labelledby="worktree-heading">
     <div class="section-heading">
-      <h2>Worktree Delivery Board</h2>
+      <h2 id="worktree-heading">Worktree Progress</h2>
       <span id="authority" class="authority">Authority unknown</span>
     </div>
-    <div class="table-wrap">
-      <table class="worktree-table">
-        <thead>
-          <tr>
-            <th>Worktree</th>
-            <th>Branch</th>
-            <th>Work</th>
-            <th>Environment</th>
-            <th>Requirements / Journeys</th>
-            <th>Profile / Slot</th>
-            <th>Station</th>
-            <th>Relay</th>
-            <th>Data &amp; Other</th>
-            <th>Live Leases</th>
-          </tr>
-        </thead>
-        <tbody id="worktree-body"></tbody>
-      </table>
-    </div>
+    <div id="worktree-list" class="worktree-list"></div>
   </section>
 
-  <section class="section">
+  <section class="section" aria-labelledby="profile-heading">
     <div class="section-heading">
-      <h2>Profile Capacity</h2>
+      <h2 id="profile-heading">Runtime Capacity</h2>
       <span id="profile-capacity-count" class="count">0</span>
     </div>
     <div class="table-wrap">
@@ -87,13 +55,13 @@
           <tr>
             <th>Profile</th>
             <th>State</th>
-            <th>Reset Policy</th>
+            <th>Control</th>
             <th>Station</th>
             <th>Relay</th>
             <th>Source</th>
             <th>Worktrees</th>
             <th>Slots</th>
-            <th>Requirements</th>
+            <th>Work</th>
           </tr>
         </thead>
         <tbody id="occupancy-body"></tbody>

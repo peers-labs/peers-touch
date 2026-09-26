@@ -357,7 +357,7 @@ make prototypes-worktree
 目标：
 
 - 更新 `pt-prototype-design` skill。
-- 更新 `make skills` 后确保 IDE 能加载新版 skill。
+- 运行 `make skills IDE=<host>` 后确保 IDE 能加载新版 skill。
 - 更新原型总账和模块入口的反链。
 
 验收：
