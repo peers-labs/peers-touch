@@ -87,12 +87,12 @@
     "Do not run Tauri release build with less than 20 GiB free disk",
     "Do not mark complete while any required Gate is stale or not current-source PASS"
   ],
-  "updatedAt": "2026-09-26T00:00:00.000Z",
+  "updatedAt": "2026-09-26T11:36:10.000Z",
   "durableEvidence": [
     {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "result": "PASS",
+      "ref": "acceptance-run 20260926T111207959347Z-954df736a40dd1ece23fafa431f124e9; gap detector PROVEN"
     }
   ]
 }
@@ -100,8 +100,9 @@
 
 ## Current Snapshot
 
-- State: pending；无本模块 Acceptance evidence。
-- Dependency: `SAL-02-federation-relay-boundary`。
+- State: done。
+- Completion run 20/20 PASS；九维遗产扫描、Desktop release、Mobile native、
+  聚合 Gate 与 Station Access domain validation 均为 exact-source proof。
 
 ## Closure
 
