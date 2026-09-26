@@ -1035,6 +1035,28 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn("zeroSuccessfulCompletion:", scenario)
+        self.assertIn("await waitForCapabilitySessionEvidence()", scenario)
+        self.assertIn("EVENT.AGENT_TURN_STREAM_EVENT", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)",
+            scenario,
+        )
+        self.assertIn("buildDirectRuntimeAttestation(", scenario)
+        self.assertIn("runtimeAttestation,", scenario)
+        for role in (
+            "'receiver-dom':",
+            "'station-readback':",
+            "'runtime-events':",
+            "'measurement-report':",
+            "'side-effect-count':",
+            "replay,",
+        ):
+            self.assertIn(role, scenario)
+        self.assertIn(
+            "resourceKind: 'provider-timeout-fixture'",
+            scenario,
+        )
         self.assertIn(
             "clearFoundationLocalConversationProjection(conversationId)",
             scenario,

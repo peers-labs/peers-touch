@@ -27181,17 +27181,28 @@ export function installAcceptanceHarness(): void {
 
     async runDevelopmentProviderTimeout({
       sampleId,
+      platform = 'desktop_app',
+      locale = i18n.language,
     }: {
       sampleId: string;
+      platform?: 'desktop_app' | 'browser';
+      locale?: string;
     }) {
       const agent = selectedAgent();
       if (!agent?.provider || !agent.model) {
         throw new Error('agent.acceptance.providerTimeout');
       }
       const agentId = agent.id || agent.name;
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const capabilitySessionId =
+        capabilitySessions.selectedStationSession?.session_id;
+      if (!capabilitySessionId) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
       const requestedWallTimeMs = 180_000;
       const providerDeadlineMs = 120_000;
       let conversationId = '';
+      let turnId = '';
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let capture: Record<string, unknown> | null = null;
@@ -27214,56 +27225,92 @@ export function installAcceptanceHarness(): void {
           api.listAgentTurnQueue(conversationId),
         ]);
 
-        const messageCountBefore = useChatStore.getState().messages.length;
-        const submittedAtMs = Date.now();
-        const sent = useChatStore.getState().sendMessage(
-          `Provider timeout ${sampleId}. Output exactly 8192 tokens as a `
-            + 'numbered technical encyclopedia about distributed systems. '
-            + 'Continue without summarizing, abbreviating, or stopping early.',
-          [],
-          {
-            clientIdempotencyKey: crypto.randomUUID(),
-            requestedBudget: {
-              max_output_tokens: 8192,
-              wall_time_ms: requestedWallTimeMs,
-            },
+        let observationSequence = 0;
+        const errorEventRef: {
+          current: FoundationPreAdmissionErrorEvent | null;
+        } = { current: null };
+        const unsubscribe = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            if (payload.conversationId !== conversationId) return;
+            observationSequence += 1;
+            if (
+              payload.event !== 'error'
+              || payload.data.error_type !== 'PROVIDER_TIMEOUT'
+            ) return;
+            errorEventRef.current = {
+              data: evidenceValue(payload.data) as Record<string, unknown>,
+              eventType: payload.event,
+              observedAt: new Date(payload.timestampMs).toISOString(),
+              streamId: payload.streamId,
+              streamGeneration: payload.streamGeneration,
+              conversationId: payload.conversationId,
+              observationSequence,
+              timestampMs: payload.timestampMs,
+              sourceDelivery,
+            };
           },
         );
-        if (!sent) {
-          throw new Error('agent.acceptance.providerTimeoutSendRejected');
-        }
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const submittedAtMs = Date.now();
         let errorMessage = useChatStore.getState().messages
           .slice(messageCountBefore)
           .find((message) => (
             message.role === 'assistant'
             && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
           ));
-        await waitFor(
-          () => {
-            errorMessage = useChatStore.getState().messages
-              .slice(messageCountBefore)
-              .find((message) => (
-                message.role === 'assistant'
-                && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
-                && message.resolution?.type === 'retry'
-              ));
-            const recovery = document.querySelector<HTMLButtonElement>(
-              '[data-pt-agent-message-error-recovery="retry"]',
-            );
-            const errorSurface = document.querySelector<HTMLElement>(
-              '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
-            );
-            return Boolean(
-              errorMessage
-              && recovery
-              && recovery.getClientRects().length > 0
-              && errorSurface
-              && errorSurface.getClientRects().length > 0,
-            );
-          },
-          'provider-timeout recovery surface',
-          150_000,
-        );
+        try {
+          const sent = useChatStore.getState().sendMessage(
+            `Provider timeout ${sampleId}. Output exactly 8192 tokens as a `
+              + 'numbered technical encyclopedia about distributed systems. '
+              + 'Continue without summarizing, abbreviating, or stopping early.',
+            [],
+            {
+              clientIdempotencyKey: crypto.randomUUID(),
+              requestedBudget: {
+                max_output_tokens: 8192,
+                wall_time_ms: requestedWallTimeMs,
+              },
+            },
+          );
+          if (!sent) {
+            throw new Error('agent.acceptance.providerTimeoutSendRejected');
+          }
+          await waitFor(
+            () => {
+              errorMessage = useChatStore.getState().messages
+                .slice(messageCountBefore)
+                .find((message) => (
+                  message.role === 'assistant'
+                  && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
+                  && message.resolution?.type === 'retry'
+                ));
+              const recovery = document.querySelector<HTMLButtonElement>(
+                '[data-pt-agent-message-error-recovery="retry"]',
+              );
+              const errorSurface = document.querySelector<HTMLElement>(
+                '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
+              );
+              return Boolean(
+                errorEventRef.current
+                && errorMessage
+                && recovery
+                && recovery.getClientRects().length > 0
+                && errorSurface
+                && errorSurface.getClientRects().length > 0,
+              );
+            },
+            'provider-timeout recovery surface',
+            150_000,
+          );
+        } finally {
+          unsubscribe();
+        }
         const terminalObservedAtMs = Date.now();
         const recovery = document.querySelector<HTMLButtonElement>(
           '[data-pt-agent-message-error-recovery="retry"]',
@@ -27271,11 +27318,51 @@ export function installAcceptanceHarness(): void {
         const errorSurface = document.querySelector<HTMLElement>(
           '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
         );
-        if (!errorMessage || !recovery || !errorSurface) {
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text="agent.errors.providerTimeout"]',
+        );
+        const errorEvent =
+          errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+        if (
+          !errorMessage
+          || !recovery
+          || !errorSurface
+          || !errorText
+          || !errorEvent
+        ) {
           throw new Error('agent.acceptance.providerTimeoutRecoveryMissing');
+        }
+        const sourceDelivery = errorEvent.sourceDelivery;
+        turnId = String(
+          errorMessage.turnId
+          ?? errorEvent.data.turnId
+          ?? errorEvent.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        );
+        if (
+          !turnId
+          || !sourceDelivery
+          || sourceDelivery.transport !== 'station-sse'
+          || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+          || sourceDelivery.conversationId !== conversationId
+          || sourceDelivery.turnId !== turnId
+          || sourceDelivery.sequence <= 0
+          || sourceDelivery.rawPayload.eventType !== 'error'
+          || stableJson(
+            normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+          ) !== stableJson(
+            normalizeProjectedStationPayload(errorEvent.data),
+          )
+        ) {
+          throw new Error(
+            'agent.acceptance.providerTimeoutRuntimeIdentityMismatch',
+          );
         }
         const recoveryVisible = recovery.getClientRects().length > 0;
         const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const errorVisible = errorText.getClientRects().length > 0;
+        const errorLabel = errorText.textContent?.trim() ?? '';
         const projectedDeadline =
           errorSurface.dataset.ptAgentErrorDeadline ?? '';
 
@@ -27289,8 +27376,11 @@ export function installAcceptanceHarness(): void {
           api.listAgentTurnQueue(conversationId),
         ]);
         const typedError = errorMessage.typedError;
+        if (!typedError) {
+          throw new Error('agent.acceptance.providerTimeoutTypedErrorMissing');
+        }
         const resolution = errorMessage.resolution;
-        const deadline = typedError?.details.deadline ?? '';
+        const deadline = typedError.details.deadline ?? '';
         const deadlineMs = Date.parse(deadline);
         const latestTrace =
           tracesAfter.entries[tracesAfter.entries.length - 1];
@@ -27332,80 +27422,242 @@ export function installAcceptanceHarness(): void {
             && String(message.status).toLowerCase() === 'completed'
           ),
         );
-        capture = {
-          assertions: {
-            typedProviderTimeout:
-              typedError?.error_type === 'PROVIDER_TIMEOUT'
-              && typedError.locale_key === 'agent.errors.providerTimeout'
-              && typedError.retryable === true
-              && typedError.terminal === true
-              && stableJson(Object.keys(typedError.details).sort())
-                === stableJson(['deadline', 'model_id', 'provider_id'])
-              && typedError.details.provider_id === agent.provider
-              && typedError.details.model_id === agent.model
-              && Number.isFinite(deadlineMs),
-            localizedRetryVisible:
-              recoveryVisible
-              && recoveryLabel.length > 0
-              && resolution?.type === 'retry'
-              && resolution.providerId === agent.provider
-              && resolution.modelId === agent.model
-              && resolution.deadline === deadline,
-            deadlineProjected: projectedDeadline === deadline,
-            oneTerminalProviderAttempt:
-              tracesAfter.entries.length === tracesBefore.entries.length + 1
-              && latestProviderCalls.length === 1
-              && String(
-                evidenceField(providerCall, 'provider', 'provider') ?? '',
-              ) === agent.provider
-              && String(
-                evidenceField(providerCall, 'model', 'model') ?? '',
-              ) === agent.model,
-            upstreamTimeoutCancelled:
-              classifiedErrors.length === 1
-              && timeoutClassified
-              && Number(
-                evidenceField(providerCall, 'latencyMs', 'latency_ms') ?? 0,
-              ) >= providerDeadlineMs - 5_000,
-            providerDeadlinePrecedesTurnBudget:
-              requestedWallTimeMs > providerDeadlineMs
-              && deadlineMs >= submittedAtMs + providerDeadlineMs - 5_000
-              && deadlineMs <= terminalObservedAtMs + 5_000,
-            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
-            queueUnchanged:
-              queueAfter.entries.length === queueBefore.entries.length,
-          },
-          facts: {
+        const replayReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const sourceReadbackHash = await sha256Hex(stableJson(readbackAfter));
+        const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+        const typedOutcome = evidenceRecord(
+          evidenceValue(typedError),
+          'providerTimeoutOutcome',
+        );
+        const payloadHash = await sha256Hex(
+          stableJson(sourceDelivery.rawPayload),
+        );
+        const runtimeEvent: FoundationRuntimeEventObservation = {
+          eventId: await sha256Hex(stableJson({
             conversationId,
-            typedError,
-            providerId: typedError?.details.provider_id ?? '',
-            modelId: typedError?.details.model_id ?? '',
-            deadline,
-            projectedDeadline,
-            submittedAt: new Date(submittedAtMs).toISOString(),
-            terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
-            requestedBudget: {
-              maxOutputTokens: 8192,
-              wallTimeMs: requestedWallTimeMs,
-            },
-            resolution,
-            recoveryLabel,
+            turnId,
+            sequence: sourceDelivery.sequence,
+            payloadHash,
+          })),
+          eventType: errorEvent.eventType,
+          sequence: sourceDelivery.sequence,
+          observedAt: errorEvent.observedAt,
+          streamGeneration: errorEvent.streamGeneration,
+          streamIdHash: await sha256Hex(errorEvent.streamId),
+          conversationIdHash: await sha256Hex(conversationId),
+          payloadHash,
+          errorType: String(typedOutcome.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        };
+        const [
+          profile,
+          readiness,
+          conversations,
+          turnEvidence,
+        ] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.getAgentCapabilityReadiness({
+            agent_id: agentId,
+            client_capability_session_id: capabilitySessionId,
+          }),
+          api.listAgentConversations(agentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationTurnEvidence(conversationId, turnId),
+        ]);
+        const replay = {
+          sourceHash: sourceReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: sourceReadbackHash === replayReadbackHash,
+        };
+        const scenarioFacts = {
+          outcome: typedOutcome,
+          typedError,
+          resolution,
+          receiver: {
+            errorVisible,
+            errorText: errorLabel,
+            expectedErrorText: i18n.t(
+              'agent.errors.providerTimeout',
+              { ns: 'agent' },
+            ),
             recoveryVisible,
-            providerCalls: latestProviderCalls,
-            classifiedErrors,
-            completedAssistantMessageCount:
-              completedAssistantMessages.length,
-            traceCountBefore: tracesBefore.entries.length,
-            traceCountAfter: tracesAfter.entries.length,
-            queueCountBefore: queueBefore.entries.length,
-            queueCountAfter: queueAfter.entries.length,
+            recoveryText: recoveryLabel,
+            expectedRecoveryText: i18n.t(
+              'agent.recovery.retry',
+              { ns: 'agent' },
+            ),
+          },
+          station: {
+            conversationId,
+            turnId,
+            providerId: typedError.details.provider_id,
+            modelId: typedError.details.model_id,
+            deadline,
+            conversationVersion: readbackAfter.conversation.version,
+            stateHash: sourceReadbackHash,
             messageDelta:
               readbackAfter.messages.length - readbackBefore.messages.length,
             traceDelta:
               tracesAfter.entries.length - tracesBefore.entries.length,
             queueDelta:
               queueAfter.entries.length - queueBefore.entries.length,
+            providerCallCount: latestProviderCalls.length,
+            classifiedErrorCount: classifiedErrors.length,
+            completedAssistantCount: completedAssistantMessages.length,
           },
+          requestedBudget: {
+            maxOutputTokens: 8192,
+            wallTimeMs: requestedWallTimeMs,
+          },
+          submittedAt: new Date(submittedAtMs).toISOString(),
+          terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
+          runtimeEvent,
+          replay,
+          cleanup: {
+            conversationDeleted: false,
+            localProjectionCleared: false,
+          },
+        };
+        const assertions = {
+          typedProviderTimeout:
+            typedError.error_type === 'PROVIDER_TIMEOUT'
+            && typedError.locale_key === 'agent.errors.providerTimeout'
+            && typedError.retryable === true
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['deadline', 'model_id', 'provider_id'])
+            && typedError.details.provider_id === agent.provider
+            && typedError.details.model_id === agent.model
+            && Number.isFinite(deadlineMs),
+          localizedRetryVisible:
+            errorVisible
+            && errorLabel.length > 0
+            && recoveryVisible
+            && recoveryLabel.length > 0
+            && resolution?.type === 'retry'
+            && resolution.providerId === agent.provider
+            && resolution.modelId === agent.model
+            && resolution.deadline === deadline,
+          deadlineProjected: projectedDeadline === deadline,
+          oneTerminalProviderAttempt:
+            tracesAfter.entries.length === tracesBefore.entries.length + 1
+            && latestProviderCalls.length === 1
+            && String(
+              evidenceField(providerCall, 'provider', 'provider') ?? '',
+            ) === agent.provider
+            && String(
+              evidenceField(providerCall, 'model', 'model') ?? '',
+            ) === agent.model,
+          upstreamTimeoutCancelled:
+            classifiedErrors.length === 1
+            && timeoutClassified
+            && Number(
+              evidenceField(providerCall, 'latencyMs', 'latency_ms') ?? 0,
+            ) >= providerDeadlineMs - 5_000,
+          providerDeadlinePrecedesTurnBudget:
+            requestedWallTimeMs > providerDeadlineMs
+            && deadlineMs >= submittedAtMs + providerDeadlineMs - 5_000
+            && deadlineMs <= terminalObservedAtMs + 5_000,
+          zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
+          queueUnchanged:
+            queueAfter.entries.length === queueBefore.entries.length,
+        };
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell: 'BASE-PROVIDER_TIMEOUT',
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: readbackAfter,
+            turnQueue: queueAfter,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: errorMessage,
+            scenarioFacts,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        capture = {
+          assertions,
+          facts: scenarioFacts,
+          scenarioFacts,
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: 'BASE-PROVIDER_TIMEOUT',
+            cellId: 'BASE-PROVIDER_TIMEOUT',
+            selector:
+              '[data-pt-agent-error-type="PROVIDER_TIMEOUT"],'
+              + '[data-pt-agent-message-error-recovery="retry"]',
+            locale,
+            textHash: await sha256Hex(stableJson({
+              errorLabel,
+              recoveryLabel,
+            })),
+            visible: errorVisible && recoveryVisible,
+          },
+          'station-readback': {
+            entityKind: 'agent-provider-timeout',
+            entityIdHash: await sha256Hex(stableJson({
+              conversationId,
+              turnId,
+            })),
+            revision: Number(readbackAfter.conversation.version),
+            stateHash: sourceReadbackHash,
+          },
+          'runtime-events': {
+            eventId: runtimeEvent.eventId,
+            sequence: runtimeEvent.sequence,
+            eventType: runtimeEvent.eventType,
+            occurredAt: runtimeEvent.observedAt,
+            streamGeneration: runtimeEvent.streamGeneration,
+            streamIdHash: runtimeEvent.streamIdHash,
+            conversationIdHash: runtimeEvent.conversationIdHash,
+            payloadHash: runtimeEvent.payloadHash,
+            errorType: runtimeEvent.errorType,
+            sourceTransport: runtimeEvent.sourceTransport,
+            sourcePtidHash: runtimeEvent.sourcePtidHash,
+            sourceConversationId: runtimeEvent.sourceConversationId,
+            sourceTurnId: runtimeEvent.sourceTurnId,
+            sourceSequence: runtimeEvent.sourceSequence,
+            sourceEventType: runtimeEvent.sourceEventType,
+          },
+          'measurement-report': {
+            metric: 'foundation-provider-timeout-duration-ms',
+            sampleIds: [sampleId],
+            threshold: '>=115000-and-before-180000',
+            passed:
+              assertions.upstreamTimeoutCancelled
+              && assertions.providerDeadlinePrecedesTurnBudget,
+            latencyMs: terminalObservedAtMs - submittedAtMs,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(stableJson({
+              cell: 'BASE-PROVIDER_TIMEOUT',
+              conversationId,
+              turnId,
+            })),
+            count: completedAssistantMessages.length,
+            maximum: 0,
+          },
+          replay,
         };
       } finally {
         if (conversationId) {
@@ -27421,16 +27673,30 @@ export function installAcceptanceHarness(): void {
       if (!capture) {
         throw new Error('agent.acceptance.providerTimeoutCaptureMissing');
       }
+      const cleanup = {
+        resourceKind: 'provider-timeout-fixture',
+        resourceIdHash: await sha256Hex(stableJson({
+          conversationId,
+          platform,
+          providerId: agent.provider,
+        })),
+        conversationDeleted,
+        localProjectionCleared,
+        status:
+          conversationDeleted && localProjectionCleared
+            ? 'clean'
+            : 'failed',
+      };
+      const scenarioFacts = evidenceRecord(
+        capture.scenarioFacts,
+        'foundationProviderTimeoutFacts',
+      );
+      scenarioFacts.cleanup = cleanup;
       return evidenceValue({
         ...capture,
-        cleanup: {
-          conversationDeleted,
-          localProjectionCleared,
-          status:
-            conversationDeleted && localProjectionCleared
-              ? 'clean'
-              : 'failed',
-        },
+        facts: scenarioFacts,
+        scenarioFacts,
+        cleanup,
       });
     },
 
