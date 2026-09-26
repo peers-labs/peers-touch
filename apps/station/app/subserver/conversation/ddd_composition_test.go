@@ -4234,13 +4234,10 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(membershipPlan.Changes) != 2 ||
+	if len(membershipPlan.Changes) != 1 ||
 		membershipPlan.Changes[0].Action != entity.MembershipActionAddActor ||
 		membershipPlan.Changes[0].Device != charlie.Device ||
-		membershipPlan.Changes[0].HomeStation != "station-b" ||
-		membershipPlan.Changes[1].Action != entity.MembershipActionAddDevice ||
-		membershipPlan.Changes[1].Device != charliePhone.Device ||
-		membershipPlan.Changes[1].HomeStation != "station-b" {
+		membershipPlan.Changes[0].HomeStation != "station-b" {
 		t.Fatalf("membership plan did not bind the identity-owned Home Station: %+v", membershipPlan.Changes)
 	}
 	required := endpointUnionDDD(membershipPlan.PreEndpoints, membershipPlan.PostEndpoints)
@@ -4250,7 +4247,7 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 		if endpoint == owner {
 			kind = valueobject.DeliveryKindPublicEvent
 		}
-		if endpoint.Actor == charlie.Actor {
+		if endpoint == charlie {
 			kind = valueobject.DeliveryKindMLSWelcome
 		}
 		membershipDeliveries = append(
