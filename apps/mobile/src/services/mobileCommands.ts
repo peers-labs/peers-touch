@@ -826,7 +826,7 @@ export async function socialFriendRequestSend(
     'social_friend_request_send',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     SendSocialFriendRequestResponseSchema,
@@ -841,7 +841,7 @@ export async function socialFriendRequestAccept(
     'social_friend_request_accept',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     AcceptSocialFriendRequestResponseSchema,
@@ -856,11 +856,17 @@ export async function socialFriendRequestReject(
     'social_friend_request_reject',
     { input },
   );
-  notifyReliabilityCommandChanged();
+  notifyFriendRequestRecoveryIfNeeded(projection);
   return decodeReliableFriendRequestResult(
     projection,
     RejectSocialFriendRequestResponseSchema,
   );
+}
+
+function notifyFriendRequestRecoveryIfNeeded(
+  projection: FriendRequestCommandProjection,
+): void {
+  if (!projection.checkpointReady) notifyReliabilityCommandChanged();
 }
 
 function decodeReliableFriendRequestResult<Desc extends DescMessage>(
