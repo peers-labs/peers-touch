@@ -1511,6 +1511,12 @@ func (s *Service) submit(
 				conversation,
 				commandRoutes,
 			)
+			if command.Kind == domainevent.KindMessageHiddenForActor {
+				command.RequiredEndpoints = filterEndpointsForActor(
+					command.RequiredEndpoints,
+					command.Sender.Actor,
+				)
+			}
 			command.Deliveries, err = bindDeliveryRoutes(
 				command.Deliveries,
 				commandRoutes,
