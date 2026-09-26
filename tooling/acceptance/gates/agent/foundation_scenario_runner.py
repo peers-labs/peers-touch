@@ -1259,6 +1259,11 @@ def _make_direct_probe(
                 f"direct probe locale did not converge for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        method = {
+            "BASE-LOOP_BUDGET_EXHAUSTED": "runDevelopmentLoopBudget",
+            "BASE-MODEL_UNAVAILABLE": "runDevelopmentProviderModelUnavailable",
+            "BASE-PROVIDER_TIMEOUT": "runDevelopmentProviderTimeout",
+        }.get(probe_input.cell, "foundationDirectProbe")
         result = client.harness(
             "foundationDirectProbe",
             {
