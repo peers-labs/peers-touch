@@ -1,7 +1,7 @@
 # Chat 本机存储治理 - 架构设计
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Device Messaging Engine
 > **Module**: `packages/messaging-core/`, `apps/desktop/`, `apps/mobile/`
@@ -139,8 +139,11 @@ authority head、lane cursor、consumption marker 与 receipt，不修改消息 
 新 Recovery archive 包含 floor 与 redaction tombstone，不包含已清理或 redacted 的
 明文和 attachment metadata。restore staging 后先 reconcile 更新的 authority
 redaction，再开放 projection。in-place restore 保留当前已认证 device identity，
-仅清除 Direct ratchet、MLS state 和其他不可恢复的 live messaging state，避免
-产生无法与现有 Station session 绑定的第二个 device identity。
+并从已停止的 live SQLCipher store 直接转移该 endpoint 的 enrollment、SPK/OPK、
+MLS bootstrap inventory、lane cursor、consumption markers、authority heads 与
+retired checkpoints；这些 continuity rows 不进入 Recovery archive，也不能跨设备
+复制。restore 仍清除 Direct ratchet、MLS group/session/transition、command outbox
+与 attachment transfer state，避免复用 message key/nonce 或恢复 stale session。
 
 ## 10. 硬切
 
