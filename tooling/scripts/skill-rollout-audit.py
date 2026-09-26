@@ -21,11 +21,6 @@ REQUIRED_SKILLS = (
 )
 LEGACY_SKILL = "pt-trae-goal-orchestrator"
 CANONICAL_ROLLOUT_GATE = "acceptance-workflow-contract"
-SESSION_ENV = {
-    "trae": ("ICUBE_CODEMAIN_SESSION", "PT_AGENT_SESSION_ID"),
-    "cursor": ("CURSOR_SESSION_ID", "CURSOR_TRACE_ID", "PT_AGENT_SESSION_ID"),
-    "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "PT_AGENT_SESSION_ID"),
-}
 ROLLOUT_RECEIPT_KEYS = {
     "kind",
     "state",
@@ -34,9 +29,6 @@ ROLLOUT_RECEIPT_KEYS = {
     "sourceHead",
     "host",
     "installedAt",
-    "installedSessionHash",
-    "acknowledgedAt",
-    "ackSessionHash",
     "catalogDigest",
     "catalogEntryCount",
     "catalogGitState",
@@ -681,22 +673,10 @@ def rollout_receipt(
         )
     except ValueError:
         pass
-    session_values = {
-        os.environ.get(name, "").strip()
-        for name in SESSION_ENV[host]
-        if os.environ.get(name, "").strip()
-    }
-    current_session = None
-    if len(session_values) > 1:
-        findings.append("rollout-session-id-ambiguous")
-    elif session_values:
-        current_session = hashlib.sha256(
-            f"{host}\0{next(iter(session_values))}".encode()
-        ).hexdigest()
     if value.get("kind") != "peers-touch-skill-rollout":
         findings.append("rollout-kind-mismatch")
-    if value.get("state") != "ACKNOWLEDGED":
-        findings.append("rollout-restart-required")
+    if value.get("state") != "INSTALLED":
+        findings.append("rollout-state-mismatch")
     if value.get("host") != host:
         findings.append("rollout-host-mismatch")
     if value.get("workspaceId") != identity["workspaceId"]:
@@ -713,41 +693,8 @@ def rollout_receipt(
     ):
         if value.get(field) != catalog.get(field):
             findings.append(f"rollout-{field}-mismatch")
-    installed_session_valid = re.fullmatch(
-        r"[0-9a-f]{64}",
-        str(value.get("installedSessionHash") or ""),
-    )
-    if installed_at is None or installed_session_valid is None:
-        findings.append("rollout-restart-evidence-invalid")
-    if value.get("state") == "ACKNOWLEDGED":
-        acknowledged_at = None
-        try:
-            acknowledged_at = datetime.fromisoformat(
-                str(value.get("acknowledgedAt")).replace("Z", "+00:00")
-            )
-        except ValueError:
-            pass
-        if (
-            acknowledged_at is None
-            or installed_at is None
-            or acknowledged_at < installed_at
-            or re.fullmatch(
-                r"[0-9a-f]{64}",
-                str(value.get("ackSessionHash") or ""),
-            )
-            is None
-            or value.get("installedSessionHash") == value.get("ackSessionHash")
-        ):
-            findings.append("rollout-restart-evidence-invalid")
-        if current_session is None:
-            findings.append("rollout-session-id-unavailable")
-        elif value.get("ackSessionHash") != current_session:
-            findings.append("rollout-session-mismatch")
-    elif (
-        value.get("acknowledgedAt") is not None
-        or value.get("ackSessionHash") is not None
-    ):
-        findings.append("rollout-restart-evidence-invalid")
+    if installed_at is None:
+        findings.append("rollout-installed-at-invalid")
     return {
         "status": "PASS" if not findings else "BLOCKED",
         "findings": findings,

@@ -139,6 +139,10 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('social.contact.open');
     expect(actionNames).toContain('social.reconcile');
     expect(actionNames).toContain('social.projection.read');
+    expect(actionNames).toContain('moments.private.publishText');
+    expect(actionNames).toContain('moments.private.readText');
+    expect(actionNames).toContain('moments.private.reconcile');
+    expect(actionNames).toContain('moments.private.snapshot');
   });
 
   it('prepares a parent-supplied actor identity without returning the seed', async () => {
@@ -365,6 +369,7 @@ describe('Mobile Acceptance Harness', () => {
       destroyMobileLifecycleKernel();
     }
   });
+
 
   it('rejects duplicate action registration', () => {
     const registry = new MobileAcceptanceActionRegistry();
@@ -1270,6 +1275,12 @@ describe('Mobile Acceptance Harness', () => {
     );
     expect(acceptanceHandler).toMatch(
       /mobile_build_identity[\s\S]*oauth_acceptance_callback_replay_handle[\s\S]*oauth_acceptance_configure_secure_storage_fault[\s\S]*oauth_acceptance_negative_callback/,
+    );
+    expect(releaseHandler).not.toMatch(
+      /reliability_acceptance_configure_fault/,
+    );
+    expect(acceptanceHandler).toMatch(
+      /reliability_acceptance_configure_fault/,
     );
     expect(releaseHandler).not.toMatch(
       /reliability_acceptance_configure_fault/,

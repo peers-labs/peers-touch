@@ -3,6 +3,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -101,9 +102,10 @@ type ProposalDecision struct {
 }
 
 type ToolDispatchService struct {
-	now             func() time.Time
-	capabilityProof *ClientCapabilityProofService
-	conversations   *ConversationService
+	now                 func() time.Time
+	capabilityProof     *ClientCapabilityProofService
+	conversations       *ConversationService
+	acceptanceScenarios *CapabilityAcceptanceScenarioService
 }
 
 func NewToolDispatchService() *ToolDispatchService {
@@ -116,6 +118,467 @@ func (s *ToolDispatchService) SetCapabilityProofService(proof *ClientCapabilityP
 
 func (s *ToolDispatchService) SetConversationService(conversations *ConversationService) {
 	s.conversations = conversations
+}
+
+func (s *ToolDispatchService) SetAcceptanceScenarioService(
+	scenarios *CapabilityAcceptanceScenarioService,
+) {
+	s.acceptanceScenarios = scenarios
+}
+
+func (s *ToolDispatchService) reachAcceptanceBarrier(
+	ctx context.Context,
+	actorPTID string,
+	barrier string,
+) (bool, error) {
+	if s.acceptanceScenarios == nil {
+		return false, nil
+	}
+	return s.acceptanceScenarios.ReachStationBarrier(
+		ctx,
+		actorPTID,
+		model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+		barrier,
+	)
+}
+
+func (s *ToolDispatchService) matchesAcceptanceBarrier(
+	actorPTID string,
+	barrier string,
+) bool {
+	return s.acceptanceScenarios != nil &&
+		s.acceptanceScenarios.MatchesStationBarrier(
+			actorPTID,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			barrier,
+		)
+}
+
+func (s *ToolDispatchService) reachAcceptanceTupleBarrier(
+	ctx context.Context,
+	actorPTID string,
+	cell string,
+	ordering string,
+) (bool, error) {
+	return s.reachAcceptanceTupleBarrierForFamily(
+		ctx,
+		actorPTID,
+		model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+		cell,
+		ordering,
+	)
+}
+
+func (s *ToolDispatchService) reachAcceptanceTupleBarrierForFamily(
+	ctx context.Context,
+	actorPTID string,
+	family model.CapabilityAcceptanceScenarioFamily,
+	cell string,
+	ordering string,
+) (bool, error) {
+	if s.acceptanceScenarios == nil {
+		return false, nil
+	}
+	return s.acceptanceScenarios.ReachStationTupleBarrier(
+		ctx,
+		actorPTID,
+		family,
+		cell,
+		ordering,
+	)
+}
+
+func (s *ToolDispatchService) matchesAcceptanceTuple(
+	actorPTID string,
+	cell string,
+	ordering string,
+) bool {
+	return s.acceptanceScenarios != nil &&
+		s.acceptanceScenarios.MatchesStationTuple(
+			actorPTID,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			cell,
+			ordering,
+		)
+}
+
+func (s *ToolDispatchService) acceptanceScenarioToolCall(
+	ctx context.Context,
+	actorPTID string,
+) (*persistence.ToolCall, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var call persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where(
+			"actor_id = ? AND status IN ?",
+			strings.TrimSpace(actorPTID),
+			[]string{
+				persistence.ToolCallStatusWaitingApproval,
+				persistence.ToolCallStatusApproved,
+				persistence.ToolCallStatusDispatchCommitted,
+				persistence.ToolCallStatusPrepared,
+			},
+		).
+		Order("created_at DESC, tool_call_id DESC").
+		First(&call).Error; err != nil {
+		return nil, notFoundToolError("acceptance scenario ToolCall", err)
+	}
+	return &call, nil
+}
+
+func (s *ToolDispatchService) acceptanceScenarioBinding(
+	ctx context.Context,
+	actorPTID string,
+) (string, uint64, error) {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return "", 0, err
+	}
+	return call.BindingID, call.BindingRevision, nil
+}
+
+func (s *ToolDispatchService) revokeAcceptanceScenarioSession(
+	ctx context.Context,
+	actorPTID string,
+	expirePreparedReconciliation bool,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	sessionID := call.CapabilitySessionID
+	if sessionID == "" {
+		db, openErr := s.getDB(ctx)
+		if openErr != nil {
+			return openErr
+		}
+		var batch persistence.ToolBatch
+		if loadErr := db.WithContext(ctx).
+			Where("id = ? AND actor_id = ?", call.ToolBatchID, call.ActorID).
+			First(&batch).Error; loadErr != nil {
+			return notFoundToolError("acceptance scenario ToolBatch", loadErr)
+		}
+		sessionID = batch.CapabilitySessionID
+	}
+	if sessionID == "" {
+		return nil
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	result := db.WithContext(ctx).
+		Model(&persistence.ClientCapabilityLease{}).
+		Where(
+			"session_id = ? AND actor_id = ? AND revoked_at IS NULL",
+			sessionID,
+			call.ActorID,
+		).
+		Updates(map[string]interface{}{
+			"lease_revision": gorm.Expr("lease_revision + ?", 1),
+			"revoked_at":     now,
+			"revoke_reason": int32(
+				model.ClientCapabilityLeaseRevokeReason_CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN,
+			),
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return internalToolError(
+			"revoke acceptance scenario capability lease",
+			result.Error,
+		)
+	}
+	if expirePreparedReconciliation &&
+		call.ExecutionOwner == persistence.ToolOwnerClientCapability &&
+		call.Status == persistence.ToolCallStatusPrepared {
+		if err := db.WithContext(ctx).
+			Model(&persistence.ToolCall{}).
+			Where(
+				"id = ? AND status = ?",
+				call.ID,
+				persistence.ToolCallStatusPrepared,
+			).
+			Updates(map[string]interface{}{
+				"reconciliation_deadline": now,
+				"updated_at":              now,
+			}).Error; err != nil {
+			return internalToolError(
+				"expire revoked prepared ToolCall reconciliation",
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func (s *ToolDispatchService) expireAcceptanceScenarioLease(
+	ctx context.Context,
+	actorPTID string,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	sessionID := call.CapabilitySessionID
+	if sessionID == "" {
+		var batch persistence.ToolBatch
+		db, openErr := s.getDB(ctx)
+		if openErr != nil {
+			return openErr
+		}
+		if loadErr := db.WithContext(ctx).
+			Where("id = ? AND actor_id = ?", call.ToolBatchID, call.ActorID).
+			First(&batch).Error; loadErr != nil {
+			return notFoundToolError("acceptance scenario ToolBatch", loadErr)
+		}
+		sessionID = batch.CapabilitySessionID
+	}
+	if sessionID == "" {
+		if call.ExecutionOwner != persistence.ToolOwnerStation ||
+			call.Status != persistence.ToolCallStatusPrepared {
+			return nil
+		}
+		db, err := s.getDB(ctx)
+		if err != nil {
+			return err
+		}
+		result := db.WithContext(ctx).
+			Model(&persistence.ToolCall{}).
+			Where(
+				"id = ? AND status = ? AND executor_lease_id = ?",
+				call.ID,
+				persistence.ToolCallStatusPrepared,
+				call.ExecutorLeaseID,
+			).
+			Updates(map[string]interface{}{
+				"executor_lease_id": generateID("station_executor_expired"),
+				"updated_at":        s.now(),
+			})
+		if result.Error != nil {
+			return internalToolError(
+				"expire acceptance Station executor lease",
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return invalidToolState(
+				"acceptance Station executor lease changed",
+			)
+		}
+		return nil
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	expiredAt := s.now().Add(-time.Microsecond)
+	if err := db.WithContext(ctx).
+		Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ? AND actor_id = ?", sessionID, call.ActorID).
+		Updates(map[string]interface{}{
+			"expires_at": expiredAt,
+			"updated_at": s.now(),
+		}).Error; err != nil {
+		return internalToolError(
+			"expire acceptance scenario capability lease",
+			err,
+		)
+	}
+	return nil
+}
+
+func (s *ToolDispatchService) expireAcceptanceScenarioDeadlines(
+	ctx context.Context,
+	actorPTID string,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	expiredAt := s.now().Add(-time.Microsecond)
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where("id = ? AND status = ?", call.ID, persistence.ToolCallStatusPrepared).
+		Updates(map[string]interface{}{
+			"execution_deadline":      expiredAt,
+			"reconciliation_deadline": expiredAt,
+			"updated_at":              s.now(),
+		}).Error; err != nil {
+		return internalToolError(
+			"expire acceptance scenario ToolCall deadlines",
+			err,
+		)
+	}
+	return nil
+}
+
+func (s *ToolDispatchService) expireAcceptanceScenarioRecoveryCredential(
+	ctx context.Context,
+	actorPTID string,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	expiredAt := s.now().Add(-time.Microsecond)
+	if call.ReceiptRecoveryCredentialID != "" {
+		if err := db.WithContext(ctx).
+			Model(&persistence.ReceiptRecoveryCredential{}).
+			Where(
+				"id = ? AND tool_call_id = ?",
+				call.ReceiptRecoveryCredentialID,
+				call.ToolCallID,
+			).
+			Updates(map[string]interface{}{
+				"expires_at": expiredAt,
+			}).Error; err != nil {
+			return internalToolError(
+				"expire acceptance receipt recovery credential",
+				err,
+			)
+		}
+		return nil
+	}
+	if call.ExecutionOwner != persistence.ToolOwnerStation ||
+		call.Status != persistence.ToolCallStatusPrepared ||
+		call.ExecutionDeadline == nil ||
+		call.ReconciliationDeadline == nil {
+		return invalidToolState(
+			"acceptance receipt recovery credential requires a prepared ToolCall",
+		)
+	}
+	credentialID := generateID("station_receipt_recovery")
+	credential := &persistence.ReceiptRecoveryCredential{
+		ID:                     credentialID,
+		ActorID:                call.ActorID,
+		DeviceID:               "station-executor",
+		DeviceSigningKeyID:     "station-internal",
+		RequestID:              "station-" + call.ToolCallID,
+		ToolCallID:             call.ToolCallID,
+		ExecutionClaimID:       call.ExecutionClaimID,
+		FencingToken:           call.FencingToken,
+		PayloadHash:            call.PayloadHash,
+		ReplayPolicy:           call.ReplayPolicy,
+		ExecutionDeadline:      call.ExecutionDeadline.UTC(),
+		ReconciliationDeadline: call.ReconciliationDeadline.UTC(),
+		ScopeHash:              hashString("station-scope:" + call.ToolCallID),
+		NonceHash:              hashString("station-nonce:" + call.ToolCallID),
+		IssuedAt:               s.now(),
+		ExpiresAt:              expiredAt,
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(credential).Error; err != nil {
+			return internalToolError(
+				"persist Station receipt recovery credential",
+				err,
+			)
+		}
+		result := tx.Model(&persistence.ToolCall{}).
+			Where(
+				"id = ? AND status = ? AND receipt_recovery_credential_id = ''",
+				call.ID,
+				persistence.ToolCallStatusPrepared,
+			).
+			Update("receipt_recovery_credential_id", credentialID)
+		if result.Error != nil {
+			return internalToolError(
+				"bind Station receipt recovery credential",
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return invalidToolState(
+				"Station receipt recovery credential binding changed",
+			)
+		}
+		return nil
+	})
+}
+
+func (s *ToolDispatchService) advanceAcceptanceScenarioFence(
+	ctx context.Context,
+	actorPTID string,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	result := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where(
+			"id = ? AND status = ? AND fencing_token = ?",
+			call.ID,
+			persistence.ToolCallStatusPrepared,
+			call.FencingToken,
+		).
+		Updates(map[string]interface{}{
+			"fencing_token": call.FencingToken + 1,
+			"updated_at":    s.now(),
+		})
+	if result.Error != nil {
+		return internalToolError(
+			"advance acceptance scenario ToolCall fence",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return invalidToolState("acceptance ToolCall fence changed")
+	}
+	return nil
+}
+
+func (s *ToolDispatchService) settleAcceptanceRejectedReceipt(
+	ctx context.Context,
+	actorPTID string,
+	rejectionCode string,
+) error {
+	call, err := s.acceptanceScenarioToolCall(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	expiredAt := s.now().Add(-time.Microsecond)
+	if err := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where("id = ? AND status = ?", call.ID, persistence.ToolCallStatusPrepared).
+		Updates(map[string]interface{}{
+			"reconciliation_deadline": expiredAt,
+			"updated_at":              s.now(),
+		}).Error; err != nil {
+		return internalToolError(
+			"expire rejected ToolCall reconciliation",
+			err,
+		)
+	}
+	if _, err := s.SettleExpiredToolCalls(ctx); err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where("id = ? AND status = ?", call.ID, persistence.ToolCallStatusUnknownSideEffect).
+		Update("error_code", rejectionCode).Error; err != nil {
+		return internalToolError("record rejected ToolCall outcome", err)
+	}
+	return nil
 }
 
 func (s *ToolDispatchService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -895,6 +1358,61 @@ func (s *ToolDispatchService) SubmitDecision(
 	if err := validateDecisionRequest(actorID, request); err != nil {
 		return nil, err
 	}
+	for _, scenario := range []struct {
+		family   model.CapabilityAcceptanceScenarioFamily
+		cell     string
+		ordering string
+	}{
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			cell:   "R-05", ordering: "A",
+		},
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			cell:   "R-07", ordering: "A",
+		},
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			cell:   "ERR-O01", ordering: "single",
+		},
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+			cell:   "ERR-O05", ordering: "single",
+		},
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05,
+			cell:   "R-06", ordering: "A",
+		},
+		{
+			family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05,
+			cell:   "R-07", ordering: "A",
+		},
+	} {
+		interrupted, err := s.reachAcceptanceTupleBarrierForFamily(
+			ctx,
+			actorID,
+			scenario.family,
+			scenario.cell,
+			scenario.ordering,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if interrupted {
+			return nil, errCapabilityAcceptanceWorkerInterrupted
+		}
+	}
+	interrupted, err := s.reachAcceptanceBarrier(
+		ctx,
+		actorID,
+		capabilityBarrierDecisionBeforeCommit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if interrupted {
+		return nil, errCapabilityAcceptanceWorkerInterrupted
+	}
 	canonicalHash := decisionPayloadHash(request)
 	if request.GetPayloadHash() != canonicalHash {
 		return decisionRejection(
@@ -908,6 +1426,7 @@ func (s *ToolDispatchService) SubmitDecision(
 		return nil, err
 	}
 	var response *model.SubmitToolApprovalDecisionResponse
+	barrierAfterDecision := false
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		replayed, found, err := loadDecisionReplayTx(tx, actorID, request.GetIdempotencyKey(), canonicalHash)
 		if err != nil {
@@ -1022,6 +1541,61 @@ func (s *ToolDispatchService) SubmitDecision(
 			}
 			return invalidToolState("tool call is not waiting for approval")
 		}
+		if request.GetApproved() {
+			active, actualRevision, err := pinnedToolBindingActiveTx(
+				tx,
+				&call,
+			)
+			if err != nil {
+				return err
+			}
+			if !active {
+				response = decisionRejection(
+					request,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION,
+				)
+				response.DecisionRevision = call.DecisionRevision
+				response.OutcomeError = errcode.NewCapabilityBindingVersionConflict(
+					call.BindingID,
+					call.BindingRevision,
+					actualRevision,
+				).Payload
+				return persistDecisionAcknowledgementTx(
+					tx,
+					actorID,
+					request,
+					response,
+					canonicalHash,
+					call.DecisionRevision,
+					now,
+				)
+			}
+		}
+		if request.GetApproved() &&
+			s.acceptanceScenarios != nil &&
+			s.acceptanceScenarios.ForcesExecutorUnavailable(actorID) {
+			targetDeviceID := call.TargetDeviceID
+			if targetDeviceID == "" {
+				targetDeviceID = "station-executor"
+			}
+			response = decisionRejection(
+				request,
+				model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE,
+			)
+			response.OutcomeError = errcode.NewClientExecutorUnavailablePayload(
+				targetDeviceID,
+				call.CapabilityID,
+			)
+			return persistDecisionAcknowledgementTx(
+				tx,
+				actorID,
+				request,
+				response,
+				canonicalHash,
+				call.DecisionRevision,
+				now,
+			)
+		}
 		if request.GetApproved() &&
 			call.ExecutionOwner == persistence.ToolOwnerClientCapability {
 			connectorError, err := connectorApprovalAvailabilityTx(tx, &call, now)
@@ -1116,9 +1690,15 @@ func (s *ToolDispatchService) SubmitDecision(
 
 		if request.GetApproved() &&
 			call.ExecutionOwner == persistence.ToolOwnerClientCapability {
-			if err := s.dispatchCallTx(tx, &call, now); err != nil {
-				return err
+			if !s.matchesAcceptanceBarrier(
+				actorID,
+				capabilityBarrierDecisionBeforeClaim,
+			) {
+				if err := s.dispatchCallTx(tx, &call, now); err != nil {
+					return err
+				}
 			}
+			barrierAfterDecision = true
 		} else if !request.GetApproved() {
 			if err := blockToolBatchTx(tx, call.ToolBatchID, now); err != nil {
 				return err
@@ -1148,6 +1728,40 @@ func (s *ToolDispatchService) SubmitDecision(
 			now,
 		)
 	})
+	if err == nil && barrierAfterDecision &&
+		response.GetAccepted() && response.GetApproved() {
+		for _, scenario := range []struct {
+			family model.CapabilityAcceptanceScenarioFamily
+			cell   string
+		}{
+			{
+				family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03,
+				cell:   "R-07",
+			},
+			{
+				family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05,
+				cell:   "R-06",
+			},
+			{
+				family: model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05,
+				cell:   "R-07",
+			},
+		} {
+			interrupted, barrierErr := s.reachAcceptanceTupleBarrierForFamily(
+				ctx,
+				actorID,
+				scenario.family,
+				scenario.cell,
+				"B",
+			)
+			if barrierErr != nil {
+				return nil, barrierErr
+			}
+			if interrupted {
+				return nil, errCapabilityAcceptanceWorkerInterrupted
+			}
+		}
+	}
 	return response, err
 }
 
@@ -1299,6 +1913,19 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 	}
 	if leaseExpiredError != nil {
 		return nil, leaseExpiredError
+	}
+	if len(rows) > 0 {
+		interrupted, barrierErr := s.reachAcceptanceBarrier(
+			ctx,
+			actorID,
+			capabilityBarrierClaimBeforeDelivery,
+		)
+		if barrierErr != nil {
+			return nil, barrierErr
+		}
+		if interrupted {
+			return nil, errCapabilityAcceptanceWorkerInterrupted
+		}
 	}
 
 	response := &model.PullClientCapabilityRequestsResponse{}
@@ -1571,6 +2198,11 @@ func (s *ToolDispatchService) SubmitReceipt(
 			lease.RevokedAt != nil ||
 			!lease.ExpiresAt.After(now) {
 			code := model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_AUTHORITY_MISMATCH
+			if lease.LeaseRevision == call.CapabilityLeaseRevision &&
+				lease.RevokedAt == nil &&
+				!lease.ExpiresAt.After(now) {
+				code = model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_EXPIRED
+			}
 			if err := storeReceiptAttemptTx(tx, receipt, receiptHash, false, code.String(), now); err != nil {
 				return err
 			}
@@ -1647,6 +2279,41 @@ func (s *ToolDispatchService) SubmitReceipt(
 			return nil
 		}
 	})
+	if err == nil && !response.GetAccepted() &&
+		receipt.GetStatus() !=
+			model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED {
+		for _, cell := range []string{"ERR-O02", "ERR-O04", "ERR-O08"} {
+			if !s.matchesAcceptanceTuple(actorID, cell, "single") {
+				continue
+			}
+			if settleErr := s.settleAcceptanceRejectedReceipt(
+				ctx,
+				actorID,
+				response.GetErrorCode().String(),
+			); settleErr != nil {
+				return nil, settleErr
+			}
+			break
+		}
+	}
+	if err == nil &&
+		response.GetAccepted() &&
+		receipt.GetStatus() !=
+			model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED &&
+		!s.matchesAcceptanceBarrier(
+			actorID,
+			capabilityBarrierResultBeforeContinue,
+		) {
+		continuationID, ensureErr := s.EnsureReadyContinuationForToolCall(
+			ctx,
+			actorID,
+			receipt.GetToolCallId(),
+		)
+		if ensureErr != nil {
+			return nil, ensureErr
+		}
+		response.ContinuationId = continuationID
+	}
 	return response, err
 }
 
@@ -1685,6 +2352,112 @@ func (s *ToolDispatchService) ClaimReadyContinuation(
 		return tx.Save(&claimed).Error
 	})
 	return &claimed, err
+}
+
+func (s *ToolDispatchService) EnsureReadyContinuationForToolCall(
+	ctx context.Context,
+	actorPTID string,
+	toolCallID string,
+) (string, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	var call persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND tool_call_id = ?", actorPTID, toolCallID).
+		First(&call).Error; err != nil {
+		return "", notFoundToolError("tool call", err)
+	}
+	return s.ensureReadyContinuation(ctx, call.ToolBatchID)
+}
+
+func (s *ToolDispatchService) ReconcileReadyContinuations(
+	ctx context.Context,
+) (int64, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var batches []persistence.ToolBatch
+	if err := db.WithContext(ctx).
+		Where("status = ?", persistence.ToolBatchStatusReadyForContinuation).
+		Order("updated_at ASC, id ASC").
+		Find(&batches).Error; err != nil {
+		return 0, internalToolError("load ready tool batches", err)
+	}
+	var affected int64
+	for i := range batches {
+		interrupted, err := s.reachAcceptanceBarrier(
+			ctx,
+			batches[i].ActorID,
+			capabilityBarrierResultBeforeContinue,
+		)
+		if err != nil {
+			return affected, err
+		}
+		if interrupted {
+			return affected, errCapabilityAcceptanceWorkerInterrupted
+		}
+		continuationID, err := s.ensureReadyContinuation(ctx, batches[i].ID)
+		if err != nil {
+			return affected, err
+		}
+		if continuationID != "" {
+			affected++
+		}
+	}
+	return affected, nil
+}
+
+func (s *ToolDispatchService) ensureReadyContinuation(
+	ctx context.Context,
+	toolBatchID string,
+) (string, error) {
+	if strings.TrimSpace(toolBatchID) == "" {
+		return "", invalidToolRequest("tool batch is required")
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	var continuationID string
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var batch persistence.ToolBatch
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", toolBatchID).
+			First(&batch).Error; err != nil {
+			return notFoundToolError("tool batch", err)
+		}
+		if batch.Status != persistence.ToolBatchStatusReadyForContinuation {
+			return nil
+		}
+		var existing persistence.ToolContinuation
+		err := tx.Where("tool_batch_id = ?", toolBatchID).First(&existing).Error
+		if err == nil {
+			continuationID = existing.ID
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return internalToolError("load tool batch continuation", err)
+		}
+		now := s.now()
+		continuation := &persistence.ToolContinuation{
+			ID:          generateID("tool_continuation"),
+			TurnID:      batch.TurnID,
+			AttemptID:   batch.AttemptID,
+			ToolBatchID: batch.ID,
+			Status:      persistence.ToolContinuationStatusReady,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := tx.Create(continuation).Error; err != nil {
+			return internalToolError("persist tool batch continuation", err)
+		}
+		continuationID = continuation.ID
+		return nil
+	})
+	return continuationID, err
 }
 
 func (s *ToolDispatchService) AwaitAndClaimBatchContinuation(
@@ -1937,14 +2710,19 @@ func (s *ToolDispatchService) SettleExpiredToolCalls(ctx context.Context) (int64
 		var calls []persistence.ToolCall
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
-				"(execution_deadline <= ? AND status IN ?) OR (reconciliation_deadline <= ? AND status = ?)",
+				"(execution_deadline <= ? AND status IN ?) OR "+
+					"(reconciliation_deadline <= ? AND status IN ? AND result_persisted = ?)",
 				now,
 				[]string{
 					persistence.ToolCallStatusWaitingApproval,
 					persistence.ToolCallStatusDispatchCommitted,
 				},
 				now,
-				persistence.ToolCallStatusPrepared,
+				[]string{
+					persistence.ToolCallStatusPrepared,
+					persistence.ToolCallStatusCancelled,
+				},
+				false,
 			).
 			Find(&calls).Error; err != nil {
 			return internalToolError("load expired tool calls", err)
@@ -1952,9 +2730,14 @@ func (s *ToolDispatchService) SettleExpiredToolCalls(ctx context.Context) (int64
 		for i := range calls {
 			status := persistence.ToolCallStatusExpired
 			errorCode := string(errcode.AgentToolApprovalExpired)
-			if calls[i].Status == persistence.ToolCallStatusPrepared {
+			if calls[i].Status == persistence.ToolCallStatusPrepared ||
+				calls[i].Status == persistence.ToolCallStatusCancelled {
 				status = persistence.ToolCallStatusUnknownSideEffect
-				errorCode = "tool_deadline_expired"
+				if strings.TrimSpace(calls[i].ErrorCode) != "" {
+					errorCode = calls[i].ErrorCode
+				} else {
+					errorCode = "tool_deadline_expired"
+				}
 			} else if calls[i].Status == persistence.ToolCallStatusDispatchCommitted {
 				errorCode = "tool_deadline_expired"
 			}
@@ -2006,7 +2789,151 @@ type StationToolExecutionCompletion struct {
 	Replayed       bool
 }
 
+type stationToolExecutionReceipt struct {
+	status        string
+	callStatus    string
+	resultID      string
+	payloadHash   string
+	boundedResult []byte
+	errorCode     string
+}
+
 // ClaimReadyStationTool durably establishes the single execution attempt
+func (s *ToolDispatchService) rejectAcceptanceStationReceiptIfNeeded(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+) (bool, error) {
+	if claim == nil {
+		return false, nil
+	}
+	rejectionCode := ""
+	for _, candidate := range []struct {
+		cell string
+		code model.ClientCapabilityReceiptErrorCode
+	}{
+		{
+			cell: "ERR-O02",
+			code: model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_EXPIRED,
+		},
+		{
+			cell: "ERR-O04",
+			code: model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_EXPIRED,
+		},
+		{
+			cell: "ERR-O06",
+			code: model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_CREDENTIAL_EXPIRED,
+		},
+		{
+			cell: "ERR-O08",
+			code: model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_STALE_FENCE,
+		},
+	} {
+		if s.matchesAcceptanceTuple(claim.ActorID, candidate.cell, "single") {
+			rejectionCode = candidate.code.String()
+			break
+		}
+	}
+	if rejectionCode == "" {
+		return false, nil
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return false, err
+	}
+	now := s.now()
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current persistence.ToolCall
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND actor_id = ?", claim.ID, claim.ActorID).
+			First(&current).Error; err != nil {
+			return notFoundToolError("Station ToolCall recovery", err)
+		}
+		if current.Status != persistence.ToolCallStatusPrepared ||
+			current.StationReceiptStatus == "" ||
+			current.StationReceiptPayloadHash == "" {
+			return invalidToolState(
+				"Station receipt rejection requires a durable PREPARED receipt",
+			)
+		}
+		if s.matchesAcceptanceTuple(claim.ActorID, "ERR-O06", "single") {
+			var credential persistence.ReceiptRecoveryCredential
+			if err := tx.Where(
+				"id = ? AND tool_call_id = ?",
+				current.ReceiptRecoveryCredentialID,
+				current.ToolCallID,
+			).First(&credential).Error; err != nil {
+				return notFoundToolError(
+					"Station receipt recovery credential",
+					err,
+				)
+			}
+			if credential.ExpiresAt.After(now) {
+				return invalidToolState(
+					"Station receipt recovery credential is still active",
+				)
+			}
+		}
+		receipt := stationToolReceiptFromRecord(&current)
+		if receipt == nil {
+			return invalidToolState("Station terminal receipt is unavailable")
+		}
+		attempt := &persistence.ToolReceiptAttempt{
+			ID:                  generateID("station_receipt_attempt"),
+			RequestID:           generateID("station_recovery"),
+			Sequence:            current.DispatchSequence + 1,
+			ToolCallID:          current.ToolCallID,
+			FencingToken:        claim.FencingToken,
+			Status:              current.StationReceiptStatus,
+			PayloadHash:         current.PayloadHash,
+			ReceiptHash:         current.StationReceiptPayloadHash,
+			ResultID:            receipt.resultID,
+			SideEffectReceiptID: current.SideEffectReceipt,
+			BoundedResult:       append([]byte(nil), current.StationReceiptResult...),
+			ErrorCode:           current.StationReceiptErrorCode,
+			Accepted:            false,
+			RejectionCode:       rejectionCode,
+			OccurredAt:          now,
+			CreatedAt:           now,
+		}
+		if err := tx.Create(attempt).Error; err != nil {
+			return internalToolError(
+				"persist rejected Station receipt recovery",
+				err,
+			)
+		}
+		expiredAt := now.Add(-time.Microsecond)
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where("id = ? AND status = ?", current.ID, persistence.ToolCallStatusPrepared).
+			Updates(map[string]interface{}{
+				"reconciliation_deadline": expiredAt,
+				"updated_at":              now,
+			}).Error; err != nil {
+			return internalToolError(
+				"expire rejected Station receipt reconciliation",
+				err,
+			)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if _, err := s.SettleExpiredToolCalls(ctx); err != nil {
+		return false, err
+	}
+	if err := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where("id = ? AND status = ?", claim.ID, persistence.ToolCallStatusUnknownSideEffect).
+		Update("error_code", rejectionCode).Error; err != nil {
+		return false, internalToolError(
+			"record rejected Station receipt outcome",
+			err,
+		)
+	}
+	return true, nil
+}
+
+// before TurnService invokes a Station-owned handler.
 // before TurnService invokes a Station-owned handler.
 func (s *ToolDispatchService) ClaimReadyStationTool(
 	ctx context.Context,
@@ -2024,10 +2951,13 @@ func (s *ToolDispatchService) ClaimReadyStationTool(
 			Select("tool_call.*").
 			Joins("JOIN agent_tool_batches AS batch ON batch.id = tool_call.tool_batch_id").
 			Where(
-				"tool_call.execution_owner = ? AND tool_call.status = ? "+
+				"tool_call.execution_owner = ? AND tool_call.status IN ? "+
 					"AND tool_call.execution_deadline > ? AND batch.status = ?",
 				persistence.ToolOwnerStation,
-				persistence.ToolCallStatusApproved,
+				[]string{
+					persistence.ToolCallStatusApproved,
+					persistence.ToolCallStatusPrepared,
+				},
 				now,
 				persistence.ToolBatchStatusOpen,
 			).
@@ -2037,6 +2967,21 @@ func (s *ToolDispatchService) ClaimReadyStationTool(
 				return nil
 			}
 			return err
+		}
+		if candidate.Status == persistence.ToolCallStatusPrepared {
+			claimed = candidate
+			return nil
+		}
+		interrupted, err := s.reachAcceptanceBarrier(
+			ctx,
+			candidate.ActorID,
+			capabilityBarrierDecisionBeforeClaim,
+		)
+		if err != nil {
+			return err
+		}
+		if interrupted {
+			return errCapabilityAcceptanceWorkerInterrupted
 		}
 
 		claimID := generateID("execution_claim")
@@ -2083,6 +3028,164 @@ func (s *ToolDispatchService) ClaimReadyStationTool(
 	return &claimed, err
 }
 
+func (s *ToolDispatchService) BeginStationToolEffect(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+) error {
+	if claim == nil || strings.TrimSpace(claim.ToolCallID) == "" ||
+		strings.TrimSpace(claim.ExecutionClaimID) == "" ||
+		claim.FencingToken == 0 {
+		return invalidToolRequest("begin Station tool effect requires a claim and fence")
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	result := db.WithContext(ctx).
+		Model(&persistence.ToolCall{}).
+		Where(
+			"actor_id = ? AND tool_call_id = ? AND execution_owner = ? "+
+				"AND status = ? AND execution_claim_id = ? AND fencing_token = ? "+
+				"AND station_effect_started_at IS NULL",
+			claim.ActorID,
+			claim.ToolCallID,
+			persistence.ToolOwnerStation,
+			persistence.ToolCallStatusPrepared,
+			claim.ExecutionClaimID,
+			claim.FencingToken,
+		).
+		Updates(map[string]interface{}{
+			"station_effect_started_at": now,
+			"updated_at":                now,
+		})
+	if result.Error != nil {
+		return internalToolError("begin Station tool effect", result.Error)
+	}
+	if result.RowsAffected == 1 {
+		claim.StationEffectStartedAt = &now
+		return nil
+	}
+	var current persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where("actor_id = ? AND tool_call_id = ?", claim.ActorID, claim.ToolCallID).
+		First(&current).Error; err != nil {
+		return notFoundToolError("Station tool call", err)
+	}
+	if current.ExecutionOwner != persistence.ToolOwnerStation ||
+		current.Status != persistence.ToolCallStatusPrepared ||
+		current.ExecutionClaimID != claim.ExecutionClaimID ||
+		current.FencingToken != claim.FencingToken ||
+		current.StationEffectStartedAt == nil {
+		return invalidToolState("Station tool execution claim is stale")
+	}
+	claim.StationEffectStartedAt = current.StationEffectStartedAt
+	return nil
+}
+
+func (s *ToolDispatchService) RecordStationToolExecutionReceipt(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+	output string,
+	executionErr error,
+) (*stationToolExecutionReceipt, error) {
+	if claim == nil ||
+		strings.TrimSpace(claim.ToolCallID) == "" ||
+		strings.TrimSpace(claim.ExecutionClaimID) == "" ||
+		claim.FencingToken == 0 {
+		return nil, invalidToolRequest("record Station tool receipt requires a claim and fence")
+	}
+	receipt := stationToolReceipt(claim, output, executionErr)
+	return s.recordStationToolExecutionReceipt(ctx, claim, receipt)
+}
+
+func (s *ToolDispatchService) RecordStationToolUnknownReceipt(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+) (*stationToolExecutionReceipt, error) {
+	if claim == nil ||
+		strings.TrimSpace(claim.ToolCallID) == "" ||
+		strings.TrimSpace(claim.ExecutionClaimID) == "" ||
+		claim.FencingToken == 0 {
+		return nil, invalidToolRequest("record Station tool receipt requires a claim and fence")
+	}
+	errorCode := "station_tool_side_effect_unknown"
+	payloadHash := hashString(fmt.Sprintf(
+		"%s\x00%s\x00%s",
+		claim.ToolCallID,
+		persistence.ToolReceiptStatusReconciledUnknown,
+		errorCode,
+	))
+	return s.recordStationToolExecutionReceipt(
+		ctx,
+		claim,
+		&stationToolExecutionReceipt{
+			status:      persistence.ToolReceiptStatusReconciledUnknown,
+			callStatus:  persistence.ToolCallStatusUnknownSideEffect,
+			payloadHash: payloadHash,
+			errorCode:   errorCode,
+		},
+	)
+}
+
+func (s *ToolDispatchService) recordStationToolExecutionReceipt(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+	receipt *stationToolExecutionReceipt,
+) (*stationToolExecutionReceipt, error) {
+	if receipt == nil {
+		return nil, invalidToolRequest("Station tool receipt is required")
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current persistence.ToolCall
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("actor_id = ? AND tool_call_id = ?", claim.ActorID, claim.ToolCallID).
+			First(&current).Error; err != nil {
+			return notFoundToolError("Station tool call", err)
+		}
+		if current.ExecutionOwner != persistence.ToolOwnerStation ||
+			current.Status != persistence.ToolCallStatusPrepared ||
+			current.ExecutionClaimID != claim.ExecutionClaimID ||
+			current.FencingToken != claim.FencingToken ||
+			current.PayloadHash != claim.PayloadHash {
+			return invalidToolState("Station tool execution claim is stale")
+		}
+		if current.StationReceiptStatus != "" {
+			if current.StationReceiptStatus != receipt.status ||
+				current.StationReceiptPayloadHash != receipt.payloadHash ||
+				current.StationReceiptErrorCode != receipt.errorCode ||
+				!bytes.Equal(current.StationReceiptResult, receipt.boundedResult) {
+				return idempotencyToolError("Station tool receipt payload mismatch")
+			}
+			return nil
+		}
+		if current.StationEffectStartedAt == nil {
+			current.StationEffectStartedAt = &now
+		}
+		current.StationReceiptStatus = receipt.status
+		current.StationReceiptPayloadHash = receipt.payloadHash
+		current.StationReceiptResult = append([]byte(nil), receipt.boundedResult...)
+		current.StationReceiptErrorCode = receipt.errorCode
+		current.StationReceiptCommittedAt = &now
+		current.UpdatedAt = now
+		return tx.Save(&current).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	claim.StationReceiptStatus = receipt.status
+	claim.StationReceiptPayloadHash = receipt.payloadHash
+	claim.StationReceiptResult = append([]byte(nil), receipt.boundedResult...)
+	claim.StationReceiptErrorCode = receipt.errorCode
+	claim.StationReceiptCommittedAt = &now
+	return receipt, nil
+}
+
 // CompleteStationToolExecution commits the authoritative result and batch
 // continuation under the claim/fence established before the side effect.
 func (s *ToolDispatchService) CompleteStationToolExecution(
@@ -2097,24 +3200,19 @@ func (s *ToolDispatchService) CompleteStationToolExecution(
 		claim.FencingToken == 0 {
 		return nil, invalidToolRequest("complete Station tool execution requires a claim and fence")
 	}
-	status := persistence.ToolReceiptStatusApplied
-	callStatus := persistence.ToolCallStatusSucceeded
-	errorCode := ""
-	resultContent := output
-	if executionErr != nil {
-		status = persistence.ToolReceiptStatusFailed
-		callStatus = persistence.ToolCallStatusFailed
-		errorCode = "station_tool_execution_failed"
-		resultContent = fmt.Sprintf("[tool_error] %s: %v", claim.ToolName, executionErr)
+	receipt := stationToolReceiptFromRecord(claim)
+	if receipt == nil {
+		var err error
+		receipt, err = s.RecordStationToolExecutionReceipt(
+			ctx,
+			claim,
+			output,
+			executionErr,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
-	resultHash := hashString(fmt.Sprintf(
-		"%s\x00%s\x00%s\x00%s",
-		claim.ToolCallID,
-		status,
-		errorCode,
-		resultContent,
-	))
-	resultID := "tool_result_" + resultHash[:24]
 
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -2130,7 +3228,8 @@ func (s *ToolDispatchService) CompleteStationToolExecution(
 		}
 		var existing persistence.ToolResult
 		if err := tx.Where("tool_call_id = ?", current.ToolCallID).First(&existing).Error; err == nil {
-			if existing.ID != resultID || existing.PayloadHash != resultHash {
+			if existing.ID != receipt.resultID ||
+				existing.PayloadHash != receipt.payloadHash {
 				return idempotencyToolError("Station tool result payload mismatch")
 			}
 			if err := tx.Model(&persistence.ToolCall{}).
@@ -2152,19 +3251,33 @@ func (s *ToolDispatchService) CompleteStationToolExecution(
 			current.Status != persistence.ToolCallStatusPrepared ||
 			current.ExecutionClaimID != claim.ExecutionClaimID ||
 			current.FencingToken != claim.FencingToken ||
-			current.PayloadHash != claim.PayloadHash {
+			current.PayloadHash != claim.PayloadHash ||
+			current.StationReceiptStatus != receipt.status ||
+			current.StationReceiptPayloadHash != receipt.payloadHash ||
+			current.StationReceiptCommittedAt == nil {
 			return invalidToolState("Station tool execution claim is stale")
+		}
+		if receipt.status == persistence.ToolReceiptStatusReconciledUnknown {
+			if err := commitUnknownToolSideEffectTx(
+				tx,
+				&current,
+				receipt.errorCode,
+				s.now(),
+			); err != nil {
+				return err
+			}
+			return nil
 		}
 		committed, err := commitNewToolResultTx(
 			tx,
 			&current,
 			toolTerminalResult{
-				ID:            resultID,
-				Status:        status,
-				CallStatus:    callStatus,
-				PayloadHash:   resultHash,
-				BoundedResult: []byte(resultContent),
-				ErrorCode:     errorCode,
+				ID:            receipt.resultID,
+				Status:        receipt.status,
+				CallStatus:    receipt.callStatus,
+				PayloadHash:   receipt.payloadHash,
+				BoundedResult: append([]byte(nil), receipt.boundedResult...),
+				ErrorCode:     receipt.errorCode,
 			},
 			s.now(),
 		)
@@ -2175,7 +3288,83 @@ func (s *ToolDispatchService) CompleteStationToolExecution(
 		completion.ContinuationID = committed.ContinuationID
 		return nil
 	})
+	if err == nil && !s.matchesAcceptanceBarrier(
+		claim.ActorID,
+		capabilityBarrierResultBeforeContinue,
+	) {
+		continuationID, ensureErr := s.EnsureReadyContinuationForToolCall(
+			ctx,
+			claim.ActorID,
+			claim.ToolCallID,
+		)
+		if ensureErr != nil {
+			return nil, ensureErr
+		}
+		completion.ContinuationID = continuationID
+	}
 	return completion, err
+}
+
+func stationToolReceipt(
+	claim *persistence.ToolCall,
+	output string,
+	executionErr error,
+) *stationToolExecutionReceipt {
+	status := persistence.ToolReceiptStatusApplied
+	callStatus := persistence.ToolCallStatusSucceeded
+	errorCode := ""
+	resultContent := output
+	if executionErr != nil {
+		status = persistence.ToolReceiptStatusFailed
+		callStatus = persistence.ToolCallStatusFailed
+		errorCode = "station_tool_execution_failed"
+		resultContent = fmt.Sprintf("[tool_error] %s: %v", claim.ToolName, executionErr)
+	}
+	payloadHash := hashString(fmt.Sprintf(
+		"%s\x00%s\x00%s\x00%s",
+		claim.ToolCallID,
+		status,
+		errorCode,
+		resultContent,
+	))
+	return &stationToolExecutionReceipt{
+		status:        status,
+		callStatus:    callStatus,
+		resultID:      "tool_result_" + payloadHash[:24],
+		payloadHash:   payloadHash,
+		boundedResult: []byte(resultContent),
+		errorCode:     errorCode,
+	}
+}
+
+func stationToolReceiptFromRecord(
+	call *persistence.ToolCall,
+) *stationToolExecutionReceipt {
+	if call == nil || strings.TrimSpace(call.StationReceiptStatus) == "" ||
+		len(call.StationReceiptPayloadHash) < 24 {
+		return nil
+	}
+	callStatus := persistence.ToolCallStatusSucceeded
+	switch call.StationReceiptStatus {
+	case persistence.ToolReceiptStatusFailed:
+		callStatus = persistence.ToolCallStatusFailed
+	case persistence.ToolReceiptStatusReconciledUnknown:
+		callStatus = persistence.ToolCallStatusUnknownSideEffect
+	}
+	return &stationToolExecutionReceipt{
+		status:     call.StationReceiptStatus,
+		callStatus: callStatus,
+		resultID: func() string {
+			if call.StationReceiptStatus ==
+				persistence.ToolReceiptStatusReconciledUnknown {
+				return ""
+			}
+			return "tool_result_" + call.StationReceiptPayloadHash[:24]
+		}(),
+		payloadHash:   call.StationReceiptPayloadHash,
+		boundedResult: append([]byte(nil), call.StationReceiptResult...),
+		errorCode:     call.StationReceiptErrorCode,
+	}
 }
 
 func (s *ToolDispatchService) proposeCallTx(
@@ -2251,6 +3440,14 @@ func (s *ToolDispatchService) proposeCallTx(
 		ReconciliationDeadline: &reconciliationDeadline,
 		CreatedAt:              now,
 		UpdatedAt:              now,
+	}
+	if s.acceptanceScenarios != nil {
+		replayPolicy, externalKey, configured :=
+			s.acceptanceScenarios.ToolReplayPolicy(proposal.ActorID)
+		if configured {
+			row.ReplayPolicy = int32(replayPolicy)
+			row.ExternalIdempotencyKey = externalKey
+		}
 	}
 	if policy == ToolPolicyDeny {
 		row.ErrorCode = string(errcode.AgentToolApprovalDenied)
@@ -2552,6 +3749,31 @@ func clientExecutorAvailableTx(
 	), nil
 }
 
+func pinnedToolBindingActiveTx(
+	tx *gorm.DB,
+	call *persistence.ToolCall,
+) (bool, uint64, error) {
+	var binding persistence.AgentCapabilityBinding
+	if err := tx.Where(
+		"binding_id = ? AND ptid = ?",
+		call.BindingID,
+		call.ActorID,
+	).First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, 0, nil
+		}
+		return false, 0, internalToolError(
+			"load pinned capability binding",
+			err,
+		)
+	}
+	return binding.TombstonedAt == nil &&
+			binding.Enabled &&
+			binding.Revision == call.BindingRevision,
+		binding.Revision,
+		nil
+}
+
 func (s *ToolDispatchService) issueCapabilityRequestTx(
 	tx *gorm.DB,
 	call *persistence.ToolCall,
@@ -2812,6 +4034,18 @@ func (s *ToolDispatchService) commitTerminalReceiptTx(
 		status = persistence.ToolCallStatusUnknownSideEffect
 		resultStatus = persistence.ToolReceiptStatusReconciledUnknown
 	}
+	if resultStatus == persistence.ToolReceiptStatusReconciledUnknown {
+		if err := commitUnknownToolSideEffectTx(
+			tx,
+			call,
+			receipt.GetErrorCode(),
+			now,
+		); err != nil {
+			return err
+		}
+		response.Accepted = true
+		return nil
+	}
 	commit, err := commitNewToolResultTx(
 		tx,
 		call,
@@ -2846,6 +4080,34 @@ type toolTerminalResult struct {
 type toolResultCommit struct {
 	ResultID       string
 	ContinuationID string
+}
+
+func commitUnknownToolSideEffectTx(
+	tx *gorm.DB,
+	call *persistence.ToolCall,
+	errorCode string,
+	now time.Time,
+) error {
+	result := tx.Model(&persistence.ToolCall{}).
+		Where(
+			"id = ? AND status = ? AND result_persisted = ?",
+			call.ID,
+			persistence.ToolCallStatusPrepared,
+			false,
+		).
+		Updates(map[string]interface{}{
+			"status":     persistence.ToolCallStatusUnknownSideEffect,
+			"error_code": strings.TrimSpace(errorCode),
+			"ended_at":   now,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return internalToolError("commit unknown tool side effect", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return invalidToolState("unknown tool side-effect target changed")
+	}
+	return blockToolBatchTx(tx, call.ToolBatchID, now)
 }
 
 func commitNewToolResultTx(
@@ -2917,13 +4179,27 @@ func commitNewToolResultTx(
 	updates := map[string]interface{}{
 		"result_id":        result.ID,
 		"result_ref":       truncateResult(string(terminal.BoundedResult)),
-		"error_code":       terminal.ErrorCode,
 		"result_persisted": true,
-		"ended_at":         now,
 		"updated_at":       now,
 	}
 	if call.Status == persistence.ToolCallStatusPrepared {
 		updates["status"] = terminal.CallStatus
+		updates["error_code"] = terminal.ErrorCode
+		updates["ended_at"] = now
+	} else if call.Status == persistence.ToolCallStatusUnknownSideEffect &&
+		batch.Status == persistence.ToolBatchStatusBlocked {
+		var turn persistence.AgentTurn
+		if err := tx.Select("status").
+			Where("id = ?", call.TurnID).
+			First(&turn).Error; err != nil {
+			return nil, internalToolError(
+				"load terminal tool result Turn lifecycle",
+				err,
+			)
+		}
+		if turn.Status == string(domain.TurnStatusCancelled) {
+			updates["status"] = persistence.ToolCallStatusCancelled
+		}
 	}
 	updateResult := tx.Model(&persistence.ToolCall{}).
 		Where("id = ? AND result_persisted = ?", call.ID, false).
@@ -2951,19 +4227,6 @@ func commitNewToolResultTx(
 		batch.AppliedCallCount == batch.ExpectedCallCount {
 		batch.Status = persistence.ToolBatchStatusReadyForContinuation
 		batch.SettledAt = &now
-		continuation := &persistence.ToolContinuation{
-			ID:          generateID("tool_continuation"),
-			TurnID:      batch.TurnID,
-			AttemptID:   batch.AttemptID,
-			ToolBatchID: batch.ID,
-			Status:      persistence.ToolContinuationStatusReady,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		}
-		if err := tx.Create(continuation).Error; err != nil {
-			return nil, internalToolError("persist tool batch continuation", err)
-		}
-		commit.ContinuationID = continuation.ID
 	}
 	if err := tx.Save(&batch).Error; err != nil {
 		return nil, internalToolError("settle tool batch", err)

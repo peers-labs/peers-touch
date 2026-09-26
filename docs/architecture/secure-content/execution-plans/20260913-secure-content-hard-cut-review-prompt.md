@@ -40,7 +40,7 @@ as independent authority, transaction, route, table, grant, and object owners.
 
 ## Plan
 
-- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md`
+- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md`
 - `docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml`
 - `docs/architecture/secure-content/execution-plans/20260913-secure-content-journeys.yaml`
 

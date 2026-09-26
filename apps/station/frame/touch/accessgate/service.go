@@ -266,7 +266,7 @@ func actorRefFromSession(ctx context.Context, sessionID string) (*actormodel.Act
 		return nil, "", "", err
 	}
 
-	return touchactor.ProtoActorRef(&actor, ""), actor.PreferredUsername, actor.Email, nil
+	return touchactor.ProtoActorRef(&actor), actor.PreferredUsername, actor.Email, nil
 }
 
 // GetAttempt loads a live attempt from the persistent store. Expired, cancelled,

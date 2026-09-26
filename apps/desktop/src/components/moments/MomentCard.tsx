@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dropdown, Typography, theme, message } from 'antd';
-import { MoreHorizontal } from 'lucide-react';
+import { ExternalLink, MapPin, MoreHorizontal } from 'lucide-react';
 import {
   Audience_Kind,
-  PostVisibility,
   RelationshipReason_Kind,
   PostType,
   ReactionKind,
@@ -232,23 +231,34 @@ export function MomentCard({
 
   const author = post.author;
   const audience = post.audience;
-  const privateByLegacyVisibility = post.visibility === PostVisibility.PRIVATE;
   const audienceKind =
     explanation?.audienceExplanation?.kind
     ?? audience?.kind
-    ?? (privateByLegacyVisibility ? Audience_Kind.FRIENDS : Audience_Kind.PUBLIC);
-  const isPrivate = (
-    audience?.kind !== undefined
-    && audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-  )
-    ? audience.kind === Audience_Kind.FRIENDS
-    : privateByLegacyVisibility;
+    ?? Audience_Kind.PUBLIC;
+  const isPrivate =
+    audienceKind !== Audience_Kind.PUBLIC
+    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
   const privateState = privateProjection?.state ?? (
     privatePlatform === 'native'
       ? 'LOADING_AUTHORIZED_RESOURCE'
       : 'PRIVATE_UNSUPPORTED_ON_DEVICE'
   );
-  const body = isPrivate ? privateProjection?.content?.text ?? '' : getBodyText(post);
+  const privateBody = privateProjection?.content?.kind === 'REPOST'
+    ? privateProjection.content.comment
+    : privateProjection?.content?.text ?? '';
+  const privateRepost = privateProjection?.content?.kind === 'REPOST'
+    ? privateProjection.content
+    : undefined;
+  const privateLink = privateProjection?.content?.kind === 'LINK'
+    ? privateProjection.content
+    : undefined;
+  const privatePoll = privateProjection?.content?.kind === 'POLL'
+    ? privateProjection.content
+    : undefined;
+  const privateLocation = privateProjection?.content?.kind === 'LOCATION'
+    ? privateProjection.content
+    : undefined;
+  const body = isPrivate ? privateBody : getBodyText(post);
   const images = isPrivate ? [] : getImages(post);
   const original = isPrivate ? undefined : getRepostOriginal(post);
   const longBody = body.length > 320;
@@ -428,13 +438,123 @@ export function MomentCard({
 
           {isPrivate
             && privateState === 'CONTENT_READY'
-            && privateProjection?.content?.kind === 'IMAGE'
+            && (
+              privateProjection?.content?.kind === 'IMAGE'
+              || privateProjection?.content?.kind === 'VIDEO'
+            )
             && (
               <div style={{ marginTop: 8 }} onClick={(event) => event.stopPropagation()}>
                 <PrivateMediaGrid
                   media={privateProjection.content.media}
                   onOpen={(objectId) => void openPrivateMedia(post.id, objectId)}
                 />
+              </div>
+            )}
+
+          {isPrivate
+            && privateState === 'CONTENT_READY'
+            && privateRepost
+            && (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingLeft: 12,
+                  borderLeft: `2px solid ${token.colorBorder}`,
+                }}
+              >
+                <Text strong style={{ fontSize: 13 }}>
+                  {privateRepost.sourceAuthorPtid}
+                </Text>
+                <Paragraph
+                  type="secondary"
+                  style={{ margin: '4px 0 0', fontSize: 13, whiteSpace: 'pre-wrap' }}
+                >
+                  {privateRepost.sourceText}
+                </Paragraph>
+              </div>
+            )}
+
+          {isPrivate
+            && privateState === 'CONTENT_READY'
+            && privateLink
+            && (
+              <div
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 10,
+                  minWidth: 0,
+                }}
+              >
+                <ExternalLink size={15} color={token.colorTextSecondary} />
+                <Link
+                  href={privateLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  ellipsis
+                  style={{ minWidth: 0 }}
+                >
+                  {privateLink.title}
+                </Link>
+              </div>
+            )}
+
+          {isPrivate
+            && privateState === 'CONTENT_READY'
+            && privatePoll
+            && (
+              <div style={{ marginTop: 10 }}>
+                <Text strong>{privatePoll.question}</Text>
+                <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                  {privatePoll.options.map((option) => (
+                    <div
+                      key={option}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 8,
+                          height: 8,
+                          flex: '0 0 8px',
+                          border: `1px solid ${token.colorBorder}`,
+                          borderRadius: '50%',
+                        }}
+                      />
+                      <Text>{option}</Text>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          {isPrivate
+            && privateState === 'CONTENT_READY'
+            && privateLocation
+            && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  marginTop: 10,
+                }}
+              >
+                <MapPin
+                  size={15}
+                  color={token.colorTextSecondary}
+                  style={{ marginTop: 3, flexShrink: 0 }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <Text strong>{privateLocation.name}</Text>
+                  {privateLocation.address && (
+                    <div>
+                      <Text type="secondary">{privateLocation.address}</Text>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -505,18 +625,16 @@ export function MomentCard({
             </div>
           )}
 
-          {!isPrivate && (
-            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
-              <SocialActionBar
-                reactions={reactions ?? post.reactions ?? []}
-                commentCount={commentsCount}
-                loading={reactionSubmitting}
-                onReact={(kind) => handleReact(kind)}
-                onUnreact={handleUnreact}
-                onOpenComments={() => onOpenComments?.(post.id)}
-              />
-            </div>
-          )}
+          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
+            <SocialActionBar
+              reactions={reactions ?? post.reactions ?? []}
+              commentCount={commentsCount}
+              loading={reactionSubmitting}
+              onReact={(kind) => handleReact(kind)}
+              onUnreact={handleUnreact}
+              onOpenComments={() => onOpenComments?.(post.id)}
+            />
+          </div>
         </div>
       </div>
     </div>

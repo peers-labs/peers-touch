@@ -140,6 +140,11 @@ message CallSignal {
   // heuristic echo detection.
   string winning_device_id = 6;
 
+  // Group ULID for group call routing. Empty for 1-to-1 calls.
+  string group_ulid    = 7;
+
+  // LiveKit room name assigned by Station for this call session.
+  string room_name     = 8;
   enum Kind {
     KIND_UNSPECIFIED = 0;
     OFFER            = 1;
@@ -160,6 +165,10 @@ message CallSignal {
     // Station-authored terminal control event emitted when the shared
     // ring deadline wins before any endpoint accepts or rejects.
     CALL_NO_ANSWER   = 9;
+
+    // SSE notifications for group call room lifecycle.
+    ROOM_ACTIVE      = 10;
+    ROOM_ENDED       = 11;
   }
 }
 

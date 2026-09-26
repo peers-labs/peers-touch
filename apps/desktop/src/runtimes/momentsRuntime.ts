@@ -6,12 +6,12 @@
 
 import { useDiscoveryStore } from '../store/discovery';
 import { useMomentsStore } from '../store/moments';
+import { usePrivateCommentsStore } from '../store/privateComments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import {
   Audience_Kind,
-  PostVisibility,
   type Post,
 } from '../gen/proto/domain/social/post_pb';
 import { EVENT, eventBus } from '../kernel/events';
@@ -42,14 +42,10 @@ let lastReconnectRefreshAt = 0;
 const seenMomentEventIds = new Set<string>();
 
 export function isPrivateMomentPost(post: Post | undefined): boolean {
-  if (!post) return false;
-  if (
-    post.audience?.kind !== undefined
-    && post.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-  ) {
-    return post.audience.kind === Audience_Kind.FRIENDS;
-  }
-  return post.visibility !== PostVisibility.PUBLIC;
+  const kind = post?.audience?.kind;
+  return kind !== undefined
+    && kind !== Audience_Kind.KIND_UNSPECIFIED
+    && kind !== Audience_Kind.PUBLIC;
 }
 
 function privatePostIds(): string[] {
@@ -136,6 +132,11 @@ async function refreshMomentsProjection(label: string): Promise<void> {
       label,
       generation,
     );
+    await usePrivateCommentsStore.getState().reconcile(
+      privatePostIdsToReconcile,
+      label,
+      generation,
+    );
 
     log.info('momentsRuntime', 'moments projection refresh completed', { label });
   })().finally(() => {
@@ -154,14 +155,36 @@ export async function ensureMomentDetailProjection(postId: string): Promise<void
 
   const moments = useMomentsStore.getState();
   const privateMoments = usePrivateMomentsStore.getState();
+  const privateComments = usePrivateCommentsStore.getState();
   const knownPost = moments.postsById[trimmedPostId];
   log.info('momentsRuntime', 'moment detail projection refresh started', { postId: trimmedPostId });
   if (isPrivateMomentPost(knownPost)) {
     await privateMoments.readMoment(trimmedPostId);
+    const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
+    if (projection?.state === 'CONTENT_READY') {
+      await privateComments.loadComments(trimmedPostId, true);
+    } else if (
+      projection?.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
+      || projection?.state === 'DELETED_OR_REVOKED'
+    ) {
+      privateComments.markParentUnavailable(trimmedPostId, projection.errorCode);
+    }
   } else {
     const post = await moments.loadPost(trimmedPostId);
     if (!post || isPrivateMomentPost(post)) {
       await usePrivateMomentsStore.getState().readMoment(trimmedPostId);
+      const projection = usePrivateMomentsStore.getState().postsById[trimmedPostId];
+      if (projection?.state === 'CONTENT_READY') {
+        await usePrivateCommentsStore.getState().loadComments(trimmedPostId, true);
+      } else if (
+        projection?.state === 'NOT_FOUND_OR_NOT_AUTHORIZED'
+        || projection?.state === 'DELETED_OR_REVOKED'
+      ) {
+        usePrivateCommentsStore.getState().markParentUnavailable(
+          trimmedPostId,
+          projection.errorCode,
+        );
+      }
     } else {
       await moments.loadComments(trimmedPostId, true);
     }
@@ -199,6 +222,10 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
   if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment deleted projection refresh', async () => {
+    usePrivateCommentsStore.getState().markParentUnavailable(
+      payload.postId,
+      'COMMENT_PARENT_UNAVAILABLE',
+    );
     await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
     await refreshMomentsProjection('event:moment.deleted');
   });
@@ -279,8 +306,12 @@ async function bootstrapForActor(
   bootstrappedActorPtid = actorPtid;
   bootstrappedSessionEpoch = sessionEpoch;
   usePrivateMomentsStore.getState().activateActor(actorPtid, sequence);
+  usePrivateCommentsStore.getState().activateActor(actorPtid, sequence);
   await Promise.allSettled([
     usePrivateMomentsStore.getState().bootstrap(sequence),
+  ]);
+  await Promise.allSettled([
+    usePrivateCommentsStore.getState().bootstrap(sequence),
     refreshMomentsProjection('bootstrap'),
   ]);
 
@@ -298,6 +329,7 @@ function reconcileAuthenticatedRuntime(): void {
     lastReconnectRefreshAt = 0;
     const sequence = ++bootstrapSequence;
     usePrivateMomentsStore.getState().deactivate(sequence);
+    usePrivateCommentsStore.getState().deactivate(sequence);
     useMomentsStore.getState().reset();
     useDiscoveryStore.getState().reset();
     useRelationshipsStore.getState().reset();
@@ -366,6 +398,7 @@ export const momentsRuntime: RuntimeDescriptor = {
       lastReconnectRefreshAt = 0;
       const sequence = ++bootstrapSequence;
       usePrivateMomentsStore.getState().deactivate(sequence);
+      usePrivateCommentsStore.getState().deactivate(sequence);
       seenMomentEventIds.clear();
     };
 

@@ -157,9 +157,8 @@ Pick one based on intent:
 - [`invariants/desktop-chat-layout-boundaries.md`](invariants/desktop-chat-layout-boundaries.md) — Desktop Chat actions must respect conversation pane bounds and collision handling.
 - [`invariants/composite-form-control-boundaries.md`](invariants/composite-form-control-boundaries.md) — composite form controls that represent one semantic input must share one parent frame and state model.
 - [`invariants/desktop-identity-lifecycle-closure.md`](invariants/desktop-identity-lifecycle-closure.md) — Desktop identity/profile/account/avatar projections must close through the identity state machine.
-- [`invariants/mobile-session-device-identity.md`](invariants/mobile-session-device-identity.md) — Mobile 原生 Session、Messaging Actor Device、传输 Header 与 Call payload 共享同一设备身份。
-- [`invariants/call-resolution-session-identity-width.md`](invariants/call-resolution-session-identity-width.md) — Call Resolution 完整保存 canonical signaling session identity，并区分 retryable failure 与终态冲突。
 - [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
+- [`invariants/actor-ref-account-is-persisted-identity.md`](invariants/actor-ref-account-is-persisted-identity.md) — `ActorRef.acct` comes from the persisted federated handle, never request transport.
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
 - [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.

@@ -21,7 +21,6 @@ import {
   Audience_Kind,
   PostDetailOutcome,
   PostType,
-  PostVisibility,
   ReactionKind,
   TimelinePageOutcome,
 } from '../../gen/proto/domain/social/post_pb';
@@ -49,7 +48,7 @@ describe('Moments reaction routes', () => {
 
     expect(commandMock).toHaveBeenCalledWith({
       method: 'POST',
-      path: '/api/v1/social/posts/post%2F1/react',
+      path: '/api/v1/social/moments/post%2F1/react',
       body: {
         post_id: 'post/1',
         kind: 2,
@@ -62,7 +61,7 @@ describe('Moments reaction routes', () => {
 
     expect(commandMock).toHaveBeenCalledWith({
       method: 'POST',
-      path: '/api/v1/social/posts/post%2F1/unreact',
+      path: '/api/v1/social/moments/post%2F1/unreact',
       body: {
         post_id: 'post/1',
         kind: 2,
@@ -119,7 +118,7 @@ describe('Moments Station protobuf JSON decoding', () => {
       .mockResolvedValueOnce({
         ok: true,
         data: {
-          comments: [snakeComment()],
+          comments: [snakeCommentResource()],
           next_cursor: 'comment-cursor',
           has_more: true,
         },
@@ -155,7 +154,6 @@ describe('Moments Station protobuf JSON decoding', () => {
           id: 'post-1',
           authorPtid: 'ptid:alice',
           type: PostType.TEXT,
-          visibility: PostVisibility.PUBLIC,
           content: { case: 'textPost', value: { text: 'Hello' } },
           stats: { commentsCount: 4n },
           author: { displayName: 'Alice' },
@@ -216,6 +214,35 @@ describe('Moments Station protobuf JSON decoding', () => {
       ok: true,
       data: expect.objectContaining({ success: true }),
     }));
+  });
+
+  it('rejects private Comment resources at the public Mobile projection boundary', async () => {
+    commandMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        comments: [{
+          metadata: {
+            comment_id: 'comment-private',
+            post_id: 'post-private',
+            author: {
+              ptid: 'ptid:bob',
+              acct: 'bob@example.test',
+            },
+          },
+          private_content: {},
+        }],
+      },
+    });
+
+    await expect(
+      createMomentsGateway(session).fetchComments('post-private', '', 15),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'INVALID_MOMENTS_RESPONSE',
+        path: '/api/v1/social/moments/post-private/comments',
+      },
+    });
   });
 
   it('fails visibly when Station JSON does not match the generated schema', async () => {
@@ -333,7 +360,6 @@ function snakePost() {
     id: 'post-1',
     author_ptid: 'ptid:alice',
     type: 'TEXT',
-    visibility: 'PUBLIC',
     created_at: '2026-09-16T10:00:00Z',
     stats: {
       comments_count: '4',
@@ -371,5 +397,25 @@ function snakeComment() {
     },
     likes_count: '1',
     reply_to_comment_id: 'comment-root',
+  };
+}
+
+function snakeCommentResource() {
+  return {
+    metadata: {
+      comment_id: 'comment-1',
+      content_id: 'comment-1',
+      post_id: 'post-1',
+      reply_to_comment_id: 'comment-root',
+      author: {
+        ptid: 'ptid:bob',
+        acct: 'bob@example.test',
+      },
+      created_at: '2026-09-16T10:01:00Z',
+      reactions_count: '1',
+    },
+    public_content: {
+      text: 'Reply',
+    },
   };
 }

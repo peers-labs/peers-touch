@@ -6,6 +6,11 @@
 
 ---
 
+This module is the control-plane implementation contract. The single human
+operating standard is [docs/global/workflow.md](../../global/workflow.md);
+documents here define ownership, schemas, decisions, and integration details
+without creating another procedure.
+
 ## 1. Document Scope
 
 本文档集定义 Peers Touch 非平凡开发任务从需求进入到关闭的工作流控制面：
@@ -72,7 +77,9 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
     Execution 和 rollout receipt 只有一个当前严格格式。
 16. 用户或 accepted Plan 已明确授权的操作在 Plan Run 内直接执行；只有
     超出授权包或实际外部权限失败才提出权限问题。
-17. 个人交互习惯通过 machine-local Overlay 选择性叠加；共享 `pt-ew` 与
+17. Context Anchor 的耗时观测只从已有 bounded Session journal 临时聚合；
+    不新增 Metrics 状态、写入工具或 Agent 调用。
+18. 个人交互习惯通过 machine-local Overlay 选择性叠加；共享 `pt-ew` 与
     canonical Skill rollout 不携带任何用户专属策略。
 
 ## 4. Document Navigation
@@ -81,17 +88,18 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D25 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D27 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
-| [host-neutral-skill-rollout.md](./host-neutral-skill-rollout.md) | DWF-D21/DWF-D22 按 worktree 语义集成、审计、宿主投影和会话重启流程 |
+| [host-neutral-skill-rollout.md](./host-neutral-skill-rollout.md) | DWF-D21/DWF-D22 按 worktree 语义集成、审计与宿主 catalog 投影 |
 | [Progress-bearing workflow plan](./execution-plans/20260917-progress-bearing-development-loop/plan.md) | Anchor、Goal、profile policy 与环境看板的落地计划 |
 | [Immutable workspace Plan binding](./execution-plans/20260918-immutable-workspace-plan-binding/plan.md) | 多 Plan 同仓库下的 workspace 单一不可换绑 hard cut |
+| [Trusted autonomous development](./execution-plans/20260920-trusted-autonomous-development/plan.md) | Task closure 真值、统一状态快照、自动续跑与 Acceptance 准入 hard cut |
 | [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | `DWF-B` 自举闭环与首个真实 Plan Package pilot |
 
 ## 5. Current Status
 
-DWF-D01..DWF-D25 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+DWF-D01..DWF-D27 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
 workspace 只解析机器级不可变绑定指向的一个 Plan；同步进入分支的外来 Plan 不
 参与本 workspace 的发现。Plan Package 只保留 immutable initial HEAD；当前
 source HEAD 由 Git、Development declaration、Session checkpoint 与

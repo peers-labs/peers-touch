@@ -13,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	actoridentity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
+	actorservice "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
@@ -247,10 +248,7 @@ func PrepareOAuthSession(
 			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
 		},
 		SessionId: sessionID,
-		ActorRef: &model.ActorRef{
-			Ptid: ptid,
-			Kind: model.ActorKind_ACTOR_KIND_PERSON,
-		},
+		ActorRef:  actorservice.ProtoActorRef(actor),
 	}, nil
 }
 
@@ -381,10 +379,7 @@ func issueSessionCredential(
 			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
 		},
 		SessionId: sessionID,
-		ActorRef: &model.ActorRef{
-			Ptid: ptid,
-			Kind: model.ActorKind_ACTOR_KIND_PERSON,
-		},
+		ActorRef:  actorservice.ProtoActorRef(actor),
 	}, nil
 }
 

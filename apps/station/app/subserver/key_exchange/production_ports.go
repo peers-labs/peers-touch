@@ -66,6 +66,7 @@ type actorSigningKeyCapability interface {
 		string,
 		string,
 		string,
+		string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
 	ResolveRetainedActorDeviceSigningKey(
 		context.Context,
@@ -76,9 +77,11 @@ type actorSigningKeyCapability interface {
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
 }
 
-type actorSigningKeyResolver struct{}
+type actorSigningKeyResolver struct {
+	localStationID string
+}
 
-func (actorSigningKeyResolver) ResolveVerifiedActorDeviceSigningKey(
+func (r actorSigningKeyResolver) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
@@ -99,6 +102,7 @@ func (actorSigningKeyResolver) ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		strings.TrimSpace(actorPTID),
+		r.localStationID,
 		strings.TrimSpace(deviceID),
 		strings.TrimSpace(signingKeyID),
 	)

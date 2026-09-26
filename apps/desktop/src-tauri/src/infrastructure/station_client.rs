@@ -1117,7 +1117,21 @@ fn request_json_with_policy_base_url(
         return Ok(Value::Null);
     }
 
-    let result: Value = resp.json().map_err(|e| {
+    let bytes = resp.bytes().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station READ_ERROR (json)");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {}", e),
+            None,
+        )
+    })?;
+
+    if bytes.is_empty() {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, empty)");
+        return Ok(Value::Null);
+    }
+
+    let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -1229,7 +1243,36 @@ where
     Req: Message,
     Resp: Message + Default,
 {
-    let url = format!("{}{}", station_base_url(), path);
+    request_proto_with_optional_auth_at(&station_base_url(), method, path, Some(token), query, body)
+}
+
+pub(crate) fn request_proto_optional_auth<Req, Resp>(
+    method: Method,
+    path: &str,
+    token: Option<&str>,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+) -> Result<Resp, StationClientError>
+where
+    Req: Message,
+    Resp: Message + Default,
+{
+    request_proto_with_optional_auth_at(&station_base_url(), method, path, token, query, body)
+}
+
+fn request_proto_with_optional_auth_at<Req, Resp>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: Option<&str>,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+) -> Result<Resp, StationClientError>
+where
+    Req: Message,
+    Resp: Message + Default,
+{
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
     tracing::debug!(
         method = %method,
@@ -1241,7 +1284,11 @@ where
     let start = std::time::Instant::now();
     let client = build_client()?;
 
-    let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
+    let request = client.request(method.clone(), &url);
+    let mut req = match token {
+        Some(token) => with_device_id(request.bearer_auth(token)),
+        None => request,
+    };
 
     if let Some(q) = query {
         req = req.query(q);
@@ -1672,9 +1719,10 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 mod tests {
     use super::{
         build_error_for_status_with_headers, request_json_with_policy_base_url,
-        StationTransportPolicy,
+        request_proto_with_optional_auth_at, StationTransportPolicy,
     };
     use crate::error::ErrorCode;
+    use crate::model::common::PeersResponse;
     use reqwest::Method;
     use serde_json::json;
     use std::io::{Read, Write};
@@ -1778,6 +1826,72 @@ mod tests {
             error.to_string(),
             "station returned 400 :  [code=CONVERSATION_INVALID_ARGUMENT]"
         );
+    }
+
+    #[test]
+    fn optional_auth_proto_request_omits_authorization_when_session_is_absent() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind optional-auth fixture");
+        let address = listener
+            .local_addr()
+            .expect("read optional-auth fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept optional-auth request");
+            let mut request = [0_u8; 4096];
+            let read = stream
+                .read(&mut request)
+                .expect("read optional-auth request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write optional-auth response");
+            String::from_utf8_lossy(&request[..read]).into_owned()
+        });
+
+        request_proto_with_optional_auth_at::<(), PeersResponse>(
+            &format!("http://{address}"),
+            Method::GET,
+            "/api/v1/social/timeline",
+            None,
+            Some(&[("type", "TIMELINE_PUBLIC".to_string())]),
+            None,
+        )
+        .expect("anonymous public request must succeed");
+        let request = server.join().expect("join optional-auth fixture");
+        let lower = request.to_ascii_lowercase();
+        assert!(request.starts_with("GET /api/v1/social/timeline?type=TIMELINE_PUBLIC "));
+        assert!(!lower.contains("\r\nauthorization:"));
+    }
+
+    #[test]
+    fn optional_auth_proto_request_preserves_supplied_bearer() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind bearer fixture");
+        let address = listener.local_addr().expect("read bearer fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept bearer request");
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).expect("read bearer request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write bearer response");
+            String::from_utf8_lossy(&request[..read]).into_owned()
+        });
+
+        request_proto_with_optional_auth_at::<(), PeersResponse>(
+            &format!("http://{address}"),
+            Method::GET,
+            "/api/v1/social/timeline",
+            Some("fixture-token"),
+            None,
+            None,
+        )
+        .expect("authenticated public request must succeed");
+        let request = server.join().expect("join bearer fixture");
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("\r\nauthorization: bearer fixture-token\r\n"));
     }
 
     #[test]
@@ -1913,6 +2027,36 @@ mod tests {
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
         assert!(details.get("private").is_none());
+    }
+
+    #[test]
+    fn json_request_path_accepts_no_content_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind no-content fixture");
+        let address = listener
+            .local_addr()
+            .expect("read no-content fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept no-content request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read no-content request");
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .expect("write no-content response");
+        });
+
+        let result = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/realtime/signal",
+            "fixture-token",
+            None,
+            Some(json!({"kind": "OFFER"})),
+            StationTransportPolicy::Interactive,
+        )
+        .expect("204 response must be accepted");
+        server.join().expect("join no-content fixture");
+
+        assert_eq!(result, serde_json::Value::Null);
     }
 
     #[test]

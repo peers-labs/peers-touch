@@ -70,6 +70,7 @@ receiver, durable-readback, and cleanup evidence.
 | [legacy-inventory.json](./legacy-inventory.json) | CCU legacy paths, commands, routes, tables and nine-dimensional scan contract |
 | [execution-plans/20260922-chat-client-unification/plan.md](./execution-plans/20260922-chat-client-unification/plan.md) | 已完成的 Desktop/Mobile Chat 统一计划（`CCU-20260922`） |
 | [../chat-storage-governance/README.md](../chat-storage-governance/README.md) | 新模块：当前设备 Chat 空间统计、保留、清理与物理回收（待 Owner 审核） |
+| [execution-plans/20260916-chat-lifecycle-product-closure/plan.md](./execution-plans/20260916-chat-lifecycle-product-closure/plan.md) | Replacement product-first execution plan |
 
 ## 5. Superseded Execution Plans
 

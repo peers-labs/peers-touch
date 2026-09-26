@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -15,7 +15,11 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.errors import DriverError
-from tooling.acceptance.drivers.native.base import MouseAction, NativeKey
+from tooling.acceptance.drivers.native.base import (
+    MouseAction,
+    NativeDesktopAdapter,
+    NativeKey,
+)
 from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
     LocalMacOSRuntimeBinding,
@@ -146,6 +150,53 @@ class SyntheticRemoteNativeLifecycle:
             "processesReleased": True,
             "storageReleased": True,
         }
+
+
+class NativeDesktopAdapterInputTest(unittest.TestCase):
+    def test_drag_mouse_posts_interpolated_drag_events_with_timing(self) -> None:
+        adapter = Mock(spec=NativeDesktopAdapter)
+
+        with patch(
+            "tooling.acceptance.drivers.native.base.time.sleep"
+        ) as sleep:
+            NativeDesktopAdapter.drag_mouse(
+                adapter,
+                (10.0, 20.0),
+                (40.0, 80.0),
+                duration_seconds=0.3,
+                steps=3,
+            )
+
+        self.assertEqual(
+            adapter.post_mouse.call_args_list,
+            [
+                call((MouseAction.MOVE,), (10.0, 20.0)),
+                call((MouseAction.LEFT_DOWN,), (10.0, 20.0)),
+                call((MouseAction.LEFT_DRAG,), (20.0, 40.0)),
+                call((MouseAction.LEFT_DRAG,), (30.0, 60.0)),
+                call((MouseAction.LEFT_DRAG,), (40.0, 80.0)),
+                call((MouseAction.LEFT_UP,), (40.0, 80.0)),
+            ],
+        )
+        self.assertEqual(sleep.call_args_list, [call(0.075)] * 4)
+
+    def test_drag_mouse_rejects_non_positive_timing(self) -> None:
+        adapter = Mock(spec=NativeDesktopAdapter)
+
+        with self.assertRaisesRegex(ValueError, "duration must be positive"):
+            NativeDesktopAdapter.drag_mouse(
+                adapter,
+                (0.0, 0.0),
+                (1.0, 1.0),
+                duration_seconds=0,
+            )
+        with self.assertRaisesRegex(ValueError, "steps must be positive"):
+            NativeDesktopAdapter.drag_mouse(
+                adapter,
+                (0.0, 0.0),
+                (1.0, 1.0),
+                steps=0,
+            )
 
 
 class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
@@ -476,6 +527,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(binding.proof_refs(), (reference,))
         launch_environment = lifecycle.calls[-1][1][2]
         self.assertNotIn("PEERS_STATION_URL", launch_environment)
+        self.assertEqual(
+            launch_environment["PT_STATION_URL"],
+            "http://station.example",
+        )
+        self.assertEqual(
+            launch_environment["PT_STATION_HEALTH_URL"],
+            "http://station.example/sub-oss/healthz",
+        )
 
     def test_bound_session_uses_client_id_for_same_actor_devices(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
@@ -603,6 +662,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                     (
                         "PT_DEV_PROFILE=four",
                         "PT_DEV_SLOT=3",
+                        "PT_STATION_URL=http://stale-station.example",
+                        (
+                            "PT_STATION_HEALTH_URL="
+                            "http://stale-station.example/sub-oss/healthz"
+                        ),
                         "PT_DESKTOP_APP_GATEWAY_PORT=3140",
                         "PT_DESKTOP_APP_WEB_PORT=3410",
                     )
@@ -620,6 +684,12 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 renderer_port=3411,
                 profile="four-app",
                 storage_root=str(root / "storage"),
+                environment={
+                    "PT_STATION_URL": "http://bound-station.example",
+                    "PT_STATION_HEALTH_URL": (
+                        "http://bound-station.example/sub-oss/healthz"
+                    ),
+                },
             )
             process = Mock(pid=1234)
             process.poll.return_value = 0
@@ -649,6 +719,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             )
             rendered = runtime_profile.read_text(encoding="utf-8")
             self.assertIn("PT_DEV_PROFILE=four-app", rendered)
+            self.assertIn(
+                "PT_STATION_URL=http://bound-station.example",
+                rendered,
+            )
+            self.assertIn(
+                "PT_STATION_HEALTH_URL="
+                "http://bound-station.example/sub-oss/healthz",
+                rendered,
+            )
+            self.assertNotIn("http://stale-station.example", rendered)
             self.assertIn("PT_DESKTOP_APP_GATEWAY_PORT=3141", rendered)
             self.assertIn("PT_DESKTOP_APP_WEB_PORT=3411", rendered)
             self.assertEqual(
@@ -723,6 +803,39 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             launcher._launch_environment = {"HOME": str(home)}
 
             self.assertEqual(launcher._managed_process_pid(), 5678)
+
+    def test_make_launcher_reads_explicit_profile_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "peers-group-chat"
+            root.mkdir()
+            home = Path(temp_dir) / "home"
+            runtime_profile_root = Path(temp_dir) / "runtime-profile"
+            runtime_profile_root.mkdir()
+            state_path = runtime_profile_root / "desktop-app-tauri.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "service": "desktop-app-tauri",
+                        "profile": "four-app",
+                        "worktreeId": "peers-group-chat",
+                        "pid": 6789,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launcher = MakeDesktopLauncher(
+                worktree=root,
+                port=4447,
+                gateway_port=3140,
+                renderer_port=3410,
+                profile="four-app",
+                storage_root=str(root / "storage"),
+                environment={"HOME": str(home)},
+            )
+            launcher._launch_environment = {"HOME": str(home)}
+            launcher._runtime_profile_root = runtime_profile_root
+
+            self.assertEqual(launcher._managed_process_pid(), 6789)
 
     def test_macos_cleanup_retains_persistent_client_storage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

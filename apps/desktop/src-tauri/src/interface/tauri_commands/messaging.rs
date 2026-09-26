@@ -1,9 +1,9 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
-    ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberSettings,
-    MemberStatus, MessagingMembershipAction, MlsLeaveIntent, UpdateMemberSettingsRequest,
-    UpdateMemberSettingsResponse, VoiceNoteMetadata,
+    ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberRole,
+    MemberSettings, MemberStatus, MessagingMembershipAction, MlsLeaveIntent,
+    UpdateMemberSettingsRequest, UpdateMemberSettingsResponse, VoiceNoteMetadata,
 };
 use crate::state::AppState;
 use reqwest::Method;
@@ -18,6 +18,8 @@ pub struct MessagingLocalAttachmentInput {
     pub file_path: String,
     pub filename: String,
     pub mime_type: String,
+    pub content_kind: String,
+    pub duration_ms: u32,
     #[serde(default)]
     pub voice_note: Option<MessagingVoiceNoteInput>,
 }
@@ -207,6 +209,39 @@ pub struct MessagingMembershipTransitionInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessagingUpdateConversationInput {
+    pub conversation_id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub avatar_object_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingUpdateMemberAuthorityInput {
+    pub conversation_id: String,
+    pub target_ptid: String,
+    pub role: Option<i32>,
+    pub muted: Option<bool>,
+    pub muted_until_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingTransferOwnershipInput {
+    pub conversation_id: String,
+    pub target_ptid: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingDissolveConversationInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingLeaveConversationInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MessagingSubmitLeaveIntentInput {
     pub federation_id: String,
     pub authority_station_peer_id: String,
@@ -313,6 +348,12 @@ fn conversation_member_json(
         "ptid": member.ptid,
         "role": member.role,
         "member_status": MemberStatus::Active as i32,
+        "actor_home_station_peer_id": member.home_station_peer_id,
+        "muted": member.muted,
+        "muted_until": member.muted_until_unix_ms.map(|millis| json!({
+            "seconds": millis.div_euclid(1_000),
+            "nanos": millis.rem_euclid(1_000) * 1_000_000,
+        })),
     })
 }
 
@@ -368,6 +409,8 @@ pub(crate) fn conversation_projection_json(
         "federation_id": conversation.federation_id,
         "kind": conversation.kind,
         "name": conversation.name,
+        "description": conversation.description,
+        "avatar_object_id": conversation.avatar_object_id,
         "owner_ptid": conversation.owner_ptid,
         "members": members,
         "membership_epoch": conversation.membership_epoch,
@@ -745,6 +788,8 @@ fn attachment_projection_json(
         "attachment_id": attachment.attachment_id,
         "filename": attachment.filename,
         "mime_type": attachment.mime_type,
+        "content_kind": attachment.content_kind,
+        "duration_ms": attachment.duration_ms,
         "plaintext_size": attachment.plaintext_size,
         "object_id": object.map(|value| value.object_id.as_str()).unwrap_or_default(),
         "storage_ref": object.map(|value| value.storage_ref.as_str()).unwrap_or_default(),
@@ -1449,6 +1494,174 @@ pub fn messaging_membership_transition(
     result
 }
 
+fn dispatch_prepared_command(
+    engine: &crate::messaging::MessagingEngine,
+    token: &str,
+    command_id: String,
+) -> AppResult<Value> {
+    let progress = engine.dispatch_command_once(
+        token,
+        crate::messaging::now_unix_ms(),
+        crate::messaging::CommandRetryPolicy {
+            initial_delay_ms: 1_000,
+            maximum_delay_ms: 300_000,
+        },
+    );
+    match progress {
+        Ok(crate::messaging::CommandDispatchProgress::Failed { code, .. }) => {
+            return AppResult::fail(ErrorCode::InternalError, code, None)
+        }
+        Ok(crate::messaging::CommandDispatchProgress::StaleDeliveryPlan { .. })
+        | Ok(crate::messaging::CommandDispatchProgress::StaleAuthorityPlan { .. }) => {
+            return AppResult::fail(
+                ErrorCode::Conflict,
+                "messaging command authority changed before dispatch",
+                None,
+            )
+        }
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        _ => {}
+    }
+    if let Err(error) = engine.drain_once(token, 100) {
+        tracing::warn!(command_id, error = %error, "messaging projection drain deferred");
+    }
+    let state = engine
+        .command_status(&command_id)
+        .ok()
+        .flatten()
+        .map(|status| status.state)
+        .unwrap_or_else(|| "pending".to_string());
+    AppResult::success(json!({
+        "command_id": command_id,
+        "state": state,
+    }))
+}
+
+#[tauri::command]
+pub fn messaging_update_conversation(
+    input: MessagingUpdateConversationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let command_id = match engine.update_conversation(
+        &token,
+        &input.conversation_id,
+        input.name,
+        input.description,
+        input.avatar_object_id,
+    ) {
+        Ok(command_id) => command_id,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let result = dispatch_prepared_command(&engine, &token, command_id);
+    if result.ok {
+        let _ = state.messaging_engines.wake_profile(&account_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn messaging_update_member_authority(
+    input: MessagingUpdateMemberAuthorityInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let role = match input.role.map(MemberRole::try_from).transpose() {
+        Ok(role) => role,
+        Err(_) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, "member role is invalid", None)
+        }
+    };
+    let command_id = match engine.update_member_authority(
+        &token,
+        &input.conversation_id,
+        &input.target_ptid,
+        role,
+        input.muted,
+        input.muted_until_unix_ms,
+    ) {
+        Ok(command_id) => command_id,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let result = dispatch_prepared_command(&engine, &token, command_id);
+    if result.ok {
+        let _ = state.messaging_engines.wake_profile(&account_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn messaging_transfer_ownership(
+    input: MessagingTransferOwnershipInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let command_id =
+        match engine.transfer_ownership(&token, &input.conversation_id, &input.target_ptid) {
+            Ok(command_id) => command_id,
+            Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        };
+    let result = dispatch_prepared_command(&engine, &token, command_id);
+    if result.ok {
+        let _ = state.messaging_engines.wake_profile(&account_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn messaging_dissolve_conversation(
+    input: MessagingDissolveConversationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let command_id = match engine.dissolve_conversation(&token, &input.conversation_id) {
+        Ok(command_id) => command_id,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let result = dispatch_prepared_command(&engine, &token, command_id);
+    if result.ok {
+        let _ = state.messaging_engines.wake_profile(&account_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn messaging_leave_conversation(
+    input: MessagingLeaveConversationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let intent = match engine.leave_conversation(&token, &input.conversation_id) {
+        Ok(intent) => intent,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let _ = state.messaging_engines.wake_profile(&account_id);
+    AppResult::success(json!({
+        "intent_id": intent.intent_id,
+        "state": "pending",
+    }))
+}
+
 #[tauri::command]
 pub fn messaging_submit_leave_intent(
     input: MessagingSubmitLeaveIntentInput,
@@ -1535,6 +1748,12 @@ pub async fn messaging_send_message(
             source_local_ref: attachment.file_path,
             filename: attachment.filename,
             mime_type: attachment.mime_type,
+            content_kind: match attachment.content_kind.as_str() {
+                "file" => crate::model::chat::AttachmentContentKind::File as i32,
+                "voice_note" => crate::model::chat::AttachmentContentKind::VoiceNote as i32,
+                _ => crate::model::chat::AttachmentContentKind::Unspecified as i32,
+            },
+            duration_ms: attachment.duration_ms,
             voice_note: attachment.voice_note.map(|voice_note| VoiceNoteMetadata {
                 duration_ms: voice_note.duration_ms,
                 codec: voice_note.codec,
@@ -2162,6 +2381,7 @@ mod tests {
             &crate::messaging::ConversationMemberProjection {
                 ptid: "ptid:alice".to_string(),
                 role: MemberRole::Owner as i32,
+                ..Default::default()
             },
         );
         assert_eq!(owner["conversation_id"], "group-1");
@@ -2174,6 +2394,7 @@ mod tests {
             &crate::messaging::ConversationMemberProjection {
                 ptid: "ptid:bob".to_string(),
                 role: MemberRole::Admin as i32,
+                ..Default::default()
             },
         );
         assert_eq!(admin["role"], MemberRole::Admin as i32);

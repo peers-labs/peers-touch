@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import importlib.util
 import json
@@ -12,15 +14,25 @@ from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def load_rollout_control():
-    path = REPO_ROOT / "tooling/scripts/skill-rollout-control.py"
-    spec = importlib.util.spec_from_file_location("skill_rollout_control", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+REQUIRED_SKILLS = (
+    "pt-goal-orchestrator",
+    "pt-trae-host-adapter",
+    "pt-cursor-host-adapter",
+    "pt-codex-host-adapter",
+)
+RECEIPT_KEYS = {
+    "kind",
+    "state",
+    "workspaceId",
+    "branch",
+    "sourceHead",
+    "host",
+    "installedAt",
+    "catalogDigest",
+    "catalogEntryCount",
+    "catalogGitState",
+    "catalogStatusDigest",
+}
 
 
 def load_rollout_audit():
@@ -52,39 +64,11 @@ class SkillRolloutTests(unittest.TestCase):
                 REPO_ROOT / "tooling/scripts" / name,
                 self.root / "tooling/scripts" / name,
             )
-        ledger_validator = (
-            self.root / "tooling/scripts/local-dev/dev-work-ledger.mjs"
-        )
-        ledger_validator.parent.mkdir(parents=True)
-        ledger_validator.write_text(
-            """
-import { readFileSync } from 'node:fs';
-export function readLedger(file) {
-  const value = JSON.parse(readFileSync(file, 'utf8'));
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    value.declarations === null ||
-    typeof value.declarations !== 'object' ||
-    Array.isArray(value.declarations)
-  ) {
-    throw new Error('MACHINE_WORK_LEDGER_INVALID');
-  }
-  return value;
-}
-""".lstrip(),
+        (self.root / "Makefile").write_text(
+            "include tooling/make/setup.mk\n",
             encoding="utf-8",
         )
-        (self.root / "Makefile").write_text(
-            "include tooling/make/setup.mk\n", encoding="utf-8"
-        )
-        for name in (
-            "pt-goal-orchestrator",
-            "pt-trae-host-adapter",
-            "pt-cursor-host-adapter",
-            "pt-codex-host-adapter",
-        ):
+        for name in REQUIRED_SKILLS:
             skill = self.root / "tooling/skills" / name
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
@@ -103,12 +87,7 @@ export function readLedger(file) {
                             "when": {
                                 "paths": [
                                     f"tooling/skills/{name}/**"
-                                    for name in (
-                                        "pt-goal-orchestrator",
-                                        "pt-trae-host-adapter",
-                                        "pt-cursor-host-adapter",
-                                        "pt-codex-host-adapter",
-                                    )
+                                    for name in REQUIRED_SKILLS
                                 ]
                             },
                             "require": ["acceptance-workflow-contract"],
@@ -148,359 +127,128 @@ export function readLedger(file) {
                     raise
                 time.sleep(0.05)
 
-    def environment(self, session: str) -> dict[str, str]:
-        environment = {
+    def environment(self) -> dict[str, str]:
+        return {
             **os.environ,
             "PT_MACHINE_DEV_ROOT": str(self.root / "machine"),
-            "PT_AGENT_SESSION_ID": session,
         }
-        for name in (
-            "ICUBE_CODEMAIN_SESSION",
-            "CURSOR_SESSION_ID",
-            "CURSOR_TRACE_ID",
-            "CODEX_THREAD_ID",
-            "CODEX_SESSION_ID",
-        ):
-            environment.pop(name, None)
-        return environment
 
-    def test_atomic_lock_capture_declares_windows_no_replace(self) -> None:
-        control = (
-            REPO_ROOT / "tooling/scripts/skill-rollout-control.py"
-        ).read_text(encoding="utf-8")
-        ledger = (
-            REPO_ROOT / "tooling/scripts/local-dev/dev-work-ledger.mjs"
-        ).read_text(encoding="utf-8")
-        for source in (control, ledger):
-            self.assertIn("MoveFileExW", source)
-            self.assertIn("0x00000008", source)
-
-    def test_windows_atomic_lock_capture_uses_no_replace_semantics(self) -> None:
-        module = load_rollout_control()
-        calls: list[tuple[str, str, int]] = []
-
-        class MoveFile:
-            argtypes = None
-            restype = None
-
-            def __call__(self, source: str, destination: str, flags: int) -> int:
-                calls.append((source, destination, flags))
-                return 1
-
-        class Kernel:
-            MoveFileExW = MoveFile()
-
-        with mock.patch.object(module.os.sys, "platform", "win32"), mock.patch.object(
-            module.ctypes,
-            "WinDLL",
-            return_value=Kernel(),
-            create=True,
-        ):
-            self.assertTrue(
-                module.atomic_move_no_replace(Path("source"), Path("target"))
-            )
-        self.assertEqual(calls, [("source", "target", 0x00000008)])
-
-        class ExistingMove(MoveFile):
-            def __call__(self, source: str, destination: str, flags: int) -> int:
-                return 0
-
-        class ExistingKernel:
-            MoveFileExW = ExistingMove()
-
-        with mock.patch.object(module.os.sys, "platform", "win32"), mock.patch.object(
-            module.ctypes,
-            "WinDLL",
-            return_value=ExistingKernel(),
-            create=True,
-        ), mock.patch.object(module.ctypes, "get_last_error", return_value=183, create=True):
-            self.assertFalse(
-                module.atomic_move_no_replace(Path("source"), Path("target"))
-            )
-
-    def test_noninteractive_codex_install_retires_real_legacy_directory(self) -> None:
-        legacy = self.root / ".agents/skills/pt-trae-goal-orchestrator"
-        legacy.mkdir(parents=True)
-        (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
-        environment = self.environment("installing-session")
-        completed = subprocess.run(
+    def install(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
-            env=environment,
+            env=self.environment(),
             check=False,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertFalse(legacy.exists())
-        retired = list(
-            (self.root / ".agents/retired-project-skills").glob(
-                "pt-trae-goal-orchestrator.*"
-            )
-        )
-        self.assertEqual(len(retired), 1)
-        for name in (
-            "pt-goal-orchestrator",
-            "pt-trae-host-adapter",
-            "pt-cursor-host-adapter",
-            "pt-codex-host-adapter",
-        ):
-            self.assertTrue((self.root / ".agents/skills" / name).is_symlink())
 
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
+    def audit(self, host: str | None = "codex") -> subprocess.CompletedProcess[str]:
+        command = [
+            "python3",
+            "tooling/scripts/skill-rollout-audit.py",
+            "--root",
+            str(self.root),
+        ]
+        if host is not None:
+            command.extend(["--host", host])
+        return subprocess.run(
+            command,
             cwd=self.root,
             capture_output=True,
             text=True,
-            env=environment,
+            env=self.environment(),
             check=False,
         )
-        self.assertEqual(audit.returncode, 2, audit.stderr)
-        self.assertEqual(
-            json.loads(audit.stdout)["rolloutReceipt"]["findings"],
-            ["rollout-restart-required"],
-        )
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("ROLLOUT_RESTART_NOT_OBSERVED", acknowledged.stdout)
-        ambiguous_environment = self.environment("installing-session")
-        ambiguous_environment["CODEX_SESSION_ID"] = "different-session"
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=ambiguous_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("HOST_SESSION_ID_AMBIGUOUS", acknowledged.stdout)
-        renamed_environment = self.environment("unused-session")
-        renamed_environment.pop("PT_AGENT_SESSION_ID")
-        renamed_environment["CODEX_SESSION_ID"] = "installing-session"
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=renamed_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("ROLLOUT_RESTART_NOT_OBSERVED", acknowledged.stdout)
-        restarted_environment = self.environment("restarted-session")
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 0, acknowledged.stderr)
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
-        self.assertEqual(json.loads(audit.stdout)["status"], "PASS")
-        receipt = next(
+
+    def receipt(self) -> Path:
+        return next(
             (self.root / "machine/workspaces").glob(
                 "*/workflow/skill-rollout.json"
             )
         )
-        receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
-        self.assertNotIn("schemaVersion", receipt_value)
-        receipt_value["schemaVersion"] = 3
-        receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-receipt-fields-invalid", audit.stdout)
-        receipt_value.pop("schemaVersion")
-        receipt_value["branch"] = "other-branch"
-        receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-branch-mismatch", audit.stdout)
-        receipt_value["branch"] = "main"
-        receipt_value.pop("installedAt")
-        receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-restart-evidence-invalid", audit.stdout)
 
-    def test_install_rejects_every_live_worktree_declaration(self) -> None:
+    def test_install_is_out_of_band_and_requires_no_session_ack(self) -> None:
+        legacy = self.root / ".agents/skills/pt-trae-goal-orchestrator"
+        legacy.mkdir(parents=True)
+        (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
         machine = self.root / "machine"
         machine.mkdir()
         workspace_id = hashlib.sha256(
             str(self.root.resolve()).encode()
         ).hexdigest()[:16]
-        for state in ("DECLARED", "ACTIVE", "RELEASING"):
-            with self.subTest(state=state):
-                (machine / "work.json").write_text(
-                    json.dumps(
-                        {
-                            "declarations": {
-                                "active": {
-                                    "workspaceId": workspace_id,
-                                    "state": state,
-                                    "workItemId": "WORK-01",
-                                    "heartbeatAt": "2026-09-19T00:00:00.000Z",
-                                }
-                            }
-                        }
-                    ),
-                    encoding="utf-8",
-                )
-                completed = subprocess.run(
-                    ["make", "skills", "IDE=codex"],
-                    cwd=self.root,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    env=self.environment("installing-session"),
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("ACTIVE_ACTION_IN_FLIGHT", completed.stdout)
-                self.assertFalse(
-                    (self.root / ".agents/skills/pt-goal-orchestrator").exists()
-                )
-
-    def test_ack_rejects_a_versioned_rollout_receipt(self) -> None:
-        installed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
-        self.assertEqual(installed.returncode, 0, installed.stderr)
-        receipt = next(
-            (self.root / "machine/workspaces").glob(
-                "*/workflow/skill-rollout.json"
-            )
-        )
-        value = json.loads(receipt.read_text(encoding="utf-8"))
-        value["schemaVersion"] = 3
-        receipt.write_text(json.dumps(value), encoding="utf-8")
-
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("restarted-session"),
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2)
-        self.assertIn("ROLLOUT_ACK_MISMATCH", acknowledged.stdout)
-
-    def test_install_rejects_a_schema_invalid_work_ledger(self) -> None:
-        machine = self.root / "machine"
-        machine.mkdir()
         (machine / "work.json").write_text(
-            '{"notDeclarations":{}}\n',
+            json.dumps(
+                {
+                    "declarations": {
+                        "active": {
+                            "workspaceId": workspace_id,
+                            "state": "ACTIVE",
+                            "workItemId": "WORK-01",
+                        }
+                    }
+                }
+            ),
             encoding="utf-8",
         )
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
+
+        completed = self.install()
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn('"status": "INSTALLED"', completed.stdout)
+        self.assertFalse(legacy.exists())
+        self.assertEqual(
+            len(
+                list(
+                    (self.root / ".agents/retired-project-skills").glob(
+                        "pt-trae-goal-orchestrator.*"
+                    )
+                )
+            ),
+            1,
         )
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("MACHINE_WORK_LEDGER_INVALID", completed.stdout)
-        self.assertFalse(
-            (self.root / ".agents/skills/pt-goal-orchestrator").exists()
+        for name in REQUIRED_SKILLS:
+            self.assertTrue((self.root / ".agents/skills" / name).is_symlink())
+
+        receipt = json.loads(self.receipt().read_text(encoding="utf-8"))
+        self.assertEqual(set(receipt), RECEIPT_KEYS)
+        self.assertEqual(receipt["state"], "INSTALLED")
+        (machine / "work.json").unlink()
+        audit = self.audit()
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+        self.assertEqual(json.loads(audit.stdout)["status"], "PASS")
+
+    def test_receipt_shape_identity_state_and_timestamp_fail_closed(self) -> None:
+        self.assertEqual(self.install().returncode, 0)
+        receipt_path = self.receipt()
+        original = json.loads(receipt_path.read_text(encoding="utf-8"))
+        mutations = (
+            (
+                "extra-field",
+                {**original, "schemaVersion": 1},
+                "receipt-fields-invalid",
+            ),
+            ("wrong-state", {**original, "state": "PENDING"}, "state-mismatch"),
+            ("wrong-branch", {**original, "branch": "other"}, "branch-mismatch"),
+            (
+                "bad-installed-at",
+                {**original, "installedAt": "not-a-time"},
+                "installed-at-invalid",
+            ),
         )
+        for name, value, expected in mutations:
+            with self.subTest(name=name):
+                receipt_path.write_text(json.dumps(value), encoding="utf-8")
+                audit = self.audit()
+                self.assertEqual(audit.returncode, 2)
+                self.assertIn(f"rollout-{expected}", audit.stdout)
 
     def test_install_and_audit_reject_projection_escape_or_wrong_target(self) -> None:
         external = self.root / "external"
         external.mkdir()
         (self.root / ".agents").symlink_to(external, target_is_directory=True)
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
+        completed = self.install()
         self.assertEqual(completed.returncode, 2)
         self.assertIn("HOST_PROJECTION_ESCAPE", completed.stdout)
         (self.root / ".agents").unlink()
@@ -514,47 +262,16 @@ export function readLedger(file) {
             retired_external,
             target_is_directory=True,
         )
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
+        completed = self.install()
         self.assertEqual(completed.returncode, 2)
         self.assertIn("HOST_PROJECTION_ESCAPE", completed.stdout)
         shutil.rmtree(self.root / ".agents")
 
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.install().returncode, 0)
         projected = self.root / ".agents/skills/pt-goal-orchestrator"
         projected.unlink()
         projected.symlink_to(self.root / "tooling/skills/pt-codex-host-adapter")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("restarted-session"),
-            check=False,
-        )
+        audit = self.audit()
         self.assertEqual(audit.returncode, 2)
         self.assertIn("wrong-project-skill-target", audit.stdout)
 
@@ -565,215 +282,42 @@ export function readLedger(file) {
         external.mkdir()
         (external / "SKILL.md").write_text("external\n", encoding="utf-8")
         source.symlink_to(external, target_is_directory=True)
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
+
+        completed = self.install()
+
         self.assertEqual(completed.returncode, 2)
         self.assertIn("CANONICAL_SKILL_SOURCE_INVALID", completed.stdout)
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+        audit = self.audit(host=None)
         self.assertEqual(audit.returncode, 2)
         self.assertIn("canonical-source-symlink", audit.stdout)
-
-    def test_install_never_reclaims_an_unowned_work_lock(self) -> None:
-        machine = self.root / "machine"
-        machine.mkdir()
-        lock = machine / "work.lock"
-        lock.write_text(
-            json.dumps(
-                {
-                    "pid": 999999,
-                    "processStart": "stale",
-                    "createdAt": "2026-09-19T00:00:00.000Z",
-                }
-            ),
-            encoding="utf-8",
-        )
-        environment = self.environment("installing-session")
-        environment["PT_SKILL_ROLLOUT_LOCK_TIMEOUT_SECONDS"] = "0.05"
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=environment,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("MACHINE_WORK_LEDGER_LOCKED", completed.stdout)
-        self.assertTrue(lock.is_file())
-
-    def test_install_waits_while_ledger_stale_recovery_is_claimed(self) -> None:
-        machine = self.root / "machine"
-        machine.mkdir()
-        lock = machine / "work.lock"
-        lock.write_text(
-            json.dumps(
-                {
-                    "pid": 999999,
-                    "processStart": "stale",
-                    "createdAt": "2026-09-19T00:00:00.000Z",
-                }
-            ),
-            encoding="utf-8",
-        )
-        process_start = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(os.getpid())],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        lock_stat = lock.stat()
-        Path(f"{lock}.recovery").write_text(
-            json.dumps(
-                {
-                    "pid": os.getpid(),
-                    "processStart": process_start,
-                    "createdAt": "2026-09-19T00:00:00.000Z",
-                    "lockDev": lock_stat.st_dev,
-                    "lockIno": lock_stat.st_ino,
-                }
-            ),
-            encoding="utf-8",
-        )
-        environment = self.environment("installing-session")
-        environment["PT_SKILL_ROLLOUT_LOCK_TIMEOUT_SECONDS"] = "0.05"
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=environment,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("MACHINE_WORK_LEDGER_LOCKED", completed.stdout)
-        self.assertTrue(lock.is_file())
-
-    def test_install_reclaims_an_orphaned_recovery_claim(self) -> None:
-        machine = self.root / "machine"
-        machine.mkdir()
-        recovery = machine / "work.lock.recovery"
-        recovery.write_text(
-            json.dumps(
-                {
-                    "pid": 999999,
-                    "processStart": "stale",
-                    "createdAt": "2026-09-19T00:00:00.000Z",
-                    "lockDev": 0,
-                    "lockIno": 0,
-                }
-            ),
-            encoding="utf-8",
-        )
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=self.environment("installing-session"),
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertFalse(recovery.exists())
 
     def test_audit_binds_recursive_dirty_skill_catalog(self) -> None:
         nested = self.root / "tooling/skills/pt-goal-orchestrator/references"
         nested.mkdir()
         content = nested / "contract.md"
-        content.write_text("version one\n", encoding="utf-8")
-        installing = self.environment("installing-session")
-        completed = subprocess.run(
-            ["make", "skills", "IDE=codex"],
-            cwd=self.root,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            env=installing,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        content.write_text("version two\n", encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("restarted-session"),
-            check=False,
-        )
+        content.write_text("initial\n", encoding="utf-8")
+        self.assertEqual(self.install().returncode, 0)
+        content.write_text("changed\n", encoding="utf-8")
+
+        audit = self.audit()
+
         self.assertEqual(audit.returncode, 2)
         findings = json.loads(audit.stdout)["rolloutReceipt"]["findings"]
         self.assertIn("rollout-catalogDigest-mismatch", findings)
         self.assertNotIn("rollout-catalogStatusDigest-mismatch", findings)
 
-    def test_audit_propagates_registry_parse_failure(self) -> None:
+    def test_audit_propagates_registry_failures(self) -> None:
         registry = self.root / "tooling/acceptance/registry.yaml"
         registry.write_text("not-json\n", encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+        audit = self.audit(host=None)
         self.assertEqual(audit.returncode, 2)
         self.assertEqual(
             json.loads(audit.stdout)["acceptanceRegistry"]["error"],
             "registry-not-json",
         )
 
-    def test_audit_fails_closed_when_registry_or_canonical_matchers_are_missing(
-        self,
-    ) -> None:
-        registry = self.root / "tooling/acceptance/registry.yaml"
         registry.unlink()
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+        audit = self.audit(host=None)
         self.assertEqual(audit.returncode, 2)
         self.assertEqual(
             json.loads(audit.stdout)["acceptanceRegistry"]["error"],
@@ -781,146 +325,25 @@ export function readLedger(file) {
         )
 
         registry.write_text('{"version":1,"rules":[]}\n', encoding="utf-8")
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+        audit = self.audit(host=None)
         self.assertEqual(audit.returncode, 2)
         self.assertEqual(
             json.loads(audit.stdout)["acceptanceRegistry"][
                 "missingCanonicalMatchers"
             ],
-            [
-                "pt-goal-orchestrator",
-                "pt-trae-host-adapter",
-                "pt-cursor-host-adapter",
-                "pt-codex-host-adapter",
-            ],
+            list(REQUIRED_SKILLS),
         )
 
         registry.write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "rules": [
-                        {
-                            "id": "forged-canonical-text",
-                            "when": {"paths": ["docs/**"]},
-                            "notes": list(
-                                (
-                                    "pt-goal-orchestrator",
-                                    "pt-trae-host-adapter",
-                                    "pt-cursor-host-adapter",
-                                    "pt-codex-host-adapter",
-                                )
-                            ),
-                            "require": [],
-                        }
-                    ],
-                }
-            )
-            + "\n",
+            json.dumps({"version": 999, "rules": []}) + "\n",
             encoding="utf-8",
         )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertEqual(
-            len(
-                json.loads(audit.stdout)["acceptanceRegistry"][
-                    "missingCanonicalMatchers"
-                ]
-            ),
-            4,
-        )
-
-    def test_audit_rejects_spoofed_registry_schema_and_matchers(self) -> None:
-        registry = self.root / "tooling/acceptance/registry.yaml"
-        registry.write_text(
-            json.dumps(
-                {
-                    "version": 999,
-                    "rules": [
-                        {
-                            "id": "spoofed",
-                            "when": {
-                                "paths": [
-                                    f"archive/{name}-not-live"
-                                    for name in (
-                                        "pt-goal-orchestrator",
-                                        "pt-trae-host-adapter",
-                                        "pt-cursor-host-adapter",
-                                        "pt-codex-host-adapter",
-                                    )
-                                ]
-                            },
-                            "require": [],
-                        }
-                    ],
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+        audit = self.audit(host=None)
         self.assertEqual(audit.returncode, 2)
         self.assertEqual(
             json.loads(audit.stdout)["acceptanceRegistry"]["error"],
             "registry-schema-invalid",
         )
-
-    def test_audit_rejects_canonical_source_ancestor_symlink_escape(self) -> None:
-        external = self.root / "external-tooling"
-        shutil.copytree(self.root / "tooling", external)
-        shutil.rmtree(self.root / "tooling")
-        (self.root / "tooling").symlink_to(external, target_is_directory=True)
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2)
-        self.assertIn("canonical-source-symlink", audit.stdout)
 
     def test_audit_uses_canonical_plan_binding_validation(self) -> None:
         machine = self.root / "machine"
@@ -945,23 +368,13 @@ export function readLedger(file) {
             ),
             encoding="utf-8",
         )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
-        )
+
+        audit = self.audit(host=None)
+
         self.assertEqual(audit.returncode, 2)
         self.assertIn("binding-canonical-invalid", audit.stdout)
 
-    def test_legacy_scan_ignores_foreign_plans_but_checks_bound_plan(self) -> None:
+    def test_legacy_scan_ignores_foreign_plans_but_checks_explicit_paths(self) -> None:
         module = load_rollout_audit()
         foreign = (
             self.root
@@ -1076,65 +489,25 @@ export function readLedger(file) {
             "planPath": None,
             "taskId": None,
         }
-        valid_declaration = {
-            **declaration,
-            "workItemId": "WORK-02",
-            "heartbeatAt": "2026-09-19T01:00:00.000Z",
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "taskId": "TASK-01",
-        }
-        (machine / "work.json").write_text(
-            json.dumps(
-                {
-                    "declarations": {
-                        "older-invalid": declaration,
-                        "newer-valid": valid_declaration,
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
         (local_dev / "dev-work.mjs").write_text(
             "console.log("
-            + json.dumps(
-                json.dumps(
-                    {
-                        "declarations": [
-                            declaration,
-                            valid_declaration,
-                        ]
-                    }
-                )
-            )
+            + json.dumps(json.dumps({"declarations": [declaration]}))
             + ");\n",
             encoding="utf-8",
         )
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=self.environment("audit-session"),
-            check=False,
+        (machine / "work.json").write_text(
+            json.dumps({"declarations": {"invalid": declaration}}),
+            encoding="utf-8",
         )
+
+        audit = self.audit(host=None)
+
         self.assertEqual(audit.returncode, 2)
         findings = json.loads(audit.stdout)["workflowIdentity"][
             "identityFindings"
         ]
         self.assertIn("declaration-plan-locator-missing", findings)
         self.assertIn("declaration-current-task-mismatch", findings)
-        self.assertEqual(
-            json.loads(audit.stdout)["workflowIdentity"][
-                "activeDeclaration"
-            ]["workItemId"],
-            "WORK-02",
-        )
 
     def test_blocked_plan_accepts_its_blocked_task_locator(self) -> None:
         module = load_rollout_audit()

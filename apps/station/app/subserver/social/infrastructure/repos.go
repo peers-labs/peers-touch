@@ -11,14 +11,12 @@ import (
 // individual repos through every constructor) avoids fragile
 // constructor-argument churn when a new repo is added later.
 type Repos struct {
-	PublicPosts   domain.PublicPostRepository
-	PrivatePosts  domain.PrivatePostRepository
-	Deliveries    domain.MomentDeliveryRepository
-	AudienceGrant domain.AudienceGrantRepository
-	Comments      domain.CommentRepository
-	Reactions     domain.ReactionRepository
-	Circles       domain.CircleRepository
-	Stats         domain.MomentsStatsRepository
+	PublicPosts domain.PublicPostRepository
+	Deliveries  domain.MomentDeliveryRepository
+	Comments    domain.CommentRepository
+	Reactions   domain.ReactionRepository
+	Circles     domain.CircleRepository
+	Stats       domain.MomentsStatsRepository
 
 	// Follows is the broader follow-graph repo used by RelationshipService.
 	// The narrower `domain.FollowRepository` interface is satisfied by
@@ -33,19 +31,16 @@ type Repos struct {
 // supplied database. Actor identity translation stays inside this layer.
 func NewRepos(gdb *gorm.DB) *Repos {
 	identity := NewActorIdentity(gdb)
-	grants := NewAudienceGrantRepository(gdb)
 	return &Repos{
-		PublicPosts:   NewPublicPostRepository(gdb),
-		PrivatePosts:  NewPrivatePostRepository(gdb, grants),
-		Deliveries:    NewMomentDeliveryRepository(gdb),
-		AudienceGrant: grants,
-		Comments:      NewCommentRepository(gdb),
-		Reactions:     NewReactionRepository(gdb),
-		Circles:       NewCircleRepository(gdb),
-		Stats:         NewMomentsStatsRepository(gdb, identity),
-		Follows:       NewFollowRepository(gdb),
-		Blocks:        NewBlockGraphRepository(gdb),
-		Moderation:    NewStationModerationRepository(gdb),
-		Identity:      identity,
+		PublicPosts: NewPublicPostRepository(gdb),
+		Deliveries:  NewMomentDeliveryRepository(gdb),
+		Comments:    NewCommentRepository(gdb),
+		Reactions:   NewReactionRepository(gdb),
+		Circles:     NewCircleRepository(gdb),
+		Stats:       NewMomentsStatsRepository(gdb, identity),
+		Follows:     NewFollowRepository(gdb),
+		Blocks:      NewBlockGraphRepository(gdb),
+		Moderation:  NewStationModerationRepository(gdb),
+		Identity:    identity,
 	}
 }

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-25
-covered_docs_hash: 04baf18f24b67a5ab6dbb6f6170711ea58bd702695fcc7542d88f378b4f63024
+last_verified_at: 2026-09-21
+covered_docs_hash: 2f4c3d8154185f700706127324763f35801b5d23511937bfaa2ed2478e68ecee
 
 covered_docs:
   - AGENTS.md
@@ -11,7 +11,13 @@ covered_docs:
   - docs/global/code-review-framework.md
   - docs/architecture/quality-framework
   - docs/architecture/acceptance-framework
-  - docs/architecture/development-workflow
+  - docs/architecture/development-workflow/README.md
+  - docs/architecture/development-workflow/design.md
+  - docs/architecture/development-workflow/data-model.md
+  - docs/architecture/development-workflow/decisions.md
+  - docs/architecture/development-workflow/integration.md
+  - docs/architecture/development-workflow/module-layout.md
+  - docs/architecture/development-workflow/host-neutral-skill-rollout.md
   - docs/architecture/local-dev-control-plane
   - docs/global/local-dev-environment.md
   - docs/global/architecture.md
@@ -289,14 +295,14 @@ Python, PR-input and Development declaration regressions cover the contract, so
 no new golden review fixture is required.
 
 DWF-D19 removes advancing `expectedHead` from tracked Plan Packages. Review
-must reject workflow version labels and any attempt to move current source
-identity back into `plan.md`; declarations, Sessions and workspace active-work
-retain their separate source-identity duties. The review Skill now states this
-hard cut, and the Plan, migration, Session and dashboard regressions provide
-executable coverage without a new golden fixture. A declaration may retain
-only its exact blocked/done Task locator while the corresponding Plan is
-blocked/completed so cleanup and delivery can finish; this terminal allowance
-must not select a new Task or reopen execution.
+must reject workflow version labels and any attempt to move current source identity
+back into `plan.md`; declarations, Sessions and `active_work` retain their
+separate source-identity duties. The review Skill now states this hard cut, and
+the Plan, migration, Session and dashboard regressions provide executable
+coverage without a new golden fixture. A declaration may retain only its exact
+blocked/done Task locator while the corresponding Plan is blocked/completed so
+cleanup and delivery can finish; this terminal allowance must not select a new
+Task or reopen execution.
 
 ## 2026-09-19 Review
 
@@ -309,9 +315,9 @@ DWF-D21 makes host-neutral ownership, complete current-closure Development
 evidence, bounded host cleanup quarantine, and worktree-scoped Skill rollout
 review requirements. Review rejects caller-authored functional PASS files,
 partial Gate promotion, direct Runtime-Handoff-to-adapter invocation,
-repository-native fallback inside an adapter, live-session Skill replacement,
-escaped Skill projections, and rollout receipts not bound to a distinct host
-session.
+repository-native fallback inside an adapter, escaped Skill projections, and
+catalog receipts that do not match the selected worktree, host, source, or
+recursive catalog.
 
 DWF-D22 separates the distributed implementation from consuming-worktree
 runtime state. Review rejects any source or projection that turns
@@ -337,6 +343,30 @@ continuous-Plan invariant, and `review/skill-check.sh` own direct enforcement;
 no new generic review fixture or `pt-github-review/SKILL.md` behavior is
 required.
 
+## 2026-09-20 Review
+
+DWF-D24 adds one read-only workflow continuation decision and hard-cuts Skill
+distribution away from business execution. Review must reject Skills or docs
+that recompute `CONTINUE | HARD_BLOCK | COMPLETE`, turn `CONTINUE` into a user
+handoff, or let catalog installation mutate Plan, Task, Session, declaration,
+active-work, or progress state. Rollout has one strict `INSTALLED` observation
+receipt and no process-session identifier, restart gate, or acknowledgement
+path. Snapshot and rollout unit tests plus `skill-check.sh` own deterministic
+coverage; no generic review fixture or additional review-Skill rule is needed.
+
+The development-standard cut makes `docs/global/workflow.md` the sole
+human-facing procedure and keeps architecture documents plus Skills
+owner-specific. Review must reject a second end-to-end workflow, divergent
+small/standard/large paths, or a Skill that recomputes machine continuation.
+The new single-source knowledge invariant and `skill-check.sh` cover this
+contract; no new golden fixture is required.
+
+Freshness now hashes only stable Development Workflow architecture contracts.
+Mutable execution-plan manifests and Task snapshots are execution state, not
+upstream review rules; including them made every valid `planctl` transition
+invalidate the Review Skill. No `pt-github-review/SKILL.md` behavior change is
+required.
+
 The progress projection refinement makes `planctl` the sole calculator of the
 post-Next completed count and percentage. Review now rejects Anchor or
 dashboard consumers that add rounded percentages locally or count unlocked
@@ -345,13 +375,12 @@ pending Tasks as completed. `pt-github-review/SKILL.md`,
 canonical Skill marker check cover the behavior; no generic review fixture is
 required.
 
-The Context Anchor timing refinement keeps timing as a transient projection of
-the bounded current Session journal and the current `planctl advance` result.
-Review now rejects persistent metrics stores, active-work expansion,
-historical Session scans, and estimated token usage.
-`pt-github-review/SKILL.md` was updated; the Session, PlanCTL, Snapshot, and
-canonical Skill checks provide deterministic coverage without a new golden
-fixture.
+DWF-D25 keeps Context Anchor timing as a transient projection of the bounded
+current Session journal and the current `planctl advance` result. Review now
+rejects persistent metrics stores, active-work expansion, historical Session
+scans, and estimated token usage. `pt-github-review/SKILL.md` was updated; the
+Session, PlanCTL, Snapshot, and canonical Skill checks provide deterministic
+coverage without a new golden fixture.
 
 ## 2026-09-21 Review
 
@@ -362,6 +391,7 @@ successor activation happen before host cleanup follow-up. This tightens the
 existing DWF-D20/DWF-D21 review boundary without changing review severity or
 requiring a new fixture. `review/skill-check.sh` rejects direct host-debugger
 coupling in the parent workflow owners and pins the transient return contract.
+
 
 LDCP-D15 hard-cuts Profile reset policy to one source: the verified canonical
 Profile ID. Review rejects stored control-mode metadata and compatibility
@@ -375,31 +405,18 @@ machine-control-plane tests, Peers Dev projection tests, and
 `review/skill-check.sh` provide deterministic coverage. No new generic review
 fixture is required.
 
-DWF-D25 separates user interaction policy from canonical project Skills.
+Context Anchor now exposes current Task timing and evidence only through the
+Task-identified `currentObservation`, while the transient recent observation
+remains the one Task closed by the current `planctl advance`. Review must reject
+renderers that collapse current and recent cost, describe recent as a Plan-wide
+aggregate, or use `UNKNOWN` for explicit absence. Snapshot tests and
+`review/skill-check.sh` enforce the hard cut; no compatibility projection or
+new fixture is required.
+
+DWF-D27 separates user interaction policy from canonical project Skills.
 Review must reject personal behavior embedded in `pt-ew`, mutable-source
 Overlay loading, symlinked packages, modified installed copies, user Overlay
 projection through `make skills`, or Overlay instructions that change project
 execution semantics. The dedicated control-plane tests and
 `user-skill-overlays-are-interaction-only` invariant provide deterministic
 coverage; no generic review fixture is required.
-
-## 2026-09-22 Review
-
-The integrated DWF-D24/DWF-D25 sources add owner-controlled source invalidation
-and immutable machine-local interaction overlays. The existing review Skill
-already rejects stale installed copies, mutable overlay loading, and durable
-workflow state outside the consuming Worktree, so no additional fixture is
-required.
-
-The Desktop runtime source now separates Social identity freshness from the
-session-scoped Messaging owner and binds native invalidations to canonical
-Proto. Existing Desktop, Proto, runtime-projection, and generated-output review
-criteria cover this ownership change without a new review workflow.
-
-## 2026-09-25 Review
-
-Acceptance data-model, module-layout, Development Workflow, Desktop runtime
-projection, and knowledge lifecycle updates tighten existing source ownership,
-exact-source evidence, and host-neutral workflow rules. The current review
-Skill already enforces those boundaries, so no Skill behavior or fixture change
-is required.

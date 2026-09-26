@@ -1,8 +1,8 @@
 # Chat Lifecycle - Design Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-22
+> **Version**: v1.4
+> **Created**: 2026-09-16 | **Updated**: 2026-09-26
 > **Owner**: Chat Product Team
 
 ---
@@ -20,6 +20,7 @@
 | CHAT-D07 | Product safety and evidence integrity precede feature proof | accepted |
 | CHAT-D08 | Old NDR and Messaging execution plans are historical only | accepted |
 | CHAT-D09 | Group live calls are required and need a separate SFU design | accepted |
+| CHAT-D10 | Presence measures authenticated reachability, not window focus | accepted |
 | CCU-D01 | Desktop extracts dedicated `messagingRuntime` from `socialRealtime` | accepted |
 | CCU-D02 | Proto owns cross-process contracts, Messaging Core owns local contracts | accepted |
 | CCU-D03 | Per-capability atomic hard-cut, no deferred deletion phase | accepted |
@@ -463,3 +464,52 @@ expiry and winner media failure.
 Only measured latency or availability evidence from the required runtime cells
 may justify a reviewed replacement that preserves one atomic owner and the
 privacy boundary.
+
+## CHAT-D10: Presence Measures Authenticated Reachability
+
+**Status**: accepted
+**Date**: 2026-09-20
+
+### Context
+
+Desktop currently maps window blur/background directly to offline and renews a
+90-second Station lease only every five minutes. A two-window conversation can
+therefore mark whichever peer loses focus offline, and a continuously active
+client expires between heartbeats. Cross-Station queries also read only the
+local Station lease table, turning missing remote authority into false offline.
+
+### Decision
+
+Presence means that at least one authenticated runtime for the actor holds a
+live Home Station lease. Window focus and visibility are not presence state.
+The client renews the lease well inside its TTL; logout, process shutdown,
+confirmed network loss, revocation, or lease expiry are the only offline
+transitions.
+
+The actor's Home Station remains the sole Presence authority. A client queries
+only its own Station. That Station resolves each actor's verified Home Station
+through Actor Identity and uses the authenticated Federation peer-call
+transport for remote snapshots. Unresolved routing, timeout, invalid
+authentication, and omitted results project as unknown, never offline.
+Same-Station `PresenceFlip` events remain immediate. Remote presence is
+reconciled after realtime reconnect, inbound activity, relationship changes,
+and the bounded social-runtime interval.
+
+Client projection applies event-over-snapshot ordering fences so a late
+snapshot cannot overwrite a newer realtime transition.
+
+### Rejected
+
+- Treating window blur, minimization, or a hidden Chat page as offline.
+- Extending Station lease TTL to mask an under-frequency heartbeat.
+- Letting Desktop call a foreign Station directly.
+- Treating a missing remote lease or failed route as authoritative offline.
+- Creating a chat-owned or UI-owned presence source.
+
+### Consequences
+
+- Background Desktop processes remain online while their authenticated runtime
+  can renew the lease.
+- Cross-Station presence is bounded eventual state with immediate refresh on
+  active conversation traffic and reconnect.
+- Presence remains tri-state at client boundaries: online, offline, or unknown.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import subprocess
 import urllib.error
 import urllib.request
@@ -47,6 +48,12 @@ def resolve_machine_profile_environment(
     require_identity_match: bool = True,
 ) -> tuple[str, Path, int, dict[str, str]]:
     root = (repo_root or REPO_ROOT).resolve()
+    configured_env_repo = os.environ.get("PT_ENV_REPO", "").strip()
+    env_repo = (
+        Path(configured_env_repo).expanduser().resolve()
+        if configured_env_repo
+        else root.parent / "env"
+    )
     machine_dev = (
         root
         / "tooling"
@@ -63,7 +70,7 @@ def resolve_machine_profile_environment(
                 "--workspace-root",
                 str(root),
                 "--env-repo",
-                str(root.parent / "env"),
+                str(env_repo),
             ],
             cwd=root,
             capture_output=True,

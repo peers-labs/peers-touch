@@ -20,9 +20,17 @@
     "apps/station/frame/core/federation",
     "apps/station/frame/core/plugin/server/hertz",
     "apps/station/frame/core/server",
+    "apps/station/frame/touch/accessgate",
     "apps/station/frame/touch/actor",
+    "apps/station/frame/touch/actor_handler.go",
+    "apps/station/frame/touch/model/constants.go",
+    "apps/station/frame/touch/router.go",
+    "apps/station/frame/touch/router_content_negotiation_test.go",
     "apps/desktop",
     "tooling/acceptance",
+    "tooling/scripts/local-dev/env.sh",
+    "tooling/scripts/local-dev/machine-dev.mjs",
+    "tooling/scripts/local-dev/machine-dev.test.mjs",
     "packages/locales"
   ],
   "readSet": [

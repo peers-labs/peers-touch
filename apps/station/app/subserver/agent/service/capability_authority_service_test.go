@@ -7,6 +7,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestAgentCapabilityBindingUsesAgentAndBindingCAS(t *testing.T) {
 	staleBinding := capabilityAuthorityBindingRequest(created.GetBindingId(), 9, 4, "update-stale")
 	if _, err := service.UpsertBinding(
 		ctx, "ptid:person:owner", staleBinding,
-	); !isCapabilityError(err, errcode.AgentVersionConflict) {
+	); !isCapabilityError(err, errcode.AgentCapabilityBindingVersionConflict) {
 		t.Fatalf("expected binding revision conflict, got %v", err)
 	}
 
@@ -351,7 +352,6 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		&persistence.AgentKnowledgeBinding{},
 		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
-		&persistence.EcosystemCustomPlugin{},
 	); err != nil {
 		t.Fatalf("migrate backfill sources: %v", err)
 	}
@@ -445,12 +445,7 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 	}).Error; err != nil {
 		t.Fatalf("seed client capability lease: %v", err)
 	}
-	if err := service.db.Create(&persistence.EcosystemCustomPlugin{
-		ID: "plugin-1", Name: "Rejected", Endpoint: "https://example.invalid",
-		OwnerActorPTID: "ptid:person:owner", Enabled: true,
-	}).Error; err != nil {
-		t.Fatalf("seed rejected plugin: %v", err)
-	}
+	seedRetiredExtensionEndpoint(t, service.db)
 
 	registry := NewToolRegistryService(nil, nil)
 	RegisterSessionSearchTool(registry, NewSessionSearchService())
@@ -509,7 +504,18 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 	if bindingCount != 5 {
 		t.Fatalf("expected five deduplicated bindings, got %d", bindingCount)
 	}
-	assertCapabilityBackfillRejection(t, first, "custom_http_plugin", "source_kind_not_accepted")
+	assertCapabilityBackfillRejection(
+		t, first, "retired_extension_endpoint", "source_kind_not_accepted",
+	)
+	for _, rejection := range first.Rejections {
+		if rejection.Source != "retired_extension_endpoint" {
+			continue
+		}
+		parts := strings.Split(rejection.SourceID, ":")
+		if len(parts) != 2 || len(parts[0]) != 64 || len(parts[1]) != 64 {
+			t.Fatalf("retired extension audit identity is not hashed: %+v", rejection)
+		}
+	}
 	assertCapabilityBackfillRejection(t, first, "agent_config", "unknown_tool")
 	assertCapabilityBackfillRejection(
 		t, first, "knowledge_resource", "mutable_url_not_migratable",
@@ -518,14 +524,14 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		t, first, "knowledge_resource", "client_local_resource_not_migratable",
 	)
 
-	var pluginManifestCount int64
+	var retiredManifestCount int64
 	if err := service.db.Model(&persistence.CapabilityManifest{}).
-		Where("source_instance_id = ?", "plugin-1").
-		Count(&pluginManifestCount).Error; err != nil {
-		t.Fatalf("count plugin manifests: %v", err)
+		Where("source_instance_id = ?", "extension-1").
+		Count(&retiredManifestCount).Error; err != nil {
+		t.Fatalf("count retired extension manifests: %v", err)
 	}
-	if pluginManifestCount != 0 {
-		t.Fatalf("custom HTTP plugin was imported as a manifest")
+	if retiredManifestCount != 0 {
+		t.Fatal("retired extension endpoint was imported as a manifest")
 	}
 	var descriptor persistence.KnowledgeResourceRevision
 	if err := service.db.Where(
@@ -597,9 +603,10 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 	if err != nil {
 		t.Fatalf("encode backfill report: %v", err)
 	}
-	if bytes.Contains(reportPayload, []byte("example.invalid")) ||
+	if bytes.Contains(reportPayload, []byte("private.invalid")) ||
+		bytes.Contains(reportPayload, []byte("example.invalid")) ||
 		bytes.Contains(reportPayload, []byte("/Users/example/private")) {
-		t.Fatal("backfill report leaked a legacy Knowledge locator")
+		t.Fatal("backfill report leaked retired source metadata")
 	}
 }
 
@@ -611,7 +618,6 @@ func TestCapabilityBackfillKeepsKnowledgeResourcesActorScoped(t *testing.T) {
 		&persistence.AgentKnowledgeBinding{},
 		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
-		&persistence.EcosystemCustomPlugin{},
 	); err != nil {
 		t.Fatalf("migrate backfill sources: %v", err)
 	}
@@ -712,7 +718,6 @@ func TestCapabilityBackfillKnowledgeSurvivesDatabaseRestart(t *testing.T) {
 			&persistence.AgentKnowledgeBinding{},
 			&persistence.AgentMcpBinding{},
 			&persistence.ClientCapabilityLease{},
-			&persistence.EcosystemCustomPlugin{},
 		); err != nil {
 			t.Fatalf("migrate backfill database: %v", err)
 		}
@@ -844,7 +849,6 @@ func TestCapabilityBackfillKeepsKnownManifestAuthorityOverLegacyLeaseVersion(
 		&persistence.AgentKnowledgeBinding{},
 		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
-		&persistence.EcosystemCustomPlugin{},
 	); err != nil {
 		t.Fatalf("migrate capability backfill sources: %v", err)
 	}
@@ -916,7 +920,6 @@ func TestCapabilityBackfillKeepsPersistedConnectorManifestAuthority(
 		&persistence.AgentKnowledgeBinding{},
 		&persistence.AgentMcpBinding{},
 		&persistence.ClientCapabilityLease{},
-		&persistence.EcosystemCustomPlugin{},
 	); err != nil {
 		t.Fatalf("migrate capability backfill sources: %v", err)
 	}
@@ -2084,6 +2087,50 @@ func assertCapabilityBackfillRejection(
 		}
 	}
 	t.Fatalf("missing rejection source=%s reason=%s: %+v", source, reason, report.Rejections)
+}
+
+func seedRetiredExtensionEndpoint(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		CREATE TABLE ecosystem_custom_plugins (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			endpoint TEXT NOT NULL,
+			method TEXT,
+			auth_type TEXT,
+			input_schema TEXT,
+			output_schema TEXT,
+			enabled BOOLEAN,
+			owner_actor_ptid TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create retired extension fixture: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO ecosystem_custom_plugins (
+			id, name, description, endpoint, method, auth_type,
+			input_schema, output_schema, enabled, owner_actor_ptid,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"extension-1",
+		"Rejected",
+		"",
+		"https://private.invalid",
+		"POST",
+		"bearer",
+		`{"type":"object"}`,
+		`{"type":"object"}`,
+		true,
+		"ptid:person:owner",
+		time.Now().UTC(),
+		time.Now().UTC(),
+	).Error; err != nil {
+		t.Fatalf("seed retired extension fixture: %v", err)
+	}
 }
 
 func capabilityReadinessBindingRequest(

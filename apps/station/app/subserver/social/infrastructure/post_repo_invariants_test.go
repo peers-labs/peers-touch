@@ -13,7 +13,7 @@ import (
 // BEFORE any DB access, so the *gorm.DB handle can be nil — we only
 // care that the storage-separation invariant is enforced loudly
 // rather than silently allowing a non-PUBLIC post into the public
-// table (or vice versa). See `docs/architecture/social/moments.md §8`.
+// table. See `docs/architecture/social/moments.md §8`.
 
 func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 	repo := NewPublicPostRepository(nil)
@@ -24,8 +24,16 @@ func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 	}{
 		{"FOLLOWERS", &model.Audience{Kind: model.Audience_FOLLOWERS}},
 		{"SELF", &model.Audience{Kind: model.Audience_SELF}},
-		{"CIRCLE", &model.Audience{Kind: model.Audience_CIRCLE, TargetId: 1}},
-		{"GROUP", &model.Audience{Kind: model.Audience_GROUP, TargetId: 1}},
+		{"CIRCLE", &model.Audience{
+			Kind:   model.Audience_CIRCLE,
+			Target: &model.Audience_CircleId{CircleId: 1},
+		}},
+		{"GROUP", &model.Audience{
+			Kind: model.Audience_GROUP,
+			Target: &model.Audience_GroupConversationId{
+				GroupConversationId: "group-1",
+			},
+		}},
 		{"CUSTOM_ALLOW", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{"x"}}},
 		{
 			"CUSTOM_DENY base PUBLIC NOT public",
@@ -49,33 +57,4 @@ func TestPublicPostRepo_Create_PanicsOnNonPublic(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestPrivatePostRepo_Create_PanicsOnPublic(t *testing.T) {
-	repo := NewPrivatePostRepository(nil, nil)
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("privatePostRepo.Create with audience=PUBLIC must panic")
-		}
-	}()
-	_ = repo.Create(context.Background(), &domain.Post{
-		AuthorPTID: "ptid:test:author",
-		Audience:   &model.Audience{Kind: model.Audience_PUBLIC},
-	})
-}
-
-func TestPrivatePostRepo_Create_NilAudienceTreatedAsPublic_Panics(t *testing.T) {
-	// Nil audience is treated as PUBLIC by `IsPublic` (legacy
-	// compatibility), so handing a nil-audience Post to the private
-	// repo must also panic — otherwise the legacy path would silently
-	// land in the wrong table.
-	repo := NewPrivatePostRepository(nil, nil)
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("privatePostRepo.Create with nil audience (treated as PUBLIC) must panic")
-		}
-	}()
-	_ = repo.Create(context.Background(), &domain.Post{AuthorPTID: "ptid:test:author", Audience: nil})
 }

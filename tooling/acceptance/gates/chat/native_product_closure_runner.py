@@ -726,17 +726,21 @@ class NativeProductClosureGate(AcceptanceGate):
             control = self.native_adapter.focused_control(client.process_id or 0)
             return control if control.kind == "text-field" else None
 
-        if self.native_adapter.platform == "win32":
-            selected_control = (
-                self.native_adapter.select_file_chooser_path_to_process(
-                    client.process_id or 0,
-                    str(selected_path),
-                )
+        selected_control = (
+            self.native_adapter.select_file_chooser_path_to_process(
+                client.process_id or 0,
+                str(selected_path),
             )
-            if selected_control is None or selected_control.dialog_count:
+        )
+        if selected_control is not None:
+            if selected_control.dialog_count:
                 raise GateError(
                     "Native file chooser selection was not committed"
                 )
+        elif self.native_adapter.platform == "win32":
+            raise GateError(
+                "Native file chooser selection returned no Win32 control"
+            )
         else:
             revealed_control = (
                 self.native_adapter.reveal_file_chooser_location_to_process(

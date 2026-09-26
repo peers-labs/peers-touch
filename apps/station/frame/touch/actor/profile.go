@@ -166,7 +166,7 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 
 	response := &ProfileResponse{
 		ID:                        activityPubID,
-		Ref:                       ProtoActorRef(actor, baseURL),
+		Ref:                       ProtoActorRef(actor),
 		Username:                  actor.PreferredUsername,
 		Acct:                      actor.PreferredUsername,
 		DisplayName:               actor.Name,

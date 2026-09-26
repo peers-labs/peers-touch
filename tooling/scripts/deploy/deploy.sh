@@ -166,9 +166,10 @@ case "$cmd" in
     # ═══ Deploy ═══
 
     if [[ "${PT_SOURCE_LEASE_HELD:-0}" != "1" ]]; then
-      echo "[0/4] Synchronizing exact Git source ..."
+      echo "[0/5] Synchronizing exact Git source ..."
       exec /bin/bash "$SOURCE_SYNC_SCRIPT" \
         "$env_name" \
+        --environment-file "$ENV_FILE" \
         --branch "$BRANCH" \
         -- \
         /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
@@ -185,12 +186,19 @@ case "$cmd" in
     echo "═══════════════════════════════════════════════"
     echo ""
 
-    echo "[1/4] Verifying synchronized source ..."
+    echo "[1/5] Verifying synchronized source ..."
     ssh_run "git -C \$HOME/$PT_DEPLOY_PATH log --oneline -1"
 
-    echo "[2/4] Building ..."
+    echo "[2/5] Preparing stable dependencies ..."
+    if [[ -n "${PT_DEPLOY_DEPENDENCIES_CMD:-}" ]]; then
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_DEPENDENCIES_CMD"
+    else
+      echo "[INFO] No stable dependencies declared"
+    fi
+
+    echo "[3/5] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse --short=12 HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
     else
       case "$PT_DEPLOY_ROLE" in
         station)
@@ -205,14 +213,14 @@ case "$cmd" in
       esac
     fi
 
-    echo "[3/4] Restarting $PT_DEPLOY_ROLE ..."
+    echo "[4/5] Restarting $PT_DEPLOY_ROLE ..."
     if [[ -n "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_RESTART_CMD"
     else
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && systemctl --user restart peers-${PT_DEPLOY_ROLE}"
     fi
 
-    echo "[4/4] Health check ..."
+    echo "[5/5] Health check ..."
     sleep 2
     if [[ -n "${PT_DEPLOY_HEALTH_URL:-}" ]]; then
       if ssh_run "for i in \$(seq 1 30); do curl -fsS -m 3 $PT_DEPLOY_HEALTH_URL >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then

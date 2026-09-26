@@ -192,8 +192,10 @@ export function normalizeConversation(raw: unknown): Conversation {
     createdAt: normalizeTimestamp(r.createdAt ?? r.created_at),
     updatedAt: normalizeTimestamp(r.updatedAt ?? r.updated_at),
     name: stringValue(r.name),
+    description: stringValue(r.description),
     maxMembers: numberValue(r.maxMembers ?? r.max_members),
     avatarCid: stringValue(r.avatarCid, r.avatar_cid),
+    ownerPtid: stringValue(r.ownerPtid, r.owner_ptid),
   } as Conversation;
 }
 

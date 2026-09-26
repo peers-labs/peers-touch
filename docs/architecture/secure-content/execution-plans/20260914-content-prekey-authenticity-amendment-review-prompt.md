@@ -20,7 +20,7 @@
 - `docs/knowledge/invariants/actor-identity-boundary.md`
 - `model/domain/actor/actor.proto`
 - `model/domain/secure_content/prekey.proto`
-- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md`
+- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md`
 
 ## Verified Gap
 

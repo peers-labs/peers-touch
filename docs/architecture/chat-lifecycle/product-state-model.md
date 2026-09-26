@@ -140,6 +140,10 @@ it must not clear a row until that conversation is opened and read. A newly
 received message updates both the active transcript and the matching row's
 latest-message preview without a page remount.
 
+Conversation-list geometry is stable across unread transitions. Each row owns a
+fixed trailing status lane, so zero, single-digit, and capped multi-digit unread
+counts cannot resize the text column or row height.
+
 ## 6. Attachment And Voice Note
 
 ```text
@@ -184,6 +188,12 @@ Typing never enters durable history, delivery receipts, or recovery archives.
 A committed thread reply cannot surface a terminal failure. Its root count,
 thread panel, peer projection, and restart readback converge on the same
 message identity and order.
+
+Thread, reaction, pending-interaction, and emoji-only rendering preserve the
+current reading position. Dynamic message measurement may change the owning
+row's internal content size, but the timeline must retain either its tail pin
+or the top visible message anchor and must not move neighboring content
+uncompensated.
 
 ## 8. Group
 
@@ -280,6 +290,19 @@ active_device -> revoke_pending -> revoked
 installed -> restoring -> recovered_fresh_device
 ```
 
+Presence is a tri-state projection over Home Station lease truth:
+
+```text
+unknown -> online -> offline
+    \---------^        |
+      authoritative snapshot/realtime reconciliation
+```
+
+Window focus does not participate in this state machine. An authenticated
+Desktop runtime renews its lease while reachable; logout, shutdown, confirmed
+network loss, revocation, or lease expiry establish offline. Missing or failed
+cross-Station resolution remains unknown.
+
 Failures that cannot preserve exact private state stop at an actionable,
 fail-closed state. They never reset storage, silently create a second identity,
 or fall back to a legacy authority.
@@ -326,8 +349,12 @@ Rules:
   preview.
 - Aggregate Chat acknowledgement erasing unread attribution from unopened
   conversation rows.
+- Unread-count changes resizing or vertically shifting conversation rows.
 - Thread send shown as failed after the authority accepted it, or thread/main
   projections disagreeing on reply identity or count.
+- Thread, reaction, or emoji-only state moving the visible message anchor.
+- Window blur or hidden state marking a reachable authenticated actor offline.
+- Missing remote presence authority rendered as offline.
 - Screenshot confirmation resizing or visibly scaling the Desktop window.
 - Permanent spinner for search, relationship, queue, MLS, transfer, or call
   failure.

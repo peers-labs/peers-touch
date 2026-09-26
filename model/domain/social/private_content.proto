@@ -418,6 +418,7 @@ message SubmitPrivateCommentRequest {
   repeated .peers_touch.model.secure_content.v1.EncryptedObjectDescriptor objects = 4;
   SignedMentionRouting mention_routing = 5;
   string command_id = 6;
+  string post_id = 7;
 }
 
 message SubmitPrivateCommentResponse {

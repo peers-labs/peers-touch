@@ -36,14 +36,10 @@ func init() {
 			&Conversation{}, &ConvMember{}, &Message{},
 			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
 			// Social — Moments family (see docs/architecture/social/moments.md §6).
-			//
-			// Public / private posts physically separated via table-name
-			// prefix (D1.A) so a SQL bug in the public path can never read
-			// from the private one. CUSTOM_ALLOW/DENY actor lists, comments,
-			// reactions, and circles each get their own table.
-			&SocialPublicPost{}, &SocialPrivatePost{},
+			// Private encrypted models are migrated through the explicit
+			// SocialPrivateContentModels path.
+			&SocialPublicPost{},
 			&SocialMomentDelivery{},
-			&SocialPrivateAudienceGrant{},
 			&SocialComment{}, &SocialReaction{},
 			&SocialCircle{}, &SocialCircleMember{},
 			&SocialStationModerationPolicy{},
@@ -79,7 +75,6 @@ func migrateTouchIdentityColumns(rds *gorm.DB) error {
 
 func migrateSocialIdentityColumns(rds *gorm.DB) error {
 	return migrateStringIdentityColumns(rds, []stringIdentityColumnRename{
-		{table: "social_private_audience_grants", from: "actor_did", to: "actor_ptid"},
 		{table: "social_circle_members", from: "member_did", to: "actor_ptid"},
 		{table: "social_circle_members", from: "actor_did", to: "actor_ptid"},
 	})

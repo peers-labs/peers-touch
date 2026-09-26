@@ -49,6 +49,8 @@ func (s *ToolDispatchService) SubmitRecoveryReceipt(
 		return nil, err
 	}
 	result := &model.SubmitClientCapabilityReceiptResponse{}
+	actorPTID := ""
+	consumedCredentialID := ""
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		proof := receipt.GetRecoveryProof()
 		var credential persistence.ReceiptRecoveryCredential
@@ -59,6 +61,7 @@ func (s *ToolDispatchService) SubmitRecoveryReceipt(
 			return nil
 		}
 		now := s.now()
+		actorPTID = credential.ActorID
 		if credential.InvalidatedAt != nil || !credential.ExpiresAt.After(now) {
 			receiptDigest, err := recoveryReceiptDigest(receipt)
 			if err != nil {
@@ -193,8 +196,59 @@ func (s *ToolDispatchService) SubmitRecoveryReceipt(
 		credential.ConsumedResultID = result.GetResultId()
 		credential.ConsumedAckRef = ack
 		credential.ConsumedAt = &now
+		actorPTID = credential.ActorID
+		consumedCredentialID = credential.ID
 		return tx.Save(&credential).Error
 	})
+	if err == nil &&
+		result.GetErrorCode() ==
+			model.ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_CREDENTIAL_EXPIRED &&
+		s.matchesAcceptanceTuple(actorPTID, "ERR-O06", "single") {
+		if settleErr := s.settleAcceptanceRejectedReceipt(
+			ctx,
+			actorPTID,
+			result.GetErrorCode().String(),
+		); settleErr != nil {
+			return nil, settleErr
+		}
+	}
+	if err == nil && result.GetAccepted() && actorPTID != "" &&
+		!s.matchesAcceptanceBarrier(
+			actorPTID,
+			capabilityBarrierResultBeforeContinue,
+		) {
+		continuationID, ensureErr := s.EnsureReadyContinuationForToolCall(
+			ctx,
+			actorPTID,
+			receipt.GetToolCallId(),
+		)
+		if ensureErr != nil {
+			return nil, ensureErr
+		}
+		result.ContinuationId = continuationID
+		if consumedCredentialID != "" {
+			ack, marshalErr := proto.MarshalOptions{Deterministic: true}.Marshal(result)
+			if marshalErr != nil {
+				return nil, internalToolError(
+					"encode recovery acknowledgement",
+					marshalErr,
+				)
+			}
+			if updateErr := db.WithContext(ctx).
+				Model(&persistence.ReceiptRecoveryCredential{}).
+				Where(
+					"id = ? AND consumed_result_id = ?",
+					consumedCredentialID,
+					result.GetResultId(),
+				).
+				Update("consumed_ack_ref", ack).Error; updateErr != nil {
+				return nil, internalToolError(
+					"update recovery acknowledgement continuation",
+					updateErr,
+				)
+			}
+		}
+	}
 	return &model.SubmitClientCapabilityRecoveryReceiptResponse{Result: result}, err
 }
 

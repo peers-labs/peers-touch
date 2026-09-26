@@ -418,6 +418,8 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             federation_id: authority.federation_id,
             kind: authority.kind,
             name: authority.name,
+            description: authority.description,
+            avatar_object_id: authority.avatar_object_id,
             owner_ptid: authority.owner_ptid,
             members: authority.members,
             membership_epoch: authority.membership_epoch,

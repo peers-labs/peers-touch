@@ -6,6 +6,10 @@
 
 ---
 
+This document maps the standard to implementation owners and command contracts.
+It is not a second operating procedure; human execution follows
+`docs/global/workflow.md`.
+
 ## 1. Existing System Mapping
 
 | Existing owner/path | Current role | Target relationship |
@@ -95,14 +99,19 @@ Plan Package:
 ```bash
 make plan-bind PLAN=<package-plan.md>
 make plan-binding
+make plan-activate PLAN=<package-plan.md> TASK=<ready-id>
 make plan-validate PLAN=<package-plan.md>
 make plan-current PLAN=<package-plan.md>
 make plan-next PLAN=<package-plan.md>
 make plan-status PLAN=<package-plan.md>
 make plan-advance PLAN=<package-plan.md> TASK=<current-id> \
-  TO=done NEXT=<ready-id>
+  TO=done SESSION=<session.json> NEXT=<ready-id>
 make plan-migrate LEGACY_PLAN=<legacy.md> PACKAGE=<package-plan.md>
 ```
+
+`plan-activate` is the only prepared-to-active transition. `plan-advance`
+revalidates the matching journal-backed Session while holding the Plan lock;
+`NONE`, missing paths and `CANCELLED` cannot satisfy `done`.
 
 Development Session:
 
@@ -119,6 +128,9 @@ make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]
 make active-work-status
 make active-work-status-all
 make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
+make workflow-snapshot
+make acceptance-run-completion SESSION=<session.json>
+make acceptance-run-full SESSION=<session.json>
 ```
 
 All commands:
@@ -141,22 +153,23 @@ in `peers-dev-workflow`, but mutable records never report back to that source
 repository.
 
 `dev-functional-result` is the single run-and-commit path for deterministic
-Development proof. It derives the current closure from the bound Plan and
-starts the Acceptance runner itself; callers cannot select one Gate or provide
-a result file, and it starts only from `FUNCTIONAL_RUNNING`. When the workspace
-runtime contains `acceptance-venv`, the owner invokes its exact Python
-executable; otherwise it uses the machine `python3`. The Acceptance runner then
-binds portable Python Gate argv to that same executable, so an isolated child
-cannot drift back to another `PATH` interpreter. Under the Session lock the
-owner validates the aggregate canonical run manifest, the exact required Gate
-set, all class-required child source/runtime/cleanup artifacts, current Git
-identity and the Task/Journey binding. Runtime-backed classes require the
-existing checkpoint and runtime binding; `source-only` rejects runtime identity.
-The owner then publishes a create-once, fsynced, content-addressed evidence
-bundle before the Session journal. A pre-journal failure may leave an unreferenced
-orphan seal for later garbage collection, but no published journal may reference
-a missing seal. Missing or substituted identity returns
-`SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
+Development proof. It derives the current closure from the bound Plan. A
+non-empty formal closure starts the Development Acceptance runner; an empty
+closure runs exactly the Task Slice's declared `FUNCTIONAL_CHECK` commands.
+Callers cannot select a Gate, command, or result file. Under the Session lock it
+validates the exact Gate/check set, class-required source/runtime/cleanup
+evidence, current Git/workspace-content identity and Task/Journey binding. It
+publishes a create-once, content-addressed evidence bundle before the Session
+journal and then commits `FUNCTIONAL_PASS`.
+
+`acceptance-admission.mjs` is the shared read-only boundary for broad formal
+proof. `acceptance-run.py` invokes it before completion/full or generated-plan
+execution, and `acceptance-gap-detect.py` invokes it before reading or writing
+Evidence Store state. The Node owner validates the immutable Plan binding,
+current Task and complete Session journal. The runner requires
+`ACCEPTANCE_RUNNING`; Gap Detector requires
+`ACCEPTANCE_PASS | DELIVERY_READY`. Missing or pre-functional Session state is
+a typed admission failure and starts no Gate.
 
 User Skill Overlays:
 
@@ -187,17 +200,15 @@ state. `make skills` remains the only canonical project Skill projector.
   workspace active-work updates through their owning commands;
 - drains supporting actions until the current Progress Slice closes one Task or
   reaches a hard boundary;
-- treats one user-authorized `continue`/`execute plan` request as a Plan Run,
-  repeatedly activating dependency-ready successor Tasks and scheduling new
-  Goal Slices until the Plan is terminal or DWF-D20 hard-boundary exhaustion is
-  proven;
+- treats one user-authorized continuation as a Plan Run, repeatedly activating
+  dependency-ready successor Tasks until the Plan is terminal or DWF-D20
+  hard-boundary exhaustion is proven;
 - executes an operation already granted by the user or the accepted Plan
   directly; it asks an authorization question only for an out-of-envelope
   action or after an admitted attempt returns an actual external permission
   failure;
-- invokes agent-led methodology, quality, completion, and code review inside
-  the Run; fixes source-backed findings and reruns affected review without
-  delegating ordinary review work to the user;
+- invokes agent-led review, fixes source-backed findings, and reruns review
+  without delegating routine review to the user;
 - reports task/Journey progress, not file/Gate counts;
 - fences Acceptance before `FUNCTIONAL_PASS`;
 - releases declaration and leases on close/cancel.
@@ -226,9 +237,9 @@ state. `make skills` remains the only canonical project Skill projector.
 
 - renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- creates the immutable workspace Plan binding; after review, Dev Workflow
-  publishes the tracked declaration and derives workspace active-work from its
-  owners;
+- registers the initial
+- immutable workspace Plan binding; after review, Dev Workflow publishes the
+  tracked declaration and derives workspace active-work from its owners;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
@@ -247,21 +258,29 @@ state. `make skills` remains the only canonical project Skill projector.
 
 ### `pt-context-anchor`
 
-Reads only:
+Reads the canonical `make workflow-snapshot` projection, the compact current
+Task Slice, and referenced durable evidence when needed. It does not rejoin
+Plan, Session, declaration, Git, active-work, runtime or rollout records, and
+does not scan `archive/`, all Task bodies or conversation history. The chat
+projection preserves each field's owner and reports snapshot findings without
+repairing them.
 
-1. matching workspace active-work record;
-2. compact `plan.md`;
-3. `current_task_path`;
-4. matching `session.json`;
-5. referenced durable evidence when needed.
-
-It does not scan `archive/`, all Task bodies or conversation history. The chat
-projection labels `dev_state` as Session-owned and Task lifecycle as
-manifest-owned. Any mismatch is reported to Dev Workflow; the Anchor does not
-repair it.
+The Snapshot also supplies `CONTINUE | HARD_BLOCK | COMPLETE`. Context Anchor
+copies that decision and never turns `CONTINUE` into a confirmation prompt.
 
 The projection uses `planctl status.progress` and renders one compact
-continuation contract:
+continuation contract.
+`make workflow-snapshot WORKFLOW_SNAPSHOT_PROJECTION=anchor` suppresses the
+full owner payload and adds current Session timing derived from the bounded
+journal. This is the same Snapshot read, not an additional metrics command.
+
+When a Task closes, `planctl advance` may return a transient
+`closureObservation` in the existing command result. Dev Workflow passes that
+value directly to Context Anchor before continuing the Plan Run. It is never
+written to Plan, Task, Session, active-work, Evidence Store, or a new metrics
+file.
+
+The compact contract includes:
 
 - stable mission and execution horizon;
 - current Task closure and Session state;
@@ -273,15 +292,23 @@ continuation contract:
 - ordered Plan Run successor queue;
 - newly unlocked Tasks, execution mandate/autonomous horizon, evidence, and
   hard boundaries.
+- current Task and just-closed Task observations rendered independently; the
+  latter is at most one Task from the current `planctl advance`, never a
+  Plan-wide aggregate;
+- actual host token usage when supplied, otherwise `not-observed`.
 
-The Anchor and Peers Dev copy `completedAfter` and `percentageAfter` from
-`planctl status.progress.nextProgressBoundary`. They never add rounded
-percentages locally or count unlocked pending Tasks as completed.
+The Anchor and Peers Dev copy the snapshot's Plan progress, including
+`completedAfter` and `percentageAfter`. They never add rounded percentages
+locally or count unlocked pending Tasks as completed.
+
+Observability values are advisory. Explicit absence renders as `none`,
+`not-started`, `not-observed`, `inactive`, `blocked`, or `not-scheduled` as
+appropriate. `UNKNOWN` is reserved for incomplete or contradictory source
+data. None of these values changes Snapshot verdict, continuation, Task
+closure, or evidence strength.
 
 It does not expose an administrative command as the user-facing next action.
-During an authorized Plan Run it also does not ask for confirmation; the Anchor
-states the autonomous horizon and hard stop conditions, then execution
-continues.
+During an authorized Plan Run it does not ask for confirmation.
 
 ### `pt-goal-orchestrator`
 
@@ -291,60 +318,35 @@ continues.
   Progress Slice;
 - chooses serial/parallel/hybrid lanes and one integration order;
 - returns a successor candidate after Task closure, while Dev Workflow alone
-  activates it and continues the Plan Run;
+  activates it;
 - never rewrites manifest, Task, Session, workspace active-work, or evidence;
 - treats stale/unaddressable agent records as runtime metadata, not blockers.
 
-The schedule is complete before any host transport is selected. Parallel
-worker capability missing from the current host degrades to a safe serial or
-hybrid schedule and does not become a project blocker.
+The schedule is complete before any host transport is selected. Missing worker
+capability degrades to a safe serial or hybrid schedule.
 
 ### `pt-dev-runtime-handoff`
 
-- owns runtime selection, launch, Journey operation policy, deterministic
-  functional result interpretation, Session result commit, and cleanup;
+- owns runtime selection, launch, Journey operation, deterministic functional
+  interpretation, Session result commit, and cleanup;
 - prefers repository-native Make, Harness, WebDriver, Appium, accessibility,
   and browser drivers;
-- reports a typed missing capability and native-attempt state to Dev Workflow
-  without selecting a host or creating a request;
-- rejects a PASS report that has not reached the source-bound
-  `FUNCTIONAL_PASS` Session state as `SESSION_PROJECTION_STALE`.
+- reports a typed missing capability without selecting a host or creating a
+  request;
+- rejects PASS not committed to source-bound `FUNCTIONAL_PASS` as
+  `SESSION_PROJECTION_STALE`.
 
-Host adapters never own a Journey assertion, proof class, Session transition,
-repository-native fallback, or Task blocker. Dev Workflow alone invokes
-`pt-trae-host-adapter`, `pt-cursor-host-adapter`, or
-`pt-codex-host-adapter` after `pt-goal-orchestrator`, the sole Host Capability
-Request projector, has bound the need and Guardian has admitted it.
-`HOST_CAPABILITY_UNAVAILABLE` with a typed UI capability blocks only the
-required interaction when no repository-native path exists. The repository
-driver and adapter are each attempted at most once for one unchanged capability
-request. Dev Workflow persists `HOST_CAPABILITY_UNAVAILABLE`; only a new
-`HOST_CAPABILITY_AVAILABLE` observation with the same immutable request identity
-can unblock it. Without that observation, recomputation must select independent
-ready Tasks or park the dependent Task instead of retrying at zero progress. A
-failed cleanup enters bounded `HOST_CLEANUP_QUARANTINED`; it cannot recursively
-request cleanup or stop unrelated ready Tasks. After lease expiry one read-only
-`inspect-quarantine` observation commits either `HOST_CLEANUP_RELEASED` or
-`HOST_CLEANUP_ESCALATION_REQUIRED`. Repeated, identity-changing, and pre-expiry
-blocked updates fail closed.
+Host adapters supply optional transport only. Goal Orchestrator projects the
+request; Dev Workflow invokes the selected adapter after Guardian admission.
+Unavailable capability and cleanup quarantine are persisted with immutable
+request identity, and independent ready Tasks continue.
 
 ### Agent Review Loop
 
-Review prompts remain structured inputs, not user handoff requirements. The
-Development Run routes them through the repository's review stack:
-
-```text
-stage methodology review
-  -> pt-quality-check
-  -> pt-completion-auditor
-  -> pt-github-review
-  -> source-backed remediation
-  -> affected checks and review rerun
-```
-
-An internal pass advances the stage or Task. A finding that accepted sources
-already resolve is implementation work. Only DWF-D20 hard-boundary decisions
-are projected to the user.
+Review prompts are workflow inputs, not user handoffs. Dev Workflow invokes the
+stage methodology review and applicable quality/completion/code review Skills,
+fixes source-backed findings, and reruns review. Only DWF-D20 hard-boundary
+decisions reach the user.
 
 ### `pt-completion-auditor`
 
@@ -528,7 +530,6 @@ completion or rollback without a Git checkpoint.
 - No automatic commit, deploy, reset, push or history rewrite.
 - No broad Acceptance run during the pilot.
 - No second Profile, lease, driver, Journey or evidence authority.
-- No host-specific scheduler, Journey, Session, or evidence authority.
 - No old/new current-state owner after cutover.
 - No historical raw logs copied into Task snapshots.
 - No plan split by test case or command.
@@ -557,6 +558,6 @@ in machine-local artifacts.
 
 The `next` field is a Progress Slice, not an individual command. Its successful
 completion must match the `planctl status.progress.nextProgressBoundary`
-projection. Dev Workflow continues across internal actions and, after the Task
-closes, across dependency-ready successor Slices until the Plan Run ends.
-Otherwise it reports the hard boundary and the unchanged delta explicitly.
+projection. Dev Workflow continues across internal actions until that boundary
+is reached; otherwise it reports the hard boundary and the unchanged delta
+explicitly.

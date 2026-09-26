@@ -37,6 +37,7 @@ from tooling.acceptance.core import (
     EphemeralLaunchError,
     RuntimeCellLifecycle,
     new_report,
+    workspace_id,
 )
 from tooling.acceptance.core.redaction import redact_artifact_bytes
 from tooling.acceptance.provisioners import HomeStationProvisioner
@@ -286,7 +287,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 / ".peers-touch"
                 / "dev"
                 / "workspaces"
-                / "b0a926025d2b25b9"
+                / workspace_id(REPO_ROOT)
                 / "workflow"
                 / "dwf-test"
                 / "artifacts"
@@ -351,6 +352,71 @@ class AcceptanceRunTest(unittest.TestCase):
         ):
             with self.subTest(values=values), self.assertRaises(SystemExit):
                 module.parse_service_profile_bindings(values)
+
+    def test_environment_provisioner_receives_only_its_profile_bindings(
+        self,
+    ) -> None:
+        module = load_module()
+        resolved = object()
+
+        with mock.patch(
+            "tooling.acceptance.provisioners.get_provisioner",
+            return_value=resolved,
+        ) as get_provisioner:
+            self.assertIs(
+                module.environment_provisioner(
+                    "home-station",
+                    station_profiles={
+                        "station-four": "four",
+                        "station-five": "fiveArm",
+                    },
+                    service_profiles={"relay": "one"},
+                ),
+                resolved,
+            )
+
+        contract = get_provisioner.call_args.args[0]
+        self.assertEqual(contract.id, "home-station")
+        self.assertEqual(
+            get_provisioner.call_args.kwargs,
+            {"station_profiles": {}, "service_profiles": {}},
+        )
+
+    def test_environment_provisioner_keeps_matching_profile_bindings(
+        self,
+    ) -> None:
+        module = load_module()
+        resolved = object()
+
+        with mock.patch(
+            "tooling.acceptance.provisioners.get_provisioner",
+            return_value=resolved,
+        ) as get_provisioner:
+            self.assertIs(
+                module.environment_provisioner(
+                    "native-tauri-embedded-webdriver",
+                    station_profiles={
+                        "station-four": "chat-native-four",
+                        "station-five": "chat-native-disposable",
+                        "unrelated-station": "ignored",
+                    },
+                    service_profiles={"relay": "ignored"},
+                ),
+                resolved,
+            )
+
+        contract = get_provisioner.call_args.args[0]
+        self.assertEqual(contract.id, "native-tauri-embedded-webdriver")
+        self.assertEqual(
+            get_provisioner.call_args.kwargs,
+            {
+                "station_profiles": {
+                    "station-four": "chat-native-four",
+                    "station-five": "chat-native-disposable",
+                },
+                "service_profiles": {},
+            },
+        )
 
     def test_load_plan_uses_the_current_python_interpreter(self) -> None:
         module = load_module()

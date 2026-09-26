@@ -17,6 +17,8 @@ const (
 	DeliveryRoute = "/federation/delivery"
 	// ActorEndpointManifestRoute serves Actor-owned endpoint routing truth.
 	ActorEndpointManifestRoute = "/federation/actor/endpoint-manifest"
+	// PresenceQueryRoute serves Home Station-owned presence snapshots.
+	PresenceQueryRoute = "/federation/presence/query"
 	// ConversationCommandPrepareRoute prepares a command at its authority.
 	ConversationCommandPrepareRoute = "/federation/conversation/command/prepare"
 	// ConversationLeaveIntentSubmitRoute submits a signed leave intent.
@@ -47,6 +49,10 @@ const (
 	KeyExchangeMLSClaimRoute = "/federation/key-exchange/mls-key-package/claim"
 	// RealtimeCallResolutionRoute reads call truth from the callee Home Station.
 	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
+	// RealtimeSignalRoute forwards a realtime call signal to a recipient's Home Station.
+	RealtimeSignalRoute = "/federation/realtime/signal"
+	// GroupCallAuthorityJoinRoute requests a LiveKit grant from Conversation Authority.
+	GroupCallAuthorityJoinRoute = "/federation/realtime/group-call/join"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
@@ -54,6 +60,7 @@ type PeerRoute string
 
 const (
 	PeerRouteActorEndpointManifest          PeerRoute = "actor-endpoint-manifest"
+	PeerRoutePresenceQuery                  PeerRoute = "presence-query"
 	PeerRouteConversationCommandPrepare     PeerRoute = "conversation-command-prepare"
 	PeerRouteConversationLeaveIntentSubmit  PeerRoute = "conversation-leave-intent-submit"
 	PeerRouteConversationLeaveIntentList    PeerRoute = "conversation-leave-intent-list"
@@ -69,6 +76,8 @@ const (
 	PeerRouteKeyExchangeMLSFetch            PeerRoute = "key-exchange-mls-fetch"
 	PeerRouteKeyExchangeMLSClaim            PeerRoute = "key-exchange-mls-claim"
 	PeerRouteRealtimeCallResolution         PeerRoute = "realtime-call-resolution"
+	PeerRouteRealtimeSignal                 PeerRoute = "realtime-signal"
+	PeerRouteGroupCallAuthorityJoin         PeerRoute = "group-call-authority-join"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -102,6 +111,7 @@ type peerRouteSpec struct {
 
 var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteActorEndpointManifest, "federation-actor-endpoint-manifest", ActorEndpointManifestRoute, server.POST, ActorEndpointManifestScope},
+	{PeerRoutePresenceQuery, "federation-presence-query", PresenceQueryRoute, server.POST, PresenceQueryScope},
 	{PeerRouteConversationCommandPrepare, "federation-conversation-command-prepare", ConversationCommandPrepareRoute, server.POST, ConversationCommandPrepareScope},
 	{PeerRouteConversationLeaveIntentSubmit, "federation-conversation-leave-intent-submit", ConversationLeaveIntentSubmitRoute, server.POST, ConversationLeaveIntentScope},
 	{PeerRouteConversationLeaveIntentList, "federation-conversation-leave-intent-list", ConversationLeaveIntentListRoute, server.POST, ConversationLeaveIntentScope},
@@ -117,6 +127,8 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteKeyExchangeMLSFetch, "federation-key-exchange-mls-fetch", KeyExchangeMLSFetchRoute, server.POST, KeyExchangeMLSFetchScope},
 	{PeerRouteKeyExchangeMLSClaim, "federation-key-exchange-mls-claim", KeyExchangeMLSClaimRoute, server.POST, KeyExchangeMLSClaimScope},
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
+	{PeerRouteRealtimeSignal, "federation-realtime-signal", RealtimeSignalRoute, server.POST, RealtimeSignalScope},
+	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
 }
 
 // NewPeerRouteFactory validates and creates the Federation route owner.
@@ -179,6 +191,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteActorEndpointManifest),
 			f.wrappers[PeerRouteActorEndpointManifest],
+		),
+		server.NewSimpleHandler(
+			"federation-presence-query",
+			PresenceQueryRoute,
+			server.POST,
+			f.dispatchRoute(PeerRoutePresenceQuery),
+			f.wrappers[PeerRoutePresenceQuery],
 		),
 		server.NewSimpleHandler(
 			"federation-conversation-command-prepare",
@@ -284,6 +303,20 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteRealtimeCallResolution),
 			f.wrappers[PeerRouteRealtimeCallResolution],
+		),
+		server.NewSimpleHandler(
+			"federation-realtime-signal",
+			RealtimeSignalRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteRealtimeSignal),
+			f.wrappers[PeerRouteRealtimeSignal],
+		),
+		server.NewSimpleHandler(
+			"federation-group-call-authority-join",
+			GroupCallAuthorityJoinRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteGroupCallAuthorityJoin),
+			f.wrappers[PeerRouteGroupCallAuthorityJoin],
 		),
 	}
 }

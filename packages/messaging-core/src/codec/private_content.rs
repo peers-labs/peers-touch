@@ -1,5 +1,7 @@
 use crate::attachment::validate_chat_encrypted_object_descriptor;
-use crate::proto::chat::{AttachmentPlaintextMetadata, MessagePrivateContent, VoiceNoteMetadata};
+use crate::proto::chat::{
+    AttachmentContentKind, AttachmentPlaintextMetadata, MessagePrivateContent, VoiceNoteMetadata,
+};
 use prost::Message;
 use secure_content_core::object::OBJECT_MAX_PLAINTEXT_SIZE;
 use std::collections::HashSet;
@@ -92,6 +94,17 @@ pub fn validate_attachment_plaintext_metadata(
     {
         return Err("messaging attachment private metadata is invalid".to_string());
     }
+    match AttachmentContentKind::try_from(attachment.content_kind) {
+        Ok(AttachmentContentKind::Unspecified | AttachmentContentKind::File)
+            if attachment.duration_ms == 0 => {}
+        Ok(AttachmentContentKind::VoiceNote)
+            if attachment.duration_ms > 0
+                && attachment
+                    .mime_type
+                    .to_ascii_lowercase()
+                    .starts_with("audio/") => {}
+        _ => return Err("messaging attachment private media metadata is invalid".to_string()),
+    }
     validate_voice_note_metadata(&attachment.mime_type, attachment.voice_note.as_ref())?;
     validate_chat_encrypted_object_descriptor(object)?;
     let expected_chunk_count = attachment
@@ -163,6 +176,8 @@ pub(crate) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
             nonce_strategy: AttachmentNonceStrategy::Counter32Be as i32,
             chunk_ciphertext_sha256: vec![Sha256::digest(&ciphertext).to_vec()],
         }),
+        content_kind: AttachmentContentKind::File as i32,
+        duration_ms: 0,
         voice_note: None,
     }
 }
@@ -213,5 +228,20 @@ mod tests {
             attachments: vec![invalid_voice],
         })
         .is_err());
+    }
+
+    #[test]
+    fn voice_note_requires_audio_mime_and_positive_duration() {
+        let mut voice = test_attachment_metadata("voice-1");
+        voice.mime_type = "audio/webm".to_string();
+        voice.content_kind = AttachmentContentKind::VoiceNote as i32;
+        voice.duration_ms = 1_250;
+        assert!(validate_attachment_plaintext_metadata(&voice).is_ok());
+
+        voice.duration_ms = 0;
+        assert!(validate_attachment_plaintext_metadata(&voice).is_err());
+        voice.duration_ms = 1_250;
+        voice.mime_type = "application/octet-stream".to_string();
+        assert!(validate_attachment_plaintext_metadata(&voice).is_err());
     }
 }

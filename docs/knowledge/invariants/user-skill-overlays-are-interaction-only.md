@@ -60,4 +60,4 @@ retargeting from changing an active Overlay silently.
 
 - DWF-D21 keeps project execution semantics host-neutral.
 - DWF-D22 separates canonical distribution from consuming machine state.
-- DWF-D25 defines the user Overlay control plane.
+- DWF-D27 defines the user Overlay control plane.

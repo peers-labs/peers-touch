@@ -6,6 +6,8 @@ from tooling.acceptance.core import REPO_ROOT
 from tooling.acceptance.gates.chat.lifecycle_onboarding import (
     GATE_ID,
     ONBOARDING_REQUIRED_ASSERTIONS,
+    SELECTORS,
+    LifecycleOnboardingGate,
     accepted_conversation_id,
     counterparty_requests,
     matching_requests,
@@ -20,6 +22,60 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
 
 
 class LifecycleOnboardingContractTest(unittest.TestCase):
+    def test_find_people_close_targets_its_own_modal(self) -> None:
+        class CloseButton:
+            clicked = False
+
+            def click(inner_self) -> None:
+                inner_self.clicked = True
+
+        class Modal:
+            locator = None
+
+            def find_element(inner_self, by: str, selector: str) -> CloseButton:
+                inner_self.locator = (by, selector)
+                return close_button
+
+        class Surface:
+            locator = None
+
+            def find_element(inner_self, by: str, selector: str) -> Modal:
+                inner_self.locator = (by, selector)
+                return modal
+
+        class Client:
+            selector = None
+            script = None
+
+            def find_element(inner_self, selector: str, timeout: int) -> Surface:
+                inner_self.selector = (selector, timeout)
+                return surface
+
+            def execute_script(
+                inner_self,
+                script: str,
+                target: CloseButton,
+            ) -> None:
+                inner_self.script = (script, target)
+                target.click()
+
+        surface = Surface()
+        modal = Modal()
+        close_button = CloseButton()
+        client = Client()
+
+        LifecycleOnboardingGate._close_find_people(client)
+
+        self.assertEqual(client.selector, (SELECTORS["find_people"], 10))
+        self.assertEqual(surface.locator[0], "xpath")
+        self.assertIn("ancestor::div", surface.locator[1])
+        self.assertEqual(modal.locator, ("css selector", ".ant-modal-close"))
+        self.assertEqual(
+            client.script,
+            ("arguments[0].click();", close_button),
+        )
+        self.assertTrue(close_button.clicked)
+
     def test_request_matching_uses_exact_actor_pair_and_state(self) -> None:
         snapshot = {
             "requests": [

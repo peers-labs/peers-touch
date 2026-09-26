@@ -70,6 +70,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     STATION_LIFECYCLE_HARNESS_ACTIONS,
     CommandResult,
     MobileSimulatorAppiumCapabilityHandler,
+    SelectedMobileSimulatorProvisioner,
     _GeneratedAndroidManifestGuard,
     _resolve_android_ndk_home,
     _resolve_android_ndk_tool,
@@ -192,6 +193,13 @@ class FakeCommandExecutor:
                         },
                     }
                 ),
+            )
+        if command[:3] == ("xcrun", "simctl", "create"):
+            return CommandResult(
+                0,
+                "ios-" + hashlib.sha256(
+                    command[3].encode("utf-8")
+                ).hexdigest()[:16] + "\n",
             )
         if command == ("emulator", "-list-avds"):
             return CommandResult(0, f"{ANDROID_AVD_NAME}\n")
@@ -356,6 +364,29 @@ class TestMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         self.register_cleanup(
             f"environment-lease:{resource}",
             lambda: self.executor.events.append("release:environment-lease"),
+        )
+
+    @staticmethod
+    def _host_platform_identity() -> tuple[str, str]:
+        return "darwin", "arm64"
+
+
+class TestSelectedMobileSimulatorProvisioner(
+    SelectedMobileSimulatorProvisioner
+):
+    def _git_commit(self) -> str:
+        return "source-commit"
+
+    def _git_workspace_digest(self) -> str:
+        return "sha256:workspace"
+
+    def acquire_profile_lease(self, resource: str, owner: str) -> None:
+        del owner
+        self.register_cleanup(
+            f"environment-lease:{resource}",
+            lambda: self.executor.events.append(
+                "release:environment-lease"
+            ),
         )
 
     @staticmethod
@@ -3264,6 +3295,87 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertNotIn("chromedriver", manifest.to_dict()["mobileSimulator"])
         self.provisioner.cleanup()
+
+    def test_secure_content_provisioner_owns_selected_platform_clients(
+        self,
+    ) -> None:
+        clients = (
+            mobile_simulator_module.SimulatorClientSpec(
+                id="ios_alice",
+                platform="ios",
+                role="alice",
+                runtime="tauri-ios-simulator",
+                port_roles=("wda-local", "mjpeg", "webview"),
+                storage_root="<runtime-home>/ios-alice",
+            ),
+            mobile_simulator_module.SimulatorClientSpec(
+                id="android_bob",
+                platform="android",
+                role="bob",
+                runtime="tauri-android-emulator",
+                port_roles=("system", "mjpeg", "webview"),
+                storage_root="<runtime-home>/android-bob",
+            ),
+        )
+        provisioner = TestSelectedMobileSimulatorProvisioner(
+            self.contract,
+            clients=clients,
+            executor=self.executor,
+            repo_root=self.repo_root,
+            runtime_base=self.root / "secure-content-runtime",
+            runtime_cache_base=self.cache_root,
+            contract_path=self.contract_path,
+            artifact_fetcher=self._fetch_driver,
+            status_reader=lambda url, timeout: {
+                "value": {"build": {"version": "2.19.0"}}
+            },
+            sleep=lambda _: None,
+        )
+
+        manifest = provisioner.provision("sc-dj-mobile-matrix")
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        payload = manifest.to_dict()
+        resources = payload["mobileSimulator"]
+        self.assertEqual(
+            {client["profile"] for client in payload["clients"]},
+            {"ios_alice", "android_bob"},
+        )
+        self.assertEqual(
+            set(resources["applications"]),
+            {"ios", "android"},
+        )
+        self.assertEqual(
+            set(resources["appium"]["drivers"]),
+            {"ios", "android"},
+        )
+        self.assertNotEqual(
+            resources["clients"]["ios_alice"]["device"],
+            resources["clients"]["android_bob"]["device"],
+        )
+        self.assertNotEqual(
+            resources["clients"]["ios_alice"]["storageRoot"],
+            resources["clients"]["android_bob"]["storageRoot"],
+        )
+
+        completed = provisioner.cleanup()
+
+        self.assertLess(
+            completed.index("appium-process"),
+            completed.index("storage:mobile-simulator"),
+        )
+        self.assertTrue(
+            any(
+                item.startswith("simulator-shutdown:ios_alice:")
+                for item in completed
+            )
+        )
+        self.assertTrue(
+            any(
+                item.startswith("emulator-process:android_bob:")
+                for item in completed
+            )
+        )
 
 
 class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):

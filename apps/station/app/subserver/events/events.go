@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
 
 const callResolutionSweepInterval = time.Second
@@ -159,4 +161,52 @@ func GetBus() EventBus {
 	busMu.RLock()
 	defer busMu.RUnlock()
 	return globalBus
+}
+
+// PublishPeerSignal handles an inbound Federation-forwarded signal by
+// re-authorizing the sender/recipient pair and publishing to the local
+// EventBus. It satisfies the realtimeSignalPeerCapabilities interface
+// consumed by the federation peer route handler.
+func (s *eventsSubServer) PublishPeerSignal(
+	ctx context.Context,
+	recipientPTID string,
+	signal *realtime.CallSignal,
+) error {
+	if signal == nil || recipientPTID == "" {
+		return server.BadRequest("signal and recipient are required")
+	}
+	senderPTID := signal.GetFromActorPtid()
+	if senderPTID != recipientPTID {
+		authorizer := getSignalAuthorizer()
+		if authorizer == nil {
+			logger.DefaultHelper.Warnf(
+				"events: peer signal authorizer not registered sender_ptid=%s",
+				senderPTID,
+			)
+			return server.NewHandlerError(503, "signal authorization unavailable")
+		}
+		allowed, err := authorizer.CanSignal(senderPTID, recipientPTID)
+		if err != nil {
+			return server.InternalErrorWithCause("signal authorization check", err)
+		}
+		if !allowed {
+			return server.Forbidden("not authorized to signal this recipient")
+		}
+	}
+	bus := GetBus()
+	if bus == nil {
+		return server.NewHandlerError(503, "event bus not initialized")
+	}
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Signaling{Signaling: signal},
+	}
+	if _, err := bus.Publish(recipientPTID, ev); err != nil {
+		logger.DefaultHelper.Warnf(
+			"events: peer signal publish failed recipient_ptid=%s: %v",
+			recipientPTID, err,
+		)
+		return server.InternalErrorWithCause("publish peer signal", err)
+	}
+
+	return nil
 }

@@ -90,7 +90,7 @@ func buildViewer(
 			return domain.Viewer{}, err
 		}
 		if len(groupIDs) > 0 {
-			v.MemberOfGroups = make(map[uint64]struct{}, len(groupIDs))
+			v.MemberOfGroups = make(map[string]struct{}, len(groupIDs))
 			for _, id := range groupIDs {
 				v.MemberOfGroups[id] = struct{}{}
 			}

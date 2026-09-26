@@ -26,6 +26,7 @@ import {
   sha256,
   validatePlanMigrationJournal,
 } from './plan-migration.mjs';
+import { advancePlan } from './planctl.mjs';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 import {
   createSessionStore,
@@ -370,6 +371,158 @@ function blockedSessionFor(fixture, evidenceRef = 'evidence/task-a.json') {
     },
   });
   return sessionStorePaths(options).session;
+}
+
+function createSessionFixture(
+  fixture,
+  {
+    taskId = 'task-a',
+    sessionId = `DWF-TEST-${taskId}-SESSION`,
+    workItemId = `DWF-TEST-${taskId}-WORK`,
+  } = {},
+) {
+  const home = path.join(fixture.root, 'home');
+  const task = fixture.taskSlices.get(taskId);
+  const initial = createInitialSessionState(
+    {
+      sessionId,
+      workItemId,
+      planId: fixture.manifest.planId,
+      taskId,
+      workspaceId: fixture.manifest.binding.workspaceId,
+      branch: fixture.manifest.binding.branch,
+      journeyId: task.journeyId,
+      executionMode: task.executionMode,
+    },
+    FIXED_TIME,
+  );
+  let tick = 0;
+  const options = {
+    home,
+    workspaceRoot: fixture.root,
+    workspaceId: fixture.manifest.binding.workspaceId,
+    workItemId,
+    expected: {
+      sessionId,
+      workItemId,
+      planId: initial.planId,
+      taskId,
+      workspaceId: initial.workspaceId,
+      branch: initial.branch,
+    },
+  };
+  const context = {
+    task,
+    acceptance: fixture.acceptance,
+    authorization: fixture.manifest.authorization,
+  };
+  createSessionStore(initial, {
+    ...options,
+    now: FIXED_TIME,
+    reason: 'start Plan handoff fixture',
+  });
+
+  function transition(to, updates = {}) {
+    tick += 1;
+    return transitionSessionStore({
+      ...options,
+      now: new Date(Date.parse(FIXED_TIME) + tick * 1_000).toISOString(),
+      context,
+      to,
+      reason: `advance fixture to ${to}`,
+      updates,
+    });
+  }
+
+  function verification(verificationClass, result = 'PASS') {
+    return {
+      id: `${taskId}-${verificationClass.toLowerCase()}`,
+      verificationClass,
+      result,
+      startedAt: FIXED_TIME,
+      durationMs: 10,
+      artifactRefs: [],
+    };
+  }
+
+  function sourceCheckpoint() {
+    return {
+      commit: INITIAL_HEAD,
+      tree: '8'.repeat(40),
+      branch: fixture.manifest.binding.branch,
+      clean: true,
+      createdAt: FIXED_TIME,
+      purpose: 'development-runtime',
+    };
+  }
+
+  function complete() {
+    if (task.executionMode === 'fix') {
+      transition('REPRODUCING');
+      transition('REPRODUCED', {
+        verification: verification('FUNCTIONAL_CHECK', 'FAIL'),
+        failure: {
+          kind: 'SOURCE_CHECK_FAILED',
+          stage: 'REPRODUCING',
+          owner: 'source',
+          summary: 'deterministic reproduction',
+          retryable: true,
+        },
+      });
+    }
+    transition('IMPLEMENTING', task.executionMode === 'fix' ? { failure: null } : {});
+    transition('FOCUSED_CHECKING');
+    transition('FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK'),
+    });
+    if (task.completionClass === 'source') {
+      transition('SOURCE_READY');
+      return;
+    }
+    if (task.completionClass === 'functional') {
+      transition('FUNCTIONAL_RUNNING');
+      transition('FUNCTIONAL_PASS', {
+        verification: verification('FUNCTIONAL_CHECK'),
+      });
+      if (fixture.acceptance.closures[task.closureId].length === 0) {
+        transition('DELIVERY_READY');
+        return;
+      }
+      transition('ACCEPTANCE_READY');
+      transition('FINAL_CHECKPOINTED', { source: sourceCheckpoint() });
+    }
+    transition('ACCEPTANCE_RUNNING');
+    transition('ACCEPTANCE_PASS', {
+      verification: verification('ACCEPTANCE_PROOF'),
+    });
+    transition('DELIVERY_READY');
+  }
+
+  function cancel() {
+    transition('CLEANING');
+    transition('CANCELLED');
+  }
+
+  return {
+    path: sessionStorePaths(options).session,
+    complete,
+    cancel,
+  };
+}
+
+function planLockRecord(planPath, {
+  pid,
+  processIdentity,
+  ownerToken,
+} = {}) {
+  return {
+    kind: 'peers-touch-plan-lock',
+    planPath,
+    ownerToken: ownerToken ?? 'a'.repeat(64),
+    pid: pid ?? 2_147_483_647,
+    processIdentity: processIdentity ?? '0'.repeat(64),
+    createdAt: FIXED_TIME,
+  };
 }
 
 async function expectPlanError(promise, code) {
@@ -853,7 +1006,7 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
   await t.test('acceptance aggregate owns proof without functional checks', async (t) => {
     const fixture = await makeFixture(t, {
       mutateTaskSlices(taskSlices) {
-        const task = taskSlices.get('task-a');
+        const task = taskSlices.get('task-b');
         task.completionClass = 'acceptance-aggregate';
         task.checks = task.checks.filter(
           (check) => check.verificationClass !== 'FUNCTIONAL_CHECK',
@@ -864,8 +1017,24 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
       repoRoot: fixture.root,
     });
     assert.equal(
-      planPackage.taskSlices.get('task-a').completionClass,
+      planPackage.taskSlices.get('task-b').completionClass,
       'acceptance-aggregate',
+    );
+  });
+
+  await t.test('acceptance aggregate requires a functional predecessor', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.completionClass = 'acceptance-aggregate';
+        task.checks = task.checks.filter(
+          (check) => check.verificationClass !== 'FUNCTIONAL_CHECK',
+        );
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_ACCEPTANCE_DEPENDENCY_INVALID',
     );
   });
 
@@ -1057,12 +1226,15 @@ test('enforces segment-aware Plan scope and supplied declaration claims', async 
     );
   });
 
-  await t.test('narrow declaration covers task sets', async (t) => {
+  await t.test('narrow declaration covers only the current task sets', async (t) => {
     const fixture = await makeFixture(t, {
       mutateTaskSlices(taskSlices) {
-        for (const task of taskSlices.values()) {
-          task.writeSet = [`tooling/scripts/plan/lane-a/${task.taskId}.mjs`];
-        }
+        taskSlices.get('task-a').writeSet = [
+          'tooling/scripts/plan/lane-a/task-a.mjs',
+        ];
+        taskSlices.get('task-b').writeSet = [
+          'tooling/scripts/plan/lane-b/task-b.mjs',
+        ];
       },
     });
     const result = await loadPlanPackage(fixture.planPath, {
@@ -1079,6 +1251,28 @@ test('enforces segment-aware Plan scope and supplied declaration claims', async 
       ],
     });
     assert.equal(result.currentTask.taskId, 'task-a');
+  });
+
+  await t.test('narrow declaration rejects the current task sets', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        taskSlices.get('task-a').writeSet = [
+          'tooling/scripts/plan/lane-a/task-a.mjs',
+        ];
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, {
+        repoRoot: fixture.root,
+        declarationClaims: [
+          {
+            pathPrefix: 'tooling/scripts/plan/lane-b',
+            mode: 'exclusive-write',
+          },
+        ],
+      }),
+      'PLAN_SCOPE_MISMATCH',
+    );
   });
 });
 
@@ -1317,40 +1511,90 @@ test('progress projection has no post-Next target without an active current task
   }
 });
 
-test('planctl advance atomically hands off and completes without changing immutable binding', async (t) => {
-  const fixture = await makeFixture(t);
-  const common = [
-    '--plan',
-    fixture.planPath,
-    '--repo-root',
-    fixture.root,
-    '--session',
-    'NONE',
-  ];
+test('planctl activate selects one explicit ready Task atomically', async (t) => {
+  const fixture = await makeFixture(t, { status: 'prepared' });
   const original = await fsp.readFile(fixture.planPath);
 
-  const missingSession = parseCliFailure(
+  const rejected = parseCliFailure(
     invokeCli([
-      'advance',
+      'activate',
+      '--plan',
+      fixture.planPath,
+      '--repo-root',
+      fixture.root,
+      '--task',
+      'missing',
+    ]),
+  );
+  assert.equal(rejected.error.code, 'PLAN_ACTIVATE_INVALID');
+  assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+
+  const activated = parseCliSuccess(
+    invokeCli([
+      'activate',
       '--plan',
       fixture.planPath,
       '--repo-root',
       fixture.root,
       '--task',
       'task-a',
-      '--to',
-      'done',
-      '--next',
-      'task-b',
     ]),
   );
-  assert.equal(missingSession.error.code, 'PLAN_ADVANCE_INVALID');
-  assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  assert.equal(activated.status, 'active');
+  assert.equal(activated.currentTaskId, 'task-a');
+  assert.equal(activated.initialHead, INITIAL_HEAD);
+
+  const repeated = parseCliFailure(
+    invokeCli([
+      'activate',
+      '--plan',
+      fixture.planPath,
+      '--repo-root',
+      fixture.root,
+      '--task',
+      'task-a',
+    ]),
+  );
+  assert.equal(repeated.error.code, 'PLAN_ACTIVATE_INVALID');
+});
+
+test('planctl advance atomically hands off and completes with successful Sessions', async (t) => {
+  const fixture = await makeFixture(t);
+  const taskASession = createSessionFixture(fixture);
+  taskASession.complete();
+  const common = ['--plan', fixture.planPath, '--repo-root', fixture.root];
+  const original = await fsp.readFile(fixture.planPath);
+
+  for (const session of [
+    undefined,
+    'NONE',
+    path.join(fixture.root, 'missing', 'session.json'),
+  ]) {
+    const sessionArguments =
+      session === undefined ? [] : ['--session', session];
+    const missingSession = parseCliFailure(
+      invokeCli([
+        'advance',
+        ...common,
+        ...sessionArguments,
+        '--task',
+        'task-a',
+        '--to',
+        'done',
+        '--next',
+        'task-b',
+      ]),
+    );
+    assert.equal(missingSession.error.code, 'PLAN_ADVANCE_INVALID');
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  }
 
   const rejected = parseCliFailure(
     invokeCli([
       'advance',
       ...common,
+      '--session',
+      taskASession.path,
       '--task',
       'task-a',
       '--to',
@@ -1366,6 +1610,8 @@ test('planctl advance atomically hands off and completes without changing immuta
     invokeCli([
       'advance',
       ...common,
+      '--session',
+      taskASession.path,
       '--task',
       'task-a',
       '--to',
@@ -1377,14 +1623,76 @@ test('planctl advance atomically hands off and completes without changing immuta
   assert.equal(handedOff.status, 'active');
   assert.equal(handedOff.currentTaskId, 'task-b');
   assert.equal(handedOff.initialHead, INITIAL_HEAD);
+  assert.equal(handedOff.closureObservation.taskId, 'task-a');
+  assert.equal(
+    handedOff.closureObservation.terminalState,
+    'DELIVERY_READY',
+  );
+  assert.equal(
+    handedOff.closureObservation.evidence.FUNCTIONAL_CHECK,
+    'PASS',
+  );
+  assert.ok(handedOff.closureObservation.timing.elapsedMs > 0);
+  assert.equal(handedOff.closureObservation.tokens, null);
 
+  const taskBSession = createSessionFixture(fixture, { taskId: 'task-b' });
+  taskBSession.complete();
   const completed = parseCliSuccess(
-    invokeCli(['advance', ...common, '--task', 'task-b', '--to', 'done']),
+    invokeCli([
+      'advance',
+      ...common,
+      '--session',
+      taskBSession.path,
+      '--task',
+      'task-b',
+      '--to',
+      'done',
+    ]),
   );
   assert.equal(completed.status, 'completed');
   assert.equal(completed.currentTaskId, null);
   const loaded = await loadPlanPackage(fixture.planPath, { repoRoot: fixture.root });
   assert.ok(loaded.manifest.tasks.every((task) => task.status === 'done'));
+});
+
+test('planctl completes when remaining Tasks are explicitly descoped', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateManifest(manifest) {
+      manifest.tasks[1].status = 'descoped';
+      manifest.tasks[1].blocker = {
+        code: 'USER_DESCOPED',
+        owner: 'user',
+      };
+    },
+  });
+  const session = createSessionFixture(fixture);
+  session.complete();
+
+  const completed = parseCliSuccess(
+    invokeCli([
+      'advance',
+      '--plan',
+      fixture.planPath,
+      '--repo-root',
+      fixture.root,
+      '--session',
+      session.path,
+      '--task',
+      'task-a',
+      '--to',
+      'done',
+    ]),
+  );
+
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.currentTaskId, null);
+  const loaded = await loadPlanPackage(fixture.planPath, {
+    repoRoot: fixture.root,
+  });
+  assert.deepEqual(
+    loaded.manifest.tasks.map((task) => task.status),
+    ['done', 'descoped'],
+  );
 });
 
 test('planctl advance validates Session terminal state against completion class', async (t) => {
@@ -1403,6 +1711,8 @@ test('planctl advance validates Session terminal state against completion class'
       acceptance.closures['closure-task-a'] = [];
     },
   });
+  const sourceSession = createSessionFixture(sourceFixture);
+  sourceSession.complete();
   const sourceAdvance = parseCliSuccess(
     invokeCli([
       'advance',
@@ -1411,7 +1721,7 @@ test('planctl advance validates Session terminal state against completion class'
       '--repo-root',
       sourceFixture.root,
       '--session',
-      'NONE',
+      sourceSession.path,
       '--task',
       'task-a',
       '--to',
@@ -1421,19 +1731,16 @@ test('planctl advance validates Session terminal state against completion class'
     ]),
   );
   assert.equal(sourceAdvance.currentTaskId, 'task-b');
+  assert.equal(sourceAdvance.closureObservation.taskId, 'task-a');
+  assert.equal(sourceAdvance.closureObservation.terminalState, 'SOURCE_READY');
+  assert.equal(
+    sourceAdvance.closureObservation.evidence.SOURCE_CHECK,
+    'PASS',
+  );
 
   const functionalFixture = await makeFixture(t);
-  const wrongSession = path.join(functionalFixture.root, 'wrong-session.json');
-  await fsp.writeFile(
-    wrongSession,
-    JSON.stringify({
-      state: {
-        state: 'SOURCE_READY',
-        planId: 'DWF-TEST',
-        taskId: 'task-a',
-      },
-    }),
-  );
+  const cancelledSession = createSessionFixture(functionalFixture);
+  cancelledSession.cancel();
   const rejected = parseCliFailure(
     invokeCli([
       'advance',
@@ -1442,7 +1749,7 @@ test('planctl advance validates Session terminal state against completion class'
       '--repo-root',
       functionalFixture.root,
       '--session',
-      wrongSession,
+      cancelledSession.path,
       '--task',
       'task-a',
       '--to',
@@ -1452,6 +1759,10 @@ test('planctl advance validates Session terminal state against completion class'
     ]),
   );
   assert.equal(rejected.error.code, 'PLAN_ADVANCE_INVALID');
+  assert.equal(
+    rejected.error.details.state,
+    'CANCELLED',
+  );
 
   const blockedFixture = await makeFixture(t, {
     mutateManifest(manifest) {
@@ -1542,6 +1853,194 @@ test('planctl advance validates Session terminal state against completion class'
   );
 });
 
+test('planctl advance accepts source-evidence for source-class Tasks without a Session', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateTaskSlices(taskSlices, manifest) {
+      const source = taskSlices.get('task-a');
+      source.completionClass = 'source';
+      source.checks = source.checks.filter(
+        (check) => check.verificationClass === 'SOURCE_CHECK',
+      );
+      const proof = taskSlices.get('task-b');
+      proof.workstreamId = source.workstreamId;
+      manifest.tasks[1].workstreamId = source.workstreamId;
+    },
+    mutateAcceptance(acceptance) {
+      acceptance.closures['closure-task-a'] = [];
+    },
+  });
+  const evidencePath = path.join(fixture.root, 'source-evidence.json');
+  fs.writeFileSync(
+    evidencePath,
+    JSON.stringify({
+      planId: fixture.manifest.planId,
+      taskId: 'task-a',
+      workspaceId: fixture.manifest.binding.workspaceId,
+      branch: fixture.manifest.binding.branch,
+      verifications: [
+        {
+          verificationClass: 'SOURCE_CHECK',
+          result: 'PASS',
+        },
+      ],
+    }),
+  );
+
+  const advanced = await advancePlan(fixture.planPath, {
+    'repo-root': fixture.root,
+    'source-evidence': evidencePath,
+    task: 'task-a',
+    to: 'done',
+    next: 'task-b',
+  });
+
+  assert.equal(advanced.manifest.status, 'active');
+  assert.equal(advanced.currentTask.taskId, 'task-b');
+  assert.equal(advanced.closureObservation.taskId, 'task-a');
+  assert.equal(advanced.closureObservation.sessionId, null);
+  assert.equal(advanced.closureObservation.timing, null);
+  assert.equal(advanced.closureObservation.evidence.SOURCE_CHECK, 'PASS');
+  assert.equal(
+    advanced.closureObservation.evidence.STRUCTURAL_CHECK,
+    'UNPROVEN',
+  );
+  assert.equal(advanced.closureObservation.evidence.UX_REVIEW, 'UNPROVEN');
+});
+
+test('planctl advance rejects source-evidence for non-source-class Tasks', async (t) => {
+  const fixture = await makeFixture(t);
+  const evidencePath = path.join(fixture.root, 'source-evidence.json');
+  fs.writeFileSync(
+    evidencePath,
+    JSON.stringify({
+      planId: fixture.manifest.planId,
+      taskId: 'task-a',
+      workspaceId: fixture.manifest.binding.workspaceId,
+      branch: fixture.manifest.binding.branch,
+      verifications: [
+        { verificationClass: 'SOURCE_CHECK', result: 'PASS' },
+      ],
+    }),
+  );
+
+  await assert.rejects(
+    advancePlan(fixture.planPath, {
+      'repo-root': fixture.root,
+      'source-evidence': evidencePath,
+      task: 'task-a',
+      to: 'done',
+      next: 'task-b',
+    }),
+    (error) => {
+      assert.equal(error.code, 'PLAN_ADVANCE_INVALID');
+      assert.match(error.message, /source-class/i);
+      return true;
+    },
+  );
+});
+
+test('planctl advance validates the successful Session after acquiring the Plan lock', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateTaskSlices(taskSlices, manifest) {
+      const source = taskSlices.get('task-a');
+      source.completionClass = 'source';
+      source.checks = source.checks.filter(
+        (check) => check.verificationClass === 'SOURCE_CHECK',
+      );
+      const proof = taskSlices.get('task-b');
+      proof.workstreamId = source.workstreamId;
+      manifest.tasks[1].workstreamId = source.workstreamId;
+    },
+    mutateAcceptance(acceptance) {
+      acceptance.closures['closure-task-a'] = [];
+    },
+  });
+  const session = createSessionFixture(fixture);
+  let completedInsideLock = false;
+
+  const advanced = await advancePlan(fixture.planPath, {
+    'repo-root': fixture.root,
+    session: session.path,
+    task: 'task-a',
+    to: 'done',
+    next: 'task-b',
+    async failpoint(name) {
+      if (name === 'after-plan-lock-acquired') {
+        session.complete();
+        completedInsideLock = true;
+      }
+    },
+  });
+
+  assert.equal(completedInsideLock, true);
+  assert.equal(advanced.manifest.status, 'active');
+  assert.equal(advanced.currentTask.taskId, 'task-b');
+});
+
+test('planctl recovers an abandoned Plan lock before advancing', async (t) => {
+  const fixture = await makeFixture(t);
+  const session = createSessionFixture(fixture);
+  session.complete();
+  const lockPath = `${fixture.planPath}.lock`;
+  await fsp.writeFile(
+    lockPath,
+    `${JSON.stringify(planLockRecord(fixture.planPath))}\n`,
+  );
+
+  const advanced = await advancePlan(fixture.planPath, {
+    'repo-root': fixture.root,
+    session: session.path,
+    task: 'task-a',
+    to: 'done',
+    next: 'task-b',
+  });
+
+  assert.equal(advanced.currentTask.taskId, 'task-b');
+  await assert.rejects(fsp.stat(lockPath), { code: 'ENOENT' });
+  await assert.rejects(fsp.stat(`${lockPath}.recovery`), { code: 'ENOENT' });
+});
+
+test('stale Plan lock recovery preserves a replacement live owner', async (t) => {
+  const fixture = await makeFixture(t);
+  const session = createSessionFixture(fixture);
+  session.complete();
+  const lockPath = `${fixture.planPath}.lock`;
+  const originalPlan = await fsp.readFile(fixture.planPath);
+  const stale = planLockRecord(fixture.planPath);
+  const liveIdentity = processIdentityForPid(process.pid);
+  assert.match(liveIdentity, /^[0-9a-f]{64}$/);
+  const live = planLockRecord(fixture.planPath, {
+    pid: process.pid,
+    processIdentity: liveIdentity,
+    ownerToken: 'b'.repeat(64),
+  });
+  await fsp.writeFile(lockPath, `${JSON.stringify(stale)}\n`);
+
+  await expectPlanError(
+    advancePlan(fixture.planPath, {
+      'repo-root': fixture.root,
+      session: session.path,
+      task: 'task-a',
+      to: 'done',
+      next: 'task-b',
+      async failpoint(name) {
+        if (name === 'after-stale-plan-lock-observed') {
+          await fsp.writeFile(lockPath, `${JSON.stringify(live)}\n`);
+        }
+      },
+    }),
+    'PLAN_ADVANCE_LOCKED',
+  );
+
+  assert.deepEqual(
+    JSON.parse(await fsp.readFile(lockPath, 'utf8')),
+    live,
+  );
+  assert.deepEqual(await fsp.readFile(fixture.planPath), originalPlan);
+  await assert.rejects(fsp.stat(`${lockPath}.recovery`), { code: 'ENOENT' });
+  await fsp.rm(lockPath);
+});
+
 test('planctl advance records typed exhaustion and can reactivate an explicit blocked Task', async (t) => {
   const fixture = await makeFixture(t);
   const blockedSession = blockedSessionFor(fixture);
@@ -1585,8 +2084,6 @@ test('planctl advance records typed exhaustion and can reactivate an explicit bl
       fixture.planPath,
       '--repo-root',
       fixture.root,
-      '--session',
-      'NONE',
       '--to',
       'reactivate',
       '--next',

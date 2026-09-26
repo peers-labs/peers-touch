@@ -362,6 +362,7 @@ td strong {
 }
 
 .state-blocked .state-dot,
+.state-drift .state-dot,
 .state-conflict .state-dot {
   background: #bd4037;
 }

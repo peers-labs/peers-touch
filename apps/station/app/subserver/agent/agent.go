@@ -111,6 +111,9 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	).Run(ctx); err != nil {
 		return err
 	}
+	if err = persistence.PurgeRetiredExtensionEndpointTable(rds); err != nil {
+		return err
+	}
 	identityRDS, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
@@ -342,11 +345,21 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		capabilityAuthoritySvc,
 		capabilityReadinessSvc,
 	)
+	capabilityAcceptanceScenarios :=
+		service.NewCapabilityAcceptanceScenarioServiceFromEnvironment(
+			capabilityAuthoritySvc,
+		)
+	toolDispatchSvc.SetAcceptanceScenarioService(
+		capabilityAcceptanceScenarios,
+	)
+	capabilityAcceptanceScenarios.SetToolDispatchService(toolDispatchSvc)
 	connectorManifestHandlers := handler.NewConnectorManifestHandlers(
 		service.NewConnectorManifestService(s.agentDB, capabilityAuthoritySvc),
 	)
 	operationSvc := service.NewCapabilityOperationService(s.agentDB)
 	operationSvc.SetCapabilityProofService(proofSvc)
+	operationSvc.SetAcceptanceScenarioService(capabilityAcceptanceScenarios)
+	capabilityAcceptanceScenarios.SetCapabilityOperationService(operationSvc)
 	operationHandlers := handler.NewCapabilityOperationHandlers(operationSvc)
 	knowledgeDescriptorSvc := service.NewKnowledgeResourceService(s.agentDB, capabilityAuthoritySvc)
 	knowledgeDescriptorHandlers := handler.NewKnowledgeDescriptorHandlers(knowledgeDescriptorSvc)
@@ -606,12 +619,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("ecosystem-comment-delete", "/agent/ecosystem/comment/delete", server.POST, ecosystemHandlers.HandleDeleteTopicComment, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("ecosystem-comment-list", "/agent/ecosystem/comment/list", server.POST, ecosystemHandlers.HandleListTopicComments, logIDWrapper, jwtWrapper),
 
-		// Ecosystem: Custom Plugins.
-		server.NewHTTPHandler("ecosystem-plugin-create", "/agent/ecosystem/plugin/create", server.POST, ecosystemHandlers.HandleCreateCustomPlugin, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("ecosystem-plugin-update", "/agent/ecosystem/plugin/update", server.POST, ecosystemHandlers.HandleUpdateCustomPlugin, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("ecosystem-plugin-delete", "/agent/ecosystem/plugin/delete", server.POST, ecosystemHandlers.HandleDeleteCustomPlugin, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("ecosystem-plugin-list", "/agent/ecosystem/plugin/list", server.POST, ecosystemHandlers.HandleListCustomPlugins, logIDWrapper, jwtWrapper),
-
 		// Agent Tasks: user-created single-agent task lifecycle (O3).
 		server.NewHTTPHandler("agent-task-create", "/agent/task/create", server.POST, agentTaskHandlers.HandleCreateTask, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-task-list", "/agent/task/list", server.POST, agentTaskHandlers.HandleListTasks, logIDWrapper, jwtWrapper),
@@ -619,6 +626,70 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-task-delete", "/agent/task/delete", server.POST, agentTaskHandlers.HandleDeleteTask, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-task-subtask-add", "/agent/task/subtask/add", server.POST, agentTaskHandlers.HandleAddSubtask, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-task-subtask-complete", "/agent/task/subtask/complete", server.POST, agentTaskHandlers.HandleCompleteSubtask, logIDWrapper, jwtWrapper),
+	}
+	if capabilityAcceptanceScenarios != nil {
+		scenarioHandlers := handler.NewCapabilityAcceptanceScenarioHandlers(
+			capabilityAcceptanceScenarios,
+		)
+		handlers = append(
+			handlers,
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-prepare",
+				"/agent/capability/acceptance/scenario/prepare",
+				server.POST,
+				scenarioHandlers.HandlePrepare,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-arm",
+				"/agent/capability/acceptance/scenario/arm",
+				server.POST,
+				scenarioHandlers.HandleArmExecutorHook,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-wait",
+				"/agent/capability/acceptance/scenario/wait",
+				server.POST,
+				scenarioHandlers.HandleWaitBarrier,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-reach",
+				"/agent/capability/acceptance/scenario/reach",
+				server.POST,
+				scenarioHandlers.HandleReachExecutorBarrier,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-release",
+				"/agent/capability/acceptance/scenario/release",
+				server.POST,
+				scenarioHandlers.HandleReleaseBarrier,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-interrupt",
+				"/agent/capability/acceptance/scenario/interrupt",
+				server.POST,
+				scenarioHandlers.HandleInterruptWorker,
+				logIDWrapper,
+				jwtWrapper,
+			),
+			server.NewTypedHandler(
+				"agent-capability-acceptance-scenario-cleanup",
+				"/agent/capability/acceptance/scenario/cleanup",
+				server.POST,
+				scenarioHandlers.HandleCleanup,
+				logIDWrapper,
+				jwtWrapper,
+			),
+		)
 	}
 	return prefixHandlers(s.opts.Path, handlers)
 }

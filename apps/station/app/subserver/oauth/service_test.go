@@ -175,10 +175,24 @@ func (fakeActorResolver) Resolve(
 		ID:                17,
 		PTID:              "ptid:v1:actor:peers:p:alice:fingerprint",
 		PreferredUsername: "oauth-user",
+		FederatedHandle:   "@OAuth-User@Home.Example",
 		Email:             "oauth-user@example.test",
+		Kind:              "p",
 	}
 	return actor, &model.ActorRef{
 		Ptid: actor.PTID,
+		Acct: "oauth-user@home.example",
+		Kind: model.ActorKind_ACTOR_KIND_PERSON,
+	}, nil
+}
+
+func (fakeActorResolver) ResolveReference(
+	_ context.Context,
+	ptid string,
+) (*model.ActorRef, error) {
+	return &model.ActorRef{
+		Ptid: ptid,
+		Acct: "oauth-user@home.example",
 		Kind: model.ActorKind_ACTOR_KIND_PERSON,
 	}, nil
 }
@@ -227,6 +241,7 @@ func (f *fakeSessionCredentialIssuer) Prepare(
 			SessionId: sessionID,
 			ActorRef: &model.ActorRef{
 				Ptid: candidate.ActorPTID,
+				Acct: "oauth-user@home.example",
 				Kind: model.ActorKind(candidate.ActorKind),
 			},
 		}, nil
@@ -592,6 +607,16 @@ func TestOAuthFinalizerPersistsOneDecryptableEnvelopeAndStatusReusesIt(t *testin
 	plaintext := decryptEnvelope(t, fixture.deliveryPrivate, firstEnvelope, completed.GetSessionCandidate())
 	if plaintext.GetTokens().GetAccessToken() != "bearer-secret" {
 		t.Fatal("decrypted credential does not contain expected access token")
+	}
+	if !proto.Equal(firstEnvelope.GetActorRef(), plaintext.GetActorRef()) {
+		t.Fatalf(
+			"envelope actor %v does not match credential actor %v",
+			firstEnvelope.GetActorRef(),
+			plaintext.GetActorRef(),
+		)
+	}
+	if got, want := firstEnvelope.GetActorRef().GetAcct(), "oauth-user@home.example"; got != want {
+		t.Fatalf("credential envelope acct = %q, want %q", got, want)
 	}
 
 	status, err := fixture.service.Status(context.Background(), fixture.statusRequest(start.GetOauthAttemptId()))

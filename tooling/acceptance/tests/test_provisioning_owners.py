@@ -259,6 +259,59 @@ class StationAttestationOwnerTests(unittest.TestCase):
             )
         )
 
+    def test_reviewed_remote_tunnel_uses_deployment_ssh_authority(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            open_reviewed_remote_tunnel,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            known_hosts = root / "known_hosts"
+            known_hosts.write_text(
+                "station.example ssh-ed25519 test-key\n",
+                encoding="utf-8",
+            )
+            environment = root / "station-three.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                        "PT_DEPLOY_SSH_PORT=2222",
+                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={known_hosts}",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            tunnel = MagicMock()
+            transport = MagicMock()
+            transport.start_local_forward.return_value = tunnel
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity.resolve_deployment_environment_path",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.provisioners.remote_source_identity.SshTransport",
+                return_value=transport,
+            ) as transport_type:
+                resolved = open_reviewed_remote_tunnel(
+                    "station-three",
+                    remote_port=18080,
+                    timeout=7,
+                )
+
+        self.assertIs(resolved, tunnel)
+        self.assertEqual(
+            {"remote_port": 18080, "timeout": 7},
+            transport.start_local_forward.call_args.kwargs,
+        )
+        target = transport_type.call_args.args[0]
+        self.assertEqual("station.example", target.host)
+        self.assertEqual("acceptance", target.user)
+        self.assertEqual(2222, target.port)
+        self.assertEqual(str(known_hosts), target.known_hosts_file)
+
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
         # TemporaryDirectory cleanup is deterministic.

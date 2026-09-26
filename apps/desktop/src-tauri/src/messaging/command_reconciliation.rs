@@ -5,7 +5,8 @@ use super::{
 use crate::model::chat::{
     chat_command, ChatCommand, ConversationCommandProposalResult, ConversationCommandRejectCode,
     ConversationCommandResolutionState, ConversationCommandResultRef,
-    ResolveConversationCommandResultsRequest, ResolvedConversationCommandResult,
+    ConversationMemberAuthorityCommand, CryptoEndpoint, ResolveConversationCommandResultsRequest,
+    ResolvedConversationCommandResult,
 };
 use messaging_core::mls::group::MlsGroupManager;
 use prost::Message;
@@ -152,17 +153,12 @@ fn validate_results(
             {
                 return Err("messaging command reconciliation command hash mismatch".to_string());
             }
-            let command = ChatCommand::decode(submitted.command_bytes.as_slice())
-                .map_err(|error| format!("decode submitted messaging command: {error}"))?;
-            if command.encode_to_vec() != submitted.command_bytes
-                || command.command_id != submitted.command_id
+            let command = decode_submitted_command(&submitted.command_bytes)?;
+            if command.command_id != submitted.command_id
                 || command.conversation_id != submitted.conversation_id
-                || command.sender.as_ref().map(|sender| sender.ptid.as_str())
+                || command.actor.as_ref().map(|actor| actor.ptid.as_str())
                     != Some(endpoint.ptid.as_str())
-                || command
-                    .sender
-                    .as_ref()
-                    .map(|sender| sender.device_id.as_str())
+                || command.actor.as_ref().map(|actor| actor.device_id.as_str())
                     != Some(endpoint.device_id.as_str())
             {
                 return Err(
@@ -181,8 +177,39 @@ fn validate_results(
         .collect()
 }
 
+struct DecodedSubmittedCommand {
+    command_id: String,
+    conversation_id: String,
+    authority_station_peer_id: String,
+    actor: Option<CryptoEndpoint>,
+}
+
+fn decode_submitted_command(bytes: &[u8]) -> Result<DecodedSubmittedCommand, String> {
+    if let Ok(command) = ChatCommand::decode(bytes) {
+        if command.encode_to_vec() == bytes {
+            return Ok(DecodedSubmittedCommand {
+                command_id: command.command_id,
+                conversation_id: command.conversation_id,
+                authority_station_peer_id: command.authority_station_peer_id,
+                actor: command.sender,
+            });
+        }
+    }
+    let command = ConversationMemberAuthorityCommand::decode(bytes)
+        .map_err(|error| format!("decode submitted messaging command: {error}"))?;
+    if command.encode_to_vec() != bytes {
+        return Err("submitted messaging command bytes are not canonical".to_string());
+    }
+    Ok(DecodedSubmittedCommand {
+        command_id: command.command_id,
+        conversation_id: command.conversation_id,
+        authority_station_peer_id: command.authority_station_peer_id,
+        actor: command.operator,
+    })
+}
+
 fn validate_result(
-    command: &ChatCommand,
+    command: &DecodedSubmittedCommand,
     resolved: &ResolvedConversationCommandResult,
 ) -> Result<CommandReconciliationDisposition, String> {
     let state = ConversationCommandResolutionState::try_from(resolved.state)
@@ -243,7 +270,7 @@ fn require_empty_result(
 }
 
 fn validate_accepted_result(
-    command: &ChatCommand,
+    command: &DecodedSubmittedCommand,
     result: &ConversationCommandProposalResult,
 ) -> Result<(), String> {
     let reject_code = ConversationCommandRejectCode::try_from(result.reject_code)
@@ -261,7 +288,7 @@ fn validate_accepted_result(
         || event.command_id != command.command_id
         || event.conversation_id != command.conversation_id
         || event.authority_station_peer_id != command.authority_station_peer_id
-        || event.actor != command.sender
+        || event.actor != command.actor
         || event.sequence <= 0
         || event.event_hash.len() != 32
     {
@@ -271,7 +298,7 @@ fn validate_accepted_result(
 }
 
 fn validate_rejected_result(
-    command: &ChatCommand,
+    command: &DecodedSubmittedCommand,
     result: &ConversationCommandProposalResult,
     terminal_code: ConversationCommandRejectCode,
 ) -> Result<(), String> {
@@ -299,9 +326,23 @@ fn is_superseding_rejection(code: ConversationCommandRejectCode) -> bool {
     matches!(
         code,
         ConversationCommandRejectCode::StaleDeliveryPlan
+            | ConversationCommandRejectCode::AuthorityHeadStale
             | ConversationCommandRejectCode::MembershipEpochStale
             | ConversationCommandRejectCode::MlsEpochMismatch
             | ConversationCommandRejectCode::AuthorityPlanStale
             | ConversationCommandRejectCode::AuthorityPlanExpired
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_superseding_rejection;
+    use crate::model::chat::ConversationCommandRejectCode;
+
+    #[test]
+    fn stale_authority_head_supersedes_the_exact_attempt() {
+        assert!(is_superseding_rejection(
+            ConversationCommandRejectCode::AuthorityHeadStale,
+        ));
+    }
 }

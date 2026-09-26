@@ -35,6 +35,85 @@ journeys:
     promotionGateIds: []
 
   - schemaVersion: 1
+    id: sc-dj-runtime-manifest-v3
+    domain: local-dev-control-plane
+    title: Immutable multi-service Development runtime attachment
+    productAcceptanceRefs: []
+    workClasses: [infrastructure]
+    runtimeClass: source-only
+    actorRoles: [runtime_owner, scenario_runner]
+    clientRoles: [desktop_client, browser_client, ios_simulator_client, android_emulator_client]
+    requiredServiceRoles: [machine_dev_control_plane, station_four, station_fiveArm]
+    steps:
+      - id: exact-topology
+        action: validate one immutable owner-produced v3 manifest with canonical workspace binding four slot 5, station-four and station-five-arm services, separate live and canonical schema-attestation endpoints, and exact client service bindings
+        expected: [source commit and worktree digest match, every service attestation and required role closes, profile selectors equal the service profile set, manifest digest is stable]
+        negative: [no singular Station or profile default, endpoint inference or fallback, CLI-order binding, mutable lineage, or v2 compatibility reader]
+      - id: platform-clients
+        action: attach to already-running native-tauri browser tauri-ios-simulator and tauri-android-emulator sessions
+        expected: [each client has isolated storage identity, boot identity, session generation, automation reference, actor-role digest, fixture capabilities, required service roles, and exact service bindings]
+        negative: [unknown kind, duplicate storage, stale boot or session, missing fixture capability, unsupported attachment, and service closure mismatch fail before product actions]
+      - id: owner-continuation
+        action: validate a runtime-owner restart acknowledgement and immutable child-manifest lineage while the scenario remains attach-only
+        expected: [the new boot identity and preserved storage binding are explicit, parent and child manifests bind the same source and authorized service set]
+        negative: [the scenario never deploys, launches, restarts, allocates storage, switches profiles, or tears down runtime]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: []
+
+  - schemaVersion: 1
+    id: sc-dj-canonical-schema-activation
+    domain: local-dev-control-plane
+    title: Canonical private schema activation before private Social Journeys
+    productAcceptanceRefs: []
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [workspace_owner, competing_invocation]
+    clientRoles: [schema_activation_controller]
+    requiredServiceRoles: [machine_dev_control_plane, station_four, station_fiveArm]
+    steps:
+      - id: dwf-control-plane-prerequisite
+        action: verify the separately delivered unversioned DWF-D23 control plane, its host-neutral rollout audit, the workspace-owned active-work record, and the current Plan declaration and Development Session checkpoint
+        expected: [the Plan and Task Slices use the one current unversioned shape, Git declaration Session and active-work owners agree on source identity, and 13 of 22 closures remain done]
+        negative: [no DWF-D18 or versioned workflow compatibility path, shared project-memory runtime truth, raw file rollout, partial semantic merge, or stale source declaration]
+      - id: source-freeze
+        action: under the W12A SOURCE_MUTATION declaration complete every remaining W7-W11 source scenario driver runtime-admission and hard-cut deliverable, run focused checks, record one clean canonical Development Session checkpoint, and write development/secure-content/W12A/source/<generation>/result.json
+        expected: [the declaration Session and workspace-owned active-work record bind the exact commit consumed by both activations and no W7-W11 functional task retains source-write authority]
+        negative: [no activation on dirty or partial source, no later functional-task patch under an older attestation, no mutable overwrite of an earlier generation result]
+      - id: source-and-control-plane-preflight
+        action: from the exact source-freeze checkpoint validate W12A-FOUR and W12A-FIVEARM as different work-item declarations, each containing exactly one profile deployment environment destructive scope and reset lease, plus the maintenance CLI identity reviewed SSH transport and closed SC-D23 database/object allowlists
+        expected: [each profile declaration freezes its own immutable SCHEMA_ACTIVATION manifest and no product client starts]
+        negative: [one declaration never contains both reset scopes; unknown schema edge attachment shape owner reference source service identity environment scope intent or manifest digest fails before mutation; no direct SQL DDL storage delete HTTP route reusable bearer or compatibility writer exists]
+      - id: lease-process-lock-and-replay
+        action: exercise the generic station.reset lease wrapper, direct-child SSH process, remote deployment-environment plus scope advisory lock, exact invocation replay, conflicting digest, competing invocation, expiry, and closed-channel cases
+        expected: [one invocation owns the complete critical section, exact replay returns the current journal state, and every competitor or invalid invocation fails closed]
+        negative: [no declaration-only possession, detached SSH mutation, parallel reset, changed-manifest resume, or journal advance after timeout disconnect lease loss or conflicting replay]
+      - id: cancellation-boundaries
+        action: cancel before database commit and separately interrupt by timeout or SSH disconnect after each durable journal transition
+        expected: [pre-commit cancellation rolls back to PREPARED, post-transition interruption leaves Station quiesced at the last durable state, and resume uses the same manifest with a fresh invocation ID]
+        negative: [no partial state reported as success, no Station restart before COMPLETE, no new reset ID or manifest during resume]
+      - id: activate-four-then-five-arm
+        action: complete W12A-FOUR then W12A-FIVEARM under separate reset IDs declarations exact scopes leases manifests journals and invocation sets
+        expected: [both journals reach COMPLETE serially, each profile directory has one immutable manifest journal invocation set attestation and result, canonical private schema and indexes match current models, retired columns and private rows and objects are absent, and public plus non-Social state remains byte-equal]
+        negative: [no cross-profile target, parallel activation, consumed Content PreKey reactivation, public mutation, or activation relabelled as FINAL_CUT]
+      - id: aggregate-activation
+        action: create one immutable W12A aggregate from exactly the four and fiveArm COMPLETE child-result digests plus the shared source-freeze digest
+        expected: [the aggregate proves both current attestations belong to the same exact source generation and contains no product-pass claim]
+        negative: [missing duplicate stale wrong-source or wrong-profile child fails aggregation, no child artifact is rewritten]
+      - id: schema-attestation-admission
+        action: emit one CanonicalPrivateSchemaAttestationV1 per completed profile and ask the runtime owner to admit a private Social manifest, then repeat with missing stale wrong-source wrong-profile wrong-service incomplete-journal and schema-drift attestations
+        expected: [the exact current attestations bind both Station services before client launch and every invalid variant returns CANONICAL_PRIVATE_SCHEMA_UNAVAILABLE before the first private product action]
+        negative: [no scenario-generated attestation, schema-inspection substitute, stale attestation acceptance, W7 pass, W12 pass, or formal Acceptance claim]
+      - id: source-drift-reopen
+        action: from a simulated W7-W11 source defect report only the failed task and first-failure ref; let the current Development Workflow owner mechanically select W12A and W7, quiesce the Session/runtime, release exact leases and declaration, record immutable evidence invalidation, return W12A to current, return W7 and every affected successor to pending, apply the root fix only under a new W12A SOURCE_MUTATION declaration, then publish a clean Session checkpoint and require both activations
+        expected: [the Plan validates before and after reopen, earlier evidence remains immutable but cannot satisfy the new generation, and product retry is impossible until both fresh attestations exist]
+        negative: [no source edit while a functional task owns the declaration, no done functional task remains credited against changed source, no recapture of the Plan initial HEAD]
+      - id: release-and-restore
+        action: release both reset leases, remove station.reset from the workspace registration, and restore the canonical workspace binding to profile four and slot 5
+        expected: [station connect and deploy capability remain, later reset acquisition fails without fresh task authorization, and W7 becomes the next dependency-ready task]
+    budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
+    promotionGateIds: []
+
+  - schemaVersion: 1
     id: sc-dj-contract-consumers
     domain: secure-content
     title: Generated Secure Content contract consumers
@@ -254,6 +333,10 @@ journeys:
     clientRoles: [desktop_alice, desktop_bob, desktop_eve]
     requiredServiceRoles: [station_four, social, key_exchange, object_backend]
     steps:
+      - id: canonical-schema-admission
+        action: before launching the first private Social client validate the Station service binding and its current CanonicalPrivateSchemaAttestationV1
+        expected: [the runtime manifest admits the exact W7 source profile service identity completed activation journal canonical schema digest retired-column absence and public snapshot]
+        negative: [CANONICAL_PRIVATE_SCHEMA_UNAVAILABLE occurs before the first private product action for any missing stale wrong-source wrong-profile wrong-service incomplete-journal or schema-drift attestation]
       - id: native-prekey-lifecycle
         action: bootstrap the process-owned Content PreKey supervisor and inject crashes before send after send and after response before local commit
         expected: [orphaned pending and in-flight commands reconcile by exact command payload, batch completion never marks unopened keys committed, fresh inventory controls readiness]
@@ -317,13 +400,14 @@ journeys:
     workClasses: [product-behavior]
     runtimeClass: native-desktop
     actorRoles: [alice, bob, eve, group_member, remote_recipient]
-    clientRoles: [desktop_alice, desktop_bob, desktop_eve]
-    requiredServiceRoles: [station_four, social, conversation_membership, key_exchange, object_backend]
+    clientRoles: [desktop_alice, desktop_bob, desktop_eve, desktop_remote_recipient]
+    requiredServiceRoles: [station_primary, station_secondary, social, conversation_membership, key_exchange, object_backend]
     steps:
       - id: audience
         action: exercise FOLLOWERS FRIENDS CIRCLE GROUP SELF CUSTOM and remote-recipient rejection
-        expected: [authorized readers succeed, stale snapshots and remote recipient reject before publish]
-      - id: comments
+        expected: [typed Circle and canonical Conversation Group targets select the intended local authority, CUSTOM_DENY accepts only FOLLOWERS, authorized readers succeed, stale snapshots and the fiveArm-backed remote recipient reject before publish]
+        negative: [no CUSTOM_DENY(PUBLIC), numeric Group alias, synthetic remote PTID, remote-member truncation, partial Post, key claim, envelope, delivery or object grant]
+      - id: comment
         action: edit encrypt submit retry rate-limit and invalidate parent
         expected: [COMMENT_EDITING and COMMENT_ENCRYPTING retain draft, COMMENT_SUBMITTING is local, COMMENT_POSTED is exact at receiver, COMMENT_FAILED is retryable, COMMENT_RATE_LIMITED exposes retry-after, COMMENT_PARENT_UNAVAILABLE disables submit]
         receiverRole: bob
@@ -331,22 +415,15 @@ journeys:
         action: publish TEXT IMAGE VIDEO Poll Repost Mention Reaction Link and Location cases
         expected: [exact typed projection and audience rules, image and video receiver bytes match]
         receiverRole: bob
-      - id: attachment
-        action: traverse placeholder grant pending download decrypt ready denied integrity and offline states
-        expected: [MEDIA_PLACEHOLDER, MEDIA_GRANT_PENDING, MEDIA_DOWNLOADING, MEDIA_DECRYPTING, MEDIA_READY, MEDIA_ACCESS_DENIED, MEDIA_INTEGRITY_FAILURE and MEDIA_OFFLINE_RETRYABLE preserve their required actions for image and video, no public or plaintext fallback]
+      - id: object
+        action: traverse image and video placeholder grant download decrypt ready deny integrity offline attach replay conflict expire physical-delete failure worker restart and cleanup retry
+        expected: [all eight media states preserve their actions, exact receiver bytes reach MEDIA_READY, exact attach replay returns the original result, conflicting attach is typed, unattached cleanup resumes through durable GC states, and attached objects are never collected]
+        negative: [no public or plaintext fallback, partial grant, cross-resource attachment, cross-uploader attachment, silent metadata deletion, or deletion of attached media]
         receiverRole: bob
-      - id: object-attach-replay
-        action: attach a COMPLETE_UNATTACHED object in the Social UOW, replay the exact attach, then retry with a conflicting domain commit or descriptor
-        expected: [exact replay returns the original result, conflicting attach is typed and attached objects remain bound to one domain commit]
-        negative: [no partial grant, no cross-resource or cross-uploader attachment]
-      - id: object-gc-recovery
-        action: expire an unattached object, fail one physical delete, restart the worker, then retry cleanup
-        expected: [COMPLETE_UNATTACHED moves through GC_CLAIMED and RETRY_WAIT or CLEANUP_FAILED before GARBAGE_COLLECTED, attached objects are never collected]
-        negative: [no silent metadata deletion while ciphertext survives, no deletion of attached media]
-      - id: lifecycle
+      - id: delete-block
         action: cancel before/after admission, time out, switch account, delete and block
         expected: [receipt resolves outcome, prior projection clears, future access denies]
-      - id: bounds-storage-overload
+      - id: bounds
         action: test exact and over-limit audience comments payload objects chunks plans uploads and recovery pages, then inject storage-full and worker queue saturation
         expected: [at-limit work completes, over-limit and overload return typed retry-after before encryption or unbounded admission, abandoned objects remain auditable and GC eligible]
         negative: [no recipient truncation, partial commit, silent drop or unbounded queue]
@@ -413,6 +490,11 @@ journeys:
       - id: android-lifecycle-bounds
         action: on Android Emulator Native repeat restart recovery cancel timeout account switch delete block storage-full overload object attach replay and GC cleanup-retry cases
         expected: [Desktop-equivalent receipt cleanup bounded-retry and no-partial-commit outcomes hold]
+        receiverRole: bob
+      - id: cross-platform-receivers
+        action: publish private Social content on iOS Simulator for Android Emulator receipt and then publish on Android Emulator for iOS Simulator receipt
+        expected: [both receivers observe exact typed content and media bytes through the same portable core and Station authority]
+        negative: [no platform-local crypto fork, Browser or API-only substitute, shared client storage, or one-way-only parity claim]
         receiverRole: bob
     budgets: { focusedCheckSeconds: 1800, deploySeconds: 1200, functionalRunSeconds: 7200, cleanupSeconds: 1200 }
     promotionGateIds: [social-private-content-mobile-native-e2e]
@@ -499,7 +581,7 @@ journeys:
   - schemaVersion: 1
     id: sc-dj-authorized-reset
     domain: local-dev-control-plane
-    title: Authorized Social private physical reset transaction
+    title: Authorized Social private FINAL_CUT transaction
     productAcceptanceRefs: []
     workClasses: [product-behavior]
     runtimeClass: service
@@ -507,17 +589,25 @@ journeys:
     clientRoles: [reset_controller]
     requiredServiceRoles: [machine_dev_control_plane, station_four, station_fiveArm]
     steps:
+      - id: prepare-reset-manifests
+        action: after W11 validate W12F-FOUR and W12F-FIVEARM as different work-item declarations with fresh FINAL_CUT reset IDs, each containing exactly one profile exact scope authorization target attestation clean source schema allowlist foreign-key graph object ownership and references, then freeze each immutable target plus public snapshot manifest
+        expected: [each profile has a fresh FINAL_CUT manifest digest and PREPARED journal entry, public Social rows and objects have canonical hashes, all object targets have one owning adapter]
+        negative: [one declaration never contains both reset scopes; unknown table column attachment shape owner reference digest or cross-profile target blocks before mutation; no W12A activation reset ID manifest journal attestation or result is reusable]
       - id: reset-four
-        action: under one station.reset lease capture the four pre-audit, delete only the authorized private schema rows and objects, deploy through make station, and capture the post-audit
-        expected: [public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
-        negative: [no reset without exact work-item scope and registration capability, no lease gap]
+        action: under one station.reset lease execute FINAL_CUT only for station-four-social-private from the frozen manifest, commit the allowlisted database/schema transaction, invoke Social and OSS owner deletion adapters, deploy through make station, and capture the post-audit
+        expected: [the fresh journal advances monotonically through DATABASE_SCHEMA_COMMITTED OBJECTS_DELETED STATION_DEPLOYED POST_AUDIT_PASSED and COMPLETE, public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
+        negative: [no reset without exact work-item scope registration capability and manifest digest, no lease gap, no Station start from partial state]
       - id: reset-five-arm
-        action: repeat the complete reset transaction for fiveArm under its distinct station.reset lease
-        expected: [public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
-        negative: [no cross-profile reset, no partial cleanup]
+        action: after four is COMPLETE repeat the fresh FINAL_CUT transaction for station-five-arm-social-private under its distinct station.reset lease
+        expected: [the fresh journal advances monotonically to COMPLETE, public hashes and counts are unchanged, legacy private schema and objects are absent, the lease spans every step]
+        negative: [no cross-profile reset, parallel reset, partial cleanup, changed-manifest resume, or Station start from partial state]
       - id: remove-reset-capability
         action: release both reset leases and remove station.reset from the workspace registration
         expected: [station.connect and station.deploy remain, subsequent reset acquisition fails closed]
+      - id: immutable-product-aggregate
+        action: after FINAL_CUT collect separate Desktop Browser iOS Android Chat Desktop Chat iOS and Chat Android child results and bind them with both final-cut child digests into one W12 aggregate
+        expected: [every named child is PASS on the final exact source and the aggregate owns the W12 completion decision]
+        negative: [missing duplicate failed wrong-source or activation-intent child keeps W12 UNPROVEN, no child artifact is rewritten]
     budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 2400, cleanupSeconds: 1200 }
     promotionGateIds: [social-private-content-hard-cut]
 

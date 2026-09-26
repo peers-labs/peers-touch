@@ -1,8 +1,8 @@
 # Chat Lifecycle - Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-16 | **Updated**: 2026-09-22
+> **Version**: v1.5
+> **Created**: 2026-09-16 | **Updated**: 2026-09-26
 > **Owner**: Chat Product Team
 
 ---
@@ -114,6 +114,22 @@ supporting evidence only.
   renderer geometry without a visible scale flash.
 - Voice capture permission, cancel, duration, playback progress, seek, pause,
   resume, end, and failure states are visible.
+
+### CHAT-G05A: Presence And Conversation Layout Regression
+
+- Two authenticated native peers remain authoritatively online while window
+  focus alternates and for longer than one Station lease interval.
+- Same-Station presence uses the local lease and realtime flip; cross-Station
+  presence is queried through the verified Home Station route.
+- Missing routing, peer timeout, invalid authentication, and omitted status
+  render unavailable, never offline.
+- A realtime presence flip observed after a snapshot starts cannot be
+  overwritten by that older snapshot.
+- Changing a conversation unread count from zero through multi-digit values
+  preserves row height, vertical position, and text-column width.
+- Adding thread, reaction, pending interaction, and emoji-only message state
+  preserves the visible message anchor and neighboring row geometry.
+- Production source contains no task-local debug egress.
 
 ### CHAT-G08-G09: Interactions And Groups
 
@@ -297,6 +313,9 @@ when its named assertion is absent from the Gate report.
 | CHAT-UR11 | Selecting a local chat background waits for upload before changing the visible surface | `chat-direct` | `chat-lifecycle-direct-e2e` | The selected local image previews in the same interaction frame; upload/persistence completes in background and failure rolls back with retry |
 | CHAT-UR12 | Search cannot find known conversation messages and the clear affordance is detached from the input edge | `chat-direct` | `chat-lifecycle-direct-e2e` | Search resolves the active canonical conversation and finds exact durable text; the clear control remains inside the input suffix boundary |
 | CHAT-UR13 | Restoring cleared history within the advertised 24-hour window fails | `chat-direct` | `chat-lifecycle-direct-e2e` | Clear stores a bounded marker; restore within 24 hours resets it and reprojects the same durable messages, while expired restore is rejected |
+| CHAT-UR14 | Two actively connected peers both render offline | `chat-presence-layout` | `chat-presence-layout-e2e` | Both native clients observe the other actor online across focus changes and beyond one lease interval; unavailable authority renders unknown |
+| CHAT-UR15 | A new unread badge squeezes or vertically shifts conversation rows | `chat-presence-layout` | `chat-presence-layout-e2e` | Zero, single-digit, and capped multi-digit unread states keep identical row and text-column geometry |
+| CHAT-UR16 | Thread, reaction, or emoji state makes the message timeline jump | `chat-presence-layout` | `chat-presence-layout-e2e` | Before/after viewport measurements preserve the visible message anchor and neighboring row positions |
 
 ## 5. Required Runtime Cells
 

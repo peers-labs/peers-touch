@@ -70,10 +70,23 @@ describe('IM service boundary', () => {
   it('binds device revocation to the observed profile version', async () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
-      data: {},
+      data: {
+        device: {
+          ref: {
+            actor: {
+              ptid: 'ptid:alice',
+              acct: 'alice@p.t',
+              kind: 'ACTOR_KIND_PERSON',
+            },
+            device_id: 'device-alice',
+          },
+          status: 'ACTOR_DEVICE_STATUS_REVOKED',
+          profile_version: '8',
+        },
+      },
     })
 
-    await imServiceV1.device.revoke('device-alice', 7n)
+    const revoked = await imServiceV1.device.revoke('device-alice', 7n)
 
     expect(invokeMock).toHaveBeenCalledWith('device_revoke', {
       input: {
@@ -81,6 +94,9 @@ describe('IM service boundary', () => {
         observed_profile_version: 7,
       },
     })
+    expect(revoked.ref?.deviceId).toBe('device-alice')
+    expect(revoked.status).toBe(4)
+    expect(revoked.profileVersion).toBe(8n)
   })
 })
 
@@ -318,6 +334,8 @@ describe('Messaging conversation projection', () => {
           federation_id: 'federation-1',
           kind: 2,
           name: 'Group',
+          description: 'Group description',
+          avatar_object_id: 'oss://chat/group-avatar',
           owner_ptid: 'ptid:test:alice',
           members: [
             {
@@ -352,6 +370,8 @@ describe('Messaging conversation projection', () => {
       federationId: 'federation-1',
       kind: 2,
       name: 'Group',
+      description: 'Group description',
+      avatarObjectId: 'oss://chat/group-avatar',
       ownerPtid: 'ptid:test:alice',
       members: [
         expect.objectContaining({
@@ -566,8 +586,20 @@ describe('Messaging send outcome', () => {
       'direct',
       '',
       [
-        { filePath: '/tmp/image.png', filename: 'image.png', mimeType: 'image/png' },
-        { filePath: '/tmp/file.pdf', filename: 'file.pdf', mimeType: 'application/pdf' },
+        {
+          filePath: '/tmp/image.png',
+          filename: 'image.png',
+          mimeType: 'image/png',
+          contentKind: 'file',
+          durationMs: 0,
+        },
+        {
+          filePath: '/tmp/file.pdf',
+          filename: 'file.pdf',
+          mimeType: 'application/pdf',
+          contentKind: 'file',
+          durationMs: 0,
+        },
       ],
     )).resolves.toEqual({
       commandId: commandId || undefined,
@@ -584,8 +616,20 @@ describe('Messaging send outcome', () => {
         reply_to_message_id: '',
         thread_root_message_id: '',
         attachments: [
-          { file_path: '/tmp/image.png', filename: 'image.png', mime_type: 'image/png' },
-          { file_path: '/tmp/file.pdf', filename: 'file.pdf', mime_type: 'application/pdf' },
+          {
+            file_path: '/tmp/image.png',
+            filename: 'image.png',
+            mime_type: 'image/png',
+            content_kind: 'file',
+            duration_ms: 0,
+          },
+          {
+            file_path: '/tmp/file.pdf',
+            filename: 'file.pdf',
+            mime_type: 'application/pdf',
+            content_kind: 'file',
+            duration_ms: 0,
+          },
         ],
       },
     })
@@ -657,6 +701,54 @@ describe('Messaging membership intent boundary', () => {
     expect(input).not.toHaveProperty('observed_membership_epoch')
     expect(input).not.toHaveProperty('key_package')
     expect(input).not.toHaveProperty('mls_commit')
+  })
+})
+
+describe('Conversation-owned group administration boundary', () => {
+  it.each([
+    ['updateConversation', ['group-1', { name: 'Renamed' }], 'messaging_update_conversation', {
+      conversation_id: 'group-1',
+      name: 'Renamed',
+    }],
+    ['updateMemberAuthority', ['group-1', 'ptid:bob', { role: 2 }], 'messaging_update_member_authority', {
+      conversation_id: 'group-1',
+      target_ptid: 'ptid:bob',
+      role: 2,
+    }],
+    ['transferOwnership', ['group-1', 'ptid:bob'], 'messaging_transfer_ownership', {
+      conversation_id: 'group-1',
+      target_ptid: 'ptid:bob',
+    }],
+    ['dissolveConversation', ['group-1'], 'messaging_dissolve_conversation', {
+      conversation_id: 'group-1',
+    }],
+  ] as const)('%s uses the Messaging Engine owner', async (method, args, command, input) => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: { command_id: 'command-1', state: 'pending' },
+    })
+
+    const operation = imServiceV1.messaging[method] as (...values: readonly unknown[]) => Promise<unknown>
+    await expect(operation(...args)).resolves.toEqual({
+      commandId: 'command-1',
+      state: 'pending',
+    })
+    expect(invokeMock).toHaveBeenCalledWith(command, { input })
+  })
+
+  it('represents leave as a pending signed intent, not a self-authored command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: { intent_id: 'leave-intent-1', state: 'pending' },
+    })
+
+    await expect(imServiceV1.messaging.leaveConversation('group-1')).resolves.toEqual({
+      intentId: 'leave-intent-1',
+      state: 'pending',
+    })
+    expect(invokeMock).toHaveBeenCalledWith('messaging_leave_conversation', {
+      input: { conversation_id: 'group-1' },
+    })
   })
 })
 

@@ -24,34 +24,38 @@ from tooling.acceptance.core.source_sync import (
     SourceSyncRequest,
 )
 
-def _continuation_pass_fds(environment: dict[str, str]) -> tuple[int, ...]:
+
+def _inherited_machine_lease_fds(
+    environment: dict[str, str],
+) -> tuple[int, ...]:
     raw_fd = environment.get("PT_MACHINE_LEASE_FD", "").strip()
     if not raw_fd:
         return ()
     try:
         lease_fd = int(raw_fd)
-    except ValueError as error:
-        raise RuntimeError("PT_MACHINE_LEASE_FD must be an integer") from error
-    if lease_fd < 3:
-        raise RuntimeError("PT_MACHINE_LEASE_FD must reference an inherited descriptor")
-    try:
+        if lease_fd < 3:
+            raise ValueError
         os.fstat(lease_fd)
-    except OSError as error:
-        raise RuntimeError("PT_MACHINE_LEASE_FD is not open") from error
+    except (OSError, ValueError) as error:
+        raise ProvisioningError(
+            "source-sync inherited machine lease file descriptor is invalid"
+        ) from error
     return (lease_fd,)
 
 
-def _run_continuation(
+def _run_follow_up(
     command: list[str],
+    *,
     environment: dict[str, str],
-) -> subprocess.CompletedProcess[bytes]:
+) -> int:
     return subprocess.run(
         command,
         cwd=REPO_ROOT,
         env=environment,
         check=False,
-        pass_fds=_continuation_pass_fds(environment),
-    )
+        close_fds=True,
+        pass_fds=_inherited_machine_lease_fds(environment),
+    ).returncode
 
 
 def main() -> int:
@@ -67,6 +71,7 @@ def main() -> int:
     )
     parser.add_argument("environment")
     parser.add_argument("--branch", default="")
+    parser.add_argument("--environment-file", type=Path)
     parser.add_argument("--source-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--require-clean", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -90,6 +95,7 @@ def main() -> int:
             source_root=args.source_root,
             environments_dir=environments_dir,
             central_environment_path=central_environment_path,
+            environment_path=args.environment_file,
             branch=args.branch,
             require_clean=args.require_clean,
         )
@@ -114,7 +120,10 @@ def main() -> int:
                 _write_result(result.to_dict(), as_json=args.json)
                 environment = os.environ.copy()
                 environment["PT_SOURCE_LEASE_HELD"] = "1"
-                return _run_continuation(command, environment).returncode
+                return _run_follow_up(
+                    command,
+                    environment=environment,
+                )
         result = RemoteSourceSynchronizer(request).sync()
     except (
         OSError,

@@ -333,8 +333,22 @@ export function filterClearedMessages(
 }
 
 export function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
-  return mergeChatMessages(existing, incoming, {
+  const merged = mergeChatMessages(existing, incoming, {
     resolveTimestampMs: messageSentMs,
+  });
+  return merged.sort((left, right) => {
+    const leftSequence = messageGroupSeq(left);
+    const rightSequence = messageGroupSeq(right);
+    const leftConfirmed = leftSequence > 0;
+    const rightConfirmed = rightSequence > 0;
+    if (leftConfirmed && rightConfirmed) {
+      return leftSequence - rightSequence;
+    }
+    if (leftConfirmed !== rightConfirmed) {
+      return leftConfirmed ? -1 : 1;
+    }
+    const timestampDelta = messageSentMs(left) - messageSentMs(right);
+    return timestampDelta || left.ulid.localeCompare(right.ulid);
   });
 }
 

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
+	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	sharedfederation "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
@@ -69,15 +71,84 @@ func newPrivateContentRecipientDirectory(
 	runtime *sharedfederation.Runtime,
 ) (*privateContentRecipientDirectory, error) {
 	if actors == nil || runtime == nil {
-		return nil, errors.New(
-			"Social private recipient directory requires Actor Identity and Federation",
-		)
+		return nil, nil
 	}
 	return &privateContentRecipientDirectory{
 		actors:  actors,
 		runtime: runtime,
 		now:     time.Now,
 	}, nil
+}
+
+func (d *privateContentRecipientDirectory) ResolveRecipientLocalities(
+	ctx context.Context,
+	localStationPeerID string,
+	recipientPTIDs []string,
+) ([]socialdomain.RecipientLocality, error) {
+	const operation = "social.private_content.resolve_recipient_localities"
+
+	if strings.TrimSpace(localStationPeerID) == "" ||
+		localStationPeerID != strings.TrimSpace(localStationPeerID) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentInvalidArgument,
+			operation,
+			"local_station_peer_id",
+			"must be canonical",
+		)
+	}
+	actors := append([]string(nil), recipientPTIDs...)
+	sort.Strings(actors)
+	localities := make([]socialdomain.RecipientLocality, 0, len(actors))
+	previous := ""
+	for _, actorPTID := range actors {
+		if strings.TrimSpace(actorPTID) == "" ||
+			actorPTID != strings.TrimSpace(actorPTID) ||
+			actorPTID == previous {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				"recipient_ptids",
+				"must be canonical and unique",
+			)
+		}
+		homeStationPeerID, err :=
+			d.actors.ResolveActorHomeStationPeerID(ctx, actorPTID)
+		if err != nil {
+			var identityError *actoridentitydomain.Error
+			if errors.As(err, &identityError) &&
+				identityError.Code ==
+					actoridentitydomain.ErrorCodeIdentityUnavailable &&
+				identityError.Field == "home_station_peer_id" {
+				return nil, socialdomain.WrapPrivateContentError(
+					socialdomain.PrivateContentUnsupported,
+					operation,
+					err,
+				)
+			}
+			return nil, err
+		}
+		if strings.TrimSpace(homeStationPeerID) == "" ||
+			homeStationPeerID != strings.TrimSpace(homeStationPeerID) {
+			return nil, errors.New(
+				"Actor Identity returned an invalid Home Station",
+			)
+		}
+		if homeStationPeerID != localStationPeerID {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnsupported,
+				operation,
+				"recipient_home_station_peer_id",
+				"v1 private content does not support remote recipients",
+			)
+		}
+		localities = append(localities, socialdomain.RecipientLocality{
+			ActorPTID:         actorPTID,
+			HomeStationPeerID: homeStationPeerID,
+		})
+		previous = actorPTID
+	}
+
+	return localities, nil
 }
 
 func (d *privateContentRecipientDirectory) ResolveContentPreKeyTargets(
@@ -430,7 +501,8 @@ func (s privateContentStationSigner) AttestContentProofVerificationKey(
 }
 
 type privateContentAuthorSignatureVerifier struct {
-	actors privateContentActorCapabilities
+	actors             privateContentActorCapabilities
+	localStationPeerID string
 }
 
 func (v privateContentAuthorSignatureVerifier) Verify(
@@ -442,6 +514,7 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	signature []byte,
 ) error {
 	if v.actors == nil ||
+		strings.TrimSpace(v.localStationPeerID) == "" ||
 		sender == nil ||
 		sender.GetActor() == nil ||
 		len(canonical) == 0 ||
@@ -455,6 +528,9 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	)
 	if err != nil {
 		return err
+	}
+	if homeStationPeerID != v.localStationPeerID {
+		return errors.New("Social private author is not homed on this Station")
 	}
 	key, err := v.actors.ResolveVerifiedActorDeviceSigningKey(
 		ctx,
@@ -490,11 +566,12 @@ func resolvePrivateContentActorCapabilities() (
 	error,
 ) {
 	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	if instance == nil {
+		return nil, nil
+	}
 	provider, ok := instance.(privateContentActorCapabilities)
-	if !ok || provider == nil {
-		return nil, errors.New(
-			"canonical Actor Identity capability is unavailable",
-		)
+	if !ok {
+		return nil, nil
 	}
 	return provider, nil
 }

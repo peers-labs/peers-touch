@@ -27,7 +27,7 @@ thiserror = "1"
 tls_codec = "0.4.2"
 ulid = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
-zeroize = "1"
+zeroize = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 prost-build = "0.14"

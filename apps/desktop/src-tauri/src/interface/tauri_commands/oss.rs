@@ -392,6 +392,10 @@ pub(crate) fn capture_screenshot_with_window_hidden(
     window: &Window,
 ) -> Result<std::path::PathBuf, AppResult<StubPayload>> {
     let was_visible = window.is_visible().unwrap_or(true);
+    let outer_position = window.outer_position().ok();
+    let outer_size = window.outer_size().ok();
+    let preserve_freeform_geometry =
+        !window.is_maximized().unwrap_or(false) && !window.is_fullscreen().unwrap_or(false);
     if was_visible {
         if let Err(error) = window.hide() {
             tracing::warn!(error = %error, "Failed to hide window before screenshot capture");
@@ -402,6 +406,18 @@ pub(crate) fn capture_screenshot_with_window_hidden(
     let result = capture_screenshot_to_temp_file();
 
     if was_visible {
+        if preserve_freeform_geometry {
+            if let Some(size) = outer_size {
+                if let Err(error) = window.set_size(size) {
+                    tracing::warn!(error = %error, "Failed to restore window size after screenshot capture");
+                }
+            }
+            if let Some(position) = outer_position {
+                if let Err(error) = window.set_position(position) {
+                    tracing::warn!(error = %error, "Failed to restore window position after screenshot capture");
+                }
+            }
+        }
         if let Err(error) = window.show() {
             tracing::warn!(error = %error, "Failed to restore window after screenshot capture");
         }

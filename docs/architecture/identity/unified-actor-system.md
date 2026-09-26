@@ -50,7 +50,9 @@ Rules:
 - `ptid` is the sole actor identity allowed outside Station persistence.
 - `actor_id` is a Station-internal database key and never enters `ActorRef`,
   API payloads, events, JWT subject identity, Tauri commands, or client stores.
-- `acct` is the human-friendly handle; pre-federation responses MAY leave it empty.
+- `acct` is the canonical `user@host` projection of persisted
+  `db.Actor.FederatedHandle`; request URLs, forwarded hosts, and tunnel
+  endpoints MUST NOT synthesize identity. Pre-federation rows MAY leave it empty.
 - `kind` MUST be present on every `ActorRef`. Receiving `ACTOR_KIND_UNSPECIFIED` from an internal trusted source MAY default to `PERSON`; from any external source it is an error.
 
 `ActorRef` is the only structure permitted to carry identity across processes or the network. Profile bodies (`ActorProfile`, `Account`, etc.) embed an optional `ActorRef ref` field but MUST NOT be used as identity carriers.
@@ -145,7 +147,7 @@ The historical `Type` column (ActivityPub literal, e.g. `"Person"`) remains as l
 |---|---|---|
 | `model/db.Actor` | `model/db/actor.go` | Persisted Actor row, including `Kind`. |
 | `activitypub/identity` | `activitypub/identity` | PTID generation and resolution. |
-| `actor` | `actor` | `SignUp`, `Login`, profile, identity-bearing helpers. `ProtoActorRef(*db.Actor, baseURL)` is the canonical `ActorRef` builder. |
+| `actor` | `actor` | `SignUp`, `Login`, profile, identity-bearing helpers. `ProtoActorRef(*db.Actor)` is the canonical `ActorRef` builder. |
 | `session/handler` | `session/handler` | JWT mint + verify; populates `actor_ref` on responses. |
 
 ---
@@ -429,8 +431,7 @@ the target identity contract is complete.
 | 4 | `account_type` legacy proto string field has no scheduled removal. | Planned: remove one release after every client confirms adoption of `kind`. |
 | 5 | The `clear-localstorage-caches` prefix list is hand-maintained. New cached keys not on the list will leak across identity changes, with no automated detection. | Mitigation: ESLint rule or boot-time prefix registry. Out of scope here. |
 | 6 | No automated end-to-end test exercises a real two-window two-account scenario through the Tauri runtime. Coverage today is unit / type / build only. | Planned: WebDriver-based smoke under `tooling/`. |
-| 7 | `HandleVerifySession` returns empty `acct` when the request lacks a base-URL helper. | Tracked as TODO in `session_handler.go`. |
-| 8 | The current `__default__` bucket absorbs empty identity. | Blocking migration: remove fallback and return a typed missing-PTID error. |
+| 7 | The current `__default__` bucket absorbs empty identity. | Blocking migration: remove fallback and return a typed missing-PTID error. |
 
 These items are not regressions of this design; they are the explicit residue of a phased migration. Future work tracks them as separate PRs.
 

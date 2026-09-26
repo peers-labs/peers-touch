@@ -171,6 +171,10 @@ export interface ChatAttachmentLike {
   readonly filename?: string;
   readonly mimeType?: string;
   readonly mime_type?: string;
+  readonly contentKind?: 'file' | 'voice_note';
+  readonly content_kind?: 'file' | 'voice_note';
+  readonly durationMs?: number;
+  readonly duration_ms?: number;
   readonly visibility?: string;
   readonly size?: number | string | bigint;
   readonly thumbnailCid?: string;
@@ -851,15 +855,12 @@ export function chatMessageTypeForMime(mimeType: string): number {
 export function chatMediaKindFromMimeFilename(mimeType = '', filename = ''): ChatMediaKind {
   const normalizedMime = mimeType.trim().toLowerCase();
   const normalizedFilename = filename.trim();
-  if (normalizedMime.startsWith('image/') || IMAGE_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) {
-    return 'image';
-  }
-  if (normalizedMime.startsWith('video/') || VIDEO_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) {
-    return 'video';
-  }
-  if (normalizedMime.startsWith('audio/') || AUDIO_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) {
-    return 'audio';
-  }
+  if (normalizedMime.startsWith('image/')) return 'image';
+  if (normalizedMime.startsWith('video/')) return 'video';
+  if (normalizedMime.startsWith('audio/')) return 'audio';
+  if (IMAGE_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) return 'image';
+  if (VIDEO_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) return 'video';
+  if (AUDIO_ATTACHMENT_FILENAME_PATTERN.test(normalizedFilename)) return 'audio';
   return 'file';
 }
 
@@ -907,6 +908,17 @@ export function encryptedChatTransportMessageType(): number {
 
 export function chatAttachmentMimeType(attachment: ChatAttachmentLike): string {
   return (attachment.mimeType ?? attachment.mime_type ?? '').trim();
+}
+
+export function chatAttachmentDurationMs(attachment: ChatAttachmentLike): number {
+  const value = Number(attachment.durationMs ?? attachment.duration_ms);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+export function isChatVoiceNoteAttachment(attachment: ChatAttachmentLike): boolean {
+  return (attachment.contentKind ?? attachment.content_kind) === 'voice_note'
+    && chatAttachmentMimeType(attachment).toLowerCase().startsWith('audio/')
+    && chatAttachmentDurationMs(attachment) > 0;
 }
 
 export function normalizeChatAttachmentVisibility(

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
@@ -17,7 +17,11 @@ import {
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
 import { blocksMessageActionOverlay } from './messageReactionState';
-import { chatMessageTimelineContainerStyle } from './chatMessageTimelinePolicy';
+import {
+  chatMessageTimelineContainerStyle,
+  shouldAdjustChatMessageScrollPosition,
+  shouldVirtualizeChatMessageTimeline,
+} from './chatMessageTimelinePolicy';
 
 const { Text } = Typography;
 
@@ -25,7 +29,6 @@ interface ChatThreadStats {
   replyCount: number;
   replyIds: string[];
   unreadCount: number;
-  previewMessages: ChatMessage[];
 }
 
 interface ChatMessageTimelineProps {
@@ -41,6 +44,7 @@ interface ChatMessageTimelineProps {
   highlightedMessageUlid: string | null;
   isPinned: (message: ChatMessage) => boolean;
   messages: ChatMessage[];
+  onTimelineMeasured: () => void;
   onDelete: (message: ChatMessage) => void;
   onEdit: (message: ChatMessage) => void;
   onForward: (message: ChatMessage) => void;
@@ -114,6 +118,7 @@ export function ChatMessageTimeline({
   highlightedMessageUlid,
   isPinned,
   messages,
+  onTimelineMeasured,
   onDelete,
   onEdit,
   onForward,
@@ -137,6 +142,7 @@ export function ChatMessageTimeline({
   const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const closeActionsTimerRef = useRef<number | null>(null);
   const [actionTarget, setActionTarget] = useState<MessageActionTarget | null>(null);
+  const virtualized = shouldVirtualizeChatMessageTimeline(surfaceItems.length);
 
   const cancelActionClose = useCallback(() => {
     if (closeActionsTimerRef.current === null) return;
@@ -191,11 +197,22 @@ export function ChatMessageTimeline({
 
   const virtualizer = useVirtualizer({
     count: surfaceItems.length,
+    enabled: virtualized,
     getScrollElement: () => scrollContainerRef.current,
+    getItemKey: (index) => surfaceItems[index]?.message.ulid ?? index,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 5,
     measureElement: (el) => el.getBoundingClientRect().height,
   });
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+    item,
+    delta,
+    instance,
+  ) => shouldAdjustChatMessageScrollPosition(
+    item.start,
+    instance.scrollOffset ?? 0,
+    delta,
+  );
 
   const measureRef = useCallback(
     (index: number) => (node: HTMLDivElement | null) => {
@@ -209,7 +226,17 @@ export function ChatMessageTimeline({
     [virtualizer],
   );
 
-  const virtualItems = virtualizer.getVirtualItems();
+  const renderedItems = virtualized
+    ? virtualizer.getVirtualItems().map((item) => ({
+        index: item.index,
+        start: item.start,
+      }))
+    : surfaceItems.map((_, index) => ({ index, start: 0 }));
+  const totalSize = virtualized ? virtualizer.getTotalSize() : 0;
+
+  useLayoutEffect(() => {
+    onTimelineMeasured();
+  }, [onTimelineMeasured, surfaceItems, totalSize]);
 
   return (
     <>
@@ -234,9 +261,10 @@ export function ChatMessageTimeline({
       />
       <div
         data-chat-message-timeline
-        style={chatMessageTimelineContainerStyle(virtualizer.getTotalSize())}
+        data-chat-message-timeline-mode={virtualized ? 'virtualized' : 'flow'}
+        style={chatMessageTimelineContainerStyle(totalSize, virtualized)}
       >
-        {virtualItems.map((virtualItem) => {
+        {renderedItems.map((virtualItem) => {
           const item = surfaceItems[virtualItem.index];
           const message = item.message;
           const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
@@ -246,14 +274,14 @@ export function ChatMessageTimeline({
           return (
             <div
               key={message.ulid}
-              ref={measureRef(virtualItem.index)}
+              ref={virtualized ? measureRef(virtualItem.index) : undefined}
               data-index={virtualItem.index}
               style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
+                position: virtualized ? 'absolute' : 'relative',
+                top: virtualized ? 0 : undefined,
+                left: virtualized ? 0 : undefined,
                 width: '100%',
-                transform: `translateY(${virtualItem.start}px)`,
+                transform: virtualized ? `translateY(${virtualItem.start}px)` : undefined,
                 display: 'flex',
                 flexDirection: 'column',
               }}
@@ -283,7 +311,6 @@ export function ChatMessageTimeline({
                 threadReplyCount={threadStats.replyCount}
                 threadReplyIds={threadStats.replyIds}
                 threadUnreadCount={threadStats.unreadCount}
-                threadPreviewMessages={threadStats.previewMessages}
                 timelineGap={item.timelineGap}
               />
             </div>

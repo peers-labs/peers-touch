@@ -60,12 +60,10 @@ pub(crate) fn station_set_active_with_state(
         }
     };
     let registry = station_client::station_registry();
-    let previous = station_binding::service().state();
+    let binding_service = station_binding::service();
     let requested_url = input.url.trim().trim_end_matches('/');
-    let already_bound = previous.phase
-        == crate::application::station_binding::StationBindingPhase::Bound
-        && previous.bound_url.as_deref() == Some(requested_url);
-    if !already_bound {
+    let selection_changes = binding_service.selection_changes(registry, requested_url);
+    if selection_changes {
         if let Err(error) = state.secure_content.shutdown() {
             return AppResult::fail(
                 ErrorCode::InternalError,
@@ -77,11 +75,11 @@ pub(crate) fn station_set_active_with_state(
             );
         }
     }
-    let binding = match station_binding::service().switch(registry, &input.url) {
+    let binding = match binding_service.switch(registry, &input.url) {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
     };
-    if !already_bound {
+    if selection_changes {
         if let Err(error) = auth_service::detach_for_station_switch(state) {
             return AppResult::fail(
                 ErrorCode::InternalError,
@@ -124,6 +122,11 @@ pub(crate) fn station_binding_complete_authenticated(
             "authentication required",
             Some(serde_json::json!({ "code": "station_authentication_required" })),
         );
+    }
+    if let Err(error) =
+        station_binding::service().resume_persisted(station_client::station_registry())
+    {
+        return binding_error(error);
     }
     let binding = match station_binding::service().mark_bound() {
         Ok(binding) => binding,

@@ -9,7 +9,6 @@ import os
 import pkgutil
 import re
 import signal
-import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -23,16 +22,23 @@ from types import FrameType
 from typing import Any, Callable, Iterator, Mapping, Optional, Sequence
 
 from tooling.acceptance.core.attestation import source_proto_digest
-from tooling.acceptance.core.provisioning import (
-    ProvisioningError,
-    load_json_artifact,
-    load_runtime_manifest,
-    require_runtime_client_service,
+from tooling.acceptance.core.errors import (
+    EphemeralCapabilityBlocked,
+    EphemeralLaunchError,
+    GateError,
 )
+from tooling.acceptance.core.launch_context import EphemeralGateClient
 from tooling.acceptance.core.redaction import (
     redact_artifact_bytes,
     redact_text,
     redact_value,
+)
+from tooling.development.secure_content import (
+    runtime_manifest as runtime_manifest_v2,
+)
+from tooling.development.secure_content.source_projection import (
+    SourceProjectionError,
+    resolve_runtime_source_identity,
 )
 
 
@@ -44,12 +50,16 @@ SCENARIO_PACKAGE = "tooling.development.secure_content.scenarios"
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$", re.IGNORECASE)
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ACTIVE_DECLARATION_STATE = "ACTIVE"
-RUNTIME_ATTACHMENT_KIND = "secure-content-development-runtime-attachment"
 PREPARED_RESULT_KIND = "peers-touch-development-prepared-result"
 RESULT_RESERVED_FIELDS = frozenset(
     {
         "schemaVersion",
         "kind",
+        "taskId",
+        "workstreamId",
+        "generationId",
+        "variantId",
+        "runId",
         "workItemId",
         "journeyId",
         "scenarioId",
@@ -71,17 +81,17 @@ RESULT_RESERVED_FIELDS = frozenset(
         "commandDigest",
         "runtimeManifestDigest",
         "runtimeManifestRef",
+        "serviceIds",
+        "fixtureManifestDigest",
+        "proofState",
         "checks",
         "artifactRefs",
         "firstFailure",
+        "completedAt",
+        "resultDigest",
     }
 )
-MAX_RUNTIME_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_BOUND_ARTIFACT_BYTES = 2 * 1024 * 1024
-RUNTIME_CLIENT_KINDS = {
-    "desktop": frozenset({"native-tauri"}),
-    "browser": frozenset({"browser"}),
-}
 BOUND_ARTIFACT_FIELDS = frozenset(
     {
         "schemaVersion",
@@ -99,6 +109,11 @@ BOUND_ARTIFACT_FIELDS = frozenset(
         "artifactDigest",
     }
 )
+RuntimeManifestBinding = runtime_manifest_v2.RuntimeManifestBinding
+ResultVariantResolver = Callable[
+    [str, Optional[str], tuple[str, ...], tuple[str, ...]],
+    str,
+]
 
 
 class RunnerError(RuntimeError):
@@ -139,362 +154,42 @@ class ScenarioDefinition:
     runtimes: frozenset[str]
     evidence_path: Path
     execute: Callable[["ScenarioContext"], Mapping[str, Any]]
+    required_fixture_capabilities: frozenset[str] = field(
+        default_factory=frozenset
+    )
+    result_prefix: Optional[Path] = None
+    result_task_id: Optional[str] = None
+    result_workstream_id: Optional[str] = None
+    result_variant: Optional[str | ResultVariantResolver] = None
 
 
 @dataclass(frozen=True)
-class RuntimeManifestBinding:
-    path: Path
-    sha256: str
-    run_id: str
-    payload: Mapping[str, Any]
-    clients: Mapping[str, Mapping[str, Any]]
-    raw_bytes: bytes = field(repr=False)
-    provenance_files: tuple[tuple[Path, bytes], ...] = field(
-        default_factory=tuple,
-        repr=False,
-    )
-
-    def client(self, client_id: str) -> Mapping[str, Any]:
-        client = self.clients.get(client_id)
-        if client is None:
-            raise RunnerError(
-                f"runtime manifest does not contain client {client_id!r}"
-            )
-        return client
-
-    def verify_unchanged(self) -> None:
-        try:
-            current = self.path.read_bytes()
-        except OSError as error:
-            raise RunnerError(
-                "runtime manifest became unreadable during scenario execution"
-            ) from error
-        if current != self.raw_bytes:
-            raise RunnerError(
-                "runtime manifest changed during scenario execution"
-            )
-        for path, expected in self.provenance_files:
-            try:
-                if path.read_bytes() != expected:
-                    raise RunnerError(
-                        f"runtime provenance artifact changed during scenario execution: {path.name}"
-                    )
-            except OSError as error:
-                raise RunnerError(
-                    f"runtime provenance artifact became unreadable: {path.name}"
-                ) from error
-
-    def client_harness_binding(self, client_id: str) -> Mapping[str, str]:
-        client = self.client(client_id)
-        source = self.payload.get("source")
-        source_commit = source.get("commit") if isinstance(source, Mapping) else None
-        try:
-            _, station = require_runtime_client_service(
-                dict(self.payload),
-                client_id,
-                "station",
-            )
-        except ProvisioningError as error:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} station binding "
-                f"is invalid: {error}"
-            ) from error
-        return validated_harness_identity(
-            client_id,
-            client,
-            client.get("harness_identity"),
-            source_commit=source_commit,
-            station=station,
-        )
+class RestartRequest:
+    request_id: str
+    client_id: str
+    parent_manifest_digest: str
+    retained_storage_identity_digest: str
+    resume_artifact_digest: str
+    reason: str
 
 
-def validated_harness_identity(
-    client_id: str,
-    client: Mapping[str, Any],
-    identity: object,
-    *,
-    actor_ptids_by_role: Optional[Mapping[str, str]] = None,
-    source_commit: object = None,
-    station: Optional[Mapping[str, Any]] = None,
-) -> dict[str, str]:
-    if not isinstance(identity, Mapping):
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} is missing harness_identity"
-        )
+@dataclass(frozen=True)
+class FixtureHandle:
+    kind: str
+    owner: str
+    handle_id: str
+    capability: str
+    digest: str
+    secret_channel_ref: str | None = None
 
-    actor = client.get("actor")
-    expected_authentication = (
-        "ANONYMOUS" if actor == "anonymous" else "AUTHENTICATED"
-    )
-    authentication = identity.get("authenticationState")
-    if authentication != expected_authentication:
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} harness identity has "
-            "an invalid authenticationState"
-        )
-
-    live_source_commit = identity.get("sourceCommit")
-    client_artifact_sha256 = identity.get("clientArtifactSha256")
-    if (
-        not isinstance(live_source_commit, str)
-        or re.fullmatch(r"[0-9a-f]{40}", live_source_commit) is None
-        or (
-            source_commit is not None
-            and live_source_commit != source_commit
-        )
-        or not isinstance(client_artifact_sha256, str)
-        or SHA256.fullmatch(client_artifact_sha256) is None
-    ):
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} does not bind the exact "
-            "client source artifact"
-        )
-    result = {
-        "authenticationState": expected_authentication,
-        "sourceCommit": live_source_commit,
-        "clientArtifactSha256": client_artifact_sha256,
-    }
-    session_identity_sha256 = identity.get("sessionIdentitySha256")
-    if (
-        not isinstance(session_identity_sha256, str)
-        or SHA256.fullmatch(session_identity_sha256) is None
-    ):
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} cannot bind the "
-            "live session identity"
-        )
-    result["sessionIdentitySha256"] = session_identity_sha256
-
-    actor_ptid_sha256 = identity.get("actorPtidSha256")
-    if expected_authentication == "AUTHENTICATED":
-        if (
-            not isinstance(actor_ptid_sha256, str)
-            or SHA256.fullmatch(actor_ptid_sha256) is None
-        ):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} cannot bind the "
-                "authenticated actor PTID"
-            )
-        role_alias_sha256 = hashlib.sha256(str(actor).encode("utf-8")).hexdigest()
-        if actor_ptid_sha256 == role_alias_sha256:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} actorPtidSha256 "
-                "must not be derived from its actor role alias"
-            )
-        if actor_ptids_by_role is not None:
-            canonical_ptid = actor_ptids_by_role.get(str(actor))
-            if (
-                canonical_ptid is None
-                or not hmac.compare_digest(
-                    actor_ptid_sha256,
-                    hashlib.sha256(canonical_ptid.encode("utf-8")).hexdigest(),
-                )
-            ):
-                raise RunnerError(
-                    f"runtime manifest client {client_id!r} live actor does not "
-                    "match the runtime owner's canonical actor binding"
-                )
-        result["actorPtidSha256"] = actor_ptid_sha256
-    elif actor_ptid_sha256 is not None:
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} anonymous harness "
-            "identity must not contain actorPtidSha256"
-        )
-    elif (
-        actor_ptids_by_role is not None
-        and str(actor) in actor_ptids_by_role
-    ):
-        raise RunnerError(
-            f"anonymous runtime client {client_id!r} has an actor PTID"
-        )
-
-    native_runtime_identity = identity.get("nativeRuntimeIdentitySha256")
-    if client.get("runtime") == "native-tauri":
-        if (
-            not isinstance(native_runtime_identity, str)
-            or SHA256.fullmatch(native_runtime_identity) is None
-        ):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} cannot bind the "
-                "Native process identity"
-            )
-        result["nativeRuntimeIdentitySha256"] = native_runtime_identity
-    elif native_runtime_identity is not None:
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} non-Native harness "
-            "identity must not contain nativeRuntimeIdentitySha256"
-        )
-
-    if not isinstance(station, Mapping):
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} cannot bind the "
-            "declared Station"
-        )
-    station_runtime_identity = station.get("runtimeIdentity")
-    station_endpoint = station.get("endpoint")
-    if (
-        not isinstance(station_runtime_identity, str)
-        or not station_runtime_identity
-        or station_runtime_identity != station_runtime_identity.strip()
-        or not isinstance(station_endpoint, str)
-        or not station_endpoint
-        or station_endpoint != station_endpoint.strip()
-    ):
-        raise RunnerError(
-            f"runtime manifest client {client_id!r} declared Station "
-            "identity is invalid"
-        )
-    expected_station_identity = {
-        "stationRuntimeIdentitySha256": hashlib.sha256(
-            station_runtime_identity.encode("utf-8")
-        ).hexdigest(),
-        "stationEndpointSha256": hashlib.sha256(
-            station_endpoint.rstrip("/").encode("utf-8")
-        ).hexdigest(),
-    }
-    for field_name, expected_digest in expected_station_identity.items():
-        observed_digest = identity.get(field_name)
-        if (
-            not isinstance(observed_digest, str)
-            or SHA256.fullmatch(observed_digest) is None
-            or not hmac.compare_digest(observed_digest, expected_digest)
-        ):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} live "
-                f"{field_name} does not match the declared Station"
-            )
-        result[field_name] = observed_digest
-    return result
-
-
-def validate_actor_manifest_reference(
-    actor_ref: object,
-    *,
-    source_manifest_path: Path,
-    actor_manifest_path: Path,
-    workspace_id: str,
-    gate_id: str,
-    run_id: str,
-    sha256: str,
-) -> None:
-    if not isinstance(actor_ref, Mapping):
-        raise RunnerError("runtime manifest actorManifest must be an ArtifactRef")
-    expected_fields = {
-        "artifactKind": "acceptance-artifact-ref",
-        "workspaceId": workspace_id,
-        "gateId": gate_id,
-        "runId": run_id,
-        "mediaType": "application/json",
-    }
-    for field_name, expected_value in expected_fields.items():
-        if actor_ref.get(field_name) != expected_value:
-            raise RunnerError(
-                f"runtime manifest actorManifest {field_name} is invalid"
-            )
-    reference_sha256 = actor_ref.get("sha256")
-    if (
-        not isinstance(reference_sha256, str)
-        or SHA256.fullmatch(reference_sha256) is None
-        or not hmac.compare_digest(reference_sha256, sha256)
-    ):
-        raise RunnerError("runtime manifest actorManifest sha256 is invalid")
-    reference_path = actor_ref.get("path")
-    if (
-        not isinstance(reference_path, str)
-        or not reference_path
-        or "\x00" in reference_path
-        or "\\" in reference_path
-        or re.match(r"^[A-Za-z]:", reference_path) is not None
-        or any(ord(character) < 32 or ord(character) == 127 for character in reference_path)
-        or any(part in {"", ".", ".."} for part in reference_path.split("/"))
-    ):
-        raise RunnerError(
-            "runtime manifest actorManifest path is not canonical relative POSIX"
-        )
-    relative_path = Path(reference_path)
-    if relative_path.is_absolute() or relative_path.as_posix() != reference_path:
-        raise RunnerError(
-            "runtime manifest actorManifest path is not canonical relative POSIX"
-        )
-    source_run_dir = source_manifest_path.parent
-    referenced_path = source_run_dir.joinpath(relative_path)
-    try:
-        resolved_run_dir = source_run_dir.resolve(strict=True)
-        expected_path = referenced_path.resolve(strict=True)
-        resolved_actor_path = actor_manifest_path.resolve(strict=True)
-    except OSError as error:
-        raise RunnerError(
-            "runtime manifest actorManifest path cannot be resolved"
-        ) from error
-    if (
-        expected_path == resolved_run_dir
-        or resolved_run_dir not in expected_path.parents
-        or resolved_actor_path == resolved_run_dir
-        or resolved_run_dir not in resolved_actor_path.parents
-    ):
-        raise RunnerError(
-            "runtime manifest actorManifest path resolves outside the source "
-            "manifest run directory"
-        )
-    try:
-        actor_relative_path = actor_manifest_path.relative_to(source_run_dir)
-    except ValueError as error:
-        raise RunnerError(
-            "runtime manifest actorManifest path is outside the source "
-            "manifest run directory"
-        ) from error
-    for candidate_relative_path in (relative_path, actor_relative_path):
-        candidate_path = source_run_dir
-        for part in candidate_relative_path.parts:
-            candidate_path = candidate_path / part
-            try:
-                candidate_stat = candidate_path.lstat()
-            except OSError as error:
-                raise RunnerError(
-                    "runtime manifest actorManifest path cannot be resolved"
-                ) from error
-            if stat_module.S_ISLNK(candidate_stat.st_mode):
-                raise RunnerError(
-                    "runtime manifest actorManifest path must not contain "
-                    "symbolic links"
-                )
-    if expected_path != resolved_actor_path:
-        raise RunnerError(
-            "runtime manifest actorManifest path does not match the actor artifact"
-        )
-
-
-def canonical_actor_ptids(actor_manifest: Mapping[str, Any]) -> dict[str, str]:
-    raw_actors = actor_manifest.get("actors")
-    if not isinstance(raw_actors, list):
-        raise RunnerError("actor manifest actors are invalid")
-    actor_ptids_by_role: dict[str, str] = {}
-    observed_ptids: set[str] = set()
-    for actor in raw_actors:
-        if not isinstance(actor, Mapping):
-            raise RunnerError("actor manifest actor is invalid")
-        role = actor.get("role")
-        ptid = actor.get("ptid")
-        if (
-            not isinstance(role, str)
-            or not role
-            or role != role.strip()
-            or role in actor_ptids_by_role
-            or not isinstance(ptid, str)
-            or not ptid.startswith("ptid:")
-            or ptid != ptid.strip()
-            or ptid in observed_ptids
-        ):
-            raise RunnerError("actor manifest actor binding is invalid")
-        actor_ptids_by_role[role] = ptid
-        observed_ptids.add(ptid)
-    return actor_ptids_by_role
 
 
 @dataclass(frozen=True)
 class PendingConsumptionReceipt:
     artifact_path: Path
     artifact_bytes: bytes = field(repr=False)
+    claim_path: Path
+    claim_bytes: bytes = field(repr=False)
     receipt_path: Path
     receipt: Mapping[str, Any]
 
@@ -520,6 +215,17 @@ class ScenarioContext:
     artifact_refs: list[str] = field(default_factory=list)
     pending_consumption_receipts: list[PendingConsumptionReceipt] = field(
         default_factory=list
+    )
+    required_fixture_capabilities: frozenset[str] = field(
+        default_factory=frozenset
+    )
+    fixture_action_client: EphemeralGateClient | None = field(
+        default=None,
+        repr=False,
+    )
+    continuation_provenance: list[tuple[Path, bytes]] = field(
+        default_factory=list,
+        repr=False,
     )
 
     def remaining_seconds(self) -> float:
@@ -551,6 +257,163 @@ class ScenarioContext:
                 f"{self.runtime} scenario requires --runtime-manifest"
             )
         return self.runtime_manifest
+
+    def fixture_handle(self, capability: str) -> FixtureHandle:
+        manifest = self.require_runtime_manifest()
+        raw = manifest.fixture_handle(capability)
+        return FixtureHandle(
+            kind=str(raw["kind"]),
+            owner=str(raw["owner"]),
+            handle_id=str(raw["opaque_id"]),
+            capability=str(raw["capability"]),
+            digest=str(raw["expected_identity_digest"]),
+            secret_channel_ref=(
+                str(raw["secret_channel_ref"])
+                if raw.get("secret_channel_ref") is not None
+                else None
+            ),
+        )
+
+    def invoke_fixture_action(
+        self,
+        capability: str,
+        operation: str,
+        payload: Mapping[str, object] | None = None,
+    ) -> Mapping[str, Any]:
+        handle = self.fixture_handle(capability)
+        client = self.fixture_action_client
+        if client is None:
+            self.block(
+                f"fixture action channel is unavailable for {capability!r}",
+                kind="FIXTURE_CAPABILITY_UNAVAILABLE",
+                owner=handle.owner,
+                retryable=True,
+            )
+        manifest = self.require_runtime_manifest()
+        request_id = hashlib.sha256(
+            (
+                f"{self.session_id}:{manifest.sha256}:{handle.handle_id}:"
+                f"{operation}"
+            ).encode("utf-8")
+        ).hexdigest()
+        try:
+            acknowledgement = client.invoke(
+                capability,
+                operation,
+                {
+                    "handleId": handle.handle_id,
+                    "expectedIdentityDigest": handle.digest,
+                    "runtimeManifestDigest": manifest.sha256,
+                    "actionPayload": dict(payload or {}),
+                },
+                timeout_seconds=min(120.0, self.remaining_seconds()),
+                request_id=request_id,
+            )
+        except EphemeralCapabilityBlocked as error:
+            self.block(
+                str(error),
+                kind="FIXTURE_CAPABILITY_UNAVAILABLE",
+                owner=handle.owner,
+                retryable=True,
+            )
+        except EphemeralLaunchError as error:
+            self.block(
+                str(error),
+                kind=error.code,
+                owner=handle.owner,
+                retryable=False,
+            )
+        content = dict(acknowledgement)
+        digest = content.pop("acknowledgementDigest", None)
+        outcome = acknowledgement.get("outcome")
+        if (
+            acknowledgement.get("schemaVersion") != 1
+            or acknowledgement.get("capability") != capability
+            or acknowledgement.get("operation") != operation
+            or acknowledgement.get("handleId") != handle.handle_id
+            or acknowledgement.get("expectedIdentityDigest") != handle.digest
+            or acknowledgement.get("runtimeManifestDigest") != manifest.sha256
+            or not isinstance(outcome, Mapping)
+            or outcome.get("fixtureIdentityDigest") != handle.digest
+            or digest != _canonical_digest(content)
+        ):
+            raise RunnerError(
+                f"fixture action acknowledgement is invalid for {capability!r}"
+            )
+        self.checks.append(
+            {
+                "name": f"fixture:{capability}:{operation}",
+                "status": "passed",
+                "detail": {
+                    "acknowledgementDigest": digest,
+                    "handleIdentityDigest": handle.digest,
+                },
+            }
+        )
+        return acknowledgement
+
+    def request_restart(
+        self,
+        client_id: str,
+        *,
+        reason: str,
+    ) -> RestartRequest:
+        manifest = self.require_runtime_manifest()
+        client = manifest.client(client_id)
+        resume_paths = [
+            Path(reference)
+            for reference in self.artifact_refs
+            if Path(reference).name.endswith("-resume.json")
+        ]
+        if len(resume_paths) != 1:
+            raise RunnerError(
+                "restart request requires exactly one immutable resume artifact"
+            )
+        _, resume_artifact = _read_json_artifact(resume_paths[0])
+        resume_artifact_digest = resume_artifact.get("artifactDigest")
+        if (
+            not isinstance(resume_artifact_digest, str)
+            or SHA256.fullmatch(resume_artifact_digest) is None
+        ):
+            raise RunnerError("restart resume artifact digest is invalid")
+        request = RestartRequest(
+            request_id=(
+                f"restart-{self.session_id}-{client_id}-{manifest.sha256[:12]}"
+            ),
+            client_id=client_id,
+            parent_manifest_digest=manifest.sha256,
+            retained_storage_identity_digest=str(
+                client["storage_identity_digest"]
+            ),
+            resume_artifact_digest=resume_artifact_digest,
+            reason=reason,
+        )
+        self.write_bound_artifact_json(
+            f"restart-request-{client_id}.json",
+            "secure-content-runtime-restart-request",
+            {
+                "schema_version": 1,
+                "run_id": manifest.run_id,
+                "request_id": request.request_id,
+                "client_id": request.client_id,
+                "parent_runtime_manifest_digest": (
+                    request.parent_manifest_digest
+                ),
+                "expected_source_checkpoint": self.source_commit,
+                "expected_profile": sorted(manifest.service_profiles),
+                "retained_storage_identity_digest": (
+                    request.retained_storage_identity_digest
+                ),
+                "resume_artifact_digest": request.resume_artifact_digest,
+                "reason": request.reason,
+            },
+        )
+        self.block(
+            f"restart requested for client {client_id!r}: {reason}",
+            kind="BLOCKED_RUNTIME_ACTION_REQUIRED",
+            owner="secure-content-w7-runtime",
+            retryable=True,
+        )
 
     def artifact_path(self, name: str) -> Path:
         if self.artifact_dir is None:
@@ -727,8 +590,8 @@ class ScenarioContext:
             f"bound artifact {resolved.name} createdAt",
         )
         manifest_captured_at = _parse_timestamp(
-            manifest.payload.get("developmentAttachment", {}).get("capturedAt"),
-            "runtime manifest attachment capturedAt",
+            manifest.payload.get("created_at"),
+            "runtime manifest created_at",
         )
         if require_fresh_runtime_manifest and (
             producer_run_id == manifest.run_id
@@ -738,8 +601,19 @@ class ScenarioContext:
             raise RunnerError(
                 f"bound artifact {resolved.name} requires a fresh runtime manifest"
             )
+        if require_fresh_runtime_manifest:
+            continuation = manifest.payload.get("continuation")
+            if (
+                not isinstance(continuation, Mapping)
+                or continuation.get("parent_manifest_digest")
+                != producer_manifest_digest
+            ):
+                raise RunnerError(
+                    f"bound artifact {resolved.name} continuation lineage is invalid"
+                )
 
         artifact_digest = hashlib.sha256(raw_bytes).hexdigest()
+        claim_path = resolved.with_name(f"{resolved.stem}.consuming.json")
         receipt_path = resolved.with_name(f"{resolved.stem}.consumed.json")
         receipt = {
             "schemaVersion": SCHEMA_VERSION,
@@ -754,10 +628,21 @@ class ScenarioContext:
             "consumerRuntimeManifestRunId": manifest.run_id,
             "consumerRuntimeManifestDigest": manifest.sha256,
         }
+        claim = {
+            **receipt,
+            "kind": f"{kind}-consumption-claim",
+            "claimedAt": _timestamp(),
+        }
+        claim["claimDigest"] = _canonical_digest(claim)
         if receipt_path.exists():
             raise RunnerError(
                 "immutable consumption receipt already exists; "
                 f"prepared-result recovery is required: {receipt_path}"
+            )
+        if claim_path.exists():
+            raise RunnerError(
+                "immutable consumption claim already exists; "
+                f"outcome reconciliation is required: {claim_path}"
             )
         if any(
             pending.receipt_path == receipt_path
@@ -775,16 +660,181 @@ class ScenarioContext:
             raise RunnerError(
                 f"bound artifact {resolved.name} became unreadable during consumption"
             ) from error
+        _write_json_immutable(claim_path, claim)
+        claim_bytes = _json_bytes(claim)
         self.pending_consumption_receipts.append(
             PendingConsumptionReceipt(
                 artifact_path=resolved,
                 artifact_bytes=raw_bytes,
+                claim_path=claim_path,
+                claim_bytes=claim_bytes,
                 receipt_path=receipt_path,
                 receipt=receipt,
             )
         )
         self._register_artifact(resolved)
+        self._register_artifact(claim_path)
         return payload
+
+    def consume_owner_continuation(
+        self,
+        resume_path: Path,
+        *,
+        client_id: str,
+        kind: str,
+        producer_scenario_id: str,
+        producer_journey_id: str,
+        producer_runtime: str,
+    ) -> Mapping[str, Any]:
+        child = self.require_runtime_manifest()
+        continuation = child.payload.get("continuation")
+        if not isinstance(continuation, Mapping):
+            raise runtime_manifest_v2.RuntimeManifestError(
+                "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                "child runtime manifest has no owner continuation lineage",
+            )
+        if continuation.get("retained_client_id") != client_id:
+            raise runtime_manifest_v2.RuntimeManifestError(
+                "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                "child runtime manifest retained the wrong client",
+            )
+
+        resolved_resume = _validate_bound_artifact_path(
+            resume_path,
+            self.artifact_dir,
+        )
+        _, resume_payload = _read_json_artifact(resolved_resume)
+        resume_digest = resume_payload.get("artifactDigest")
+        if (
+            not isinstance(resume_digest, str)
+            or SHA256.fullmatch(resume_digest) is None
+        ):
+            raise RunnerError("continuation resume artifact digest is invalid")
+
+        if self.result_path is None or not self.result_path.is_file():
+            raise runtime_manifest_v2.RuntimeManifestError(
+                "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                "continuation requires the prior blocked scenario result",
+            )
+        _, prior_result = _read_json_artifact(self.result_path)
+        prior_failure = prior_result.get("firstFailure")
+        parent_manifest_ref = prior_result.get("runtimeManifestRef")
+        if (
+            prior_result.get("kind") != RESULT_KIND
+            or prior_result.get("result") != "BLOCKED"
+            or prior_result.get("scenarioId") != self.scenario_id
+            or prior_result.get("journeyId") != self.journey_id
+            or prior_result.get("runtime") != self.runtime
+            or prior_result.get("sourceCommit") != self.source_commit
+            or not isinstance(prior_failure, Mapping)
+            or prior_failure.get("kind")
+            != "BLOCKED_RUNTIME_ACTION_REQUIRED"
+            or prior_result.get("runtimeManifestDigest")
+            != continuation.get("parent_manifest_digest")
+            or not isinstance(parent_manifest_ref, str)
+            or not parent_manifest_ref
+        ):
+            raise runtime_manifest_v2.RuntimeManifestError(
+                "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                "prior scenario result does not authorize continuation",
+            )
+
+        source = child.payload["source"]
+        try:
+            protocol_digest = source_proto_digest(self.repo_root)
+            parent = runtime_manifest_v2.load_runtime_manifest(
+                Path(parent_manifest_ref),
+                journey_id=self.journey_id,
+                repo_root=self.repo_root,
+                workspace_identity={
+                    "workspaceId": str(source["workspace_id"]),
+                    "head": self.source_commit,
+                    "worktreeSetDigest": str(
+                        source["worktree_set_digest"]
+                    ),
+                },
+                profile_selectors=self.profiles
+                or ((self.profile,) if self.profile else ()),
+                client_selectors=self.clients,
+                runtime=self.runtime,
+                expected_protocol_digest=protocol_digest,
+                required_fixture_capabilities=tuple(
+                    self.required_fixture_capabilities
+                ),
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise RunnerError(
+                "cannot validate the parent runtime manifest"
+            ) from error
+
+        request_path = _validate_bound_artifact_path(
+            self.artifact_path(f"restart-request-{client_id}.json"),
+            self.artifact_dir,
+        )
+        acknowledgement_path = _validate_bound_artifact_path(
+            self.artifact_path(
+                f"restart-acknowledgement-{client_id}.json"
+            ),
+            self.artifact_dir,
+        )
+        _, restart_request = _read_json_artifact(request_path)
+        request_content = dict(restart_request)
+        request_digest = request_content.pop("artifactDigest", None)
+        if (
+            request_digest != _canonical_digest(request_content)
+            or restart_request.get("runtimeManifestDigest") != parent.sha256
+        ):
+            raise runtime_manifest_v2.RuntimeManifestError(
+                "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                "restart request artifact identity is invalid",
+            )
+        acknowledgement_bytes, acknowledgement = _read_json_artifact(
+            acknowledgement_path
+        )
+
+        runtime_manifest_v2.validate_owner_continuation(
+            parent,
+            child,
+            restart_request=restart_request,
+            acknowledgement=acknowledgement,
+            resume_artifact_digest=resume_digest,
+        )
+        self.consume_bound_artifact_json(
+            request_path,
+            kind="secure-content-runtime-restart-request",
+            producer_scenario_id=self.scenario_id,
+            producer_journey_id=self.journey_id,
+            producer_runtime=self.runtime,
+        )
+        parent.verify_unchanged()
+        child.verify_unchanged()
+        self.continuation_provenance = [
+            (parent.path, parent.raw_bytes),
+            *parent.provenance_files,
+            (acknowledgement_path, acknowledgement_bytes),
+        ]
+        return self.consume_bound_artifact_json(
+            resolved_resume,
+            kind=kind,
+            producer_scenario_id=producer_scenario_id,
+            producer_journey_id=producer_journey_id,
+            producer_runtime=producer_runtime,
+        )
+
+    def verify_continuation_unchanged(self) -> None:
+        for path, expected in self.continuation_provenance:
+            try:
+                current = path.read_bytes()
+            except OSError as error:
+                raise runtime_manifest_v2.RuntimeManifestError(
+                    "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                    f"continuation evidence became unreadable: {path.name}",
+                ) from error
+            if not hmac.compare_digest(current, expected):
+                raise runtime_manifest_v2.RuntimeManifestError(
+                    "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                    f"continuation evidence changed during scenario execution: {path.name}",
+                )
 
     def prepare_bound_artifact_consumptions(
         self,
@@ -804,10 +854,18 @@ class ScenarioContext:
                         f"bound artifact {pending.artifact_path.name} changed "
                         "before consumption succeeded"
                     )
+                if not hmac.compare_digest(
+                    pending.claim_path.read_bytes(),
+                    pending.claim_bytes,
+                ):
+                    raise RunnerError(
+                        f"bound artifact {pending.artifact_path.name} "
+                        "consumption claim changed before completion"
+                    )
             except OSError as error:
                 raise RunnerError(
-                    f"bound artifact {pending.artifact_path.name} became "
-                    "unreadable before consumption succeeded"
+                    f"bound artifact {pending.artifact_path.name} or its "
+                    "consumption claim became unreadable before completion"
                 ) from error
 
         durable_result = _redacted_mapping(result)
@@ -830,6 +888,10 @@ class ScenarioContext:
                     "artifactPath": str(pending.artifact_path),
                     "artifactSha256": hashlib.sha256(
                         pending.artifact_bytes
+                    ).hexdigest(),
+                    "claimPath": str(pending.claim_path),
+                    "claimSha256": hashlib.sha256(
+                        pending.claim_bytes
                     ).hexdigest(),
                     "receiptPath": str(pending.receipt_path),
                     "receiptSha256": hashlib.sha256(receipt_bytes).hexdigest(),
@@ -962,6 +1024,7 @@ def _validate_definition(value: Any, module_name: str) -> ScenarioDefinition:
         "runtimes",
         "evidence_path",
         "execute",
+        "required_fixture_capabilities",
     )
     if any(not hasattr(value, field_name) for field_name in required):
         raise RunnerError(f"{module_name} does not export a complete SCENARIO definition")
@@ -983,6 +1046,43 @@ def _validate_definition(value: Any, module_name: str) -> ScenarioDefinition:
         raise RunnerError(f"scenario {scenario_id} has an invalid evidence path")
     if not callable(value.execute):
         raise RunnerError(f"scenario {scenario_id} execute is not callable")
+    required_fixture_capabilities = frozenset(
+        value.required_fixture_capabilities
+    )
+    for capability in required_fixture_capabilities:
+        _require_identifier(capability, "fixture capability")
+    result_prefix = getattr(value, "result_prefix", None)
+    result_task_id = getattr(value, "result_task_id", None)
+    result_workstream_id = getattr(value, "result_workstream_id", None)
+    result_variant = getattr(value, "result_variant", None)
+    layout_fields = (
+        result_prefix,
+        result_task_id,
+        result_workstream_id,
+        result_variant,
+    )
+    if any(field is not None for field in layout_fields):
+        if any(field is None for field in layout_fields):
+            raise RunnerError(
+                f"scenario {scenario_id} has an incomplete canonical result layout"
+            )
+        result_prefix = Path(result_prefix)
+        if (
+            result_prefix.is_absolute()
+            or ".." in result_prefix.parts
+            or result_prefix in {Path("."), Path("")}
+        ):
+            raise RunnerError(
+                f"scenario {scenario_id} has an invalid result prefix"
+            )
+        _require_identifier(result_task_id, "result task id")
+        _require_identifier(result_workstream_id, "result workstream id")
+        if not isinstance(result_variant, str) and not callable(result_variant):
+            raise RunnerError(
+                f"scenario {scenario_id} has an invalid result variant"
+            )
+        if isinstance(result_variant, str):
+            _require_identifier(result_variant, "result variant")
     return ScenarioDefinition(
         scenario_id=scenario_id,
         journey_id=_require_identifier(value.journey_id, "journey id"),
@@ -990,6 +1090,11 @@ def _validate_definition(value: Any, module_name: str) -> ScenarioDefinition:
         runtimes=runtimes,
         evidence_path=evidence_path,
         execute=value.execute,
+        required_fixture_capabilities=required_fixture_capabilities,
+        result_prefix=result_prefix,
+        result_task_id=result_task_id,
+        result_workstream_id=result_workstream_id,
+        result_variant=result_variant,
     )
 
 
@@ -1080,460 +1185,23 @@ def _runtime_manifest_binding(
     clients: Sequence[str],
     repo_root: Path,
 ) -> RuntimeManifestBinding:
-    if not path.is_absolute():
-        raise RunnerError("runtime manifest path must be absolute")
-    if path.is_symlink():
-        raise RunnerError("runtime manifest path must not be a symbolic link")
     try:
-        resolved = path.resolve(strict=True)
-        stat = resolved.stat()
-        if not resolved.is_file():
-            raise RunnerError("runtime manifest path must name a file")
-        if stat.st_uid != os.geteuid() or stat_module.S_IMODE(stat.st_mode) & 0o077:
-            raise RunnerError(
-                "runtime manifest must be owned by the current user and private"
-            )
-        if stat.st_size <= 0 or stat.st_size > MAX_RUNTIME_MANIFEST_BYTES:
-            raise RunnerError("runtime manifest size is invalid")
-        if resolved == repo_root.resolve() or repo_root.resolve() in resolved.parents:
-            raise RunnerError("runtime manifest must be outside the repository")
-        raw_bytes = resolved.read_bytes()
-    except RunnerError:
-        raise
-    except OSError as error:
-        raise RunnerError(f"cannot read runtime manifest: {error}") from error
-
-    try:
-        payload = load_runtime_manifest(resolved, scenario.journey_id)
-    except ProvisioningError as error:
-        raise RunnerError(f"runtime manifest is invalid: {error}") from error
-    try:
-        if resolved.read_bytes() != raw_bytes:
-            raise RunnerError("runtime manifest changed while it was loaded")
-    except OSError as error:
-        raise RunnerError(
-            "runtime manifest became unreadable while it was loaded"
-        ) from error
-
-    attachment = payload.get("developmentAttachment")
-    if (
-        not isinstance(attachment, dict)
-        or attachment.get("kind") != RUNTIME_ATTACHMENT_KIND
-        or not isinstance(attachment.get("sourceManifestRunId"), str)
-        or attachment.get("sourceManifestRunId") != payload.get("runId")
-        or not isinstance(attachment.get("sourceManifestPath"), str)
-        or not attachment["sourceManifestPath"]
-        or not isinstance(attachment.get("sourceManifestSha256"), str)
-        or SHA256.fullmatch(attachment["sourceManifestSha256"]) is None
-        or not isinstance(attachment.get("actorManifestPath"), str)
-        or not attachment["actorManifestPath"]
-        or not isinstance(attachment.get("actorManifestSha256"), str)
-        or SHA256.fullmatch(attachment["actorManifestSha256"]) is None
-        or not isinstance(attachment.get("capturedAt"), str)
-        or not attachment["capturedAt"]
-        or attachment.get("namespace") != "moments"
-    ):
-        raise RunnerError(
-            "runtime manifest is missing its post-launch Development attachment"
-        )
-    source_manifest_path = Path(attachment["sourceManifestPath"])
-    if (
-        not source_manifest_path.is_absolute()
-        or source_manifest_path.is_symlink()
-        or source_manifest_path == resolved
-    ):
-        raise RunnerError("runtime manifest attachment source path is invalid")
-    try:
-        source_manifest_path = source_manifest_path.resolve(strict=True)
-        if (
-            not source_manifest_path.is_file()
-            or source_manifest_path == repo_root.resolve()
-            or repo_root.resolve() in source_manifest_path.parents
-        ):
-            raise RunnerError("runtime manifest attachment source is invalid")
-        source_manifest_bytes = source_manifest_path.read_bytes()
-        if (
-            hashlib.sha256(source_manifest_bytes).hexdigest()
-            != attachment["sourceManifestSha256"]
-        ):
-            raise RunnerError("runtime manifest attachment source digest is invalid")
-        source_manifest_payload = load_runtime_manifest(
-            source_manifest_path,
-            scenario.journey_id,
-        )
-        if source_manifest_path.read_bytes() != source_manifest_bytes:
-            raise RunnerError(
-                "runtime manifest attachment source changed while it was loaded"
-            )
-    except RunnerError:
-        raise
-    except (OSError, ProvisioningError) as error:
-        raise RunnerError(
-            f"runtime manifest attachment source is invalid: {error}"
-        ) from error
-    if (
-        source_manifest_payload.get("developmentAttachment") is not None
-        or source_manifest_payload.get("runId") != attachment["sourceManifestRunId"]
-    ):
-        raise RunnerError("runtime manifest attachment source lineage is invalid")
-    manifest_run_id = payload.get("runId")
-    if not isinstance(manifest_run_id, str) or not manifest_run_id:
-        raise RunnerError("runtime manifest run id is required")
-    reconstructed_source = json.loads(json.dumps(payload))
-    reconstructed_source.pop("developmentAttachment", None)
-    for client in reconstructed_source.get("clients", []):
-        if isinstance(client, dict):
-            client.pop("webdriver_session_id", None)
-            client.pop("harness_identity", None)
-    if reconstructed_source != source_manifest_payload:
-        raise RunnerError("runtime manifest attachment diverges from its source")
-    actor_manifest_path = Path(attachment["actorManifestPath"])
-    actor_ref = source_manifest_payload.get("actorManifest")
-    if (
-        not actor_manifest_path.is_absolute()
-        or actor_manifest_path.is_symlink()
-        or not isinstance(actor_ref, dict)
-    ):
-        raise RunnerError("runtime manifest actor provenance is invalid")
-    try:
-        actor_manifest_path = actor_manifest_path.resolve(strict=True)
-        if (
-            not actor_manifest_path.is_file()
-            or actor_manifest_path == repo_root.resolve()
-            or repo_root.resolve() in actor_manifest_path.parents
-        ):
-            raise RunnerError("runtime manifest actor provenance is invalid")
-        actor_manifest_bytes = actor_manifest_path.read_bytes()
-        actor_manifest = load_json_artifact(
-            actor_manifest_path,
-            "acceptance-actor-manifest",
-        )
-        if actor_manifest_path.read_bytes() != actor_manifest_bytes:
-            raise RunnerError("runtime manifest actor provenance changed while loaded")
-    except RunnerError:
-        raise
-    except (OSError, ProvisioningError) as error:
-        raise RunnerError(f"runtime manifest actor provenance is invalid: {error}") from error
-    actor_manifest_sha256 = hashlib.sha256(actor_manifest_bytes).hexdigest()
-    validate_actor_manifest_reference(
-        actor_ref,
-        source_manifest_path=source_manifest_path,
-        actor_manifest_path=actor_manifest_path,
-        workspace_id=identity["workspaceId"],
-        gate_id=scenario.journey_id,
-        run_id=manifest_run_id,
-        sha256=actor_manifest_sha256,
-    )
-    if (
-        actor_manifest_sha256 != attachment["actorManifestSha256"]
-        or actor_manifest.get("runId") != manifest_run_id
-        or actor_manifest.get("environmentId") != payload.get("environmentId")
-    ):
-        raise RunnerError("runtime manifest actor provenance is invalid")
-    actor_ptids_by_role = canonical_actor_ptids(actor_manifest)
-
-    source = payload.get("source")
-    if not isinstance(source, dict):
-        raise RunnerError("runtime manifest source is required")
-    source_worktree = source.get("worktree")
-    if not isinstance(source_worktree, str):
-        raise RunnerError("runtime manifest source worktree is required")
-    try:
-        if Path(source_worktree).resolve(strict=True) != repo_root.resolve():
-            raise RunnerError(
-                "runtime manifest source worktree differs from the runner repository"
-            )
-    except OSError as error:
-        raise RunnerError(
-            "runtime manifest source worktree cannot be resolved"
-        ) from error
-    if source.get("commit") != identity["head"]:
-        raise RunnerError(
-            "runtime manifest source commit differs from the runner checkpoint"
-        )
-    if source.get("workspaceDigest") != "clean":
-        raise RunnerError("runtime manifest source workspace is not clean")
-    environment_id = payload.get("environmentId")
-    if not isinstance(environment_id, str) or not environment_id:
-        raise RunnerError("runtime manifest environment id is required")
-    services = payload.get("services")
-    service_attestation_files: list[tuple[Path, bytes]] = []
-    try:
-        local_protocol_digest = source_proto_digest(repo_root)
+        protocol_digest = source_proto_digest(repo_root)
     except (OSError, subprocess.SubprocessError) as error:
         raise RunnerError("cannot derive source protocol digest") from error
-    if not isinstance(services, dict) or not services:
-        raise RunnerError("runtime manifest services are required")
-    for service_id, service in services.items():
-        if not isinstance(service_id, str) or not isinstance(service, dict):
-            raise RunnerError("runtime manifest service binding is invalid")
-        if service.get("kind") == "station":
-            if service.get("workspaceDigest") != "clean":
-                raise RunnerError(
-                    f"runtime manifest Station service {service_id!r} "
-                    "workspace is not clean"
-                )
-            if service.get("protocolDigest") != local_protocol_digest:
-                raise RunnerError(
-                    f"runtime manifest Station service {service_id!r} "
-                    "protocol digest differs from source"
-                )
-        attestation_ref = service.get("attestationArtifact")
-        if (
-            not isinstance(attestation_ref, dict)
-            or attestation_ref.get("artifactKind") != "acceptance-artifact-ref"
-            or attestation_ref.get("workspaceId") != identity["workspaceId"]
-            or attestation_ref.get("gateId") != scenario.journey_id
-            or attestation_ref.get("runId") != manifest_run_id
-            or not isinstance(attestation_ref.get("path"), str)
-            or not attestation_ref["path"]
-            or not isinstance(attestation_ref.get("sha256"), str)
-            or SHA256.fullmatch(attestation_ref["sha256"]) is None
-        ):
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} attestation reference is invalid"
-            )
-        relative_path = Path(attestation_ref["path"])
-        if relative_path.is_absolute() or ".." in relative_path.parts:
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} attestation path is invalid"
-            )
-        attestation_path = source_manifest_path.parent.joinpath(relative_path)
-        if attestation_path.is_symlink():
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} attestation is symlinked"
-            )
-        try:
-            attestation_path = attestation_path.resolve(strict=True)
-            source_root = source_manifest_path.parent.resolve(strict=True)
-            if source_root not in attestation_path.parents:
-                raise RunnerError(
-                    f"runtime manifest service {service_id!r} attestation escaped its run"
-                )
-            attestation_bytes = attestation_path.read_bytes()
-            attestation = load_json_artifact(
-                attestation_path,
-                "service-deployment-attestation",
-            )
-            if attestation_path.read_bytes() != attestation_bytes:
-                raise RunnerError(
-                    f"runtime manifest service {service_id!r} attestation changed while loaded"
-                )
-        except RunnerError:
-            raise
-        except (OSError, ProvisioningError) as error:
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} attestation is invalid: {error}"
-            ) from error
-        if hashlib.sha256(attestation_bytes).hexdigest() != attestation_ref["sha256"]:
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} attestation digest is invalid"
-            )
-        expected_attestation = {
-            "serviceId": service_id,
-            "serviceKind": service.get("kind"),
-            "environmentId": environment_id,
-            "deploymentEnvironment": service.get("deploymentEnvironment"),
-            "endpoint": service.get("endpoint"),
-            "commit": service.get("liveCommit"),
-            "workspaceDigest": service.get("workspaceDigest"),
-            "protocolDigest": service.get("protocolDigest"),
-            "runtimeIdentity": service.get("runtimeIdentity"),
-        }
-        for field_name, expected_value in expected_attestation.items():
-            if attestation.get(field_name) != expected_value:
-                raise RunnerError(
-                    f"runtime manifest service {service_id!r} attestation "
-                    f"has invalid {field_name}"
-                )
-        if service.get("kind") == "station" and (
-            attestation.get("workspaceDigest") != "clean"
-            or attestation.get("protocolDigest") != local_protocol_digest
-        ):
-            raise RunnerError(
-                f"runtime manifest Station service {service_id!r} "
-                "attestation differs from source"
-            )
-        live_metadata = attestation.get("liveMetadata")
-        if (
-            not isinstance(live_metadata, dict)
-            or live_metadata.get("buildCommit") != service.get("liveCommit")
-        ):
-            raise RunnerError(
-                f"runtime manifest service {service_id!r} live metadata is invalid"
-            )
-        service_attestation_files.append((attestation_path, attestation_bytes))
-
-    profile_binding = payload.get("profile")
-    if not isinstance(profile_binding, dict):
-        raise RunnerError("runtime manifest profile is required")
-    expected_profiles = tuple(profiles) if profiles else ((profile,) if profile else ())
-    if len(expected_profiles) != 1:
-        raise RunnerError(
-            "runtime manifest binding requires exactly one selected profile"
-        )
-    selected_profile = expected_profiles[0]
-    if (
-        profile_binding.get("requestedName") != selected_profile
-        or profile_binding.get("resolvedName") != selected_profile
-    ):
-        raise RunnerError(
-            "runtime manifest profile differs from the scenario profile"
-        )
-    slot = profile_binding.get("slot")
-    if not isinstance(slot, int) or isinstance(slot, bool) or slot <= 0:
-        raise RunnerError("runtime manifest profile slot is invalid")
-
-    raw_clients = payload.get("clients")
-    if not isinstance(raw_clients, list):
-        raise RunnerError("runtime manifest clients must be an array")
-    clients_by_id: dict[str, Mapping[str, Any]] = {}
-    webdriver_ports: set[int] = set()
-    webdriver_session_ids: set[str] = set()
-    gateway_ports: set[int] = set()
-    renderer_ports: set[int] = set()
-    storage_roots: set[str] = set()
-    accepted_kinds = RUNTIME_CLIENT_KINDS.get(runtime)
-    if accepted_kinds is None:
-        raise RunnerError(
-            f"runtime {runtime} does not support runtime-manifest clients"
-        )
-    for raw_client in raw_clients:
-        if not isinstance(raw_client, dict):
-            raise RunnerError("runtime manifest client must be an object")
-        client_id = raw_client.get("id")
-        if not isinstance(client_id, str) or not client_id:
-            raise RunnerError("runtime manifest client id is required")
-        if client_id in clients_by_id:
-            raise RunnerError("runtime manifest contains duplicate client ids")
-        if raw_client.get("runtime") not in accepted_kinds:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} has the wrong runtime"
-            )
-        actor = raw_client.get("actor")
-        if not isinstance(actor, str) or not actor:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} actor is invalid"
-            )
-        if raw_client.get("profile") != f"{selected_profile}-app":
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} profile differs from "
-                "the selected profile"
-            )
-        client_worktree = raw_client.get("worktree")
-        if not isinstance(client_worktree, str):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} worktree is invalid"
-            )
-        try:
-            if Path(client_worktree).resolve(strict=True) != repo_root.resolve():
-                raise RunnerError(
-                    f"runtime manifest client {client_id!r} worktree differs "
-                    "from the runner repository"
-                )
-        except OSError as error:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} worktree cannot be resolved"
-            ) from error
-        webdriver_session_id = raw_client.get("webdriver_session_id")
-        if (
-            not isinstance(webdriver_session_id, str)
-            or not webdriver_session_id.strip()
-            or webdriver_session_id != webdriver_session_id.strip()
-            or webdriver_session_id in webdriver_session_ids
-        ):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} has an invalid or "
-                "duplicate webdriver_session_id"
-            )
-        webdriver_session_ids.add(webdriver_session_id)
-        for field_name, allocated in (
-            ("webdriver_port", webdriver_ports),
-            ("gateway_port", gateway_ports),
-            ("renderer_port", renderer_ports),
-        ):
-            port = raw_client.get(field_name)
-            if (
-                not isinstance(port, int)
-                or isinstance(port, bool)
-                or port < 1
-                or port > 65535
-                or port in allocated
-            ):
-                raise RunnerError(
-                    f"runtime manifest client {client_id!r} has an invalid "
-                    f"or duplicate {field_name}"
-                )
-            allocated.add(port)
-        storage_root = raw_client.get("storage_root")
-        if (
-            not isinstance(storage_root, str)
-            or not Path(storage_root).is_absolute()
-            or storage_root in storage_roots
-        ):
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} storage root is invalid "
-                "or duplicated"
-            )
-        storage_roots.add(storage_root)
-        if raw_client.get("storage_lifecycle") not in {
-            "ephemeral",
-            "persistent",
-        }:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} storage lifecycle is invalid"
-            )
-        try:
-            _, station = require_runtime_client_service(
-                payload,
-                client_id,
-                "station",
-            )
-        except ProvisioningError as error:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} station binding is invalid: "
-                f"{error}"
-            ) from error
-        if station.get("liveCommit") != identity["head"]:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} Station commit differs "
-                "from the runner checkpoint"
-            )
-        if not isinstance(station.get("runtimeIdentity"), str) or not station[
-            "runtimeIdentity"
-        ]:
-            raise RunnerError(
-                f"runtime manifest client {client_id!r} Station runtime identity "
-                "is missing"
-            )
-        validated_harness_identity(
-            client_id,
-            raw_client,
-            raw_client.get("harness_identity"),
-            actor_ptids_by_role=actor_ptids_by_role,
-            source_commit=identity["head"],
-            station=station,
-        )
-        clients_by_id[client_id] = raw_client
-
-    if tuple(clients_by_id) != tuple(clients):
-        raise RunnerError(
-            "runtime manifest clients differ from the ordered --clients binding"
-        )
-    binding = RuntimeManifestBinding(
-        path=resolved,
-        sha256=hashlib.sha256(raw_bytes).hexdigest(),
-        run_id=manifest_run_id,
-        payload=payload,
-        clients=clients_by_id,
-        raw_bytes=raw_bytes,
-        provenance_files=(
-            (source_manifest_path, source_manifest_bytes),
-            (actor_manifest_path, actor_manifest_bytes),
-            *service_attestation_files,
+    return runtime_manifest_v2.load_runtime_manifest(
+        path,
+        journey_id=scenario.journey_id,
+        repo_root=repo_root,
+        workspace_identity=identity,
+        profile_selectors=profiles,
+        client_selectors=clients,
+        runtime=runtime,
+        expected_protocol_digest=protocol_digest,
+        required_fixture_capabilities=tuple(
+            scenario.required_fixture_capabilities
         ),
     )
-    return binding
 
 
 def _validate_active_declaration(
@@ -1549,7 +1217,7 @@ def _validate_active_declaration(
         "journeyId": scenario.journey_id,
         "workspaceId": identity["workspaceId"],
         "branch": identity["branch"],
-        "sourceHead": identity["head"],
+        "sourceHead": identity.get("controlHead", identity["head"]),
         "state": ACTIVE_DECLARATION_STATE,
     }
     for field_name, expected_value in expected.items():
@@ -1671,6 +1339,56 @@ def _default_result_root(workspace_id: str) -> Path:
     )
 
 
+def _scenario_result_coordinates(
+    *,
+    scenario: ScenarioDefinition,
+    identity: Mapping[str, str],
+    declaration: Mapping[str, Any],
+    runtime: str,
+    profile: Optional[str],
+    profiles: Sequence[str],
+    clients: Sequence[str],
+    runtime_manifest: Optional[RuntimeManifestBinding],
+) -> tuple[Path, Mapping[str, str]]:
+    if scenario.result_prefix is None:
+        return scenario.evidence_path, {}
+    resolver = scenario.result_variant
+    variant = (
+        resolver(runtime, profile, tuple(profiles), tuple(clients))
+        if callable(resolver)
+        else resolver
+    )
+    checked_variant = _require_identifier(variant, "result variant")
+    run_id = _require_identifier(
+        (
+            runtime_manifest.run_id
+            if runtime_manifest is not None
+            else declaration["sessionId"]
+        ),
+        "result run id",
+    )
+    generation_id = _require_identifier(identity["head"], "result generation id")
+    task_id = _require_identifier(scenario.result_task_id, "result task id")
+    workstream_id = _require_identifier(
+        scenario.result_workstream_id,
+        "result workstream id",
+    )
+    return (
+        scenario.result_prefix
+        / generation_id
+        / checked_variant
+        / run_id
+        / "result.json",
+        {
+            "taskId": task_id,
+            "workstreamId": workstream_id,
+            "generationId": generation_id,
+            "variantId": checked_variant,
+            "runId": run_id,
+        },
+    )
+
+
 def _assert_external_result_path(repo_root: Path, result_root: Path) -> None:
     resolved_repo = repo_root.resolve()
     resolved_result = result_root.resolve()
@@ -1767,10 +1485,15 @@ def _failure_summary(
     error: Exception,
     checks: Sequence[Mapping[str, Any]],
 ) -> str:
-    if isinstance(error, ScenarioBlocked):
+    if isinstance(
+        error,
+        (ScenarioBlocked, runtime_manifest_v2.RuntimeManifestError),
+    ):
         return redact_text(str(error))
     if isinstance(error, ScenarioBudgetExceeded):
         return "scenario exceeded the declared budget"
+    if isinstance(error, (GateError, RunnerError)):
+        return redact_text(str(error))
     if checks and checks[-1].get("result") == "FAIL":
         return (
             f"{checks[-1].get('id', 'scenario check')} failed with exit code "
@@ -1919,6 +1642,7 @@ def _recover_prepared_result(
     profile: Optional[str],
     profiles: Sequence[str],
     clients: Sequence[str],
+    result_coordinates: Mapping[str, str],
 ) -> Optional[Mapping[str, Any]]:
     if not prepared_path.exists():
         return None
@@ -1980,9 +1704,22 @@ def _recover_prepared_result(
         "profile": profile,
         "profiles": list(profiles),
         "clients": list(clients),
+        **result_coordinates,
     }
     if any(result.get(field) != value for field, value in expected_result.items()):
         raise RunnerError("prepared result journal identity is invalid")
+    if result_coordinates:
+        result_content = dict(result)
+        result_digest = result_content.pop("resultDigest", None)
+        if (
+            not isinstance(result_digest, str)
+            or SHA256.fullmatch(result_digest) is None
+            or not hmac.compare_digest(
+                result_digest,
+                _canonical_digest(result_content),
+            )
+        ):
+            raise RunnerError("prepared result digest is invalid")
     result_bytes = _json_bytes(result)
     result_digest = hashlib.sha256(result_bytes).hexdigest()
     prepared_digest = journal.get("preparedResultSha256")
@@ -2023,10 +1760,12 @@ def _recover_prepared_result(
             raise RunnerError("prepared result consumption is invalid")
         artifact_path_value = consumption.get("artifactPath")
         receipt_path_value = consumption.get("receiptPath")
+        claim_path_value = consumption.get("claimPath")
         receipt = consumption.get("receipt")
         if (
             not isinstance(artifact_path_value, str)
             or not isinstance(receipt_path_value, str)
+            or not isinstance(claim_path_value, str)
             or not isinstance(receipt, Mapping)
         ):
             raise RunnerError("prepared result consumption is invalid")
@@ -2035,13 +1774,19 @@ def _recover_prepared_result(
             output_path.parent,
         )
         receipt_path = Path(receipt_path_value)
+        claim_path = Path(claim_path_value)
         if (
             not receipt_path.is_absolute()
             or receipt_path
             != artifact_path.with_name(f"{artifact_path.stem}.consumed.json")
             or receipt_path.is_symlink()
+            or not claim_path.is_absolute()
+            or claim_path
+            != artifact_path.with_name(f"{artifact_path.stem}.consuming.json")
+            or claim_path.is_symlink()
         ):
             raise RunnerError("prepared result receipt path is invalid")
+        claim_bytes, claim = _read_json_artifact(claim_path)
         artifact_bytes, artifact = _read_json_artifact(artifact_path)
         artifact_digest = hashlib.sha256(artifact_bytes).hexdigest()
         expected_receipt = {
@@ -2062,6 +1807,14 @@ def _recover_prepared_result(
             ),
             "preparedResultSha256": result_digest,
         }
+        expected_claim = {
+            key: value
+            for key, value in expected_receipt.items()
+            if key != "preparedResultSha256"
+        }
+        expected_claim["kind"] = (
+            f"{artifact.get('kind')}-consumption-claim"
+        )
         if (
             consumption.get("artifactSha256") != artifact_digest
             or any(
@@ -2070,6 +1823,28 @@ def _recover_prepared_result(
             )
         ):
             raise RunnerError("prepared result consumption artifact is invalid")
+        claim_content = dict(claim)
+        claim_digest = claim_content.pop("claimDigest", None)
+        _parse_timestamp(
+            claim.get("claimedAt"),
+            "prepared result consumption claim claimedAt",
+        )
+        if (
+            any(
+                claim.get(field) != value
+                for field, value in expected_claim.items()
+            )
+            or not isinstance(claim_digest, str)
+            or SHA256.fullmatch(claim_digest) is None
+            or not hmac.compare_digest(
+                claim_digest,
+                _canonical_digest(claim_content),
+            )
+            or consumption.get("claimSha256")
+            != hashlib.sha256(claim_bytes).hexdigest()
+            or str(claim_path) not in artifact_refs
+        ):
+            raise RunnerError("prepared result consumption claim is invalid")
         receipt_bytes = _json_bytes(receipt)
         receipt_digest = hashlib.sha256(receipt_bytes).hexdigest()
         if (
@@ -2161,6 +1936,7 @@ def execute_scenario(
     registry: Optional[Mapping[str, ScenarioDefinition]] = None,
     workspace_identity: Optional[Mapping[str, str]] = None,
     command_runner: CommandRunner = _run_command,
+    fixture_action_client: EphemeralGateClient | None = None,
 ) -> Mapping[str, Any]:
     normalized_scenario = _canonical_scenario_id(scenario_id)
     if runtime not in RUNTIMES:
@@ -2188,33 +1964,56 @@ def execute_scenario(
     for field_name in ("workspaceId", "branch", "head"):
         if not isinstance(identity.get(field_name), str) or not identity[field_name]:
             raise RunnerError(f"worktree identity is missing {field_name}")
-    declaration = _active_scenario_declaration(
-        repo_root=repo_root,
-        scenario=scenario,
-        identity=identity,
-        command_runner=command_runner,
-    )
-    runtime_manifest = (
-        _runtime_manifest_binding(
-            path=runtime_manifest_path,
-            scenario=scenario,
-            identity=identity,
-            runtime=runtime,
-            profile=profile,
-            profiles=bound_profiles,
-            clients=clients,
-            repo_root=repo_root,
-        )
-        if runtime_manifest_path is not None
-        else None
-    )
     output_root = (
         result_root.resolve()
         if result_root is not None
         else _default_result_root(identity["workspaceId"]).resolve()
     )
     _assert_external_result_path(repo_root, output_root)
-    output_path = output_root / scenario.evidence_path
+    if workspace_identity is None:
+        try:
+            identity = resolve_runtime_source_identity(
+                repo_root=repo_root,
+                result_root=output_root,
+                control_identity=identity,
+            )
+        except SourceProjectionError as error:
+            raise RunnerError(str(error)) from error
+    declaration = _active_scenario_declaration(
+        repo_root=repo_root,
+        scenario=scenario,
+        identity=identity,
+        command_runner=command_runner,
+    )
+    runtime_manifest: Optional[RuntimeManifestBinding] = None
+    manifest_preflight_error: Optional[
+        runtime_manifest_v2.RuntimeManifestError
+    ] = None
+    if runtime_manifest_path is not None:
+        try:
+            runtime_manifest = _runtime_manifest_binding(
+                path=runtime_manifest_path,
+                scenario=scenario,
+                identity=identity,
+                runtime=runtime,
+                profile=profile,
+                profiles=bound_profiles,
+                clients=clients,
+                repo_root=repo_root,
+            )
+        except runtime_manifest_v2.RuntimeManifestError as error:
+            manifest_preflight_error = error
+    relative_output_path, result_coordinates = _scenario_result_coordinates(
+        scenario=scenario,
+        identity=identity,
+        declaration=declaration,
+        runtime=runtime,
+        profile=profile,
+        profiles=bound_profiles,
+        clients=clients,
+        runtime_manifest=runtime_manifest,
+    )
+    output_path = output_root / relative_output_path
     prepared_path = _prepared_result_path(output_path)
     command_digest = _command_digest(
         scenario_id=scenario.scenario_id,
@@ -2227,18 +2026,23 @@ def execute_scenario(
             runtime_manifest.sha256 if runtime_manifest is not None else None
         ),
     )
-    recovered = _recover_prepared_result(
-        prepared_path=prepared_path,
-        output_path=output_path,
-        scenario=scenario,
-        identity=identity,
-        declaration=declaration,
-        runtime_manifest=runtime_manifest,
-        command_digest=command_digest,
-        runtime=runtime,
-        profile=profile,
-        profiles=bound_profiles,
-        clients=clients,
+    recovered = (
+        _recover_prepared_result(
+            prepared_path=prepared_path,
+            output_path=output_path,
+            scenario=scenario,
+            identity=identity,
+            declaration=declaration,
+            runtime_manifest=runtime_manifest,
+            command_digest=command_digest,
+            runtime=runtime,
+            profile=profile,
+            profiles=bound_profiles,
+            clients=clients,
+            result_coordinates=result_coordinates,
+        )
+        if manifest_preflight_error is None
+        else None
     )
     if recovered is not None:
         return recovered
@@ -2261,30 +2065,47 @@ def execute_scenario(
         runtime_manifest=runtime_manifest,
         artifact_dir=output_path.parent,
         result_path=output_path,
+        required_fixture_capabilities=scenario.required_fixture_capabilities,
+        fixture_action_client=fixture_action_client,
     )
     failure: Optional[str] = None
     detail: Mapping[str, Any] = {}
     failure_kind = "PRODUCT_ASSERTION_FAILED"
     failure_owner = "source"
     failure_retryable = False
+    failure_stage = "FUNCTIONAL_RUNNING"
     blocked_error: Optional[ScenarioBlocked] = None
-    execution_error: Optional[Exception] = None
-    try:
-        with _scenario_budget(context.remaining_seconds()):
-            detail = _validated_detail(scenario.execute(context))
-        context.remaining_seconds()
-    except Exception as error:
-        execution_error = error
+    execution_error: Optional[Exception] = manifest_preflight_error
+    if execution_error is None:
+        try:
+            with _scenario_budget(context.remaining_seconds()):
+                detail = _validated_detail(scenario.execute(context))
+            context.remaining_seconds()
+        except Exception as error:
+            execution_error = error
 
     manifest_error: Optional[Exception] = None
     if runtime_manifest is not None:
         try:
             runtime_manifest.verify_unchanged()
+            context.verify_continuation_unchanged()
         except Exception as error:
             manifest_error = error
 
     outcome_error = manifest_error or execution_error
-    if isinstance(outcome_error, ScenarioBlocked):
+    if isinstance(outcome_error, runtime_manifest_v2.RuntimeManifestError):
+        failure = redact_text(str(outcome_error))
+        failure_kind = outcome_error.code
+        failure_owner = outcome_error.owner
+        failure_retryable = outcome_error.retryable
+        failure_stage = outcome_error.stage
+        blocked_error = ScenarioBlocked(
+            failure,
+            kind=failure_kind,
+            owner=failure_owner,
+            retryable=failure_retryable,
+        )
+    elif isinstance(outcome_error, ScenarioBlocked):
         failure = _failure_summary(outcome_error, context.checks)
         failure_kind = outcome_error.kind
         failure_owner = outcome_error.owner
@@ -2327,6 +2148,7 @@ def execute_scenario(
         "runtime": runtime,
         "verificationClass": VERIFICATION_CLASS,
         "result": "BLOCKED" if blocked_error else ("FAIL" if failure else "PASS"),
+        "proofState": "UNPROVEN",
         "workspaceId": identity["workspaceId"],
         "branch": identity["branch"],
         "sourceCommit": identity["head"],
@@ -2363,20 +2185,28 @@ def execute_scenario(
             *prepared_result_refs,
             *pending_receipt_refs,
         ],
+        **result_coordinates,
     }
     if runtime_manifest is not None:
         result["runtimeManifestDigest"] = runtime_manifest.sha256
         result["runtimeManifestRef"] = str(runtime_manifest.path)
+        result["serviceIds"] = sorted(runtime_manifest.services)
+        result["fixtureManifestDigest"] = runtime_manifest.payload[
+            "fixture_manifest_digest"
+        ]
     result.update(detail)
     if failure:
         result["firstFailure"] = {
             "kind": failure_kind,
-            "stage": "FUNCTIONAL_RUNNING",
+            "stage": failure_stage,
             "owner": failure_owner,
             "summary": failure,
             "retryable": failure_retryable,
         }
+    result["completedAt"] = _timestamp()
     durable_result = _redacted_mapping(result)
+    if result_coordinates:
+        durable_result["resultDigest"] = _canonical_digest(durable_result)
     if pending_receipt_refs:
         context.prepare_bound_artifact_consumptions(
             prepared_path,

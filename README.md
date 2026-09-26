@@ -48,6 +48,30 @@ Through such a privacy-focused network, we aim to create a society that respects
 
 ## Features
 
+## How to Contribute
+
+Peers-Touch uses a structured development workflow that supports both human
+developers and AI agents working together.
+
+**For developers**: pick a worktree, read the platform docs for the area you
+want to change, and follow the unified workflow. Every change — from a one-line
+fix to a cross-platform feature — follows the same control flow: understand
+intent, bind a worktree, execute, prove behavior, and deliver.
+
+**For AI agents**: read `AGENTS.md` on session start, then the platform-specific
+entry under `docs/.agent/`. The project ships a skill system under
+`tooling/skills/` that handles routing, planning, acceptance, and delivery.
+
+Key entry points:
+
+| What you need | Where to look |
+|---------------|--------------|
+| Full contributing guide | [`docs/global/contributing.md`](docs/global/contributing.md) |
+| Agent behavioral contract | [`AGENTS.md`](AGENTS.md) |
+| Document navigation | [`docs/README.md`](docs/README.md) |
+| Development workflow | [`docs/global/workflow.md`](docs/global/workflow.md) |
+| Local environment setup | [`docs/global/local-dev-environment.md`](docs/global/local-dev-environment.md) |
+
 ## References
 
 Thanks for those friend projects:  <br />

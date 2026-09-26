@@ -55,6 +55,7 @@ function identity(port, workspaceId = '0123456789abcdef') {
       branch: 'feat/peers-dev',
       head: '1'.repeat(40),
       dirty: false,
+      sourceDigest: 'clean',
     },
   };
 }
@@ -84,26 +85,25 @@ function request(port, method, pathname) {
   });
 }
 
-test('concurrent starts produce one server and one compatible reuse', async () => {
+test('an existing server from another source is rejected', async () => {
   const envRepo = mkdtempSync(path.join(tmpdir(), 'peers-dev-env-'));
   const port = await freePort();
   const firstIdentity = identity(port, '1111111111111111');
   const secondIdentity = identity(port, '2222222222222222');
   let started;
   try {
-    const results = await Promise.all([
-      ensureDevServer({ envRepo, port, identity: firstIdentity }),
+    started = await ensureDevServer({
+      envRepo,
+      port,
+      identity: firstIdentity,
+    });
+    await assert.rejects(
       ensureDevServer({ envRepo, port, identity: secondIdentity }),
-    ]);
-    assert.deepEqual(
-      results.map((result) => result.state).sort(),
-      ['existing', 'started'],
-    );
-    started = results.find((result) => result.state === 'started');
-    const existing = results.find((result) => result.state === 'existing');
-    assert.equal(
-      existing.identity.source.workspaceId,
-      started.identity.source.workspaceId,
+      (error) => {
+        assert.ok(error instanceof PeersDevError);
+        assert.equal(error.code, 'DEV_SERVER_SOURCE_MISMATCH');
+        return true;
+      },
     );
     const probe = await probeDevServer({ port });
     assert.equal(probe.state, 'compatible');
@@ -153,7 +153,7 @@ test('compatible launch is idempotent and HTTP surface is read-only', async () =
     const reused = await ensureDevServer({
       envRepo,
       port,
-      identity: identity(port, 'fedcba9876543210'),
+      identity: identity(port),
     });
     assert.equal(started.state, 'started');
     assert.equal(reused.state, 'existing');
@@ -333,6 +333,7 @@ test('browser renderer consumes split work and environment state', () => {
     'utf8',
   );
   assert.match(app, /item\.workState/);
+  assert.match(app, /item\.workflow\?\.findings/);
   assert.match(app, /item\.environmentHealth\.state/);
   assert.match(app, /projected\.completedAfter/);
   assert.match(app, /projected\.percentageAfter/);

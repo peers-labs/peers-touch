@@ -618,6 +618,24 @@ pub struct MlsRetirementProcessor<R: MlsInboundRepository> {
     clock: fn() -> i64,
 }
 
+fn transition_removes_endpoint(
+    transition: &MembershipTransitionCommittedFact,
+    endpoint: &CryptoEndpoint,
+) -> bool {
+    transition.changes.iter().any(|change| {
+        change.ptid == endpoint.ptid
+            && match MessagingMembershipAction::try_from(change.action) {
+                Ok(MessagingMembershipAction::RemoveActor | MessagingMembershipAction::Leave) => {
+                    true
+                }
+                Ok(MessagingMembershipAction::RemoveDevice) => {
+                    change.device_id == endpoint.device_id
+                }
+                _ => false,
+            }
+    })
+}
+
 impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
     pub fn new(
         manager: Arc<MlsGroupManager>,
@@ -671,16 +689,7 @@ impl<R: MlsInboundRepository> MlsRetirementProcessor<R> {
         {
             return Err("messaging MLS retirement marker binding mismatch".to_string());
         }
-        let local_removed = transition.changes.iter().any(|change| {
-            change.ptid == self.endpoint.ptid
-                && match MessagingMembershipAction::try_from(change.action) {
-                    Ok(MessagingMembershipAction::RemoveActor) => true,
-                    Ok(MessagingMembershipAction::RemoveDevice) => {
-                        change.device_id == self.endpoint.device_id
-                    }
-                    _ => false,
-                }
-        });
+        let local_removed = transition_removes_endpoint(transition, &self.endpoint);
         let snapshot = transition
             .post_state
             .as_ref()
@@ -801,6 +810,8 @@ pub fn authority_snapshot_projection(
         federation_id: snapshot.federation_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
+        description: snapshot.description.clone(),
+        avatar_object_id: snapshot.avatar_object_id.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
         members: snapshot
             .active_members
@@ -820,6 +831,13 @@ pub fn authority_snapshot_projection(
         active: true,
         updated_at_unix_ms: now,
     })
+}
+
+fn timestamp_value_millis(timestamp: &prost_types::Timestamp) -> i64 {
+    timestamp
+        .seconds
+        .saturating_mul(1_000)
+        .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
 }
 
 fn join_checkpoint_projection(
@@ -1041,13 +1059,6 @@ fn timestamp_millis(event: &ConversationEvent, fallback: i64) -> i64 {
                 .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
         })
         .unwrap_or(fallback)
-}
-
-fn timestamp_value_millis(timestamp: &prost_types::Timestamp) -> i64 {
-    timestamp
-        .seconds
-        .saturating_mul(1_000)
-        .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
 }
 
 #[cfg(test)]
@@ -2079,5 +2090,30 @@ mod tests {
         assert_eq!(projection.membership_epoch, 7);
         assert_eq!(projection.mls_epoch, 7);
         assert!(projection.active);
+    }
+
+    #[test]
+    fn leave_transition_retires_every_endpoint_for_departing_actor() {
+        let transition = MembershipTransitionCommittedFact {
+            changes: vec![MessagingMembershipChangeCommitted {
+                action: MessagingMembershipAction::Leave as i32,
+                ptid: "ptid:carol".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert!(transition_removes_endpoint(
+            &transition,
+            &endpoint("ptid:carol", "carol-device-1"),
+        ));
+        assert!(transition_removes_endpoint(
+            &transition,
+            &endpoint("ptid:carol", "carol-device-2"),
+        ));
+        assert!(!transition_removes_endpoint(
+            &transition,
+            &endpoint("ptid:bob", "bob-device"),
+        ));
     }
 }

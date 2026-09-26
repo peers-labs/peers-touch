@@ -148,7 +148,7 @@ func TestPendingLeaveIntentsRequiresMembershipAndDelegatesBoundedQuery(
 	}
 	if len(got) != 1 || got[0].ID != "leave-1" ||
 		intents.conversationID != "conversation-1" ||
-		intents.actor != "ptid:alice" ||
+		intents.excludedActor != "ptid:alice" ||
 		intents.limit != 100 {
 		t.Fatalf("PendingLeaveIntents() = %+v, repository = %+v", got, intents)
 	}
@@ -326,19 +326,19 @@ type queryLeaveIntentRepository struct {
 	values         []repository.LeaveIntent
 	calls          int
 	conversationID valueobject.ConversationID
-	actor          valueobject.PTID
+	excludedActor  valueobject.PTID
 	limit          int
 }
 
 func (r *queryLeaveIntentRepository) ListPending(
 	_ context.Context,
 	conversationID valueobject.ConversationID,
-	actor valueobject.PTID,
+	excludedActor valueobject.PTID,
 	limit int,
 ) ([]repository.LeaveIntent, error) {
 	r.calls++
 	r.conversationID = conversationID
-	r.actor = actor
+	r.excludedActor = excludedActor
 	r.limit = limit
 
 	return append([]repository.LeaveIntent(nil), r.values...), nil

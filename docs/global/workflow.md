@@ -1,369 +1,205 @@
 # Development Workflow
 
-> How to execute tasks in the current `apps/*` architecture.
+> This is the single human-facing standard for Peers-Touch development.
+> Architecture documents define why the control plane works; Skills and
+> commands implement it.
 
----
+## One Flow
 
-## 1) Read before coding
+Every change follows the same control flow:
 
-1. [project-identity.md](./project-identity.md)
-2. [architecture.md](./architecture.md)
-3. [domain-model.md](./domain-model.md)
-4. [docs/README.md](../README.md)
-
-Then select platform docs:
-- Desktop: `docs/client/desktop/`
-- Mobile: `docs/client/mobile/`
-- Station: `docs/station/`
-
----
-
-## 2) Bind the active worktree
-
-When the user starts by saying which worktree to use, that worktree becomes the
-task's active worktree.
-
-Default rule:
-- All edits, generated files, staging, commits, and PR operations must stay
-  inside the active worktree.
-- Other worktrees are read-only unless the user explicitly grants write scope
-  for another path.
-- IDE-open files, search results, shell defaults, and previous conversation
-  context do not override the active worktree.
-- Before editing or staging, verify `pwd` and `git rev-parse --show-toplevel`
-  point to the active worktree.
-- If a required change appears to belong in another worktree, stop and ask
-  before writing.
-
-Cross-worktree comparison is allowed for investigation, conflict analysis, and
-PR review, but write scope remains bound to the active worktree.
-
----
-
-## 3) Declare development resources
-
-Read-only investigation may happen before declaration. Before the first
-repository write or runtime acquisition for any non-trivial task:
-
-```bash
-make dev-start \
-  WORK_ITEM=<stable-id> \
-  PURPOSE='<purpose>' \
-  SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
-  RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]'
+```text
+understand intent and accepted sources
+  -> bind one worktree
+  -> choose the required artifact depth
+  -> declare source/runtime intent
+  -> execute the current closure
+  -> prove functional behavior
+  -> run required formal Acceptance
+  -> review and deliver within authorization
+  -> release resources
 ```
 
-Rules:
+Task size changes documentation and proof depth, not ownership, worktree,
+authorization, or evidence rules.
 
-- The command atomically publishes intent to
-  `~/.peers-touch/dev/work.json`, checks cross-worktree conflicts, and reads the
-  declaration back.
-- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
-- Use `make dev-update` before growing source or runtime scope.
-- Refresh the declared source HEAD with `make dev-update` after an authorized
-  commit, rebase or merge.
-- Use `make dev-status-all` to inspect all worktree declarations.
-- A declaration is public intent, not a Profile/Station lease or operation
-  authorization.
-- Completion, cancellation and abandonment require
-  `make dev-release WORK_ITEM=<id>`.
+| Change class | Required artifacts |
+|---|---|
+| Small | Existing product/architecture sources must already decide the behavior. Use one bounded mutation slice and focused regression proof. No placeholder Plan or new design document. |
+| Standard | Use a compact Plan Package with independently closable Task Slices. Add a product or architecture amendment only when an accepted source does not decide the required behavior. |
+| Large | Establish accepted product Journeys and states, architecture ownership/contracts, optional UI prototype, then a dependency-ordered Plan Package before implementation. |
 
-Architecture source:
-`docs/architecture/development-workflow/README.md`.
+Undefined user-visible behavior returns `PRODUCT_AMENDMENT_REQUIRED`. Undefined
+ownership, protocol, persistence, or failure semantics returns
+`DESIGN_AMENDMENT_REQUIRED`. Stale but already-decided inventory or dependency
+mapping returns `PLAN_AMENDMENT_REQUIRED`.
 
-### Development Skill responsibility chain
+## Execute
+
+1. Read `project-identity.md`, `architecture.md`, `domain-model.md`,
+   `docs/README.md`, and the affected platform/domain sources.
+2. Select one explicit worktree. Verify its canonical root, branch,
+   `workspaceId`, and expected HEAD. Never infer it from a Skill path, open
+   editor file, branch proximity, or chat history.
+3. For tracked work, resolve only the workspace's immutable Plan binding and
+   current Task. Synchronized foreign Plans do not participate.
+4. Before the first repository write or runtime acquisition, publish intent:
+
+   ```bash
+   make dev-start \
+     WORK_ITEM=<stable-id> \
+     PURPOSE='<purpose>' \
+     SOURCE_CLAIMS='<mode>:<repo-path>[;...]' \
+     RUNTIME_CLAIMS='<mode>:<kind>:<resource-id>[;...]' \
+     [PLAN=<plan.md>] [TASK=<task-id>] [JOURNEY=<journey-id>]
+   make dev-check WORK_ITEM=<stable-id>
+   ```
+
+5. Execute the current closure at its owning layer. Record the first actionable
+   failure, fix the root cause, and rerun focused checks. Update the declaration
+   before scope growth and heartbeat long-running work.
+6. Run `make workflow-snapshot` for tracked execution:
+   - `CONTINUE`: perform the next legal owner repair, review, Task handoff, or
+     dependency-ready action without asking for confirmation;
+   - `HARD_BLOCK`: stop only at the reported typed boundary after the runnable
+     frontier is exhausted;
+   - `COMPLETE`: close the Plan Run.
+7. Persist transitions only through the owning Plan, Session, declaration, and
+   active-work commands. Projections never repair their inputs.
+   Context Anchor uses
+   `make workflow-snapshot WORKFLOW_SNAPSHOT_PROJECTION=anchor`; timing is
+   derived from the existing bounded Session journal and never creates a
+   metrics write or lifecycle owner.
+8. Run agent-led review, fix source-backed findings, and rerun review. The user
+   is not the default reviewer.
+9. Deliver only operations allowed by the exact user grant or Plan
+   authorization, then release runtime resources, the declaration, and the
+   workspace active-work record.
+
+Use `make dev-update` after an authorized commit, merge, or rebase changes HEAD.
+Use `make dev-release WORK_ITEM=<id>` on completion or cancellation.
+
+## Continuous Plan Run
+
+One explicit `continue`, `resume`, `execute the plan`, or equivalent request
+authorizes the accepted Plan Run within its recorded scope and authorization
+envelope. A Goal Slice is a single-Task internal scheduling unit, not a user
+handoff.
+
+Task closure, successor activation, review, Context Anchor output, retry, and
+context compaction do not consume that authorization.
+Already-authorized operations execute directly. Ask only for an out-of-envelope or denied
+operation, an actual external permission failure, an unavailable external
+resource, a destructive action without an exact grant, an unresolved material
+semantic decision, or fixed-point exhaustion.
+
+The responsibility chain is:
 
 ```text
 pt-god-view routes
-  -> pt-dev-workflow owns one Development Run
-  -> pt-goal-orchestrator schedules WHAT is ready
-  -> pt-execution-plan-guardian decides whether one proposed action MAY run
-  -> pt-dev-workflow executes and persists through owner commands
-  -> pt-context-anchor renders read-only status
+  -> pt-dev-workflow owns the Development Run
+  -> pt-goal-orchestrator proposes what is ready
+  -> pt-execution-plan-guardian decides whether one action may run
+  -> pt-dev-workflow executes through owner commands
+  -> pt-context-anchor projects read-only status
 ```
 
-`pt-architecture-execution-methodology` defines the vertical dependency model;
-`pt-plan-and-document` only persists the accepted model. Router, scheduler,
-policy guard, and status projection do not write Plan/Task/Session/workspace
-active-work state.
+Host-specific adapters are optional transports. Repository-native Make,
+Harness, WebDriver, Appium, accessibility, and browser drivers define proof
+strength. A missing host capability degrades only that transport.
 
-The workflow implementation is maintained as canonical source in
-`peers-dev-workflow`, then distributed to consuming worktrees. Every installed
-copy derives the consuming worktree's canonical root and `workspaceId`; mutable
-state stays under that workspace's machine directory. Project memory and chat
-never become a shared runtime-state service.
-
-### Continuous Plan Run
-
-An explicit `continue`, `resume`, `execute the plan`, or equivalent request
-authorizes Dev Workflow to drain the accepted Plan within its recorded
-authorization envelope:
+## Evidence Order
 
 ```text
-Task Goal Slice
-  -> focused verification
-  -> agent review and remediation
-  -> Task closure or parking
-  -> dependency-ready successor
-  -> repeat
+implementation
+  -> SOURCE_CHECK / STRUCTURAL_CHECK / UX_REVIEW
+  -> exact-source FUNCTIONAL_CHECK
+  -> FUNCTIONAL_PASS
+  -> required ACCEPTANCE_PROOF
+  -> PROVEN
 ```
 
-Goal Slice remains one Task and one stage. Task closure, review success,
-Context Anchor output, and context compaction are internal checkpoints, not
-requests for another user confirmation.
-
-Already-authorized operations execute directly. An exact user grant or an
-explicit allowed field in the accepted Plan authorization envelope remains
-valid across Task/Goal transitions, retries, context compaction, and host
-changes. A sensitive operation category is not a reason to ask again.
-`OPERATION_AUTHORIZATION_REQUIRED` applies only when the proposed action is
-denied or outside every explicit grant. After admission, ask about permission
-only when the attempted operation returns an actual external permission,
-credential, or scope failure.
-
-The agent runs the applicable methodology review plus `pt-quality-check`,
-`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
-and reruns the affected review. Escalate only when the next step requires an
-operation outside the accepted authorization, destructive or irreversible
-work, an external grant/resource, an unresolved material semantic choice, or
-fixed-point exhaustion.
-
-### Host-Neutral Runtime And Tool Dispatch
-
-Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
-
-```text
-pt-dev-runtime-handoff -> repository-native command / product driver
-pt-goal-orchestrator -> Host Capability Request
-  -> Guardian ACTION_ALLOWED
-  -> pt-dev-workflow
-  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
-```
-
-The generic owners define scheduling, Journey semantics, verification class,
-Session transition, and cleanup. A host adapter only invokes tools exposed by
-the detected host. It may not decide PASS, weaken required proof, run the
-repository-native fallback, or become a Task blocker when a project-owned path
-can continue. Missing capability degrades only that transport. Cleanup failure
-has one bounded quarantine and one post-expiry observation, never a recursive
-cleanup loop.
-
-### Continuous Plan Run
-
-An explicit `continue`, `resume`, `execute the plan`, or equivalent request
-authorizes Dev Workflow to drain the accepted Plan within its recorded
-authorization envelope:
-
-```text
-Task Goal Slice
-  -> focused verification
-  -> agent review and remediation
-  -> Task closure or parking
-  -> dependency-ready successor
-  -> repeat
-```
-
-Goal Slice remains one Task and one stage. Task closure, review success,
-Context Anchor output, and context compaction are internal checkpoints, not
-requests for another user confirmation.
-
-The agent runs the applicable methodology review plus `pt-quality-check`,
-`pt-completion-auditor`, and `pt-github-review`; it fixes source-backed findings
-and reruns the affected review. Escalate only when the next step requires:
-
-- an operation the accepted Plan authorization explicitly denies or does not
-  grant;
-- destructive or irreversible work not already authorized;
-- force push, history rewrite, merge, release, production mutation, data
-  deletion/reset, environment creation, permission expansion, version/schema
-  bump, worktree add/remove/prune, or secret access;
-- a product, architecture, security, privacy, compatibility, or rollout choice
-  that accepted sources cannot determine;
-- an unavailable external resource or credential; or
-- fixed-point exhaustion with no dependency-ready Task or legal remediation.
-
-An Anchor emitted during the Run reports the autonomous horizon and stop
-conditions. It never ends with `Continue?`.
-
-### Host-Neutral Runtime And Tool Dispatch
-
-Project owners do not depend on TRAE, Cursor, Codex, or another agent host:
-
-```text
-pt-dev-runtime-handoff -> repository-native command / product driver
-pt-goal-orchestrator -> Host Capability Request
-  -> Guardian ACTION_ALLOWED
-  -> pt-dev-workflow
-  -> pt-trae-host-adapter | pt-cursor-host-adapter | pt-codex-host-adapter
-```
-
-The generic owners define scheduling, Journey semantics, verification class,
-Session transition, and cleanup. A host adapter only invokes tools exposed by
-the detected host. It may not decide PASS, weaken a native Journey to browser
-or coordinate evidence, or become a Task blocker when a repository-native path
-can continue.
-
-The scheduler only projects the required host capability. Dev Workflow invokes
-the selected adapter after Guardian admission and owns retries, fallback,
-cleanup, parking, and durable result handling. An adapter never runs the
-repository-native fallback. Unavailable capability identity and attempted
-transports are persisted; only a new available observation can unblock the
-request. A failed cleanup has one bounded quarantine result, not a recursive
-cleanup loop; the current resource-dependent Task parks while independent ready
-Tasks continue. One post-expiry `inspect-quarantine` observation commits release
-or escalates the still-live external resource. Repeated and pre-expiry
-observations fail closed.
-
-Host identity comes from explicit runtime metadata, corroborated by tool
-inventory or host-injected environment markers. The presence of `.trae`,
-`.cursor`, `.agents`, or an installed CLI is not identity. A missing optional
-host capability returns a typed unavailable result and degrades to another
-project-owned path or serial execution.
-
----
-
-## 4) Route Acceptance work by ownership
-
-Before changing Acceptance code, classify responsibility:
-
-| Work | Required Skill | Ownership |
-|---|---|---|
-| Core contracts, planner, validator, runner, reporter, Evidence Store, generic lifecycle, registration mechanism, framework self-tests | `pt-acceptance-infra-engineering` | Acceptance Infra |
-| Domain, Feature, Capability, Registry rule, concrete Gate, Environment, Provisioner, Fixture, actor/client role, credential reference, product evidence | `pt-acceptance-engineering` | Business module injection |
-
-Rules:
-
-- Infra defines how business modules inject; business modules provide the
-  injected content.
-- A path under `tooling/acceptance/` is not automatically Infra-owned.
-- Missing business injection blocks only its Domain and is reported as
-  `BUSINESS_INJECTION_REQUIRED`.
-- Business Gate `FAILED`, `BLOCKED`, or `UNPROVEN` does not block Acceptance
-  Infra completion.
-- Mixed requests are split into separate work items and ownership contexts.
-- Infra Agents must not add placeholders, mocks, default identities, concrete
-  actor roles, or weakened product assertions to make framework checks pass.
-
-Architecture source:
-`docs/architecture/acceptance-framework/decisions.md` D-12.
-
----
-
-## 5) Use correct paths
-
-- Desktop: `apps/desktop`
-- Mobile Android: `apps/mobile/android`
-- Mobile iOS: `apps/mobile/ios`
-- Station App: `apps/station/app`
-- Station Frame: `apps/station/frame`
-- Domain Model: `model/domain`
-
----
-
-## 6) Product-first implementation sequence
-
-For every dependency-ready workstream:
-
-1. Bind one product Journey or class-specific functional boundary.
-2. Reproduce once and record the first actionable failure.
-3. Define/adjust contracts (`model/domain` or Desktop Tauri contracts).
-4. Implement the root correction at the owning layer.
-5. Connect consumers and UI.
-6. Run focused unit/type/contract checks.
-7. Create an authorized checkpoint commit when exact-source runtime is needed.
-8. Deploy/start through Local Dev Control Plane and Make.
-9. Run the real Journey:
-   - `FAIL` → return the first failure to implementation;
-   - `BLOCKED` → park the environment or authorization edge;
-   - `PASS` → record `FUNCTIONAL_PASS`.
-10. Only after `FUNCTIONAL_PASS`, promote the same Journey into formal
-    Acceptance and run final exact-source proof.
-
-Acceptance scenarios are selected from product states, receiver outcomes,
-changed failure semantics, and concrete architecture risks. Do not impose a
-generic success/network/timeout/invalid/cancellation matrix on every closure.
-
-Before `FUNCTIONAL_PASS`, do not run coverage, Gap Detector, Completion Auditor,
-cross-platform matrices, submit pipeline, or unrelated broad Gate bundles.
-
----
-
-## 7) Verification commands
-
-### Desktop
-
-```bash
-cd apps/desktop
-pnpm run check
-pnpm run test
-pnpm run build
-```
-
-App-only check:
-
-```bash
-cd apps/desktop
-source ~/.cargo/env
-CI=false pnpm run tauri:build
-```
-
-### Mobile
-
-```bash
-cd apps/mobile/android && ./gradlew build
-cd apps/mobile/ios && xcodebuild -scheme PeersTouch -configuration Debug build
-```
-
-### Station
-
-```bash
-cd apps/station
-gofmt -l .
-go test ./...
-```
-
----
-
-## 8) Verification classes
-
-| Class | Meaning |
+| Class | Proves |
 |---|---|
-| `SOURCE_CHECK` | unit, typecheck, build, or focused contract check |
-| `STRUCTURAL_CHECK` | source, registry, schema, or static relation |
-| `UX_REVIEW` | prototype or screenshot contract |
-| `FUNCTIONAL_CHECK` | exact-source real product Journey |
-| `ACCEPTANCE_PROOF` | formal capability proof |
+| `SOURCE_CHECK` | Focused unit, type, build, or contract correctness |
+| `STRUCTURAL_CHECK` | Source, registry, schema, or static relationship |
+| `UX_REVIEW` | Prototype, screenshot, or interaction contract |
+| `FUNCTIONAL_CHECK` | The named exact-source Journey or functional boundary works |
+| `ACCEPTANCE_PROOF` | Formal capability evidence |
 
-Only `FUNCTIONAL_CHECK` supports “this Journey works”. `PROVEN` is reserved for
-formal Acceptance.
+Focused checks, build success, coverage, and Gate counts do not establish
+`FUNCTIONAL_PASS`. `PROVEN` is reserved for formal Acceptance. Completion/full
+Acceptance, Gap Detector, and completion review run only after the required
+functional frontier passes.
 
----
+Acceptance scenarios come from product states, receiver outcomes, changed
+failure semantics, and architecture risks. Do not impose a generic scenario
+matrix on every closure.
 
-## 9) Completion criteria
+## Route Acceptance work by ownership
 
-Only mark task done when:
-- Implementation is complete
-- Relevant lint/check passes
-- Build succeeds
-- Tests pass
-- Required exact-source Journeys have `FUNCTIONAL_CHECK`
-- Required formal capabilities have `ACCEPTANCE_PROOF`
-- Public resource declaration and runtime leases are released
+| Work | Owner |
+|---|---|
+| Core contracts, planner, validator, runner, reporter, Evidence Store, generic lifecycle, framework self-tests | `pt-acceptance-infra-engineering` |
+| Domain, Feature, Capability, Registry rule, Gate, Environment, Provisioner, Fixture, actor/client role, credential reference, product evidence | `pt-acceptance-engineering` |
 
-Suggested report format:
+A path under `tooling/acceptance/` does not determine ownership. Missing
+business injection returns `BUSINESS_INJECTION_REQUIRED` and blocks only its
+Domain; Acceptance Infra does not add mocks, placeholder identities, or weaker
+assertions.
+Business Gate `FAILED`, `BLOCKED`, or `UNPROVEN` does not block Acceptance
+Infra completion.
 
-```markdown
-✅ Task Completed
+## HEAD Lineage
 
-## Implementation
-- ...
+The workflow snapshot uses forward-only HEAD tracking. When a Task makes commits
+that advance the branch HEAD, those commits are recognized as forward progress —
+not identity drift — as long as the recorded HEAD is an ancestor of the current
+HEAD.
 
-## Verification
-- ✅ check/lint
-- ✅ build
-- ✅ tests
-- ✅ functional validation
+- `declaration.sourceHead` vs `git.commit`: skipped when sourceHead is an
+  ancestor of the current commit.
+- `activeWork.expectedHead` vs `git.commit`: skipped when expectedHead is an
+  ancestor of the current commit.
+- Non-ancestor divergence (force-push, rebase to unrelated history) is flagged
+  as `WORKFLOW_OWNER_MISMATCH` error with verdict `DRIFT`.
 
-## Files
-- [file](file:///absolute/path)
+## Source Evidence Advance
+
+Tasks with `completionClass: source` may advance without a full Development
+Session. Instead of `--session`, pass `--source-evidence <path>` to
+`planctl advance`. The evidence file must contain:
+
+```json
+{
+  "planId": "<plan-id>",
+  "taskId": "<task-id>",
+  "workspaceId": "<workspace-id>",
+  "branch": "<branch>",
+  "verifications": [
+    { "verificationClass": "SOURCE_CHECK", "result": "PASS" }
+  ]
+}
 ```
+
+This eliminates the declaration, binding verification, and Session lifecycle
+overhead for implementation-only Tasks. Tasks with `completionClass: functional`
+or `acceptance-aggregate` still require a journal-backed Session.
+
+## Completion
+
+A named scope is complete only when:
+
+- implementation and required deletion are complete;
+- focused checks pass;
+- the required exact-source Journey has current `FUNCTIONAL_CHECK/PASS`;
+- required formal capabilities have `ACCEPTANCE_PROOF/PASS`;
+- Plan, Task, Session, declaration, Git, and active-work owners agree;
+- review findings are resolved;
+- unrun scope remains explicitly `UNPROVEN`;
+- owned runtime resources and declarations are released.
+
+Use affected-module commands from its architecture/platform documentation.
+The control-plane command reference lives in
+`docs/architecture/development-workflow/integration.md`; schema and state
+details live in `data-model.md`.

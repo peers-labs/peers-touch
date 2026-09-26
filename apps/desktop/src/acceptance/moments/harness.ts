@@ -3,14 +3,33 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   AudienceSchema,
   Audience_Kind,
+  MentionSchema,
+  ReactionKind,
+  type Audience,
   type Post,
 } from '../../gen/proto/domain/social/post_pb';
 import type {
+  PrivateMomentMention,
   PrivateMomentMediaProjection,
   PrivateMomentProjection,
+  PrivateMomentPublishIntent,
 } from '../../services/privateMomentsNative';
+import { privateMomentsNative } from '../../services/privateMomentsNative';
 import { api } from '../../services/desktop_api';
+import {
+  socialBlockActor,
+  socialFollow,
+  socialUnblockActor,
+  type MomentDraft,
+} from '../../services/social_api';
+import {
+  SocialRelationshipCommandResultKind,
+} from '../../gen/proto/domain/social/relationship_pb';
 import { useMomentsStore, type MomentComposerDraft } from '../../store/moments';
+import {
+  selectPrivateCommentThread,
+  usePrivateCommentsStore,
+} from '../../store/privateComments';
 import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useSessionStore } from '../../store/session';
 import { registerAcceptanceHarness } from '../registry';
@@ -18,15 +37,103 @@ import { registerAcceptanceHarness } from '../registry';
 declare const __PT_SOURCE_COMMIT__: string;
 
 let rendererArtifactSha256Promise: Promise<string> | null = null;
+const browserPageBootIdentity = (() => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+})();
+const MAX_CAPTURE_EVENT_DIGESTS = 4096;
+const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 
-interface StageFriendsDraftInput {
+interface StagePrivateDraftInput {
   draftId: string;
   revision: number;
   text: string;
+  audienceKind?: keyof typeof PRIVATE_AUDIENCE_BY_NAME;
+  circleId?: string;
+  groupConversationId?: string;
+  baseKind?: 'PUBLIC' | 'FOLLOWERS';
+  actorPtids?: string[];
+  momentKind?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'LINK' | 'POLL' | 'REPOST' | 'LOCATION';
+  mentions?: PrivateMomentPublishIntent['mentions'];
   files?: Array<{
     intentId: string;
     filePath: string;
   }>;
+  link?: PrivateMomentPublishIntent['link'];
+  location?: PrivateMomentPublishIntent['location'];
+  poll?: PrivateMomentPublishIntent['poll'];
+  repost?: PrivateMomentPublishIntent['repost'];
+}
+
+const PRIVATE_AUDIENCE_BY_NAME = {
+  FRIENDS: Audience_Kind.FRIENDS,
+  FOLLOWERS: Audience_Kind.FOLLOWERS,
+  CIRCLE: Audience_Kind.CIRCLE,
+  GROUP: Audience_Kind.GROUP,
+  SELF: Audience_Kind.SELF,
+  CUSTOM_ALLOW: Audience_Kind.CUSTOM_ALLOW,
+  CUSTOM_DENY: Audience_Kind.CUSTOM_DENY,
+} as const;
+
+const PRIVATE_REACTION_BY_NAME = {
+  LIKE: ReactionKind.REACTION_LIKE,
+  LOVE: ReactionKind.REACTION_LOVE,
+  LAUGH: ReactionKind.REACTION_LAUGH,
+  WOW: ReactionKind.REACTION_WOW,
+  CELEBRATE: ReactionKind.REACTION_CELEBRATE,
+} as const;
+
+function audienceName(kind: Audience_Kind): string {
+  return Object.entries(PRIVATE_AUDIENCE_BY_NAME)
+    .find(([, value]) => value === kind)?.[0] ?? 'OTHER';
+}
+
+function privateAudience(input: StagePrivateDraftInput) {
+  const kindName = input.audienceKind ?? 'FRIENDS';
+  const kind = PRIVATE_AUDIENCE_BY_NAME[kindName];
+  let target: Audience['target'];
+  if (kindName === 'CIRCLE') {
+    const circleId = input.circleId;
+    if (
+      !circleId
+      || input.groupConversationId !== undefined
+      || !/^[1-9]\d*$/.test(circleId)
+      || BigInt(circleId) > MAX_PROTO_UINT64
+    ) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: 'circleId', value: BigInt(circleId) };
+  } else if (kindName === 'GROUP') {
+    const groupConversationId = input.groupConversationId;
+    if (
+      input.circleId !== undefined
+      || !groupConversationId
+      || groupConversationId.trim() !== groupConversationId
+      || groupConversationId.includes('\0')
+    ) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: 'groupConversationId', value: groupConversationId };
+  } else {
+    if (input.circleId !== undefined || input.groupConversationId !== undefined) {
+      throw new Error('moments.acceptance.invalidAudience');
+    }
+    target = { case: undefined };
+  }
+  const baseKind = input.baseKind === 'PUBLIC'
+    ? Audience_Kind.PUBLIC
+    : input.baseKind === 'FOLLOWERS'
+      ? Audience_Kind.FOLLOWERS
+      : Audience_Kind.KIND_UNSPECIFIED;
+  return create(AudienceSchema, {
+    kind,
+    target,
+    baseKind,
+    actorPtids: input.actorPtids ?? [],
+  });
 }
 
 interface PrivateMomentInput {
@@ -39,16 +146,48 @@ interface PublicMomentInput {
   filePath?: string;
 }
 
+interface ResolveFederatedActorIdentityInput {
+  federatedHandle: string;
+}
+
+interface FederationBindingInput {
+  federationId: string;
+}
+
+interface JoinAcceptanceFederationInput extends FederationBindingInput {
+  federationEndpoint: string;
+}
+
 interface RuntimeIdentityResult {
   ok: boolean;
   data?: {
-    processId?: unknown;
-    bootId?: unknown;
+    bootIdentitySha256?: unknown;
+    sessionGeneration?: unknown;
     sourceCommit?: unknown;
     executableSha256?: unknown;
     stationRuntimeIdentitySha256?: unknown;
     stationEndpointSha256?: unknown;
   };
+}
+
+interface StreamTerminalMarker {
+  schemaVersion: 1;
+  captureId: string;
+  actionId: string;
+  runtimeManifestDigest: string;
+  finalObserverSequence: number;
+  openStreamIdentityDigests: readonly string[];
+  captureIntervalDigest: string;
+  markerDigest: string;
+}
+
+interface ActiveNetworkCapture {
+  actionId: string;
+  captureId: string;
+  eventDigests: string[];
+  failure?: Error;
+  initialObserverSequence: number;
+  runtimeManifestDigest: string;
 }
 
 async function sha256(value: string | ArrayBuffer): Promise<string> {
@@ -188,23 +327,53 @@ function resolveBoundBrowserStation(
 
 async function nativeRuntimeIdentitySha256(
   platform: string,
+  scope: {
+    actorPtid: string | null;
+    rendererGeneration: number;
+  },
 ): Promise<{
+  bootIdentitySha256: string;
+  sessionGeneration: number;
   nativeRuntimeIdentitySha256?: string;
   stationRuntimeIdentitySha256: string;
   stationEndpointSha256: string;
   clientArtifactSha256: string;
 }> {
   if (platform !== 'native') {
+    const sessionGeneration = useSessionStore.getState().sessionEpoch;
+    if (
+      !Number.isSafeInteger(sessionGeneration)
+      || sessionGeneration < 1
+    ) {
+      throw new Error('moments.acceptance.browserRuntimeIdentityMissing');
+    }
     return {
+      bootIdentitySha256: await sha256(
+        `peers-touch:browser-page-boot:v1:${browserPageBootIdentity}`,
+      ),
+      sessionGeneration,
       ...await browserStationIdentitySha256(),
       clientArtifactSha256: await rendererArtifactSha256(),
     };
   }
+  if (
+    !scope.actorPtid
+    || !Number.isSafeInteger(scope.rendererGeneration)
+    || scope.rendererGeneration < 1
+  ) {
+    throw new Error('moments.acceptance.nativeRuntimeIdentityMissing');
+  }
   const result = await invoke<RuntimeIdentityResult>(
     'social_private_moments_acceptance_runtime_identity',
+    {
+      input: {
+        actor_ptid: scope.actorPtid,
+        renderer_generation: scope.rendererGeneration,
+      },
+    },
   );
-  const processId = result.data?.processId;
-  const bootId = result.data?.bootId;
+  const bootIdentitySha256 = result.data?.bootIdentitySha256;
+  const sessionGeneration = result.data?.sessionGeneration;
   const sourceCommit = result.data?.sourceCommit;
   const executableSha256 = result.data?.executableSha256;
   const stationRuntimeIdentitySha256 =
@@ -212,10 +381,11 @@ async function nativeRuntimeIdentitySha256(
   const stationEndpointSha256 = result.data?.stationEndpointSha256;
   if (
     result.ok !== true
-    || typeof processId !== 'number'
-    || !Number.isSafeInteger(processId)
-    || typeof bootId !== 'string'
-    || !bootId
+    || typeof bootIdentitySha256 !== 'string'
+    || !/^[0-9a-f]{64}$/.test(bootIdentitySha256)
+    || typeof sessionGeneration !== 'number'
+    || !Number.isSafeInteger(sessionGeneration)
+    || sessionGeneration < 1
     || sourceCommit !== __PT_SOURCE_COMMIT__
     || typeof executableSha256 !== 'string'
     || !/^[0-9a-f]{64}$/.test(executableSha256)
@@ -227,7 +397,9 @@ async function nativeRuntimeIdentitySha256(
     throw new Error('moments.acceptance.nativeRuntimeIdentityMissing');
   }
   return {
-    nativeRuntimeIdentitySha256: await sha256(`${processId}:${bootId}`),
+    bootIdentitySha256,
+    sessionGeneration,
+    nativeRuntimeIdentitySha256: bootIdentitySha256,
     stationRuntimeIdentitySha256,
     stationEndpointSha256,
     clientArtifactSha256: await sha256(JSON.stringify({
@@ -238,6 +410,428 @@ async function nativeRuntimeIdentitySha256(
     })),
   };
 }
+
+function canonicalJson(value: unknown): string {
+  if (
+    value === null
+    || typeof value === 'boolean'
+    || typeof value === 'number'
+    || typeof value === 'string'
+  ) {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(',')}}`;
+  }
+  throw new Error('moments.acceptance.canonicalJsonUnsupported');
+}
+
+function canonicalTerminalMarker(marker: Omit<StreamTerminalMarker, 'markerDigest'>): string {
+  return canonicalJson({
+    actionId: marker.actionId,
+    captureId: marker.captureId,
+    captureIntervalDigest: marker.captureIntervalDigest,
+    finalObserverSequence: marker.finalObserverSequence,
+    openStreamIdentityDigests: marker.openStreamIdentityDigests,
+    runtimeManifestDigest: marker.runtimeManifestDigest,
+    schemaVersion: marker.schemaVersion,
+  });
+}
+
+function terminalNetworkMarkerUrl(marker: StreamTerminalMarker): string {
+  const bytes = new TextEncoder().encode(canonicalTerminalMarker(marker));
+  const encoded = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return new URL(
+    `/__pt_acceptance/network-terminal/${encoded}`,
+    window.location.origin,
+  ).href;
+}
+
+class AcceptanceBrowserNetworkObserver {
+  private activeCapture: ActiveNetworkCapture | null = null;
+  private captureOrdinal = 0;
+  private resourceOrdinal = 0;
+  private observerSequence = 0;
+  private observerQueue: Promise<void> = Promise.resolve();
+  private readonly openStreamIdentityDigests = new Set<string>();
+  private observedFetch?: typeof fetch;
+  private observedWebSocket?: typeof WebSocket;
+  private observedEventSource?: typeof EventSource;
+  private observedXMLHttpRequest?: typeof XMLHttpRequest;
+
+  install(): void {
+    this.installFetchObserver();
+    this.installXMLHttpRequestObserver();
+    this.installWebSocketObserver();
+    this.installEventSourceObserver();
+  }
+
+  async begin(actionId: string, runtimeManifestDigest: string) {
+    if (
+      !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(actionId)
+      || !/^[0-9a-f]{64}$/.test(runtimeManifestDigest)
+    ) {
+      throw new Error('moments.acceptance.actionIdInvalid');
+    }
+    await this.observerQueue;
+    if (this.activeCapture) {
+      throw new Error('moments.acceptance.captureAlreadyActive');
+    }
+    this.captureOrdinal += 1;
+    const nonce = new Uint8Array(32);
+    crypto.getRandomValues(nonce);
+    const captureId = await sha256(JSON.stringify({
+      schemaVersion: 1,
+      actionId,
+      ordinal: this.captureOrdinal,
+      nonce: Array.from(nonce),
+      pageBootIdentity: browserPageBootIdentity,
+    }));
+    this.activeCapture = {
+      actionId,
+      captureId,
+      eventDigests: [],
+      initialObserverSequence: this.observerSequence,
+      runtimeManifestDigest,
+    };
+    return {
+      schemaVersion: 1,
+      captureId,
+      actionId,
+      initialObserverSequence: this.observerSequence,
+      runtimeManifestDigest,
+    };
+  }
+
+  finalize(captureId: string, actionId: string): Promise<StreamTerminalMarker> {
+    if (
+      !/^[0-9a-f]{64}$/.test(captureId)
+      || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(actionId)
+    ) {
+      return Promise.reject(
+        new Error('moments.acceptance.captureIdentityInvalid'),
+      );
+    }
+    const expected = this.activeCapture;
+    if (
+      !expected
+      || expected.captureId !== captureId
+      || expected.actionId !== actionId
+    ) {
+      return Promise.reject(
+        new Error('moments.acceptance.captureIdentityMismatch'),
+      );
+    }
+    return new Promise<StreamTerminalMarker>((resolve, reject) => {
+      this.observerQueue = this.observerQueue.then(async () => {
+        const capture = this.activeCapture;
+        if (
+          !capture
+          || capture.captureId !== captureId
+          || capture.actionId !== actionId
+        ) {
+          throw new Error('moments.acceptance.captureIdentityMismatch');
+        }
+        if (capture.failure) throw capture.failure;
+        this.activeCapture = null;
+        const interval = {
+          schemaVersion: 1 as const,
+          captureId,
+          actionId,
+          runtimeManifestDigest: capture.runtimeManifestDigest,
+          finalObserverSequence: this.observerSequence,
+          openStreamIdentityDigests: Object.freeze(
+            [...this.openStreamIdentityDigests].sort(),
+          ),
+        };
+        const captureIntervalDigest = await sha256(
+          canonicalJson({
+            actionId,
+            captureId,
+            eventDigests: capture.eventDigests,
+            finalObserverSequence: this.observerSequence,
+            initialObserverSequence: capture.initialObserverSequence,
+            openStreamIdentityDigests: interval.openStreamIdentityDigests,
+            runtimeManifestDigest: capture.runtimeManifestDigest,
+            schemaVersion: 1,
+          }),
+        );
+        const unsignedMarker = {
+          ...interval,
+          captureIntervalDigest,
+        };
+        const marker: StreamTerminalMarker = Object.freeze({
+          ...unsignedMarker,
+          markerDigest: await sha256(
+            canonicalTerminalMarker(unsignedMarker),
+          ),
+        });
+        await fetch(terminalNetworkMarkerUrl(marker), {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          method: 'GET',
+        });
+        resolve(marker);
+      }).catch((error) => {
+        reject(error);
+      });
+    });
+  }
+
+  private nextResourceIdentity(kind: string, value: string): string {
+    this.resourceOrdinal += 1;
+    return `${kind}:${this.resourceOrdinal}:${value}`;
+  }
+
+  private record(
+    kind: string,
+    resourceIdentity: string,
+    metadata: string,
+    streamTransition?: 'open' | 'close',
+  ): void {
+    this.observerQueue = this.observerQueue.then(async () => {
+      this.observerSequence += 1;
+      const identityDigest = await sha256(resourceIdentity);
+      if (streamTransition === 'open') {
+        this.openStreamIdentityDigests.add(identityDigest);
+      } else if (streamTransition === 'close') {
+        this.openStreamIdentityDigests.delete(identityDigest);
+      }
+      const capture = this.activeCapture;
+      if (!capture) return;
+      if (capture.eventDigests.length >= MAX_CAPTURE_EVENT_DIGESTS) {
+        capture.failure = new Error(
+          'moments.acceptance.networkCaptureEventLimitExceeded',
+        );
+        return;
+      }
+      const metadataDigest = await sha256(metadata);
+      capture.eventDigests.push(await sha256(canonicalJson({
+        schemaVersion: 1,
+        captureId: capture.captureId,
+        identityDigest,
+        kind,
+        metadataDigest,
+        observerSequence: this.observerSequence,
+      })));
+    });
+  }
+
+  private installFetchObserver(): void {
+    const nativeFetch = globalThis.fetch;
+    if (typeof nativeFetch !== 'function' || nativeFetch === this.observedFetch) return;
+    const observer = this;
+    const observed = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const method = (
+        init?.method
+        || (typeof Request !== 'undefined' && input instanceof Request
+          ? input.method
+          : 'GET')
+      ).toUpperCase();
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+      const identity = observer.nextResourceIdentity(
+        'http',
+        `${method}:${url}`,
+      );
+      observer.record('http.request', identity, method);
+      try {
+        const response = await nativeFetch.call(globalThis, input, init);
+        observer.record(
+          'http.response',
+          identity,
+          `${response.status}`,
+        );
+        return response;
+      } catch (error) {
+        observer.record('http.error', identity, errorName(error));
+        throw error;
+      }
+    }) as typeof fetch;
+    this.observedFetch = observed;
+    globalThis.fetch = observed;
+  }
+
+  private installXMLHttpRequestObserver(): void {
+    const NativeXMLHttpRequest = globalThis.XMLHttpRequest;
+    if (
+      typeof NativeXMLHttpRequest !== 'function'
+      || NativeXMLHttpRequest === this.observedXMLHttpRequest
+    ) return;
+    const observer = this;
+    const ObservedXMLHttpRequest = function () {
+      const request = new NativeXMLHttpRequest();
+      const nativeOpen = request.open.bind(request);
+      const nativeSend = request.send.bind(request);
+      let identity = '';
+      (request as unknown as { open: (...args: unknown[]) => void }).open = (
+        ...args: unknown[]
+      ) => {
+        const method = String(args[0] ?? 'GET').toUpperCase();
+        const url = String(args[1] ?? '');
+        identity = observer.nextResourceIdentity('xhr', `${method}:${url}`);
+        Reflect.apply(nativeOpen, request, args);
+      };
+      (request as unknown as { send: (...args: unknown[]) => void }).send = (
+        ...args: unknown[]
+      ) => {
+        if (!identity) {
+          identity = observer.nextResourceIdentity('xhr', 'UNKNOWN');
+        }
+        observer.record('http.request', identity, 'XMLHTTPREQUEST');
+        request.addEventListener('load', () => {
+          observer.record('http.response', identity, `${request.status}`);
+        }, { once: true });
+        for (const kind of ['error', 'abort', 'timeout'] as const) {
+          request.addEventListener(kind, () => {
+            observer.record(`http.${kind}`, identity, kind);
+          }, { once: true });
+        }
+        Reflect.apply(nativeSend, request, args);
+      };
+      return request;
+    } as unknown as typeof XMLHttpRequest;
+    ObservedXMLHttpRequest.prototype = NativeXMLHttpRequest.prototype;
+    Object.setPrototypeOf(ObservedXMLHttpRequest, NativeXMLHttpRequest);
+    this.observedXMLHttpRequest = ObservedXMLHttpRequest;
+    globalThis.XMLHttpRequest = ObservedXMLHttpRequest;
+  }
+
+  private installWebSocketObserver(): void {
+    const NativeWebSocket = globalThis.WebSocket;
+    if (
+      typeof NativeWebSocket !== 'function'
+      || NativeWebSocket === this.observedWebSocket
+    ) return;
+    const observer = this;
+    const ObservedWebSocket = function (
+      url: string | URL,
+      protocols?: string | string[],
+    ) {
+      const socket = protocols === undefined
+        ? new NativeWebSocket(url)
+        : new NativeWebSocket(url, protocols);
+      const identity = observer.nextResourceIdentity(
+        'websocket',
+        String(url),
+      );
+      socket.addEventListener('open', () => {
+        observer.record('websocket.open', identity, 'open', 'open');
+      });
+      socket.addEventListener('message', (event) => {
+        observer.record(
+          'websocket.frame',
+          identity,
+          payloadSize(event.data).toString(),
+        );
+      });
+      socket.addEventListener('error', () => {
+        observer.record('websocket.error', identity, 'error');
+      });
+      socket.addEventListener('close', (event) => {
+        observer.record(
+          'websocket.close',
+          identity,
+          `${event.code}`,
+          'close',
+        );
+      });
+      return socket;
+    } as unknown as typeof WebSocket;
+    ObservedWebSocket.prototype = NativeWebSocket.prototype;
+    Object.setPrototypeOf(ObservedWebSocket, NativeWebSocket);
+    for (const key of ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'] as const) {
+      Object.defineProperty(ObservedWebSocket, key, {
+        value: NativeWebSocket[key],
+      });
+    }
+    this.observedWebSocket = ObservedWebSocket;
+    globalThis.WebSocket = ObservedWebSocket;
+  }
+
+  private installEventSourceObserver(): void {
+    const NativeEventSource = globalThis.EventSource;
+    if (
+      typeof NativeEventSource !== 'function'
+      || NativeEventSource === this.observedEventSource
+    ) return;
+    const observer = this;
+    const ObservedEventSource = function (
+      url: string | URL,
+      init?: EventSourceInit,
+    ) {
+      const source = new NativeEventSource(url, init);
+      const identity = observer.nextResourceIdentity(
+        'eventsource',
+        String(url),
+      );
+      source.addEventListener('open', () => {
+        observer.record('eventsource.open', identity, 'open', 'open');
+      });
+      source.addEventListener('message', (event) => {
+        observer.record(
+          'eventsource.frame',
+          identity,
+          payloadSize(event.data).toString(),
+        );
+      });
+      source.addEventListener('error', () => {
+        const closed = source.readyState === EventSource.CLOSED;
+        observer.record(
+          'eventsource.error',
+          identity,
+          closed ? 'closed' : 'error',
+          closed ? 'close' : undefined,
+        );
+      });
+      const nativeClose = source.close.bind(source);
+      source.close = () => {
+        observer.record('eventsource.close', identity, 'close', 'close');
+        nativeClose();
+      };
+      return source;
+    } as unknown as typeof EventSource;
+    ObservedEventSource.prototype = NativeEventSource.prototype;
+    Object.setPrototypeOf(ObservedEventSource, NativeEventSource);
+    for (const key of ['CONNECTING', 'OPEN', 'CLOSED'] as const) {
+      Object.defineProperty(ObservedEventSource, key, {
+        value: NativeEventSource[key],
+      });
+    }
+    this.observedEventSource = ObservedEventSource;
+    globalThis.EventSource = ObservedEventSource;
+  }
+}
+
+function payloadSize(value: unknown): number {
+  if (typeof value === 'string') return new TextEncoder().encode(value).byteLength;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return value.size;
+  return 0;
+}
+
+function errorName(value: unknown): string {
+  return value instanceof Error ? value.name : 'Error';
+}
+
+const browserNetworkObserver = new AcceptanceBrowserNetworkObserver();
 
 async function draftEvidence(draft: MomentComposerDraft | null) {
   if (!draft) {
@@ -253,9 +847,7 @@ async function draftEvidence(draft: MomentComposerDraft | null) {
     revision: draft.revision,
     textSha256: await sha256(draft.text),
     textByteLength: new TextEncoder().encode(draft.text).byteLength,
-    audienceKind: draft.audience.kind === Audience_Kind.FRIENDS
-      ? 'FRIENDS'
-      : 'OTHER',
+    audienceKind: audienceName(draft.audience.kind),
     fileCount: draft.files.length,
     files: await Promise.all(draft.files.map(async (file) => ({
       intentIdSha256: await sha256(file.intentId),
@@ -271,16 +863,14 @@ async function mediaEvidence(media: PrivateMomentMediaProjection) {
     if (!media.renderUrl) {
       throw new Error('moments.acceptance.readyMediaUrlMissing');
     }
-    const response = await fetch(media.renderUrl, {
-      cache: 'no-store',
-      credentials: 'omit',
-    });
-    if (!response.ok) {
-      throw new Error('moments.acceptance.readyMediaFetchFailed');
+    if (!media.plaintextSha256 || !/^[0-9a-f]{64}$/.test(media.plaintextSha256)) {
+      throw new Error('moments.acceptance.readyMediaDigestMissing');
     }
-    const bytes = await response.arrayBuffer();
-    plaintextSha256 = await sha256(bytes);
-    byteLength = bytes.byteLength;
+    if (!Number.isSafeInteger(media.plaintextSize) || (media.plaintextSize ?? 0) <= 0) {
+      throw new Error('moments.acceptance.readyMediaLengthMissing');
+    }
+    plaintextSha256 = media.plaintextSha256;
+    byteLength = media.plaintextSize;
   }
   return {
     objectIdSha256: await sha256(media.objectId),
@@ -295,7 +885,40 @@ async function privateProjectionEvidence(
   projection: PrivateMomentProjection,
 ) {
   const content = projection.content;
-  const text = content?.text ?? '';
+  const mentions = projection.mentions ?? [];
+  const text = content?.kind === 'REPOST'
+    ? content.comment
+    : content?.text ?? '';
+  let subtypeEvidence: Record<string, unknown> | undefined;
+  if (content?.kind === 'LINK') {
+    subtypeEvidence = {
+      urlSha256: await sha256(content.url),
+      titleSha256: await sha256(content.title),
+    };
+  } else if (content?.kind === 'POLL') {
+    subtypeEvidence = {
+      questionSha256: await sha256(content.question),
+      optionLabelSha256: await Promise.all(content.options.map(sha256)),
+      minChoices: content.minChoices,
+      maxChoices: content.maxChoices,
+      expiresAtSeconds: content.expiresAtSeconds,
+    };
+  } else if (content?.kind === 'REPOST') {
+    subtypeEvidence = {
+      commentSha256: await sha256(content.comment),
+      sourcePostIdSha256: await sha256(content.sourcePostId),
+      sourceAuthorPtidSha256: await sha256(content.sourceAuthorPtid),
+      sourceKind: content.sourceKind,
+      sourceTextSha256: await sha256(content.sourceText),
+    };
+  } else if (content?.kind === 'LOCATION') {
+    subtypeEvidence = {
+      nameSha256: await sha256(content.name),
+      latitudeSha256: await sha256(content.latitude),
+      longitudeSha256: await sha256(content.longitude),
+      addressSha256: await sha256(content.address),
+    };
+  }
   return {
     platform: usePrivateMomentsStore.getState().platform,
     state: projection.state,
@@ -306,14 +929,20 @@ async function privateProjectionEvidence(
       ? await sha256(projection.authorPtid)
       : undefined,
     generationSha256: await sha256(projection.generation),
+    audienceKind: projection.audienceKind,
     contentKind: content?.kind,
     textSha256: content ? await sha256(text) : undefined,
     textByteLength: content
       ? new TextEncoder().encode(text).byteLength
       : undefined,
-    media: content?.kind === 'IMAGE'
+    media: content?.kind === 'IMAGE' || content?.kind === 'VIDEO'
       ? await Promise.all(content.media.map(mediaEvidence))
       : [],
+    mentionCount: mentions.length,
+    mentionedActorPtidsSha256: await Promise.all(
+      mentions.map((mention) => sha256(mention.actorPtid)),
+    ),
+    subtypeEvidence,
   };
 }
 
@@ -366,14 +995,266 @@ async function publicPostEvidence(post: Post) {
   };
 }
 
+async function privateCommentEvidence(comment: {
+  authorPtid: string;
+  commentId: string;
+  contentId: string;
+  mentions: PrivateMomentMention[];
+  postId: string;
+  state: string;
+  text: string;
+}) {
+  return {
+    authorPtidSha256: await sha256(comment.authorPtid),
+    commentIdSha256: await sha256(comment.commentId),
+    contentIdSha256: await sha256(comment.contentId),
+    mentionCount: comment.mentions.length,
+    mentionedActorPtidsSha256: await Promise.all(
+      comment.mentions.map((mention) => sha256(mention.actorPtid)),
+    ),
+    postIdSha256: await sha256(comment.postId),
+    state: comment.state,
+    textByteLength: new TextEncoder().encode(comment.text).byteLength,
+    textSha256: await sha256(comment.text),
+  };
+}
+
+async function stagePrivateDraft(input: StagePrivateDraftInput) {
+  if (
+    !input
+    || !input.draftId?.trim()
+    || !Number.isSafeInteger(input.revision)
+    || input.revision < 1
+    || !input.text?.trim()
+  ) {
+    throw new Error('moments.acceptance.invalidDraft');
+  }
+  useMomentsStore.getState().setComposerDraft({
+    draftId: input.draftId,
+    revision: input.revision,
+    text: input.text,
+    audience: privateAudience(input),
+    mentions: [],
+    files: (input.files ?? []).map((file) => ({
+      intentId: file.intentId,
+      filePath: file.filePath,
+      previewSrc: '',
+    })),
+  });
+  return draftEvidence(useMomentsStore.getState().composerDraft);
+}
+
+async function publishPrivateDraft() {
+  const moments = useMomentsStore.getState();
+  const draft = moments.composerDraft;
+  if (!draft) {
+    throw new Error('moments.acceptance.draftMissing');
+  }
+  let transientPostId: string | undefined;
+  try {
+    transientPostId = await moments.createPost({
+      kind: draft.files.length > 0 ? 'image' : 'text',
+      text: draft.text,
+      imageIds: [],
+      localFiles: draft.files,
+      audience: draft.audience,
+      draftId: draft.draftId,
+      draftRevision: draft.revision,
+      mentions: draft.mentions,
+    });
+  } catch {
+    // The production store owns the typed failure projection.
+  }
+  const publish = usePrivateMomentsStore.getState().publish;
+  return {
+    platform: usePrivateMomentsStore.getState().platform,
+    state: publish.state,
+    errorCode: publish.errorCode,
+    ...(publish.rejectionEvidence
+      ? { rejectionEvidence: publish.rejectionEvidence }
+      : {}),
+    ...(transientPostId
+      ? {
+          postIdSha256: await sha256(transientPostId),
+          transientPostId,
+        }
+      : {}),
+    draft: await draftEvidence(useMomentsStore.getState().composerDraft),
+  };
+}
+
+async function publishUnsupportedCustomDenyPublic(
+  input: StagePrivateDraftInput,
+) {
+  if (
+    input.audienceKind !== 'CUSTOM_DENY'
+    || input.baseKind !== 'PUBLIC'
+    || !input.draftId?.trim()
+    || !Number.isSafeInteger(input.revision)
+    || input.revision < 1
+    || !input.text?.trim()
+    || !input.actorPtids?.length
+  ) {
+    throw new Error('moments.acceptance.invalidUnsupportedAudienceProbe');
+  }
+  const privateState = usePrivateMomentsStore.getState();
+  const { actorPtid, rendererGeneration } = privateState.scope;
+  if (
+    privateState.platform !== 'native'
+    || !actorPtid
+    || rendererGeneration < 1
+  ) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+
+  // This cast is deliberately confined to the build-gated Acceptance harness:
+  // production callers cannot construct CUSTOM_DENY(PUBLIC).
+  const intent = {
+    actorPtid,
+    rendererGeneration,
+    draftId: input.draftId,
+    draftRevision: input.revision,
+    audience: {
+      kind: 'CUSTOM_DENY',
+      actorPtids: [...input.actorPtids],
+      baseKind: 'PUBLIC',
+    },
+    momentKind: 'TEXT',
+    text: input.text,
+    mentions: [],
+    files: [],
+  } as unknown as PrivateMomentPublishIntent;
+  const result = await privateMomentsNative.publish(intent);
+  if (result.state !== 'PRIVATE_UNSUPPORTED') {
+    throw new Error('moments.acceptance.unsupportedAudienceWasAccepted');
+  }
+  return {
+    platform: privateState.platform,
+    state: result.state,
+    errorCode: result.errorCode,
+    stationErrorCode: result.stationErrorCode,
+    rejectionEvidence: result.evidence,
+  };
+}
+
+async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
+  if (
+    !input?.draftId?.trim()
+    || !Number.isSafeInteger(input.revision)
+    || input.revision < 1
+    || !input.text?.trim()
+    || !input.momentKind
+  ) {
+    throw new Error('moments.acceptance.invalidTypedPrivateMoment');
+  }
+  const privateState = usePrivateMomentsStore.getState();
+  const { actorPtid, rendererGeneration } = privateState.scope;
+  if (
+    privateState.platform !== 'native'
+    || !actorPtid
+    || rendererGeneration < 1
+  ) {
+    throw new Error('moments.acceptance.nativeScopeMissing');
+  }
+  const base = {
+    audience: privateAudience(input),
+    draftId: input.draftId,
+    draftRevision: input.revision,
+    mentions: (input.mentions ?? []).map((mention) => create(MentionSchema, {
+      actorPtid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
+  };
+  const localFiles = (input.files ?? []).map((file) => ({
+      intentId: file.intentId,
+      filePath: file.filePath,
+      previewSrc: '',
+  }));
+  let draft: MomentDraft;
+  switch (input.momentKind) {
+    case 'TEXT':
+      draft = { ...base, kind: 'text', text: input.text };
+      break;
+    case 'IMAGE':
+      draft = {
+        ...base,
+        kind: 'image',
+        text: input.text,
+        imageIds: [],
+        localFiles,
+      };
+      break;
+    case 'VIDEO':
+      draft = {
+        ...base,
+        kind: 'video',
+        text: input.text,
+        localFiles,
+      };
+      break;
+    case 'LINK':
+      if (!input.link) throw new Error('moments.acceptance.linkMissing');
+      draft = { ...base, kind: 'link', text: input.text, link: input.link };
+      break;
+    case 'POLL':
+      if (!input.poll) throw new Error('moments.acceptance.pollMissing');
+      draft = {
+        ...base,
+        kind: 'poll',
+        text: input.text,
+        poll: {
+          ...input.poll,
+          durationHours: 1,
+          multipleChoice: input.poll.maxChoices > 1,
+        },
+      };
+      break;
+    case 'REPOST':
+      if (!input.repost) throw new Error('moments.acceptance.repostMissing');
+      draft = {
+        ...base,
+        kind: 'repost',
+        originalPostId: input.repost.sourcePostId,
+        comment: input.text,
+      };
+      break;
+    case 'LOCATION':
+      if (!input.location) throw new Error('moments.acceptance.locationMissing');
+      draft = {
+        ...base,
+        kind: 'location',
+        text: input.text,
+        location: input.location,
+      };
+      break;
+  }
+  const transientPostId = await useMomentsStore.getState().createPost(draft);
+  const publish = usePrivateMomentsStore.getState().publish;
+  return {
+    platform: privateState.platform,
+    state: publish.state,
+    ...(publish.errorCode ? { errorCode: publish.errorCode } : {}),
+    ...(transientPostId
+      ? {
+          postIdSha256: await sha256(transientPostId),
+          transientPostId,
+        }
+      : {}),
+  };
+}
+
 export function installAcceptanceHarness(): void {
   rendererArtifactSha256Promise = null;
+  browserNetworkObserver.install();
   registerAcceptanceHarness('moments', {
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();
       const sessionIdentity = await activeSessionIdentity();
       const runtimeIdentity = await nativeRuntimeIdentitySha256(
         privateState.platform,
+        privateState.scope,
       );
       return {
         platform: privateState.platform,
@@ -390,65 +1271,304 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async stageFriendsDraft(input: StageFriendsDraftInput) {
-      if (
-        !input
-        || !input.draftId?.trim()
-        || !Number.isSafeInteger(input.revision)
-        || input.revision < 1
-        || !input.text?.trim()
-      ) {
-        throw new Error('moments.acceptance.invalidDraft');
+    async stagePrivateDraft(input: StagePrivateDraftInput) {
+      return stagePrivateDraft(input);
+    },
+
+    async acceptanceActorIdentity() {
+      const actorPtid = useSessionStore.getState().currentUser?.actorPtid?.trim();
+      if (!actorPtid) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
       }
-      useMomentsStore.getState().setComposerDraft({
-        draftId: input.draftId,
-        revision: input.revision,
-        text: input.text,
-        audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
-        mentions: [],
-        files: (input.files ?? []).map((file) => ({
-          intentId: file.intentId,
-          filePath: file.filePath,
-          previewSrc: '',
-        })),
+      return { actorPtid };
+    },
+
+    async federatedActorIdentity() {
+      const actorPtid = useSessionStore.getState().currentUser?.actorPtid?.trim();
+      const self = await api.federationGetSelf();
+      const federatedHandle = self.federatedHandle.trim();
+      const homeStationPeerId = self.homeStationPeerId.trim();
+      if (!actorPtid || !federatedHandle || !homeStationPeerId) {
+        throw new Error('moments.acceptance.federatedActorIdentityMissing');
+      }
+      return { actorPtid, federatedHandle, homeStationPeerId };
+    },
+
+    async resolveFederatedActorIdentity(
+      input: ResolveFederatedActorIdentityInput,
+    ) {
+      const federatedHandle = input.federatedHandle?.trim();
+      if (!federatedHandle) {
+        throw new Error('moments.acceptance.federatedHandleMissing');
+      }
+      const resolved = await api.federationResolve(federatedHandle);
+      const actorPtid = resolved.profile?.ref?.ptid.trim();
+      const homeStationPeerId = resolved.homeStationPeerId.trim();
+      const resolvedHandle = resolved.federatedHandle.trim();
+      if (!actorPtid || !homeStationPeerId || !resolvedHandle) {
+        throw new Error('moments.acceptance.federatedActorResolveIncomplete');
+      }
+      return {
+        actorPtid,
+        federatedHandle: resolvedHandle,
+        homeStationPeerId,
+      };
+    },
+
+    async friendshipAuthority() {
+      const [self, federationProjection] = await Promise.all([
+        api.federationGetSelf(),
+        api.federationListFederations(),
+      ]);
+      const homeStationPeerId = self.homeStationPeerId.trim();
+      const federationId = federationProjection.federations
+        .filter(
+          (federation) => federation.status.trim().toLowerCase() === 'active',
+        )
+        .map((federation) => federation.federationId.trim())
+        .find(Boolean);
+      if (!homeStationPeerId || !federationId) {
+        throw new Error('moments.acceptance.friendshipAuthorityMissing');
+      }
+      return { federationId, homeStationPeerId };
+    },
+
+    async federationJoinAuthority() {
+      const [self, federationProjection] = await Promise.all([
+        api.federationGetSelf(),
+        api.federationListFederations(),
+      ]);
+      const homeStationPeerId = self.homeStationPeerId.trim();
+      if (!homeStationPeerId) {
+        throw new Error('moments.acceptance.friendshipAuthorityMissing');
+      }
+      for (const federation of federationProjection.federations) {
+        const federationId = federation.federationId.trim();
+        const sequencerStationPeerId =
+          federation.sequencerStationPeerId.trim();
+        if (
+          !federationId
+          || !sequencerStationPeerId
+          || federation.status.trim().toLowerCase() !== 'active'
+        ) {
+          continue;
+        }
+        const members = await api.federationListMemberStations(federationId);
+        const sequencer = members.stations.find(
+          (station) =>
+            station.stationPeerId.trim() === sequencerStationPeerId
+            && station.status.trim().toLowerCase() === 'active'
+            && Boolean(station.stationUrl.trim()),
+        );
+        if (sequencer) {
+          return {
+            federationEndpoint: sequencer.stationUrl.trim(),
+            federationId,
+            homeStationPeerId,
+          };
+        }
+      }
+      const created = await api.federationCreate({
+        name: 'Secure Content W8 Fixture',
+        description: 'Acceptance-owned cross-Station Social fixture',
+        policy_type: 'single_admin',
       });
-      return draftEvidence(useMomentsStore.getState().composerDraft);
+      const federationId = created.federationId.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationJoinAuthorityMissing');
+      }
+      const members = await api.federationListMemberStations(federationId);
+      const sequencer = members.stations.find(
+        (station) =>
+          station.stationPeerId.trim() === homeStationPeerId
+          && station.status.trim().toLowerCase() === 'active'
+          && Boolean(station.stationUrl.trim()),
+      );
+      if (!sequencer) {
+        throw new Error('moments.acceptance.federationJoinAuthorityMissing');
+      }
+      return {
+        federationEndpoint: sequencer.stationUrl.trim(),
+        federationId,
+        homeStationPeerId,
+      };
+    },
+
+    async federationMemberStations(input: FederationBindingInput) {
+      const federationId = input.federationId?.trim();
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationIdMissing');
+      }
+      const response = await api.federationListMemberStations(federationId);
+      const stationPeerIds = Array.from(new Set(
+        response.stations
+          .filter((station) => station.status.trim().toLowerCase() === 'active')
+          .map((station) => station.stationPeerId.trim())
+          .filter(Boolean),
+      )).sort();
+      if (stationPeerIds.length === 0) {
+        throw new Error('moments.acceptance.federationMembersMissing');
+      }
+      return { federationId, stationPeerIds };
+    },
+
+    async joinAcceptanceFederation(input: JoinAcceptanceFederationInput) {
+      const federationId = input.federationId?.trim();
+      const federationEndpoint = input.federationEndpoint?.trim();
+      if (!federationId || !federationEndpoint) {
+        throw new Error('moments.acceptance.federationJoinMissing');
+      }
+      const response = await api.federationJoin({
+        federation_endpoint: federationEndpoint,
+        federation_id: federationId,
+        message: 'secure-content-w8 remote recipient fixture',
+      });
+      const status = response.status.trim().toLowerCase();
+      if (status !== 'active') {
+        throw new Error('moments.acceptance.federationJoinIncomplete');
+      }
+      return {
+        federationId,
+        status,
+        proposalId: response.proposalId.trim(),
+      };
+    },
+
+    async sendFriendRequest(input: {
+      actorPtid: string;
+      federationId: string;
+      homeStationPeerId: string;
+    }) {
+      if (
+        !input.actorPtid?.trim()
+        || !input.federationId?.trim()
+        || !input.homeStationPeerId?.trim()
+      ) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      const response = await api.socialFriendRequestSend({
+        receiverPtid: input.actorPtid,
+        receiverHomeStationPeerId: input.homeStationPeerId,
+        federationId: input.federationId,
+        message: 'secure-content-w7 friendship',
+      });
+      const requestId = response.request?.requestId.trim();
+      if (!requestId) {
+        throw new Error('moments.acceptance.friendRequestMissing');
+      }
+      return { requestId };
+    },
+
+    async acceptFriendRequest(input: { actorPtid: string }) {
+      if (!input.actorPtid?.trim()) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const response = await api.socialFriendRequestList(1, 200, 0);
+        const request = response.requests.find(
+          (candidate) => candidate.sender?.ptid === input.actorPtid,
+        );
+        if (request) {
+          const requestId = request.requestId.trim();
+          const senderHomeStationPeerId =
+            request.senderHomeStationPeerId.trim();
+          const federationId = request.federationId.trim();
+          if (!requestId || !senderHomeStationPeerId || !federationId) {
+            throw new Error('moments.acceptance.friendRequestInvalid');
+          }
+          await api.socialFriendRequestAccept({
+            requestId,
+            senderPtid: input.actorPtid,
+            senderHomeStationPeerId,
+            federationId,
+            message: '',
+          });
+          return { accepted: true, requestId };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error('moments.acceptance.friendRequestMissing');
+    },
+
+    async followActor(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      const response = await socialFollow(actorPtid);
+      if (
+        response.success !== true
+        || response.relationship?.following !== true
+        || response.relationship.targetActorPtid !== actorPtid
+      ) {
+        throw new Error('moments.acceptance.followProjectionMismatch');
+      }
+      return {
+        followed: true,
+        actorPtidSha256: await sha256(actorPtid),
+      };
+    },
+
+    async createAudienceCircle(input: { name: string }) {
+      if (!input.name?.trim()) {
+        throw new Error('moments.acceptance.circleNameMissing');
+      }
+      const circleId = await useMomentsStore.getState().createCircle(input.name);
+      return { circleId };
+    },
+
+    async addAudienceCircleMember(input: {
+      circleId: string;
+      actorPtid: string;
+    }) {
+      if (!input.circleId?.trim() || !input.actorPtid?.trim()) {
+        throw new Error('moments.acceptance.circleMemberInvalid');
+      }
+      await useMomentsStore.getState().addCircleMember(
+        input.circleId,
+        input.actorPtid,
+      );
+      return { added: true };
+    },
+
+    async stageFriendsDraft(input: StagePrivateDraftInput) {
+      return stagePrivateDraft({ ...input, audienceKind: 'FRIENDS' });
+    },
+
+    async publishPrivateDraft() {
+      return publishPrivateDraft();
+    },
+
+    async publishUnsupportedCustomDenyPublic(input: StagePrivateDraftInput) {
+      return publishUnsupportedCustomDenyPublic(input);
+    },
+
+    async publishTypedPrivateMoment(input: StagePrivateDraftInput) {
+      return publishTypedPrivateMoment(input);
+    },
+
+    async probeTypedPrivateMomentRejection(input: StagePrivateDraftInput) {
+      try {
+        const result = await publishTypedPrivateMoment(input);
+        return {
+          rejected: false,
+          state: result.state,
+          errorCode: result.errorCode,
+          transientPostId: result.transientPostId,
+        };
+      } catch {
+        const publish = usePrivateMomentsStore.getState().publish;
+        return {
+          rejected: true,
+          state: publish.state,
+          errorCode: publish.errorCode,
+          transientPostId: publish.postId,
+        };
+      }
     },
 
     async publishFriendsDraft() {
-      const moments = useMomentsStore.getState();
-      const draft = moments.composerDraft;
-      if (!draft) {
-        throw new Error('moments.acceptance.draftMissing');
-      }
-      let transientPostId: string | undefined;
-      try {
-        transientPostId = await moments.createPost({
-          kind: draft.files.length > 0 ? 'image' : 'text',
-          text: draft.text,
-          imageIds: [],
-          localFiles: draft.files,
-          audience: draft.audience,
-          draftId: draft.draftId,
-          draftRevision: draft.revision,
-          mentions: draft.mentions,
-        });
-      } catch {
-        // The production store owns the typed failure projection.
-      }
-      const publish = usePrivateMomentsStore.getState().publish;
-      return {
-        platform: usePrivateMomentsStore.getState().platform,
-        state: publish.state,
-        errorCode: publish.errorCode,
-        ...(transientPostId
-          ? {
-              postIdSha256: await sha256(transientPostId),
-              transientPostId,
-            }
-          : {}),
-        draft: await draftEvidence(useMomentsStore.getState().composerDraft),
-      };
+      return publishPrivateDraft();
     },
 
     async readPrivateMoment(input: PrivateMomentInput) {
@@ -461,7 +1581,13 @@ export function installAcceptanceHarness(): void {
       if (!projection) {
         throw new Error('moments.acceptance.privateProjectionMissing');
       }
-      if (input.openMedia && projection.content?.kind === 'IMAGE') {
+      if (
+        input.openMedia
+        && (
+          projection.content?.kind === 'IMAGE'
+          || projection.content?.kind === 'VIDEO'
+        )
+      ) {
         for (const media of projection.content.media) {
           await usePrivateMomentsStore.getState().openMedia(
             input.postId,
@@ -474,6 +1600,205 @@ export function installAcceptanceHarness(): void {
         throw new Error('moments.acceptance.privateProjectionMissing');
       }
       return privateProjectionEvidence(projection);
+    },
+
+    async reactToPrivateMoment(input: {
+      postId: string;
+      kind: keyof typeof PRIVATE_REACTION_BY_NAME;
+    }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const kind = PRIVATE_REACTION_BY_NAME[input.kind];
+      if (kind === undefined) {
+        throw new Error('moments.acceptance.reactionKindInvalid');
+      }
+      const store = useMomentsStore.getState();
+      await store.reactToPost(input.postId, kind);
+      return {
+        reactions: (useMomentsStore.getState().reactions[input.postId] ?? [])
+          .map((reaction) => ({
+            kind: reaction.kind,
+            count: Number(reaction.count),
+            reactedByViewer: reaction.reactedByViewer,
+          })),
+      };
+    },
+
+    async unreactToPrivateMoment(input: {
+      postId: string;
+      kind: keyof typeof PRIVATE_REACTION_BY_NAME;
+    }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const kind = PRIVATE_REACTION_BY_NAME[input.kind];
+      if (kind === undefined) {
+        throw new Error('moments.acceptance.reactionKindInvalid');
+      }
+      const store = useMomentsStore.getState();
+      await store.unreactToPost(input.postId, kind);
+      return {
+        reactions: (useMomentsStore.getState().reactions[input.postId] ?? [])
+          .map((reaction) => ({
+            kind: reaction.kind,
+            count: Number(reaction.count),
+            reactedByViewer: reaction.reactedByViewer,
+          })),
+      };
+    },
+
+    async deletePrivateMoment(input: { postId: string }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      await useMomentsStore.getState().deletePost(input.postId);
+      return {
+        deleted: true,
+        localProjectionPresent: Boolean(
+          usePrivateMomentsStore.getState().postsById[input.postId],
+        ),
+      };
+    },
+
+    async blockActor(input: {
+      actorPtid: string;
+      homeStationPeerId: string;
+      observedRevision: number;
+    }) {
+      if (
+        !input?.actorPtid?.trim()
+        || !input?.homeStationPeerId?.trim()
+        || !Number.isSafeInteger(input.observedRevision)
+        || input.observedRevision < 0
+      ) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialBlockActor({
+        targetActorPtid: input.actorPtid,
+        targetHomeStationPeerId: input.homeStationPeerId,
+        observedRevision: input.observedRevision,
+      });
+      const result = response.result;
+      if (
+        !result
+        || (
+          result.kind
+          !== SocialRelationshipCommandResultKind.COMMITTED
+          && result.kind
+          !== SocialRelationshipCommandResultKind.DUPLICATE
+        )
+        || result.projection?.blockedByViewer !== true
+      ) {
+        throw new Error('moments.acceptance.relationshipBlockFailed');
+      }
+      return {
+        state: 'BLOCKED',
+        revision: Number(result.projection.revision),
+        interactionAllowed: result.projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
+      };
+    },
+
+    async unblockActor(input: {
+      actorPtid: string;
+      homeStationPeerId: string;
+      observedRevision: number;
+    }) {
+      if (
+        !input?.actorPtid?.trim()
+        || !input?.homeStationPeerId?.trim()
+        || !Number.isSafeInteger(input.observedRevision)
+        || input.observedRevision < 0
+      ) {
+        throw new Error('moments.acceptance.relationshipInputInvalid');
+      }
+      const response = await socialUnblockActor({
+        targetActorPtid: input.actorPtid,
+        targetHomeStationPeerId: input.homeStationPeerId,
+        observedRevision: input.observedRevision,
+      });
+      const result = response.result;
+      if (
+        !result
+        || (
+          result.kind
+          !== SocialRelationshipCommandResultKind.COMMITTED
+          && result.kind
+          !== SocialRelationshipCommandResultKind.DUPLICATE
+        )
+        || result.projection?.blockedByViewer !== false
+      ) {
+        throw new Error('moments.acceptance.relationshipUnblockFailed');
+      }
+      return {
+        state: 'UNBLOCKED',
+        revision: Number(result.projection.revision),
+        interactionAllowed: result.projection.interactionAllowed,
+        targetActorPtidSha256: await sha256(input.actorPtid),
+      };
+    },
+
+    async recoverPrivateMoment(input: PrivateMomentInput) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const store = usePrivateMomentsStore.getState();
+      await store.recoverMoment(input.postId);
+      const projection = usePrivateMomentsStore.getState().postsById[input.postId];
+      if (!projection) {
+        throw new Error('moments.acceptance.privateProjectionMissing');
+      }
+      return privateProjectionEvidence(projection);
+    },
+
+    async submitPrivateComment(input: {
+      postId: string;
+      text: string;
+      mentions?: PrivateMomentMention[];
+    }) {
+      if (!input?.postId?.trim() || !input?.text?.trim()) {
+        throw new Error('moments.acceptance.privateCommentInvalid');
+      }
+      const store = usePrivateCommentsStore.getState();
+      await store.submitComment(input.postId, input.text, undefined, input.mentions ?? []);
+      const thread = selectPrivateCommentThread(
+        usePrivateCommentsStore.getState(),
+        input.postId,
+      );
+      const comment = [...thread.comments]
+        .reverse()
+        .find((candidate) => candidate.text === input.text);
+      if (!comment) {
+        throw new Error('moments.acceptance.privateCommentProjectionMissing');
+      }
+      return privateCommentEvidence(comment);
+    },
+
+    async readPrivateComments(input: {
+      postId: string;
+      refresh?: boolean;
+    }) {
+      if (!input?.postId?.trim()) {
+        throw new Error('moments.acceptance.postIdMissing');
+      }
+      const store = usePrivateCommentsStore.getState();
+      try {
+        await store.loadComments(input.postId, input.refresh !== false);
+      } catch {
+        // The production store owns the typed failure projection.
+      }
+      const thread = selectPrivateCommentThread(
+        usePrivateCommentsStore.getState(),
+        input.postId,
+      );
+      return {
+        comments: await Promise.all(thread.comments.map(privateCommentEvidence)),
+        errorCode: thread.errorCode,
+        hasMore: thread.hasMore,
+        loaded: thread.loaded,
+        state: thread.state,
+      };
     },
 
     async findPublicMoment(input: PublicMomentInput) {
@@ -503,9 +1828,7 @@ export function installAcceptanceHarness(): void {
       const audience = create(AudienceSchema, { kind: Audience_Kind.PUBLIC });
       let postId: string;
       if (input.filePath) {
-        const uploaded = await api.ossUploadEncryptedAttachmentSocial(
-          input.filePath,
-        );
+        const uploaded = await api.ossUploadAttachmentSocial(input.filePath);
         if (!uploaded?.cid) {
           throw new Error('moments.acceptance.publicMediaUploadFailed');
         }
@@ -540,6 +1863,32 @@ export function installAcceptanceHarness(): void {
         draftPresent: useMomentsStore.getState().composerDraft !== null,
         publishState: usePrivateMomentsStore.getState().publish.state,
       };
+    },
+
+    async beginNetworkCapture(input: {
+      actionId: string;
+      runtimeManifestDigest: string;
+    }) {
+      if (
+        !input?.actionId?.trim()
+        || !input?.runtimeManifestDigest?.trim()
+      ) {
+        throw new Error('moments.acceptance.actionIdMissing');
+      }
+      return browserNetworkObserver.begin(
+        input.actionId,
+        input.runtimeManifestDigest,
+      );
+    },
+
+    async emitTerminalMarker(input: {
+      captureId: string;
+      actionId: string;
+    }) {
+      if (!input?.captureId?.trim() || !input?.actionId?.trim()) {
+        throw new Error('moments.acceptance.captureIdentityMissing');
+      }
+      return browserNetworkObserver.finalize(input.captureId, input.actionId);
     },
   });
 }

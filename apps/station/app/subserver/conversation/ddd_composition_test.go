@@ -4103,6 +4103,68 @@ func TestConversationDDDMemberAuthorityReplayRollbackAndFollower(t *testing.T) {
 	}
 }
 
+func TestConversationDDDRemoteNewOwnerCanSubmitMemberAuthority(t *testing.T) {
+	ctx := context.Background()
+	authority := newDDDComposition(t)
+	owner := dddEndpoint("ptid:remote-owner-former", "owner-1")
+	remoteOwner := dddEndpoint("ptid:remote-owner-current", "owner-1")
+	groupID := valueobject.ConversationID("group-remote-owner-member-authority")
+	createDDDGroupWithMemberStation(
+		t,
+		authority,
+		groupID,
+		owner,
+		remoteOwner,
+		"station-b",
+	)
+
+	transfer := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		owner,
+		remoteOwner.Actor,
+		"transfer-remote-owner",
+		domainevent.MemberAuthorityActionTransferOwnership,
+		nil,
+		nil,
+		nil,
+	)
+	if _, err := authority.commands.Submit(ctx, transfer); err != nil {
+		t.Fatalf("Submit(owner transfer) error = %v", err)
+	}
+
+	muted := true
+	remoteMutation := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		remoteOwner,
+		owner.Actor,
+		"remote-owner-mutes-former-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		nil,
+		&muted,
+		nil,
+	)
+	forwarded := dddForwardedCommandRequest(
+		t,
+		remoteMutation,
+		dddFederationID,
+		dddAuthorityEpoch,
+		"station-b",
+	)
+	result, err := authority.commands.SubmitForwarded(ctx, forwarded)
+	if err != nil {
+		t.Fatalf("SubmitForwarded(remote owner mutation) error = %v", err)
+	}
+	if result.Replay ||
+		result.Conversation.Owner != remoteOwner.Actor ||
+		!dddSnapshotMember(t, result.Conversation, owner.Actor).Muted {
+		t.Fatalf("remote owner mutation result = %+v", result)
+	}
+}
+
 func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:owner", "owner-1")
@@ -4384,6 +4446,7 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 		t.Fatal(err)
 	}
 
+	fixture.clock.now = time.Now().UTC().Truncate(time.Millisecond)
 	leaveRequest := dddLeaveIntentRequest(
 		t,
 		"leave-1",
@@ -4400,6 +4463,30 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 	}
 	if intent.State != repository.LeaveIntentStatePending {
 		t.Fatalf("leave intent = %+v", intent)
+	}
+	ownerPending, err := fixture.queries.PendingLeaveIntents(
+		ctx,
+		groupID,
+		owner.Actor,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownerPending) != 1 || ownerPending[0].ID != intent.ID {
+		t.Fatalf("owner pending leave intents = %+v, want %s", ownerPending, intent.ID)
+	}
+	departingPending, err := fixture.queries.PendingLeaveIntents(
+		ctx,
+		groupID,
+		member.Actor,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(departingPending) != 0 {
+		t.Fatalf("departing actor pending leave intents = %+v, want none", departingPending)
 	}
 	wrongFederation := dddLeaveIntentRequest(
 		t,
@@ -6746,9 +6833,28 @@ func createDDDGroup(
 	member valueobject.Endpoint,
 ) command.Result {
 	t.Helper()
+	return createDDDGroupWithMemberStation(
+		t,
+		fixture,
+		groupID,
+		owner,
+		member,
+		"station-a",
+	)
+}
+
+func createDDDGroupWithMemberStation(
+	t *testing.T,
+	fixture dddFixture,
+	groupID valueobject.ConversationID,
+	owner valueobject.Endpoint,
+	member valueobject.Endpoint,
+	memberStation valueobject.StationID,
+) command.Result {
+	t.Helper()
 	seedDDDDevices(t, fixture.db,
 		dddDevice(owner, "station-a"),
-		dddDevice(member, "station-a"),
+		dddDevice(member, string(memberStation)),
 	)
 	plan, err := fixture.commands.PrepareGroup(
 		context.Background(),
@@ -6779,7 +6885,7 @@ func createDDDGroup(
 			AuthorityPlanHash: plan.Hash,
 			Deliveries: []valueobject.PreparedDelivery{
 				dddDelivery(t, owner, "station-a", valueobject.DeliveryKindPublicEvent, "owner-marker"),
-				dddDelivery(t, member, "station-a", valueobject.DeliveryKindMLSWelcome, "member-welcome"),
+				dddDelivery(t, member, memberStation, valueobject.DeliveryKindMLSWelcome, "member-welcome"),
 			},
 			ExactCommandBytes: []byte("create-" + string(groupID)),
 		},

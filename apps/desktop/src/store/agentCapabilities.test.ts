@@ -19,6 +19,7 @@ import {
 
 const capabilityApi = vi.hoisted(() => ({
   listCapabilityManifests: vi.fn(),
+  listCapabilityManifestInventory: vi.fn(),
   listAgentCapabilityBindings: vi.fn(),
   readAgentCapabilityReadiness: vi.fn(),
   upsertAgentCapabilityBinding: vi.fn(),
@@ -97,6 +98,10 @@ describe('agent capability authority store', () => {
       mcpManifest,
       connectorManifest,
     ]);
+    capabilityApi.listCapabilityManifestInventory.mockResolvedValue({
+      manifests: [mcpManifest, connectorManifest],
+      issues: [],
+    });
     capabilityApi.listAgentCapabilityBindings.mockResolvedValue([mcpBinding]);
     capabilityApi.readAgentCapabilityReadiness.mockResolvedValue(readiness);
     capabilityApi.upsertAgentCapabilityBinding.mockResolvedValue(mcpBinding);
@@ -264,7 +269,7 @@ describe('agent capability authority store', () => {
     expect(capabilityApi.tombstoneKnowledgeResourceDescriptor)
       .toHaveBeenCalledWith(tombstoneRequest);
     expect(capabilityApi.listKnowledgeResourceDescriptors).toHaveBeenCalledTimes(3);
-    expect(capabilityApi.listCapabilityManifests).toHaveBeenCalledTimes(3);
+    expect(capabilityApi.listCapabilityManifestInventory).toHaveBeenCalledTimes(3);
   });
 
   it('clears every actor-scoped projection on reset', async () => {

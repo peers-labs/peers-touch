@@ -171,6 +171,7 @@ const SIGNAL_EXIT_CODES = {
 
 export async function runCli(argv) {
   const { action, options } = parseArguments(argv);
+  options.envRepo ??= process.env.PT_ENV_REPO;
   switch (action) {
     case 'register':
       for (const key of [

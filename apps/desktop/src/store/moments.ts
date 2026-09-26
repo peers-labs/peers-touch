@@ -15,6 +15,7 @@ import {
   socialCreateMoment,
   socialDeleteMoment,
   socialGetComments,
+  publicCommentFromResource,
   socialGetMomentResponse,
   socialGetTimeline,
   socialSyncMomentsProjection,
@@ -33,12 +34,17 @@ import {
   type MomentDraft,
   type TimelineSort,
 } from '../services/social_api';
-import type { PrivateMomentLocalFileIntent } from '../services/privateMomentsNative';
+import type {
+  PrivateMomentAudience,
+  PrivateMomentLocalFileIntent,
+  PrivateMomentPublishIntent,
+} from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
+const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 let storeGeneration = 0;
 
 // All proto-shaped types in this store come straight from the
@@ -87,6 +93,111 @@ const emptyFeed = (): MomentFeedState => ({
   hasMore: false,
   loading: false,
 });
+
+function privateMomentAudience(audience: Audience): PrivateMomentAudience {
+  const hasActorList = audience.actorPtids.length > 0;
+  const hasBaseKind = audience.baseKind !== Audience_Kind.KIND_UNSPECIFIED;
+  const hasTarget = audience.target.case !== undefined;
+
+  switch (audience.kind) {
+    case Audience_Kind.FRIENDS:
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'FRIENDS' };
+    case Audience_Kind.FOLLOWERS:
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'FOLLOWERS' };
+    case Audience_Kind.CIRCLE: {
+      if (
+        audience.target.case !== 'circleId'
+        || audience.target.value <= 0n
+        || audience.target.value > MAX_PROTO_UINT64
+        || hasActorList
+        || hasBaseKind
+      ) {
+        break;
+      }
+      return {
+        kind: 'CIRCLE',
+        circleId: audience.target.value.toString(),
+      };
+    }
+    case Audience_Kind.GROUP: {
+      if (
+        audience.target.case !== 'groupConversationId'
+        || !audience.target.value
+        || audience.target.value.trim() !== audience.target.value
+        || audience.target.value.includes('\0')
+        || hasActorList
+        || hasBaseKind
+      ) {
+        break;
+      }
+      return {
+        kind: 'GROUP',
+        groupConversationId: audience.target.value,
+      };
+    }
+    case Audience_Kind.SELF:
+      if (hasTarget || hasActorList || hasBaseKind) break;
+      return { kind: 'SELF' };
+    case Audience_Kind.CUSTOM_ALLOW:
+      if (hasTarget || !hasActorList || hasBaseKind) break;
+      return {
+        kind: 'CUSTOM_ALLOW',
+        actorPtids: [...audience.actorPtids],
+      };
+    case Audience_Kind.CUSTOM_DENY:
+      if (audience.baseKind !== Audience_Kind.FOLLOWERS) {
+        break;
+      }
+      if (
+        hasTarget
+        || !hasActorList
+      ) {
+        break;
+      }
+      return {
+        kind: 'CUSTOM_DENY',
+        actorPtids: [...audience.actorPtids],
+        baseKind: 'FOLLOWERS',
+      };
+  }
+
+  throw new Error('PRIVATE_AUDIENCE_INVALID');
+}
+
+function privateMomentKind(
+  draft: MomentDraft,
+): PrivateMomentPublishIntent['momentKind'] {
+  switch (draft.kind) {
+    case 'text':
+      return 'TEXT';
+    case 'image':
+      return 'IMAGE';
+    case 'video':
+      return 'VIDEO';
+    case 'link':
+      return 'LINK';
+    case 'poll':
+      return 'POLL';
+    case 'repost':
+      return 'REPOST';
+    case 'location':
+      return 'LOCATION';
+  }
+}
+
+function privateMomentText(draft: MomentDraft): string {
+  return draft.kind === 'repost' ? draft.comment : draft.text;
+}
+
+function privateMomentFiles(
+  draft: MomentDraft,
+): PrivateMomentLocalFileIntent[] {
+  return draft.kind === 'image' || draft.kind === 'video'
+    ? draft.localFiles ?? []
+    : [];
+}
 
 export function selectMomentComments(
   state: { comments: Record<string, Comment[]> },
@@ -454,19 +565,40 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   createPost: async (draft) => {
     const generation = storeGeneration;
-    if (draft.audience.kind === Audience_Kind.FRIENDS) {
-      if (draft.kind !== 'text' && draft.kind !== 'image') {
-        throw new Error('PRIVATE_UNSUPPORTED');
-      }
+    if (
+      draft.audience.kind !== Audience_Kind.PUBLIC
+      && draft.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+    ) {
       if (!draft.draftId || draft.draftRevision === undefined) {
         throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
       }
       const result = await usePrivateMomentsStore.getState().publishMoment({
         draftId: draft.draftId,
         draftRevision: draft.draftRevision,
-        audienceKind: 'FRIENDS',
-        text: draft.text,
-        files: draft.kind === 'image' ? draft.localFiles ?? [] : [],
+        audience: privateMomentAudience(draft.audience),
+        momentKind: privateMomentKind(draft),
+        text: privateMomentText(draft),
+        mentions: (draft.mentions ?? []).map((mention) => ({
+          actorPtid: mention.actorPtid,
+          offset: mention.offset,
+          length: mention.length,
+          display: mention.display,
+        })),
+        files: privateMomentFiles(draft),
+        link: draft.kind === 'link' ? draft.link : undefined,
+        location: draft.kind === 'location' ? draft.location : undefined,
+        poll: draft.kind === 'poll'
+          ? {
+              question: draft.poll.question,
+              options: draft.poll.options,
+              minChoices: draft.poll.minChoices,
+              maxChoices: draft.poll.maxChoices,
+              expiresAtSeconds: draft.poll.expiresAtSeconds,
+            }
+          : undefined,
+        repost: draft.kind === 'repost'
+          ? { sourcePostId: draft.originalPostId }
+          : undefined,
       });
       if (generation !== storeGeneration) {
         throw new Error('MOMENTS_SESSION_STALE');
@@ -563,10 +695,11 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     try {
       const resp = await socialGetComments(postId, cursor || undefined);
       if (generation !== storeGeneration) return;
+      const page = resp.comments.map(publicCommentFromResource);
       set((s) => {
         const prev = refresh ? [] : (s.comments[postId] ?? []);
         const seen = new Set(prev.map((c) => c.id));
-        const merged = [...prev, ...resp.comments.filter((c) => !seen.has(c.id))];
+        const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
         return {
           comments: { ...s.comments, [postId]: merged },
           commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },

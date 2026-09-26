@@ -11,11 +11,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { workspaceIdForRoot } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
 import {
   buildDevSnapshot,
   collectProfiles,
-  resolveDeclarationPlan,
 } from './status.mjs';
 
 function git(directory, ...args) {
@@ -81,35 +79,6 @@ function fixture() {
   };
 }
 
-function fakePlanPackage(workspaceId, head) {
-  return {
-    manifest: {
-      planId: 'TEST-PLAN',
-      status: 'active',
-      binding: {
-        workspaceId,
-        branch: 'main',
-        initialHead: head,
-      },
-      tasks: [
-        {
-          id: 'TEST-DONE',
-          status: 'done',
-          dependsOn: [],
-        },
-        {
-          id: 'TEST-CURRENT',
-          status: 'in_progress',
-          dependsOn: ['TEST-DONE'],
-        },
-      ],
-    },
-    taskSlices: new Map([
-      ['TEST-CURRENT', { title: 'Current test task' }],
-    ]),
-  };
-}
-
 test('collectProfiles exposes only selected public fields', () => {
   const scope = fixture();
   try {
@@ -121,7 +90,7 @@ test('collectProfiles exposes only selected public fields', () => {
       relayDeployEnvironment: 'relay-one',
     });
     addProfile(scope.root, 'untracked-lab', {
-      stationUrl: 'http://10.10.0.2:18132',
+      stationUrl: 'http://192.0.2.2:18132',
       deployEnvironment: 'station-lab',
       tracked: false,
     });
@@ -152,139 +121,6 @@ test('collectProfiles exposes only selected public fields', () => {
     assert.equal(profiles[0].error.code, 'PROFILE_IDENTITY_INVALID');
     assert.equal(profiles[1].relayUrl, 'http://192.0.2.1:18081/path');
     assert.equal(JSON.stringify(profiles).includes('must-not-leak'), false);
-  } finally {
-    scope.close();
-  }
-});
-
-test('resolveDeclarationPlan uses only declaration and immutable workspace binding', async () => {
-  const scope = fixture();
-  try {
-    const workspaceId = workspaceIdForRoot(scope.root);
-    const head = git(scope.root, 'rev-parse', 'HEAD');
-    const planDirectory = path.join(
-      scope.root,
-      'docs',
-      'architecture',
-      'example',
-      'execution-plans',
-      'test-plan',
-    );
-    mkdirSync(planDirectory, { recursive: true });
-    writeFileSync(
-      path.join(planDirectory, 'plan.md'),
-      '{"planId":"TEST-PLAN"}\n',
-    );
-    const declaration = {
-      workItemId: 'TEST-WORK',
-      workspaceId,
-      branch: 'main',
-      sourceHead: head,
-      planPath:
-        'docs/architecture/example/execution-plans/test-plan/plan.md',
-      planId: 'TEST-PLAN',
-      taskId: 'TEST-CURRENT',
-    };
-    const registration = {
-      workspaceId,
-      canonicalRoot: scope.root,
-    };
-    const loadPlanPackage = async () => fakePlanPackage(workspaceId, head);
-    const resolveWorkspacePlanBinding = async () => ({
-      planId: 'TEST-PLAN',
-      planPath: declaration.planPath,
-    });
-
-    const direct = await resolveDeclarationPlan(declaration, registration, {
-      home: scope.root,
-      loadPlanPackage,
-      resolveWorkspacePlanBinding,
-    });
-    assert.equal(direct.status, 'available');
-    assert.equal(direct.locatorSource, 'declaration');
-    assert.deepEqual(
-      {
-        completed: direct.progress.completed,
-        total: direct.progress.total,
-        percentage: direct.progress.percentage,
-        completedAfter:
-          direct.progress.nextProgressBoundary.completedAfter,
-        percentageAfter:
-          direct.progress.nextProgressBoundary.percentageAfter,
-      },
-      {
-        completed: 1,
-        total: 2,
-        percentage: 50,
-        completedAfter: 2,
-        percentageAfter: 100,
-      },
-    );
-
-    const boundWithoutLocator = await resolveDeclarationPlan(
-      {
-        ...declaration,
-        planPath: undefined,
-        planId: undefined,
-        taskId: undefined,
-      },
-      registration,
-      {
-        home: scope.root,
-        loadPlanPackage,
-        resolveWorkspacePlanBinding,
-      },
-    );
-    assert.equal(boundWithoutLocator.status, 'mismatch');
-    assert.equal(
-      boundWithoutLocator.errorCode,
-      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
-    );
-
-    const untracked = await resolveDeclarationPlan(
-      {
-        workItemId: 'UNTRACKED-WORK',
-        workspaceId,
-        branch: 'main',
-        sourceHead: head,
-      },
-      registration,
-      {
-        home: scope.root,
-        async resolveWorkspacePlanBinding() {
-          const error = new Error('binding absent');
-          error.code = 'WORKSPACE_PLAN_BINDING_REQUIRED';
-          throw error;
-        },
-      },
-    );
-    assert.equal(untracked.status, 'untracked');
-
-    const mismatched = await resolveDeclarationPlan(
-      { ...declaration, taskId: 'OTHER-TASK' },
-      registration,
-      { home: scope.root, loadPlanPackage, resolveWorkspacePlanBinding },
-    );
-    assert.equal(mismatched.status, 'mismatch');
-    assert.equal(mismatched.errorCode, 'PLAN_LOCATOR_MISMATCH');
-
-    const bindingMismatch = await resolveDeclarationPlan(
-      declaration,
-      registration,
-      {
-        home: scope.root,
-        loadPlanPackage,
-        async resolveWorkspacePlanBinding() {
-          return {
-            planId: 'FOREIGN-PLAN',
-            planPath:
-              'docs/architecture/example/execution-plans/foreign/plan.md',
-          };
-        },
-      },
-    );
-    assert.equal(bindingMismatch.status, 'mismatch');
-    assert.equal(bindingMismatch.errorCode, 'PLAN_LOCATOR_MISMATCH');
   } finally {
     scope.close();
   }
@@ -475,6 +311,67 @@ test('buildDevSnapshot aggregates workspace-owned active work without cross-work
       JSON.stringify(snapshot).includes('/Users/'),
       false,
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('buildDevSnapshot projects the canonical workflow verdict without recomputing it', async () => {
+  const scope = fixture();
+  try {
+    const workspaceId = '0123456789abcdef';
+    const workflow = {
+      kind: 'peers-touch-workflow-snapshot',
+      observedAt: '2026-09-20T00:00:00.000Z',
+      workspaceId,
+      verdict: 'DRIFT',
+      findings: [
+        {
+          severity: 'error',
+          code: 'WORKFLOW_OWNER_MISMATCH',
+          owner: 'active-work',
+          field: 'currentTaskId',
+          expected: 'TASK-2',
+          actual: 'TASK-1',
+        },
+      ],
+      owners: {
+        plan: { status: 'active' },
+      },
+    };
+    const snapshot = await buildDevSnapshot({
+      envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
+      workflowSnapshots: [workflow],
+      machineStatus: {
+        authority: 'machine-control-plane',
+        registrations: [
+          {
+            workspaceId,
+            name: 'workflow-consumer',
+            branch: 'feature/workflow',
+            profile: null,
+            slot: null,
+            allowedCapabilities: [],
+            purpose: 'workflow snapshot projection',
+            owner: 'peers-dev-test@example.invalid',
+            activity: 'active',
+            resetPolicy: 'agent-resettable',
+            profileState: 'available',
+            profileError: null,
+          },
+        ],
+        activeLeases: [],
+        staleLeaseMetadata: [],
+        unregisteredObservations: null,
+      },
+      ledger: { declarations: {} },
+      now: new Date('2026-09-20T00:00:00.000Z'),
+    });
+
+    assert.deepEqual(snapshot.workflowSnapshots, [workflow]);
+    assert.equal(snapshot.worktrees[0].workflow, workflow);
+    assert.equal(snapshot.worktrees[0].workState, 'drift');
   } finally {
     scope.close();
   }

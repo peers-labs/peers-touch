@@ -33,8 +33,11 @@
 | DWF-D21 | Keep orchestration and runtime verification host-neutral | accepted |
 | DWF-D22 | Separate workflow distribution from consuming-worktree runtime state | accepted |
 | DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
-| DWF-D24 | Reopen frozen source through one Plan-declared invalidation owner | accepted |
-| DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
+| DWF-D24 | Make workflow truth, continuation and Acceptance admission machine-enforced | accepted |
+| DWF-D25 | Keep Context Anchor observability ephemeral and bounded | accepted |
+| DWF-D26 | Reopen frozen source through one Plan-declared invalidation owner | accepted |
+| DWF-D27 | Keep user Skill overlays machine-local and interaction-only | accepted |
+| DWF-D28 | Preserve frozen runtime source across verified Plan-only handoffs | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -749,37 +752,25 @@ identity checks at their actual owners.
 ### Context
 
 DWF-D15 made one Task-closing Progress Slice larger than an individual command,
-but `continue` still returned control after each Task. Product, architecture,
-plan, completion, and code review prompts were also routinely handed to the
-user even when repository Skills and accepted sources could decide them. A
-large accepted Plan therefore degraded into many short interactions and made
-the user the default reviewer and scheduler. Agents also re-requested
-checkpoint, deploy, reset, merge, or similar permission solely because the
-operation category was sensitive, even when the user or accepted Plan had
-already granted the exact operation.
+but `continue` still returned control after each Task. Review prompts were also
+handed to the user when repository Skills and accepted sources could decide
+them, turning a large accepted Plan into many short interactions. Agents also
+re-requested checkpoint, deploy, reset, merge, or similar permission solely
+because the operation category was sensitive, even when the user or accepted
+Plan had already granted the exact operation.
 
 ### Decision
 
 - One explicit `continue`, `resume`, `execute the plan`, or equivalent request
-  authorizes one **Plan Run** over the current Plan's already accepted scope and
+  authorizes one Plan Run over the current Plan's accepted scope and
   authorization envelope.
-- A Plan Run repeatedly:
-  1. selects one dependency-ready current Task;
-  2. executes its bounded Goal Slice;
-  3. runs the required agent review and remediation loop;
-  4. closes or parks the Task through owner commands;
-  5. activates a dependency-ready successor; and
-  6. continues without asking for confirmation.
-- Goal Slice remains a single-Task, stage-pure, recoverable scheduler unit. It
-  is an internal checkpoint and context-compaction boundary, not a user
-  interaction boundary.
-- Stage review is agent-led by default. The workflow invokes the relevant
-  methodology review plus `pt-quality-check`, `pt-completion-auditor`, and
-  `pt-github-review` as applicable, fixes actionable findings inside accepted
-  scope, and reruns review until the gate passes or a hard boundary remains.
-- A Context Anchor may be emitted at a meaningful reporting or compaction
-  boundary, but it does not request confirmation and does not pause an
-  authorized Plan Run.
+- Dev Workflow repeatedly schedules one Task-bounded Goal Slice, executes it,
+  runs agent review and remediation, closes or parks the Task, activates a
+  dependency-ready successor and continues.
+- Goal Slice remains a single-Task recoverable scheduler unit. It is not the
+  user interaction boundary.
+- Context Anchor may report at meaningful boundaries, but it does not request
+  confirmation or pause an authorized Plan Run.
 - An exact authorization granted by the user or recorded as allowed in the
   accepted Plan remains valid for the full Plan Run. Task/Goal transitions,
   retries, context compaction, and host changes do not consume it.
@@ -790,55 +781,21 @@ already granted the exact operation.
   credential, or scope failure.
 - Plan existence and public declarations do not imply authorization; only
   explicit user grants and the Plan's explicit authorization fields do.
-- Human escalation is limited to:
-  - an operation outside or explicitly denied by every exact grant;
-  - an admitted operation whose attempted execution returns an actual external
-    permission, credential, or scope failure with no legal in-scope remediation;
-  - force push, history rewrite, merge, release, production mutation, data
-    deletion/reset, environment creation, permission expansion, version/schema
-    bump, worktree add/remove/prune, or secret access only when its exact grant
-    is absent;
-  - product, architecture, security, privacy, compatibility, or rollout choices
-    with multiple materially valid outcomes that accepted sources cannot
-    resolve;
-  - a required external resource or credential that the agent cannot obtain;
-  - fixed-point exhaustion where no dependency-ready Task or legal remediation
-    remains.
-- Ordinary review findings, failed checks, implementation defects, mechanical
-  plan repairs, Task handoff, successor activation, context compaction, and
-  non-destructive retries are not human escalation boundaries.
-
-### Rationale
-
-The Plan Package already owns scope, dependencies, authorization, and evidence
-requirements. Requiring another user decision after every Task or review adds
-no safety when the accepted sources determine the answer. Keeping Goal Slices
-bounded preserves recovery and scheduling rigor while the outer Plan Run
-provides the long-running autonomy users expect.
-
-### Alternatives Considered
-
-- Make each Goal span the whole Plan: rejected because it would cross stages,
-  blur Task ownership, and weaken recovery.
-- Keep one-Task user handoffs: rejected because it turns internal checkpoints
-  into repeated approval work.
-- Let the workflow self-authorize destructive or semantic decisions: rejected
-  because accepted scope cannot supply missing authority or intent.
+- Human escalation is limited to denied or missing authority, destructive or
+  irreversible operations, unresolved product/architecture/security/privacy/
+  compatibility/rollout choices, unavailable external resources or
+  fixed-point exhaustion.
 
 ### Consequences
 
 - `pt-dev-workflow` owns the Plan Run loop and successor activation.
-- `pt-goal-orchestrator` continues to schedule one Task at a time and may
-  return `NEXT`, but it does not activate the successor itself.
-- Methodology and delivery review prompts are consumed internally by the
-  project's review Skills unless a precise hard-boundary decision must be
-  escalated.
-- Context Anchors expose the autonomous horizon and stop conditions instead of
-  ending with `Continue?` or one administrative next action.
+- `pt-goal-orchestrator` schedules one Task at a time.
+- Ordinary review findings, failed checks, mechanical Plan repairs, Task
+  handoff and non-destructive retries remain internal Run work.
 - Dev Workflow and Guardian must reject repeat-confirmation behavior for an
   already-authorized operation and preserve the evidence source of the grant.
-- A Plan Run may span context windows; durable Plan, Task, Session, declaration,
-  and workspace active-work state remain the recovery truth.
+- Durable Plan, Task, Session, declaration and workspace active-work state
+  remain the recovery inputs across context windows.
 
 ## DWF-D21: Host Tools Are Replaceable Transport Adapters
 
@@ -946,7 +903,133 @@ versions of one unstable internal workflow.
 - A future incompatible workflow change replaces the current internal shape
   atomically instead of adding a parallel workflow version.
 
-## DWF-D24: Reopen Frozen Source Through One Plan-Declared Invalidation Owner
+## DWF-D24: Workflow Truth And Continuation Are Machine-Enforced
+
+**Status**: accepted
+**Date**: 2026-09-20
+
+### Context
+
+The workflow has been used across multiple long-running worktrees. Three
+failures remain visible in normal operation:
+
+- Peers Dev and Context Anchor aggregate individually valid records without one
+  trustworthy cross-owner consistency result.
+- Continuous Plan Run and authorization reuse are written in Skills, but Agent
+  turns can still stop after a small Next action and request another message.
+- Broad Acceptance can be called directly before the required real product
+  Journey reaches `FUNCTIONAL_PASS`.
+
+The same gap also lets a Plan Task become `done` without a matching successful
+Development Session, so a mathematically correct percentage may still describe
+an unproven closure.
+
+### Decision
+
+- Every tracked Task closes through its matching successful Development
+  Session. `NONE`, unavailable Session paths and `CANCELLED` never satisfy
+  `done`.
+- One pure, read-only Workflow Snapshot derives Plan, Task, Session,
+  declaration, Git, active-work, runtime and rollout relationships. Peers Dev
+  and Context Anchor consume the same verdict semantics and never repair owner
+  state.
+- The snapshot derives one continuation decision:
+  `CONTINUE`, `HARD_BLOCK` or `COMPLETE`. `CONTINUE` is an internal Plan Run
+  boundary and cannot request another user confirmation.
+- Development Journey execution remains available before
+  `FUNCTIONAL_PASS`. Completion/full Acceptance, Gap Detector and completion
+  review require an explicit matching Session and reject a pre-functional
+  frontier before any broad Gate starts.
+- Acceptance aggregate Tasks depend on the functional predecessors whose
+  Journey or closure they promote.
+- Workflow Skill distribution is out-of-band infrastructure. Catalog drift is
+  observable but cannot release a business declaration, consume progress, or
+  require a process-restart ACK. A new host session naturally loads the current
+  catalog.
+- `docs/global/workflow.md` is the single human-facing development standard.
+  Architecture, schema, command and Skill documents remain implementation
+  references.
+
+### Consequences
+
+- Peers Dev shows a typed consistency result instead of presenting record
+  existence as health.
+- Context Anchor remains a read-only projection and cannot become a user
+  interaction boundary.
+- Existing owner stores remain unchanged; no second status database, queue or
+  workflow version is introduced.
+- Existing active work is audited before cutover. Invalid current state is
+  repaired through its owner rather than accepted through a compatibility
+  path.
+- Historical completed Tasks are not reinterpreted or backfilled.
+
+## DWF-D25: Context Anchor Observability Is Ephemeral And Bounded
+
+**Status**: accepted
+**Date**: 2026-09-20
+
+### Context
+
+The Context Anchor carries enough detail to resume a continuous Plan Run, but
+its full projection is verbose and does not expose the elapsed time of the
+current or just-closed Task. Adding another durable metrics record would create
+a new owner, duplicate Session timing, and require additional reconciliation.
+
+### Decision
+
+- Context Anchor remains a compact, read-only projection for uninterrupted
+  multi-Task execution.
+- Current Task timing is derived in memory from the bounded Development Session
+  journal during the existing Workflow Snapshot read. That read validates but
+  never locks, repairs, or rewrites the Session projection.
+- `planctl advance` may return a transient `closureObservation` derived from
+  the already validated terminal Session or source evidence. It is command
+  output, not persisted workflow state.
+- Dev Workflow may pass that observation directly to Context Anchor at the
+  Task-closing boundary. A missing recent observation renders as `none`; a
+  source-evidence-only closure renders timing as `not-observed`. Neither case
+  affects Task lifecycle, workflow verdict, continuation, or proof.
+- The compact Snapshot exposes current timing and evidence through one
+  Task-identified `currentObservation`. It distinguishes `measured`,
+  `not-started`, `none`, and `unavailable`; the transient recent observation is
+  never interpreted as a Plan-wide or all-Task aggregate.
+- Token usage is displayed only when the active host supplies an actual usage
+  observation during the same Run. Missing host usage renders as
+  `not-observed`; the workflow never estimates or persists token counts.
+- `active-work.json`, Plan Package, Task Slice, Session state, and Evidence
+  Store schemas remain unchanged. No metrics file, closure receipt, history
+  table, or compatibility writer is introduced.
+- The compact Snapshot projection suppresses full owner payloads while
+  retaining the verified continuation, binding, progress, current closure,
+  Ready/Parked frontier, evidence summary, and timing needed by the Anchor.
+
+### Rationale
+
+The existing journal already owns all durable timestamps required for current
+execution timing. Pure aggregation and transient command output add no Agent
+round-trip and avoid turning observability into lifecycle truth.
+
+### Alternatives Considered
+
+- Add a workspace `run-observation.json`: rejected because it creates another
+  persistent entity and reconciliation boundary.
+- Add metrics fields to `active-work.json`: rejected because active-work is a
+  closed current-locator projection, not a history or analytics owner.
+- Store metrics in Plan or Task files: rejected because runtime observations do
+  not belong in tracked planning truth.
+- Ask the Agent to run separate metrics commands: rejected because it increases
+  tool calls, context output, and interruption frequency.
+
+### Consequences
+
+- Current and immediately closed Task metrics are available without additional
+  writes or commands.
+- Historical timing is intentionally unavailable after the transient
+  observation leaves the active context.
+- Metrics are advisory. Missing timing or token usage cannot block a Plan Run.
+- Context Anchor output becomes smaller while preserving execution continuity.
+
+## DWF-D26: Reopen Frozen Source Through One Plan-Declared Invalidation Owner
 
 **Status**: accepted
 **Date**: 2026-09-21
@@ -994,7 +1077,7 @@ implementation or allowing arbitrary lifecycle rewrites.
 - Old evidence remains immutable history but cannot satisfy the reopened
   closure.
 
-## DWF-D25: User Skill Overlays Are Machine-Local Interaction Policy
+## DWF-D27: User Skill Overlays Are Machine-Local Interaction Policy
 
 **Status**: accepted
 **Date**: 2026-09-21
@@ -1052,3 +1135,50 @@ without an explicit replacement operation.
   no canonical compatibility copy remains.
 - Malformed registry entries or modified installed copies fail closed instead
   of silently disabling user policy.
+
+## DWF-D28: Preserve Frozen Runtime Source Across Verified Plan-Only Handoffs
+
+**Status**: accepted
+**Date**: 2026-09-21
+
+### Context
+
+Some Plans deliberately freeze and activate executable source before a chain of
+functional Tasks. Each completed Task still advances the tracked Plan
+lifecycle, creating a new clean Git HEAD even though executable source is
+unchanged. Treating that Plan-only commit as product-source drift makes the
+next Task reject the activation it was designed to consume.
+
+### Decision
+
+- Runtime evidence continues to name the exact frozen Git commit that was
+  built, deployed, and activated.
+- The current control HEAD may differ only through a linear sequence of commits
+  that each changes exactly the bound `plan.md`.
+- Every accepted transition must preserve all bytes outside the Plan Package,
+  preserve the normalized Plan contract, and perform one legal
+  `in_progress -> done -> successor` lifecycle handoff.
+- Functional aggregates record both `runtimeSourceCommit` and `controlHead`
+  plus the deterministic transition-chain digest. The Session independently
+  revalidates that projection before sealing the result.
+- A merge, non-Plan path change, Plan contract or authorization change, prose
+  change, invalid lifecycle transition, or non-ancestor relationship fails
+  closed and requires DWF-D26 source invalidation.
+- Source freeze and schema activation never use this projection; both continue
+  to require literal current HEAD.
+
+### Rationale
+
+This keeps executable evidence bound to a real immutable commit while allowing
+the Plan to remain the tracked owner of Task progress. It does not introduce a
+filtered source tree or claim that an ancestor commit was the current control
+HEAD.
+
+### Consequences
+
+- Plans can traverse functional-only Tasks without redeploying or destructively
+  reactivating unchanged product source after every status commit.
+- The Plan lifecycle validator becomes part of the evidence admission boundary
+  and requires dedicated negative tests.
+- Any source or contract mutation invalidates the projection and reopens the
+  declared source owner.

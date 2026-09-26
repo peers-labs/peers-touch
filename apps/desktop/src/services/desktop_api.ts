@@ -69,25 +69,37 @@ import {
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AgentPackageUnresolvedDependency,
+  ArmCapabilityAcceptanceExecutorHookRequest,
+  CapabilityCatalogIssue,
   CapabilityApprovalPolicy,
+  CapabilityManifest,
   CapabilityReadiness as ProtoCapabilityReadiness,
   CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
   CapabilitySourceKind,
+  CleanupCapabilityAcceptanceScenarioRequest,
   CreateKnowledgeResourceDescriptorRequest,
   ConnectorResourceManifest,
+  InterruptCapabilityAcceptanceWorkerRequest,
   ListConnectorResourceManifestsRequest,
   ListKnowledgeResourceDescriptorsRequest,
+  PrepareCapabilityAcceptanceScenarioRequest,
+  ReleaseCapabilityAcceptanceBarrierRequest,
   StartCapabilityOperationResponse,
   TakeOverCapabilityCleanupRequest,
   TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
   UpdateKnowledgeResourceDescriptorRequest,
+  WaitCapabilityAcceptanceBarrierRequest,
 } from '../gen/proto/domain/agent/capability_pb';
 import {
   AgentCapabilityBindingSchema,
   AgentPackageDocumentSchema,
+  ArmCapabilityAcceptanceExecutorHookRequestSchema,
+  ArmCapabilityAcceptanceExecutorHookResponseSchema,
   CancelCapabilityOperationRequestSchema,
   CancelCapabilityOperationResponseSchema,
+  CleanupCapabilityAcceptanceScenarioRequestSchema,
+  CleanupCapabilityAcceptanceScenarioResponseSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
   DeleteAgentCapabilityBindingResponseSchema,
@@ -98,14 +110,20 @@ import {
   GetCapabilityReadinessResponseSchema,
   ImportAgentPackageRequestSchema,
   ImportAgentPackageResponseSchema,
+  InterruptCapabilityAcceptanceWorkerRequestSchema,
+  InterruptCapabilityAcceptanceWorkerResponseSchema,
   ListAgentCapabilityBindingsResponseSchema,
   ListCapabilityManifestsResponseSchema,
   ListConnectorResourceManifestsRequestSchema,
   ListConnectorResourceManifestsResponseSchema,
   ListKnowledgeResourceDescriptorsRequestSchema,
   ListKnowledgeResourceDescriptorsResponseSchema,
+  PrepareCapabilityAcceptanceScenarioRequestSchema,
+  PrepareCapabilityAcceptanceScenarioResponseSchema,
   ReconcileCapabilityOperationRequestSchema,
   ReconcileCapabilityOperationResponseSchema,
+  ReleaseCapabilityAcceptanceBarrierRequestSchema,
+  ReleaseCapabilityAcceptanceBarrierResponseSchema,
   StartCapabilityOperationResponseSchema,
   SyncConnectorResourceManifestsResponseSchema,
   TakeOverCapabilityCleanupRequestSchema,
@@ -117,6 +135,8 @@ import {
   UpdateKnowledgeResourceDescriptorRequestSchema,
   UpdateKnowledgeResourceDescriptorResponseSchema,
   UpsertAgentCapabilityBindingResponseSchema,
+  WaitCapabilityAcceptanceBarrierRequestSchema,
+  WaitCapabilityAcceptanceBarrierResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
 import type {
   HomeWorkProjection,
@@ -213,16 +233,6 @@ export interface ChatThreadCount {
   latestReplyUlid: string;
   latestReplyAt: number;
   unreadCount: number;
-}
-
-export interface GroupChatFederatedActorInput {
-  ptid: string;
-  homeStationPeerId: string;
-  homeStationDomain?: string;
-  federatedHandle?: string;
-  actorIdentityPublicKey?: Uint8Array | number[];
-  profileVersion?: number | bigint;
-  federationId?: string;
 }
 
 export interface DesktopNativeHostEventInput {
@@ -588,7 +598,6 @@ function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
 export type PresenceTrigger =
   | 'app_launch'
   | 'app_foreground'
-  | 'app_background'
   | 'app_shutdown'
   | 'identity_restored'
   | 'identity_switched'
@@ -2787,6 +2796,13 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'actual_revision',
   'terminal_status',
   'capability_id',
+  'capability_version',
+  'expected_version',
+  'actual_version',
+  'schema_field',
+  'binding_id',
+  'target_device_id',
+  'policy_kind',
   'turn_id',
   'budget_kind',
   'limit',
@@ -4500,11 +4516,6 @@ export interface ContextSnapshotGetInput {
 export interface ContextActionDispatchInput {
   action: string;
   payload?: Record<string, unknown>;
-}
-
-export interface ChatLocalSearchInput {
-  query: string;
-  limit?: number;
 }
 
 export interface ChatScopeCursorSetInput {
@@ -6285,6 +6296,72 @@ export const api = {
       { sourceKinds: [...sourceKinds] },
     ).then((response) => response.manifests),
 
+  listCapabilityManifestInventory: (
+    sourceKinds: readonly CapabilitySourceKind[] = [],
+  ): Promise<{
+    manifests: CapabilityManifest[];
+    issues: CapabilityCatalogIssue[];
+  }> =>
+    invokeRustProto(
+      'agent_capability_manifest_list',
+      ListCapabilityManifestsResponseSchema,
+      { sourceKinds: [...sourceKinds] },
+    ),
+
+  prepareCapabilityAcceptanceScenario: (
+    request: PrepareCapabilityAcceptanceScenarioRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_prepare',
+    PrepareCapabilityAcceptanceScenarioRequestSchema,
+    PrepareCapabilityAcceptanceScenarioResponseSchema,
+    request,
+  ),
+
+  armCapabilityAcceptanceExecutorHook: (
+    request: ArmCapabilityAcceptanceExecutorHookRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_arm',
+    ArmCapabilityAcceptanceExecutorHookRequestSchema,
+    ArmCapabilityAcceptanceExecutorHookResponseSchema,
+    request,
+  ),
+
+  waitCapabilityAcceptanceBarrier: (
+    request: WaitCapabilityAcceptanceBarrierRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_wait',
+    WaitCapabilityAcceptanceBarrierRequestSchema,
+    WaitCapabilityAcceptanceBarrierResponseSchema,
+    request,
+  ),
+
+  releaseCapabilityAcceptanceBarrier: (
+    request: ReleaseCapabilityAcceptanceBarrierRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_release',
+    ReleaseCapabilityAcceptanceBarrierRequestSchema,
+    ReleaseCapabilityAcceptanceBarrierResponseSchema,
+    request,
+  ),
+
+  interruptCapabilityAcceptanceWorker: (
+    request: InterruptCapabilityAcceptanceWorkerRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_interrupt',
+    InterruptCapabilityAcceptanceWorkerRequestSchema,
+    InterruptCapabilityAcceptanceWorkerResponseSchema,
+    request,
+  ),
+
+  cleanupCapabilityAcceptanceScenario: (
+    request: CleanupCapabilityAcceptanceScenarioRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_cleanup',
+    CleanupCapabilityAcceptanceScenarioRequestSchema,
+    CleanupCapabilityAcceptanceScenarioResponseSchema,
+    request,
+  ),
+
   syncOAuthConnectorManifests: () =>
     invokeRustProto(
       'oauth2_sync_connector_manifests',
@@ -7608,6 +7685,12 @@ export const api = {
       { agent_id: string; prompt: string },
       { ok: boolean; content: string }
     >('agent_quick_completion', { agent_id: agentId, prompt }).then((r) => r.content ?? ''),
+
+  groupCallJoin: (input: { group_ulid: string }) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string },
+      { url: string; token: string; room_name: string }
+    >('group_call_join', input),
 };
 
 export interface ConfigFieldMeta {

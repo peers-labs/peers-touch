@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   setPeerOnline: vi.fn(),
   clearPeerPresence: vi.fn(),
   presenceQuery: vi.fn(),
+  presenceNotify: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
   loadPeerProfile: vi.fn(),
   resolveActorStations: vi.fn(),
@@ -164,6 +165,7 @@ vi.mock('./eventStream', () => ({
 vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
+    presenceNotify: mocks.presenceNotify,
     presenceQuery: mocks.presenceQuery,
   },
 }));
@@ -194,6 +196,10 @@ describe('social realtime group membership side effects', () => {
     mocks.markFriendRead.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
     mocks.presenceQuery.mockResolvedValue([]);
+    mocks.presenceNotify.mockResolvedValue({
+      command: 'presence_notify',
+      status: '{"accepted":true}',
+    });
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadPeerProfile.mockResolvedValue(undefined);
     mocks.resolveActorStations.mockResolvedValue(undefined);
@@ -240,8 +246,16 @@ describe('social realtime group membership side effects', () => {
     await refreshPeerPresence(['ptid:alice', 'ptid:bob', 'ptid:alice']);
 
     expect(mocks.presenceQuery).toHaveBeenCalledWith(['ptid:alice', 'ptid:bob']);
-    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:alice', true);
-    expect(mocks.setPeerOnline).toHaveBeenCalledWith('ptid:bob', false);
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith(
+      'ptid:alice',
+      true,
+      expect.any(Number),
+    );
+    expect(mocks.setPeerOnline).toHaveBeenCalledWith(
+      'ptid:bob',
+      false,
+      expect.any(Number),
+    );
   });
 
   it('removes stale presence when the authoritative snapshot omits a peer', async () => {
@@ -249,7 +263,51 @@ describe('social realtime group membership side effects', () => {
 
     await refreshPeerPresence(['ptid:alice']);
 
-    expect(mocks.clearPeerPresence).toHaveBeenCalledWith(['ptid:alice']);
+    expect(mocks.clearPeerPresence).toHaveBeenCalledWith(
+      ['ptid:alice'],
+      expect.any(Number),
+    );
+  });
+
+  it('orders a realtime presence event after an older in-flight snapshot', async () => {
+    const snapshot = deferred<Array<{ actorPtid: string; online: boolean }>>();
+    mocks.presenceQuery.mockReturnValueOnce(snapshot.promise);
+
+    const refresh = refreshPeerPresence(['ptid:alice']);
+    await vi.waitFor(() => {
+      expect(mocks.presenceQuery).toHaveBeenCalledWith(['ptid:alice']);
+    });
+
+    eventBus.publish(EVENT.REALTIME_PRESENCE_FLIP, {
+      actorPtid: 'ptid:alice',
+      online: true,
+    });
+    snapshot.resolve([{ actorPtid: 'ptid:alice', online: false }]);
+    await refresh;
+
+    const eventCall = mocks.setPeerOnline.mock.calls.find((call) => call[1] === true);
+    const snapshotCall = mocks.setPeerOnline.mock.calls.find((call) => call[1] === false);
+    expect(eventCall?.[2]).toBeGreaterThan(snapshotCall?.[2]);
+  });
+
+  it('renews own presence and reconciles peers after realtime reconnect', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+    mocks.conversationMembers = {
+      'direct-1': [{ ptid: 'ptid:bob' }],
+    };
+    mocks.presenceQuery.mockResolvedValue([
+      { actorPtid: 'ptid:bob', online: true },
+    ]);
+
+    eventBus.publish(EVENT.REALTIME_CONNECTION_STATE, {
+      connected: true,
+      reason: 'connected',
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.presenceNotify).toHaveBeenCalledWith('heartbeat');
+      expect(mocks.presenceQuery).toHaveBeenCalledWith(['ptid:bob']);
+    });
   });
 
   it('hydrates peer profiles before resolving their Station identities', async () => {

@@ -1,12 +1,18 @@
-use super::store::{InteractionMutation, InteractionReceiveCommit};
+use super::store::{
+    ConversationMutation, ConversationMutationReceiveCommit, InteractionMutation,
+    InteractionReceiveCommit, MemberAuthorityReceiveCommit,
+};
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, EngineEndpoint, MessagingStore,
+    verify_device_event_delivery, ClaimedItemConsumer, ConversationMemberProjection,
+    ConversationProjection, ConversationStateReceiveCommit, EngineEndpoint, MessagingStore,
     PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::model::chat::{
-    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
-    DurableDeviceInboxItem, MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact,
-    MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
+    conversation_event, ConversationEvent, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommittedFact, CryptoEndpoint, DeviceConsumptionReceipt,
+    DeviceInboxPayloadType, DurableDeviceInboxItem, MemberRole, MessageEditedFact,
+    MessagePinCommittedFact, MessageRetractedFact, MessagingContentKind,
+    PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -116,6 +122,31 @@ impl PublicEventProcessor {
             Some(conversation_event::Payload::MessagePinCommitted(fact)) => {
                 self.process_pin(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }
+            Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
+                self.process_member_authority(item, event, fact, &delivery, consumer_epoch, now)
+            }
+            Some(conversation_event::Payload::ConversationUpdated(update)) => self
+                .process_conversation_mutation(
+                    item,
+                    event,
+                    &delivery,
+                    consumer_epoch,
+                    now,
+                    ConversationMutation::Update {
+                        name: update.name.as_deref(),
+                        description: update.description.as_deref(),
+                        avatar_object_id: update.avatar_object_id.as_deref(),
+                    },
+                ),
+            Some(conversation_event::Payload::ConversationDissolved(_)) => self
+                .process_conversation_mutation(
+                    item,
+                    event,
+                    &delivery,
+                    consumer_epoch,
+                    now,
+                    ConversationMutation::Dissolve,
+                ),
             _ => Err("messaging public-event payload type is unsupported".to_string()),
         }
     }
@@ -283,6 +314,127 @@ impl PublicEventProcessor {
         Ok(())
     }
 
+    fn process_member_authority(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &ConversationEvent,
+        fact: &ConversationMemberAuthorityCommittedFact,
+        delivery: &crate::model::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging member-authority marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        validate_member_authority_fact(event, fact, &self.endpoint.ptid)?;
+        let snapshot = fact
+            .post_state
+            .as_ref()
+            .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+        let projection = ConversationProjection {
+            conversation_id: event.conversation_id.clone(),
+            authority_station_id: event.authority_station_peer_id.clone(),
+            federation_id: snapshot.federation_id.clone(),
+            kind: snapshot.kind,
+            name: snapshot.name.clone(),
+            description: snapshot.description.clone(),
+            avatar_object_id: snapshot.avatar_object_id.clone(),
+            owner_ptid: snapshot.owner_ptid.clone(),
+            members: snapshot
+                .active_members
+                .iter()
+                .map(|member| {
+                    Ok(ConversationMemberProjection {
+                        ptid: member.ptid.clone(),
+                        role: member_role(&member.role)? as i32,
+                        home_station_peer_id: member.home_station_peer_id.clone(),
+                        muted: member.muted,
+                        muted_until_unix_ms: member.muted_until.as_ref().map(|value| {
+                            value
+                                .seconds
+                                .saturating_mul(1_000)
+                                .saturating_add(i64::from(value.nanos) / 1_000_000)
+                        }),
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+            membership_epoch: snapshot.membership_epoch,
+            mls_epoch: snapshot.mls_epoch,
+            active: true,
+            updated_at_unix_ms: now,
+        };
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_member_authority_state(&MemberAuthorityReceiveCommit {
+                state: ConversationStateReceiveCommit {
+                    item_id: &item.item_id,
+                    event_id: &event.event_id,
+                    conversation_id: &event.conversation_id,
+                    event_sequence: event.sequence,
+                    lane_sequence: item.lane_sequence,
+                    consumer_epoch,
+                    payload_sha256: &item.payload_sha256,
+                    event_hash: &event.event_hash,
+                    previous_event_hash: &event.previous_hash,
+                    projection: &projection,
+                    receipt_id: &receipt.receipt_id,
+                    receipt_bytes: &receipt_bytes,
+                    consumed_at_unix_ms: now,
+                },
+                command_id: &event.command_id,
+                operator_ptid: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.ptid.as_str())
+                    .unwrap_or_default(),
+                operator_device_id: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.device_id.as_str())
+                    .unwrap_or_default(),
+                action: fact.action,
+                target_ptid: &fact.target_ptid,
+            })?;
+        Ok(())
+    }
+
+    fn process_conversation_mutation(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &ConversationEvent,
+        delivery: &crate::model::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+        mutation: ConversationMutation<'_>,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging Conversation mutation marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_conversation_mutation_event(&ConversationMutationReceiveCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                conversation_id: &event.conversation_id,
+                command_id: &event.command_id,
+                event_sequence: event.sequence,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                membership_epoch: event.membership_epoch,
+                mls_epoch: event.mls_epoch,
+                mutation,
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            })?;
+        Ok(())
+    }
+
     fn commit_interaction(
         &self,
         item: &DurableDeviceInboxItem,
@@ -371,6 +523,88 @@ fn validate_marker_bindings(
     Ok(())
 }
 
+fn validate_authority_marker_bindings(
+    event: &ConversationEvent,
+    marker: &PublicEventMarker,
+) -> Result<(), String> {
+    if marker.conversation_id != event.conversation_id
+        || marker.event_id != event.event_id
+        || marker.command_id != event.command_id
+        || marker.sending_endpoint.is_none()
+        || marker.sending_endpoint != event.actor
+    {
+        return Err("messaging member-authority marker binding mismatch".to_string());
+    }
+    Ok(())
+}
+
+fn validate_member_authority_fact(
+    event: &ConversationEvent,
+    fact: &ConversationMemberAuthorityCommittedFact,
+    local_ptid: &str,
+) -> Result<(), String> {
+    let action = ConversationMemberAuthorityAction::try_from(fact.action)
+        .map_err(|_| "messaging member-authority action is invalid".to_string())?;
+    let snapshot = fact
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+    let target = snapshot
+        .active_members
+        .iter()
+        .find(|member| member.ptid == fact.target_ptid)
+        .ok_or_else(|| "messaging member-authority target is not active".to_string())?;
+    if action == ConversationMemberAuthorityAction::Unspecified
+        || fact.target_ptid.trim().is_empty()
+        || fact.from_membership_epoch <= 0
+        || fact.to_membership_epoch != fact.from_membership_epoch.saturating_add(1)
+        || fact.to_membership_epoch != event.membership_epoch
+        || snapshot.owner_ptid != fact.owner_ptid
+        || snapshot.membership_epoch != event.membership_epoch
+        || snapshot.mls_epoch != event.mls_epoch
+        || !snapshot
+            .active_members
+            .iter()
+            .any(|member| member.ptid == local_ptid)
+    {
+        return Err("messaging member-authority fact is inconsistent".to_string());
+    }
+    match action {
+        ConversationMemberAuthorityAction::UpdateMember => {
+            if fact.previous_owner_ptid != fact.owner_ptid
+                || (fact.role.is_none() && fact.muted.is_none())
+                || fact.role.is_some_and(|role| {
+                    member_role(&target.role).ok().map(|value| value as i32) != Some(role)
+                })
+                || fact.muted.is_some_and(|muted| target.muted != muted)
+                || fact.muted_until != target.muted_until
+            {
+                return Err("messaging member-authority update is incomplete".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::TransferOwnership => {
+            if fact.previous_owner_ptid == fact.owner_ptid
+                || fact.owner_ptid != fact.target_ptid
+                || fact.role != Some(MemberRole::Owner as i32)
+                || target.role != "owner"
+            {
+                return Err("messaging ownership-transfer fact is inconsistent".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::Unspecified => unreachable!(),
+    }
+    Ok(())
+}
+
+fn member_role(role: &str) -> Result<MemberRole, String> {
+    match role {
+        "member" | "MEMBER_ROLE_MEMBER" => Ok(MemberRole::Member),
+        "admin" | "MEMBER_ROLE_ADMIN" => Ok(MemberRole::Admin),
+        "owner" | "MEMBER_ROLE_OWNER" => Ok(MemberRole::Owner),
+        _ => Err("messaging member-authority member role is invalid".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::verification::delivery_commitment;
@@ -390,6 +624,14 @@ mod tests {
 
     fn now() -> i64 {
         1_000
+    }
+
+    fn completed_chunk_bitmap(chunk_count: u32) -> Vec<u8> {
+        let mut bitmap = vec![0; chunk_count.div_ceil(8) as usize];
+        for chunk_index in 0..chunk_count {
+            bitmap[chunk_index as usize / 8] |= 1 << (chunk_index % 8);
+        }
+        bitmap
     }
 
     fn direct_session() -> DirectSession {
@@ -553,7 +795,7 @@ mod tests {
             upload_id: "upload-1".to_string(),
             generation: 1,
             descriptor_sha256: Sha256::digest(descriptor.encode_to_vec()).to_vec(),
-            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            completed_chunk_bitmap: completed_chunk_bitmap(descriptor.chunk_count),
             source_local_ref: "/tmp/sender-source".to_string(),
             partial_local_ref: String::new(),
             object_key: attachment.object_key.clone(),

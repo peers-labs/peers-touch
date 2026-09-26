@@ -5,43 +5,46 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
 from selenium import webdriver
+from selenium.webdriver.remote.command import Command
 from selenium.webdriver.remote.webdriver import WebDriver
 
-from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
-from tooling.acceptance.core.provisioning import (
-    ProvisioningError,
-    load_json_artifact,
-    load_runtime_manifest,
-    require_runtime_client_service,
-)
 from tooling.acceptance.core.redaction import (
     redact_text,
     redact_text_with_values,
 )
+from tooling.development.secure_content import runtime_manifest
 from tooling.development.secure_content.run import (
-    RUNTIME_ATTACHMENT_KIND,
     RunnerError,
     ScenarioContext,
-    canonical_actor_ptids,
-    validate_actor_manifest_reference,
-    validated_harness_identity,
 )
 
 
 LOOPBACK_HOST = "127.0.0.1"
 NETWORK_CAPTURE_TIMEOUT_SECONDS = 5.0
-NETWORK_CAPTURE_QUIET_SECONDS = 0.2
 NETWORK_CAPTURE_POLL_SECONDS = 0.02
+TERMINAL_MARKER_PATH_PREFIX = "/__pt_acceptance/network-terminal/"
+TERMINAL_MARKER_FIELDS = frozenset(
+    {
+        "schemaVersion",
+        "captureId",
+        "actionId",
+        "runtimeManifestDigest",
+        "finalObserverSequence",
+        "openStreamIdentityDigests",
+        "captureIntervalDigest",
+        "markerDigest",
+    }
+)
 PRIVATE_ROUTE_MARKERS = (
     "/moments/prepare-private",
     "/moments/submit-private",
@@ -75,6 +78,34 @@ class NetworkObservation:
     capture_gaps: tuple[str, ...]
 
 
+def reconcile_private_moment_publish(
+    client: AttachedProductClient,
+    method: str,
+    *,
+    label: str,
+    max_attempts: int = 3,
+    retry_delay_seconds: float = 0.25,
+) -> Mapping[str, Any]:
+    if max_attempts < 1:
+        raise RunnerError(f"{label} retry budget is invalid")
+    for attempt in range(1, max_attempts + 1):
+        result = client.call(method)
+        if not isinstance(result, Mapping):
+            raise RunnerError(f"{label} result is invalid")
+        if result.get("state") != "UNKNOWN_COMMIT":
+            return result
+        if attempt < max_attempts:
+            time.sleep(
+                min(
+                    retry_delay_seconds,
+                    client.context.remaining_seconds(),
+                )
+            )
+    raise RunnerError(
+        f"{label} remained UNKNOWN_COMMIT after {max_attempts} attempts"
+    )
+
+
 class _AttachedRemoteWebDriver(webdriver.Remote):
     def __init__(
         self,
@@ -92,6 +123,12 @@ class _AttachedRemoteWebDriver(webdriver.Remote):
         del capabilities
         self.session_id = self._attached_session_id
         self.caps = {}
+
+    def get_log(self, log_type: str) -> list[dict[str, Any]]:
+        entries = self.execute(Command.GET_LOG, {"type": log_type}).get("value")
+        if not isinstance(entries, list):
+            raise ValueError("WebDriver getLog returned a non-list value")
+        return entries
 
     def detach(self) -> None:
         try:
@@ -120,10 +157,11 @@ class AttachedProductClient:
         self.namespace = namespace
         self._driver: _AttachedRemoteWebDriver | None = None
         self._network_capture_armed = False
+        self._network_capture: Mapping[str, Any] | None = None
 
     @property
     def actor(self) -> str:
-        value = self.client.get("actor")
+        value = self.client.get("actor_role")
         if not isinstance(value, str) or not value:
             raise RunnerError(
                 f"runtime manifest client {self.client_id!r} actor is missing"
@@ -139,12 +177,13 @@ class AttachedProductClient:
     def connect(self) -> "AttachedProductClient":
         if self._driver is not None:
             return self
-        port = int(self.client["webdriver_port"])
-        session_id = str(self.client["webdriver_session_id"])
+        attachment = self.client["automation_attachment_ref"]
+        command_executor = str(attachment["endpoint"])
+        session_id = str(attachment["session_id"])
         timeout = min(30.0, self.context.remaining_seconds())
         try:
             self._driver = _AttachedRemoteWebDriver(
-                command_executor=f"http://{LOOPBACK_HOST}:{port}",
+                command_executor=command_executor,
                 session_id=session_id,
             )
             if self._driver.session_id != session_id:
@@ -154,18 +193,22 @@ class AttachedProductClient:
                 )
             self._driver.set_script_timeout(timeout)
             self._driver.set_page_load_timeout(timeout)
-            if self.context.runtime == "browser":
+            runtime_kind = self.client["runtime_kind"]
+            if runtime_kind == "browser":
                 current = urlparse(self._driver.current_url)
                 if (
                     current.scheme not in {"http", "https"}
                     or current.hostname not in {LOOPBACK_HOST, "localhost"}
-                    or current.port != int(self.client["renderer_port"])
                 ):
                     raise RunnerError(
                         f"runtime client {self.client_id!r} is not attached "
                         "to its declared Browser renderer"
                     )
-            elif self.context.runtime == "desktop":
+            elif runtime_kind in {
+                "native-tauri",
+                "tauri-ios-simulator",
+                "tauri-android-emulator",
+            }:
                 state = self._driver.execute_script(
                     """
                     return {
@@ -251,7 +294,12 @@ class AttachedProductClient:
             raise RunnerError(
                 f"runtime client {self.client_id!r} returned an invalid snapshot"
             )
-        expected_webdriver_session_id = self.client.get("webdriver_session_id")
+        attachment = self.client.get("automation_attachment_ref")
+        expected_webdriver_session_id = (
+            attachment.get("session_id")
+            if isinstance(attachment, Mapping)
+            else None
+        )
         live_webdriver_session_id = getattr(self.driver, "session_id", None)
         if (
             not isinstance(expected_webdriver_session_id, str)
@@ -265,37 +313,15 @@ class AttachedProductClient:
                 f"runtime client {self.client_id!r} WebDriver session does not "
                 "match the runtime manifest"
             )
-        expected = self.context.require_runtime_manifest().client_harness_binding(
-            self.client_id
-        )
-        expected_platform = {
-            "desktop": "native",
-            "browser": "browser",
-        }.get(self.context.runtime)
-        if value.get("platform") != expected_platform:
-            raise RunnerError(
-                f"runtime client {self.client_id!r} live platform does not "
-                "match the runtime manifest"
+        try:
+            runtime_manifest.validate_harness_snapshot(
+                self.context.require_runtime_manifest(),
+                self.client_id,
+                value,
+                automation_session_id=live_webdriver_session_id,
             )
-        for field_name, expected_digest in expected.items():
-            observed = value.get(field_name)
-            if (
-                not isinstance(observed, str)
-                or not hmac.compare_digest(observed, expected_digest)
-            ):
-                raise RunnerError(
-                    f"runtime client {self.client_id!r} live {field_name} "
-                    "does not match the runtime manifest"
-                )
-        for field_name in (
-            "actorPtidSha256",
-            "nativeRuntimeIdentitySha256",
-        ):
-            if field_name not in expected and value.get(field_name) is not None:
-                raise RunnerError(
-                    f"runtime client {self.client_id!r} live {field_name} "
-                    "contradicts the runtime manifest"
-                )
+        except runtime_manifest.RuntimeManifestError as error:
+            raise RunnerError(str(error)) from error
         return value
 
     def reload_renderer(self) -> None:
@@ -323,9 +349,76 @@ class AttachedProductClient:
             if isinstance(error, RunnerError):
                 raise
             raise RunnerError(
-                "browser runtime does not expose performance network logs"
+                f"browser runtime does not expose performance network logs: {type(error).__name__}: {error}"
             ) from error
         self._network_capture_armed = True
+        self._network_capture = None
+
+    def begin_network_capture(self, action_id: str) -> Mapping[str, Any]:
+        if not self._network_capture_armed:
+            raise RunnerError(
+                "browser network capture was not enabled before observer admission"
+            )
+        if (
+            not isinstance(action_id, str)
+            or not action_id
+            or action_id != action_id.strip()
+        ):
+            raise RunnerError("browser network capture action ID is invalid")
+        if self._network_capture is not None:
+            raise RunnerError("browser network capture is already active")
+        manifest = self.context.require_runtime_manifest()
+        result = self._raw_call(
+            "beginNetworkCapture",
+            {
+                "actionId": action_id,
+                "runtimeManifestDigest": manifest.sha256,
+            },
+        )
+        if (
+            not isinstance(result, Mapping)
+            or set(result) != {
+                "schemaVersion",
+                "captureId",
+                "actionId",
+                "initialObserverSequence",
+                "runtimeManifestDigest",
+            }
+            or result.get("schemaVersion") != 1
+            or not _is_sha256(result.get("captureId"))
+            or result.get("actionId") != action_id
+            or result.get("runtimeManifestDigest") != manifest.sha256
+            or not isinstance(result.get("initialObserverSequence"), int)
+            or isinstance(result.get("initialObserverSequence"), bool)
+            or int(result["initialObserverSequence"]) < 0
+        ):
+            raise RunnerError(
+                "browser runtime did not acknowledge the exact network capture"
+            )
+        self._network_capture = dict(result)
+        return dict(result)
+
+    def emit_terminal_marker(self, action_id: str) -> Mapping[str, Any]:
+        capture = self._network_capture
+        if not self._network_capture_armed or capture is None:
+            raise RunnerError(
+                "browser network capture was not admitted before the terminal marker"
+            )
+        if action_id != capture.get("actionId"):
+            raise RunnerError("browser terminal marker action ID is invalid")
+        self.snapshot()
+        result = self._raw_call(
+            "emitTerminalMarker",
+            {
+                "captureId": capture["captureId"],
+                "actionId": action_id,
+            },
+        )
+        marker = _validated_terminal_marker(
+            result,
+            capture=capture,
+        )
+        return marker
 
     def network_observation(
         self,
@@ -333,6 +426,7 @@ class AttachedProductClient:
         private_plaintext: str,
         private_resource_id: str = "",
         require_response_body: bool = False,
+        terminal_marker: Mapping[str, Any] | None = None,
     ) -> NetworkObservation:
         if self.context.runtime != "browser":
             raise RunnerError("network observation requires a browser runtime")
@@ -340,18 +434,26 @@ class AttachedProductClient:
             raise RunnerError(
                 "browser network capture was not enabled before observation"
             )
-        if hasattr(self, "client"):
-            self.snapshot()
+        if terminal_marker is None:
+            raise RunnerError(
+                "browser network capture is insufficient: "
+                "stream-terminal-barrier-unavailable"
+            )
+        marker = _validated_terminal_marker(
+            terminal_marker,
+            capture=getattr(self, "_network_capture", None),
+        )
         try:
-            raw_entries = self._collect_network_entries()
+            raw_entries = self._collect_network_entries(marker)
         except RunnerError:
             raise
         except Exception as error:
             raise RunnerError(
-                "browser runtime does not expose performance network logs"
+                f"browser runtime does not expose performance network logs: {type(error).__name__}: {error}"
             ) from error
         finally:
             self._network_capture_armed = False
+            self._network_capture = None
 
         request_urls: list[str] = []
         observed_response_count = 0
@@ -600,9 +702,6 @@ class AttachedProductClient:
             and response_headers_count < observed_response_count
         ):
             capture_gaps.add("response-header-coverage-incomplete")
-        # CDP performance logs do not expose a deterministic barrier proving
-        # that an already-open WebSocket or EventSource cannot emit later.
-        capture_gaps.add("stream-terminal-barrier-unavailable")
         if require_response_body:
             if not request_urls:
                 capture_gaps.add("request-control-missing")
@@ -642,15 +741,19 @@ class AttachedProductClient:
             )
         return observation
 
-    def _collect_network_entries(self) -> list[Any]:
+    def _collect_network_entries(
+        self,
+        terminal_marker: Mapping[str, Any],
+    ) -> list[Any]:
         timeout = min(
             NETWORK_CAPTURE_TIMEOUT_SECONDS,
             self.context.remaining_seconds(),
         )
         deadline = time.monotonic() + timeout
-        quiet_since: float | None = None
         pending_http_requests: set[str] = set()
+        long_lived_request_ids: set[str] = set()
         collected: list[Any] = []
+        terminal_marker_seen = False
 
         while True:
             batch = self.driver.get_log("performance")
@@ -658,15 +761,39 @@ class AttachedProductClient:
                 raise RunnerError(
                     "browser runtime returned invalid performance network logs"
                 )
-            now = time.monotonic()
-            network_activity = False
             for entry in batch:
-                collected.append(entry)
                 event = _network_event(entry)
+                if not terminal_marker_seen and _is_terminal_marker(
+                    entry,
+                    terminal_marker,
+                ):
+                    terminal_marker_seen = True
+                    if not pending_http_requests - long_lived_request_ids:
+                        return collected
+                    continue
                 if event is None:
+                    if not terminal_marker_seen:
+                        collected.append(entry)
                     continue
                 method, params = event
-                network_activity = True
+                request_id = params.get("requestId")
+                if terminal_marker_seen:
+                    if (
+                        isinstance(request_id, str)
+                        and request_id in pending_http_requests
+                    ):
+                        collected.append(entry)
+                        if method in {
+                            "Network.loadingFinished",
+                            "Network.loadingFailed",
+                        }:
+                            pending_http_requests.discard(request_id)
+                        elif method == "Network.eventSourceMessageReceived":
+                            long_lived_request_ids.add(request_id)
+                    if not pending_http_requests - long_lived_request_ids:
+                        return collected
+                    continue
+                collected.append(entry)
                 if method == "Network.requestWillBeSent":
                     request = params.get("request")
                     url = request.get("url") if isinstance(request, Mapping) else None
@@ -688,24 +815,22 @@ class AttachedProductClient:
                     request_id = params.get("requestId")
                     if isinstance(request_id, str) and request_id:
                         pending_http_requests.discard(request_id)
+                elif method == "Network.eventSourceMessageReceived":
+                    request_id = params.get("requestId")
+                    if isinstance(request_id, str) and request_id:
+                        long_lived_request_ids.add(request_id)
 
-            if network_activity:
-                quiet_since = None
-            if not pending_http_requests:
-                if quiet_since is None:
-                    quiet_since = now
-                elif now - quiet_since >= NETWORK_CAPTURE_QUIET_SECONDS:
-                    return collected
-
+            now = time.monotonic()
             if now >= deadline:
-                if pending_http_requests:
+                pending = pending_http_requests - long_lived_request_ids
+                if pending:
                     raise RunnerError(
                         "browser network capture timed out with "
-                        f"{len(pending_http_requests)} pending HTTP request(s)"
+                        f"{len(pending)} pending HTTP request(s)"
                     )
                 raise RunnerError(
-                    "browser network capture timed out before the bounded "
-                    "quiet interval"
+                    "browser network capture timed out before the "
+                    "same-event-loop terminal marker"
                 )
             time.sleep(
                 min(
@@ -723,89 +848,49 @@ class AttachedProductClient:
 
 def write_attached_runtime_manifest(
     *,
-    source_manifest_path: Path,
+    manifest_payload: Mapping[str, Any],
     output_path: Path,
     journey_id: str,
     sessions_by_client: Mapping[str, Any],
-    actor_manifest_path: Path,
+    automation_refs_by_client: Mapping[str, Mapping[str, Any]],
     repo_root: Path,
     namespace: str = "moments",
     timeout: float = 30.0,
 ) -> Path:
-    source_path = _external_manifest_path(
-        source_manifest_path,
-        repo_root=repo_root,
-        must_exist=True,
-        label="source runtime manifest",
-    )
     target_path = _external_manifest_path(
         output_path,
         repo_root=repo_root,
         must_exist=False,
-        label="attached runtime manifest",
-    )
-    if source_path == target_path:
-        raise RunnerError("attached runtime manifest must use a new path")
-    actor_path = _external_manifest_path(
-        actor_manifest_path,
-        repo_root=repo_root,
-        must_exist=True,
-        label="actor manifest",
+        label="runtime manifest",
     )
     if not journey_id or journey_id != journey_id.strip():
-        raise RunnerError("attached runtime manifest journey ID is invalid")
+        raise RunnerError("runtime manifest journey ID is invalid")
     if namespace != "moments":
-        raise RunnerError("attached runtime manifest namespace must be moments")
+        raise RunnerError("runtime manifest namespace must be moments")
     if timeout <= 0:
-        raise RunnerError("attached runtime manifest timeout must be positive")
-
-    try:
-        source_bytes = source_path.read_bytes()
-    except OSError as error:
-        raise RunnerError(f"cannot read source runtime manifest: {error}") from error
-    try:
-        source_payload = load_runtime_manifest(source_path, journey_id)
-    except Exception as error:
-        raise RunnerError(f"source runtime manifest is invalid: {error}") from error
-    if source_payload.get("developmentAttachment") is not None:
-        raise RunnerError("source runtime manifest is already post-launch attached")
-    try:
-        actor_bytes = actor_path.read_bytes()
-        actor_payload = load_json_artifact(actor_path, "acceptance-actor-manifest")
-    except Exception as error:
-        raise RunnerError(f"actor manifest is invalid: {error}") from error
-    actor_ref = source_payload.get("actorManifest")
-    actor_sha256 = hashlib.sha256(actor_bytes).hexdigest()
-    validate_actor_manifest_reference(
-        actor_ref,
-        source_manifest_path=source_path,
-        actor_manifest_path=actor_path,
-        workspace_id=workspace_id(repo_root),
-        gate_id=journey_id,
-        run_id=str(source_payload.get("runId") or ""),
-        sha256=actor_sha256,
-    )
-    if (
-        actor_payload.get("runId") != source_payload.get("runId")
-        or actor_payload.get("environmentId") != source_payload.get("environmentId")
-    ):
-        raise RunnerError("actor manifest does not match the source runtime manifest")
-    actor_ptids_by_role = canonical_actor_ptids(actor_payload)
-
-    clients = source_payload.get("clients")
+        raise RunnerError("runtime manifest timeout must be positive")
+    if "manifest_digest" in manifest_payload:
+        raise RunnerError(
+            "runtime owner must provide an unpublished manifest payload"
+        )
+    payload = json.loads(json.dumps(manifest_payload))
+    if payload.get("journey_id") != journey_id:
+        raise RunnerError("runtime manifest journey_id is invalid")
+    clients = payload.get("clients")
     if not isinstance(clients, list) or any(
         not isinstance(client, dict) for client in clients
     ):
-        raise RunnerError("source runtime manifest clients are invalid")
+        raise RunnerError("runtime manifest clients are invalid")
     client_ids = tuple(str(client.get("id") or "") for client in clients)
     if (
         not client_ids
         or any(not client_id for client_id in client_ids)
         or len(set(client_ids)) != len(client_ids)
         or set(sessions_by_client) != set(client_ids)
+        or set(automation_refs_by_client) != set(client_ids)
     ):
         raise RunnerError(
-            "attached runtime sessions must exactly match manifest clients"
+            "runtime sessions and attachment refs must exactly match manifest clients"
         )
 
     attached_clients: list[dict[str, Any]] = []
@@ -814,6 +899,7 @@ def write_attached_runtime_manifest(
         client_id = str(client["id"])
         session = sessions_by_client[client_id]
         driver = _raw_webdriver(session)
+        attachment = dict(automation_refs_by_client[client_id])
         session_id = getattr(driver, "session_id", None)
         if (
             not isinstance(session_id, str)
@@ -824,6 +910,11 @@ def write_attached_runtime_manifest(
             raise RunnerError(
                 f"runtime owner supplied an invalid or duplicate WebDriver "
                 f"session for {client_id!r}"
+            )
+        if attachment.get("session_id") != session_id:
+            raise RunnerError(
+                f"runtime client {client_id!r} attachment does not bind "
+                "the owner session"
             )
         if not harness_ready(driver, namespace, timeout=timeout):
             raise RunnerError(
@@ -849,63 +940,89 @@ def write_attached_runtime_manifest(
         expected_platform = {
             "native-tauri": "native",
             "browser": "browser",
-        }.get(client.get("runtime"))
+            "tauri-ios-simulator": "mobile",
+            "tauri-android-emulator": "mobile",
+        }.get(client.get("runtime_kind"))
         if snapshot.get("platform") != expected_platform:
             raise RunnerError(
                 f"runtime client {client_id!r} live platform does not match "
                 "the source runtime manifest"
             )
-        try:
-            _, station = require_runtime_client_service(
-                source_payload,
-                client_id,
-                "station",
-            )
-        except ProvisioningError as error:
-            raise RunnerError(
-                f"runtime client {client_id!r} Station binding is invalid: "
-                f"{error}"
-            ) from error
-        harness_identity = validated_harness_identity(
-            client_id,
-            client,
-            snapshot,
-            actor_ptids_by_role=actor_ptids_by_role,
-            source_commit=source_payload.get("source", {}).get("commit"),
-            station=station,
-        )
         attached_client = dict(client)
-        attached_client["webdriver_session_id"] = session_id
-        attached_client["harness_identity"] = harness_identity
+        attached_client["automation_attachment_ref"] = attachment
+        source = payload.get("source")
+        services = payload.get("services")
+        bindings = client.get("service_bindings")
+        station_binding = (
+            bindings.get("station")
+            if isinstance(bindings, Mapping)
+            else None
+        )
+        station = (
+            services.get(station_binding.get("service_id"))
+            if isinstance(services, Mapping)
+            and isinstance(station_binding, Mapping)
+            else None
+        )
+        if not isinstance(source, Mapping) or not isinstance(station, Mapping):
+            raise RunnerError(
+                f"runtime client {client_id!r} Station identity is invalid"
+            )
+        try:
+            attached_client["harness_identity_digest"] = (
+                runtime_manifest.harness_identity_digest(
+                    snapshot,
+                    client=attached_client,
+                    source_commit=str(source.get("commit") or ""),
+                    station=station,
+                    automation_session_id=session_id,
+                )
+            )
+        except runtime_manifest.RuntimeManifestError as error:
+            raise RunnerError(str(error)) from error
         attached_clients.append(attached_client)
         session_ids.add(session_id)
 
-    try:
-        if source_path.read_bytes() != source_bytes:
-            raise RunnerError(
-                "source runtime manifest changed during attachment capture"
-            )
-        if actor_path.read_bytes() != actor_bytes:
-            raise RunnerError("actor manifest changed during attachment capture")
-    except OSError as error:
-        raise RunnerError(
-            "source or actor manifest became unreadable during attachment capture"
-        ) from error
-
-    source_digest = hashlib.sha256(source_bytes).hexdigest()
-    attached_payload = json.loads(json.dumps(source_payload))
-    attached_payload["clients"] = attached_clients
-    attached_payload["developmentAttachment"] = {
-        "kind": RUNTIME_ATTACHMENT_KIND,
-        "sourceManifestRunId": source_payload["runId"],
-        "sourceManifestPath": str(source_path),
-        "sourceManifestSha256": source_digest,
-        "actorManifestPath": str(actor_path),
-        "actorManifestSha256": actor_sha256,
-        "capturedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-        "namespace": namespace,
+    payload["clients"] = attached_clients
+    finalized = runtime_manifest.with_manifest_digest(payload)
+    source = finalized.get("source")
+    services = finalized.get("services")
+    if not isinstance(source, Mapping) or not isinstance(services, Mapping):
+        raise RunnerError("runtime manifest source or services are invalid")
+    identity = {
+        "workspaceId": source.get("workspace_id"),
+        "head": source.get("commit"),
+        "worktreeSetDigest": source.get("worktree_set_digest"),
     }
-    _write_private_immutable_json(target_path, attached_payload)
+    profiles = tuple(
+        sorted(
+            {
+                str(service.get("profile_id"))
+                for service in services.values()
+                if isinstance(service, Mapping)
+            }
+        )
+    )
+    encoded = (
+        json.dumps(finalized, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
+    )
+    try:
+        runtime_manifest.validate_runtime_manifest(
+            finalized,
+            path=target_path,
+            raw_bytes=encoded,
+            journey_id=journey_id,
+            repo_root=repo_root,
+            workspace_identity=identity,
+            profile_selectors=profiles,
+            client_selectors=client_ids,
+            runtime=None,
+        )
+    except runtime_manifest.RuntimeManifestError as error:
+        raise RunnerError(str(error)) from error
+    _write_private_immutable_json(target_path, finalized)
     return target_path
 
 
@@ -1008,6 +1125,104 @@ def _network_event(
     ):
         return None
     return method, params
+
+
+def _validated_terminal_marker(
+    value: object,
+    *,
+    capture: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != TERMINAL_MARKER_FIELDS:
+        raise RunnerError("browser terminal marker schema is invalid")
+    if (
+        value.get("schemaVersion") != 1
+        or not _is_sha256(value.get("captureId"))
+        or not isinstance(value.get("actionId"), str)
+        or not value["actionId"]
+        or value["actionId"] != value["actionId"].strip()
+        or not _is_sha256(value.get("runtimeManifestDigest"))
+        or not isinstance(value.get("finalObserverSequence"), int)
+        or isinstance(value.get("finalObserverSequence"), bool)
+        or int(value["finalObserverSequence"]) < 0
+        or not _is_sha256(value.get("captureIntervalDigest"))
+        or not _is_sha256(value.get("markerDigest"))
+    ):
+        raise RunnerError("browser terminal marker identity is invalid")
+    open_streams = value.get("openStreamIdentityDigests")
+    if (
+        not isinstance(open_streams, list)
+        or any(not _is_sha256(item) for item in open_streams)
+        or open_streams != sorted(set(open_streams))
+    ):
+        raise RunnerError("browser terminal marker open-stream set is invalid")
+    if capture is not None and (
+        value["captureId"] != capture.get("captureId")
+        or value["actionId"] != capture.get("actionId")
+        or value["runtimeManifestDigest"]
+        != capture.get("runtimeManifestDigest")
+        or int(value["finalObserverSequence"])
+        < int(capture.get("initialObserverSequence", -1))
+    ):
+        raise RunnerError("browser terminal marker capture identity is invalid")
+    marker = dict(value)
+    marker_digest = marker.pop("markerDigest")
+    if not hmac.compare_digest(
+        str(marker_digest),
+        hashlib.sha256(
+            json.dumps(
+                marker,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+    ):
+        raise RunnerError("browser terminal marker digest is invalid")
+    return dict(value)
+
+
+def _is_terminal_marker(
+    entry: object,
+    expected_marker: Mapping[str, Any],
+) -> bool:
+    event = _network_event(entry)
+    if event is None:
+        return False
+    method, params = event
+    if method != "Network.requestWillBeSent":
+        return False
+    request = params.get("request")
+    if not isinstance(request, Mapping) or request.get("method") != "GET":
+        return False
+    url = request.get("url")
+    if not isinstance(url, str):
+        return False
+    parsed = urlparse(url)
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or parsed.hostname not in {LOOPBACK_HOST, "localhost"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith(TERMINAL_MARKER_PATH_PREFIX)
+    ):
+        return False
+    encoded = parsed.path.removeprefix(TERMINAL_MARKER_PATH_PREFIX)
+    if re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None:
+        return False
+    try:
+        padding = "=" * (-len(encoded) % 4)
+        decoded = base64.urlsafe_b64decode(encoded + padding)
+        canonical = base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=")
+        persisted = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    expected = dict(expected_marker)
+    expected.pop("markerDigest")
+    return canonical == encoded and persisted == expected
+
+
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 def _contains_secret_representation(

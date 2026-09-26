@@ -180,6 +180,14 @@ pub struct MessagingAccountScope {
     pub device_id: String,
 }
 
+pub(crate) struct SecureContentRuntimeIdentity {
+    pub scope: MessagingAccountScope,
+    pub access_token: Zeroizing<String>,
+    pub signing_key_id: String,
+    pub profile_version: u64,
+    pub device_signing_key: DeviceSigningKey,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingSubmitMessageOutcome {
     pub command_id: Option<String>,
@@ -1042,9 +1050,11 @@ impl MobileMessagingEngine {
             authority_sequence,
             authority_hash,
         )?;
-        let identity = self.mls_manager.actor_identity();
+        let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&device_signing_key.seed_bytes());
         submit_core_leave_intent(
-            identity.as_ref(),
+            &enrollment.certificate.signing_key_id,
+            &signing_key,
             &self.proto_endpoint(),
             &input,
             now_unix_ms(),
@@ -2022,6 +2032,8 @@ impl MobileMessagingEngine {
             &token,
             &plan,
             &command_id,
+            None,
+            &command_id,
             message_id,
             plaintext.trim(),
             created_at_unix_ms,
@@ -2054,6 +2066,8 @@ impl MobileMessagingEngine {
         let command_id = Ulid::new().to_string();
         self.prepare_metadata_with_plan(
             &plan,
+            &command_id,
+            None,
             &command_id,
             message_id,
             interaction,
@@ -2142,6 +2156,8 @@ impl MobileMessagingEngine {
                     self.prepare_edit_with_plan(
                         &token,
                         &plan,
+                        &intent.command_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         edited_text,
@@ -2154,6 +2170,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.command_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Retract,
@@ -2169,6 +2187,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.command_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Reaction {
@@ -2185,6 +2205,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.command_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Pin { remove: pin.remove },
@@ -2207,6 +2229,8 @@ impl MobileMessagingEngine {
         &self,
         access_token: &str,
         plan: &PrepareConversationCommandResponse,
+        logical_intent_id: &str,
+        replaces_command_id: Option<&str>,
         command_id: &str,
         message_id: &str,
         plaintext: &str,
@@ -2235,6 +2259,8 @@ impl MobileMessagingEngine {
                 DirectOutboundPreparer::new(self.store.clone(), endpoint)?.prepare_edit(
                     plan,
                     &DirectEditIntent {
+                        logical_intent_id,
+                        replaces_command_id,
                         command_id,
                         message_id,
                         conversation_id: &plan.conversation_id,
@@ -2249,6 +2275,8 @@ impl MobileMessagingEngine {
                     .prepare_edit(
                     plan,
                     &GroupEditTextIntent {
+                        logical_intent_id,
+                        replaces_command_id,
                         command_id,
                         message_id,
                         conversation_id: &plan.conversation_id,
@@ -2267,6 +2295,8 @@ impl MobileMessagingEngine {
     fn prepare_metadata_with_plan(
         &self,
         plan: &PrepareConversationCommandResponse,
+        logical_intent_id: &str,
+        replaces_command_id: Option<&str>,
         command_id: &str,
         message_id: &str,
         interaction: MetadataInteraction<'_>,
@@ -2274,6 +2304,8 @@ impl MobileMessagingEngine {
     ) -> Result<(), String> {
         MetadataInteractionPreparer::new(self.store.clone(), self.proto_endpoint())?.prepare(
             plan,
+            logical_intent_id,
+            replaces_command_id,
             command_id,
             message_id,
             interaction,
@@ -2345,6 +2377,34 @@ impl MobileMessagingEngine {
 
     pub(crate) fn store(&self) -> &MobileMessagingStore {
         self.store.as_ref()
+    }
+
+    pub(crate) fn secure_content_runtime_identity(
+        &self,
+    ) -> Result<SecureContentRuntimeIdentity, String> {
+        let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
+        let certificate = enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile secure content device identity has no endpoint".to_string())?;
+        if actor_device_ptid(device)? != self.scope.actor_ptid
+            || device.device_id != self.scope.device_id
+            || device_signing_key.device_id() != self.scope.device_id
+            || certificate.signing_key_id.trim().is_empty()
+            || certificate.observed_profile_version == 0
+        {
+            return Err(
+                "mobile secure content signer does not match the active account".to_string(),
+            );
+        }
+        Ok(SecureContentRuntimeIdentity {
+            scope: self.scope.clone(),
+            access_token: Zeroizing::new(self.access_token()?),
+            signing_key_id: certificate.signing_key_id,
+            profile_version: certificate.observed_profile_version,
+            device_signing_key,
+        })
     }
 
     pub fn refresh_access_token(&self, access_token: String) -> Result<(), String> {
@@ -3117,6 +3177,8 @@ fn prepare_local_attachment_upload(
         mime_type: stage.mime_type.clone(),
         plaintext_sha256: blobs.sha256(source_local_ref)?.to_vec(),
         voice_note: stage.voice_note.clone(),
+        content_kind: 0,
+        duration_ms: 0,
     })
 }
 
@@ -4237,6 +4299,8 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:bob".to_string(),
             members: vec![
                 messaging_core::contracts::ConversationAuthorityMemberProjection {
@@ -4306,6 +4370,8 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 messaging_core::contracts::ConversationAuthorityMemberProjection {

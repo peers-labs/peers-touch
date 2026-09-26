@@ -43,6 +43,7 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 	}
 	fixture.clock.now = fixture.clock.now.Add(time.Minute)
 	fixture.audiences.snapshot = socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   2,
 		SourceHeadSHA256: privateDigest("changed-friends"),
 		RecipientPTIDs:   []string{"ptid:bob", "ptid:eve"},
@@ -121,6 +122,13 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 		bobRead.GetResource().GetPrivateContent().GetViewerEnvelope().
 			GetEndpoint().GetActor().GetPtid() != "ptid:bob" {
 		t.Fatalf("Bob private read projection = %+v", bobRead)
+	}
+	if !proto.Equal(
+		bobRead.GetResource().GetMetadata().GetAuthor(),
+		bobRead.GetResource().GetPrivateContent().GetVerification().
+			GetCommitProof().GetAuthor().GetActor(),
+	) {
+		t.Fatal("Bob private read metadata does not preserve the proven author identity")
 	}
 	attestation := bobRead.GetResource().GetPrivateContent().GetVerification().
 		GetStationSigningKeyAttestation()
@@ -249,6 +257,106 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 	) {
 		t.Fatalf("removed FRIENDS read error = %v", err)
 	}
+}
+
+func TestPrivateContentServicePrepareSubmitSelfWithoutRecipientRows(t *testing.T) {
+	fixture := newPrivateContentServiceFixture(t)
+	ctx := context.Background()
+	prepare := privateMomentPrepareRequest(
+		"prepare-self",
+		"content-self",
+	)
+	prepare.Audience = &actormodel.Audience{
+		Kind: actormodel.Audience_SELF,
+	}
+	prepared, err := fixture.service.PreparePrivateMoment(
+		ctx,
+		fixture.author,
+		prepare,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.GetPlan().GetRequiredSlots()) != 2 {
+		t.Fatalf(
+			"SELF required slots = %d, want author endpoint and recovery slots",
+			len(prepared.GetPlan().GetRequiredSlots()),
+		)
+	}
+
+	submit := privateTextSubmitRequest(
+		t,
+		prepared.GetPlan(),
+		fixture.author.Endpoint,
+		fixture.authorPrivateKey,
+		"submit-self",
+		"self-ciphertext",
+	)
+	created, err := fixture.service.SubmitPrivateMoment(
+		ctx,
+		fixture.author.Endpoint,
+		submit,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetPost().GetMetadata().GetAudienceKind() !=
+		actormodel.Audience_SELF ||
+		created.GetPost().GetPrivateContent().GetViewerEnvelope().
+			GetEndpoint().GetActor().GetPtid() != "ptid:alice" {
+		t.Fatalf("unexpected SELF submit response: %+v", created)
+	}
+
+	read, err := fixture.service.GetPrivateMoment(
+		ctx,
+		fixture.author.Endpoint,
+		prepared.GetPlan().GetResource().GetContentId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.GetResource().GetMetadata().GetAudienceKind() !=
+		actormodel.Audience_SELF ||
+		read.GetResource().GetPrivateContent().GetViewerEnvelope().
+			GetEndpoint().GetActor().GetPtid() != "ptid:alice" {
+		t.Fatalf("unexpected SELF author read: %+v", read)
+	}
+	_, err = fixture.service.GetPrivateMoment(
+		ctx,
+		&actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		prepared.GetPlan().GetResource().GetContentId(),
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentNotFound,
+	) {
+		t.Fatalf("SELF non-author read error = %v", err)
+	}
+
+	assertPrivateContentCount(
+		t,
+		fixture.database,
+		&dbmodel.SocialPrivateRecipientGrant{},
+		0,
+	)
+	assertPrivateContentCount(
+		t,
+		fixture.database,
+		&dbmodel.SocialPrivateDeliveryIntent{},
+		0,
+	)
+	assertPrivateContentCount(
+		t,
+		fixture.database,
+		&dbmodel.SocialPrivateContentEnvelope{},
+		2,
+	)
 }
 
 func TestPrivateContentServiceReplayReverifiesStoredCommitProof(t *testing.T) {
@@ -385,6 +493,7 @@ func TestPrivateContentServiceRejectsStaleFriendsAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.audiences.snapshot = socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   2,
 		SourceHeadSHA256: privateDigest("friends-advanced"),
 		RecipientPTIDs:   []string{"ptid:bob"},
@@ -541,6 +650,13 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	audienceBytes, err := socialdomain.CanonicalProtoBytes(request.GetAudience())
+	if err != nil {
+		t.Fatal(err)
+	}
+	audienceHash := sha256.Sum256(audienceBytes)
+	emptyGroupSnapshotHash := sha256.Sum256(nil)
+	emptySubtypeHash := sha256.Sum256(nil)
 	if _, err := fixture.store.ClaimPreparing(
 		ctx,
 		dbmodel.SocialPrivateContentPlan{
@@ -565,6 +681,12 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 			ExpiresAt: fixture.clock.now.Add(
 				socialdomain.PrivateContentPlanLifetime,
 			),
+		},
+		infrastructure.PrivatePrepareBinding{
+			AudienceBytes:                 audienceBytes,
+			AudienceSHA256:                audienceHash[:],
+			GroupRecipientSnapshotSHA256:  emptyGroupSnapshotHash[:],
+			SubtypePrepareAuthoritySHA256: emptySubtypeHash[:],
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -595,6 +717,24 @@ func TestPrivateContentServicePrepareSubmitComment(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	ctx := context.Background()
 	parentID := privateTestContentID("parent-post")
+	if err := fixture.database.Create(
+		&dbmodel.SocialPrivateContentPost{
+			PostID:                    parentID,
+			ContentID:                 parentID,
+			AuthorPTID:                fixture.author.Endpoint.GetActor().GetPtid(),
+			Generation:                1,
+			AudienceSnapshotID:        "parent-snapshot",
+			Kind:                      privateContentPostKindText,
+			EncryptedPayloadBytes:     []byte("parent"),
+			EncryptedPayloadSHA256:    privateDigest("parent"),
+			ObjectDescriptorSetSHA256: privateDigest("parent-objects"),
+			LifecycleState:            privateContentActiveState,
+			CreatedAt:                 fixture.clock.now,
+			UpdatedAt:                 fixture.clock.now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
 	prepared, err := fixture.service.PreparePrivateComment(
 		ctx,
 		fixture.author,
@@ -640,6 +780,17 @@ func TestPrivateContentServicePrepareSubmitComment(t *testing.T) {
 		&dbmodel.SocialPrivateContentComment{},
 		1,
 	)
+	var parent dbmodel.SocialPrivateContentPost
+	if err := fixture.database.First(
+		&parent,
+		"post_id = ?",
+		parentID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if parent.CommentsCount != 1 {
+		t.Fatalf("private parent CommentsCount = %d, want 1", parent.CommentsCount)
+	}
 }
 
 func TestPrivateContentServiceReadRejectsPersistedTampering(t *testing.T) {
@@ -936,6 +1087,636 @@ func TestPrivateContentServiceGetPrivateMomentDistinguishesEndpointFailure(
 	}
 }
 
+func TestPrivateContentServiceRejectsRepostSourceBeforePreKeyClaim(t *testing.T) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.repostPrepareErr =
+		socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnauthorized,
+			"test.repost_source",
+			"target.recipients",
+			"must be a subset of the source grant",
+		)
+	request := privateMomentPrepareRequest(
+		"prepare-repost-source",
+		"content-repost-source",
+	)
+	request.Kind = privatecontentpb.
+		PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST
+	request.RepostAuthority = &privatecontentpb.PrivateRepostAuthority{
+		Source: &privatecontentpb.SocialPostSourceRef{
+			PostId: "source-post",
+		},
+		SourceAuthor: &actormodel.ActorRef{
+			Ptid: "ptid:source",
+			Acct: "source@station.test",
+			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+		},
+		RenderedSourceCommitment: bytes.Repeat(
+			[]byte{0x33},
+			sha256.Size,
+		),
+		SourceProof: &privatecontentpb.PrivateRepostAuthority_PublicSource{
+			PublicSource: &privatecontentpb.PublicRepostSourceProof{
+				CanonicalPublicPostSha256: bytes.Repeat(
+					[]byte{0x44},
+					sha256.Size,
+				),
+			},
+		},
+	}
+
+	_, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		request,
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentUnauthorized,
+	) {
+		t.Fatalf("repost source rejection error = %v", err)
+	}
+	if fixture.audiences.repostPrepareCalls != 1 {
+		t.Fatalf(
+			"repost source prepare calls = %d",
+			fixture.audiences.repostPrepareCalls,
+		)
+	}
+	if fixture.keyExchange.claimCalls != 0 {
+		t.Fatalf(
+			"repost source rejection claimed PreKeys %d times",
+			fixture.keyExchange.claimCalls,
+		)
+	}
+	assertPrivateContentCount(
+		t,
+		fixture.database,
+		&dbmodel.SocialPrivateContentPlan{},
+		0,
+	)
+}
+
+func TestPrivateContentServiceMentionRoutingPersistsAndRejectsGrantWidening(
+	t *testing.T,
+) {
+	t.Run("persists exact signed routing for receiver verification", func(t *testing.T) {
+		fixture := newPrivateContentServiceFixture(t)
+		prepared, err := fixture.service.PreparePrivateMoment(
+			context.Background(),
+			fixture.author,
+			privateMomentPrepareRequest("prepare-mention", "content-mention"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		submit := privateTextSubmitRequest(
+			t,
+			prepared.GetPlan(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			"submit-mention",
+			"mention ciphertext",
+		)
+		routing := privateMentionRouting(
+			t,
+			submit.GetPlan(),
+			submit.GetPayload(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			&actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Acct: "bob@station.test",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+		)
+		submit.MentionRouting = routing
+
+		created, err := fixture.service.SubmitPrivateMoment(
+			context.Background(),
+			fixture.author.Endpoint,
+			submit,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(
+			created.GetPost().GetPrivateContent().GetVerification().
+				GetMentionRouting(),
+			routing,
+		) {
+			t.Fatal("submit response changed the signed mention routing")
+		}
+
+		read, err := fixture.service.GetPrivateMoment(
+			context.Background(),
+			&actormodel.ActorDeviceRef{
+				Actor: &actormodel.ActorRef{
+					Ptid: "ptid:bob",
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: "bob-device",
+			},
+			prepared.GetPlan().GetResource().GetContentId(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(
+			read.GetResource().GetPrivateContent().GetVerification().
+				GetMentionRouting(),
+			routing,
+		) {
+			t.Fatal("point read changed the signed mention routing")
+		}
+
+		var row dbmodel.SocialPrivateContentPost
+		if err := fixture.database.Where(
+			"post_id = ?",
+			prepared.GetPlan().GetResource().GetContentId(),
+		).First(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		routingBytes, err := socialdomain.CanonicalProtoBytes(routing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		routingHash := sha256.Sum256(routingBytes)
+		if !bytes.Equal(row.MentionRoutingBytes, routingBytes) ||
+			!bytes.Equal(row.MentionRoutingSHA256, routingHash[:]) {
+			t.Fatal("persisted mention routing does not match the submit bundle")
+		}
+	})
+
+	t.Run("rejects a mentioned actor outside the frozen grant", func(t *testing.T) {
+		fixture := newPrivateContentServiceFixture(t)
+		prepared, err := fixture.service.PreparePrivateMoment(
+			context.Background(),
+			fixture.author,
+			privateMomentPrepareRequest(
+				"prepare-mention-widened",
+				"content-mention-widened",
+			),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		submit := privateTextSubmitRequest(
+			t,
+			prepared.GetPlan(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			"submit-mention-widened",
+			"mention widened ciphertext",
+		)
+		submit.MentionRouting = privateMentionRouting(
+			t,
+			submit.GetPlan(),
+			submit.GetPayload(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			&actormodel.ActorRef{
+				Ptid: "ptid:eve",
+				Acct: "eve@station.test",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+		)
+
+		_, err = fixture.service.SubmitPrivateMoment(
+			context.Background(),
+			fixture.author.Endpoint,
+			submit,
+		)
+		if !socialdomain.IsPrivateContentCode(
+			err,
+			socialdomain.PrivateContentUnauthorized,
+		) {
+			t.Fatalf("grant-widening mention error = %v", err)
+		}
+		assertPrivateContentCount(
+			t,
+			fixture.database,
+			&dbmodel.SocialPrivateContentPost{},
+			0,
+		)
+	})
+
+	t.Run("persists exact signed routing for private Comments", func(t *testing.T) {
+		fixture := newPrivateContentServiceFixture(t)
+		postID := publishPrivateCommentParent(t, fixture, "mention-routing")
+		prepared, err := fixture.service.PreparePrivateComment(
+			context.Background(),
+			fixture.author,
+			&privatecontentpb.PreparePrivateCommentRequest{
+				PostId:           postID,
+				CommentContentId: privateTestContentID("comment-mention-routing"),
+				CommandId:        "prepare-comment-mention-routing",
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		momentSubmit := privateTextSubmitRequest(
+			t,
+			prepared.GetPlan(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			"submit-comment-mention-routing",
+			"private Comment mention ciphertext",
+		)
+		submit := &privatecontentpb.SubmitPrivateCommentRequest{
+			Plan:      momentSubmit.GetPlan(),
+			Payload:   momentSubmit.GetPayload(),
+			Envelopes: momentSubmit.GetEnvelopes(),
+			Objects:   momentSubmit.GetObjects(),
+			CommandId: momentSubmit.GetCommandId(),
+			PostId:    postID,
+		}
+		routing := privateMentionRouting(
+			t,
+			submit.GetPlan(),
+			submit.GetPayload(),
+			fixture.author.Endpoint,
+			fixture.authorPrivateKey,
+			&actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Acct: "bob@station.test",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+		)
+		submit.MentionRouting = routing
+
+		created, err := fixture.service.SubmitPrivateComment(
+			context.Background(),
+			fixture.author.Endpoint,
+			submit,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(
+			created.GetComment().GetPrivateContent().GetVerification().
+				GetMentionRouting(),
+			routing,
+		) {
+			t.Fatal("Comment submit response changed the signed mention routing")
+		}
+
+		read, err := fixture.service.GetPrivateComment(
+			context.Background(),
+			&actormodel.ActorDeviceRef{
+				Actor: &actormodel.ActorRef{
+					Ptid: "ptid:bob",
+					Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+				},
+				DeviceId: "bob-device",
+			},
+			postID,
+			created.GetComment().GetMetadata().GetCommentId(),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(
+			read.GetComment().GetPrivateContent().GetVerification().
+				GetMentionRouting(),
+			routing,
+		) {
+			t.Fatal("Comment point read changed the signed mention routing")
+		}
+
+		var row dbmodel.SocialPrivateContentComment
+		if err := fixture.database.Where(
+			"comment_id = ?",
+			created.GetComment().GetMetadata().GetCommentId(),
+		).First(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		routingBytes, err := socialdomain.CanonicalProtoBytes(routing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		routingHash := sha256.Sum256(routingBytes)
+		if !bytes.Equal(row.MentionRoutingBytes, routingBytes) ||
+			!bytes.Equal(row.MentionRoutingSHA256, routingHash[:]) {
+			t.Fatal("persisted Comment mention routing does not match the submit bundle")
+		}
+	})
+}
+
+func TestPrivateReactionUsesCanonicalPrivatePostIdentityAndCurrentGrant(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	prepared, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		privateMomentPrepareRequest("prepare-reaction", "content-reaction"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := privateTextSubmitRequest(
+		t,
+		prepared.GetPlan(),
+		fixture.author.Endpoint,
+		fixture.authorPrivateKey,
+		"submit-reaction",
+		"reaction ciphertext",
+	)
+	if _, err := fixture.service.SubmitPrivateMoment(
+		context.Background(),
+		fixture.author.Endpoint,
+		submit,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.AutoMigrate(
+		&dbmodel.Actor{},
+		&dbmodel.SocialReaction{},
+		&dbmodel.Follow{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Create(&dbmodel.Actor{
+		ID:                2,
+		PTID:              "ptid:bob",
+		Namespace:         "peers",
+		PreferredUsername: "bob",
+		Email:             "bob@station.test",
+		PasswordHash:      "test",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	reactions := NewReactionService(
+		fixture.database,
+		infrastructure.NewRepos(fixture.database),
+	)
+	postID := prepared.GetPlan().GetResource().GetContentId()
+	summaries, err := reactions.React(
+		context.Background(),
+		postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 ||
+		summaries[0].GetKind() != actormodel.ReactionKind_REACTION_LIKE ||
+		summaries[0].GetCount() != 1 ||
+		!summaries[0].GetReactedByViewer() {
+		t.Fatalf("private reaction summaries = %+v", summaries)
+	}
+	read, err := fixture.service.GetPrivateMoment(
+		context.Background(),
+		&actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		postID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.GetResource().GetMetadata().GetStats().GetLikesCount() != 1 {
+		t.Fatalf(
+			"private reaction count = %d",
+			read.GetResource().GetMetadata().GetStats().GetLikesCount(),
+		)
+	}
+	summaries, err = reactions.Unreact(
+		context.Background(),
+		postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("private unreact summaries = %+v", summaries)
+	}
+	read, err = fixture.service.GetPrivateMoment(
+		context.Background(),
+		&actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		postID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.GetResource().GetMetadata().GetStats().GetLikesCount() != 0 {
+		t.Fatalf(
+			"private reaction count after unreact = %d",
+			read.GetResource().GetMetadata().GetStats().GetLikesCount(),
+		)
+	}
+	if _, err := reactions.React(
+		context.Background(),
+		postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := fixture.database.Exec(
+		"DELETE FROM social_relationship_projections WHERE owner_ptid = ? AND peer_ptid = ?",
+		"ptid:alice",
+		"ptid:bob",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = reactions.React(
+		context.Background(),
+		postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LOVE,
+	)
+	if socialdomain.PrivateContentCodeOf(err) !=
+		socialdomain.PrivateContentNotFound {
+		t.Fatalf("revoked private reaction error = %v", err)
+	}
+	_, err = reactions.Unreact(
+		context.Background(),
+		postID,
+		"ptid:bob",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	if socialdomain.PrivateContentCodeOf(err) !=
+		socialdomain.PrivateContentNotFound {
+		t.Fatalf("revoked private unreact error = %v", err)
+	}
+	var count int64
+	if err := fixture.database.Model(&dbmodel.SocialReaction{}).
+		Where("post_id = ?", postID).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("revoked private reaction wrote %d rows", count)
+	}
+}
+
+func TestPrivateContentServiceDeletePrivateMomentRevokesFutureAccess(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	ctx := context.Background()
+	postID := publishPrivateCommentParent(t, fixture, "private-delete")
+	fixture.clock.now = fixture.clock.now.Add(time.Minute)
+	commentID := publishPrivateComment(
+		t,
+		fixture,
+		postID,
+		"private-delete-comment",
+	)
+
+	var post dbmodel.SocialPrivateContentPost
+	if err := fixture.database.First(&post, "post_id = ?", postID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var comment dbmodel.SocialPrivateContentComment
+	if err := fixture.database.First(
+		&comment,
+		"comment_id = ?",
+		commentID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	objectID := "private-delete-object"
+	if err := fixture.database.Create(
+		&dbmodel.SocialPrivateObjectAttachment{
+			ObjectID:                 objectID,
+			UploadID:                 "private-delete-upload",
+			UploadGeneration:         1,
+			ContentID:                post.ContentID,
+			UploaderPTID:             post.AuthorPTID,
+			UploaderDeviceID:         "alice-device",
+			CanonicalDescriptorBytes: []byte("private-delete-descriptor"),
+			DescriptorSHA256:         privateDigest("private-delete-descriptor"),
+			StorageKey:               "private/private-delete-object",
+			TotalCiphertextSize:      1,
+			CiphertextSHA256:         privateDigest("private-delete-ciphertext"),
+			State:                    dbmodel.SocialPrivateObjectAttached,
+			DomainCommitID:           postID,
+			CreatedAt:                fixture.clock.now,
+			UpdatedAt:                fixture.clock.now,
+			ExpiresAt:                fixture.clock.now.Add(time.Hour),
+			AttachedAt:               &fixture.clock.now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Create(&dbmodel.SocialPrivateObjectGrant{
+		ObjectID:          objectID,
+		PrincipalKind:     infrastructure.PrivateContentKeyKindEndpoint,
+		PrincipalPTID:     "ptid:bob",
+		PrincipalDeviceID: "bob-device",
+		DomainCommitID:    postID,
+		GrantedAt:         fixture.clock.now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.AutoMigrate(&dbmodel.SocialReaction{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Create(&dbmodel.SocialReaction{
+		PostID:    postID,
+		ActorID:   42,
+		Kind:      actormodel.ReactionKind_REACTION_LIKE.String(),
+		PostClass: "private",
+		CreatedAt: fixture.clock.now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := fixture.service.DeletePrivateMoment(
+		ctx,
+		postID,
+		"ptid:eve",
+	)
+	if err != nil || deleted {
+		t.Fatalf("non-author delete = %v, %v", deleted, err)
+	}
+	deleted, err = fixture.service.DeletePrivateMoment(
+		ctx,
+		postID,
+		"ptid:alice",
+	)
+	if err != nil || !deleted {
+		t.Fatalf("author delete = %v, %v", deleted, err)
+	}
+	replayed, err := fixture.service.DeletePrivateMoment(
+		ctx,
+		postID,
+		"ptid:alice",
+	)
+	if err != nil || replayed {
+		t.Fatalf("delete replay = %v, %v", replayed, err)
+	}
+
+	if err := fixture.database.First(&post, "post_id = ?", postID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if post.LifecycleState != "DELETED" || post.DeletedAt == nil {
+		t.Fatalf("deleted private Post = %+v", post)
+	}
+	if err := fixture.database.First(
+		&comment,
+		"comment_id = ?",
+		commentID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if comment.LifecycleState != "DELETED" || comment.DeletedAt == nil {
+		t.Fatalf("deleted private Comment = %+v", comment)
+	}
+	for name, query := range map[string]*gorm.DB{
+		"recipient grants": fixture.database.
+			Model(&dbmodel.SocialPrivateRecipientGrant{}).
+			Where("revoked_at IS NULL"),
+		"object grants": fixture.database.
+			Model(&dbmodel.SocialPrivateObjectGrant{}).
+			Where("revoked_at IS NULL"),
+		"pending deliveries": fixture.database.
+			Model(&dbmodel.SocialPrivateDeliveryIntent{}).
+			Where(
+				"state = ?",
+				dbmodel.SocialPrivateDeliveryIntentStatePending,
+			),
+		"private reactions": fixture.database.
+			Model(&dbmodel.SocialReaction{}).
+			Where("post_id = ? AND post_class = ?", postID, "private"),
+	} {
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s remain after private Post delete: %d", name, count)
+		}
+	}
+	if _, err := fixture.service.GetPrivateMoment(
+		ctx,
+		privateCommentBobViewer(),
+		postID,
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentNotFound,
+	) {
+		t.Fatalf("deleted private Post read error = %v", err)
+	}
+}
+
 type privateContentServiceFixture struct {
 	database         *gorm.DB
 	service          *PrivateContentService
@@ -1019,6 +1800,7 @@ INSERT INTO social_relationship_projections (
 		Endpoint: &actormodel.ActorDeviceRef{
 			Actor: &actormodel.ActorRef{
 				Ptid: "ptid:alice",
+				Acct: "alice@station.test",
 				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
 			},
 			DeviceId: "alice-device",
@@ -1026,9 +1808,14 @@ INSERT INTO social_relationship_projections (
 		HomeStationPeerID: "station-local",
 	}
 	snapshot := socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   1,
 		SourceHeadSHA256: privateDigest("friends-v1"),
 		RecipientPTIDs:   []string{"ptid:bob"},
+		RecipientLocalities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-local",
+		}},
 	}
 	audiences := &privateContentTestAudience{snapshot: snapshot}
 	keyExchange := &privateContentTestKeyExchange{}
@@ -1038,6 +1825,8 @@ INSERT INTO social_relationship_projections (
 	service, err := NewPrivateContentService(
 		store,
 		audiences,
+		audiences,
+		privateContentTestGroups{},
 		privateContentTestRecipients{author: author.Endpoint},
 		keyExchange,
 		privateContentTestSigner{
@@ -1064,14 +1853,68 @@ INSERT INTO social_relationship_projections (
 }
 
 type privateContentTestAudience struct {
-	snapshot  socialdomain.FriendsSnapshot
-	postCalls int
+	snapshot           socialdomain.FriendsSnapshot
+	postCalls          int
+	repostPrepareCalls int
+	repostSubmitCalls  int
+	repostPrepareErr   error
+	repostSubmitErr    error
 }
 
 func (a *privateContentTestAudience) ResolveFriendsPostSnapshot(
 	context.Context,
 	federationdelivery.Transaction,
 	string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveFollowersPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCirclePostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	uint64,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveGroupPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	socialdomain.GroupRecipientSnapshot,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCustomAllowPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	[]string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCustomDenyPostSnapshot(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	_ string,
+	_ []string,
+	_ actormodel.Audience_Kind,
 ) (socialdomain.FriendsSnapshot, error) {
 	a.postCalls++
 	return a.snapshot, nil
@@ -1087,9 +1930,50 @@ func (a *privateContentTestAudience) ResolvePrivateCommentSnapshot(
 	return a.snapshot, nil
 }
 
+func (a *privateContentTestAudience) ValidatePrepare(
+	context.Context,
+	string,
+	socialdomain.FriendsSnapshot,
+	*privatecontentpb.PrivateRepostAuthority,
+) error {
+	a.repostPrepareCalls++
+	return a.repostPrepareErr
+}
+
+func (a *privateContentTestAudience) ValidateSubmit(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	socialdomain.FriendsSnapshot,
+	*privatecontentpb.PrivateRepostAuthority,
+) error {
+	a.repostSubmitCalls++
+	return a.repostSubmitErr
+}
+
 type privateContentTestRecipients struct {
 	author        *actormodel.ActorDeviceRef
 	validationErr error
+}
+
+func (r privateContentTestRecipients) ResolveRecipientLocalities(
+	_ context.Context,
+	localStationPeerID string,
+	recipients []string,
+) ([]socialdomain.RecipientLocality, error) {
+	localities := make(
+		[]socialdomain.RecipientLocality,
+		0,
+		len(recipients),
+	)
+	for _, actorPTID := range recipients {
+		localities = append(localities, socialdomain.RecipientLocality{
+			ActorPTID:         actorPTID,
+			HomeStationPeerID: localStationPeerID,
+		})
+	}
+
+	return localities, nil
 }
 
 func (r privateContentTestRecipients) ResolveContentPreKeyTargets(
@@ -1132,6 +2016,25 @@ func (r privateContentTestRecipients) ValidateActiveEndpoint(
 		)
 	}
 	return nil
+}
+
+type privateContentTestGroups struct{}
+
+func (privateContentTestGroups) PrepareSnapshot(
+	context.Context,
+	string,
+	string,
+) (socialdomain.GroupRecipientSnapshot, error) {
+	return socialdomain.GroupRecipientSnapshot{},
+		fmt.Errorf("unexpected Group snapshot request")
+}
+
+func (privateContentTestGroups) WithSubmitFence(
+	_ context.Context,
+	_ socialdomain.GroupRecipientSnapshot,
+	_ func(socialdomain.GroupRecipientSnapshot) error,
+) error {
+	return fmt.Errorf("unexpected Group submit fence")
 }
 
 type privateContentTestKeyExchange struct {
@@ -1510,6 +2413,53 @@ func privateMomentSubmitRequest(
 		Objects:   objects,
 		CommandId: commandID,
 	}
+}
+
+func privateMentionRouting(
+	t *testing.T,
+	plan *securecontentpb.ContentEncryptionPlan,
+	payload *securecontentpb.EncryptedPayload,
+	author *actormodel.ActorDeviceRef,
+	authorPrivateKey ed25519.PrivateKey,
+	mentionedActor *actormodel.ActorRef,
+) *privatecontentpb.SignedMentionRouting {
+	t.Helper()
+	payloadBytes, err := socialdomain.CanonicalProtoBytes(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadHash := sha256.Sum256(payloadBytes)
+	routing := &privatecontentpb.SignedMentionRouting{
+		FormatVersion: 1,
+		Resource: proto.Clone(
+			plan.GetResource(),
+		).(*securecontentpb.SecureResourceRef),
+		AuthorizationSnapshotSha256: clonePrivateTestBytes(
+			plan.GetAuthorizationSnapshotSha256(),
+		),
+		EncryptedPayloadSha256: payloadHash[:],
+		Facts: []*privatecontentpb.MentionRoutingFact{{
+			MentionedActor: proto.Clone(
+				mentionedActor,
+			).(*actormodel.ActorRef),
+			MentionCommitment: privateDigest(
+				"mention:" + mentionedActor.GetPtid(),
+			),
+		}},
+		Sender:             proto.Clone(author).(*actormodel.ActorDeviceRef),
+		SenderSigningKeyId: "author-key",
+	}
+	signingBytes, err := socialdomain.CanonicalProtoBytes(routing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signingDigest := sha256.Sum256(signingBytes)
+	routing.CanonicalFactsSha256 = signingDigest[:]
+	routing.SenderSignature = ed25519.Sign(
+		authorPrivateKey,
+		routing.GetCanonicalFactsSha256(),
+	)
+	return routing
 }
 
 func privateContentEndpointTarget(

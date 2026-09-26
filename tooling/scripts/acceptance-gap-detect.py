@@ -24,7 +24,16 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
+    AcceptanceAdmissionError,
+    require_acceptance_admission,
+)
+
 RECEIVER_PROOF_GATE = "chat-native-two-client-e2e"
+RECEIVER_PROOF_GATES = frozenset({
+    RECEIVER_PROOF_GATE,
+    "chat-lifecycle-rich-voice-e2e",
+})
 RECEIVER_VISIBLE_PATHS = {
     "apps/desktop/src-tauri/src/messaging/direct.rs",
     "apps/desktop/src/runtimes/imRuntime.ts",
@@ -427,8 +436,9 @@ def detect(
 
     receipt_paths = sorted(RECEIVER_VISIBLE_PATHS.intersection(paths))
     if receipt_paths:
-        obligations.add(RECEIVER_PROOF_GATE)
-        if RECEIVER_PROOF_GATE not in selected:
+        selected_receiver_proof_gates = RECEIVER_PROOF_GATES.intersection(selected)
+        if not selected_receiver_proof_gates:
+            obligations.add(RECEIVER_PROOF_GATE)
             gaps.append(
                 gap(
                     gap_type="RECEIVER_PROOF_GATE_NOT_SELECTED",
@@ -615,6 +625,7 @@ def main() -> int:
     parser.add_argument("--changed-file", action="append", default=[])
     parser.add_argument("--plan")
     parser.add_argument("--run")
+    parser.add_argument("--session")
     parser.add_argument("--require-gate", action="append", default=[])
     parser.add_argument(
         "--contract",
@@ -623,6 +634,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        require_acceptance_admission(REPO_ROOT, args.session, "gap")
         store = EvidenceStore.from_environment(
             repo_root=REPO_ROOT,
             worktree=REPO_ROOT,
@@ -665,7 +677,7 @@ def main() -> int:
                 else None
             ),
         )
-    except DetectorError as error:
+    except (AcceptanceAdmissionError, DetectorError) as error:
         sys.stderr.write(f"acceptance gap detector failed closed: {error}\n")
         return 2
 

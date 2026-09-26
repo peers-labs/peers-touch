@@ -38,11 +38,14 @@ GATE_ROLES = {
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
     "agent-marketplace-catalog-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-lifecycle-interactions-group-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob"),
     "chat-native-recovery-e2e": ("alice", "bob"),
     "chat-native-group-mls-e2e": ("alice", "bob", "charlie"),
+    "chat-lifecycle-group-live-e2e": ("alice", "bob", "charlie"),
     "chat-native-product-closure-e2e": ("alice", "bob"),
     "chat-contact-message-resilience-e2e": ("alice", "bob"),
 }
@@ -70,11 +73,14 @@ AGENT_V2_CREDENTIAL_REFS = (
 
 CLIENT_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-lifecycle-interactions-group-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob1", "bob2"),
     "chat-native-recovery-e2e": ("alice", "bob"),
     "chat-native-group-mls-e2e": ("alice", "bob", "charlie"),
+    "chat-lifecycle-group-live-e2e": ("alice", "bob", "charlie"),
     "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-contact-message-resilience-e2e": ("alice",),
 }

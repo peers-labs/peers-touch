@@ -131,6 +131,7 @@ pub struct MobileConversationProjection {
     pub kind: i32,
     pub name: String,
     pub description: String,
+    pub avatar_object_id: String,
     pub owner_ptid: String,
     pub members: Vec<ConversationAuthorityMemberProjection>,
     pub membership_epoch: i64,
@@ -233,6 +234,8 @@ pub(crate) struct PendingAttachmentUpload {
     pub(crate) filename: String,
     pub(crate) mime_type: String,
     pub(crate) plaintext_sha256: Vec<u8>,
+    pub(crate) content_kind: i32,
+    pub(crate) duration_ms: u32,
     pub(crate) voice_note: Option<VoiceNoteMetadata>,
 }
 
@@ -256,6 +259,7 @@ pub(crate) struct CompletedSenderAttachmentSource {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SupersededInteractionIntent {
+    pub intent_id: String,
     pub command_id: String,
     pub conversation_id: String,
     pub target_message_id: String,
@@ -425,7 +429,7 @@ impl MobileMessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT conversation_id, authority_station_id, federation_id,
-                        kind, name, description, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations ORDER BY updated_at_unix_ms DESC",
             )
@@ -440,10 +444,11 @@ impl MobileMessagingStore {
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
-                    row.get::<_, i64>(7)?,
+                    row.get::<_, String>(7)?,
                     row.get::<_, i64>(8)?,
-                    row.get::<_, bool>(9)?,
-                    row.get::<_, i64>(10)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, bool>(10)?,
+                    row.get::<_, i64>(11)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -479,12 +484,13 @@ impl MobileMessagingStore {
                     kind: row.3,
                     name: row.4,
                     description: row.5,
-                    owner_ptid: row.6,
+                    avatar_object_id: row.6,
+                    owner_ptid: row.7,
                     members,
-                    membership_epoch: row.7,
-                    mls_epoch: row.8,
-                    active: row.9,
-                    updated_at_unix_ms: row.10,
+                    membership_epoch: row.8,
+                    mls_epoch: row.9,
+                    active: row.10,
+                    updated_at_unix_ms: row.11,
                 })
             })
             .collect()
@@ -806,9 +812,9 @@ impl MobileMessagingStore {
                     .execute(
                         "INSERT INTO messaging_attachment_drafts(
                             attachment_id, conversation_id, message_id, filename,
-                            mime_type, plaintext_sha256, descriptor_bytes,
-                            voice_note_bytes, created_at_unix_ms
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8)",
+                            mime_type, plaintext_sha256, content_kind, duration_ms,
+                            descriptor_bytes, voice_note_bytes, created_at_unix_ms
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10)",
                         params![
                             transfer.attachment_id,
                             transfer.conversation_id,
@@ -816,6 +822,8 @@ impl MobileMessagingStore {
                             upload.filename,
                             upload.mime_type,
                             upload.plaintext_sha256,
+                            upload.content_kind,
+                            upload.duration_ms,
                             encode_voice_note_column(upload.voice_note.as_ref()),
                             draft.created_at_unix_ms,
                         ],
@@ -1101,6 +1109,7 @@ impl MobileMessagingStore {
                 "SELECT message.conversation_id, attachment.message_id,
                         conversation.authority_station_id,
                         attachment.filename, attachment.mime_type,
+                        attachment.content_kind, attachment.duration_ms,
                         attachment.plaintext_size, attachment.plaintext_sha256,
                         attachment.object_key, attachment.base_nonce,
                         attachment.descriptor_bytes, attachment.voice_note_bytes,
@@ -1113,7 +1122,7 @@ impl MobileMessagingStore {
                  WHERE attachment.attachment_id = ?1",
                 params![attachment_id],
                 |row| {
-                    let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
+                    let descriptor_bytes = row.get::<_, Vec<u8>>(11)?;
                     let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
                         .map_err(|error| {
                             rusqlite::Error::FromSqlConversionFailure(
@@ -1130,20 +1139,28 @@ impl MobileMessagingStore {
                             attachment_id: attachment_id.to_string(),
                             filename: row.get(3)?,
                             mime_type: row.get(4)?,
-                            plaintext_size: row.get::<_, i64>(5)?.try_into().map_err(|error| {
+                            content_kind: row.get(5)?,
+                            duration_ms: row.get::<_, i64>(6)?.try_into().map_err(|error| {
                                 rusqlite::Error::FromSqlConversionFailure(
-                                    8,
+                                    6,
                                     rusqlite::types::Type::Integer,
                                     Box::new(error),
                                 )
                             })?,
-                            plaintext_sha256: row.get(6)?,
-                            object_key: row.get(7)?,
-                            base_nonce: row.get(8)?,
+                            plaintext_size: row.get::<_, i64>(7)?.try_into().map_err(|error| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    7,
+                                    rusqlite::types::Type::Integer,
+                                    Box::new(error),
+                                )
+                            })?,
+                            plaintext_sha256: row.get(8)?,
+                            object_key: row.get(9)?,
+                            base_nonce: row.get(10)?,
                             object: Some(object),
-                            voice_note: decode_voice_note_column(row.get(10)?, 10)?,
+                            voice_note: decode_voice_note_column(row.get(12)?, 12)?,
                         },
-                        local_cache_path: row.get(11)?,
+                        local_cache_path: row.get(13)?,
                     })
                 },
             )
@@ -2328,7 +2345,7 @@ impl MobileMessagingStore {
             .lock()
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?
             .query_row(
-                "SELECT intent.command_id, intent.conversation_id,
+                "SELECT intent.intent_id, intent.command_id, intent.conversation_id,
                         intent.target_message_id, intent.interaction_kind,
                         intent.edited_text, command.command_bytes,
                         intent.created_at_unix_ms
@@ -2342,13 +2359,14 @@ impl MobileMessagingStore {
                 [],
                 |row| {
                     Ok(SupersededInteractionIntent {
-                        command_id: row.get(0)?,
-                        conversation_id: row.get(1)?,
-                        target_message_id: row.get(2)?,
-                        interaction_kind: row.get(3)?,
-                        edited_text: row.get(4)?,
-                        command_bytes: row.get(5)?,
-                        created_at_unix_ms: row.get(6)?,
+                        intent_id: row.get(0)?,
+                        command_id: row.get(1)?,
+                        conversation_id: row.get(2)?,
+                        target_message_id: row.get(3)?,
+                        interaction_kind: row.get(4)?,
+                        edited_text: row.get(5)?,
+                        command_bytes: row.get(6)?,
+                        created_at_unix_ms: row.get(7)?,
                     })
                 },
             )
@@ -3362,6 +3380,8 @@ impl MetadataInteractionRepository for MobileMessagingStore {
             )?;
             persist_interaction_command(
                 transaction,
+                commit.logical_intent_id,
+                commit.replaces_command_id,
                 commit.command_id,
                 commit.conversation_id,
                 commit.target_message_id,
@@ -3502,6 +3522,8 @@ impl MessagingRepository for MobileMessagingStore {
                     federation_id: projection.federation_id,
                     kind: projection.kind,
                     name: projection.name,
+                    description: projection.description,
+                    avatar_object_id: projection.avatar_object_id,
                     owner_ptid: projection.owner_ptid,
                     members: projection.members,
                     membership_epoch: projection.membership_epoch,
@@ -5164,6 +5186,8 @@ impl DirectOutboundRepository for MobileMessagingStore {
             )?;
             persist_interaction_command(
                 transaction,
+                commit.logical_intent_id,
+                commit.replaces_command_id,
                 commit.command_id,
                 commit.conversation_id,
                 commit.target_message_id,
@@ -5327,6 +5351,8 @@ impl MlsOutboundRepository for MobileMessagingStore {
             )?;
             persist_interaction_command(
                 transaction,
+                commit.logical_intent_id,
+                commit.replaces_command_id,
                 commit.command_id,
                 commit.conversation_id,
                 commit.target_message_id,
@@ -6249,6 +6275,8 @@ fn persist_pending_sender(
 #[allow(clippy::too_many_arguments)]
 fn persist_interaction_command(
     transaction: &Transaction<'_>,
+    logical_intent_id: &str,
+    replaces_command_id: Option<&str>,
     command_id: &str,
     conversation_id: &str,
     target_message_id: &str,
@@ -6258,7 +6286,13 @@ fn persist_interaction_command(
     delivery_plan_sha256: &[u8],
     created_at_unix_ms: i64,
 ) -> Result<(), String> {
-    if command_id.trim().is_empty()
+    let lineage_is_valid = match replaces_command_id {
+        Some(replaced) => !replaced.trim().is_empty() && replaced != command_id,
+        None => logical_intent_id == command_id,
+    };
+    if logical_intent_id.trim().is_empty()
+        || !lineage_is_valid
+        || command_id.trim().is_empty()
         || conversation_id.trim().is_empty()
         || target_message_id.trim().is_empty()
         || interaction_kind.trim().is_empty()
@@ -6269,6 +6303,53 @@ fn persist_interaction_command(
         || (interaction_kind != "edit" && edited_text.is_some())
     {
         return Err("mobile messaging interaction command is incomplete".to_string());
+    }
+    if let Some(replaced_command_id) = replaces_command_id {
+        let replaced = transaction
+            .query_row(
+                "SELECT intent_id, conversation_id, target_message_id,
+                        interaction_kind, edited_text, state
+                 FROM messaging_interaction_intents
+                 WHERE command_id = ?1",
+                params![replaced_command_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "mobile messaging replaced interaction intent is unavailable".to_string()
+            })?;
+        if replaced.0 != logical_intent_id
+            || replaced.1 != conversation_id
+            || replaced.2 != target_message_id
+            || replaced.3 != interaction_kind
+            || replaced.4.as_deref() != edited_text
+            || replaced.5 != "superseded"
+        {
+            return Err(
+                "mobile messaging interaction replacement does not match intent".to_string(),
+            );
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents
+                 SET state = 'replaced'
+                 WHERE command_id = ?1 AND state = 'superseded'",
+                params![replaced_command_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("mobile messaging interaction replacement was not fenced".to_string());
+        }
     }
     persist_local_command(
         transaction,
@@ -6295,11 +6376,14 @@ fn persist_interaction_command(
     transaction
         .execute(
             "INSERT INTO messaging_interaction_intents(
-                command_id, conversation_id, target_message_id,
-                interaction_kind, edited_text, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'prepared', ?6)",
+                command_id, intent_id, replaces_command_id,
+                conversation_id, target_message_id, interaction_kind,
+                edited_text, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'prepared', ?8)",
             params![
                 command_id,
+                logical_intent_id,
+                replaces_command_id.unwrap_or_default(),
                 conversation_id,
                 target_message_id,
                 interaction_kind,
@@ -7248,12 +7332,13 @@ fn persist_message_attachments(
             .execute(
                 "INSERT INTO messaging_attachment_projections(
                     message_id, attachment_id, object_id, storage_ref,
-                    filename, mime_type, plaintext_size, plaintext_sha256,
-                    object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                    filename, mime_type, content_kind, duration_ms,
+                    plaintext_size, plaintext_sha256, object_key, base_nonce, descriptor_bytes,
+                    voice_note_bytes,
                     availability_state, local_cache_path
                  ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                    ?13, NULL
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                    ?14, ?15, NULL
                  )
                  ON CONFLICT(message_id, attachment_id) DO UPDATE SET
                     availability_state=messaging_attachment_projections.availability_state
@@ -7261,6 +7346,8 @@ fn persist_message_attachments(
                    AND messaging_attachment_projections.storage_ref = excluded.storage_ref
                    AND messaging_attachment_projections.filename = excluded.filename
                    AND messaging_attachment_projections.mime_type = excluded.mime_type
+                   AND messaging_attachment_projections.content_kind = excluded.content_kind
+                   AND messaging_attachment_projections.duration_ms = excluded.duration_ms
                    AND messaging_attachment_projections.plaintext_size = excluded.plaintext_size
                    AND messaging_attachment_projections.plaintext_sha256 = excluded.plaintext_sha256
                    AND messaging_attachment_projections.object_key = excluded.object_key
@@ -7274,6 +7361,8 @@ fn persist_message_attachments(
                     object.storage_ref,
                     attachment.filename,
                     attachment.mime_type,
+                    attachment.content_kind,
+                    attachment.duration_ms,
                     i64::try_from(attachment.plaintext_size)
                         .map_err(|_| "mobile messaging attachment size exceeds i64")?,
                     attachment.plaintext_sha256,
@@ -7333,8 +7422,8 @@ fn load_pending_attachments(
     let mut statement = connection
         .prepare(
             "SELECT attachment_id, filename, mime_type, plaintext_size,
-                    plaintext_sha256, object_key, base_nonce, descriptor_bytes,
-                    voice_note_bytes
+                    plaintext_sha256, object_key, base_nonce, content_kind,
+                    duration_ms, descriptor_bytes, voice_note_bytes
              FROM messaging_attachment_projections
              WHERE message_id = ?1 ORDER BY attachment_id",
         )
@@ -7349,8 +7438,10 @@ fn load_pending_attachments(
                 row.get::<_, Vec<u8>>(4)?,
                 row.get::<_, Vec<u8>>(5)?,
                 row.get::<_, Vec<u8>>(6)?,
-                row.get::<_, Vec<u8>>(7)?,
-                row.get::<_, Vec<u8>>(8)?,
+                row.get::<_, i32>(7)?,
+                row.get::<_, i64>(8)?,
+                row.get::<_, Vec<u8>>(9)?,
+                row.get::<_, Vec<u8>>(10)?,
             ))
         })
         .map_err(|error| error.to_string())?
@@ -7365,13 +7456,16 @@ fn load_pending_attachments(
                 plaintext_sha256: row.4,
                 object_key: row.5,
                 base_nonce: row.6,
+                content_kind: row.7,
+                duration_ms: u32::try_from(row.8)
+                    .map_err(|_| "mobile messaging attachment duration is invalid")?,
                 object: Some(
                     messaging_core::proto::chat::EncryptedObjectDescriptor::decode(
-                        row.7.as_slice(),
+                        row.9.as_slice(),
                     )
                     .map_err(|_| "mobile messaging attachment descriptor is invalid".to_string())?,
                 ),
-                voice_note: decode_voice_note_column(row.8, 8)
+                voice_note: decode_voice_note_column(row.10, 10)
                     .map_err(|error| error.to_string())?,
             })
         })
@@ -7397,8 +7491,8 @@ fn load_staged_attachment_metadata(
         .prepare(
             "SELECT draft.attachment_id, draft.filename, draft.mime_type,
                     transfer.plaintext_size, draft.plaintext_sha256,
-                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes,
-                    draft.voice_note_bytes
+                    transfer.object_key, transfer.base_nonce, draft.content_kind,
+                    draft.duration_ms, draft.descriptor_bytes, draft.voice_note_bytes
              FROM messaging_attachment_drafts draft
              JOIN messaging_attachment_transfers transfer
                ON transfer.attachment_id = draft.attachment_id
@@ -7412,7 +7506,7 @@ fn load_staged_attachment_metadata(
         .query_map(
             params![message_id, AttachmentTransferState::Complete as i32],
             |row| {
-                let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+                let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
                 let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
                     .map_err(|error| {
                         rusqlite::Error::FromSqlConversionFailure(
@@ -7435,8 +7529,16 @@ fn load_staged_attachment_metadata(
                     plaintext_sha256: row.get(4)?,
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
+                    content_kind: row.get(7)?,
+                    duration_ms: row.get::<_, i64>(8)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
                     object: Some(object),
-                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
+                    voice_note: decode_voice_note_column(row.get(10)?, 10)?,
                 })
             },
         )
@@ -7826,9 +7928,9 @@ mod tests {
     use messaging_core::inbox::{ClaimedItemConsumer, PublicEventProcessor};
     use messaging_core::proto::actor_device_from_chat_endpoint;
     use messaging_core::proto::chat::{
-        conversation_event, AttachmentEncryptionSuite, AttachmentNonceStrategy,
-        ConversationAuthorityMember, ConversationAuthoritySnapshot, ConversationEvent,
-        ConversationKind, ConversationMemberAuthorityAction,
+        conversation_event, AttachmentContentKind, AttachmentEncryptionSuite,
+        AttachmentNonceStrategy, ConversationAuthorityMember, ConversationAuthoritySnapshot,
+        ConversationEvent, ConversationKind, ConversationMemberAuthorityAction,
         ConversationMemberAuthorityCommittedFact, CryptoEndpoint as ProtoCryptoEndpoint,
         DeviceConsumptionReceipt, DeviceEventDelivery, DeviceInboxPayloadType,
         DurableDeviceInboxItem, MemberRole, PreparedEndpointPayloadKind, PublicEventMarker,
@@ -7873,6 +7975,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 2,
             name: "Original".into(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![
                 authority_member("ptid:alice", MemberRole::Owner as i32),
@@ -8320,6 +8424,8 @@ mod tests {
             object_key: vec![8; 32],
             base_nonce: vec![0; 12],
             object: Some(attachment_descriptor()),
+            content_kind: AttachmentContentKind::File as i32,
+            duration_ms: 0,
             voice_note: None,
         }
     }
@@ -8548,6 +8654,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![
                 authority_member("ptid:alice", MemberRole::Owner as i32),
@@ -8619,6 +8727,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![],
             membership_epoch: 1,
@@ -8845,10 +8955,12 @@ mod tests {
                 transaction
                     .execute(
                         "INSERT INTO messaging_interaction_intents(
-                            command_id, conversation_id, target_message_id,
+                            command_id, intent_id, replaces_command_id,
+                            conversation_id, target_message_id,
                             interaction_kind, edited_text, state, created_at_unix_ms
                          ) VALUES (
-                            'interaction-old', 'conversation-1', 'message-1',
+                            'interaction-old', 'interaction-old', '',
+                            'conversation-1', 'message-1',
                             'retract', NULL, 'prepared', 10
                          )",
                         [],
@@ -8872,19 +8984,34 @@ mod tests {
 
         store
             .with_transaction(|transaction| {
-                persist_local_command(
+                persist_interaction_command(
                     transaction,
+                    "interaction-old",
+                    Some("interaction-old"),
                     "interaction-new",
                     "conversation-1",
+                    "message-1",
+                    "retract",
+                    None,
                     b"interaction-new",
+                    &[8; 32],
                     20,
                 )
             })
             .unwrap();
-        store
-            .mark_interaction_reprepared("interaction-old", "interaction-new")
-            .unwrap();
         assert!(store.next_superseded_interaction().unwrap().is_none());
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT state FROM messaging_interaction_intents
+                     WHERE command_id = 'interaction-old'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "replaced"
+        );
     }
 
     #[test]
@@ -9234,6 +9361,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![authority_member("ptid:alice", MemberRole::Owner as i32)],
             membership_epoch: 1,
@@ -10122,6 +10251,8 @@ mod tests {
         let error = MetadataInteractionRepository::persist_metadata_interaction(
             &store,
             &MetadataInteractionCommit {
+                logical_intent_id: "stale-interaction",
+                replaces_command_id: None,
                 command_id: "stale-interaction",
                 conversation_id: "conversation-1",
                 target_message_id: "message-public",
@@ -10299,6 +10430,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![
                 authority_member("ptid:alice", 1),
@@ -10578,6 +10711,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![
                 authority_member("ptid:alice", MemberRole::Owner as i32),
@@ -10641,6 +10776,8 @@ mod tests {
             federation_id: "federation-1".into(),
             kind: ConversationKind::Group as i32,
             name: "Group".into(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".into(),
             members: vec![
                 authority_member("ptid:alice", MemberRole::Owner as i32),
@@ -10741,6 +10878,8 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Genesis group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 authority_member("ptid:alice", MemberRole::Owner as i32),
@@ -11038,6 +11177,8 @@ mod tests {
             filename: "proof.txt".to_string(),
             mime_type: "text/plain".to_string(),
             plaintext_sha256: vec![7; 32],
+            content_kind: AttachmentContentKind::File as i32,
+            duration_ms: 0,
             voice_note: None,
         };
         store
@@ -11315,7 +11456,11 @@ mod tests {
     #[test]
     fn received_attachment_remains_remote_until_verified_download_completion() {
         let store = store();
-        let metadata = attachment_metadata();
+        let mut metadata = attachment_metadata();
+        metadata.filename = "voice.webm".to_string();
+        metadata.mime_type = "audio/webm".to_string();
+        metadata.content_kind = AttachmentContentKind::VoiceNote as i32;
+        metadata.duration_ms = 1_250;
         {
             let connection = store.connection.lock().unwrap();
             connection
@@ -11407,15 +11552,19 @@ mod tests {
                 .as_deref(),
             Some("local")
         );
+        let projection = store
+            .attachment_download_projection("attachment-1")
+            .unwrap()
+            .unwrap();
         assert_eq!(
-            store
-                .attachment_download_projection("attachment-1")
-                .unwrap()
-                .unwrap()
-                .local_cache_path
-                .as_deref(),
+            projection.local_cache_path.as_deref(),
             Some("/tmp/mobile-attachment-cache")
         );
+        assert_eq!(
+            projection.metadata.content_kind,
+            AttachmentContentKind::VoiceNote as i32
+        );
+        assert_eq!(projection.metadata.duration_ms, 1_250);
     }
 
     #[test]

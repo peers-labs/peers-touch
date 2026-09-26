@@ -92,21 +92,26 @@ const (
 	// Station-authored terminal control event emitted when the shared
 	// ring deadline wins before any endpoint accepts or rejects.
 	CallSignal_CALL_NO_ANSWER CallSignal_Kind = 9
+	// SSE notifications for group call room lifecycle.
+	CallSignal_ROOM_ACTIVE CallSignal_Kind = 10
+	CallSignal_ROOM_ENDED  CallSignal_Kind = 11
 )
 
 // Enum value maps for CallSignal_Kind.
 var (
 	CallSignal_Kind_name = map[int32]string{
-		0: "KIND_UNSPECIFIED",
-		1: "OFFER",
-		2: "ANSWER",
-		3: "CANDIDATE",
-		4: "HANGUP",
-		5: "CALL_REQUEST",
-		6: "CALL_ACCEPT",
-		7: "CALL_REJECT",
-		8: "CALL_END",
-		9: "CALL_NO_ANSWER",
+		0:  "KIND_UNSPECIFIED",
+		1:  "OFFER",
+		2:  "ANSWER",
+		3:  "CANDIDATE",
+		4:  "HANGUP",
+		5:  "CALL_REQUEST",
+		6:  "CALL_ACCEPT",
+		7:  "CALL_REJECT",
+		8:  "CALL_END",
+		9:  "CALL_NO_ANSWER",
+		10: "ROOM_ACTIVE",
+		11: "ROOM_ENDED",
 	}
 	CallSignal_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -119,6 +124,8 @@ var (
 		"CALL_REJECT":      7,
 		"CALL_END":         8,
 		"CALL_NO_ANSWER":   9,
+		"ROOM_ACTIVE":      10,
+		"ROOM_ENDED":       11,
 	}
 )
 
@@ -1121,8 +1128,12 @@ type CallSignal struct {
 	// distinguish "I won" from "handled elsewhere" without relying on
 	// heuristic echo detection.
 	WinningDeviceId string `protobuf:"bytes,6,opt,name=winning_device_id,json=winningDeviceId,proto3" json:"winning_device_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Group ULID for group call routing. Empty for 1-to-1 calls.
+	GroupUlid string `protobuf:"bytes,7,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
+	// LiveKit room name assigned by Station for this call session.
+	RoomName      string `protobuf:"bytes,8,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CallSignal) Reset() {
@@ -1193,6 +1204,20 @@ func (x *CallSignal) GetCallId() string {
 func (x *CallSignal) GetWinningDeviceId() string {
 	if x != nil {
 		return x.WinningDeviceId
+	}
+	return ""
+}
+
+func (x *CallSignal) GetGroupUlid() string {
+	if x != nil {
+		return x.GroupUlid
+	}
+	return ""
+}
+
+func (x *CallSignal) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
 	}
 	return ""
 }
@@ -2525,7 +2550,7 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\fPresenceFlip\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
-	"\x06online\x18\x02 \x01(\bR\x06online\"\xa1\x03\n" +
+	"\x06online\x18\x02 \x01(\bR\x06online\"\xfe\x03\n" +
 	"\n" +
 	"CallSignal\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12&\n" +
@@ -2533,7 +2558,10 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\x0e2..peers_touch.model.realtime.v1.CallSignal.KindR\x04kind\x12\x18\n" +
 	"\apayload\x18\x04 \x01(\fR\apayload\x12\x17\n" +
 	"\acall_id\x18\x05 \x01(\tR\x06callId\x12*\n" +
-	"\x11winning_device_id\x18\x06 \x01(\tR\x0fwinningDeviceId\"\xa4\x01\n" +
+	"\x11winning_device_id\x18\x06 \x01(\tR\x0fwinningDeviceId\x12\x1d\n" +
+	"\n" +
+	"group_ulid\x18\a \x01(\tR\tgroupUlid\x12\x1b\n" +
+	"\troom_name\x18\b \x01(\tR\broomName\"\xc5\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05OFFER\x10\x01\x12\n" +
@@ -2546,7 +2574,11 @@ const file_domain_realtime_event_proto_rawDesc = "" +
 	"\vCALL_ACCEPT\x10\x06\x12\x0f\n" +
 	"\vCALL_REJECT\x10\a\x12\f\n" +
 	"\bCALL_END\x10\b\x12\x12\n" +
-	"\x0eCALL_NO_ANSWER\x10\t\"\x8a\x01\n" +
+	"\x0eCALL_NO_ANSWER\x10\t\x12\x0f\n" +
+	"\vROOM_ACTIVE\x10\n" +
+	"\x12\x0e\n" +
+	"\n" +
+	"ROOM_ENDED\x10\v\"\x8a\x01\n" +
 	"\x13FederatedCallSignal\x120\n" +
 	"\x14recipient_actor_ptid\x18\x01 \x01(\tR\x12recipientActorPtid\x12A\n" +
 	"\x06signal\x18\x02 \x01(\v2).peers_touch.model.realtime.v1.CallSignalR\x06signal\"\x98\x01\n" +

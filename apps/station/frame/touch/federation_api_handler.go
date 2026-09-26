@@ -183,11 +183,11 @@ func selfViewFromSnapshot(s *actor.FederationSelfSnapshot) *apipb.FederationSelf
 		return &apipb.FederationSelfView{}
 	}
 	return &apipb.FederationSelfView{
-		ActorRef: &modelpb.ActorRef{
-			Ptid: s.ActorPTID,
-			Acct: strings.TrimPrefix(s.FederatedHandle, "@"),
-			Kind: db.ActorKindFromShorthand(s.ActorKind),
-		},
+		ActorRef: actor.ProtoActorRef(&db.Actor{
+			PTID:            s.ActorPTID,
+			FederatedHandle: s.FederatedHandle,
+			Kind:            s.ActorKind,
+		}),
 		PreferredUsername: s.PreferredUsername,
 		FederatedHandle:   s.FederatedHandle,
 		HomeStationPeerId: s.HomeStationPeerID,

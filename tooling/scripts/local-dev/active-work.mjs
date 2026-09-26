@@ -18,6 +18,7 @@ import {
   clearActiveWorkRecord,
   readActiveWorkRecord,
   readAllActiveWorkRecords,
+  repairActiveWorkRecord,
   updateActiveWorkRecord,
 } from './active-work-store.mjs';
 import { statusDevelopmentSession } from './dev-session.mjs';
@@ -255,6 +256,19 @@ export async function syncActiveWork(options, dependencies = {}) {
   });
 }
 
+export async function repairActiveWork(options, dependencies = {}) {
+  const input = await deriveActiveWorkInput(options, dependencies);
+  return repairActiveWorkRecord(input, {
+    home: options.home,
+    workspaceRoot: options.workspaceRoot ?? repoRoot,
+    expectedRevision: options.expectedRevision,
+    expectedRecordSha256: options.expectedRecordSha256,
+    now: options.now,
+    clock: options.clock,
+    lockTimeoutMs: options.lockTimeoutMs,
+  });
+}
+
 export function statusActiveWork(options = {}) {
   return readActiveWorkRecord({
     home: options.home,
@@ -283,6 +297,7 @@ const OPTION_NAMES = {
   'workspace-id': 'workspaceId',
   'work-item': 'workItemId',
   'expected-revision': 'expectedRevision',
+  'expected-record-sha256': 'expectedRecordSha256',
 };
 
 function parseArguments(argv) {
@@ -320,6 +335,15 @@ export async function runCli(argv, io = {}) {
     case 'sync':
       result = await syncActiveWork(options, io.dependencies);
       break;
+    case 'repair':
+      if (options.expectedRecordSha256 === undefined) {
+        fail(
+          'INVALID_ARGUMENT',
+          'repair requires --expected-record-sha256',
+        );
+      }
+      result = await repairActiveWork(options, io.dependencies);
+      break;
     case 'status':
       result = statusActiveWork(options);
       break;
@@ -332,7 +356,7 @@ export async function runCli(argv, io = {}) {
     default:
       fail(
         'INVALID_ARGUMENT',
-        'action must be sync, status, status-all, or close',
+        'action must be sync, repair, status, status-all, or close',
       );
   }
   write({ status: 'PASS', action, activeWork: result });

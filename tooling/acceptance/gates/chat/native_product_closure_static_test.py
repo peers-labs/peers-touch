@@ -3,7 +3,9 @@ from __future__ import annotations
 import ast
 import binascii
 import json
+import os
 import struct
+import subprocess
 import tempfile
 import unittest
 import zlib
@@ -14,6 +16,9 @@ from selenium.webdriver.common.by import By
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.drivers.native.base import NativeControlSnapshot
+from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
+from tooling.acceptance.drivers.native.runtime import LocalMacOSRuntimeBinding
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
     NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
@@ -987,6 +992,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "NSApplicationActivateIgnoringOtherApps",
             self.macos_adapter,
         )
+        self.assertIn(
+            "def reveal_file_chooser_location_to_process(",
+            self.macos_adapter,
+        )
+        self.assertIn(
+            "owner.actual_frontmost_pid != process_id",
+            self.macos_adapter,
+        )
+        self.assertIn(
+            "self.reveal_file_chooser_location()",
+            self.macos_adapter,
+        )
         local_binding_start = self.runtime_binding.index(
             "class LocalMacOSRuntimeBinding("
         )
@@ -1001,6 +1018,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         yield_source = self.runtime_binding[yield_start:yield_end]
         self.assertIn('"acceptance_yield_activation"', yield_source)
         self.assertIn('"acceptance_request_activation"', yield_source)
+        self.assertIn("if source is not None:", yield_source)
+        self.assertNotIn("if source is None:\n            return False", yield_source)
+        self.assertLess(
+            yield_source.index("if source is not None:"),
+            yield_source.index('"acceptance_request_activation"'),
+        )
         self.assertNotIn("call_async_harness", yield_source)
         self.assertIn(
             "window.__TAURI_INTERNALS__.invoke(",
@@ -1554,6 +1577,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("CGEventCreateKeyboardEvent", self.macos_adapter)
         self.assertIn("CGEventKeyboardSetUnicodeString", self.macos_adapter)
+        self.assertIn("_FILE_CHOOSER_SELECTION_PROBE", self.macos_adapter)
+        self.assertIn('"AXSelectedChildren"', self.macos_adapter)
+        self.assertIn('"AXFilename"', self.macos_adapter)
+        self.assertIn('"AXPress"', self.macos_adapter)
+        self.assertIn(
+            'prefix="PeersTouchAcceptance-"',
+            self.runtime_binding,
+        )
+        self.assertIn("shutil.copy2(resolved, target)", self.runtime_binding)
         self.assertIn('"AXFocusedUIElement"', self.macos_adapter)
         self.assertIn('"AXTextField"', self.macos_adapter)
         self.assertIn('"windowCount"', self.macos_adapter)
@@ -1598,6 +1630,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.native_adapter.reveal_file_chooser_location_to_process(",
             self.source,
         )
+        self.assertIn(
+            "self.native_adapter.select_file_chooser_path_to_process(",
+            self.source,
+        )
         self.assertIn("if revealed_control is None:", self.source)
         self.assertIn(
             'elif revealed_control.kind != "text-field":',
@@ -1618,6 +1654,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"Native Accessibility probe timed out"',
             self.macos_adapter,
         )
+
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
         self.assertIn('control.kind == "application-dialog"', self.source)
@@ -1661,6 +1698,91 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "attachment_input.send_keys",
         ):
             self.assertNotIn(forbidden, self.source)
+
+    def test_macos_file_chooser_selection_binds_exact_staged_path(self) -> None:
+        adapter = MacOSNativeDesktopAdapter()
+        owner = NativeControlSnapshot(
+            kind="list",
+            window_count=1,
+            frontmost=True,
+            main_window=True,
+            actual_frontmost_pid=42,
+            platform_role="AXList",
+        )
+        restored = NativeControlSnapshot(
+            kind="unknown",
+            window_count=1,
+            frontmost=True,
+            main_window=True,
+            actual_frontmost_pid=42,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            target = home / "PeersTouchAcceptance-test" / "bob" / "proof.txt"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"chooser-proof")
+            target = target.resolve()
+            completed = subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "selected": True,
+                        "path": str(target),
+                    }
+                ),
+                stderr="",
+            )
+            with (
+                patch.object(Path, "home", return_value=home),
+                patch.object(
+                    adapter,
+                    "focused_control",
+                    side_effect=(owner, restored),
+                ),
+                patch(
+                    "tooling.acceptance.drivers.native.macos.subprocess.run",
+                    return_value=completed,
+                ) as run,
+            ):
+                result = adapter.select_file_chooser_path_to_process(
+                    42,
+                    str(target),
+                )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.kind, "file-selection")
+        self.assertEqual(result.value, str(target))
+        command = run.call_args.args[0]
+        self.assertEqual(command[-2:], (str(42), str(target)))
+        self.assertNotIn("CGEventPostToPid", self.macos_adapter)
+
+    def test_local_macos_file_staging_is_released(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home"
+            home.mkdir()
+            source = Path(temporary) / "voice.webm"
+            source.write_bytes(b"voice-proof")
+            with (
+                patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+                ),
+                patch.object(Path, "home", return_value=home),
+            ):
+                binding = LocalMacOSRuntimeBinding()
+                try:
+                    staged = binding.stage_native_file("bob", source)
+                    staging_root = staged.parents[1]
+                    self.assertEqual(staged.read_bytes(), source.read_bytes())
+                    self.assertEqual(staged.parent.name, "bob")
+                    self.assertEqual(staging_root.parent, home.resolve())
+                finally:
+                    cleanup = binding.finalize_cleanup((), {})
+
+        self.assertFalse(staging_root.exists())
+        self.assertTrue(cleanup["storageReleased"])
+        self.assertEqual(cleanup["cleanupErrors"], [])
 
     def test_background_select_uses_visible_native_options(self) -> None:
         self.assertIn("def rendered_options(driver: Any)", self.source)
@@ -1774,14 +1896,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("toast.success({", create_group)
         self.assertIn("placement: 'top'", create_group)
 
-    def test_visible_thread_previews_preserve_reply_identity(self) -> None:
+    def test_bounded_thread_summary_preserves_reply_identity(self) -> None:
         message_row = (
             ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
         ).read_text(encoding="utf-8")
-        self.assertIn("data-thread-preview-message-id={reply.ulid}", message_row)
-        self.assertIn("data-thread-preview-message-content={reply.ulid}", message_row)
-        self.assertIn("[data-thread-preview-message-id]", self.source)
-        self.assertIn("[data-thread-preview-message-content]", self.source)
+        self.assertIn(
+            "data-message-thread-reply-ids={threadReplyIds.join(',')}",
+            message_row,
+        )
+        self.assertIn(
+            "data-message-thread-summary={threadReplyCount}",
+            message_row,
+        )
+        self.assertIn("data-message-metadata-rail={message.ulid}", message_row)
+        self.assertNotIn("data-thread-preview-message-id", message_row)
+        self.assertNotIn("data-thread-preview-message-content", message_row)
 
     def test_top_level_transcript_excludes_rooted_thread_replies(self) -> None:
         self.assertIn(
@@ -2251,11 +2380,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_message_action_anchor_includes_reaction_and_metadata_rows(self) -> None:
         anchor_index = self.message_row.index("data-message-action-anchor")
         bubble_index = self.message_row.index("data-message-content", anchor_index)
-        reaction_index = self.message_row.index("data-message-reaction={emoji}", bubble_index)
-        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", reaction_index)
+        rail_index = self.message_row.index("<MessageInteractionRail", bubble_index)
+        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", rail_index)
         self.assertLess(anchor_index, bubble_index)
-        self.assertLess(bubble_index, reaction_index)
-        self.assertLess(reaction_index, metadata_index)
+        self.assertLess(bubble_index, rail_index)
+        self.assertLess(rail_index, metadata_index)
+        self.assertIn(
+            "data-message-reaction={emoji}",
+            self.message_row,
+        )
+        self.assertIn(
+            "data-message-reaction-state={reactionMutationPhase || 'idle'}",
+            self.message_row,
+        )
         self.assertNotIn("ref={messageContentRef}", self.message_row)
         self.assertIn("const REACTION_PICKER_COLUMNS = 6", self.message_action_overlay)
         self.assertIn(

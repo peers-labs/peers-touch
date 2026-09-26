@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS messaging_conversations (
     federation_id TEXT NOT NULL,
     kind INTEGER NOT NULL,
     name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    avatar_object_id TEXT NOT NULL DEFAULT '',
     owner_ptid TEXT NOT NULL,
     membership_epoch INTEGER NOT NULL,
     mls_epoch INTEGER NOT NULL,
@@ -209,6 +211,8 @@ CREATE TABLE IF NOT EXISTS messaging_command_attempts (
 );
 CREATE TABLE IF NOT EXISTS messaging_interaction_intents (
     command_id TEXT PRIMARY KEY,
+    intent_id TEXT NOT NULL,
+    replaces_command_id TEXT NOT NULL DEFAULT '',
     conversation_id TEXT NOT NULL,
     target_message_id TEXT NOT NULL,
     interaction_kind TEXT NOT NULL,
@@ -217,6 +221,28 @@ CREATE TABLE IF NOT EXISTS messaging_interaction_intents (
     created_at_unix_ms INTEGER NOT NULL,
     FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
 );
+CREATE TABLE IF NOT EXISTS messaging_conversation_command_intents (
+    command_id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    intent_kind TEXT NOT NULL
+        CHECK(intent_kind IN ('update', 'dissolve')),
+    state TEXT NOT NULL,
+    created_at_unix_ms INTEGER NOT NULL,
+    FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_conversation_command_intents_pending
+    ON messaging_conversation_command_intents(state, created_at_unix_ms);
+CREATE TABLE IF NOT EXISTS messaging_member_authority_intents (
+    command_id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    action INTEGER NOT NULL,
+    target_ptid TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at_unix_ms INTEGER NOT NULL,
+    FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_member_authority_intents_pending
+    ON messaging_member_authority_intents(state, created_at_unix_ms);
 CREATE TABLE IF NOT EXISTS messaging_command_outbox (
     command_id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -340,6 +366,8 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_drafts (
     filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
+    content_kind INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
     descriptor_bytes BLOB,
     voice_note_bytes BLOB NOT NULL DEFAULT X'',
     created_at_unix_ms INTEGER NOT NULL
@@ -354,6 +382,8 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     storage_ref TEXT NOT NULL,
     filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
+    content_kind INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
     plaintext_size INTEGER NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
     object_key BLOB NOT NULL CHECK(length(object_key) = 32),
@@ -410,6 +440,16 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         table: "messaging_conversations",
         column: "recovery_ready",
         definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_conversations",
+        column: "description",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
+        table: "messaging_conversations",
+        column: "avatar_object_id",
+        definition: "TEXT NOT NULL DEFAULT ''",
     },
     RequiredColumn {
         table: "messaging_conversation_members",
@@ -492,6 +532,26 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         definition: "TEXT NOT NULL DEFAULT ''",
     },
     RequiredColumn {
+        table: "messaging_attachment_drafts",
+        column: "content_kind",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_attachment_drafts",
+        column: "duration_ms",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_attachment_projections",
+        column: "content_kind",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "messaging_attachment_projections",
+        column: "duration_ms",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
         table: "messaging_command_outbox",
         column: "conversation_id",
         definition: "TEXT NOT NULL DEFAULT ''",
@@ -557,6 +617,16 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         definition: "BLOB NOT NULL DEFAULT X''",
     },
     RequiredColumn {
+        table: "messaging_interaction_intents",
+        column: "intent_id",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
+        table: "messaging_interaction_intents",
+        column: "replaces_command_id",
+        definition: "TEXT NOT NULL DEFAULT ''",
+    },
+    RequiredColumn {
         table: "messaging_prekey_bundle",
         column: "one_time_prekey_high_watermark",
         definition: "INTEGER NOT NULL DEFAULT 0",
@@ -564,6 +634,12 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
 ];
 
 pub const POST_COLUMN_MIGRATION_SQL: &str = r#"
+UPDATE messaging_interaction_intents
+SET intent_id = command_id
+WHERE intent_id = '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_interaction_intents_active
+ON messaging_interaction_intents(intent_id)
+WHERE state IN ('prepared', 'retry_wait', 'submitted', 'superseded');
 UPDATE messaging_prekey_bundle
 SET one_time_prekey_high_watermark = -1
 WHERE one_time_prekey_high_watermark = 0;

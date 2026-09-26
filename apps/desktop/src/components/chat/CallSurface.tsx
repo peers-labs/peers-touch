@@ -1,26 +1,37 @@
-// Call surface — renders the ringing modal AND the in-call HUD.
+// Call surface — renders the compact global call tray and scalable video view.
 //
 // Mounting strategy: this component subscribes to the
 // `callP2p` manager's call-snapshot stream once at the page
 // level (see SocialChatPage.tsx). It is intentionally peer-aware
 // rather than per-conversation: a user can be on chat A while
-// receiving a call from peer B, and the modal needs to surface the
+// receiving a call from peer B, and the tray needs to surface the
 // inbound call regardless of which session is currently open.
 //
 // State machine:
 //   idle/ended    — render nothing
-//   incoming      — full-screen ringing modal (Accept / Decline)
-//   outgoing      — small floating HUD ("Ringing…" / Cancel)
-//   active        — full HUD with mute / camera / hangup, plus
-//                   <video> elements for both streams.
+//   incoming      — compact global tray (Accept / Decline)
+//   outgoing      — compact global tray ("Ringing…" / Cancel)
+//   active        — compact tray or expanded video with media controls.
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Button, Dropdown, Modal, theme, Tooltip, Typography } from 'antd';
+import { Dropdown, theme, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  Camera, CameraOff, Mic, MicOff, Phone, PhoneIncoming, PhoneOff, Settings, Video,
+  Camera,
+  CameraOff,
+  Maximize2,
+  Mic,
+  MicOff,
+  Minimize2,
+  PanelTop,
+  Phone,
+  PhoneIncoming,
+  PhoneOff,
+  Settings,
+  Video,
 } from 'lucide-react';
 import {
   callP2p,
@@ -29,9 +40,14 @@ import {
   type CallSnapshot,
 } from '../../modules/p2p/callP2p';
 import { log } from '../../utils/logger';
-import { toast } from '@lobehub/ui';
+import { ActionIcon, toast } from '@lobehub/ui';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
+
+type CallDisplayMode = 'compact' | 'chat' | 'fullscreen';
+
+const CALL_TRAY_EDGE = 20;
+const CALL_TRAY_MAX_WIDTH = 320;
 
 /** Map a terminal call result onto a localized, user-explainable
  *  message key. Phase 1 acceptance (voice-video-calls.md §11) requires
@@ -69,8 +85,10 @@ export function CallSurface() {
   // CALL_REQUEST while one is in flight) so we never need to
   // surface more than one at a time.
   const [active, setActive] = useState<ActivePeer | null>(null);
+  const [displayMode, setDisplayMode] = useState<CallDisplayMode>('compact');
   const [now, setNow] = useState(() => Date.now());
   const [devices, setDevices] = useState<CallMediaDevices>({ audioInputs: [], videoInputs: [] });
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -96,6 +114,10 @@ export function CallSurface() {
       callP2p.setOnCall(null);
     };
   }, [t]);
+
+  useEffect(() => {
+    setDisplayMode('compact');
+  }, [active?.myDid, active?.peerPtid, active?.snapshot.mediaKind]);
 
   // Tick clock for the in-call duration label. Cheap (1Hz).
   useEffect(() => {
@@ -145,7 +167,43 @@ export function CallSurface() {
       // visible. Keeping a dedicated <audio> sidesteps both.
       remoteAudioRef.current.srcObject = active.snapshot.remoteStream;
     }
-  }, [active?.snapshot.localStream, active?.snapshot.remoteStream]);
+  }, [active?.snapshot.localStream, active?.snapshot.remoteStream, displayMode]);
+
+  useEffect(() => {
+    const expanded =
+      active?.snapshot.mediaKind === 'video' && displayMode !== 'compact';
+    const surface = surfaceRef.current;
+    if (!expanded || !surface || typeof document === 'undefined') return;
+
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const scope = displayMode === 'fullscreen'
+      ? document.body
+      : surface.parentElement;
+    const inertSiblings = scope
+      ? Array.from(scope.children).filter((element) => element !== surface)
+      : [];
+
+    for (const sibling of inertSiblings) {
+      sibling.setAttribute('inert', '');
+    }
+    surface.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDisplayMode('compact');
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      for (const sibling of inertSiblings) {
+        sibling.removeAttribute('inert');
+      }
+      previousFocus?.focus();
+    };
+  }, [active?.snapshot.mediaKind, displayMode]);
 
   if (!active) return null;
   const { myDid, peerPtid, snapshot } = active;
@@ -182,61 +240,83 @@ export function CallSurface() {
     });
   };
 
-  // ── INCOMING CALL: full-screen modal ──
+  // Incoming calls use the same global compact tray boundary as Agent
+  // background operations so they remain actionable without blocking Chat.
   if (snapshot.state === 'incoming') {
-    return (
-      <Modal
-        open
-        closable={false}
-        footer={null}
-        centered
-        maskClosable={false}
-        styles={{ body: { padding: 0 } }}
-        width={360}
+    const incomingSurface = (
+      <Flexbox
+        data-chat-call-surface
+        data-chat-call-state="incoming"
+        data-chat-call-media-kind={snapshot.mediaKind}
+        data-chat-call-display-mode="compact"
+        role="dialog"
+        aria-live="assertive"
+        aria-label={t('chat.social.call.incomingTitle', {
+          kind: isVideo ? t('chat.social.call.videoBadge') : t('chat.social.call.audioBadge'),
+        })}
+        horizontal
+        align="center"
+        gap={10}
+        style={{
+          position: 'fixed',
+          right: CALL_TRAY_EDGE,
+          bottom: CALL_TRAY_EDGE,
+          zIndex: 1100,
+          width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))`,
+          minHeight: 64,
+          padding: '10px 12px',
+          borderRadius: 14,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgElevated,
+          boxShadow: token.boxShadowSecondary,
+          boxSizing: 'border-box',
+        }}
       >
-        <Flexbox align="center" gap={16} style={{ padding: '32px 24px' }}>
-          <Flexbox
-            align="center"
-            justify="center"
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 40,
-              background: token.colorPrimary,
-              color: '#fff',
-            }}
-          >
-            <PhoneIncoming size={36} />
-          </Flexbox>
-          <Title level={4} style={{ margin: 0, textAlign: 'center' }}>
+        <Flexbox
+          align="center"
+          justify="center"
+          style={{
+            width: 40,
+            height: 40,
+            flexShrink: 0,
+            borderRadius: 10,
+            background: token.colorPrimaryBg,
+            color: token.colorPrimary,
+          }}
+        >
+          <PhoneIncoming size={20} />
+        </Flexbox>
+        <Flexbox flex={1} style={{ minWidth: 0 }}>
+          <Text strong ellipsis style={{ fontSize: 13 }}>
             {t('chat.social.call.incomingTitle', {
               kind: isVideo ? t('chat.social.call.videoBadge') : t('chat.social.call.audioBadge'),
             })}
-          </Title>
-          <Text type="secondary" ellipsis style={{ maxWidth: 280 }}>
+          </Text>
+          <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
             {t('chat.social.call.incomingFrom', { from: peerPtid })}
           </Text>
-          <Flexbox horizontal gap={12} style={{ marginTop: 8 }}>
-            <Button
-              danger
-              size="large"
-              icon={<PhoneOff size={18} />}
-              onClick={handleDecline}
-            >
-              {t('chat.social.call.decline')}
-            </Button>
-            <Button
-              type="primary"
-              size="large"
-              icon={isVideo ? <Video size={18} /> : <Phone size={18} />}
-              onClick={handleAccept}
-            >
-              {t('chat.social.call.accept')}
-            </Button>
-          </Flexbox>
         </Flexbox>
-      </Modal>
+        <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
+          <ActionIcon
+            icon={PhoneOff}
+            title={t('chat.social.call.decline')}
+            size={{ blockSize: 32, size: 15 }}
+            onClick={handleDecline}
+            style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
+          />
+          <ActionIcon
+            icon={isVideo ? Video : Phone}
+            title={t('chat.social.call.accept')}
+            size={{ blockSize: 32, size: 15 }}
+            onClick={() => void handleAccept()}
+            style={{ borderRadius: 999, background: token.colorSuccess, color: token.colorTextLightSolid }}
+          />
+        </Flexbox>
+      </Flexbox>
     );
+    return typeof document === 'undefined'
+      ? incomingSurface
+      : createPortal(incomingSurface, document.body);
   }
 
   // ── OUTGOING (ringing) + ACTIVE + RECONNECTING: floating HUD ──
@@ -280,164 +360,265 @@ export function CallSurface() {
     });
   }
 
-  return (
-    <Flexbox
-      style={{
-        position: 'fixed',
-        bottom: 24,
-        right: 24,
-        width: isVideo ? 360 : 260,
-        background: token.colorBgElevated,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 12,
-        boxShadow: token.boxShadowSecondary,
-        zIndex: 1000,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Remote video (only if isVideo & media plane is up). For
-          voice-only or ringing states we show a hero icon instead.
-          The element stays mounted across a reconnect so recovery is
-          seamless. */}
-      {isVideo && hasMedia ? (
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          muted={false}
-          style={{
-            width: '100%',
-            height: 200,
-            background: '#000',
-            objectFit: 'cover',
-          }}
-        />
-      ) : (
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{ height: isVideo ? 200 : 100, background: token.colorFillTertiary }}
-        >
-          {isVideo ? (
-            <Video size={48} style={{ color: token.colorTextTertiary }} />
-          ) : (
-            <Phone size={36} style={{ color: token.colorTextTertiary }} />
-          )}
-        </Flexbox>
-      )}
+  const effectiveDisplayMode: CallDisplayMode = isVideo ? displayMode : 'compact';
+  const expandedVideo = isVideo && effectiveDisplayMode !== 'compact';
+  const status = isActive
+    ? formatDuration(elapsed)
+    : isReconnecting
+      ? t('chat.social.call.reconnecting')
+      : snapshot.state === 'outgoing'
+        ? t('chat.social.call.ringing')
+        : t('chat.social.call.connecting');
+  const neutralControlStyle = {
+    borderRadius: 999,
+    border: `1px solid ${token.colorBorderSecondary}`,
+    background: token.colorBgContainer,
+    color: token.colorTextSecondary,
+  };
 
-      {/* Reconnecting banner — overlays the media so the user knows the
-          call is recovering rather than frozen (voice-video-calls.md §6.5). */}
-      {isReconnecting && (
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            padding: '6px 12px',
-            background: token.colorWarning,
-            color: token.colorTextLightSolid,
-            fontSize: 12,
-            zIndex: 1,
-          }}
-        >
-          {t('chat.social.call.reconnecting')}
-        </Flexbox>
-      )}
-
-      {/* Local self-view PiP — only when video and not muted off. */}
-      {isVideo && hasMedia && !snapshot.cameraOff && (
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            width: 80,
-            height: 60,
-            background: '#000',
-            borderRadius: 6,
-            objectFit: 'cover',
-            border: `1px solid ${token.colorBorder}`,
-          }}
+  const callControls = (
+    <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
+      {hasMedia && (
+        <ActionIcon
+          icon={snapshot.micMuted ? MicOff : Mic}
+          title={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}
+          size={{ blockSize: 32, size: 15 }}
+          onClick={() => callP2p.toggleMic(myDid, peerPtid, !snapshot.micMuted)}
+          style={neutralControlStyle}
         />
       )}
-
-      {/* Always-on remote audio — invisible. The browser autoplay
-          policy lets us start audio without a click because we just
-          accepted a getUserMedia prompt, which counts as a user
-          gesture. */}
-      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
-
-      <Flexbox style={{ padding: 12 }} gap={8}>
-        <Flexbox horizontal align="center" justify="space-between">
-          <Text strong ellipsis style={{ maxWidth: 200 }}>
-            {peerPtid}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {isActive
-              ? formatDuration(elapsed)
-              : isReconnecting
-                ? t('chat.social.call.reconnecting')
-                : snapshot.state === 'outgoing'
-                  ? t('chat.social.call.ringing')
-                  : t('chat.social.call.connecting')}
-          </Text>
-        </Flexbox>
-
-        <Flexbox horizontal gap={8} justify="center" style={{ marginTop: 4 }}>
-          {hasMedia && (
-            <Tooltip title={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}>
-              <Button
-                shape="circle"
-                size="large"
-                icon={snapshot.micMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                onClick={() => callP2p.toggleMic(myDid, peerPtid, !snapshot.micMuted)}
-              />
-            </Tooltip>
-          )}
-
-          {hasMedia && isVideo && (
-            <Tooltip title={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}>
-              <Button
-                shape="circle"
-                size="large"
-                icon={snapshot.cameraOff ? <CameraOff size={18} /> : <Camera size={18} />}
-                onClick={() => callP2p.toggleCamera(myDid, peerPtid, !snapshot.cameraOff)}
-              />
-            </Tooltip>
-          )}
-
-          {hasMedia && deviceMenu.length > 0 && (
-            <Dropdown
-              menu={{ items: deviceMenu }}
-              trigger={['click']}
-              placement="top"
-            >
-              <Tooltip title={t('chat.social.call.devices')}>
-                <Button shape="circle" size="large" icon={<Settings size={18} />} />
-              </Tooltip>
-            </Dropdown>
-          )}
-
-          <Tooltip title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}>
-            <Button
-              danger
-              type="primary"
-              shape="circle"
-              size="large"
-              icon={<PhoneOff size={18} />}
-              onClick={handleHangup}
-            />
-          </Tooltip>
-        </Flexbox>
-      </Flexbox>
+      {hasMedia && isVideo && (
+        <ActionIcon
+          icon={snapshot.cameraOff ? CameraOff : Camera}
+          title={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
+          size={{ blockSize: 32, size: 15 }}
+          onClick={() => callP2p.toggleCamera(myDid, peerPtid, !snapshot.cameraOff)}
+          style={neutralControlStyle}
+        />
+      )}
+      {hasMedia && deviceMenu.length > 0 && (
+        <Dropdown menu={{ items: deviceMenu }} trigger={['click']} placement="top">
+          <ActionIcon
+            icon={Settings}
+            title={t('chat.social.call.devices')}
+            size={{ blockSize: 32, size: 15 }}
+            style={neutralControlStyle}
+          />
+        </Dropdown>
+      )}
+      <ActionIcon
+        icon={PhoneOff}
+        title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
+        size={{ blockSize: 32, size: 15 }}
+        onClick={handleHangup}
+        style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
+      />
     </Flexbox>
   );
+
+  const surface = (
+    <Flexbox
+      ref={surfaceRef}
+      data-chat-call-surface
+      data-chat-call-state={snapshot.state}
+      data-chat-call-media-kind={snapshot.mediaKind}
+      data-chat-call-display-mode={effectiveDisplayMode}
+      role={expandedVideo ? 'dialog' : 'status'}
+      aria-modal={effectiveDisplayMode === 'fullscreen' ? true : undefined}
+      aria-label={isVideo ? t('chat.social.call.startVideo') : t('chat.social.call.startAudio')}
+      tabIndex={expandedVideo ? -1 : undefined}
+      style={{
+        position: effectiveDisplayMode === 'chat' ? 'absolute' : 'fixed',
+        ...(effectiveDisplayMode === 'compact'
+          ? {
+              right: CALL_TRAY_EDGE,
+              bottom: CALL_TRAY_EDGE,
+              width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))`,
+            }
+          : { inset: 0, width: '100%', height: '100%' }),
+        background: isVideo ? '#000' : token.colorBgElevated,
+        border: effectiveDisplayMode === 'compact'
+          ? `1px solid ${token.colorBorderSecondary}`
+          : 'none',
+        borderRadius: effectiveDisplayMode === 'compact' ? 14 : 0,
+        boxShadow: effectiveDisplayMode === 'compact' ? token.boxShadowSecondary : 'none',
+        zIndex: effectiveDisplayMode === 'fullscreen' ? 2000 : 1100,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
+      {!isVideo && (
+        <Flexbox
+          horizontal
+          align="center"
+          gap={10}
+          style={{
+            minHeight: 64,
+            padding: '10px 12px',
+            background: token.colorBgElevated,
+            boxSizing: 'border-box',
+          }}
+        >
+          <Flexbox
+            align="center"
+            justify="center"
+            style={{
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              borderRadius: 10,
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+            }}
+          >
+            <Phone size={20} />
+          </Flexbox>
+          <Flexbox flex={1} style={{ minWidth: 0 }}>
+            <Text strong ellipsis style={{ fontSize: 13 }}>{peerPtid}</Text>
+            <Text type="secondary" ellipsis style={{ fontSize: 11 }}>{status}</Text>
+          </Flexbox>
+          {callControls}
+        </Flexbox>
+      )}
+
+      {isVideo && (
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: expandedVideo ? undefined : 184,
+            flex: expandedVideo ? 1 : undefined,
+            minHeight: 0,
+            background: '#000',
+          }}
+        >
+          {hasMedia ? (
+            <video
+              data-chat-call-remote-video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              muted={false}
+              style={{ width: '100%', height: '100%', background: '#000', objectFit: 'cover' }}
+            />
+          ) : (
+            <Flexbox align="center" justify="center" style={{ width: '100%', height: '100%', background: token.colorFillTertiary }}>
+              <Video size={expandedVideo ? 54 : 40} style={{ color: token.colorTextTertiary }} />
+            </Flexbox>
+          )}
+
+          {isReconnecting && (
+            <Flexbox
+              align="center"
+              justify="center"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                padding: '6px 12px',
+                background: token.colorWarning,
+                color: token.colorTextLightSolid,
+                fontSize: 12,
+                zIndex: 1,
+              }}
+            >
+              {t('chat.social.call.reconnecting')}
+            </Flexbox>
+          )}
+          {hasMedia && !snapshot.cameraOff && (
+            <video
+              data-chat-call-local-video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                position: 'absolute',
+                right: expandedVideo ? 16 : 8,
+                bottom: expandedVideo ? 16 : 8,
+                width: expandedVideo ? 136 : 72,
+                height: expandedVideo ? 92 : 52,
+                background: '#000',
+                borderRadius: 6,
+                objectFit: 'cover',
+                border: `1px solid ${token.colorBorder}`,
+              }}
+            />
+          )}
+
+          <Flexbox
+            horizontal
+            align="center"
+            gap={2}
+            style={{
+              position: 'absolute',
+              top: expandedVideo ? 12 : 8,
+              right: expandedVideo ? 12 : 8,
+              zIndex: 2,
+              padding: 3,
+              borderRadius: 8,
+              background: 'rgba(15,23,42,0.56)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            {([
+              ['compact', Minimize2, 'chat.social.call.compactWindow'],
+              ['chat', PanelTop, 'chat.social.call.fillChat'],
+              ['fullscreen', Maximize2, 'chat.social.call.fullscreen'],
+            ] as const).map(([mode, Icon, titleKey]) => (
+              <ActionIcon
+                key={mode}
+                data-chat-call-display-mode-target={mode}
+                icon={Icon}
+                title={t(titleKey)}
+                aria-pressed={effectiveDisplayMode === mode}
+                size={{ blockSize: 28, size: 14 }}
+                onClick={() => setDisplayMode(mode)}
+                style={{
+                  borderRadius: 6,
+                  background: effectiveDisplayMode === mode ? 'rgba(255,255,255,0.2)' : 'transparent',
+                  color: token.colorTextLightSolid,
+                }}
+              />
+            ))}
+          </Flexbox>
+        </div>
+      )}
+
+      {/* Remote audio stays mounted independently from video visibility so
+          voice-only calls and display-mode changes preserve playback. */}
+      <audio
+        data-chat-call-remote-audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ display: 'none' }}
+      />
+
+      {isVideo && (
+        <Flexbox
+          horizontal={expandedVideo}
+          align={expandedVideo ? 'center' : undefined}
+          justify={expandedVideo ? 'space-between' : undefined}
+          gap={expandedVideo ? 16 : 8}
+          style={{
+            padding: expandedVideo ? '10px 16px' : 12,
+            background: token.colorBgElevated,
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
+          }}
+        >
+          <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ minWidth: 0, flex: 1 }}>
+            <Text strong ellipsis>{peerPtid}</Text>
+            <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>{status}</Text>
+          </Flexbox>
+          {callControls}
+        </Flexbox>
+      )}
+    </Flexbox>
+  );
+
+  return effectiveDisplayMode === 'chat' || typeof document === 'undefined'
+    ? surface
+    : createPortal(surface, document.body);
 }

@@ -11,6 +11,21 @@ const BINDING_LIST_PATH: &str = "/sub-agent/agent/capability/binding/list";
 const BINDING_UPSERT_PATH: &str = "/sub-agent/agent/capability/binding/upsert";
 const BINDING_DELETE_PATH: &str = "/sub-agent/agent/capability/binding/delete";
 const READINESS_PATH: &str = "/sub-agent/agent/capability/readiness";
+#[cfg(feature = "acceptance-webdriver")]
+const ACCEPTANCE_SCENARIO_PREPARE_PATH: &str =
+    "/sub-agent/agent/capability/acceptance/scenario/prepare";
+#[cfg(feature = "acceptance-webdriver")]
+const ACCEPTANCE_SCENARIO_ARM_PATH: &str = "/sub-agent/agent/capability/acceptance/scenario/arm";
+#[cfg(feature = "acceptance-webdriver")]
+const ACCEPTANCE_SCENARIO_WAIT_PATH: &str = "/sub-agent/agent/capability/acceptance/scenario/wait";
+const ACCEPTANCE_SCENARIO_RELEASE_PATH: &str =
+    "/sub-agent/agent/capability/acceptance/scenario/release";
+#[cfg(feature = "acceptance-webdriver")]
+const ACCEPTANCE_SCENARIO_INTERRUPT_PATH: &str =
+    "/sub-agent/agent/capability/acceptance/scenario/interrupt";
+#[cfg(feature = "acceptance-webdriver")]
+const ACCEPTANCE_SCENARIO_CLEANUP_PATH: &str =
+    "/sub-agent/agent/capability/acceptance/scenario/cleanup";
 const CONNECTOR_MANIFEST_SYNC_PATH: &str = "/sub-agent/agent/connector/manifest/sync";
 const CONNECTOR_MANIFEST_LIST_PATH: &str = "/sub-agent/agent/connector/manifest/list";
 const OPERATION_CANCEL_PATH: &str = "/sub-agent/agent/capability/operation/cancel";
@@ -161,6 +176,99 @@ pub fn readiness(input: CapabilityReadinessInput, token: &str) -> AppResult<Vec<
         },
         token,
         "agent.capabilityReadinessFailed",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn prepare_acceptance_scenario(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::PrepareCapabilityAcceptanceScenarioRequest,
+        agent::PrepareCapabilityAcceptanceScenarioResponse,
+    >(
+        ACCEPTANCE_SCENARIO_PREPARE_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioPrepareFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn arm_acceptance_scenario_hook(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ArmCapabilityAcceptanceExecutorHookRequest,
+        agent::ArmCapabilityAcceptanceExecutorHookResponse,
+    >(
+        ACCEPTANCE_SCENARIO_ARM_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioArmFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn wait_acceptance_scenario_barrier(
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::WaitCapabilityAcceptanceBarrierRequest,
+        agent::WaitCapabilityAcceptanceBarrierResponse,
+    >(
+        ACCEPTANCE_SCENARIO_WAIT_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioWaitFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn release_acceptance_scenario_barrier(
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::ReleaseCapabilityAcceptanceBarrierRequest,
+        agent::ReleaseCapabilityAcceptanceBarrierResponse,
+    >(
+        ACCEPTANCE_SCENARIO_RELEASE_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioReleaseFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn interrupt_acceptance_scenario_worker(
+    input: EncodedRequestInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::InterruptCapabilityAcceptanceWorkerRequest,
+        agent::InterruptCapabilityAcceptanceWorkerResponse,
+    >(
+        ACCEPTANCE_SCENARIO_INTERRUPT_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioInterruptFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+pub fn cleanup_acceptance_scenario(input: EncodedRequestInput, token: &str) -> AppResult<Vec<u8>> {
+    request_encoded::<
+        agent::CleanupCapabilityAcceptanceScenarioRequest,
+        agent::CleanupCapabilityAcceptanceScenarioResponse,
+    >(
+        ACCEPTANCE_SCENARIO_CLEANUP_PATH,
+        input,
+        token,
+        "agent.capabilityAcceptanceScenarioCleanupFailed",
+        "agent.capabilityAcceptanceScenarioRequestInvalid",
     )
 }
 

@@ -34,12 +34,22 @@ func TestActorProfileEnvelopeSignatureCoversDeviceSigningKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if envelope.GetFederatedHandle() != "@alice@station-a.example" {
+		t.Fatalf("federated handle = %q", envelope.GetFederatedHandle())
+	}
+	if err := Verify(envelope, VerifyOptions{
+		ExpectedHandle:        "@alice@station-a.example",
+		ExpectedSigningKeyPEM: localKey.PubPEM,
+		Now:                   now,
+	}); err != nil {
+		t.Fatalf("verify signed envelope: %v", err)
+	}
 	if err := Verify(envelope, VerifyOptions{
 		ExpectedHandle:        "alice@station-a.example",
 		ExpectedSigningKeyPEM: localKey.PubPEM,
 		Now:                   now,
 	}); err != nil {
-		t.Fatalf("verify signed envelope: %v", err)
+		t.Fatalf("verify normalized expected handle: %v", err)
 	}
 
 	envelope.DeviceSigningKeys[0].SigningKeyId = "forged-key"
