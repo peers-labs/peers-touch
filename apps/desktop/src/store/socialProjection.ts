@@ -52,7 +52,6 @@ export interface DesktopUnifiedConversationLike {
 export interface ConversationLocalState {
   hidden?: boolean;
   clearedAt?: number;
-  deletedMessageUlids?: Record<string, true>;
   muted?: boolean;
   sticky?: boolean;
   alertEnabled?: boolean;
@@ -322,11 +321,8 @@ export function filterClearedMessages(
 ): SocialMessage[] {
   const state = localState[conversationKey(kind, ulid)];
   const clearedAt = state?.clearedAt ?? 0;
-  const deletedMessageUlids = state?.deletedMessageUlids ?? {};
-  const hasDeletedMessages = Object.keys(deletedMessageUlids).length > 0;
-  if (!clearedAt && !hasDeletedMessages) return messages;
+  if (!clearedAt) return messages;
   return messages.filter((message) => {
-    if (message.ulid && deletedMessageUlids[message.ulid]) return false;
     const sentMs = messageSentMs(message);
     return sentMs === 0 || sentMs >= clearedAt;
   });

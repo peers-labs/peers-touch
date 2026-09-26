@@ -14,8 +14,10 @@ use crate::model::recovery::{
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use messaging_core::codec::verification::verify_authority_event;
 use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
 use messaging_core::identity::FreshDeviceEnrollment;
+use messaging_core::proto::chat::{conversation_event, ConversationEvent};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -25,7 +27,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 3;
+pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryMessageProjection {
@@ -37,6 +39,7 @@ pub struct RecoveryMessageProjection {
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub retracted: bool,
     pub committed_at_unix_ms: i64,
 }
 
@@ -44,13 +47,11 @@ pub struct RecoveryMessageProjection {
 pub struct RecoveryConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
-    #[serde(default)]
     pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
     pub member_ptids: Vec<String>,
-    #[serde(default)]
     pub member_roles: BTreeMap<String, i32>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
@@ -98,6 +99,24 @@ pub struct RecoveryRetentionFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct RecoveryAuthorityHead {
+    pub conversation_id: String,
+    pub event_sequence: i64,
+    pub event_hash: Vec<u8>,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct RecoveryMessageRedactionTombstone {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub kind: String,
+    pub authority_sequence: i64,
+    pub authority_event_hash: Vec<u8>,
+    pub applied_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryAttachmentMetadata {
     pub message_id: String,
     pub attachment_id: String,
@@ -119,8 +138,15 @@ pub struct MessagingRecoveryArchive {
     pub conversations: Vec<RecoveryConversationProjection>,
     pub messages: Vec<RecoveryMessageProjection>,
     pub retention_floors: Vec<RecoveryRetentionFloor>,
+    pub authority_heads: Vec<RecoveryAuthorityHead>,
+    pub redaction_tombstones: Vec<RecoveryMessageRedactionTombstone>,
     pub attachments: Vec<RecoveryAttachmentMetadata>,
     pub trust: Vec<RecoveryTrustRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+pub struct RecoveryReconciliation {
+    pub redactions: Vec<RecoveryMessageRedactionTombstone>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +185,8 @@ struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
     retention_floors: Vec<RecoveryRetentionFloor>,
+    authority_heads: Vec<RecoveryAuthorityHead>,
+    redaction_tombstones: Vec<RecoveryMessageRedactionTombstone>,
 }
 
 #[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -183,6 +211,8 @@ struct MessageHistorySectionRef<'a> {
     conversations: &'a [RecoveryConversationProjection],
     messages: &'a [RecoveryMessageProjection],
     retention_floors: &'a [RecoveryRetentionFloor],
+    authority_heads: &'a [RecoveryAuthorityHead],
+    redaction_tombstones: &'a [RecoveryMessageRedactionTombstone],
 }
 
 #[derive(Serialize)]
@@ -241,9 +271,14 @@ pub fn encode_recovery_revision(
             conversations: &archive.conversations,
             messages: &archive.messages,
             retention_floors: &archive.retention_floors,
+            authority_heads: &archive.authority_heads,
+            redaction_tombstones: &archive.redaction_tombstones,
         },
-        (archive.conversations.len() + archive.messages.len() + archive.retention_floors.len())
-            as u64,
+        (archive.conversations.len()
+            + archive.messages.len()
+            + archive.retention_floors.len()
+            + archive.authority_heads.len()
+            + archive.redaction_tombstones.len()) as u64,
     )?);
     sections.push(encrypt_section(
         &key,
@@ -364,6 +399,8 @@ pub fn decode_recovery_revision(
         conversations: std::mem::take(&mut history.conversations),
         messages: std::mem::take(&mut history.messages),
         retention_floors: std::mem::take(&mut history.retention_floors),
+        authority_heads: std::mem::take(&mut history.authority_heads),
+        redaction_tombstones: std::mem::take(&mut history.redaction_tombstones),
         attachments: std::mem::take(&mut attachments.attachments),
         trust: std::mem::take(&mut trust.trust),
     };
@@ -383,8 +420,10 @@ fn initial_recovery_epoch() -> u64 {
 pub fn restore_profile_database_atomically(
     profile_id: &str,
     archive: &MessagingRecoveryArchive,
+    reconciliation: &RecoveryReconciliation,
 ) -> Result<FreshDeviceEnrollment, String> {
     validate_archive(archive)?;
+    validate_reconciliation(archive, reconciliation)?;
     if profile_id.trim().is_empty() {
         return Err("messaging recovery requires profile ID".to_string());
     }
@@ -426,6 +465,7 @@ pub fn restore_profile_database_atomically(
         if &readback != archive {
             return Err("messaging recovery staging readback mismatch".to_string());
         }
+        staging.apply_recovery_reconciliation(reconciliation)?;
         staging.validate_integrity()?;
         staging.prepare_for_atomic_replace()?;
         drop(staging);
@@ -465,6 +505,16 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
         .iter()
         .map(|message| message.message_id.as_str())
         .collect::<std::collections::HashSet<_>>();
+    let message_keys = archive
+        .messages
+        .iter()
+        .map(|message| {
+            (
+                message.conversation_id.as_str(),
+                message.message_id.as_str(),
+            )
+        })
+        .collect::<std::collections::HashSet<_>>();
     let conversation_station_by_id = archive
         .conversations
         .iter()
@@ -475,6 +525,15 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
             )
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut authority_head_by_conversation = std::collections::HashMap::new();
+    for head in &archive.authority_heads {
+        if authority_head_by_conversation
+            .insert(head.conversation_id.as_str(), head)
+            .is_some()
+        {
+            return Err("messaging recovery archive has duplicate authority heads".to_string());
+        }
+    }
     let mut retention_floor_by_conversation = std::collections::HashMap::new();
     for floor in &archive.retention_floors {
         if retention_floor_by_conversation
@@ -487,20 +546,32 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
             return Err("messaging recovery archive has duplicate retention floors".to_string());
         }
     }
+    let mut redaction_keys = std::collections::HashSet::new();
+    for tombstone in &archive.redaction_tombstones {
+        if !redaction_keys.insert((
+            tombstone.conversation_id.as_str(),
+            tombstone.message_id.as_str(),
+            tombstone.kind.as_str(),
+        )) {
+            return Err(
+                "messaging recovery archive has duplicate redaction tombstones".to_string(),
+            );
+        }
+    }
     if archive.ptid.trim().is_empty()
         || archive.actor_profile_version == 0
         || archive.conversations.iter().any(|conversation| {
             conversation.conversation_id.trim().is_empty()
                 || conversation.authority_station_id.trim().is_empty()
+                || conversation.federation_id.trim().is_empty()
                 || conversation.kind == 0
                 || conversation.owner_ptid.trim().is_empty()
                 || conversation.member_ptids.len() < 2
-                || (!conversation.member_roles.is_empty()
-                    && (conversation.member_roles.len() != conversation.member_ptids.len()
-                        || conversation
-                            .member_ptids
-                            .iter()
-                            .any(|ptid| !conversation.member_roles.contains_key(ptid))))
+                || conversation.member_roles.len() != conversation.member_ptids.len()
+                || conversation
+                    .member_ptids
+                    .iter()
+                    .any(|ptid| !conversation.member_roles.contains_key(ptid))
                 || conversation.member_roles.iter().any(|(ptid, role)| {
                     ptid.trim().is_empty()
                         || !matches!(
@@ -510,6 +581,8 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
                                 | crate::model::chat::MemberRole::Owner)
                         )
                 })
+                || !authority_head_by_conversation
+                    .contains_key(conversation.conversation_id.as_str())
                 || conversation.membership_epoch < 0
                 || conversation.mls_epoch < 0
                 || conversation.updated_at_unix_ms <= 0
@@ -526,6 +599,20 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
                 || message.message_id.trim().is_empty()
                 || message.sender_ptid.trim().is_empty()
                 || message.sender_device_id.trim().is_empty()
+                || authority_head_by_conversation
+                    .get(message.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        message.event_sequence > head.event_sequence
+                            || (message.event_sequence == head.event_sequence
+                                && message.authority_event_hash != head.event_hash)
+                    })
+                || (message.retracted
+                    && (!message.plaintext.is_empty()
+                        || !redaction_keys.contains(&(
+                            message.conversation_id.as_str(),
+                            message.message_id.as_str(),
+                            "retracted",
+                        ))))
         })
         || archive.retention_floors.iter().any(|floor| {
             floor.station_peer_id.trim().is_empty()
@@ -537,6 +624,49 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
                 || floor.authority_event_hash.iter().all(|byte| *byte == 0)
                 || !matches!(floor.reason.as_str(), "policy" | "manual_clear")
                 || floor.updated_at_unix_ms <= 0
+                || authority_head_by_conversation
+                    .get(floor.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        floor.pruned_through_sequence > head.event_sequence
+                            || (floor.pruned_through_sequence == head.event_sequence
+                                && floor.authority_event_hash != head.event_hash)
+                    })
+        })
+        || archive.authority_heads.iter().any(|head| {
+            head.conversation_id.trim().is_empty()
+                || !conversation_station_by_id.contains_key(head.conversation_id.as_str())
+                || head.event_sequence <= 0
+                || head.event_hash.len() != 32
+                || head.event_hash.iter().all(|byte| *byte == 0)
+                || head.updated_at_unix_ms <= 0
+        })
+        || archive.redaction_tombstones.iter().any(|tombstone| {
+            tombstone.conversation_id.trim().is_empty()
+                || tombstone.message_id.trim().is_empty()
+                || !matches!(tombstone.kind.as_str(), "hidden_for_actor" | "retracted")
+                || !conversation_station_by_id.contains_key(tombstone.conversation_id.as_str())
+                || tombstone.authority_sequence <= 0
+                || tombstone.authority_event_hash.len() != 32
+                || tombstone.authority_event_hash.iter().all(|byte| *byte == 0)
+                || tombstone.applied_at_unix_ms <= 0
+                || authority_head_by_conversation
+                    .get(tombstone.conversation_id.as_str())
+                    .is_none_or(|head| {
+                        tombstone.authority_sequence > head.event_sequence
+                            || (tombstone.authority_sequence == head.event_sequence
+                                && tombstone.authority_event_hash != head.event_hash)
+                    })
+                || (tombstone.kind == "hidden_for_actor"
+                    && message_keys.contains(&(
+                        tombstone.conversation_id.as_str(),
+                        tombstone.message_id.as_str(),
+                    )))
+                || (tombstone.kind == "retracted"
+                    && archive.messages.iter().any(|message| {
+                        message.conversation_id == tombstone.conversation_id
+                            && message.message_id == tombstone.message_id
+                            && (!message.retracted || !message.plaintext.is_empty())
+                    }))
         })
         || archive.attachments.iter().any(|attachment| {
             attachment.message_id.trim().is_empty()
@@ -560,6 +690,212 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
         return Err("messaging recovery archive is invalid".to_string());
     }
     Ok(())
+}
+
+pub(super) fn fetch_recovery_events_to_target<F>(
+    from_sequence: i64,
+    target_sequence: i64,
+    page_limit: i32,
+    max_pages: usize,
+    mut fetch_page: F,
+) -> Result<Vec<ConversationEvent>, String>
+where
+    F: FnMut(i64, i32) -> Result<Vec<ConversationEvent>, String>,
+{
+    if from_sequence <= 0 || target_sequence < from_sequence || page_limit <= 0 || max_pages == 0 {
+        return Err("messaging recovery reconciliation replay bound is invalid".to_string());
+    }
+    let mut events = Vec::new();
+    let mut after_sequence = from_sequence;
+    for _ in 0..max_pages {
+        if after_sequence == target_sequence {
+            return Ok(events);
+        }
+        let limit = i32::try_from((target_sequence - after_sequence).min(i64::from(page_limit)))
+            .map_err(|_| "messaging recovery reconciliation page limit is invalid".to_string())?;
+        let page = fetch_page(after_sequence, limit)?;
+        if page.is_empty() {
+            return Err(
+                "messaging recovery reconciliation authority event log is incomplete".to_string(),
+            );
+        }
+        if page.len() > limit as usize {
+            return Err(
+                "messaging recovery reconciliation authority event page exceeds target".to_string(),
+            );
+        }
+        let next_sequence = page.last().map(|event| event.sequence).ok_or_else(|| {
+            "messaging recovery reconciliation authority event log is incomplete".to_string()
+        })?;
+        if next_sequence <= after_sequence || next_sequence > target_sequence {
+            return Err(
+                "messaging recovery reconciliation authority event page is out of range"
+                    .to_string(),
+            );
+        }
+        after_sequence = next_sequence;
+        events.extend(page);
+    }
+    Err("messaging recovery reconciliation exceeded authority replay bound".to_string())
+}
+
+pub(super) fn reconcile_archive_authority_events(
+    archive: &MessagingRecoveryArchive,
+    conversation_id: &str,
+    target_sequence: i64,
+    target_event_hash: &[u8],
+    events: &[ConversationEvent],
+) -> Result<Vec<RecoveryMessageRedactionTombstone>, String> {
+    let conversation = archive
+        .conversations
+        .iter()
+        .find(|conversation| conversation.conversation_id == conversation_id)
+        .ok_or_else(|| "messaging recovery reconciliation conversation is missing".to_string())?;
+    let authority_station_id = conversation.authority_station_id.clone();
+    let head_index = archive
+        .authority_heads
+        .iter()
+        .position(|head| head.conversation_id == conversation_id)
+        .ok_or_else(|| "messaging recovery reconciliation authority head is missing".to_string())?;
+    let mut sequence = archive.authority_heads[head_index].event_sequence;
+    let mut event_hash = archive.authority_heads[head_index].event_hash.clone();
+    if target_sequence < sequence
+        || target_event_hash.len() != 32
+        || target_event_hash.iter().all(|byte| *byte == 0)
+    {
+        return Err("messaging recovery reconciliation authority target is invalid".to_string());
+    }
+    let mut redactions = Vec::new();
+
+    for event in events {
+        verify_authority_event(event)?;
+        if event.conversation_id != conversation_id
+            || event.authority_station_peer_id != authority_station_id
+            || event.sequence != sequence + 1
+            || event.previous_hash != event_hash
+        {
+            return Err(
+                "messaging recovery reconciliation authority chain is not contiguous".to_string(),
+            );
+        }
+        match event.payload.as_ref() {
+            Some(conversation_event::Payload::MessageRetracted(fact)) => {
+                upsert_reconciliation_redaction(
+                    &mut redactions,
+                    conversation_id,
+                    &fact.message_id,
+                    "retracted",
+                    event,
+                    event_timestamp_unix_ms(event)?,
+                )?;
+            }
+            Some(conversation_event::Payload::MessageHiddenForActor(fact))
+                if fact.actor_ptid == archive.ptid =>
+            {
+                upsert_reconciliation_redaction(
+                    &mut redactions,
+                    conversation_id,
+                    &fact.message_id,
+                    "hidden_for_actor",
+                    event,
+                    event_timestamp_unix_ms(event)?,
+                )?;
+            }
+            _ => {}
+        }
+        sequence = event.sequence;
+        event_hash.clone_from(&event.event_hash);
+    }
+
+    if sequence != target_sequence || event_hash != target_event_hash {
+        return Err(
+            "messaging recovery reconciliation did not reach the authority snapshot".to_string(),
+        );
+    }
+    Ok(redactions)
+}
+
+fn upsert_reconciliation_redaction(
+    redactions: &mut Vec<RecoveryMessageRedactionTombstone>,
+    conversation_id: &str,
+    message_id: &str,
+    kind: &str,
+    event: &ConversationEvent,
+    applied_at_unix_ms: i64,
+) -> Result<(), String> {
+    if message_id.trim().is_empty() {
+        return Err("messaging recovery redaction target is missing".to_string());
+    }
+    if !matches!(kind, "retracted" | "hidden_for_actor") {
+        return Err("messaging recovery redaction kind is invalid".to_string());
+    }
+    let tombstone = RecoveryMessageRedactionTombstone {
+        conversation_id: conversation_id.to_string(),
+        message_id: message_id.to_string(),
+        kind: kind.to_string(),
+        authority_sequence: event.sequence,
+        authority_event_hash: event.event_hash.clone(),
+        applied_at_unix_ms,
+    };
+    if let Some(existing) = redactions.iter_mut().find(|existing| {
+        existing.conversation_id == conversation_id
+            && existing.message_id == message_id
+            && existing.kind == kind
+    }) {
+        *existing = tombstone;
+    } else {
+        redactions.push(tombstone);
+    }
+    Ok(())
+}
+
+fn validate_reconciliation(
+    archive: &MessagingRecoveryArchive,
+    reconciliation: &RecoveryReconciliation,
+) -> Result<(), String> {
+    let heads = archive
+        .authority_heads
+        .iter()
+        .map(|head| (head.conversation_id.as_str(), head.event_sequence))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut keys = std::collections::HashSet::new();
+    if reconciliation.redactions.iter().any(|redaction| {
+        redaction.conversation_id.trim().is_empty()
+            || redaction.message_id.trim().is_empty()
+            || !matches!(redaction.kind.as_str(), "hidden_for_actor" | "retracted")
+            || redaction.authority_sequence
+                <= heads
+                    .get(redaction.conversation_id.as_str())
+                    .copied()
+                    .unwrap_or(i64::MAX)
+            || redaction.authority_event_hash.len() != 32
+            || redaction.authority_event_hash.iter().all(|byte| *byte == 0)
+            || redaction.applied_at_unix_ms <= 0
+            || !keys.insert((
+                redaction.conversation_id.as_str(),
+                redaction.message_id.as_str(),
+                redaction.kind.as_str(),
+            ))
+    }) {
+        return Err("messaging recovery reconciliation is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn event_timestamp_unix_ms(event: &ConversationEvent) -> Result<i64, String> {
+    let timestamp = event
+        .committed_at
+        .as_ref()
+        .ok_or_else(|| "messaging recovery authority event timestamp is missing".to_string())?;
+    if timestamp.seconds < 0 || !(0..1_000_000_000).contains(&timestamp.nanos) {
+        return Err("messaging recovery authority event timestamp is invalid".to_string());
+    }
+    timestamp
+        .seconds
+        .checked_mul(1_000)
+        .and_then(|value| value.checked_add(i64::from(timestamp.nanos) / 1_000_000))
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "messaging recovery authority event timestamp is invalid".to_string())
 }
 
 fn encrypt_section<T: Serialize>(
@@ -697,6 +1033,9 @@ mod tests {
 
         require_zeroize_on_drop::<RecoveryMessageProjection>();
         require_zeroize_on_drop::<RecoveryRetentionFloor>();
+        require_zeroize_on_drop::<RecoveryAuthorityHead>();
+        require_zeroize_on_drop::<RecoveryMessageRedactionTombstone>();
+        require_zeroize_on_drop::<RecoveryReconciliation>();
         require_zeroize_on_drop::<RecoveryConversationProjection>();
         require_zeroize_on_drop::<RecoveryAttachmentMetadata>();
         require_zeroize_on_drop::<RecoveryTrustRecord>();
@@ -744,6 +1083,7 @@ mod tests {
                 sender_ptid: "ptid:bob".to_string(),
                 sender_device_id: "bob-device".to_string(),
                 plaintext: "exact plaintext".to_string(),
+                retracted: false,
                 committed_at_unix_ms: 10,
             }],
             retention_floors: vec![RecoveryRetentionFloor {
@@ -755,6 +1095,13 @@ mod tests {
                 reason: "policy".to_string(),
                 updated_at_unix_ms: 70,
             }],
+            authority_heads: vec![RecoveryAuthorityHead {
+                conversation_id: "conversation-1".to_string(),
+                event_sequence: 7,
+                event_hash: vec![7; 32],
+                updated_at_unix_ms: 10,
+            }],
+            redaction_tombstones: Vec::new(),
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "message-1".to_string(),
                 attachment_id: "attachment-1".to_string(),
@@ -769,27 +1116,28 @@ mod tests {
     }
 
     #[test]
-    fn legacy_conversation_projection_decodes_without_member_roles() {
-        let projection: RecoveryConversationProjection =
-            serde_json::from_value(serde_json::json!({
-                "conversation_id": "conversation-legacy",
-                "authority_station_id": "station-local",
-                "kind": 2,
-                "name": "Legacy group",
-                "owner_ptid": "ptid:alice",
-                "member_ptids": ["ptid:alice", "ptid:bob"],
-                "membership_epoch": 1,
-                "mls_epoch": 1,
-                "active": true,
-                "updated_at_unix_ms": 100,
-            }))
-            .unwrap();
+    fn recovery_v4_rejects_conversation_projection_without_required_scope() {
+        let legacy = serde_json::json!({
+            "conversation_id": "conversation-1",
+            "authority_station_id": "station-local",
+            "kind": 2,
+            "name": "Legacy group",
+            "owner_ptid": "ptid:alice",
+            "member_ptids": ["ptid:alice", "ptid:bob"],
+            "membership_epoch": 1,
+            "mls_epoch": 1,
+            "active": true,
+            "updated_at_unix_ms": 100,
+        });
 
-        assert!(projection.member_roles.is_empty());
-        assert!(projection.federation_id.is_empty());
-        let mut legacy = archive();
-        legacy.conversations = vec![projection];
-        assert!(validate_archive(&legacy).is_ok());
+        assert!(serde_json::from_value::<RecoveryConversationProjection>(legacy).is_err());
+
+        let mut invalid = archive();
+        invalid.conversations[0].federation_id.clear();
+        assert!(validate_archive(&invalid).is_err());
+        invalid.conversations[0].federation_id = "federation-1".to_string();
+        invalid.conversations[0].member_roles.clear();
+        assert!(validate_archive(&invalid).is_err());
     }
 
     #[test]
@@ -808,6 +1156,277 @@ mod tests {
         .unwrap();
         assert_eq!(actual.recovery_epoch, 7);
         assert_eq!(actual.archive, expected);
+    }
+
+    #[test]
+    fn redacted_history_requires_a_tombstone_and_contains_no_plaintext() {
+        let mut redacted = archive();
+        redacted.messages[0].plaintext.clear();
+        redacted.messages[0].retracted = true;
+        redacted.redaction_tombstones = vec![RecoveryMessageRedactionTombstone {
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            kind: "retracted".to_string(),
+            authority_sequence: 8,
+            authority_event_hash: vec![8; 32],
+            applied_at_unix_ms: 20,
+        }];
+        redacted.authority_heads[0] = RecoveryAuthorityHead {
+            conversation_id: "conversation-1".to_string(),
+            event_sequence: 8,
+            event_hash: vec![8; 32],
+            updated_at_unix_ms: 20,
+        };
+        assert!(validate_archive(&redacted).is_ok());
+
+        redacted.messages[0].plaintext = "must not survive".to_string();
+        assert!(validate_archive(&redacted).is_err());
+        redacted.messages[0].plaintext.clear();
+        redacted.redaction_tombstones.clear();
+        assert!(validate_archive(&redacted).is_err());
+    }
+
+    #[test]
+    fn actor_hidden_history_cannot_remain_in_the_archive() {
+        let mut hidden = archive();
+        hidden.redaction_tombstones = vec![RecoveryMessageRedactionTombstone {
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            kind: "hidden_for_actor".to_string(),
+            authority_sequence: 8,
+            authority_event_hash: vec![8; 32],
+            applied_at_unix_ms: 20,
+        }];
+        hidden.authority_heads[0] = RecoveryAuthorityHead {
+            conversation_id: "conversation-1".to_string(),
+            event_sequence: 8,
+            event_hash: vec![8; 32],
+            updated_at_unix_ms: 20,
+        };
+
+        assert!(validate_archive(&hidden).is_err());
+        hidden.messages.clear();
+        hidden.attachments.clear();
+        assert!(validate_archive(&hidden).is_ok());
+    }
+
+    #[test]
+    fn newer_authority_redactions_are_captured_without_advancing_the_archive_head() {
+        let archived = archive();
+        let mut retract = ConversationEvent {
+            event_id: "event-retract".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 8,
+            command_id: "command-retract".to_string(),
+            previous_hash: vec![7; 32],
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::MessageRetracted(
+                messaging_core::proto::chat::MessageRetractedFact {
+                    message_id: "message-1".to_string(),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        retract.event_hash = Sha256::digest(retract.encode_to_vec()).to_vec();
+        let mut trailing = ConversationEvent {
+            event_id: "event-trailing".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 9,
+            command_id: "command-trailing".to_string(),
+            previous_hash: retract.event_hash.clone(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 2,
+                nanos: 0,
+            }),
+            authority_station_peer_id: "station-local".to_string(),
+            ..Default::default()
+        };
+        trailing.event_hash = Sha256::digest(trailing.encode_to_vec()).to_vec();
+        let trailing_hash = trailing.event_hash.clone();
+
+        let redactions = reconcile_archive_authority_events(
+            &archived,
+            "conversation-1",
+            9,
+            &trailing_hash,
+            &[retract, trailing],
+        )
+        .unwrap();
+
+        assert_eq!(redactions.len(), 1);
+        assert_eq!(redactions[0].kind, "retracted");
+        assert_eq!(redactions[0].authority_sequence, 8);
+        assert_eq!(archived.messages[0].plaintext, "exact plaintext");
+        assert!(!archived.messages[0].retracted);
+        assert_eq!(archived.attachments.len(), 1);
+        assert_eq!(archived.authority_heads[0].event_sequence, 7);
+        assert_eq!(archived.authority_heads[0].event_hash, vec![7; 32]);
+    }
+
+    #[test]
+    fn actor_hide_reconciliation_is_idempotent_and_removes_recoverable_content() {
+        let archived = archive();
+        let mut hidden = ConversationEvent {
+            event_id: "event-hidden".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 8,
+            command_id: "command-hidden".to_string(),
+            previous_hash: vec![7; 32],
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::MessageHiddenForActor(
+                messaging_core::proto::chat::MessageHiddenForActorFact {
+                    message_id: "message-1".to_string(),
+                    actor_ptid: "ptid:alice".to_string(),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        hidden.event_hash = Sha256::digest(hidden.encode_to_vec()).to_vec();
+        let mut repeated = ConversationEvent {
+            event_id: "event-hidden-repeated".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 9,
+            command_id: "command-hidden-repeated".to_string(),
+            previous_hash: hidden.event_hash.clone(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 2,
+                nanos: 0,
+            }),
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::MessageHiddenForActor(
+                messaging_core::proto::chat::MessageHiddenForActorFact {
+                    message_id: "message-1".to_string(),
+                    actor_ptid: "ptid:alice".to_string(),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        repeated.event_hash = Sha256::digest(repeated.encode_to_vec()).to_vec();
+        let repeated_hash = repeated.event_hash.clone();
+
+        let redactions = reconcile_archive_authority_events(
+            &archived,
+            "conversation-1",
+            9,
+            &repeated_hash,
+            &[hidden, repeated],
+        )
+        .unwrap();
+
+        assert_eq!(redactions.len(), 1);
+        assert_eq!(redactions[0].kind, "hidden_for_actor");
+        assert_eq!(redactions[0].authority_sequence, 9);
+        assert_eq!(redactions[0].authority_event_hash, repeated_hash);
+        assert_eq!(archived.authority_heads[0].event_sequence, 7);
+    }
+
+    #[test]
+    fn reconciliation_rejects_a_broken_authority_chain() {
+        let archived = archive();
+        let mut broken = ConversationEvent {
+            event_id: "event-broken".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 8,
+            command_id: "command-broken".to_string(),
+            previous_hash: vec![6; 32],
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            authority_station_peer_id: "station-local".to_string(),
+            ..Default::default()
+        };
+        broken.event_hash = Sha256::digest(broken.encode_to_vec()).to_vec();
+
+        let target_hash = broken.event_hash.clone();
+        let error = reconcile_archive_authority_events(
+            &archived,
+            "conversation-1",
+            8,
+            &target_hash,
+            &[broken],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("authority chain is not contiguous"));
+    }
+
+    #[test]
+    fn reconciliation_requires_the_exact_snapshotted_authority_head() {
+        let archived = archive();
+        let mut event = ConversationEvent {
+            event_id: "event-8".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sequence: 8,
+            command_id: "command-8".to_string(),
+            previous_hash: vec![7; 32],
+            authority_station_peer_id: "station-local".to_string(),
+            ..Default::default()
+        };
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+
+        let error =
+            reconcile_archive_authority_events(&archived, "conversation-1", 8, &[9; 32], &[event])
+                .unwrap_err();
+
+        assert!(error.contains("did not reach the authority snapshot"));
+    }
+
+    #[test]
+    fn recovery_replay_continues_after_short_pages_until_the_snapshot() {
+        let mut pages = std::collections::VecDeque::from([
+            vec![ConversationEvent {
+                sequence: 8,
+                ..Default::default()
+            }],
+            vec![ConversationEvent {
+                sequence: 9,
+                ..Default::default()
+            }],
+        ]);
+        let mut calls = Vec::new();
+
+        let events = fetch_recovery_events_to_target(7, 9, 500, 3, |after, limit| {
+            calls.push((after, limit));
+            Ok(pages.pop_front().unwrap_or_default())
+        })
+        .unwrap();
+
+        assert_eq!(calls, vec![(7, 2), (8, 1)]);
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.sequence)
+                .collect::<Vec<_>>(),
+            vec![8, 9]
+        );
+    }
+
+    #[test]
+    fn recovery_replay_fails_when_the_snapshotted_range_disappears_or_is_overshot() {
+        let incomplete =
+            fetch_recovery_events_to_target(7, 9, 500, 3, |_, _| Ok(Vec::new())).unwrap_err();
+        assert!(incomplete.contains("event log is incomplete"));
+
+        let overshot = fetch_recovery_events_to_target(7, 9, 500, 3, |_, _| {
+            Ok(vec![ConversationEvent {
+                sequence: 10,
+                ..Default::default()
+            }])
+        })
+        .unwrap_err();
+        assert!(overshot.contains("page is out of range"));
     }
 
     #[test]

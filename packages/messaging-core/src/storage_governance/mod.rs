@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod redaction;
 pub mod retention;
 
 use crate::proto::chat::{

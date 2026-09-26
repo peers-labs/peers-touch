@@ -1917,6 +1917,35 @@ describe('api messaging interaction bridge', () => {
       },
     )
   })
+
+  it('submits delete-for-me as the canonical actor-scoped hide interaction', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command_id: 'command-hide-1',
+        state: 'pending',
+      },
+    })
+
+    await api.messagingMetadataInteraction(
+      'conversation-1',
+      'message-1',
+      'hideForActor',
+    )
+
+    expect(invoke).toHaveBeenCalledWith(
+      'messaging_submit_metadata_interaction',
+      {
+        input: {
+          conversation_id: 'conversation-1',
+          message_id: 'message-1',
+          kind: 'hideForActor',
+          reaction: '',
+          remove: false,
+        },
+      },
+    )
+  })
 })
 
 describe('api.listApplets', () => {

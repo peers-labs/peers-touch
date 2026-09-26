@@ -400,6 +400,15 @@ CREATE TABLE IF NOT EXISTS chat_retention_floor (
     updated_at_unix_ms INTEGER NOT NULL,
     PRIMARY KEY(station_peer_id, actor_ptid, device_id, conversation_id)
 );
+CREATE TABLE IF NOT EXISTS message_redaction_tombstones (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('hidden_for_actor', 'retracted')),
+    authority_sequence INTEGER NOT NULL,
+    authority_event_hash BLOB NOT NULL CHECK(length(authority_event_hash) = 32),
+    applied_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, message_id, kind)
+);
 CREATE TABLE IF NOT EXISTS chat_cleanup_journal (
     operation_id TEXT PRIMARY KEY,
     scope_kind TEXT NOT NULL CHECK (
@@ -718,7 +727,9 @@ AND NOT EXISTS (
     FROM messaging_message_search_fts search
     WHERE search.conversation_id = message.conversation_id
       AND search.message_id = message.message_id
-);
+)
+AND message.retracted = 0
+AND message.hidden_for_actor = 0;
 INSERT OR IGNORE INTO messaging_schema_migrations(migration_id)
 VALUES ('message-search-backfill-v1');
 "#;

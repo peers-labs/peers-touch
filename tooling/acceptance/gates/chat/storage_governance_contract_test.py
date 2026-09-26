@@ -248,7 +248,7 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("chat_storage_acceptance_seed_retention", mobile_registry)
         self.assertIn("data-chat-storage-retention-option", desktop_ui)
         self.assertIn("data-chat-storage-retention-option", mobile_ui)
-        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 3", recovery)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 4", recovery)
         self.assertIn("retention_floors", recovery)
 
     def test_retention_gate_uses_one_station_mobile_runtime(self) -> None:
