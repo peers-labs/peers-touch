@@ -510,7 +510,6 @@ describe('Messaging local projections and member settings', () => {
         pinned: true,
         background: 'mint',
         backgroundImage: 'oss://station/background',
-        clearedAtUnixMs: 1_800_000_000_000,
       },
     })
 
@@ -519,7 +518,6 @@ describe('Messaging local projections and member settings', () => {
       pinned: true,
       background: 'mint',
       backgroundImage: 'oss://station/background',
-      clearedAtUnixMs: 1_800_000_000_000,
     })).resolves.toEqual({
       nickname: '',
       muted: true,
@@ -527,7 +525,6 @@ describe('Messaging local projections and member settings', () => {
       pinned: true,
       background: 'mint',
       backgroundImage: 'oss://station/background',
-      clearedAtUnixMs: 1_800_000_000_000,
     })
 
     expect(invokeMock).toHaveBeenCalledWith('messaging_update_member_settings', {
@@ -539,7 +536,6 @@ describe('Messaging local projections and member settings', () => {
         pinned: true,
         background: 'mint',
         background_image: 'oss://station/background',
-        cleared_at_unix_ms: 1_800_000_000_000,
       },
     })
   })

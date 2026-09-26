@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/shallow';
 import {
   buildChatConversationSurfaceItems,
-  filterChatMessagesAfterClearedAt,
   filterChatMessagesBySearchText,
   chatMessageDisplayKind,
   type ChatConversationPreferenceLike,
@@ -195,11 +194,7 @@ export function useThreadProjection(
       ? t('mobile.chat.typing')
       : t('mobile.chat.peerAtStation', { station: stationHost });
 
-  const threadMessages = filterChatMessagesAfterClearedAt(
-    messages,
-    actionState.clearedAt,
-    (message) => messageTimestampMillis(message),
-  );
+  const threadMessages = messages;
 
   return {
     messages: threadMessages,
@@ -326,7 +321,6 @@ export function chatStateTags(
   if (state.sticky) tags.push(t('mobile.chat.stateSticky'));
   if (state.muted) tags.push(t('mobile.chat.stateMuted'));
   if (state.alertEnabled === false) tags.push(t('mobile.chat.stateAlertOff'));
-  if (state.clearedAt) tags.push(t('mobile.chat.stateCleared'));
   return tags;
 }
 
@@ -353,7 +347,6 @@ export function friendSettingsToActionState(
     sticky: settings.isPinned,
     alertEnabled: settings.alertEnabled,
     background: settings.background,
-    clearedAt: settings.clearedAt,
   };
 }
 
@@ -379,7 +372,6 @@ export function useChatHistoryProjection(
   conversationMessages: SocialMessage[],
   loadedThreadMessages: SocialMessage[],
   threadRoot: string,
-  clearedAt: number,
   query: string,
 ) {
   const logical = useMemo(() => {
@@ -388,15 +380,16 @@ export function useChatHistoryProjection(
       if (!byId.has(message.ulid)) byId.set(message.ulid, message);
     });
     const visible = [...byId.values()]
-      .filter((message) => (!threadRoot || message.ulid === threadRoot || message.threadRootUlid === threadRoot)
-        && messageTimestampMillis(message) > clearedAt)
+      .filter((message) => (
+        !threadRoot || message.ulid === threadRoot || message.threadRootUlid === threadRoot
+      ))
       .sort((a, b) => messageTimestampMillis(a) - messageTimestampMillis(b)
         || a.ulid.localeCompare(b.ulid));
     return {
       byId, visible,
       replyCount: threadRoot ? visible.filter((message) => message.ulid !== threadRoot).length : 0,
     };
-  }, [conversationMessages, loadedThreadMessages, threadRoot, clearedAt]);
+  }, [conversationMessages, loadedThreadMessages, threadRoot]);
   const searchResults = useMemo(
     () => localThreadSearchResults(logical.visible, query),
     [logical.visible, query],

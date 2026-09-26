@@ -1235,7 +1235,6 @@ func TestConversationUpdateSettings(t *testing.T) {
 	fixture := mustCreateGroup(t)
 	name := "  Project Room  "
 	description := "  Shared planning  "
-	timer := uint32(3600)
 	command := aggregate.SettingsCommand{
 		Command: mustCommand(
 			t,
@@ -1246,9 +1245,8 @@ func TestConversationUpdateSettings(t *testing.T) {
 			testTime.Add(time.Minute),
 		),
 		Patch: valueobject.SettingsPatch{
-			Name:                  &name,
-			Description:           &description,
-			DisappearTimerSeconds: &timer,
+			Name:        &name,
+			Description: &description,
 		},
 	}
 
@@ -1258,8 +1256,7 @@ func TestConversationUpdateSettings(t *testing.T) {
 	}
 	settings := fixture.conversation.Settings()
 	if settings.Name != "Project Room" ||
-		settings.Description != "Shared planning" ||
-		settings.DisappearTimerSeconds != timer {
+		settings.Description != "Shared planning" {
 		t.Fatalf("Settings() = %+v, want applied and normalized patch", settings)
 	}
 	if transition.Event.Fact.Kind != domainevent.KindConversationSettings ||

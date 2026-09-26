@@ -792,6 +792,66 @@ func (x *ChatStorageRetentionRequest) GetRetentionPreset() ChatRetentionPreset {
 	return ChatRetentionPreset_CHAT_RETENTION_PRESET_UNSPECIFIED
 }
 
+type ChatStorageConversationRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Scope          *ChatStorageScope      `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	ScopeRevision  string                 `protobuf:"bytes,2,opt,name=scope_revision,json=scopeRevision,proto3" json:"scope_revision,omitempty"`
+	ConversationId string                 `protobuf:"bytes,3,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ChatStorageConversationRequest) Reset() {
+	*x = ChatStorageConversationRequest{}
+	mi := &file_domain_chat_storage_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatStorageConversationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatStorageConversationRequest) ProtoMessage() {}
+
+func (x *ChatStorageConversationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_storage_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatStorageConversationRequest.ProtoReflect.Descriptor instead.
+func (*ChatStorageConversationRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_storage_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ChatStorageConversationRequest) GetScope() *ChatStorageScope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *ChatStorageConversationRequest) GetScopeRevision() string {
+	if x != nil {
+		return x.ScopeRevision
+	}
+	return ""
+}
+
+func (x *ChatStorageConversationRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
 type ChatStoragePolicy struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Scope           *ChatStorageScope      `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -803,7 +863,7 @@ type ChatStoragePolicy struct {
 
 func (x *ChatStoragePolicy) Reset() {
 	*x = ChatStoragePolicy{}
-	mi := &file_domain_chat_storage_proto_msgTypes[6]
+	mi := &file_domain_chat_storage_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -815,7 +875,7 @@ func (x *ChatStoragePolicy) String() string {
 func (*ChatStoragePolicy) ProtoMessage() {}
 
 func (x *ChatStoragePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_storage_proto_msgTypes[6]
+	mi := &file_domain_chat_storage_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,7 +888,7 @@ func (x *ChatStoragePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatStoragePolicy.ProtoReflect.Descriptor instead.
 func (*ChatStoragePolicy) Descriptor() ([]byte, []int) {
-	return file_domain_chat_storage_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_storage_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ChatStoragePolicy) GetScope() *ChatStorageScope {
@@ -871,7 +931,7 @@ type ChatStorageOperation struct {
 
 func (x *ChatStorageOperation) Reset() {
 	*x = ChatStorageOperation{}
-	mi := &file_domain_chat_storage_proto_msgTypes[7]
+	mi := &file_domain_chat_storage_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -883,7 +943,7 @@ func (x *ChatStorageOperation) String() string {
 func (*ChatStorageOperation) ProtoMessage() {}
 
 func (x *ChatStorageOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_storage_proto_msgTypes[7]
+	mi := &file_domain_chat_storage_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -896,7 +956,7 @@ func (x *ChatStorageOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatStorageOperation.ProtoReflect.Descriptor instead.
 func (*ChatStorageOperation) Descriptor() ([]byte, []int) {
-	return file_domain_chat_storage_proto_rawDescGZIP(), []int{7}
+	return file_domain_chat_storage_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ChatStorageOperation) GetOperationId() string {
@@ -987,7 +1047,7 @@ type ChatStorageError struct {
 
 func (x *ChatStorageError) Reset() {
 	*x = ChatStorageError{}
-	mi := &file_domain_chat_storage_proto_msgTypes[8]
+	mi := &file_domain_chat_storage_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1059,7 @@ func (x *ChatStorageError) String() string {
 func (*ChatStorageError) ProtoMessage() {}
 
 func (x *ChatStorageError) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_storage_proto_msgTypes[8]
+	mi := &file_domain_chat_storage_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1072,7 @@ func (x *ChatStorageError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatStorageError.ProtoReflect.Descriptor instead.
 func (*ChatStorageError) Descriptor() ([]byte, []int) {
-	return file_domain_chat_storage_proto_rawDescGZIP(), []int{8}
+	return file_domain_chat_storage_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ChatStorageError) GetCode() ChatStorageErrorCode {
@@ -1048,7 +1108,7 @@ type ChatStorageResult struct {
 
 func (x *ChatStorageResult) Reset() {
 	*x = ChatStorageResult{}
-	mi := &file_domain_chat_storage_proto_msgTypes[9]
+	mi := &file_domain_chat_storage_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1120,7 @@ func (x *ChatStorageResult) String() string {
 func (*ChatStorageResult) ProtoMessage() {}
 
 func (x *ChatStorageResult) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_storage_proto_msgTypes[9]
+	mi := &file_domain_chat_storage_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1133,7 @@ func (x *ChatStorageResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatStorageResult.ProtoReflect.Descriptor instead.
 func (*ChatStorageResult) Descriptor() ([]byte, []int) {
-	return file_domain_chat_storage_proto_rawDescGZIP(), []int{9}
+	return file_domain_chat_storage_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ChatStorageResult) GetSnapshot() *ChatStorageSnapshot {
@@ -1151,7 +1211,11 @@ const file_domain_chat_storage_proto_rawDesc = "" +
 	"\x1bChatStorageRetentionRequest\x12A\n" +
 	"\x05scope\x18\x01 \x01(\v2+.peers_touch.model.chat.v1.ChatStorageScopeR\x05scope\x12%\n" +
 	"\x0escope_revision\x18\x02 \x01(\tR\rscopeRevision\x12Y\n" +
-	"\x10retention_preset\x18\x03 \x01(\x0e2..peers_touch.model.chat.v1.ChatRetentionPresetR\x0fretentionPreset\"\xde\x01\n" +
+	"\x10retention_preset\x18\x03 \x01(\x0e2..peers_touch.model.chat.v1.ChatRetentionPresetR\x0fretentionPreset\"\xb3\x01\n" +
+	"\x1eChatStorageConversationRequest\x12A\n" +
+	"\x05scope\x18\x01 \x01(\v2+.peers_touch.model.chat.v1.ChatStorageScopeR\x05scope\x12%\n" +
+	"\x0escope_revision\x18\x02 \x01(\tR\rscopeRevision\x12'\n" +
+	"\x0fconversation_id\x18\x03 \x01(\tR\x0econversationId\"\xde\x01\n" +
 	"\x11ChatStoragePolicy\x12A\n" +
 	"\x05scope\x18\x01 \x01(\v2+.peers_touch.model.chat.v1.ChatStorageScopeR\x05scope\x12Y\n" +
 	"\x10retention_preset\x18\x02 \x01(\x0e2..peers_touch.model.chat.v1.ChatRetentionPresetR\x0fretentionPreset\x12+\n" +
@@ -1231,23 +1295,24 @@ func file_domain_chat_storage_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_storage_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_domain_chat_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_domain_chat_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_domain_chat_storage_proto_goTypes = []any{
-	(ChatRetentionPreset)(0),            // 0: peers_touch.model.chat.v1.ChatRetentionPreset
-	(ChatStorageSnapshotStatus)(0),      // 1: peers_touch.model.chat.v1.ChatStorageSnapshotStatus
-	(ChatStorageOperationKind)(0),       // 2: peers_touch.model.chat.v1.ChatStorageOperationKind
-	(ChatStorageOperationState)(0),      // 3: peers_touch.model.chat.v1.ChatStorageOperationState
-	(ChatStorageErrorCode)(0),           // 4: peers_touch.model.chat.v1.ChatStorageErrorCode
-	(*ChatStorageScope)(nil),            // 5: peers_touch.model.chat.v1.ChatStorageScope
-	(*ConversationStorageUsage)(nil),    // 6: peers_touch.model.chat.v1.ConversationStorageUsage
-	(*ChatStorageMeasurementIssue)(nil), // 7: peers_touch.model.chat.v1.ChatStorageMeasurementIssue
-	(*ChatStorageSnapshot)(nil),         // 8: peers_touch.model.chat.v1.ChatStorageSnapshot
-	(*ChatStorageSnapshotRequest)(nil),  // 9: peers_touch.model.chat.v1.ChatStorageSnapshotRequest
-	(*ChatStorageRetentionRequest)(nil), // 10: peers_touch.model.chat.v1.ChatStorageRetentionRequest
-	(*ChatStoragePolicy)(nil),           // 11: peers_touch.model.chat.v1.ChatStoragePolicy
-	(*ChatStorageOperation)(nil),        // 12: peers_touch.model.chat.v1.ChatStorageOperation
-	(*ChatStorageError)(nil),            // 13: peers_touch.model.chat.v1.ChatStorageError
-	(*ChatStorageResult)(nil),           // 14: peers_touch.model.chat.v1.ChatStorageResult
+	(ChatRetentionPreset)(0),               // 0: peers_touch.model.chat.v1.ChatRetentionPreset
+	(ChatStorageSnapshotStatus)(0),         // 1: peers_touch.model.chat.v1.ChatStorageSnapshotStatus
+	(ChatStorageOperationKind)(0),          // 2: peers_touch.model.chat.v1.ChatStorageOperationKind
+	(ChatStorageOperationState)(0),         // 3: peers_touch.model.chat.v1.ChatStorageOperationState
+	(ChatStorageErrorCode)(0),              // 4: peers_touch.model.chat.v1.ChatStorageErrorCode
+	(*ChatStorageScope)(nil),               // 5: peers_touch.model.chat.v1.ChatStorageScope
+	(*ConversationStorageUsage)(nil),       // 6: peers_touch.model.chat.v1.ConversationStorageUsage
+	(*ChatStorageMeasurementIssue)(nil),    // 7: peers_touch.model.chat.v1.ChatStorageMeasurementIssue
+	(*ChatStorageSnapshot)(nil),            // 8: peers_touch.model.chat.v1.ChatStorageSnapshot
+	(*ChatStorageSnapshotRequest)(nil),     // 9: peers_touch.model.chat.v1.ChatStorageSnapshotRequest
+	(*ChatStorageRetentionRequest)(nil),    // 10: peers_touch.model.chat.v1.ChatStorageRetentionRequest
+	(*ChatStorageConversationRequest)(nil), // 11: peers_touch.model.chat.v1.ChatStorageConversationRequest
+	(*ChatStoragePolicy)(nil),              // 12: peers_touch.model.chat.v1.ChatStoragePolicy
+	(*ChatStorageOperation)(nil),           // 13: peers_touch.model.chat.v1.ChatStorageOperation
+	(*ChatStorageError)(nil),               // 14: peers_touch.model.chat.v1.ChatStorageError
+	(*ChatStorageResult)(nil),              // 15: peers_touch.model.chat.v1.ChatStorageResult
 }
 var file_domain_chat_storage_proto_depIdxs = []int32{
 	4,  // 0: peers_touch.model.chat.v1.ChatStorageMeasurementIssue.code:type_name -> peers_touch.model.chat.v1.ChatStorageErrorCode
@@ -1255,25 +1320,26 @@ var file_domain_chat_storage_proto_depIdxs = []int32{
 	6,  // 2: peers_touch.model.chat.v1.ChatStorageSnapshot.conversations:type_name -> peers_touch.model.chat.v1.ConversationStorageUsage
 	1,  // 3: peers_touch.model.chat.v1.ChatStorageSnapshot.status:type_name -> peers_touch.model.chat.v1.ChatStorageSnapshotStatus
 	7,  // 4: peers_touch.model.chat.v1.ChatStorageSnapshot.issues:type_name -> peers_touch.model.chat.v1.ChatStorageMeasurementIssue
-	11, // 5: peers_touch.model.chat.v1.ChatStorageSnapshot.retention_policy:type_name -> peers_touch.model.chat.v1.ChatStoragePolicy
+	12, // 5: peers_touch.model.chat.v1.ChatStorageSnapshot.retention_policy:type_name -> peers_touch.model.chat.v1.ChatStoragePolicy
 	5,  // 6: peers_touch.model.chat.v1.ChatStorageSnapshotRequest.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
 	5,  // 7: peers_touch.model.chat.v1.ChatStorageRetentionRequest.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
 	0,  // 8: peers_touch.model.chat.v1.ChatStorageRetentionRequest.retention_preset:type_name -> peers_touch.model.chat.v1.ChatRetentionPreset
-	5,  // 9: peers_touch.model.chat.v1.ChatStoragePolicy.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
-	0,  // 10: peers_touch.model.chat.v1.ChatStoragePolicy.retention_preset:type_name -> peers_touch.model.chat.v1.ChatRetentionPreset
-	5,  // 11: peers_touch.model.chat.v1.ChatStorageOperation.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
-	2,  // 12: peers_touch.model.chat.v1.ChatStorageOperation.kind:type_name -> peers_touch.model.chat.v1.ChatStorageOperationKind
-	3,  // 13: peers_touch.model.chat.v1.ChatStorageOperation.state:type_name -> peers_touch.model.chat.v1.ChatStorageOperationState
-	4,  // 14: peers_touch.model.chat.v1.ChatStorageError.code:type_name -> peers_touch.model.chat.v1.ChatStorageErrorCode
-	8,  // 15: peers_touch.model.chat.v1.ChatStorageResult.snapshot:type_name -> peers_touch.model.chat.v1.ChatStorageSnapshot
-	11, // 16: peers_touch.model.chat.v1.ChatStorageResult.policy:type_name -> peers_touch.model.chat.v1.ChatStoragePolicy
-	12, // 17: peers_touch.model.chat.v1.ChatStorageResult.operation:type_name -> peers_touch.model.chat.v1.ChatStorageOperation
-	13, // 18: peers_touch.model.chat.v1.ChatStorageResult.error:type_name -> peers_touch.model.chat.v1.ChatStorageError
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	5,  // 9: peers_touch.model.chat.v1.ChatStorageConversationRequest.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
+	5,  // 10: peers_touch.model.chat.v1.ChatStoragePolicy.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
+	0,  // 11: peers_touch.model.chat.v1.ChatStoragePolicy.retention_preset:type_name -> peers_touch.model.chat.v1.ChatRetentionPreset
+	5,  // 12: peers_touch.model.chat.v1.ChatStorageOperation.scope:type_name -> peers_touch.model.chat.v1.ChatStorageScope
+	2,  // 13: peers_touch.model.chat.v1.ChatStorageOperation.kind:type_name -> peers_touch.model.chat.v1.ChatStorageOperationKind
+	3,  // 14: peers_touch.model.chat.v1.ChatStorageOperation.state:type_name -> peers_touch.model.chat.v1.ChatStorageOperationState
+	4,  // 15: peers_touch.model.chat.v1.ChatStorageError.code:type_name -> peers_touch.model.chat.v1.ChatStorageErrorCode
+	8,  // 16: peers_touch.model.chat.v1.ChatStorageResult.snapshot:type_name -> peers_touch.model.chat.v1.ChatStorageSnapshot
+	12, // 17: peers_touch.model.chat.v1.ChatStorageResult.policy:type_name -> peers_touch.model.chat.v1.ChatStoragePolicy
+	13, // 18: peers_touch.model.chat.v1.ChatStorageResult.operation:type_name -> peers_touch.model.chat.v1.ChatStorageOperation
+	14, // 19: peers_touch.model.chat.v1.ChatStorageResult.error:type_name -> peers_touch.model.chat.v1.ChatStorageError
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_storage_proto_init() }
@@ -1287,7 +1353,7 @@ func file_domain_chat_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_storage_proto_rawDesc), len(file_domain_chat_storage_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

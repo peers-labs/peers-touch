@@ -102,6 +102,12 @@ message ChatStorageRetentionRequest {
   ChatRetentionPreset retention_preset = 3;
 }
 
+message ChatStorageConversationRequest {
+  ChatStorageScope scope = 1;
+  string scope_revision = 2;
+  string conversation_id = 3;
+}
+
 message ChatStoragePolicy {
   ChatStorageScope scope = 1;
   ChatRetentionPreset retention_preset = 2;

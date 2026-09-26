@@ -19,9 +19,6 @@ import {
   Volume2,
   UserCog,
   Upload,
-  Clock3,
-  RotateCcw,
-  AlertTriangle,
   Search,
   UserPlus,
 } from 'lucide-react';
@@ -36,7 +33,6 @@ interface DetailPanelProps {
   onClose: () => void;
   onDeleteConversation: (conversationId: string) => void;
   onClearHistory: (conversationId: string) => void;
-  onRestoreHistory: (conversationId: string) => void;
   onSelectBackgroundImage: (conversationId: string, file: File) => void;
   onRemoveMember: (conversationId: string, userId: string) => void;
   onRenameGroup: (conversationId: string, name: string) => void;
@@ -160,16 +156,6 @@ function permissionSummary(role: MockGroupRole) {
   return 'Member can view group info, set personal chat background, and leave the group. Member cannot edit group profile or manage other members.';
 }
 
-const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function formatRemaining(ms: number) {
-  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
 function ConfirmSheet({
   title,
   body,
@@ -258,7 +244,6 @@ export function DetailPanel({
   onClose,
   onDeleteConversation,
   onClearHistory,
-  onRestoreHistory,
   onSelectBackgroundImage,
   onRemoveMember,
   onRenameGroup,
@@ -280,7 +265,6 @@ export function DetailPanel({
   }>(null);
   const [backgroundFileName, setBackgroundFileName] = useState('');
   const [avatarFileName, setAvatarFileName] = useState('');
-  const [now, setNow] = useState(Date.now());
   const [memberSearch, setMemberSearch] = useState('');
 
   useEffect(() => {
@@ -292,7 +276,6 @@ export function DetailPanel({
     setConfirmAction(null);
     setBackgroundFileName('');
     setAvatarFileName('');
-    setNow(Date.now());
     setMemberSearch('');
   }, [conversation.id, conversation.muted, conversation.name, conversation.pinned]);
 
@@ -303,13 +286,6 @@ export function DetailPanel({
   const isAdmin = currentRole === 'admin';
   const canManageMembers = isOwner || isAdmin;
   const canEditGroupProfile = isOwner || isAdmin;
-  const historyClearedAt = conversation.historyClearedAt ?? 0;
-  const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
-  const canRestoreHistory = historyClearedAt > 0 && now < historyRestoreExpiresAt;
-  const historyRestoreExpired = historyClearedAt > 0 && !canRestoreHistory;
-  const historyRestoreRemaining = canRestoreHistory
-    ? formatRemaining(historyRestoreExpiresAt - now)
-    : '';
   const members = useMemo(
     () => groupMembers
       .map((member) => ({ member, user: USERS[member.userId] }))
@@ -325,12 +301,6 @@ export function DetailPanel({
       || member.role.toLowerCase().includes(query),
     );
   }, [memberSearch, members]);
-  useEffect(() => {
-    if (!canRestoreHistory) return undefined;
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, [canRestoreHistory, historyRestoreExpiresAt]);
-
   const canManageTarget = (target: MockGroupMember) => {
     if (target.userId === currentUserId) return false;
     if (target.role === 'owner') return false;
@@ -688,28 +658,24 @@ export function DetailPanel({
         <DetailSection title="Danger zone">
           <div style={{ padding: T.space4, borderBottom: `1px solid ${T.borderSubtle}` }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: T.space3 }}>
-              <span style={{ display: 'flex', color: historyClearedAt ? T.warning : T.textDanger, marginTop: 2 }}>
-                {historyClearedAt ? <Clock3 size={18} /> : <Trash2 size={18} />}
+              <span style={{ display: 'flex', color: T.textDanger, marginTop: 2 }}>
+                <Trash2 size={18} />
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: T.fontBase, fontWeight: 700, color: T.text }}>
-                  {historyClearedAt ? 'History hidden on this device' : 'Clear visible history'}
+                  Clear local chat data
                 </div>
                 <div style={{ fontSize: T.fontSm, color: T.textSecondary, lineHeight: 1.5, marginTop: T.space1 }}>
-                  {canRestoreHistory
-                    ? `You can restore this conversation for ${historyRestoreRemaining}. After 24h the restore action is hidden.`
-                    : historyRestoreExpired
-                      ? 'The 24h restore window has ended. The restore action is now hidden.'
-                      : 'Hides messages before this moment for you. Peer devices keep their own history. You can restore for 24h.'}
+                  Permanently removes local messages, search entries, and unreferenced media from this device.
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: T.space2, marginTop: T.space3 }}>
               <button
                 onClick={() => requestConfirm({
-                  title: 'Clear visible history?',
-                  body: 'Messages before this moment will be hidden from your local conversation view. You can restore within 24 hours; after that the restore button disappears.',
-                  confirmLabel: 'Clear history',
+                  title: 'Clear local chat data?',
+                  body: 'This permanently removes local data from this device. Other devices and participants are not affected.',
+                  confirmLabel: 'Clear local data',
                   danger: true,
                   run: () => onClearHistory(conversation.id),
                 })}
@@ -718,36 +684,6 @@ export function DetailPanel({
                 <Trash2 size={13} />
                 Clear
               </button>
-              {canRestoreHistory && (
-                <button
-                  onClick={() => requestConfirm({
-                    title: 'Restore hidden history?',
-                    body: `This will show hidden messages again. Restore window remaining: ${historyRestoreRemaining}.`,
-                    confirmLabel: 'Restore',
-                    run: () => onRestoreHistory(conversation.id),
-                  })}
-                  style={historyActionButtonStyle()}
-                >
-                  <RotateCcw size={13} />
-                  Restore
-                </button>
-              )}
-              {historyRestoreExpired && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: T.space1,
-                    height: 30,
-                    color: T.textTertiary,
-                    fontSize: T.fontXs,
-                    fontWeight: 700,
-                  }}
-                >
-                  <AlertTriangle size={13} />
-                  Restore expired
-                </span>
-              )}
             </div>
           </div>
           {isGroup ? (

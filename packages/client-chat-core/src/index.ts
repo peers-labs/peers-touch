@@ -266,7 +266,6 @@ export interface ChatConversationPreferenceLike {
   readonly sticky?: boolean;
   readonly muted?: boolean;
   readonly alertEnabled?: boolean;
-  readonly clearedAt?: number;
 }
 
 export interface ChatConversationSurfaceOptions<T> {
@@ -1049,15 +1048,6 @@ export function buildChatMessageSurfaceItems<T extends ChatMessageLike>({
       timelineGap: sameDay && timestampMs > 0 && previousTimestampMs > 0 && timestampMs - previousTimestampMs > timeGroupGapMs,
     };
   });
-}
-
-export function filterChatMessagesAfterClearedAt<T extends ChatMessageLike>(
-  messages: readonly T[],
-  clearedAt: number | null | undefined,
-  resolveTimestampMs: (message: T) => number,
-): T[] {
-  if (!clearedAt) return [...messages];
-  return messages.filter((message) => resolveTimestampMs(message) >= clearedAt);
 }
 
 export function countChatThreadReplies<T extends ChatMessageLike>(

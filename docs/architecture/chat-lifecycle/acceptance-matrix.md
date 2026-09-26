@@ -100,8 +100,8 @@ supporting evidence only.
 - Message search targets canonical Conversation projections, finds known local
   plaintext in the active conversation, and keeps its clear action inside the
   input boundary.
-- Clear history hides prior messages immediately, and restore within 24 hours
-  resets the authoritative marker and returns the same durable messages.
+- Clearing a conversation removes its eligible data only from the current
+  device, remains effective after restart, and allows later messages to arrive.
 
 ### CHAT-G06-G07: Rich Media And Voice Notes
 
@@ -296,7 +296,7 @@ when its named assertion is absent from the Gate report.
 | CHAT-UR10 | Direct Chat exposes raw Station IDs or guesses online/offline state | `chat-direct` | `chat-lifecycle-direct-e2e` | Header, row, and detail show authoritative Station name; raw IDs are expandable; presence is snapshot/event-derived or explicitly unavailable |
 | CHAT-UR11 | Selecting a local chat background waits for upload before changing the visible surface | `chat-direct` | `chat-lifecycle-direct-e2e` | The selected local image previews in the same interaction frame; upload/persistence completes in background and failure rolls back with retry |
 | CHAT-UR12 | Search cannot find known conversation messages and the clear affordance is detached from the input edge | `chat-direct` | `chat-lifecycle-direct-e2e` | Search resolves the active canonical conversation and finds exact durable text; the clear control remains inside the input suffix boundary |
-| CHAT-UR13 | Restoring cleared history within the advertised 24-hour window fails | `chat-direct` | `chat-lifecycle-direct-e2e` | Clear stores a bounded marker; restore within 24 hours resets it and reprojects the same durable messages, while expired restore is rejected |
+| CHAT-UR13 | Current-device conversation cleanup is reversible, affects another device, or allows old plaintext to return | `chat-direct` | `chat-lifecycle-direct-e2e` | Clear commits a verified sequence/hash floor, removes eligible local projection and search data, offers no undo, remains effective after restart, leaves the peer device unchanged, and accepts later messages |
 
 ## 5. Required Runtime Cells
 
