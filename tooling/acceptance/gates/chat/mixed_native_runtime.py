@@ -699,6 +699,8 @@ class MixedNativeRuntime:
                 if self.gate_id in STATION_ACCESS_GATE_IDS
                 else device.get("deviceIdentityDigest")
             ),
+            "social": scope.get("social"),
+            "navigation": scope.get("navigation"),
         }
 
     def _wait_for_mobile_active_identity(
