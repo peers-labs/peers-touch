@@ -319,7 +319,7 @@ def _register_runtime_account(
     password: str,
 ) -> str:
     account = f"sc-{role.replace('_', '-')}-{suffix}@testnet.local"
-    name = f"sc-{_sha256(f'{role}:{suffix}')[:17]}"
+    name = _runtime_account_preferred_username(role=role, suffix=suffix)
     request = urllib.request.Request(
         f"{station_url.rstrip('/')}/actor/sign-up",
         data=_json_bytes(
@@ -352,6 +352,28 @@ def _register_runtime_account(
             resource=f"fixture-account:{role}",
         )
     return account
+
+
+def _runtime_account_search_query(account: str, *, role: str) -> str:
+    prefix = f"sc-{role.replace('_', '-')}-"
+    local_part, separator, host = account.partition("@")
+    suffix = local_part.removeprefix(prefix)
+    if (
+        separator != "@"
+        or host != "testnet.local"
+        or not local_part.startswith(prefix)
+        or len(suffix) != 10
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            f"runtime account identity is invalid for role {role}",
+            resource=f"fixture-account:{role}",
+        )
+    return _runtime_account_preferred_username(role=role, suffix=suffix)
+
+
+def _runtime_account_preferred_username(*, role: str, suffix: str) -> str:
+    return f"sc-{_sha256(f'{role}:{suffix}')[:17]}"
 
 
 def _provision_runtime_accounts(
@@ -1248,7 +1270,12 @@ def _prepare_mobile_friendship(
         try:
             candidates = sessions[alice_id].call_action(
                 "social.people.search",
-                {"query": accounts["bob"]},
+                {
+                    "query": _runtime_account_search_query(
+                        accounts["bob"],
+                        role="bob",
+                    )
+                },
             )
         except Exception as error:
             raise RuntimeOwnerBlocked(
