@@ -1052,6 +1052,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
         self.assertIn("runFoundationToolLoopBudget({", scenario)
         self.assertIn("selectConversation: true", scenario)
+        selection = scenario.index(
+            "await useChatStore.getState().selectSession(conversationId);",
+        )
+        recovery_wait = scenario.index(
+            "'loop-budget Inspect budget recovery'",
+        )
+        self.assertLess(selection, recovery_wait)
         self.assertIn("=== 'TOOL_LOOP_BUDGET_EXHAUSTED'", scenario)
         self.assertIn(
             '[data-pt-agent-message-error-recovery="inspect-budget"]',

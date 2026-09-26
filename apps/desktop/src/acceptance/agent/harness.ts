@@ -27268,6 +27268,7 @@ export function installAcceptanceHarness(): void {
         });
         conversationId = loop.conversationId;
         turnId = loop.turnId;
+        await useChatStore.getState().selectSession(conversationId);
 
         let errorMessage = useChatStore.getState().messages.find(
           (message) => (
