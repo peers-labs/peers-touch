@@ -5450,10 +5450,14 @@ impl MessagingRepository for MobileMessagingStore {
                     |row| row.get::<_, bool>(0),
                 )
                 .map_err(|error| error.to_string())?;
-            if !message_exists && redaction.is_none() {
+            if !message_exists
+                && redaction.is_none()
+                && !matches!(&commit.mutation, InteractionMutation::ObserveOnly)
+            {
                 return Err("mobile messaging interaction target message not found".to_string());
             }
             match &commit.mutation {
+                InteractionMutation::ObserveOnly => {}
                 InteractionMutation::Edit {
                     edited_text,
                     edited_at_unix_ms,
@@ -11204,6 +11208,66 @@ mod tests {
                 .unwrap()[0]
                 .message_id,
             "message-public"
+        );
+    }
+
+    #[test]
+    fn observe_only_interaction_advances_head_without_mutating_projection() {
+        let store = store();
+        seed_pending_public_message(&store);
+        let first_hash = commit_public_message(&store);
+        let observed_hash = [20u8; 32];
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "item-observed",
+            "event-observed",
+            "conversation-1",
+            2,
+            1,
+            &observed_hash,
+            b"observed",
+            21,
+        )
+        .unwrap();
+
+        assert_eq!(
+            MessagingRepository::commit_interaction_event(
+                &store,
+                &InteractionReceiveCommit {
+                    item_id: "item-observed",
+                    event_id: "event-observed",
+                    command_id: "observed-command",
+                    conversation_id: "conversation-1",
+                    event_sequence: 2,
+                    lane_sequence: 2,
+                    consumer_epoch: 1,
+                    payload_sha256: &observed_hash,
+                    event_hash: &observed_hash,
+                    previous_event_hash: &first_hash,
+                    message_id: "message-already-retained",
+                    mutation: InteractionMutation::ObserveOnly,
+                    mls_session_state: None,
+                    membership_epoch: 1,
+                    mls_epoch: 0,
+                    receipt_id: "receipt-observed",
+                    receipt_bytes: b"receipt",
+                    consumed_at_unix_ms: 21,
+                },
+            )
+            .unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            MessagingRepository::authority_head(&store, "conversation-1").unwrap(),
+            (2, observed_hash.to_vec())
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 1));
+        assert_eq!(
+            store
+                .conversation_message_projections("conversation-1")
+                .unwrap()[0]
+                .plaintext,
+            "hello"
         );
     }
 

@@ -364,6 +364,7 @@ pub struct PublicEventReceiveCommit<'a> {
 }
 
 pub enum InteractionMutation<'a> {
+    ObserveOnly,
     Edit {
         edited_text: &'a str,
         edited_at_unix_ms: i64,
@@ -6229,10 +6230,14 @@ impl MessagingStore {
                     |row| row.get::<_, bool>(0),
                 )
                 .map_err(|error| error.to_string())?;
-            if !message_exists && redaction.is_none() {
+            if !message_exists
+                && redaction.is_none()
+                && !matches!(&input.mutation, InteractionMutation::ObserveOnly)
+            {
                 return Err("messaging interaction target message not found".to_string());
             }
             match &input.mutation {
+                InteractionMutation::ObserveOnly => {}
                 InteractionMutation::Edit {
                     edited_text,
                     edited_at_unix_ms,
@@ -9319,6 +9324,7 @@ impl MlsInboundRepository for MessagingStore {
         commit: &CoreInteractionReceiveCommit<'_>,
     ) -> Result<CoreReceiveCommitResult, String> {
         let mutation = match &commit.mutation {
+            CoreInteractionMutation::ObserveOnly => InteractionMutation::ObserveOnly,
             CoreInteractionMutation::Edit {
                 edited_text,
                 edited_at_unix_ms,

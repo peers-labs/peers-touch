@@ -131,6 +131,11 @@ Retention、cache clear 和 conversation clear 均不得删除：
 | 为我删除 | actor-scoped fact | 本人所有设备 | 明文/FTS/无引用媒体删除，保留 tombstone |
 | 撤回 | ordered fact | 所有参与者 | 撤回占位，原内容缓存删除 |
 
+`MessageHiddenForActor` 的 projection effect 仅作用于目标 actor，但它仍是全局
+authority hash chain 中的 ordinary event，必须投递给所有 active endpoints。目标
+actor 的设备提交 redaction；其他 endpoint 以 observe-only transaction 推进
+authority head、lane cursor、consumption marker 与 receipt，不修改消息 projection。
+
 新 Recovery archive 包含 floor 与 redaction tombstone，不包含已清理或 redacted 的
 明文和 attachment metadata。restore staging 后先 reconcile 更新的 authority
 redaction，再开放 projection。

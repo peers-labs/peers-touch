@@ -208,7 +208,6 @@ type PrepareCommandRequest struct {
 	Sender            valueobject.Endpoint
 	SenderHomeStation valueobject.StationID
 	VerifiedRoutes    []ports.EndpointRoute
-	ActorScoped       bool
 }
 
 type PrepareGroupRequest struct {
@@ -1129,11 +1128,10 @@ func (s *Service) PrepareCommand(
 		); err != nil {
 			return err
 		}
-		required := eligibleConversationEndpoints(conversation, routes)
-		if request.ActorScoped {
-			required = filterEndpointsForActor(required, request.Sender.Actor)
-		}
-		preparation, err = conversation.PrepareCommand(request.Sender, required)
+		preparation, err = conversation.PrepareCommand(
+			request.Sender,
+			eligibleConversationEndpoints(conversation, routes),
+		)
 		return err
 	})
 	return preparation, err
@@ -1511,12 +1509,6 @@ func (s *Service) submit(
 				conversation,
 				commandRoutes,
 			)
-			if command.Kind == domainevent.KindMessageHiddenForActor {
-				command.RequiredEndpoints = filterEndpointsForActor(
-					command.RequiredEndpoints,
-					command.Sender.Actor,
-				)
-			}
 			command.Deliveries, err = bindDeliveryRoutes(
 				command.Deliveries,
 				commandRoutes,
@@ -2979,19 +2971,6 @@ func eligibleConversationEndpoints(
 		endpoints = append(endpoints, route.Endpoint)
 	}
 	return valueobject.SortEndpoints(endpoints)
-}
-
-func filterEndpointsForActor(
-	endpoints []valueobject.Endpoint,
-	actor valueobject.PTID,
-) []valueobject.Endpoint {
-	filtered := make([]valueobject.Endpoint, 0, len(endpoints))
-	for _, endpoint := range endpoints {
-		if endpoint.Actor == actor {
-			filtered = append(filtered, endpoint)
-		}
-	}
-	return valueobject.SortEndpoints(filtered)
 }
 
 func eligibleConversationRoutes(

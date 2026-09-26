@@ -230,17 +230,15 @@ impl PublicEventProcessor {
         consumer_epoch: u64,
         now: i64,
     ) -> Result<(), String> {
-        if fact.message_id.trim().is_empty() || fact.actor_ptid != self.endpoint.ptid {
-            return Err("messaging actor-hide event is not bound to this actor".to_string());
+        if fact.message_id.trim().is_empty() || fact.actor_ptid.trim().is_empty() {
+            return Err("messaging actor-hide event is incomplete".to_string());
         }
-        self.commit_interaction(
-            item,
-            event,
-            consumer_epoch,
-            &fact.message_id,
-            InteractionMutation::HideForActor,
-            now,
-        )?;
+        let mutation = if fact.actor_ptid == self.endpoint.ptid {
+            InteractionMutation::HideForActor
+        } else {
+            InteractionMutation::ObserveOnly
+        };
+        self.commit_interaction(item, event, consumer_epoch, &fact.message_id, mutation, now)?;
         Ok(())
     }
 
@@ -732,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn actor_hide_event_for_another_actor_is_not_acknowledged() {
+    fn actor_hide_event_for_another_actor_preserves_projection_and_advances_the_ack_cursor() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         prepare_send(&store);
         let processor = PublicEventProcessor::new(
@@ -751,20 +749,23 @@ mod tests {
         processor.consume(&committed, 3).unwrap();
 
         let hidden = actor_hide_queue_item(committed_hash, "ptid:bob");
-        assert_eq!(
-            processor.consume(&hidden, 3).unwrap_err(),
-            "messaging actor-hide event is not bound to this actor"
-        );
+        let hidden_event_hash = DeviceEventDelivery::decode(hidden.opaque_payload.as_slice())
+            .unwrap()
+            .event
+            .unwrap()
+            .event_hash;
+        processor.consume(&hidden, 3).unwrap();
 
+        let projections = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+        assert_eq!(projections.len(), 1);
         assert_eq!(
-            store
-                .conversation_message_projections("conversation-1")
-                .unwrap()
-                .len(),
-            1
+            store.authority_head("conversation-1").unwrap(),
+            (2, hidden_event_hash)
         );
-        assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
-        assert!(!store
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 3));
+        assert!(store
             .consumption_marker_matches("item-hide", &hidden.payload_sha256)
             .unwrap());
     }

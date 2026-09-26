@@ -204,6 +204,7 @@ pub struct PublicEventReceiveCommit<'a> {
 }
 
 pub enum InteractionMutation<'a> {
+    ObserveOnly,
     Edit {
         edited_text: &'a str,
         edited_at_unix_ms: i64,

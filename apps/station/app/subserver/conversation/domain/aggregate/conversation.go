@@ -1182,18 +1182,6 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 		if command.MessageID == "" {
 			return invalid("aggregate.validate_command", "message_id", "is required")
 		}
-		if command.Kind == domainevent.KindMessageHiddenForActor {
-			for _, endpoint := range command.RequiredEndpoints {
-				if endpoint.Actor != command.Sender.Actor {
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeDeliverySetMismatch,
-						"aggregate.validate_command",
-						"required_endpoints",
-						"actor-scoped hide may target only the requesting actor's devices",
-					)
-				}
-			}
-		}
 		if command.Kind == domainevent.KindMessageModerated {
 			if c.kind != valueobject.ConversationKindGroup ||
 				!c.members[command.Sender.Actor].Role.CanManageMembership() {
