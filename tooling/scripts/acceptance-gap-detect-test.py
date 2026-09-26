@@ -337,17 +337,34 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
             "GATE_BLOCKED_BY_ENVIRONMENT",
         )
 
-    def test_receipt_owner_requires_native_two_client_selection(self) -> None:
+    def test_formal_closure_may_defer_receiver_candidate_gate(self) -> None:
+        changed_path = "apps/desktop/src/store/socialChat.ts"
+        closure_gate = "chat-storage-redaction-recovery-e2e"
         report = MODULE.detect(
-            claim="Direct receipt behavior is covered",
-            paths=["apps/desktop/src-tauri/src/messaging/direct.rs"],
-            plan={"selected_gates": ["chat-desktop-gateway-e2e"]},
-            run={"results": [proven_result("chat-desktop-gateway-e2e")]},
+            claim="Redaction Recovery behavior is covered",
+            paths=[changed_path],
+            plan={
+                "changed_paths": [changed_path],
+                "candidate_gates": [
+                    "chat-native-two-client-e2e",
+                    closure_gate,
+                ],
+                "execution": {"mode": "completion"},
+                "selected_gates": [closure_gate],
+            },
+            canonical_plan={
+                "changed_paths": [changed_path],
+                "selected_gates": [
+                    "chat-native-two-client-e2e",
+                    closure_gate,
+                ],
+            },
+            run={"results": [proven_result(closure_gate)]},
             required_gates=[],
         )
-        gap_types = {item["gapType"] for item in report["gaps"]}
-        self.assertIn("RECEIVER_PROOF_GATE_NOT_SELECTED", gap_types)
-        self.assertIn("REQUIRED_GATE_NOT_RUN", gap_types)
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
 
     def test_formal_completion_may_defer_declared_receiver_proof_gate(
         self,
