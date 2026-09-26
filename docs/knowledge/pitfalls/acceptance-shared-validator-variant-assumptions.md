@@ -4,8 +4,11 @@ title: Shared Gate validators must derive variant semantics
 status: active
 owns:
   - tooling/acceptance/gates/chat/native_two_client_e2e.py
+  - tooling/acceptance/gates/chat/native_two_client_runner.py
   - tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py
   - tooling/acceptance/gates/chat/native_submitted_command_recovery_e2e.py
+  - tooling/acceptance/gates/chat/storage_redaction_recovery_e2e.py
+  - tooling/acceptance/gates/chat/storage_redaction_recovery_runner.py
 referenced-by:
   - docs/knowledge/README.md
 related:
@@ -31,25 +34,29 @@ profile used by both current-profile clients.
 
 ## Root cause
 
-The reusable two-client validator hard-coded the base Direct journey name and
-special-cased one Gate ID for profile topology. A second Gate reused the same
-runtime contract but supplied its own journey and belonged to the same
-current-profile Gate family.
+The reusable two-client validator relied on an incomplete Gate-to-journey
+mapping and special-cased one Gate ID for profile topology. Reused Gates can
+therefore emit the correct variant journey while validation silently falls
+back to the base Direct journey.
 
 ## Mitigation
 
 ### What was done in code
 
 - `native_two_client_e2e.py` derives the expected journey from the Gate ID.
+- `native_two_client_runner.py` keeps a closed mapping for every shared runner
+  variant, including storage redaction and Recovery.
 - Shared-profile validation uses the canonical `is_current_profile_gate`
   classification instead of comparing one Gate ID.
-- `native_two_client_e2e_test.py` covers the submitted-command journey and
-  profile-family classification.
+- Gate-specific tests cover their journey mappings; the submitted-command
+  suite also covers profile-family classification.
 
 ### What guards against regression
 
 `NativeTwoClientEvidenceTest.test_submitted_recovery_uses_current_profile_contract`
-asserts both variant rules.
+asserts the submitted-command rules.
+`StorageGovernanceRunnerTest.test_redaction_gate_uses_the_single_station_native_environment`
+asserts the storage-redaction journey mapping.
 
 ## How to detect a recurrence
 

@@ -12,6 +12,7 @@ from tooling.acceptance.gates.chat.storage_redaction_recovery_runner import (
     redaction_command_disposition,
     redaction_snapshot_is_valid,
 )
+from tooling.acceptance.gates.chat.native_two_client_runner import journey_for_gate
 from tooling.acceptance.provisioners import (
     ChatStorageNativeProvisioner,
     get_provisioner,
@@ -209,6 +210,10 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
 
         self.assertIsInstance(provisioner, ChatStorageNativeProvisioner)
         self.assertEqual(REDACTION_GATE_ID, "chat-storage-redaction-recovery-e2e")
+        self.assertEqual(
+            journey_for_gate(REDACTION_GATE_ID),
+            "storage-redaction-recovery",
+        )
 
 
 if __name__ == "__main__":
