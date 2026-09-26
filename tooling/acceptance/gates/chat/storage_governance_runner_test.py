@@ -7,6 +7,10 @@ from tooling.acceptance.core import EnvironmentContract
 from tooling.acceptance.gates.chat.storage_governance_runner import (
     storage_snapshot_is_valid,
 )
+from tooling.acceptance.gates.chat.storage_redaction_recovery_runner import (
+    GATE_ID as REDACTION_GATE_ID,
+    redaction_snapshot_is_valid,
+)
 from tooling.acceptance.provisioners import (
     ChatStorageNativeProvisioner,
     get_provisioner,
@@ -72,6 +76,78 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
         self.assertFalse(
             storage_snapshot_is_valid(snapshot, "conversation-1")
         )
+
+    def test_accepts_complete_durable_redaction_snapshot(self) -> None:
+        snapshot = {
+            "projection": {
+                "plaintextEmpty": True,
+                "hiddenForActor": True,
+                "retracted": False,
+            },
+            "redactionTombstones": [
+                {
+                    "kind": "hidden_for_actor",
+                    "authoritySequence": 2,
+                    "authorityEventHash": "ab" * 32,
+                }
+            ],
+            "redactionCleanup": [
+                {
+                    "scopeKind": "actor_hide",
+                    "state": "succeeded",
+                }
+            ],
+            "searchEntryCount": 0,
+            "attachmentProjectionCount": 0,
+            "attachmentTransferCount": 0,
+            "consumptionCount": 1,
+            "laneSequence": 2,
+        }
+
+        self.assertTrue(
+            redaction_snapshot_is_valid(
+                snapshot,
+                kind="hidden_for_actor",
+            )
+        )
+
+    def test_rejects_redaction_snapshot_with_plaintext_or_no_tombstone(
+        self,
+    ) -> None:
+        snapshot = {
+            "projection": {
+                "plaintextEmpty": False,
+                "hiddenForActor": False,
+                "retracted": True,
+            },
+            "redactionTombstones": [],
+            "redactionCleanup": [
+                {
+                    "scopeKind": "retract",
+                    "state": "compacting",
+                }
+            ],
+            "searchEntryCount": 0,
+            "attachmentProjectionCount": 0,
+            "attachmentTransferCount": 0,
+            "consumptionCount": 1,
+            "laneSequence": 2,
+        }
+
+        self.assertFalse(
+            redaction_snapshot_is_valid(snapshot, kind="retracted")
+        )
+
+    def test_redaction_gate_uses_the_single_station_native_environment(
+        self,
+    ) -> None:
+        contract = EnvironmentContract.from_yaml(
+            ROOT / "tooling/acceptance/environments/chat-storage-native.yaml"
+        )
+        provisioner = get_provisioner(contract)
+
+        self.assertIsInstance(provisioner, ChatStorageNativeProvisioner)
+        self.assertEqual(REDACTION_GATE_ID, "chat-storage-redaction-recovery-e2e")
 
 
 if __name__ == "__main__":

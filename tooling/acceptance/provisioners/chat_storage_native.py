@@ -24,7 +24,12 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 from .home_station import HomeStationProvisioner
 
 
-GATE_ID = "chat-storage-accounting-e2e"
+GATE_IDS = frozenset(
+    {
+        "chat-storage-accounting-e2e",
+        "chat-storage-redaction-recovery-e2e",
+    }
+)
 
 
 class ChatStorageNativeProvisioner(HomeStationProvisioner):
@@ -65,7 +70,7 @@ class ChatStorageNativeProvisioner(HomeStationProvisioner):
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
-            if gate_id != GATE_ID:
+            if gate_id not in GATE_IDS:
                 raise BlockedError(
                     reason=f"Chat storage native does not support gate {gate_id}",
                     resource=f"gate-environment:{gate_id}",

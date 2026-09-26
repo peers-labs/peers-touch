@@ -1,0 +1,48 @@
+{
+  "id": "chat-storage-redaction-recovery",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/messaging-core/src/storage_governance/redaction.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/acceptance/chat/**",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "tooling/acceptance/environments/chat-storage-native.yaml",
+    "tooling/acceptance/provisioners/chat_storage_native.py",
+    "tooling/acceptance/gates/chat/storage_redaction_recovery_*.py"
+  ],
+  "truth_sources": [
+    "Station Conversation HideMessageForActor and retract authority events",
+    "Device Messaging Engine redaction tombstones and ordered consumption cursor",
+    "Device Messaging Engine encrypted Recovery archive"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Chat message delete and retract actions"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-redaction-recovery-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Hide and retract atomically clear plaintext, search, attachment references, and commit a durable tombstone before ACK",
+      "physical file cleanup is journaled without blocking ordered consumption",
+      "Recovery v4 excludes redacted plaintext and reconciles authority redactions newer than an archive"
+    ],
+    "visible": [
+      "actor-scoped hide removes the message only for that actor",
+      "retract leaves a participant-visible tombstone without original plaintext",
+      "restart and restore of an older Recovery archive do not resurrect redacted plaintext"
+    ]
+  },
+  "negative": [
+    "actor-scoped hide must not remove the message for another participant",
+    "redaction must not ACK before its local transaction commits",
+    "file cleanup failure must not roll back a durable redaction",
+    "Recovery must not expose archived plaintext before authority redaction reconciliation"
+  ]
+}
