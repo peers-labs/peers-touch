@@ -38,6 +38,8 @@ vi.mock('../../services/mobileCommands', () => ({
   setSecureStorageValue: vi.fn(),
 }));
 
+const TEST_CREDENTIAL = 'test-only-credential';
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -182,7 +184,7 @@ describe('Station-advertised credential actions', () => {
       attemptId: 'attempt-1',
       gate: loginGate,
       email: 'alice@example.test',
-      password: 'secret',
+      password: TEST_CREDENTIAL,
       submissionId: 'submission-1',
     })).resolves.toMatchObject({
       decision: { state: 'ACCESS_DECISION_STATE_GRANTED' },
@@ -202,7 +204,7 @@ describe('Station-advertised credential actions', () => {
       input: {
         kind: 'login',
         email: 'alice@example.test',
-        password: 'secret',
+        password: TEST_CREDENTIAL,
       },
     });
     expect(JSON.stringify((await vi.mocked(accessSubmit).mock.results[0].value))).not.toContain(
@@ -245,7 +247,7 @@ describe('Station-advertised credential actions', () => {
       attemptId: 'attempt-retry',
       gate: loginGate,
       email: 'alice@example.test',
-      password: 'secret',
+      password: TEST_CREDENTIAL,
     };
 
     await expect(submitStationLoginGate(input)).rejects.toThrow('response lost');
