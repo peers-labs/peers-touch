@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import GateError, REPO_ROOT
 from tooling.acceptance.gates.station_access.mobile_native_build import (
     MobileNativeBuildGate,
     validate_mobile_native_build,
@@ -68,6 +69,18 @@ class MobileNativeBuildGateTest(unittest.TestCase):
                 "mobile_native_build_source_bound",
             },
         )
+
+    def test_catalog_does_not_request_unused_ephemeral_capability(self) -> None:
+        catalog = json.loads(
+            (REPO_ROOT / "tooling/acceptance/gates.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        definition = catalog["gates"]["mobile-native-build"]
+
+        self.assertEqual(definition["environment"], "mobile-simulator")
+        self.assertEqual(definition["provisioner"], "mobile-simulator")
+        self.assertNotIn("ephemeralCapabilities", definition)
 
 
 if __name__ == "__main__":
