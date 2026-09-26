@@ -54,7 +54,7 @@ describe('Mobile Acceptance social actions', () => {
     socialMocks.readSocialPeopleSearchFederations.mockReturnValue([]);
   });
 
-  it('projects the sole active Federation for a local actor search', async () => {
+  it('selects a deterministic active Federation for a local actor search', async () => {
     socialMocks.searchSocialPeople.mockResolvedValue([{
       id: 'ptid:bob',
       ptid: 'ptid:bob',
@@ -63,9 +63,10 @@ describe('Mobile Acceptance social actions', () => {
       displayName: 'Bob',
       avatar: '',
     }]);
-    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([{
-      federationId: 'federation-1',
-    }]);
+    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([
+      { federationId: 'federation-2' },
+      { federationId: 'federation-1' },
+    ]);
 
     await expect(
       mobileAcceptanceActions['social.people.search']({ query: 'bob' }),
