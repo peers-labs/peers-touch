@@ -632,7 +632,29 @@ def workflow_identity(root: Path) -> dict[str, object]:
     if binding is not None:
         try:
             canonical_binding = resolved_plan_binding(root)
-            if canonical_binding != binding:
+            if binding.get("schemaVersion") == 1:
+                legacy_fields = (
+                    "kind",
+                    "workspaceId",
+                    "canonicalRoot",
+                    "planId",
+                    "planPath",
+                    "boundAt",
+                    "boundBy",
+                )
+                legacy_projection = {
+                    key: canonical_binding.get(key)
+                    for key in legacy_fields
+                }
+                stored_projection = {
+                    key: binding.get(key)
+                    for key in legacy_fields
+                }
+                if legacy_projection != stored_projection:
+                    findings.append("binding-canonical-mismatch")
+                else:
+                    binding = canonical_binding
+            elif canonical_binding != binding:
                 findings.append("binding-canonical-mismatch")
         except (OSError, RuntimeError, json.JSONDecodeError):
             findings.append("binding-canonical-invalid")
