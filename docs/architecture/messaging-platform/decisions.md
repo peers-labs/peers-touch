@@ -1,8 +1,8 @@
 # Messaging Platform — 设计决策
 
 > **Status**: active
-> **Version**: v1.5
-> **Created**: 2026-08-08 | **Updated**: 2026-09-13
+> **Version**: v1.6
+> **Created**: 2026-08-08 | **Updated**: 2026-09-26
 > **Owner**: Messaging Platform Team
 
 ---
@@ -147,6 +147,11 @@ metadata 和 trust。fresh install 创建 fresh device identity、Direct session
 leaves。
 
 拒绝复制 ratchet/OPK/MLS live state，避免 nonce/key reuse 与并发 endpoint identity。
+这里的“复制”指进入 portable archive 或跨设备迁移。same-device in-place restore 在
+停止当前 worker 后，必须把该 endpoint 的 enrollment、SPK/OPK、MLS bootstrap
+inventory、lane cursor、consumption markers、authority heads 与 retired
+checkpoints 从 live SQLCipher store 直接转移到 staging；Direct ratchet、MLS
+group/session/transition、pending command 与 transfer state 仍必须清除。
 
 ## MP-D09: 统一 Conversation Framework
 

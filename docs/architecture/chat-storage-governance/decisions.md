@@ -1,7 +1,7 @@
 # Chat 本机存储治理 - 设计决策
 
 > **Status**: draft
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Device Messaging Engine
 
@@ -120,8 +120,11 @@ ACK 早于本地不可见化会在崩溃或 Recovery 后复活内容。
 actor-hide 只限制 projection mutation，不限制 authority event fanout；所有 active
 endpoint 都必须按序提交该 event，非目标 actor 使用 observe-only commit 保持
 authority head 连续。
-in-place Recovery restore 必须保留当前 session 已绑定的 device identity；archive
-不得恢复旧 ratchet/MLS state，也不得在同一 session 内生成无法授权的新 device。
+in-place Recovery restore 必须保留当前 session 已绑定的 device identity，并在停止
+worker 后把当前 endpoint 的 enrollment、SPK/OPK、MLS bootstrap inventory、lane
+cursor、consumption markers、authority heads 与 retired checkpoints 从 live
+SQLCipher store 直接转移到 staging。它们不得进入 archive 或跨设备复制；Direct
+ratchet、MLS group/session/transition 与 pending command state 仍必须清除。
 
 ## CSG-D06：删除旧语义
 

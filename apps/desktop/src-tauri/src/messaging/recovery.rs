@@ -447,6 +447,10 @@ pub fn restore_profile_database_atomically(
     remove_database_files(&staging_path)?;
 
     let result = (|| {
+        let source = MessagingStore::from_connection(
+            open_database(&final_spec, PlatformKeyProvider::shared())
+                .map_err(|error| format!("{error:?}"))?,
+        )?;
         let connection = open_database(&staging_spec, PlatformKeyProvider::shared())
             .map_err(|error| format!("{error:?}"))?;
         let staging = MessagingStore::from_connection(connection)?;
@@ -461,7 +465,10 @@ pub fn restore_profile_database_atomically(
             return Err("messaging recovery staging readback mismatch".to_string());
         }
         staging.apply_recovery_reconciliation(reconciliation)?;
+        staging.install_in_place_recovery_continuity_from(&source, device_identity)?;
         staging.validate_integrity()?;
+        source.prepare_for_atomic_replace()?;
+        drop(source);
         staging.prepare_for_atomic_replace()?;
         drop(staging);
         #[cfg(feature = "acceptance-webdriver")]
@@ -1534,6 +1541,32 @@ mod tests {
         .unwrap();
         remove_database_files(&path).unwrap();
 
+        let source = MessagingStore::from_connection(
+            open_database(&spec, PlatformKeyProvider::shared()).unwrap(),
+        )
+        .unwrap();
+        source
+            .install_fresh_device_identity(&device_identity)
+            .unwrap();
+        source
+            .complete_device_enrollment(
+                &device_identity
+                    .enrollment
+                    .certificate
+                    .device
+                    .as_ref()
+                    .unwrap()
+                    .device_id,
+            )
+            .unwrap();
+        source
+            .install_fresh_prekey_bundle(7, &[7; 32], &[(1, [1; 32]), (2, [2; 32])], 100)
+            .unwrap();
+        source.complete_prekey_publication(7).unwrap();
+        source.consume_one_time_prekey(1).unwrap();
+        source.prepare_for_atomic_replace().unwrap();
+        drop(source);
+
         let restored_enrollment = restore_profile_database_atomically(
             &profile_id,
             &archive,
@@ -1560,6 +1593,11 @@ mod tests {
             restored_key_id,
             device_identity.enrollment.certificate.signing_key_id
         );
+        assert_eq!(restored.pending_device_enrollment().unwrap(), None);
+        assert_eq!(restored.load_signed_prekey(7).unwrap(), [7; 32]);
+        assert!(restored.load_one_time_prekey(1).is_err());
+        assert_eq!(restored.load_one_time_prekey(2).unwrap(), [2; 32]);
+        assert_eq!(restored.next_one_time_prekey_id().unwrap(), 3);
         drop(restored);
         remove_database_files(&path).unwrap();
     }
