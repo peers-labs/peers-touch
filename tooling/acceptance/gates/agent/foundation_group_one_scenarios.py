@@ -4039,6 +4039,373 @@ def evaluate_base_lease_expired(
     return assertions
 
 
+def evaluate_base_permission_denied(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-PERMISSION_DENIED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    executor = _mapping(capture, "executor", scenario=scenario)
+    executor_before = _mapping(executor, "before", scenario=scenario)
+    executor_after = _mapping(executor, "after", scenario=scenario)
+    lease = _mapping(capture, "lease", scenario=scenario)
+    denied = _mapping(lease, "denied", scenario=scenario)
+    restored = _mapping(lease, "restored", scenario=scenario)
+    browser = _mapping(capture, "browser", scenario=scenario)
+    recovery = _mapping(capture, "recovery", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    turn_id = _nonempty_string(station, "turnId", scenario=scenario)
+    stream_id = _nonempty_string(station, "streamId", scenario=scenario)
+    source_sequence = _positive_int(
+        station,
+        "sourceSequence",
+        scenario=scenario,
+    )
+    payload_hash = _sha256_string(
+        station,
+        "payloadHash",
+        scenario=scenario,
+    )
+    runtime_payload = _mapping(
+        station,
+        "runtimePayload",
+        scenario=scenario,
+    )
+    runtime_payload_data = _mapping(
+        runtime_payload,
+        "data",
+        scenario=scenario,
+    )
+    nested_outcome = runtime_payload_data.get("outcome_error")
+    source_payload = (
+        dict(nested_outcome)
+        if isinstance(nested_outcome, Mapping)
+        else runtime_payload_data
+    )
+    source_outcome = {
+        key: source_payload.get(key)
+        for key in (
+            "error",
+            "error_type",
+            "locale_key",
+            "retryable",
+            "terminal",
+            "details",
+        )
+    }
+    stream_generation = _positive_int(
+        station,
+        "streamGeneration",
+        scenario=scenario,
+    )
+    expected_event_id = _canonical_payload_hash(
+        {
+            "streamId": stream_id,
+            "streamGeneration": stream_generation,
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "sequence": source_sequence,
+            "payloadHash": payload_hash,
+        }
+    )
+    platform = _nonempty_string(
+        browser,
+        "receiverPlatform",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedPermissionDenied": (
+            outcome.get("error") == "agent.errors.clientPermissionDenied"
+            and outcome.get("error_type") == "CLIENT_PERMISSION_DENIED"
+            and outcome.get("locale_key")
+            == "agent.errors.clientPermissionDenied"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and source_outcome == outcome
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "CLIENT_PERMISSION_DENIED"
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and runtime_event.get("sourceEventType") == "error"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            == _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            == source_sequence
+            and _sha256_string(
+                runtime_event,
+                "eventId",
+                scenario=scenario,
+            )
+            == expected_event_id
+            and _sha256_string(
+                runtime_event,
+                "streamIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(stream_id.encode("utf-8")).hexdigest()
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and _sha256_string(
+                runtime_event,
+                "payloadHash",
+                scenario=scenario,
+            )
+            == payload_hash
+            == _canonical_payload_hash(runtime_payload)
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == conversation_id
+            and runtime_event.get("sourceTurnId") == turn_id
+        ),
+        "boundedDetails": (
+            sorted(details) == ["capability_id", "permission_kind"]
+            and details.get("capability_id") == "filesystem.read"
+            and details.get("permission_kind") == "filesystem"
+        ),
+        "deniedLeaseObserved": (
+            denied.get("permission") == "CAPABILITY_PERMISSION_STATE_DENIED"
+            and denied.get("permissionKind")
+            == "CAPABILITY_PERMISSION_KIND_FILESYSTEM"
+            and _sha256_string(
+                denied,
+                "capabilitySessionIdHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                executor,
+                "capabilitySessionIdHash",
+                scenario=scenario,
+            )
+            and _nonempty_string(
+                denied,
+                "sourceCapabilitySessionIdHash",
+                scenario=scenario,
+            )
+            != _nonempty_string(
+                denied,
+                "capabilitySessionIdHash",
+                scenario=scenario,
+            )
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "permissionDetailOpened": (
+            receiver.get("recoveryExecuted") is True
+            and receiver.get("profileVisible") is True
+            and receiver.get("capabilitiesTabVisible") is True
+            and receiver.get("capabilityDetailVisible") is True
+            and receiver.get("capabilityId") == details.get("capability_id")
+            and receiver.get("permissionKind")
+            == details.get("permission_kind")
+        ),
+        "browserCapabilityIsolation": (
+            (
+                platform == "browser"
+                and _nonnegative_int(
+                    browser,
+                    "localCapabilityCount",
+                    scenario=scenario,
+                )
+                == 0
+            )
+            or (
+                platform == "desktop_app"
+                and _positive_int(
+                    browser,
+                    "localCapabilityCount",
+                    scenario=scenario,
+                )
+                > 0
+            )
+        ),
+        "zeroToolCallPersistence": (
+            _nonnegative_int(
+                station,
+                "toolCallCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "toolResultCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroLocalExecution": (
+            executor.get("evidenceSource") == "native-executor-coordinator"
+            and executor.get("targetCapabilityId") == "filesystem.read"
+            and executor.get("targetPlatform") == "desktop"
+            and _nonnegative_int(
+                executor_before,
+                "executionAttemptCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor_after,
+                "executionAttemptCount",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                executor_before,
+                "sideEffectCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor_after,
+                "sideEffectCount",
+                scenario=scenario,
+            )
+        ),
+        "zeroProviderContinuation": (
+            _positive_int(
+                station,
+                "providerCallCount",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "providerContinuationCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+            == payload_hash
+        ),
+        "noAutomaticResend": (
+            _positive_int(
+                recovery,
+                "turnCountBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                recovery,
+                "turnCountAfter",
+                scenario=scenario,
+            )
+            and _positive_int(
+                recovery,
+                "messageCountBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                recovery,
+                "messageCountAfter",
+                scenario=scenario,
+            )
+            and _positive_int(
+                recovery,
+                "providerCallCountBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                recovery,
+                "providerCallCountAfter",
+                scenario=scenario,
+            )
+        ),
+        "permissionRestored": (
+            restored.get("permission")
+            == "CAPABILITY_PERMISSION_STATE_GRANTED"
+            and restored.get("permissionKind")
+            == "CAPABILITY_PERMISSION_KIND_FILESYSTEM"
+            and _nonempty_string(
+                restored,
+                "sourceCapabilitySessionIdHash",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                denied,
+                "capabilitySessionIdHash",
+                scenario=scenario,
+            )
+            and _nonempty_string(
+                restored,
+                "capabilitySessionIdHash",
+                scenario=scenario,
+            )
+            != _nonempty_string(
+                restored,
+                "sourceCapabilitySessionIdHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("bindingRestored") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("permissionRestored") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_denied(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:
