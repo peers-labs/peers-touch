@@ -2410,6 +2410,32 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertNotIn("mock", scenario.lower())
 
+    def test_executor_unavailable_reselects_conversation_before_receiver(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function prepareFoundationExecutorUnavailableScenario"
+        )
+        scenario_end = self.source.index(
+            "function executorUnavailableStationFact",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        approval = scenario.index(
+            "const approval = await waitForToolApprovalEvent(turn);"
+        )
+        selection = scenario.index(
+            "await useChatStore.getState().selectSession(turn.conversationId);",
+            approval,
+        )
+        receiver_wait = scenario.index(
+            "'executor-unavailable ToolCall receiver'",
+            selection,
+        )
+
+        self.assertLess(approval, selection)
+        self.assertLess(selection, receiver_wait)
+
     def test_lease_expired_uses_real_lease_control_and_reconcile(self) -> None:
         scenario_start = self.source.index(
             "async function prepareFoundationLeaseExpiredScenario"
