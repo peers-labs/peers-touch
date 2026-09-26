@@ -250,14 +250,19 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		sourceHomeStation,
+		verifiedRoutes,
+		proposalCommand.Kind,
+	)
+	if err != nil {
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
+	}
 	preparation, err := boundService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: sourceHomeStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
+		prepareRequest,
 	)
 	if err != nil {
 		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
