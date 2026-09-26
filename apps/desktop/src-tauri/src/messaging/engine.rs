@@ -107,9 +107,33 @@ pub struct MessagingProjectionChange {
     pub event_id: String,
     pub lane_sequence: i64,
     pub kind: MessagingProjectionKind,
+    pub message_id: String,
+    pub message_removed_from_projection: bool,
 }
 
 pub type MessagingProjectionNotifier = Arc<dyn Fn(MessagingProjectionChange) + Send + Sync>;
+
+fn projection_change_metadata(
+    item: &DurableDeviceInboxItem,
+) -> (MessagingProjectionKind, String, bool) {
+    if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+        != Some(DeviceInboxPayloadType::ConversationEvent)
+    {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    }
+    let Ok(delivery) = DeviceEventDelivery::decode(item.opaque_payload.as_slice()) else {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    };
+    let Some(event) = delivery.event else {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    };
+    match event.payload {
+        Some(crate::model::chat::conversation_event::Payload::MessageHiddenForActor(fact)) => {
+            (MessagingProjectionKind::Message, fact.message_id, true)
+        }
+        _ => (MessagingProjectionKind::Conversation, String::new(), false),
+    }
+}
 
 #[derive(Default)]
 struct PreKeyMaintenanceState {
@@ -1426,6 +1450,8 @@ impl MessagingEngine {
                     "messaging projection Home Station identity is unavailable".to_string()
                 })?;
             drain = drain.with_acknowledged_item_observer(Arc::new(move |item| {
+                let (kind, message_id, message_removed_from_projection) =
+                    projection_change_metadata(item);
                 notifier(MessagingProjectionChange {
                     profile_id: profile_id.clone(),
                     actor_ptid: actor_ptid.clone(),
@@ -1434,7 +1460,9 @@ impl MessagingEngine {
                     conversation_id: item.conversation_id.clone(),
                     event_id: item.event_id.clone(),
                     lane_sequence: item.lane_sequence,
-                    kind: MessagingProjectionKind::Conversation,
+                    kind,
+                    message_id,
+                    message_removed_from_projection,
                 });
             }));
         }
@@ -3410,8 +3438,8 @@ mod tests {
     use crate::model::chat::{
         conversation_event, ConversationAuthorityEndpoint, ConversationAuthorityMember,
         ConversationAuthoritySnapshot, ConversationCreatedFact, DeviceEventDelivery,
-        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact, MessagingContentKind,
-        PreparedEndpointPayloadKind,
+        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact,
+        MessageHiddenForActorFact, MessagingContentKind, PreparedEndpointPayloadKind,
     };
     use messaging_core::mls::group::MlsMemberKeyPackage;
     use messaging_core::proto::actor_device_ptid;
@@ -3585,6 +3613,54 @@ mod tests {
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn projection_change_identifies_actor_hidden_message_removal() {
+        let genesis = direct_genesis_event();
+        let previous = direct_message_event(&genesis);
+        let mut hidden = ConversationEvent {
+            event_id: "hide:direct-1".to_string(),
+            conversation_id: previous.conversation_id.clone(),
+            sequence: previous.sequence + 1,
+            command_id: "hide-command".to_string(),
+            actor: previous.actor.clone(),
+            previous_hash: previous.event_hash.clone(),
+            event_hash: Vec::new(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 3,
+                nanos: 0,
+            }),
+            delivery_commitments: Vec::new(),
+            membership_epoch: previous.membership_epoch,
+            mls_epoch: previous.mls_epoch,
+            authority_station_peer_id: previous.authority_station_peer_id,
+            payload: Some(conversation_event::Payload::MessageHiddenForActor(
+                MessageHiddenForActorFact {
+                    message_id: "message-1".to_string(),
+                    actor_ptid: "ptid:alice".to_string(),
+                    ..Default::default()
+                },
+            )),
+        };
+        hidden.event_hash = Sha256::digest(hidden.encode_to_vec()).to_vec();
+        let item = direct_delivery_item(
+            hidden,
+            CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            PreparedEndpointPayloadKind::PublicEvent,
+        );
+
+        assert_eq!(
+            projection_change_metadata(&item),
+            (
+                MessagingProjectionKind::Message,
+                "message-1".to_string(),
+                true,
+            )
+        );
     }
 
     #[test]
