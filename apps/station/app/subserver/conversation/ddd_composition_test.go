@@ -3877,79 +3877,6 @@ func TestConversationDDDPlanConsumptionRollsBackWithTransition(t *testing.T) {
 	}
 }
 
-func TestConversationDDDMemberSettingsClearCursorSupportsBoundedRestore(t *testing.T) {
-	fixture := newDDDComposition(t)
-	ctx := context.Background()
-	alice := dddEndpoint("ptid:alice", "alice-1")
-	bob := dddEndpoint("ptid:bob", "bob-1")
-	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"), dddDevice(bob, "station-a"))
-	created, err := fixture.commands.CreateDirect(ctx, command.CreateDirectRequest{
-		Creator:           alice,
-		Peer:              bob.Actor,
-		FederationID:      dddFederationID,
-		AuthorityEpoch:    dddAuthorityEpoch,
-		CommandID:         "create-settings",
-		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
-		ExactCommandBytes: []byte("create-settings"),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conversationID := created.Conversation.ID
-	clearedAt := dddTestTime.UnixMilli()
-	muted := true
-	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
-		command.MemberSettingsPatch{ClearedAtUnixMillis: &clearedAt, Muted: &muted},
-	); err != nil {
-		t.Fatal(err)
-	}
-	for _, rejected := range []int64{-1, clearedAt - 1} {
-		if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
-			command.MemberSettingsPatch{ClearedAtUnixMillis: &rejected},
-		); err == nil {
-			t.Fatalf("accepted invalid clear cursor %d", rejected)
-		}
-	}
-	restoredAt := int64(0)
-	restored, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
-		command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
-	)
-	if err != nil {
-		t.Fatalf("restore within window: %v", err)
-	}
-	if restored.ClearedAtUnixMillis != 0 {
-		t.Fatalf("restored settings = %+v", restored)
-	}
-	secondClearAt := clearedAt + 1
-	fixture.clock.now = time.UnixMilli(secondClearAt)
-	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
-		command.MemberSettingsPatch{ClearedAtUnixMillis: &secondClearAt},
-	); err != nil {
-		t.Fatalf("clear after restore: %v", err)
-	}
-	fixture.clock.now = time.UnixMilli(secondClearAt).Add(24*time.Hour + time.Millisecond)
-	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
-		command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
-	); err == nil {
-		t.Fatal("accepted restore after restore window expired")
-	}
-	advancedAt := clearedAt + 1
-	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, "ptid:outsider",
-		command.MemberSettingsPatch{ClearedAtUnixMillis: &advancedAt},
-	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
-		t.Fatalf("nonmember update error = %v", err)
-	}
-	var persisted persistence.ConversationMemberSettingsModel
-	if err := fixture.db.First(&persisted, "conversation_id = ? AND ptid = ?",
-		string(conversationID), string(alice.Actor),
-	).Error; err != nil {
-		t.Fatal(err)
-	}
-	if persisted.ClearedAtUnixMillis != secondClearAt || !persisted.Muted {
-		t.Fatalf("persisted settings = %+v", persisted)
-	}
-}
-
 func TestConversationDDDMemberAuthorityReplayRollbackAndFollower(t *testing.T) {
 	ctx := context.Background()
 	authority := newDDDComposition(t)
@@ -5456,7 +5383,6 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 	description := "Preserved description"
 	avatar := "object-avatar"
 	visibility := valueobject.ConversationVisibilityPublic
-	timer := uint32(3600)
 	wireVisibility := chat.GroupVisibilityV1_GROUP_VISIBILITY_V1_PUBLIC
 	wireCommand := &chat.ChatCommand{
 		CommandId:               "follower-settings-update",
@@ -5469,11 +5395,10 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 		ClientTimestamp:         timestamppb.New(authorityFixture.clock.Now()),
 		Payload: &chat.ChatCommand_UpdateConversation{
 			UpdateConversation: &chat.UpdateConversationIntent{
-				Name:                  &name,
-				Description:           &description,
-				AvatarObjectId:        &avatar,
-				DisappearTimerSeconds: &timer,
-				Visibility:            &wireVisibility,
+				Name:           &name,
+				Description:    &description,
+				AvatarObjectId: &avatar,
+				Visibility:     &wireVisibility,
 			},
 		},
 	}
@@ -5509,11 +5434,10 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 				CommittedAt:             authorityFixture.clock.Now(),
 			},
 			Settings: &valueobject.SettingsPatch{
-				Name:                  &name,
-				Description:           &description,
-				AvatarObjectID:        &avatar,
-				Visibility:            &visibility,
-				DisappearTimerSeconds: &timer,
+				Name:           &name,
+				Description:    &description,
+				AvatarObjectID: &avatar,
+				Visibility:     &visibility,
 			},
 			VerifiedRoutes:    dddActiveRoutes(t, authorityFixture.db, owner.Actor, member.Actor),
 			ExactCommandBytes: commandBytes,
@@ -5571,11 +5495,10 @@ func TestConversationDDDFollowerMembershipPreservesSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := valueobject.ConversationSettings{
-		Name:                  name,
-		Description:           description,
-		AvatarObjectID:        avatar,
-		Visibility:            visibility,
-		DisappearTimerSeconds: timer,
+		Name:           name,
+		Description:    description,
+		AvatarObjectID: avatar,
+		Visibility:     visibility,
 	}
 	if view.Conversation.Settings != want {
 		t.Fatalf("follower settings = %+v, want %+v", view.Conversation.Settings, want)

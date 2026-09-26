@@ -99,6 +99,7 @@
       "moments.comment",
       "moments.comments.read",
       "storage.cache.seed",
+      "storage.conversation-clear.seed",
       "storage.retention.seed",
       "getRealtimeDevice",
       "cleanup"

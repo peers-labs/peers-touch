@@ -49,7 +49,7 @@ REQUIRED_DIRECT_ASSERTIONS = {
     "direct_background_persisted",
     "direct_message_search",
     "direct_search_clear_bounded",
-    "direct_history_restore",
+    "direct_local_conversation_clear",
 }
 
 
@@ -795,22 +795,17 @@ class LifecycleDirectGate(NativeTwoClientGate):
         client.find_element("[data-chat-history-action=\"clear\"]", STEP_TIMEOUT).click()
         self._click_visible_confirmation(
             client,
-            "visible Direct clear-history confirmation",
+            "visible Direct local-data clear confirmation",
         )
-        cleared_at = wait_until(
+        cleared = wait_until(
             lambda: (
-                value
-                if int(
-                    value := client.find_element(
-                        "[data-chat-detail-panel=\"open\"]",
-                        STEP_TIMEOUT,
-                    ).get_attribute("data-chat-detail-cleared-at")
-                    or "0"
+                True
+                if not client.find_elements(
+                    f'[data-message-ulid="{message_id}"]'
                 )
-                > 0
                 else None
             ),
-            "history clear marker",
+            "cleared Direct plaintext projection",
             timeout=STEP_TIMEOUT,
         )
         wait_until(
@@ -818,48 +813,16 @@ class LifecycleDirectGate(NativeTwoClientGate):
                 button.is_displayed()
                 for button in client.find_elements(".ant-modal-confirm")
             ),
-            "Direct clear-history confirmation dismissal",
-            timeout=STEP_TIMEOUT,
-        )
-        restore_control = wait_until(
-            lambda: (
-                button
-                if (
-                    (button := client.find_element(
-                        '[data-chat-history-action="restore"]',
-                        STEP_TIMEOUT,
-                    )).is_displayed()
-                    and button.is_enabled()
-                )
-                else None
-            ),
-            "enabled Direct history restore control",
-            timeout=STEP_TIMEOUT,
-        )
-        restore_control.click()
-        self._click_visible_confirmation(
-            client,
-            "visible Direct restore-history confirmation",
-        )
-        restored = wait_until(
-            lambda: client.execute_script(
-                """
-                const panel = document.querySelector('[data-chat-detail-panel="open"]');
-                const message = document.querySelector(
-                  `[data-message-ulid="${arguments[0]}"]`
-                );
-                return panel?.getAttribute('data-chat-detail-cleared-at') === '0'
-                  && Boolean(message);
-                """,
-                message_id,
-            ),
-            "restored durable history",
+            "Direct local-data clear confirmation dismissal",
             timeout=STEP_TIMEOUT,
         )
         self.assert_condition(
-            "direct_history_restore",
-            restored is True,
-            f"conversation_id={conversation_id}; cleared_at={cleared_at}; message_id={message_id}",
+            "direct_local_conversation_clear",
+            cleared is True
+            and not client.find_elements(
+                '[data-chat-history-action="restore"]'
+            ),
+            f"conversation_id={conversation_id}; message_id={message_id}",
         )
         self.report.runtime["directExperience"] = {
             "actor": actor,
@@ -869,7 +832,7 @@ class LifecycleDirectGate(NativeTwoClientGate):
             "identity": identity,
             "searchGeometry": geometry,
             "background": persisted,
-            "clearedAt": cleared_at,
+            "localConversationClear": True,
         }
 
     def run(self) -> dict[str, Any]:

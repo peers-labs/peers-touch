@@ -123,16 +123,17 @@ The preview transition is immediate and never persists a local filesystem
 reference. Successful upload binds the durable object reference to the already
 visible preview; failure removes the preview and exposes retry.
 
-History visibility is an actor-scoped Conversation setting:
+Conversation cleanup is a device-local storage operation:
 
 ```text
-visible -> cleared(restore_deadline) -> visible
-                              \-> restore_expired
+visible -> confirming -> deleting -> compacting -> cleared
+                                      \-> compaction_pending
 ```
 
-Restore may reset the clear marker only before the 24-hour deadline. Search
-targets canonical Conversation projections and applies the same clear marker
-before returning durable local matches.
+The device freezes a verified authority sequence/hash floor before deleting
+eligible projection, search, completed-transfer, and zero-reference media data.
+There is no undo state. Ordinary replay cannot restore plaintext at or below
+the floor, while later authority events remain eligible for projection.
 
 The aggregate Chat navigation badge and each conversation-row unread count are
 separate projections. Entering Chat may clear the aggregate acknowledgement;

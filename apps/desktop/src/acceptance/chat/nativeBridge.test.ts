@@ -258,8 +258,6 @@ describe('nativeAcceptanceBridge', () => {
       alertEnabled: true,
       pinned: false,
       background: 'default',
-      backgroundImage: '',
-      clearedAtUnixMs: 0,
     };
     const bridge = createNativeAcceptanceBridge({
       ...lifecycleDependencies(),

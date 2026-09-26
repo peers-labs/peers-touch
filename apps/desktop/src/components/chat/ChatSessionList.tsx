@@ -175,6 +175,8 @@ export function ChatSessionList({
     selectGroup,
     getIMConversations,
     updateConversationLocalState,
+    markFriendRead,
+    markGroupRead,
     hideConversation,
     loadSessions,
     loadGroups,
@@ -199,6 +201,8 @@ export function ChatSessionList({
     selectGroup: state.selectGroup,
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
+    markFriendRead: state.markFriendRead,
+    markGroupRead: state.markGroupRead,
     hideConversation: state.hideConversation,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
@@ -458,9 +462,8 @@ export function ChatSessionList({
             }
             break;
           case 'markRead':
-            // Mark-read clears unread badge; for friend chats this acks messages.
             try {
-              await updateConversationLocalState(c.kind, c.id, { clearedAt: 0 });
+              await (c.kind === 'friend' ? markFriendRead(c.id) : markGroupRead(c.id));
             } catch (error) {
               presentError(error, {
                 mapper: mapChatError,
@@ -469,12 +472,19 @@ export function ChatSessionList({
             }
             break;
           case 'hide':
-            hideConversation(c.kind, c.id, true);
+            hideConversation(c.kind, c.id);
             break;
         }
       },
     };
-  }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
+  }, [
+    conversationLocalState,
+    hideConversation,
+    markFriendRead,
+    markGroupRead,
+    t,
+    updateConversationLocalState,
+  ]);
 
   const isRowActive = (c: DesktopIMConversationProjection) => {
     if (c.kind === 'friend') {

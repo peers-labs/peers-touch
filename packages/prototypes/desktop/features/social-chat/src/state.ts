@@ -62,15 +62,10 @@ export function useChatState() {
     if (activeId === id) setActiveId(null);
   }, [activeId]);
 
-  const clearConversationHistory = useCallback((id: string) => {
+  const clearConversationData = useCallback((id: string) => {
+    setMessagesByConversation((prev) => ({ ...prev, [id]: [] }));
     setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, historyClearedAt: Date.now() } : c)),
-    );
-  }, []);
-
-  const restoreConversationHistory = useCallback((id: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, historyClearedAt: undefined } : c)),
+      prev.map((c) => (c.id === id ? { ...c, lastMessage: 'No messages yet', unread: 0 } : c)),
     );
   }, []);
 
@@ -254,8 +249,7 @@ export function useChatState() {
     markAsRead,
     hideConversation,
     deleteConversation,
-    clearConversationHistory,
-    restoreConversationHistory,
+    clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
     renameGroup,

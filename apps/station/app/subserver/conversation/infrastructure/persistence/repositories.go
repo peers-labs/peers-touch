@@ -125,7 +125,6 @@ func (r *authorityRepository) Save(
 			"description":               model.Description,
 			"avatar_object_id":          model.AvatarObjectID,
 			"visibility":                model.Visibility,
-			"disappear_timer_seconds":   model.DisappearTimerSeconds,
 			"updated_at":                model.UpdatedAt,
 		})
 	if result.Error != nil {
@@ -260,11 +259,10 @@ func (r *authorityRepository) loadSnapshot(
 			MLSEpoch:        valueobject.Epoch(model.MLSEpoch),
 		},
 		Settings: valueobject.ConversationSettings{
-			Name:                  model.Name,
-			Description:           model.Description,
-			AvatarObjectID:        model.AvatarObjectID,
-			Visibility:            valueobject.ConversationVisibility(model.Visibility),
-			DisappearTimerSeconds: model.DisappearTimerSeconds,
+			Name:           model.Name,
+			Description:    model.Description,
+			AvatarObjectID: model.AvatarObjectID,
+			Visibility:     valueobject.ConversationVisibility(model.Visibility),
 		},
 		Members:   members,
 		Devices:   devices,
@@ -1109,16 +1107,15 @@ func (r *memberSettingsRepository) Save(
 	settings repository.MemberSettings,
 ) error {
 	model := ConversationMemberSettingsModel{
-		ConversationID:      string(settings.ConversationID),
-		PTID:                string(settings.Actor),
-		Nickname:            settings.Nickname,
-		Muted:               settings.Muted,
-		Pinned:              settings.Pinned,
-		AlertEnabled:        settings.AlertEnabled,
-		Background:          settings.Background,
-		BackgroundImage:     settings.BackgroundImage,
-		ClearedAtUnixMillis: settings.ClearedAtUnixMillis,
-		UpdatedAt:           settings.UpdatedAt.UTC(),
+		ConversationID:  string(settings.ConversationID),
+		PTID:            string(settings.Actor),
+		Nickname:        settings.Nickname,
+		Muted:           settings.Muted,
+		Pinned:          settings.Pinned,
+		AlertEnabled:    settings.AlertEnabled,
+		Background:      settings.Background,
+		BackgroundImage: settings.BackgroundImage,
+		UpdatedAt:       settings.UpdatedAt.UTC(),
 	}
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -1130,7 +1127,6 @@ func (r *memberSettingsRepository) Save(
 				"alert_enabled",
 				"background",
 				"background_image",
-				"cleared_at_unix_ms",
 				"updated_at",
 			}),
 		}).
@@ -1139,16 +1135,15 @@ func (r *memberSettingsRepository) Save(
 
 func memberSettingsFromModel(model ConversationMemberSettingsModel) repository.MemberSettings {
 	return repository.MemberSettings{
-		ConversationID:      valueobject.ConversationID(model.ConversationID),
-		Actor:               valueobject.PTID(model.PTID),
-		Nickname:            model.Nickname,
-		Muted:               model.Muted,
-		Pinned:              model.Pinned,
-		AlertEnabled:        model.AlertEnabled,
-		Background:          model.Background,
-		BackgroundImage:     model.BackgroundImage,
-		ClearedAtUnixMillis: model.ClearedAtUnixMillis,
-		UpdatedAt:           model.UpdatedAt,
+		ConversationID:  valueobject.ConversationID(model.ConversationID),
+		Actor:           valueobject.PTID(model.PTID),
+		Nickname:        model.Nickname,
+		Muted:           model.Muted,
+		Pinned:          model.Pinned,
+		AlertEnabled:    model.AlertEnabled,
+		Background:      model.Background,
+		BackgroundImage: model.BackgroundImage,
+		UpdatedAt:       model.UpdatedAt,
 	}
 }
 
@@ -2014,7 +2009,6 @@ func conversationModelFromSnapshot(snapshot aggregate.Snapshot) ConversationMode
 		Description:            snapshot.Settings.Description,
 		AvatarObjectID:         snapshot.Settings.AvatarObjectID,
 		Visibility:             string(snapshot.Settings.Visibility),
-		DisappearTimerSeconds:  snapshot.Settings.DisappearTimerSeconds,
 		CreatedAt:              snapshot.CreatedAt.UTC(),
 		UpdatedAt:              snapshot.UpdatedAt.UTC(),
 	}
