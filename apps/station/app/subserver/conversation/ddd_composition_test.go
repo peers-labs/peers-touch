@@ -1935,9 +1935,16 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 		wire *chat.ChatCommand,
 	) command.SubmitRequest {
 		t.Helper()
+		prepareRequest := dddPrepareCommandRequest(
+			t,
+			fixture,
+			created.Conversation.ID,
+			sender,
+		)
+		prepareRequest.ActorScoped = wire.GetHideMessageForActor() != nil
 		preparation, err := fixture.commands.PrepareCommand(
 			context.Background(),
-			dddPrepareCommandRequest(t, fixture, created.Conversation.ID, sender),
+			prepareRequest,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -2031,7 +2038,26 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
 		t.Fatalf("foreign edit error = %v", err)
 	}
-	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 2)
+
+	hide := submitWire(
+		alice,
+		"message-rules-hide",
+		&chat.ChatCommand{
+			Payload: &chat.ChatCommand_HideMessageForActor{
+				HideMessageForActor: &chat.HideMessageForActorIntent{
+					MessageId: "message-rules-target",
+				},
+			},
+		},
+	)
+	hidden, err := fixture.commands.Submit(context.Background(), hide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hidden.Event.Fact.Kind != domainevent.KindMessageHiddenForActor {
+		t.Fatalf("hide event kind = %q", hidden.Event.Fact.Kind)
+	}
+	assertCount(t, fixture.db, &persistence.ConversationEventModel{}, 3)
 }
 
 func TestConversationDDDDissolveUsesCanonicalCommandAndEvent(t *testing.T) {
