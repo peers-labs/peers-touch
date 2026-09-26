@@ -21,6 +21,8 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from tooling.acceptance.core import source_identity, workspace_id
+
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
@@ -1932,9 +1934,7 @@ def main() -> int:
         EvidenceError,
         EvidenceStore,
         new_run_id,
-        source_identity,
         validate_run_id,
-        workspace_id,
     )
 
     parser = argparse.ArgumentParser()

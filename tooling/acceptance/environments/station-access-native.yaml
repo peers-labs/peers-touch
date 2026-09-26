@@ -23,9 +23,9 @@
   },
   "fixtures": [
     {
-      "id": "station-access-existing-actors",
-      "authorization_required": false,
-      "initial_assertion": "Alice and Bob already exist on the selected approved development Station"
+      "id": "station-access-reset-actors",
+      "authorization_required": true,
+      "initial_assertion": "Alice and Bob are reset to the deterministic baseline on the selected approved development Station"
     }
   ],
   "credentials": [],

@@ -42,7 +42,7 @@
 
 Stable Gate：`station-access-auth-e2e`，环境
 `station-access-native`（macOS Desktop + iOS Simulator，同一 source-attested
-Station，无服务端 destructive reset）。
+Station；每个 Gate 在已授权的 `chat-native-four` 上独立重置 Alice/Bob fixture）。
 
 ### SAL-G02：Scope 隔离
 
