@@ -2249,8 +2249,12 @@ type MessagingProjectionInvalidation struct {
 	EventId           string                  `protobuf:"bytes,6,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	LaneSequence      int64                   `protobuf:"varint,7,opt,name=lane_sequence,json=laneSequence,proto3" json:"lane_sequence,omitempty"`
 	Kind              MessagingProjectionKind `protobuf:"varint,8,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.MessagingProjectionKind" json:"kind,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Identifies the affected message when kind is MESSAGE.
+	MessageId string `protobuf:"bytes,9,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	// True only after the local durable projection no longer exposes message_id.
+	MessageRemovedFromProjection bool `protobuf:"varint,10,opt,name=message_removed_from_projection,json=messageRemovedFromProjection,proto3" json:"message_removed_from_projection,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *MessagingProjectionInvalidation) Reset() {
@@ -2337,6 +2341,20 @@ func (x *MessagingProjectionInvalidation) GetKind() MessagingProjectionKind {
 		return x.Kind
 	}
 	return MessagingProjectionKind_MESSAGING_PROJECTION_KIND_UNSPECIFIED
+}
+
+func (x *MessagingProjectionInvalidation) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *MessagingProjectionInvalidation) GetMessageRemovedFromProjection() bool {
+	if x != nil {
+		return x.MessageRemovedFromProjection
+	}
+	return false
 }
 
 var File_domain_chat_event_proto protoreflect.FileDescriptor
@@ -2552,7 +2570,7 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x10endpoint_payload\x18\x04 \x01(\fR\x0fendpointPayload\x126\n" +
 	"\x17endpoint_payload_sha256\x18\x05 \x01(\fR\x15endpointPayloadSha256\x12/\n" +
 	"\x13delivery_commitment\x18\x06 \x01(\fR\x12deliveryCommitment\x12F\n" +
-	" sender_actor_identity_public_key\x18\a \x01(\fR\x1csenderActorIdentityPublicKey\"\xe6\x02\n" +
+	" sender_actor_identity_public_key\x18\a \x01(\fR\x1csenderActorIdentityPublicKey\"\xcc\x03\n" +
 	"\x1fMessagingProjectionInvalidation\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1d\n" +
 	"\n" +
@@ -2562,7 +2580,11 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x05 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bevent_id\x18\x06 \x01(\tR\aeventId\x12#\n" +
 	"\rlane_sequence\x18\a \x01(\x03R\flaneSequence\x12F\n" +
-	"\x04kind\x18\b \x01(\x0e22.peers_touch.model.chat.v1.MessagingProjectionKindR\x04kind*\x86\x03\n" +
+	"\x04kind\x18\b \x01(\x0e22.peers_touch.model.chat.v1.MessagingProjectionKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\t \x01(\tR\tmessageId\x12E\n" +
+	"\x1fmessage_removed_from_projection\x18\n" +
+	" \x01(\bR\x1cmessageRemovedFromProjection*\x86\x03\n" +
 	"\x17MessagingProjectionKind\x12)\n" +
 	"%MESSAGING_PROJECTION_KIND_UNSPECIFIED\x10\x00\x12*\n" +
 	"&MESSAGING_PROJECTION_KIND_CONVERSATION\x10\x01\x12%\n" +

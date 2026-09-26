@@ -10,6 +10,7 @@ import {
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
 import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
+import type { SocialMessage } from './socialProjection';
 
 describe('social chat conversation projection', () => {
   beforeEach(() => {
@@ -109,5 +110,55 @@ describe('social chat conversation projection', () => {
       null,
     );
     expect(useSocialChatStore.getState().conversationBackgroundPreviews).toEqual({});
+  });
+
+  it('removes a durably hidden message from the cached projection', () => {
+    const visible = {
+      ulid: 'message-visible',
+      senderPtid: 'ptid:peer:bob',
+      content: 'visible',
+      type: 1,
+      attachments: [],
+    } satisfies SocialMessage;
+    const hidden = {
+      ulid: 'message-hidden',
+      senderPtid: 'ptid:peer:bob',
+      content: 'hidden',
+      type: 1,
+      attachments: [],
+    } satisfies SocialMessage;
+    useSocialChatStore.setState({
+      messages: {
+        'direct-conversation': [visible, hidden],
+      },
+      lastPreviews: {
+        'direct-conversation': {
+          content: hidden.content,
+          type: hidden.type,
+          senderPtid: hidden.senderPtid,
+        },
+      },
+      openThreadRootUlid: hidden.ulid,
+    });
+
+    useSocialChatStore.getState().applyMessageMutation(
+      'direct-conversation',
+      hidden.ulid,
+      'DELETE',
+      {
+        newContent: '',
+        newCiphertext: new Uint8Array(),
+        mutatedTsUnixMs: 0,
+      },
+    );
+
+    const state = useSocialChatStore.getState();
+    expect(state.messages['direct-conversation']).toEqual([visible]);
+    expect(state.lastPreviews['direct-conversation']).toEqual({
+      content: visible.content,
+      type: visible.type,
+      senderPtid: visible.senderPtid,
+    });
+    expect(state.openThreadRootUlid).toBeNull();
   });
 });

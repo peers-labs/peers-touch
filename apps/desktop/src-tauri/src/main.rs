@@ -504,6 +504,8 @@ fn main() {
                         "eventId": change.event_id,
                         "laneSequence": change.lane_sequence.to_string(),
                         "kind": change.kind.as_str_name(),
+                        "messageId": change.message_id,
+                        "messageRemovedFromProjection": change.message_removed_from_projection,
                     });
                     for session in state
                         .sessions

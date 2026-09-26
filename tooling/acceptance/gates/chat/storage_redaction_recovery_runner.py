@@ -549,17 +549,34 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
         plaintext: str,
         kind: str,
     ) -> None:
-        snapshot = message_dom_snapshot(self.clients[actor], message_id)
-        if kind == "hidden_for_actor":
-            if snapshot is not None:
-                raise GateError(f"{actor} actor-hidden message remains visible")
-            return
-        if (
-            snapshot is None
-            or snapshot.get("retracted") != "true"
-            or plaintext in str(snapshot.get("text") or "")
-        ):
-            raise GateError(f"{actor} retracted plaintext remains visible")
+        last_snapshot: dict[str, Any] = {}
+
+        def probe() -> bool | None:
+            snapshot = message_dom_snapshot(self.clients[actor], message_id)
+            last_snapshot.clear()
+            if isinstance(snapshot, dict):
+                last_snapshot.update(snapshot)
+            if kind == "hidden_for_actor":
+                return True if snapshot is None else None
+            if (
+                snapshot is not None
+                and snapshot.get("retracted") == "true"
+                and plaintext not in str(snapshot.get("text") or "")
+            ):
+                return True
+            return None
+
+        try:
+            wait_until(
+                probe,
+                f"{actor} {kind} DOM projection",
+                timeout=30,
+            )
+        except GateError as error:
+            raise GateError(
+                f"{error}; lastDomSnapshot="
+                f"{json.dumps(last_snapshot, sort_keys=True)}"
+            ) from error
 
     def assert_redaction_state(
         self,

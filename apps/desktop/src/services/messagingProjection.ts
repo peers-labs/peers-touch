@@ -60,6 +60,19 @@ function requiresFullReconcile(
     || (lastLaneSequence > 0n && payload.laneSequence > lastLaneSequence + 1n);
 }
 
+function applyProjectionRemoval(
+  payload: MessagingProjectionInvalidation,
+): void {
+  const conversationId = payload.conversationId.trim();
+  const messageId = payload.messageId.trim();
+  if (!payload.messageRemovedFromProjection || !conversationId || !messageId) return;
+  useSocialChatStore.getState().applyMessageMutation(conversationId, messageId, 'DELETE', {
+    newContent: '',
+    newCiphertext: new Uint8Array(),
+    mutatedTsUnixMs: 0,
+  });
+}
+
 function rawPayloadMatchesScope(
   payload: JsonValue,
   scope: MessagingRuntimeScope,
@@ -196,6 +209,7 @@ export function installMessagingProjectionBridge(): Promise<void> {
           ) {
             return;
           }
+          applyProjectionRemoval(payload);
           if (requiresFullReconcile(payload)) {
             await messagingDomainRuntime.reconcile('projection-invalidation');
           } else {

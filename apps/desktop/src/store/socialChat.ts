@@ -1704,7 +1704,49 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   applyMessageMutation: (sessionUlid, messageUlid, kind, payload) => {
     set((state) => {
       const next = applyMessageMutationToList(state.messages[sessionUlid], messageUlid, { kind, ...payload });
-      return next ? { messages: { ...state.messages, [sessionUlid]: next } } : {};
+      if (!next) return {};
+      if (kind !== 'DELETE') {
+        return { messages: { ...state.messages, [sessionUlid]: next } };
+      }
+
+      const reactions = { ...state.reactions };
+      const pinnedMessages = { ...state.pinnedMessages };
+      const threadCounts = { ...state.threadCounts };
+      const lastPreviews = { ...state.lastPreviews };
+      delete reactions[messageUlid];
+      delete pinnedMessages[messageUlid];
+      delete threadCounts[socialThreadKey('friend', sessionUlid, messageUlid)];
+      delete threadCounts[socialThreadKey('group', sessionUlid, messageUlid)];
+
+      const mainMessages = next.filter(
+        (message) => !socialMessageExplicitThreadRootUlid(message),
+      );
+      const latestMainMessage = mainMessages[mainMessages.length - 1];
+      if (latestMainMessage) {
+        lastPreviews[sessionUlid] = previewFromMessage(latestMainMessage);
+      } else {
+        delete lastPreviews[sessionUlid];
+      }
+
+      const threadMessages = Object.fromEntries(
+        Object.entries(state.threadMessages)
+          .filter(([key]) => !key.endsWith(`:${messageUlid}`))
+          .map(([key, messages]) => [
+            key,
+            messages.filter((message) => message.ulid !== messageUlid),
+          ]),
+      );
+      return {
+        messages: { ...state.messages, [sessionUlid]: next },
+        reactions,
+        pinnedMessages,
+        threadCounts,
+        threadMessages,
+        lastPreviews,
+        ...(state.openThreadRootUlid === messageUlid
+          ? { openThreadRootUlid: null }
+          : {}),
+      };
     });
   },
 
