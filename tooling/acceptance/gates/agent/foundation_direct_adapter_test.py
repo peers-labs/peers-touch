@@ -322,6 +322,70 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             },
         )
 
+    def test_permission_denied_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-PERMISSION_DENIED"],
+            {
+                "typedPermissionDenied",
+                "boundedDetails",
+                "deniedLeaseObserved",
+                "localizedRecoveryVisible",
+                "permissionDetailOpened",
+                "browserCapabilityIsolation",
+                "zeroToolCallPersistence",
+                "zeroLocalExecution",
+                "zeroProviderContinuation",
+                "replayEqual",
+                "noAutomaticResend",
+                "permissionRestored",
+                "cleanupComplete",
+            },
+        )
+
+    def test_loop_budget_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-LOOP_BUDGET_EXHAUSTED"],
+            {
+                "stationTypedPayload",
+                "typedLoopBudget",
+                "localizedInspectBudgetVisible",
+                "budgetIdentityProjected",
+                "inspectBudgetOpenedTurnDetails",
+                "terminalAtExactLimit",
+                "inspectBudgetHasNoAutomaticRetry",
+            },
+        )
+
+    def test_model_unavailable_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-MODEL_UNAVAILABLE"],
+            {
+                "typedModelUnavailable",
+                "localizedRecoveryVisible",
+                "chooseModelOpened",
+                "oneTerminalProviderAttempt",
+                "zeroSuccessfulCompletion",
+                "queueUnchanged",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
+    def test_provider_timeout_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-PROVIDER_TIMEOUT"],
+            {
+                "typedProviderTimeout",
+                "localizedRetryVisible",
+                "deadlineProjected",
+                "oneTerminalProviderAttempt",
+                "upstreamTimeoutCancelled",
+                "providerDeadlinePrecedesTurnBudget",
+                "zeroSuccessfulCompletion",
+                "queueUnchanged",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(

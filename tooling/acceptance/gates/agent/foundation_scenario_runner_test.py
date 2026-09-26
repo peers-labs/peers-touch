@@ -588,6 +588,93 @@ class TimeoutCaptureHarnessClient:
         raise RuntimeError("captured timeout")
 
 
+class LoopBudgetHarnessClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object], float]] = []
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        request = payload or {}
+        self.calls.append((method, request, timeout))
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method != "runDevelopmentLoopBudget":
+            raise AssertionError(f"unexpected method: {method}")
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell="BASE-LOOP_BUDGET_EXHAUSTED",
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_loop_budget_exhausted_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_loop_budget_exhausted(facts)
+        return result
+
+
+class ModelUnavailableHarnessClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object], float]] = []
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        request = payload or {}
+        self.calls.append((method, request, timeout))
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method != "runDevelopmentProviderModelUnavailable":
+            raise AssertionError(f"unexpected method: {method}")
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell="BASE-MODEL_UNAVAILABLE",
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_model_unavailable_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_model_unavailable(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
+
+
+class ProviderTimeoutHarnessClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object], float]] = []
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        request = payload or {}
+        self.calls.append((method, request, timeout))
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method != "runDevelopmentProviderTimeout":
+            raise AssertionError(f"unexpected method: {method}")
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell="BASE-PROVIDER_TIMEOUT",
+            sample_id=str(request["sampleId"]),
+        )
+        return capture(probe)
+
+
 class F06HarnessClient:
     def __init__(
         self,
@@ -1845,6 +1932,100 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertEqual(client.locale, "en")
         self.assertEqual(client.timeout, 1200)
+
+    def test_loop_budget_reuses_product_journey_with_tuple_identity(self) -> None:
+        client = LoopBudgetHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="zh-CN",
+            cell="BASE-LOOP_BUDGET_EXHAUSTED",
+            sample_id="sample-001",
+        )
+
+        result = foundation_scenario_runner._make_direct_probe(client)(
+            probe_input
+        )
+
+        self.assertTrue(result["assertions"]["terminalAtExactLimit"])
+        self.assertEqual(
+            client.calls,
+            [
+                ("setFoundationLocale", {"locale": "zh-CN"}, 30),
+                (
+                    "runDevelopmentLoopBudget",
+                    {
+                        "platform": "desktop_app",
+                        "locale": "zh-CN",
+                        "sampleId": "sample-001",
+                    },
+                    660,
+                ),
+            ],
+        )
+
+    def test_model_unavailable_reuses_product_journey_with_tuple_identity(
+        self,
+    ) -> None:
+        client = ModelUnavailableHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="zh-CN",
+            cell="BASE-MODEL_UNAVAILABLE",
+            sample_id="sample-001",
+        )
+
+        result = foundation_scenario_runner._make_direct_probe(client)(
+            probe_input
+        )
+
+        self.assertTrue(result["assertions"]["typedModelUnavailable"])
+        self.assertEqual(
+            client.calls,
+            [
+                ("setFoundationLocale", {"locale": "zh-CN"}, 30),
+                (
+                    "runDevelopmentProviderModelUnavailable",
+                    {
+                        "platform": "browser",
+                        "locale": "zh-CN",
+                        "sampleId": "sample-001",
+                    },
+                    300,
+                ),
+            ],
+        )
+
+    def test_provider_timeout_reuses_product_journey_with_tuple_identity(
+        self,
+    ) -> None:
+        client = ProviderTimeoutHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="en",
+            cell="BASE-PROVIDER_TIMEOUT",
+            sample_id="sample-001",
+        )
+
+        result = foundation_scenario_runner._make_direct_probe(client)(
+            probe_input
+        )
+
+        self.assertTrue(result["assertions"]["typedProviderTimeout"])
+        self.assertEqual(
+            client.calls,
+            [
+                ("setFoundationLocale", {"locale": "en"}, 30),
+                (
+                    "runDevelopmentProviderTimeout",
+                    {
+                        "platform": "desktop_app",
+                        "locale": "en",
+                        "sampleId": "sample-001",
+                    },
+                    300,
+                ),
+            ],
+        )
 
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:
         event_log: list[str] = []
