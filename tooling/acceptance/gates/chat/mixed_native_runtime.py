@@ -616,6 +616,7 @@ class MixedNativeRuntime:
             )
         return {
             "identity": dict(state),
+            "authenticated": state.get("authenticated"),
             "stationPeerId": restored.station_peer_id,
             "actorPtid": restored.ptid,
             "deviceIdentityDigest": restored.device_id,
