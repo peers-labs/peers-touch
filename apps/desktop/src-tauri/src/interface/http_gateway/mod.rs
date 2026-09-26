@@ -6623,6 +6623,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 status: serde_json::to_string(&payload).unwrap_or_default(),
             }))
         }
+        "station_binding_complete" => to_json(
+            crate::interface::tauri_commands::station::station_binding_complete_authenticated(
+                gateway_session(state).is_some(),
+            ),
+        ),
         "station_set_active" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
             if url.is_empty() {
@@ -7801,6 +7806,29 @@ mod tests {
         assert!(
             binding.get("phase").and_then(Value::as_str).is_some(),
             "station_list binding must expose its phase: {binding:?}"
+        );
+    }
+
+    #[test]
+    fn station_binding_complete_routes_through_http_gateway_dispatch() {
+        let layout = temp_layout("station-binding-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("station_binding_complete", json!({}), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
         );
     }
 
