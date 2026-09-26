@@ -2096,6 +2096,105 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("foundationDirectProbe", scenario)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_client_permission_denied_uses_native_lease_and_real_recovery(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runDevelopmentClientPermissionDeniedScenario"
+        )
+        scenario_end = self.source.index(
+            "function firstToolApprovalOutcome",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        resolver_start = self.source.index(
+            "async resolveFoundationInvalidResourceExecutorTarget"
+        )
+        resolver_end = self.source.index(
+            "async getFoundationClientExecutorCounters",
+            resolver_start,
+        )
+        resolver = self.source[resolver_start:resolver_end]
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        direct_probe = self.source[direct_probe_start:]
+        scenario_runner = FOUNDATION_SCENARIO_RUNNER.read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("toolName: 'local_file_read'", scenario)
+        self.assertIn("CapabilityApprovalPolicy.AUTO", scenario)
+        self.assertIn("CAPABILITY_PERMISSION_STATE_DENIED", scenario)
+        self.assertIn("CAPABILITY_PERMISSION_KIND_FILESYSTEM", scenario)
+        self.assertIn("CLIENT_PERMISSION_DENIED", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "projectAgentTurnOutcomeErrorPayload(terminalEvent.data)",
+            scenario,
+        )
+        self.assertIn(
+            "projectAgentTypedErrorPayload(terminalEvent.data)",
+            scenario,
+        )
+        self.assertNotIn(
+            "terminalEvent.data.outcome_error ?? terminalEvent.data",
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="open-permission-settings"]',
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-capability-permission-kind="filesystem"]',
+            scenario,
+        )
+        self.assertIn("foundationStationReplayReadback(", scenario)
+        self.assertIn("foundationIncompatibleExecutionSnapshot(", scenario)
+        self.assertIn("providerContinuationCount", scenario)
+        self.assertIn("localCapabilityCount", scenario)
+        self.assertIn("receiverPlatform: 'browser' | 'desktop_app'", scenario)
+        self.assertIn("const receiverPlatform = input.receiverPlatform", scenario)
+        self.assertNotIn("'__TAURI_INTERNALS__' in window", scenario)
+        self.assertIn(
+            "async runDevelopmentClientPermissionDenied",
+            self.source,
+        )
+        self.assertIn(
+            "async abortFoundationClientPermissionDenied",
+            self.source,
+        )
+        self.assertIn("targetPermission:", resolver)
+        self.assertIn("targetPermissionKind:", resolver)
+        self.assertIn(
+            "case 'BASE-PERMISSION_DENIED':",
+            self.source,
+        )
+        self.assertIn(
+            "cleanupFoundationPermissionDeniedScenario({",
+            direct_probe,
+        )
+        self.assertIn(
+            "class FoundationPermissionDeniedCoordinator",
+            scenario_runner,
+        )
+        self.assertIn(
+            '"runDevelopmentClientPermissionDenied"',
+            scenario_runner,
+        )
+        self.assertIn(
+            '"receiverPlatform": probe_input.platform',
+            scenario_runner,
+        )
+        self.assertIn(
+            '"control": "permissionDenied"',
+            scenario_runner,
+        )
+        self.assertIn(
+            '"control": "permissionGranted"',
+            scenario_runner,
+        )
+        self.assertNotIn("foundationDirectProbe", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_duplicate_conflict_uses_typed_open_original_recovery_path(
         self,
     ) -> None:
