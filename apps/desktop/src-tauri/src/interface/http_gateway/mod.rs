@@ -2512,11 +2512,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(value) => value,
                 Err(error) => return error,
             };
-            let (_, actor_ptid, token) = match gateway_access_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(app_oss::oss_resolve_url(&input.uri, &token, &actor_ptid))
+            let session = gateway_session(state);
+            let token = session
+                .as_ref()
+                .map(|session| session.jwt.as_str())
+                .unwrap_or_default();
+            let actor_ptid = session
+                .as_ref()
+                .map(|session| session.actor.ptid.as_str())
+                .unwrap_or_default();
+            to_json(app_oss::oss_resolve_url(&input.uri, token, actor_ptid))
         }
         "oss_list_my_files" => {
             let input = match parse_args::<OssListMyFilesInput>(args) {
@@ -7889,6 +7894,29 @@ mod tests {
                 .expect("authenticated HOME timeline must carry its token")
                 .as_deref(),
             Some("token-http-gateway-test")
+        );
+    }
+
+    #[test]
+    fn oss_resolve_url_allows_anonymous_gateway_context() {
+        let layout = temp_layout("public-oss-resolve-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch("oss_resolve_url", json!({ "uri": "" }), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("INVALID_ARGUMENT")
         );
     }
 
