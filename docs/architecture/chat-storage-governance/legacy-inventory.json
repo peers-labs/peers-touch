@@ -25,6 +25,7 @@
     "packages/client-storage",
     "packages/locales",
     "packages/prototypes/desktop/features/social-chat",
+    "packages/prototypes/mobile/chat",
     "tooling/acceptance",
     "tooling/scripts",
     "docs/architecture/chat-lifecycle",

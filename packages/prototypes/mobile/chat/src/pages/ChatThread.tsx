@@ -675,8 +675,8 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             </div>
 
               <div className="mp-chat-details-section">
-                <button type="button" className="mp-chat-details-item" onClick={() => setConfirmAction('clear')}>
-                  <span>Clear Chat History</span>
+                <button type="button" className="mp-chat-details-item danger" onClick={() => setConfirmAction('clear')}>
+                  <span>Clear Local Chat Data</span>
                 </button>
               </div>
 
@@ -724,12 +724,12 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             <div className="mp-confirm-backdrop" onClick={() => setConfirmAction(null)}>
               <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
                 <div className="mp-confirm-title">
-                  {confirmAction === 'clear' && 'Clear Chat History?'}
+                  {confirmAction === 'clear' && 'Clear Local Chat Data?'}
                   {confirmAction === 'block' && (isBlocked ? 'Unblock Contact?' : 'Block Contact?')}
                   {confirmAction === 'report' && 'Report this contact?'}
                 </div>
                 <div className="mp-confirm-desc">
-                  {confirmAction === 'clear' && 'All messages will be permanently deleted. This cannot be undone.'}
+                  {confirmAction === 'clear' && 'Permanently removes messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.'}
                   {confirmAction === 'block' && (isBlocked ? `${conversation.name} will be able to message you again.` : `${conversation.name} will no longer be able to send you messages.`)}
                   {confirmAction === 'report' && 'This will be reported to our safety team for review.'}
                 </div>
@@ -738,7 +738,7 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                   <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => {
                     if (confirmAction === 'clear') {
                       setMessages([]);
-                      showToast('Chat history cleared');
+                      showToast('Local chat data cleared');
                     } else if (confirmAction === 'block') {
                       setIsBlocked(!isBlocked);
                       showToast(isBlocked ? 'Contact unblocked' : 'Contact blocked');
@@ -747,7 +747,7 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                     }
                     setConfirmAction(null);
                   }}>
-                    {confirmAction === 'clear' && 'Clear'}
+                    {confirmAction === 'clear' && 'Clear Local Data'}
                     {confirmAction === 'block' && (isBlocked ? 'Unblock' : 'Block')}
                     {confirmAction === 'report' && 'Report'}
                   </button>

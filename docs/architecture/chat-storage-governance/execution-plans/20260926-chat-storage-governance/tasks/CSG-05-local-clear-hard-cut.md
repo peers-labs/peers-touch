@@ -25,6 +25,7 @@
     "packages/client-chat-core",
     "packages/locales",
     "packages/prototypes/desktop/features/social-chat",
+    "packages/prototypes/mobile/chat",
     "docs/architecture/chat-lifecycle",
     "docs/architecture/messaging-platform",
     "docs/client/chat",
