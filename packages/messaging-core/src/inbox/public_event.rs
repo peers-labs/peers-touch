@@ -251,17 +251,15 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         consumer_epoch: u64,
         now: i64,
     ) -> Result<(), String> {
-        if fact.message_id.trim().is_empty() || fact.actor_ptid != self.endpoint.ptid {
-            return Err("messaging actor-hide event is not bound to this actor".to_string());
+        if fact.message_id.trim().is_empty() || fact.actor_ptid.trim().is_empty() {
+            return Err("messaging actor-hide event is incomplete".to_string());
         }
-        self.commit_interaction(
-            item,
-            event,
-            consumer_epoch,
-            &fact.message_id,
-            InteractionMutation::HideForActor,
-            now,
-        )?;
+        let mutation = if fact.actor_ptid == self.endpoint.ptid {
+            InteractionMutation::HideForActor
+        } else {
+            InteractionMutation::ObserveOnly
+        };
+        self.commit_interaction(item, event, consumer_epoch, &fact.message_id, mutation, now)?;
         Ok(())
     }
 

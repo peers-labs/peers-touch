@@ -54,16 +54,14 @@ var productionAdapterTestTime = time.Date(
 	time.UTC,
 )
 
-func TestProductionPrepareCommandRequestPreservesActorScope(t *testing.T) {
+func TestProductionPrepareCommandRequestAcceptsSupportedKinds(t *testing.T) {
 	tests := []struct {
-		name        string
-		kind        chatmodel.ConversationCommandKind
-		actorScoped bool
+		name string
+		kind chatmodel.ConversationCommandKind
 	}{
 		{
-			name:        "hide for actor",
-			kind:        chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR,
-			actorScoped: true,
+			name: "hide for actor",
+			kind: chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR,
 		},
 		{
 			name: "retract",
@@ -99,12 +97,8 @@ func TestProductionPrepareCommandRequestPreservesActorScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if request.ActorScoped != test.actorScoped {
-				t.Fatalf(
-					"actor scoped = %t, want %t",
-					request.ActorScoped,
-					test.actorScoped,
-				)
+			if request.ConversationID != "conversation-1" {
+				t.Fatalf("conversation ID = %q", request.ConversationID)
 			}
 		})
 	}

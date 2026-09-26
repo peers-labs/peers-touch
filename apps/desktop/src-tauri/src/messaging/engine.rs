@@ -115,6 +115,7 @@ pub type MessagingProjectionNotifier = Arc<dyn Fn(MessagingProjectionChange) + S
 
 fn projection_change_metadata(
     item: &DurableDeviceInboxItem,
+    actor_ptid: &str,
 ) -> (MessagingProjectionKind, String, bool) {
     if DeviceInboxPayloadType::try_from(item.payload_type).ok()
         != Some(DeviceInboxPayloadType::ConversationEvent)
@@ -128,7 +129,9 @@ fn projection_change_metadata(
         return (MessagingProjectionKind::Conversation, String::new(), false);
     };
     match event.payload {
-        Some(crate::model::chat::conversation_event::Payload::MessageHiddenForActor(fact)) => {
+        Some(crate::model::chat::conversation_event::Payload::MessageHiddenForActor(fact))
+            if fact.actor_ptid == actor_ptid =>
+        {
             (MessagingProjectionKind::Message, fact.message_id, true)
         }
         _ => (MessagingProjectionKind::Conversation, String::new(), false),
@@ -1451,7 +1454,7 @@ impl MessagingEngine {
                 })?;
             drain = drain.with_acknowledged_item_observer(Arc::new(move |item| {
                 let (kind, message_id, message_removed_from_projection) =
-                    projection_change_metadata(item);
+                    projection_change_metadata(item, &actor_ptid);
                 notifier(MessagingProjectionChange {
                     profile_id: profile_id.clone(),
                     actor_ptid: actor_ptid.clone(),
@@ -3654,12 +3657,16 @@ mod tests {
         );
 
         assert_eq!(
-            projection_change_metadata(&item),
+            projection_change_metadata(&item, "ptid:alice"),
             (
                 MessagingProjectionKind::Message,
                 "message-1".to_string(),
                 true,
             )
+        );
+        assert_eq!(
+            projection_change_metadata(&item, "ptid:bob"),
+            (MessagingProjectionKind::Conversation, String::new(), false,)
         );
     }
 
