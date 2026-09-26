@@ -15,8 +15,7 @@ use crate::model::recovery::{
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use messaging_core::codec::verification::verify_authority_event;
-use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
-use messaging_core::identity::FreshDeviceEnrollment;
+use messaging_core::identity::{FreshDeviceEnrollment, FreshDeviceIdentityState};
 use messaging_core::proto::chat::{conversation_event, ConversationEvent};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
@@ -421,6 +420,7 @@ pub fn restore_profile_database_atomically(
     profile_id: &str,
     archive: &MessagingRecoveryArchive,
     reconciliation: &RecoveryReconciliation,
+    device_identity: &FreshDeviceIdentityState,
 ) -> Result<FreshDeviceEnrollment, String> {
     validate_archive(archive)?;
     validate_reconciliation(archive, reconciliation)?;
@@ -451,12 +451,7 @@ pub fn restore_profile_database_atomically(
             .map_err(|error| format!("{error:?}"))?;
         let staging = MessagingStore::from_connection(connection)?;
         staging.populate_recovery_staging(archive)?;
-        let fresh_device = generate_fresh_device_identity_from_seed(
-            &archive.ptid,
-            &archive.actor_identity_seed,
-            archive.actor_profile_version,
-        )?;
-        staging.install_fresh_device_identity(&fresh_device)?;
+        staging.install_fresh_device_identity(device_identity)?;
         let readback = staging.build_recovery_archive(
             &archive.ptid,
             &archive.actor_identity_seed,
@@ -478,7 +473,7 @@ pub fn restore_profile_database_atomically(
         }
         remove_sidecars(&final_path)?;
         atomic_replace_file(&staging_path, &final_path)?;
-        Ok(fresh_device.enrollment)
+        Ok(device_identity.enrollment.clone())
     })();
     if result.is_err() {
         let _ = remove_database_files(&staging_path);
@@ -1024,6 +1019,7 @@ mod tests {
     use super::*;
     use crate::domain::crypto::{DeviceSigningKey, IdentityKeyPair};
     use crate::messaging::private_content::test_attachment_metadata;
+    use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
 
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 
@@ -1519,7 +1515,57 @@ mod tests {
     }
 
     #[test]
-    fn recovery_generates_fresh_cross_signed_device_identity() {
+    fn in_place_restore_preserves_authenticated_device_identity() {
+        let archive = archive();
+        let device_identity = generate_fresh_device_identity_from_seed(
+            &archive.ptid,
+            &archive.actor_identity_seed,
+            archive.actor_profile_version,
+        )
+        .unwrap();
+        let profile_id = format!("recovery-preserved-device-{:016x}", OsRng.next_u64());
+        let spec = DatabaseOpenSpec::new_chat_main(profile_id.clone());
+        let path = resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .unwrap();
+        remove_database_files(&path).unwrap();
+
+        let restored_enrollment = restore_profile_database_atomically(
+            &profile_id,
+            &archive,
+            &RecoveryReconciliation::default(),
+            &device_identity,
+        )
+        .unwrap();
+        assert_eq!(restored_enrollment, device_identity.enrollment);
+
+        let restored = MessagingStore::from_connection(
+            open_database(&spec, PlatformKeyProvider::shared()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored.device_enrollment().unwrap(),
+            Some(device_identity.enrollment.clone())
+        );
+        let (restored_seed, restored_key_id) = restored.device_signing_seed().unwrap().unwrap();
+        assert_eq!(
+            restored_seed.as_slice(),
+            device_identity.device_signing_seed.as_slice()
+        );
+        assert_eq!(
+            restored_key_id,
+            device_identity.enrollment.certificate.signing_key_id
+        );
+        drop(restored);
+        remove_database_files(&path).unwrap();
+    }
+
+    #[test]
+    fn new_installation_generates_fresh_cross_signed_device_identity() {
         let archive = archive();
         let first = generate_fresh_device_identity_from_seed(
             &archive.ptid,
