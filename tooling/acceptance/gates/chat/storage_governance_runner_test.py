@@ -9,6 +9,7 @@ from tooling.acceptance.gates.chat.storage_governance_runner import (
 )
 from tooling.acceptance.gates.chat.storage_redaction_recovery_runner import (
     GATE_ID as REDACTION_GATE_ID,
+    redaction_command_disposition,
     redaction_snapshot_is_valid,
 )
 from tooling.acceptance.provisioners import (
@@ -169,6 +170,33 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
 
         self.assertTrue(
             redaction_snapshot_is_valid(snapshot, kind="retracted")
+        )
+
+    def test_retries_only_an_authority_head_stale_redaction_command(
+        self,
+    ) -> None:
+        snapshot = {
+            "intent": {"state": "failed"},
+            "outbox": {
+                "state": "failed",
+                "lastErrorCode": "authority_head_stale",
+            },
+        }
+
+        self.assertEqual(
+            redaction_command_disposition(
+                snapshot,
+                kind="hidden_for_actor",
+            ),
+            "retry_authority_head",
+        )
+        snapshot["outbox"]["lastErrorCode"] = "permission_denied"
+        self.assertEqual(
+            redaction_command_disposition(
+                snapshot,
+                kind="hidden_for_actor",
+            ),
+            "failed",
         )
 
     def test_redaction_gate_uses_the_single_station_native_environment(
