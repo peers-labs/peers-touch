@@ -123,7 +123,7 @@ describe('Station-advertised credential actions', () => {
         },
         {
           gateId: 'auth.login.camel',
-          type: 2,
+          gateType: 2,
           state: 2,
           alternativeActions: [{
             actionId: 'auth.oauth',
@@ -152,6 +152,7 @@ describe('Station-advertised credential actions', () => {
         schemaDigest: 'b'.repeat(64),
       },
     ]);
+    expect(decision.gates[1].type).toBe(2);
     expect(decision.gates[1].alternativeActions).toEqual([{
       actionId: 'auth.oauth',
       type: 'ACCESS_GATE_TYPE_AUTH_OAUTH',
