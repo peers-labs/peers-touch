@@ -88,6 +88,11 @@ class DesktopChatStorageRuntime {
     revision: string;
     promise: Promise<ChatStorageResult | null>;
   } | null = null;
+  private conversationClearInFlight: {
+    revision: string;
+    conversationId: string;
+    promise: Promise<ChatStorageResult | null>;
+  } | null = null;
   private unsubscribeScope: (() => void) | null = null;
   private lastRetentionSweepAtUnixMs = 0;
 
@@ -113,6 +118,7 @@ class DesktopChatStorageRuntime {
     this.inFlight = null;
     this.cleanupInFlight = null;
     this.retentionInFlight = null;
+    this.conversationClearInFlight = null;
     this.lastRetentionSweepAtUnixMs = 0;
     this.publish(idleProjection);
   }
@@ -339,6 +345,46 @@ class DesktopChatStorageRuntime {
         }
       });
     this.retentionInFlight = { revision, promise: operation };
+    return operation;
+  }
+
+  clearConversation(conversationId: string): Promise<ChatStorageResult | null> {
+    const scope = messagingDomainRuntime.captureScope();
+    if (!scope || !conversationId.trim()) return Promise.resolve(null);
+    const revision = chatStorageScopeRevision(scope);
+    if (
+      this.conversationClearInFlight?.revision === revision
+      && this.conversationClearInFlight.conversationId === conversationId
+    ) {
+      return this.conversationClearInFlight.promise;
+    }
+    const operation = api.chatStorageClearConversation({
+      stationPeerId: scope.stationPeerId,
+      actorPtid: scope.actorPtid,
+      deviceId: scope.endpointId,
+      scopeRevision: revision,
+      conversationId,
+    })
+      .then((result) => {
+        if (!messagingDomainRuntime.isCurrent(scope)) return null;
+        if (!isChatStorageResultForScope(scope, result)) {
+          throw new Error('chat conversation cleanup returned a stale scope');
+        }
+        this.publish({
+          ...this.projection,
+          status: 'ready',
+          snapshot: result.snapshot ?? this.projection.snapshot,
+          stale: false,
+          error: null,
+        });
+        return result;
+      })
+      .finally(() => {
+        if (this.conversationClearInFlight?.promise === operation) {
+          this.conversationClearInFlight = null;
+        }
+      });
+    this.conversationClearInFlight = { revision, conversationId, promise: operation };
     return operation;
   }
 

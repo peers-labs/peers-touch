@@ -91,8 +91,6 @@ struct ConversationMemberSettingsInput {
     alert_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     background: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cleared_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

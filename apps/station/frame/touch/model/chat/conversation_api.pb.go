@@ -3378,7 +3378,6 @@ type MemberSettings struct {
 	AlertEnabled    bool                   `protobuf:"varint,3,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
 	Pinned          bool                   `protobuf:"varint,4,opt,name=pinned,proto3" json:"pinned,omitempty"`
 	Background      string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
-	ClearedAtMs     int64                  `protobuf:"varint,6,opt,name=cleared_at_ms,json=clearedAtMs,proto3" json:"cleared_at_ms,omitempty"`
 	BackgroundImage string                 `protobuf:"bytes,7,opt,name=background_image,json=backgroundImage,proto3" json:"background_image,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -3447,13 +3446,6 @@ func (x *MemberSettings) GetBackground() string {
 		return x.Background
 	}
 	return ""
-}
-
-func (x *MemberSettings) GetClearedAtMs() int64 {
-	if x != nil {
-		return x.ClearedAtMs
-	}
-	return 0
 }
 
 func (x *MemberSettings) GetBackgroundImage() string {
@@ -3874,7 +3866,7 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x12latest_reply_at_ms\x18\x04 \x01(\x03R\x0flatestReplyAtMs\x12!\n" +
 	"\funread_count\x18\x05 \x01(\x03R\vunreadCount\"^\n" +
 	"\x17GetThreadCountsResponse\x12C\n" +
-	"\x06counts\x18\x01 \x03(\v2+.peers_touch.model.chat.v1.ThreadCountEntryR\x06counts\"\xee\x01\n" +
+	"\x06counts\x18\x01 \x03(\v2+.peers_touch.model.chat.v1.ThreadCountEntryR\x06counts\"\xd0\x01\n" +
 	"\x0eMemberSettings\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\x02 \x01(\bR\x05muted\x12#\n" +
@@ -3882,9 +3874,8 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x06pinned\x18\x04 \x01(\bR\x06pinned\x12\x1e\n" +
 	"\n" +
 	"background\x18\x05 \x01(\tR\n" +
-	"background\x12\"\n" +
-	"\rcleared_at_ms\x18\x06 \x01(\x03R\vclearedAtMs\x12)\n" +
-	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImage\"C\n" +
+	"background\x12)\n" +
+	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImageJ\x04\b\x06\x10\a\"C\n" +
 	"\x18GetMemberSettingsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"b\n" +
 	"\x19GetMemberSettingsResponse\x12E\n" +

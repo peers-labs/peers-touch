@@ -105,8 +105,9 @@ Recovery:
     preserves an explicit retry action.
 12. Search the active canonical conversation for known durable message text,
     clear the query from the input-owned suffix, and jump to the exact result.
-13. Clear visible history and restore it within 24 hours; both transitions
-    update all local projections without a false action-failed state.
+13. Clear the current device's conversation data after explicit confirmation;
+    the removed plaintext stays absent after restart, while later messages
+    continue to arrive.
 
 Success: no accepted message is lost or duplicated and every terminal state is
 truthful and actionable.
@@ -115,7 +116,7 @@ truthful and actionable.
 
 ```yaml
 surface: desktop.chat.direct
-scenario: truthful identity, responsive settings, durable search, and bounded history restore
+scenario: truthful identity, responsive settings, durable search, and device-local conversation clearing
 given:
   - an existing Direct conversation with durable plaintext and authoritative Station metadata
   - an authenticated peer whose presence may be online, offline, or unavailable
@@ -123,13 +124,13 @@ when:
   - the user opens the conversation and Details
   - the user selects a local background
   - the user searches for known message text
-  - the user clears and restores visible history within 24 hours
+  - the user clears the current device's conversation data
 then:
   - human-readable names lead and raw identifiers remain expandable
   - presence comes from Station snapshot or realtime events
   - the local background preview appears before upload finishes
   - search reads the canonical local message projection and finds the message
-  - restore removes the clear marker and reloads the same durable history
+  - the removed plaintext stays absent after restart and later messages continue
 visual_invariants:
   - the search clear control remains inside the input suffix boundary
   - background preview does not resize or remount the conversation pane
@@ -138,7 +139,7 @@ forbidden:
   - guessed presence
   - waiting for upload before local preview
   - legacy session arrays as message-search authority
-  - treating accepted clear or restore commands as failed because refresh lags
+  - presenting incomplete compaction as a successful clear
 evidence:
   - native interaction trace
   - owner-layer unit and contract assertions

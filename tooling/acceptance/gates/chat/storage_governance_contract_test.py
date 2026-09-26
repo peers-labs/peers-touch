@@ -269,6 +269,103 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("storage.retention.seed", environment["harness"]["required_actions"])
         self.assertIn("--scenario storage-retention", gate["command"])
 
+    def test_conversation_clear_is_connected_and_physically_proven(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        registry = json.loads(
+            (ROOT / "tooling/acceptance/registry.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["rules"]
+        domain = json.loads(
+            (ROOT / "tooling/acceptance/domains/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        capabilities = json.loads(
+            (ROOT / "tooling/acceptance/capabilities/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["capabilities"]
+        feature = json.loads(
+            (
+                ROOT
+                / "tooling/acceptance/features/"
+                "chat-storage-conversation-clear.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        environment = json.loads(
+            (
+                ROOT
+                / "tooling/acceptance/environments/mobile-direct-simulator.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        core = (
+            ROOT
+            / "packages/messaging-core/src/storage_governance/"
+            "conversation_clear.rs"
+        ).read_text(encoding="utf-8")
+        desktop_ui = (
+            ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
+        ).read_text(encoding="utf-8")
+        mobile_ui = (
+            ROOT / "apps/mobile/src/pages/ChatPage.tsx"
+        ).read_text(encoding="utf-8")
+
+        expected_gates = [
+            "chat-storage-delete-reclaim-e2e",
+            "chat-storage-dead-contract-zero-e2e",
+        ]
+        capability = next(
+            item
+            for item in capabilities
+            if item["id"] == "chat-storage-conversation-clear"
+        )
+        rule = next(
+            item
+            for item in registry
+            if item["id"] == "chat-storage-conversation-clear"
+        )
+
+        self.assertEqual(feature["required_gates"], expected_gates)
+        self.assertEqual(capability["required_gates"], expected_gates)
+        self.assertEqual(rule["require"], expected_gates)
+        self.assertIn(
+            "chat-storage-conversation-clear",
+            domain["capabilities"],
+        )
+        for symbol in (
+            "ConversationClearRepository",
+            "build_conversation_clear_plan",
+            "pruned_through_sequence",
+            "authority_event_hash",
+        ):
+            self.assertIn(symbol, core)
+        self.assertIn('data-chat-history-action="clear"', desktop_ui)
+        self.assertIn("data-chat-actions-open", mobile_ui)
+        self.assertIn("data-chat-conversation-clear-result", mobile_ui)
+        self.assertIn(
+            "storage.conversation-clear.seed",
+            environment["harness"]["required_actions"],
+        )
+        delete_gate = gates["chat-storage-delete-reclaim-e2e"]
+        self.assertEqual(delete_gate["environment"], "mobile-direct-simulator")
+        self.assertEqual(
+            delete_gate["provisioner"],
+            "mobile-direct-simulator",
+        )
+        self.assertIn(
+            "--scenario storage-conversation-clear",
+            delete_gate["command"],
+        )
+        self.assertIn("pnpm --dir apps/desktop check", delete_gate["command"])
+        self.assertNotIn("apps/desktop exec tsc -b", delete_gate["command"])
+        self.assertEqual(
+            gates["chat-storage-dead-contract-zero-e2e"]["environment"],
+            "local",
+        )
+
     def test_accounting_gate_uses_single_profile_native_runtime(self) -> None:
         gates = json.loads(
             (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")

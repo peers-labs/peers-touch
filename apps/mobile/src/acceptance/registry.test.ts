@@ -142,6 +142,42 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('social.contact.open');
     expect(actionNames).toContain('social.reconcile');
     expect(actionNames).toContain('social.projection.read');
+    expect(actionNames).toContain('storage.conversation-clear.seed');
+  });
+
+  it('routes conversation-clear fixture creation through the active Rust owner', async () => {
+    invokeMock.mockImplementation(async (command: string, payload?: unknown) => {
+      if (command === 'messaging_status') {
+        return {
+          active: true,
+          stationPeerId: 'station-peer',
+          actorPtid: 'ptid:alice',
+        };
+      }
+      if (command === 'chat_storage_acceptance_seed_conversation_clear') {
+        expect(payload).toEqual({
+          input: {
+            stationPeerId: 'station-peer',
+            actorPtid: 'ptid:alice',
+            plaintextBytes: 2 * 1024 * 1024,
+          },
+        });
+        return {
+          conversationId: 'conversation-clear',
+          messageId: 'message-clear',
+        };
+      }
+      throw new Error(`unexpected command: ${command}`);
+    });
+
+    await expect(createMobileAcceptanceHarness()[
+      'storage.conversation-clear.seed'
+    ]({
+      plaintextBytes: 2 * 1024 * 1024,
+    })).resolves.toEqual({
+      conversationId: 'conversation-clear',
+      messageId: 'message-clear',
+    });
   });
 
   it('prepares a parent-supplied actor identity without returning the seed', async () => {

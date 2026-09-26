@@ -114,6 +114,7 @@ import {
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { SocialApiError, readableErrorMessage, type SocialMessage, type SocialMessageAttachment } from '../features/social/socialTypes';
 import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
+import { ChatStorageOperationState } from '../gen/proto/domain/chat/storage_pb';
 import { MobileDraftSurfaceKind } from '../gen/proto/domain/mobile/reliability_pb';
 import { getDraftRestorationPort } from '../runtimes/commandRuntime';
 import {
@@ -125,6 +126,10 @@ import {
   type MessagingMemberAuthorityMemberProjection,
   type MessagingSubmitCommandResult,
 } from '../services/mobileCommands';
+import {
+  chatStorageReleasedBytes,
+  mobileChatStorageProjectionRuntime,
+} from '../runtimes/chatStorageRuntime';
 import {
   ChatConversationListPageContent,
   ChatThreadPageContent,
@@ -172,6 +177,19 @@ const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('
 const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
 /** Maximum messages mounted in one traversable window. */
 const MESSAGE_WINDOW_SIZE = 200;
+
+function formatReleasedBytes(value: bigint): string {
+  const bytes = Number(value);
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let amount = bytes / 1024;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[unit]}`;
+}
 
 type EditingMessage = {
   kind: 'friend' | 'group';
@@ -394,7 +412,6 @@ function ChatPageInner({
     messages,
     projectedThreadMessages,
     threadRootMessageUlid,
-    actionState.clearedAt || 0,
     threadSearchQuery,
   );
   const activeConversationKeyRef = useRef('');
@@ -1213,6 +1230,40 @@ function ChatPageInner({
     }
   };
 
+  const clearConversationData = async () => {
+    if (!activeConversationId) return;
+    setActionSheetOpen(false);
+    setLocalActionError('');
+    try {
+      const result = await mobileChatStorageProjectionRuntime
+        .clearConversation(activeConversationId);
+      if (
+        !result
+        || result.error
+        || result.operation?.state !== ChatStorageOperationState.SUCCEEDED
+      ) {
+        throw new Error(result?.error?.message || 'chat conversation cleanup did not complete');
+      }
+      const releasedBytes = chatStorageReleasedBytes(result) ?? 0n;
+      await selectSession(activeConversationId);
+      Modal.success({
+        title: t('mobile.chat.clearHistorySuccessTitle'),
+        content: (
+          <span
+            data-chat-conversation-clear-result="succeeded"
+            data-chat-storage-released-bytes={releasedBytes.toString()}
+          >
+            {t('mobile.chat.clearHistorySuccessBody', {
+              bytes: formatReleasedBytes(releasedBytes),
+            })}
+          </span>
+        ),
+      });
+    } catch (error) {
+      setLocalActionError(formatChatOperationError(error));
+    }
+  };
+
   const scrollToMessage = async (messageUlid: string) => {
     const scope = activeConversationKeyRef.current;
     const current = () => activeConversationKeyRef.current === scope
@@ -1371,9 +1422,7 @@ function ChatPageInner({
 
     const submittedSearch = historySearch.query === threadSearchQuery.trim() && historySearch.query !== '';
     const threadSearchResults = submittedSearch
-      ? (historySearch.page?.messages ?? []).filter(
-        (message) => messageTimestampMillis(message) > (actionState.clearedAt || 0),
-      )
+      ? (historySearch.page?.messages ?? [])
       : history.searchResults;
 
     return (
@@ -1444,7 +1493,7 @@ function ChatPageInner({
                       </button>
                     </>
                   ) : null}
-                  <button className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
+                  <button data-chat-actions-open className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
                 </div>
               ) : null}
             </>
@@ -1470,10 +1519,9 @@ function ChatPageInner({
               Modal.confirm({
                 title: t('mobile.chat.clearHistoryConfirmTitle'), content: t('mobile.chat.clearHistoryConfirmBody'),
                 okText: t('mobile.chat.quickClearHistory'), cancelText: t('common.action.cancel'), okButtonProps: { danger: true },
-                onOk: () => updateChatActionState(activeKey, { clearedAt: Date.now() }),
+                onOk: clearConversationData,
               });
             }}
-            onRestoreHistory={() => { void updateChatActionState(activeKey, { clearedAt: 0 }); }}
             isFriendThread={Boolean(activeConversation)}
             onManageGroup={activeGroupConversation ? () => {
               setGroupManageOpen(true);

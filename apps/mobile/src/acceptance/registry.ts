@@ -334,6 +334,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'storage.conversation-clear.seed',
+    mobileAcceptanceActions['storage.conversation-clear.seed'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'storage.retention.seed',
     mobileAcceptanceActions['storage.retention.seed'],
     registry,

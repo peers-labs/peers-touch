@@ -76,6 +76,23 @@ pub struct ChatStorageAcceptanceSeedRetentionResult {
 #[cfg(feature = "acceptance-harness")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatStorageAcceptanceSeedConversationClearInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    plaintext_bytes: usize,
+}
+
+#[cfg(feature = "acceptance-harness")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStorageAcceptanceSeedConversationClearResult {
+    conversation_id: String,
+    message_id: String,
+}
+
+#[cfg(feature = "acceptance-harness")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatStorageAcceptanceSeedCacheInput {
     station_peer_id: String,
     actor_ptid: String,
@@ -836,6 +853,46 @@ pub async fn chat_storage_clear_cache(
 }
 
 #[tauri::command]
+pub async fn chat_storage_clear_conversation(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: ChatStorageSnapshotInput,
+) -> MobileResult<Vec<u8>> {
+    let request = messaging_core::proto::chat::ChatStorageConversationRequest::decode(
+        input.request_bytes.as_slice(),
+    )
+    .map_err(|error| {
+        MobileError::invalid_input(format!(
+            "invalid chat conversation cleanup request: {error}"
+        ))
+    })?;
+    let scope = request
+        .scope
+        .ok_or_else(|| MobileError::invalid_input("chat storage scope is required"))?;
+    if request.conversation_id.trim().is_empty() {
+        return Err(MobileError::invalid_input(
+            "chat conversation ID is required",
+        ));
+    }
+    let engine = runtime.active_engine(&scope.station_peer_id, &scope.actor_ptid)?;
+    if engine.scope().device_id != scope.device_id {
+        return Err(MobileError::coded(
+            "STORAGE_SCOPE_STALE",
+            "chat storage scope is stale",
+        ));
+    }
+    let revision = request.scope_revision;
+    let conversation_id = request.conversation_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_clear_conversation(&revision, &conversation_id)
+            .map(|result| result.encode_to_vec())
+    })
+    .await
+    .map_err(|error| MobileError::messaging(format!("join conversation cleanup task: {error}")))?
+    .map_err(MobileError::messaging)
+}
+
+#[tauri::command]
 pub async fn chat_storage_set_retention(
     runtime: State<'_, MobileMessagingRuntime>,
     input: ChatStorageSnapshotInput,
@@ -892,6 +949,31 @@ pub async fn chat_storage_acceptance_seed_retention(
     })
     .await
     .map_err(|error| MobileError::messaging(format!("join retention fixture task: {error}")))?
+    .map_err(MobileError::messaging)
+}
+
+#[cfg(feature = "acceptance-harness")]
+#[tauri::command]
+pub async fn chat_storage_acceptance_seed_conversation_clear(
+    runtime: State<'_, MobileMessagingRuntime>,
+    input: ChatStorageAcceptanceSeedConversationClearInput,
+) -> MobileResult<ChatStorageAcceptanceSeedConversationClearResult> {
+    let engine = runtime.active_engine(&input.station_peer_id, &input.actor_ptid)?;
+    let plaintext_bytes = input.plaintext_bytes;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .seed_acceptance_storage_conversation_clear(plaintext_bytes)
+            .map(
+                |(conversation_id, message_id)| ChatStorageAcceptanceSeedConversationClearResult {
+                    conversation_id,
+                    message_id,
+                },
+            )
+    })
+    .await
+    .map_err(|error| {
+        MobileError::messaging(format!("join conversation clear fixture task: {error}"))
+    })?
     .map_err(MobileError::messaging)
 }
 

@@ -14,7 +14,7 @@ describe('Logical message history projection', () => {
   it('searches outside the newest render window and counts the complete thread', () => {
     let result: ReturnType<typeof useChatHistoryProjection> | undefined;
     function Fixture() {
-      result = useChatHistoryProjection(messages, [], 'message-0', 0, 'earliest-match');
+      result = useChatHistoryProjection(messages, [], 'message-0', 'earliest-match');
       return null;
     }
     renderToStaticMarkup(<Fixture />);
@@ -29,7 +29,7 @@ describe('Logical message history projection', () => {
       result = useChatHistoryProjection(
         [{ ...messages[17], content: 'edited' }],
         [...messages].reverse(),
-        'message-0', 0, 'edited',
+        'message-0', 'edited',
       );
       return null;
     }

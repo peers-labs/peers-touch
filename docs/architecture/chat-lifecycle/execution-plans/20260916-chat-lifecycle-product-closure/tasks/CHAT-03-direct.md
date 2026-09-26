@@ -60,7 +60,7 @@
     "CHAT-UR10: Direct header, row, and detail use authoritative Station names and snapshot-plus-event presence without raw-ID or guessed-status primary labels",
     "CHAT-UR11: local chat background preview is immediate while upload/persistence runs asynchronously, with rollback and retry on failure",
     "CHAT-UR12: message search targets canonical Conversation projections, finds known durable plaintext, and keeps the clear affordance inside the input",
-    "CHAT-UR13: clear history and restore within 24 hours converge on the authoritative marker and reproject the same durable messages",
+    "CHAT-UR13: current-device conversation clearing commits a verified sequence/hash floor, remains effective after restart, does not affect the peer device, and permits later messages",
     "Queued, retrying, failed, delivered, and read states are visibly distinct",
     "Message-level retry reuses the logical message without duplicate authority facts",
     "Conversation preview, unread/read, history pagination, search, and settings survive restart"

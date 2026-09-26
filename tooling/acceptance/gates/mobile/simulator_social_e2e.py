@@ -46,6 +46,7 @@ SCENARIO_GATES = {
     "recovery-ui": "mobile-simulator-recovery-ui-e2e",
     "moments": "mobile-simulator-moments-e2e",
     "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+    "storage-conversation-clear": "chat-storage-delete-reclaim-e2e",
     "storage-retention": "chat-storage-retention-e2e",
 }
 CLIENT_ASSIGNMENTS = {
@@ -82,6 +83,11 @@ SCENARIO_METADATA = {
         "phase": "CSG-02 Mobile Cache Cleanup",
         "bom": ["CSG-G02"],
         "spec": ["chat-storage-cache-cleanup"],
+    },
+    "storage-conversation-clear": {
+        "phase": "CSG-05 Mobile Conversation Clear",
+        "bom": ["CSG-G04"],
+        "spec": ["chat-storage-conversation-clear"],
     },
     "storage-retention": {
         "phase": "CSG-03 Mobile Retention",
@@ -312,6 +318,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
         elif self.scenario == "storage-cache-cleanup":
             journey_result = self._run_storage_cache_cleanup_journey(
+                session=sessions["sim-ios"],
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "storage-conversation-clear":
+            journey_result = self._run_storage_conversation_clear_journey(
                 session=sessions["sim-ios"],
                 journey_id=artifacts.run_id[-12:],
             )
@@ -777,6 +788,276 @@ return true;
             "prunedMessageAbsent": True,
             "protectedMessagePreserved": True,
             "recentMessagePreserved": True,
+            "restartStable": True,
+            "messagingIdentityPreserved": True,
+        }
+
+    def _run_storage_conversation_clear_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        fixture_size = 2 * 1024 * 1024
+        fixture = self._mapping(
+            session.call_action(
+                "storage.conversation-clear.seed",
+                {"plaintextBytes": fixture_size},
+            ),
+            "storage conversation clear fixture",
+        )
+        conversation_id = self._required_text(
+            fixture,
+            "conversationId",
+            "storage conversation clear fixture",
+        )
+        message_id = self._required_text(
+            fixture,
+            "messageId",
+            "storage conversation clear fixture",
+        )
+        identity_before = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity before conversation clear",
+        )
+        if not identity_before.get("active"):
+            raise GateError(
+                "messaging runtime is inactive before conversation clear"
+            )
+
+        session.call_action("messaging.reconcile")
+        projection_before = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            "conversation projection before clear",
+        )
+        messages_before = self._mapping(
+            projection_before.get("messages"),
+            "conversation message projection before clear",
+        ).get(conversation_id)
+        if not isinstance(messages_before, list) or not any(
+            isinstance(message, Mapping)
+            and message.get("messageId") == message_id
+            for message in messages_before
+        ):
+            raise GateError("conversation clear fixture message is not visible")
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "storage refresh before conversation clear",
+        )
+        before = self._wait_for_storage_snapshot(
+            session,
+            lambda value: int(value.get("messageBytes") or 0) >= fixture_size
+            and conversation_id in value.get("conversationIds", []),
+            "seeded Mobile conversation clear measurement",
+        )
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:chat"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:chat-conversation",
+                    "sessionUlid": conversation_id,
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-actions-open]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "conversation actions",
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector(
+  '[data-chat-history-action="clear"]'
+);
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "conversation clear action",
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = Array.from(document.querySelectorAll(
+  '.ant-modal-confirm .ant-btn-primary'
+)).find((candidate) => candidate.offsetParent !== null);
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "conversation clear confirmation",
+        )
+        clear_result = self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const result = document.querySelector(
+  '[data-chat-conversation-clear-result="succeeded"]'
+);
+if (!result) return null;
+return {
+  releasedBytes: Number(
+    result.getAttribute('data-chat-storage-released-bytes') || '0'
+  ),
+};
+"""
+            ),
+            "conversation clear result",
+            timeout_seconds=60,
+        )
+        released_bytes = int(clear_result.get("releasedBytes") or 0)
+        if released_bytes <= 0:
+            raise GateError(
+                "conversation clear did not report released physical bytes"
+            )
+        session.execute_script(
+            """
+const button = Array.from(document.querySelectorAll(
+  '.ant-modal-confirm .ant-btn-primary'
+)).find((candidate) => candidate.offsetParent !== null);
+button?.click();
+"""
+        )
+
+        session.call_action("messaging.reconcile")
+        projection_after = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            "conversation projection after clear",
+        )
+        messages_after = self._mapping(
+            projection_after.get("messages"),
+            "conversation message projection after clear",
+        ).get(conversation_id)
+        if not isinstance(messages_after, list) or messages_after:
+            raise GateError("conversation clear left plaintext projections")
+        search_after = session.call_action(
+            "messaging.search",
+            {
+                "conversationId": conversation_id,
+                "query": "cccccccc",
+                "limit": 20,
+            },
+        )
+        if not isinstance(search_after, list) or search_after:
+            raise GateError("conversation clear left searchable plaintext")
+
+        restart = session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("conversation clear restart was not acknowledged")
+        session.call_action("messaging.reconcile")
+        projection_restarted = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            "conversation projection after clear restart",
+        )
+        messages_restarted = self._mapping(
+            projection_restarted.get("messages"),
+            "conversation message projection after clear restart",
+        ).get(conversation_id)
+        if not isinstance(messages_restarted, list) or messages_restarted:
+            raise GateError(
+                "conversation clear plaintext returned after restart"
+            )
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "storage refresh after conversation clear",
+        )
+        after = self._wait_for_storage_snapshot(
+            session,
+            lambda value: int(value.get("physicalTotalBytes") or 0)
+            < int(before.get("physicalTotalBytes") or 0),
+            "Mobile conversation clear physical reclamation",
+        )
+        identity_after = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity after conversation clear",
+        )
+        if identity_after != identity_before:
+            raise GateError(
+                "conversation clear changed the active messaging identity"
+            )
+        return {
+            "scenario": "storage-conversation-clear",
+            "journeyId": journey_id,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "fixtureBytes": fixture_size,
+            "physicalBytesBefore": int(before["physicalTotalBytes"]),
+            "physicalBytesAfter": int(after["physicalTotalBytes"]),
+            "releasedBytes": released_bytes,
+            "plaintextAbsent": True,
+            "searchEntryAbsent": True,
             "restartStable": True,
             "messagingIdentityPreserved": True,
         }

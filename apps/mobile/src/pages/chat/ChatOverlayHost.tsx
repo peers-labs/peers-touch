@@ -268,7 +268,6 @@ export function ChatActionSheet({
   onToggleAlert,
   onSelectBackground,
   onClearHistory,
-  onRestoreHistory,
   isFriendThread,
   onManageGroup,
   peerBlocked,
@@ -286,7 +285,6 @@ export function ChatActionSheet({
   readonly onToggleAlert: () => void;
   readonly onSelectBackground: (background: ChatBackgroundId) => void;
   readonly onClearHistory: () => void;
-  readonly onRestoreHistory: () => void;
   readonly isFriendThread: boolean;
   readonly onManageGroup?: () => void;
   readonly peerBlocked: boolean;
@@ -338,11 +336,17 @@ export function ChatActionSheet({
             </div>
           </div>
           <div className="chat-action-group">
-            {state.clearedAt ? <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.chat.quickRestoreHistory')} disabled={settingsBusy} onClick={onRestoreHistory} /> : null}
             {onManageGroup ? <ChatActionButton icon={<Users size={18} />} title={t('mobile.group.members')} onClick={onManageGroup} /> : null}
           </div>
           <div className="chat-action-group danger">
-            <ChatActionButton icon={<Trash2 size={18} />} title={t('mobile.chat.quickClearHistory')} danger disabled={settingsBusy} onClick={onClearHistory} />
+            <ChatActionButton
+              dataChatHistoryAction="clear"
+              icon={<Trash2 size={18} />}
+              title={t('mobile.chat.quickClearHistory')}
+              danger
+              disabled={settingsBusy}
+              onClick={onClearHistory}
+            />
             {isFriendThread ? (
               peerBlocked
                 ? <ChatActionButton icon={<RotateCcw size={18} />} title={t('mobile.contacts.unblock')} onClick={onUnblockPeer} />
@@ -821,6 +825,7 @@ function groupRoleLabel(
 }
 
 function ChatActionButton({
+  dataChatHistoryAction,
   icon,
   title,
   active,
@@ -828,6 +833,7 @@ function ChatActionButton({
   disabled,
   onClick,
 }: {
+  readonly dataChatHistoryAction?: 'clear';
   readonly icon: ReactNode;
   readonly title: string;
   readonly active?: boolean;
@@ -837,6 +843,7 @@ function ChatActionButton({
 }) {
   return (
     <button
+      data-chat-history-action={dataChatHistoryAction}
       className={`chat-action-button ${active ? 'active' : ''} ${danger ? 'danger' : ''}`}
       type="button"
       onClick={onClick}

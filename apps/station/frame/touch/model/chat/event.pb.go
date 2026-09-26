@@ -634,14 +634,13 @@ func (x *MessagePinCommittedFact) GetRemoved() bool {
 }
 
 type ConversationUpdatedFact struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Name                  *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Description           *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	AvatarObjectId        *string                `protobuf:"bytes,3,opt,name=avatar_object_id,json=avatarObjectId,proto3,oneof" json:"avatar_object_id,omitempty"`
-	DisappearTimerSeconds *uint32                `protobuf:"varint,4,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3,oneof" json:"disappear_timer_seconds,omitempty"`
-	Visibility            *GroupVisibilityV1     `protobuf:"varint,5,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1,oneof" json:"visibility,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Description    *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	AvatarObjectId *string                `protobuf:"bytes,3,opt,name=avatar_object_id,json=avatarObjectId,proto3,oneof" json:"avatar_object_id,omitempty"`
+	Visibility     *GroupVisibilityV1     `protobuf:"varint,5,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1,oneof" json:"visibility,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ConversationUpdatedFact) Reset() {
@@ -693,13 +692,6 @@ func (x *ConversationUpdatedFact) GetAvatarObjectId() string {
 		return *x.AvatarObjectId
 	}
 	return ""
-}
-
-func (x *ConversationUpdatedFact) GetDisappearTimerSeconds() uint32 {
-	if x != nil && x.DisappearTimerSeconds != nil {
-		return *x.DisappearTimerSeconds
-	}
-	return 0
 }
 
 func (x *ConversationUpdatedFact) GetVisibility() GroupVisibilityV1 {
@@ -993,23 +985,22 @@ func (x *ConversationAuthorityEndpoint) GetHomeStationPeerId() string {
 // the authority event hash so a freshly added MLS endpoint can atomically
 // establish its first local projection and future hash-chain checkpoint.
 type ConversationAuthoritySnapshot struct {
-	state                 protoimpl.MessageState           `protogen:"open.v1"`
-	Kind                  ConversationKind                 `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"kind,omitempty"`
-	Name                  string                           `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	OwnerPtid             string                           `protobuf:"bytes,3,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
-	ActiveMembers         []*ConversationAuthorityMember   `protobuf:"bytes,4,rep,name=active_members,json=activeMembers,proto3" json:"active_members,omitempty"`
-	ActiveEndpoints       []*CryptoEndpoint                `protobuf:"bytes,5,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
-	MembershipEpoch       int64                            `protobuf:"varint,6,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
-	MlsEpoch              int64                            `protobuf:"varint,7,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
-	ActiveEndpointRoutes  []*ConversationAuthorityEndpoint `protobuf:"bytes,8,rep,name=active_endpoint_routes,json=activeEndpointRoutes,proto3" json:"active_endpoint_routes,omitempty"`
-	FederationId          string                           `protobuf:"bytes,9,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	AuthorityEpoch        int64                            `protobuf:"varint,10,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
-	Description           string                           `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
-	AvatarObjectId        string                           `protobuf:"bytes,12,opt,name=avatar_object_id,json=avatarObjectId,proto3" json:"avatar_object_id,omitempty"`
-	Visibility            GroupVisibilityV1                `protobuf:"varint,13,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
-	DisappearTimerSeconds uint32                           `protobuf:"varint,14,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3" json:"disappear_timer_seconds,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                protoimpl.MessageState           `protogen:"open.v1"`
+	Kind                 ConversationKind                 `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.ConversationKind" json:"kind,omitempty"`
+	Name                 string                           `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	OwnerPtid            string                           `protobuf:"bytes,3,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	ActiveMembers        []*ConversationAuthorityMember   `protobuf:"bytes,4,rep,name=active_members,json=activeMembers,proto3" json:"active_members,omitempty"`
+	ActiveEndpoints      []*CryptoEndpoint                `protobuf:"bytes,5,rep,name=active_endpoints,json=activeEndpoints,proto3" json:"active_endpoints,omitempty"`
+	MembershipEpoch      int64                            `protobuf:"varint,6,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
+	MlsEpoch             int64                            `protobuf:"varint,7,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
+	ActiveEndpointRoutes []*ConversationAuthorityEndpoint `protobuf:"bytes,8,rep,name=active_endpoint_routes,json=activeEndpointRoutes,proto3" json:"active_endpoint_routes,omitempty"`
+	FederationId         string                           `protobuf:"bytes,9,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityEpoch       int64                            `protobuf:"varint,10,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	Description          string                           `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
+	AvatarObjectId       string                           `protobuf:"bytes,12,opt,name=avatar_object_id,json=avatarObjectId,proto3" json:"avatar_object_id,omitempty"`
+	Visibility           GroupVisibilityV1                `protobuf:"varint,13,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ConversationAuthoritySnapshot) Reset() {
@@ -1131,13 +1122,6 @@ func (x *ConversationAuthoritySnapshot) GetVisibility() GroupVisibilityV1 {
 		return x.Visibility
 	}
 	return GroupVisibilityV1_GROUP_VISIBILITY_V1_UNSPECIFIED
-}
-
-func (x *ConversationAuthoritySnapshot) GetDisappearTimerSeconds() uint32 {
-	if x != nil {
-		return x.DisappearTimerSeconds
-	}
-	return 0
 }
 
 type MembershipTransitionCommittedFact struct {
@@ -2410,20 +2394,18 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12?\n" +
 	"\x05actor\x18\x02 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\x05actor\x12\x18\n" +
-	"\aremoved\x18\x03 \x01(\bR\aremoved\"\xf1\x02\n" +
+	"\aremoved\x18\x03 \x01(\bR\aremoved\"\x9e\x02\n" +
 	"\x17ConversationUpdatedFact\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12-\n" +
-	"\x10avatar_object_id\x18\x03 \x01(\tH\x02R\x0eavatarObjectId\x88\x01\x01\x12;\n" +
-	"\x17disappear_timer_seconds\x18\x04 \x01(\rH\x03R\x15disappearTimerSeconds\x88\x01\x01\x12Q\n" +
+	"\x10avatar_object_id\x18\x03 \x01(\tH\x02R\x0eavatarObjectId\x88\x01\x01\x12Q\n" +
 	"\n" +
-	"visibility\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1H\x04R\n" +
+	"visibility\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1H\x03R\n" +
 	"visibility\x88\x01\x01B\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\x13\n" +
-	"\x11_avatar_object_idB\x1a\n" +
-	"\x18_disappear_timer_secondsB\r\n" +
-	"\v_visibility\"\xcc\x02\n" +
+	"\x11_avatar_object_idB\r\n" +
+	"\v_visibilityJ\x04\b\x04\x10\x05\"\xcc\x02\n" +
 	"\x17ConversationCreatedFact\x12?\n" +
 	"\x04kind\x18\x01 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -2447,7 +2429,7 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"mutedUntil\"\x97\x01\n" +
 	"\x1dConversationAuthorityEndpoint\x12E\n" +
 	"\bendpoint\x18\x01 \x01(\v2).peers_touch.model.chat.v1.CryptoEndpointR\bendpoint\x12/\n" +
-	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\"\xa0\x06\n" +
+	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\"\xee\x05\n" +
 	"\x1dConversationAuthoritySnapshot\x12?\n" +
 	"\x04kind\x18\x01 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -2465,8 +2447,7 @@ const file_domain_chat_event_proto_rawDesc = "" +
 	"\x10avatar_object_id\x18\f \x01(\tR\x0eavatarObjectId\x12L\n" +
 	"\n" +
 	"visibility\x18\r \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1R\n" +
-	"visibility\x126\n" +
-	"\x17disappear_timer_seconds\x18\x0e \x01(\rR\x15disappearTimerSeconds\"\xfa\x03\n" +
+	"visibilityJ\x04\b\x0e\x10\x0f\"\xfa\x03\n" +
 	"!MembershipTransitionCommittedFact\x12#\n" +
 	"\rtransition_id\x18\x01 \x01(\tR\ftransitionId\x122\n" +
 	"\x15from_membership_epoch\x18\x02 \x01(\x03R\x13fromMembershipEpoch\x12.\n" +

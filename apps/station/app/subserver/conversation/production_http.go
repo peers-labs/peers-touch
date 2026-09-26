@@ -1158,13 +1158,12 @@ func (s *subServer) handleUpdateMemberSettings(
 		conversationID,
 		actor,
 		command.MemberSettingsPatch{
-			Nickname:            productionStringPointer(settings.GetNickname()),
-			Muted:               productionBoolPointer(settings.GetMuted()),
-			Pinned:              productionBoolPointer(settings.GetPinned()),
-			AlertEnabled:        productionBoolPointer(settings.GetAlertEnabled()),
-			Background:          productionStringPointer(settings.GetBackground()),
-			BackgroundImage:     productionStringPointer(settings.GetBackgroundImage()),
-			ClearedAtUnixMillis: productionInt64Pointer(settings.GetClearedAtMs()),
+			Nickname:        productionStringPointer(settings.GetNickname()),
+			Muted:           productionBoolPointer(settings.GetMuted()),
+			Pinned:          productionBoolPointer(settings.GetPinned()),
+			AlertEnabled:    productionBoolPointer(settings.GetAlertEnabled()),
+			Background:      productionStringPointer(settings.GetBackground()),
+			BackgroundImage: productionStringPointer(settings.GetBackgroundImage()),
 		},
 	)
 	if err != nil {
@@ -2046,7 +2045,6 @@ func productionConversation(snapshot aggregate.Snapshot) *chatmodel.Conversation
 		AvatarCid:              snapshot.Settings.AvatarObjectID,
 		OwnerPtid:              string(snapshot.Owner),
 		Visibility:             productionConversationVisibility(snapshot.Settings.Visibility),
-		DisappearTimerSeconds:  snapshot.Settings.DisappearTimerSeconds,
 		MlsEpoch:               int64(snapshot.Head.MLSEpoch),
 		FederationId:           string(snapshot.FederationID),
 		AuthorityEpoch:         int64(snapshot.AuthorityEpoch),
@@ -2310,7 +2308,6 @@ func productionMemberSettings(
 		AlertEnabled:    settings.AlertEnabled,
 		Pinned:          settings.Pinned,
 		Background:      settings.Background,
-		ClearedAtMs:     settings.ClearedAtUnixMillis,
 		BackgroundImage: settings.BackgroundImage,
 	}
 }

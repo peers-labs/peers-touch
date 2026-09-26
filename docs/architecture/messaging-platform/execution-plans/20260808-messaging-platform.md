@@ -1244,13 +1244,13 @@ candidate is required for product proof.
 
 The clean candidate `36ffad755a4c` reached `FIXTURE_READY` and completed the
 core Native product assertions, but run
-`20260828T071458758679Z-c06fe73fdd587a0192178ab70eead116` failed at
-`clear.cursor.restart.ui` because the runner queried the Ant Design
-confirmation portal synchronously after the native clear-history click. The
-runner now waits for the same visible primary confirmation control with a
-bounded timeout and still activates it through the native input adapter; it
-does not use a JavaScript click or weaken the clear-cursor assertion. The
-failed run remains `FAILED/UNPROVEN`.
+`20260828T071458758679Z-c06fe73fdd587a0192178ab70eead116` failed during the
+then-current conversation-history action because the runner queried the Ant
+Design confirmation portal synchronously after the native action. The runner
+was subsequently updated to wait for the visible primary confirmation control
+with a bounded timeout and to activate it through the native input adapter.
+That historical run remains `FAILED/UNPROVEN`; current conversation clearing is
+owned by the Chat storage-governance contract.
 
 Candidate `110dbbad60db` passed
 `chat-native-product-closure-e2e` on `desktop-linux-native` in run
@@ -1324,7 +1324,8 @@ evidence for both required Linux runtime journeys:
   `20260828T142622748616Z-bbff7c7eb9e2c2de7bc43b0ef990e94e`
   proved Direct search create/reuse with one list row, no forbidden or raw
   localized feedback, settings/background, attachments, offline and restart
-  recovery, clear/restore, second-device recovery, and actor cleanup.
+  recovery, current-device conversation clearing, second-device recovery, and
+  actor cleanup.
 - Receiver Gate
   `20260828T150121373022Z-051e7bcc11587cb9ccd6d1fc36dc6217`
   proved bidirectional receiver-visible delivery and cleanup.

@@ -497,9 +497,6 @@ func migrateProductionConversationSchema(
 	database *gorm.DB,
 ) error {
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := persistence.BackfillConversationDefaults(tx); err != nil {
-			return err
-		}
 		if err := tx.AutoMigrate(
 			&persistence.ConversationModel{},
 			&persistence.ConversationMemberModel{},

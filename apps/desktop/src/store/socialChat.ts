@@ -44,7 +44,6 @@ import {
   applyPresenceToMap,
   applyTypingStateToMap,
   conversationKey,
-  filterClearedMessages,
   mergeConversationMessages,
   messageGroupSeq,
   messageSentMs,
@@ -88,7 +87,7 @@ function projectConversationMemberSettings(
   settings: MemberSettingsResult,
 ): Pick<
   ConversationLocalState,
-  'muted' | 'sticky' | 'alertEnabled' | 'background' | 'backgroundImage' | 'clearedAt'
+  'muted' | 'sticky' | 'alertEnabled' | 'background' | 'backgroundImage'
 > {
   return {
     muted: settings.muted,
@@ -96,7 +95,6 @@ function projectConversationMemberSettings(
     alertEnabled: settings.alertEnabled,
     background: normalizeChatBackgroundId(settings.background),
     backgroundImage: settings.backgroundImage,
-    clearedAt: settings.clearedAtUnixMs,
   };
 }
 
@@ -580,7 +578,7 @@ interface SocialChatState {
     ulid: string,
     previewUrl: string | null,
   ) => void;
-  hideConversation: (kind: 'friend' | 'group', ulid: string, keepHistory: boolean) => Promise<void>;
+  hideConversation: (kind: 'friend' | 'group', ulid: string) => Promise<void>;
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
 
@@ -1160,16 +1158,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           projection.conversationId,
           latest,
         );
-        if (
-          filterClearedMessages(
-            [projected],
-            nextConversationLocalState,
-            kind,
-            projection.conversationId,
-          ).length > 0
-        ) {
-          nextPreviews[projection.conversationId] = previewFromMessage(projected);
-        }
+        nextPreviews[projection.conversationId] = previewFromMessage(projected);
       }
       saveConversationLocalState(actorPtid, nextConversationLocalState);
       set({
@@ -1326,12 +1315,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           (messages, message) => mergeConversationMessages(messages, message),
           state.messages[ulid] ?? [],
         );
-        const visibleMessages = filterClearedMessages(
-          mergedMessages,
-          state.conversationLocalState,
-          activeTab,
-          ulid,
-        );
+        const visibleMessages = mergedMessages;
         const mainMessages = visibleMessages
           .filter(message => !socialMessageExplicitThreadRootUlid(message));
         const latestMainMessage = mainMessages[mainMessages.length - 1];
@@ -1413,12 +1397,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         return {
           messages: {
             ...state.messages,
-            [ulid]: filterClearedMessages(
-              mergedMessages,
-              state.conversationLocalState,
-              activeKind,
-              ulid,
-            ),
+            [ulid]: mergedMessages,
           },
           reactions,
           pinnedMessages,
@@ -2080,7 +2059,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         pinned: patch.sticky,
         background: patch.background,
         backgroundImage: patch.backgroundImage,
-        clearedAtUnixMs: patch.clearedAt,
       };
       if (Object.values(settingsPatch).some(value => value !== undefined)) {
         const settings = await messagingCommands.updateMemberSettings(ulid, settingsPatch);
@@ -2119,25 +2097,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     });
   },
 
-  hideConversation: async (kind, ulid, keepHistory) => {
+  hideConversation: async (kind, ulid) => {
     const key = conversationKey(kind, ulid);
     const nextEntry: ConversationLocalState = {
       hidden: true,
-      ...(keepHistory ? {} : { clearedAt: Date.now() }),
     };
     set((state) => {
       const nextLocalState = { ...state.conversationLocalState, [key]: nextEntry };
       saveConversationLocalState(state.currentUserPtid, nextLocalState);
-      const nextMessages = { ...state.messages };
-      const nextPreviews = { ...state.lastPreviews };
-      if (!keepHistory) {
-        delete nextMessages[ulid];
-        delete nextPreviews[ulid];
-      }
       return {
         conversationLocalState: nextLocalState,
-        messages: nextMessages,
-        lastPreviews: nextPreviews,
         ...(kind === 'friend' && state.activeSessionUlid === ulid ? { activeSessionUlid: null } : {}),
         ...(kind === 'group' && state.activeGroupUlid === ulid ? { activeGroupUlid: null } : {}),
       };
@@ -2435,11 +2404,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           conversationName = group?.name || '';
         }
         return messages
-          .filter(message => {
-            const localState = state.conversationLocalState[conversationKey(scope, conversationId)];
-            const clearedAt = localState?.clearedAt ?? 0;
-            return !clearedAt || message.timestampUnixMs >= clearedAt;
-          })
           .map(message => ({
             messageId: message.messageId,
             conversationId,

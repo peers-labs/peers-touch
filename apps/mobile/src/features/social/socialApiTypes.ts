@@ -48,7 +48,6 @@ export interface FriendConversationSettings {
   isPinned: boolean;
   alertEnabled: boolean;
   background: ChatBackgroundId;
-  clearedAt: number;
 }
 
 export interface UpdateFriendConversationSettingsInput {
@@ -56,7 +55,6 @@ export interface UpdateFriendConversationSettingsInput {
   isPinned?: boolean;
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
-  clearedAt?: number;
 }
 
 // ---------------------------------------------------------------------------

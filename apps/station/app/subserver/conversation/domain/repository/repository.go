@@ -119,16 +119,15 @@ type AuthorityPlanRepository interface {
 }
 
 type MemberSettings struct {
-	ConversationID      valueobject.ConversationID
-	Actor               valueobject.PTID
-	Nickname            string
-	Muted               bool
-	Pinned              bool
-	AlertEnabled        bool
-	Background          string
-	BackgroundImage     string
-	ClearedAtUnixMillis int64
-	UpdatedAt           time.Time
+	ConversationID  valueobject.ConversationID
+	Actor           valueobject.PTID
+	Nickname        string
+	Muted           bool
+	Pinned          bool
+	AlertEnabled    bool
+	Background      string
+	BackgroundImage string
+	UpdatedAt       time.Time
 }
 
 type MemberSettingsRepository interface {

@@ -1,0 +1,58 @@
+{
+  "id": "chat-storage-conversation-clear",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/**",
+    "packages/messaging-core/src/storage_governance/conversation_clear.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/station/app/subserver/conversation/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+    "apps/desktop/src/components/chat/**",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+    "apps/mobile/src/pages/ChatPage.tsx",
+    "apps/mobile/src/acceptance/**",
+    "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
+    "tooling/acceptance/gates/chat_storage/**"
+  ],
+  "truth_sources": [
+    "Device Messaging Engine authority head and sequence/hash floor",
+    "Device Messaging Engine SQLCipher projections and cleanup journal",
+    "post-compaction physical storage snapshot"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Conversation details > Clear local chat data"
+    },
+    {
+      "type": "native-mobile",
+      "route": "Conversation actions > Clear local chat data"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-delete-reclaim-e2e",
+    "chat-storage-dead-contract-zero-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "shared Core freezes the verified authority sequence and event hash before deletion",
+      "one device-local transaction removes eligible projection, search, completed transfer metadata, and zero-reference media",
+      "the committed floor prevents ordinary replay from restoring removed plaintext while higher-sequence events remain eligible",
+      "successful completion reports bytes measured after checkpoint and compaction"
+    ],
+    "visible": [
+      "native Mobile requires explicit confirmation before clearing one conversation",
+      "native Mobile reports actual released bytes and the removed plaintext remains absent after restart",
+      "Desktop and Mobile expose the same irreversible current-device action without a restore control"
+    ]
+  },
+  "negative": [
+    "conversation clear must not mutate Station authority or another device",
+    "a failed deletion transaction must not advance the sequence/hash floor",
+    "compaction_pending must not render as success",
+    "legacy marker, restore, disappearing-message, backfill, or compatibility-schema paths must not remain executable"
+  ]
+}

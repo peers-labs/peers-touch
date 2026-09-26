@@ -1206,6 +1206,26 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     });
   },
 
+  'storage.conversation-clear.seed': async (input) => {
+    const runtime = await messagingStatus();
+    if (!runtime.active || !runtime.stationPeerId || !runtime.actorPtid) {
+      throw new Error('acceptance.mobile.messagingUnavailable');
+    }
+    return invoke<{
+      conversationId: string;
+      messageId: string;
+    }>('chat_storage_acceptance_seed_conversation_clear', {
+      input: {
+        stationPeerId: runtime.stationPeerId,
+        actorPtid: runtime.actorPtid,
+        plaintextBytes: requirePositiveInteger(
+          input?.plaintextBytes,
+          'storage.conversation-clear.seed.plaintextBytes',
+        ),
+      },
+    });
+  },
+
   'storage.retention.seed': async (input) => {
     const runtime = await messagingStatus();
     if (!runtime.active || !runtime.stationPeerId || !runtime.actorPtid) {

@@ -73,14 +73,12 @@ describe('Chat typing snapshots', () => {
         isPinned: true,
         alertEnabled: false,
         background: 'paper',
-        clearedAt: 21,
       },
     })).toMatchObject({
       muted: true,
       sticky: true,
       alertEnabled: false,
       background: 'paper',
-      clearedAt: 21,
     });
   });
 });

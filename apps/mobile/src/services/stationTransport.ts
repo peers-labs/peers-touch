@@ -62,7 +62,6 @@ export type StationTransportOperation =
         pinned?: boolean;
         alert_enabled?: boolean;
         background?: string;
-        cleared_at_ms?: number;
       };
     };
   }

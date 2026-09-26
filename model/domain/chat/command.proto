@@ -94,7 +94,7 @@ message UpdateConversationIntent {
   optional string name = 1;
   optional string description = 2;
   optional string avatar_object_id = 3;
-  optional uint32 disappear_timer_seconds = 4;
+  reserved 4;
   optional GroupVisibilityV1 visibility = 5;
 }
 

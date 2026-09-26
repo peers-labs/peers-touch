@@ -371,6 +371,44 @@
       ]
     },
     {
+      "id": "chat-storage-conversation-clear",
+      "features": [
+        "chat-storage-conversation-clear"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/chat/**",
+          "packages/messaging-core/src/storage_governance/conversation_clear.rs",
+          "packages/messaging-core/src/store/schema.rs",
+          "apps/station/app/subserver/conversation/**",
+          "apps/station/frame/touch/model/chat/**",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+          "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+          "apps/mobile/src-tauri/src/messaging/engine.rs",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs",
+          "apps/mobile/src-tauri/src/messaging/commands.rs",
+          "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+          "apps/mobile/src/pages/ChatPage.tsx",
+          "apps/mobile/src/acceptance/**",
+          "packages/client-chat-core/**",
+          "packages/prototypes/desktop/features/social-chat/**",
+          "docs/architecture/chat-lifecycle/**",
+          "docs/architecture/messaging-platform/**",
+          "docs/client/chat/**",
+          "tooling/acceptance/features/chat-storage-conversation-clear.yaml",
+          "tooling/acceptance/gates/chat_storage/**",
+          "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+        ]
+      },
+      "require": [
+        "chat-storage-delete-reclaim-e2e",
+        "chat-storage-dead-contract-zero-e2e"
+      ]
+    },
+    {
       "id": "station-messaging",
       "features": [
         "chat-service-contract",

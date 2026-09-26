@@ -24,6 +24,7 @@ import {
   type ImageAttachment,
 } from '../gen/proto/domain/social/post_pb';
 import {
+  ChatStorageConversationRequestSchema,
   ChatStorageResultSchema,
   ChatStorageRetentionRequestSchema,
   ChatStorageSnapshotRequestSchema,
@@ -164,6 +165,30 @@ export async function chatStorageClearCache(
   const response = await invoke<number[]>('chat_storage_clear_cache', {
     input: {
       requestBytes: Array.from(toBinary(ChatStorageSnapshotRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
+}
+
+export async function chatStorageClearConversation(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+    conversationId: string;
+  },
+): Promise<ChatStorageResult> {
+  const request = create(ChatStorageConversationRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+    conversationId: input.conversationId,
+  });
+  const response = await invoke<number[]>('chat_storage_clear_conversation', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageConversationRequestSchema, request)),
     },
   });
   return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));

@@ -1016,6 +1016,7 @@ fn main() {
             messaging_commands::messaging_command_status,
             messaging_commands::chat_storage_snapshot,
             messaging_commands::chat_storage_clear_cache,
+            messaging_commands::chat_storage_clear_conversation,
             messaging_commands::chat_storage_set_retention,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,

@@ -2166,11 +2166,10 @@ func productionFactFromWire(
 		update := payload.ConversationUpdated
 		command.Payload = &chatmodel.ChatCommand_UpdateConversation{
 			UpdateConversation: &chatmodel.UpdateConversationIntent{
-				Name:                  update.Name,
-				Description:           update.Description,
-				AvatarObjectId:        update.AvatarObjectId,
-				DisappearTimerSeconds: update.DisappearTimerSeconds,
-				Visibility:            update.Visibility,
+				Name:           update.Name,
+				Description:    update.Description,
+				AvatarObjectId: update.AvatarObjectId,
+				Visibility:     update.Visibility,
 			},
 		}
 		fact.Kind = domainevent.KindConversationSettings
@@ -2398,10 +2397,9 @@ func productionSettingsPatchFromWire(
 	wire *chatmodel.ConversationUpdatedFact,
 ) valueobject.SettingsPatch {
 	patch := valueobject.SettingsPatch{
-		Name:                  wire.Name,
-		Description:           wire.Description,
-		AvatarObjectID:        wire.AvatarObjectId,
-		DisappearTimerSeconds: wire.DisappearTimerSeconds,
+		Name:           wire.Name,
+		Description:    wire.Description,
+		AvatarObjectID: wire.AvatarObjectId,
 	}
 	if wire.Visibility != nil {
 		visibility := productionConversationVisibilityFromProto(*wire.Visibility)
@@ -2415,11 +2413,10 @@ func productionConversationSettingsFromWire(
 	wire *chatmodel.ConversationAuthoritySnapshot,
 ) valueobject.ConversationSettings {
 	return valueobject.ConversationSettings{
-		Name:                  wire.GetName(),
-		Description:           wire.GetDescription(),
-		AvatarObjectID:        wire.GetAvatarObjectId(),
-		Visibility:            productionConversationVisibilityFromProto(wire.GetVisibility()),
-		DisappearTimerSeconds: wire.GetDisappearTimerSeconds(),
+		Name:           wire.GetName(),
+		Description:    wire.GetDescription(),
+		AvatarObjectID: wire.GetAvatarObjectId(),
+		Visibility:     productionConversationVisibilityFromProto(wire.GetVisibility()),
 	}
 }
 

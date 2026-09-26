@@ -80,6 +80,10 @@ use messaging_core::storage_governance::cache::{
     finalize_cache_cleanup, prepare_cache_cleanup, storage_error_code_name, CacheCleanupError,
     CacheCleanupJournalRepository, CacheCleanupOperation, CacheCleanupPlanInput,
 };
+use messaging_core::storage_governance::conversation_clear::{
+    clear_conversation, conversation_clear_error_proto, conversation_clear_operation_proto,
+    ConversationClearInput, ConversationClearRepository,
+};
 use messaging_core::storage_governance::retention::{
     apply_retention, retention_error_proto, retention_operation_proto, RetentionApplyInput,
     RetentionRepository,
@@ -711,6 +715,122 @@ impl MobileMessagingEngine {
         )
     }
 
+    pub fn chat_storage_clear_conversation(
+        &self,
+        scope_revision: &str,
+        conversation_id: &str,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "mobile chat storage governance lock poisoned".to_string())?;
+        let before = self.chat_storage_snapshot(scope_revision)?;
+        let scope = before
+            .scope
+            .clone()
+            .ok_or_else(|| "mobile chat conversation clear scope is unavailable".to_string())?;
+        let cache_root = self.attachment_root.join("cache");
+
+        let operation = if let Some(operation) =
+            self.store
+                .load_resumable_conversation_clear(&scope, scope_revision, conversation_id)?
+        {
+            operation
+        } else {
+            match clear_conversation(
+                self.store.as_ref(),
+                ConversationClearInput {
+                    scope,
+                    scope_revision: scope_revision.to_string(),
+                    conversation_id: conversation_id.to_string(),
+                    physical_bytes_before: before.physical_total_bytes,
+                    now_unix_ms: now_unix_ms(),
+                },
+            ) {
+                Ok(progress) => progress.commit.operation,
+                Err(error) => {
+                    return Ok(ChatStorageResult {
+                        snapshot: Some(before),
+                        policy: None,
+                        operation: None,
+                        error: Some(conversation_clear_error_proto(&error)),
+                    })
+                }
+            }
+        };
+        self.finish_conversation_clear_operation(
+            scope_revision,
+            conversation_id,
+            operation,
+            &cache_root,
+        )
+    }
+
+    fn finish_conversation_clear_operation(
+        &self,
+        scope_revision: &str,
+        conversation_id: &str,
+        mut operation: CacheCleanupOperation,
+        cache_root: &PathBuf,
+    ) -> Result<ChatStorageResult, String> {
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let mut cleanup_error = None;
+        let mut failed_item_count = 0;
+        if matches!(
+            operation.state,
+            ChatStorageOperationState::DeletingFiles
+                | ChatStorageOperationState::CompactionPending
+                | ChatStorageOperationState::PausedScopeInactive
+                | ChatStorageOperationState::FailedRetryable
+        ) {
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                std::slice::from_ref(cache_root),
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = progress.error;
+            failed_item_count = progress.failed_item_count;
+        }
+        if operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_compact().is_err() {
+                operation = self.store.update_cache_cleanup_operation(
+                    &operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    None,
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                cleanup_error = Some(CacheCleanupError::CompactionPending);
+            }
+        }
+        let after = self.chat_storage_snapshot(scope_revision)?;
+        if operation.state == ChatStorageOperationState::Compacting {
+            let progress = finalize_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                after.physical_total_bytes,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = cleanup_error.or(progress.error);
+            failed_item_count = failed_item_count.max(progress.failed_item_count);
+        }
+        Ok(conversation_clear_result(
+            after,
+            operation,
+            conversation_id,
+            cleanup_error,
+            failed_item_count,
+        ))
+    }
+
     fn finish_retention_operation(
         &self,
         scope_revision: &str,
@@ -792,6 +912,19 @@ impl MobileMessagingEngine {
             fixture.protected_message_id,
             fixture.recent_message_id,
         ))
+    }
+
+    #[cfg(any(test, feature = "acceptance-harness"))]
+    pub fn seed_acceptance_storage_conversation_clear(
+        &self,
+        plaintext_bytes: usize,
+    ) -> Result<(String, String), String> {
+        let fixture = self.store.seed_acceptance_conversation_clear_fixture(
+            &self.scope.station_peer_id,
+            plaintext_bytes,
+            now_unix_ms(),
+        )?;
+        Ok((fixture.conversation_id, fixture.message_id))
     }
 
     #[cfg(any(test, feature = "acceptance-harness"))]
@@ -3667,6 +3800,36 @@ fn retention_result(
         snapshot: Some(snapshot),
         policy: Some(policy),
         operation: Some(retention_operation_proto(scope, &operation)),
+        error,
+    }
+}
+
+fn conversation_clear_result(
+    snapshot: ChatStorageSnapshot,
+    operation: messaging_core::storage_governance::cache::CacheCleanupOperation,
+    conversation_id: &str,
+    cleanup_error: Option<CacheCleanupError>,
+    failed_item_count: usize,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = cleanup_error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} conversation media item(s) remain",
+                value.message, failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: None,
+        operation: Some(conversation_clear_operation_proto(
+            scope,
+            &operation,
+            conversation_id,
+        )),
         error,
     }
 }

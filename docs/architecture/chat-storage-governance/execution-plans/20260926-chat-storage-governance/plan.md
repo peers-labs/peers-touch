@@ -170,13 +170,13 @@ CSG-01-storage-observability
 
 ## Workspace Binding
 
-本文件在已绑定 completed `CCU-20260922` 的评审 worktree 中生成，当前 machine
-binding 不属于本 Plan。Owner 批准后必须从批准提交创建新 worktree，机械更新
-`branch/workspaceId/initialHead`，完成 binding-delta review，再运行
-`plan-validate`、`plan-current` 和 `plan-bind`。此前所有 Task 保持 `pending`。
+本 Plan 已绑定 `work/chat-storage-governance`、workspace
+`db9e7bd2a30e4fc8` 与 initial HEAD
+`2ffb93248c8636903f6b8d24ea9cf41c4da01a39`。后续执行必须继续使用该不可变
+workspace Plan binding。
 
 ## Review Status
 
 - Review 1：见 `../../reviews/review-01-product-architecture.md`。
 - Review 2：见 `../../reviews/review-02-plan-readiness.md`。
-- Owner：待审核；未授权 EXECUTE。
+- Owner：已批准执行；以 manifest `authorization` 为操作授权边界。

@@ -789,18 +789,17 @@ type Conversation struct {
 	CreatedAt              *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt              *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Group-only fields (empty for direct).
-	Name                  string            `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
-	Description           string            `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
-	AvatarCid             string            `protobuf:"bytes,12,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`
-	OwnerPtid             string            `protobuf:"bytes,13,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
-	MaxMembers            int32             `protobuf:"varint,14,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`
-	Visibility            GroupVisibilityV1 `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
-	DisappearTimerSeconds uint32            `protobuf:"varint,16,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3" json:"disappear_timer_seconds,omitempty"`
-	MlsEpoch              int64             `protobuf:"varint,17,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
-	FederationId          string            `protobuf:"bytes,18,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	AuthorityEpoch        int64             `protobuf:"varint,19,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	Name           string            `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
+	Description    string            `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
+	AvatarCid      string            `protobuf:"bytes,12,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`
+	OwnerPtid      string            `protobuf:"bytes,13,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
+	MaxMembers     int32             `protobuf:"varint,14,opt,name=max_members,json=maxMembers,proto3" json:"max_members,omitempty"`
+	Visibility     GroupVisibilityV1 `protobuf:"varint,15,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1" json:"visibility,omitempty"`
+	MlsEpoch       int64             `protobuf:"varint,17,opt,name=mls_epoch,json=mlsEpoch,proto3" json:"mls_epoch,omitempty"`
+	FederationId   string            `protobuf:"bytes,18,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityEpoch int64             `protobuf:"varint,19,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Conversation) Reset() {
@@ -922,13 +921,6 @@ func (x *Conversation) GetVisibility() GroupVisibilityV1 {
 		return x.Visibility
 	}
 	return GroupVisibilityV1_GROUP_VISIBILITY_V1_UNSPECIFIED
-}
-
-func (x *Conversation) GetDisappearTimerSeconds() uint32 {
-	if x != nil {
-		return x.DisappearTimerSeconds
-	}
-	return 0
 }
 
 func (x *Conversation) GetMlsEpoch() int64 {
@@ -1774,7 +1766,7 @@ var File_domain_chat_conversation_proto protoreflect.FileDescriptor
 
 const file_domain_chat_conversation_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa1\x06\n" +
+	"\x1edomain/chat/conversation.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x05\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12?\n" +
 	"\x04kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x04kind\x129\n" +
@@ -1796,11 +1788,10 @@ const file_domain_chat_conversation_proto_rawDesc = "" +
 	"maxMembers\x12L\n" +
 	"\n" +
 	"visibility\x18\x0f \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1R\n" +
-	"visibility\x126\n" +
-	"\x17disappear_timer_seconds\x18\x10 \x01(\rR\x15disappearTimerSeconds\x12\x1b\n" +
+	"visibility\x12\x1b\n" +
 	"\tmls_epoch\x18\x11 \x01(\x03R\bmlsEpoch\x12#\n" +
 	"\rfederation_id\x18\x12 \x01(\tR\ffederationId\x12'\n" +
-	"\x0fauthority_epoch\x18\x13 \x01(\x03R\x0eauthorityEpoch\"\x81\x04\n" +
+	"\x0fauthority_epoch\x18\x13 \x01(\x03R\x0eauthorityEpochJ\x04\b\x10\x10\x11\"\x81\x04\n" +
 	"\x16ConversationPublicHead\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12O\n" +
 	"\x06source\x18\x02 \x01(\x0e27.peers_touch.model.chat.v1.ConversationPublicHeadSourceR\x06source\x12#\n" +

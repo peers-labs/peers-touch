@@ -14,16 +14,13 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
-const historyRestoreWindow = 24 * time.Hour
-
 type MemberSettingsPatch struct {
-	Nickname            *string
-	Muted               *bool
-	Pinned              *bool
-	AlertEnabled        *bool
-	Background          *string
-	BackgroundImage     *string
-	ClearedAtUnixMillis *int64
+	Nickname        *string
+	Muted           *bool
+	Pinned          *bool
+	AlertEnabled    *bool
+	Background      *string
+	BackgroundImage *string
 }
 
 type ReadCursorResult struct {
@@ -75,23 +72,6 @@ func (s *Service) UpdateMemberSettings(
 		}
 		if patch.BackgroundImage != nil {
 			current.BackgroundImage = *patch.BackgroundImage
-		}
-		if patch.ClearedAtUnixMillis != nil {
-			requested := *patch.ClearedAtUnixMillis
-			restoreRequested := requested == 0 && current.ClearedAtUnixMillis > 0
-			restoreExpired := restoreRequested && !s.clock.Now().Before(
-				time.UnixMilli(current.ClearedAtUnixMillis).Add(historyRestoreWindow),
-			)
-			if requested < 0 || restoreExpired ||
-				(requested > 0 && requested < current.ClearedAtUnixMillis) {
-				return conversationdomain.NewError(
-					conversationdomain.ErrorCodeStaleAuthorityHead,
-					"application.update_member_settings",
-					"cleared_at_unix_ms",
-					"cannot move backwards outside the restore window",
-				)
-			}
-			current.ClearedAtUnixMillis = requested
 		}
 		current.UpdatedAt = s.clock.Now()
 		if err := transaction.Repositories.MemberSettings.Save(ctx, current); err != nil {

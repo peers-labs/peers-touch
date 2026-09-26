@@ -51,7 +51,6 @@ export interface DesktopUnifiedConversationLike {
 
 export interface ConversationLocalState {
   hidden?: boolean;
-  clearedAt?: number;
   muted?: boolean;
   sticky?: boolean;
   alertEnabled?: boolean;
@@ -311,21 +310,6 @@ export function messageSentMs(message: SocialMessage): number {
   const ts = sentAt || createdAt;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return ts ? timestampDate(ts as any).getTime() : 0;
-}
-
-export function filterClearedMessages(
-  messages: SocialMessage[],
-  localState: Record<string, ConversationLocalState>,
-  kind: 'friend' | 'group',
-  ulid: string,
-): SocialMessage[] {
-  const state = localState[conversationKey(kind, ulid)];
-  const clearedAt = state?.clearedAt ?? 0;
-  if (!clearedAt) return messages;
-  return messages.filter((message) => {
-    const sentMs = messageSentMs(message);
-    return sentMs === 0 || sentMs >= clearedAt;
-  });
 }
 
 export function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {

@@ -154,6 +154,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "recovery-ui": "mobile-simulator-recovery-ui-e2e",
                 "moments": "mobile-simulator-moments-e2e",
                 "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+                "storage-conversation-clear": (
+                    "chat-storage-delete-reclaim-e2e"
+                ),
                 "storage-retention": "chat-storage-retention-e2e",
             },
         )
@@ -394,6 +397,81 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertTrue(result["draftPreserved"])
         self.assertTrue(result["messagingIdentityPreserved"])
         self.assertTrue(result["confirmationObserved"])
+
+    def test_storage_conversation_clear_requires_reclaim_and_restart_absence(
+        self,
+    ) -> None:
+        fixture = {
+            "conversationId": "conversation-clear",
+            "messageId": "message-clear",
+        }
+
+        class Session:
+            def __init__(self) -> None:
+                self.projection_reads = 0
+                self.snapshots = [
+                    {
+                        "physicalTotalBytes": 4_000_000,
+                        "messageBytes": 2_100_000,
+                        "conversationIds": ["conversation-clear"],
+                    },
+                    {
+                        "physicalTotalBytes": 1_500_000,
+                        "messageBytes": 0,
+                        "conversationIds": [],
+                    },
+                ]
+
+            def call_action(self, action: str, payload: object = None) -> object:
+                if action == "storage.conversation-clear.seed":
+                    return fixture
+                if action == "getRealtimeDevice":
+                    return {
+                        "actorPtid": "ptid:alice",
+                        "deviceId": "device-one",
+                        "active": True,
+                    }
+                if action in {"navigation.apply", "messaging.reconcile"}:
+                    return {}
+                if action == "messaging.projection.read":
+                    self.projection_reads += 1
+                    messages = (
+                        [{"messageId": "message-clear"}]
+                        if self.projection_reads == 1
+                        else []
+                    )
+                    return {
+                        "messages": {"conversation-clear": messages},
+                    }
+                if action == "messaging.search":
+                    return []
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                raise AssertionError((action, payload))
+
+            def execute_script(self, script: str) -> object:
+                if "data-chat-storage-summary" in script:
+                    return self.snapshots.pop(0)
+                if "data-chat-conversation-clear-result" in script:
+                    return {"releasedBytes": 2_500_000}
+                return True
+
+        session = Session()
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep",
+        ):
+            result = SimulatorSocialGate(
+                "storage-conversation-clear"
+            )._run_storage_conversation_clear_journey(
+                session=session,
+                journey_id="run",
+            )
+
+        self.assertEqual(result["releasedBytes"], 2_500_000)
+        self.assertTrue(result["plaintextAbsent"])
+        self.assertTrue(result["searchEntryAbsent"])
+        self.assertTrue(result["restartStable"])
+        self.assertTrue(result["messagingIdentityPreserved"])
 
     def test_storage_retention_journey_requires_prune_protection_and_restart(self) -> None:
         fixture = {

@@ -96,7 +96,6 @@ describe('createSocialGateway Friend Request routes', () => {
             pinned: false,
             alert_enabled: false,
             background: 'paper',
-            cleared_at_ms: 42,
           },
         },
       })
@@ -109,7 +108,6 @@ describe('createSocialGateway Friend Request routes', () => {
             pinned: true,
             alert_enabled: true,
             background: 'dusk',
-            cleared_at_ms: 84,
           },
         },
       });
@@ -121,7 +119,6 @@ describe('createSocialGateway Friend Request routes', () => {
       isPinned: true,
       alertEnabled: true,
       background: 'dusk',
-      clearedAt: 84,
     });
 
     expect(initial).toEqual({
@@ -132,7 +129,6 @@ describe('createSocialGateway Friend Request routes', () => {
         isPinned: false,
         alertEnabled: false,
         background: 'paper',
-        clearedAt: 42,
       },
     });
     expect(updated).toEqual({
@@ -143,7 +139,6 @@ describe('createSocialGateway Friend Request routes', () => {
         isPinned: true,
         alertEnabled: true,
         background: 'dusk',
-        clearedAt: 84,
       },
     });
     expect(commandMock.mock.calls.map(([request]) => request)).toEqual([
@@ -162,7 +157,6 @@ describe('createSocialGateway Friend Request routes', () => {
             pinned: true,
             alert_enabled: true,
             background: 'dusk',
-            cleared_at_ms: 84,
           },
         },
       },
