@@ -22,8 +22,22 @@
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner and report semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
+    "machine-dev-registry-self": {
+      "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs",
+      "timeout_seconds": 360,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate authoritative workspace registration, update, owner-checked unregister, profile policy, conflict detection, and OS-held runtime lease lifecycle."
+    },
+    "workspace-plan-generation-self": {
+      "command": "node --test tooling/scripts/plan/workspace-plan-binding.test.mjs",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate immutable current Plan generations, explicit completed-and-quiescent advance, history integrity, generation CAS, resource rejection, and concurrent winner semantics."
+    },
     "acceptance-workflow-contract": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs apps/dev/server/status.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/skill-rollout-audit-test.py && tooling/scripts/review/skill-check.sh'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/workflow-*.test.mjs tooling/scripts/local-dev/worktree-observation-store.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs apps/dev/server/*.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.gates.dev.dev_ui_browser_e2e_test tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/agent-integration-audit-test.py && tooling/scripts/review/skill-check.sh'",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
@@ -1557,6 +1571,20 @@
       "environment": "local",
       "tier": "ci-cheap",
       "description": "CCU aggregate gate: verify all preceding CCU closure gates passed before marking the project code-complete."
+    },
+    "peers-dev-ui-browser-e2e": {
+      "command": "node tooling/acceptance/gates/dev/dev-ui-browser-e2e.mjs",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Render the Peers Dev Workflow Snapshot through SSE at desktop and narrow viewports, verify three-level progress and action state, capture screenshots, and prove polling preserves the last valid snapshot after disconnect."
+    },
+    "peers-dev-product": {
+      "command": "node tooling/acceptance/gates/dev/peers-dev-product.mjs",
+      "timeout_seconds": 420,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove the executable Workflow Doctor contract, isolated installed integration, complete workflow source suite, and Peers Dev rendering at desktop and narrow browser viewports."
     }
   }
 }

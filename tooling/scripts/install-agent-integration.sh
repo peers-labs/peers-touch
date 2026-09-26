@@ -34,5 +34,8 @@ else
   root="$(cd "$root" && pwd -P)"
 fi
 
-python3 "$root/tooling/scripts/skill-rollout-control.py" \
+python3 "$root/tooling/scripts/agent-integration-control.py" \
   install --root "$root" --host "$host"
+
+python3 "$root/tooling/scripts/agent-integration-audit.py" \
+  --root "$root" --host "$host"

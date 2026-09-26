@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Fail-closed host-neutral Skill rollout audit for one worktree."""
+"""Fail-closed host-neutral agent integration audit for one worktree."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import subprocess
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -20,13 +22,40 @@ REQUIRED_SKILLS = (
     "pt-codex-host-adapter",
 )
 LEGACY_SKILL = "pt-trae-goal-orchestrator"
-CANONICAL_ROLLOUT_GATE = "acceptance-workflow-contract"
-SESSION_ENV = {
-    "trae": ("ICUBE_CODEMAIN_SESSION", "PT_AGENT_SESSION_ID"),
-    "cursor": ("CURSOR_SESSION_ID", "CURSOR_TRACE_ID", "PT_AGENT_SESSION_ID"),
-    "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "PT_AGENT_SESSION_ID"),
+PLUGIN_NAME = "pt-ew-plugin"
+TRAE_HOOK_EVENTS = (
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "Stop",
+)
+CURSOR_HOOK_EVENTS = (
+    ("sessionStart", "sessionStart"),
+    ("beforeSubmitPrompt", "beforeSubmitPrompt"),
+    ("preToolUse", "preToolUse"),
+    ("stop", "stop"),
+)
+WORKFLOW_KERNEL_FILES = (
+    "tooling/scripts/local-dev/workflow-action-store.mjs",
+    "tooling/scripts/local-dev/workflow-anchor.mjs",
+    "tooling/scripts/local-dev/workflow-conversation-binding.mjs",
+    "tooling/scripts/local-dev/workflow-host-adapters.mjs",
+    "tooling/scripts/local-dev/workflow-kernel.mjs",
+    "tooling/scripts/local-dev/workflow-state-inspector.mjs",
+    "tooling/scripts/local-dev/workflow-tool-intent.mjs",
+)
+CANONICAL_INTEGRATION_GATE = "acceptance-workflow-contract"
+REQUIRED_INTEGRATION_MATCHERS = {
+    **{
+        name: f"tooling/skills/{name}/**"
+        for name in REQUIRED_SKILLS
+    },
+    "pt-ew-plugin": "tooling/plugins/pt-ew-plugin/**",
+    "workflow-kernel": "tooling/scripts/local-dev/workflow-*.mjs",
 }
-ROLLOUT_RECEIPT_KEYS = {
+INTEGRATION_RECEIPT_KEYS = {
     "kind",
     "state",
     "workspaceId",
@@ -34,13 +63,11 @@ ROLLOUT_RECEIPT_KEYS = {
     "sourceHead",
     "host",
     "installedAt",
-    "installedSessionHash",
-    "acknowledgedAt",
-    "ackSessionHash",
-    "catalogDigest",
-    "catalogEntryCount",
-    "catalogGitState",
-    "catalogStatusDigest",
+    "integrationDigest",
+    "integrationEntryCount",
+    "integrationGitState",
+    "integrationStatusDigest",
+    "callbackProof",
 }
 SCAN_ROOTS = (
     "AGENTS.md",
@@ -56,12 +83,26 @@ HISTORICAL_MARKERS = (
 )
 LEGACY_MIGRATION_SOURCES = {
     "tooling/make/setup.mk",
-    "tooling/scripts/install-project-skills.sh",
-    "tooling/scripts/skill-rollout-audit.py",
-    "tooling/scripts/skill-rollout-audit-test.py",
-    "tooling/scripts/skill-rollout-control.py",
+    "tooling/scripts/install-agent-integration.sh",
+    "tooling/scripts/agent-integration-audit.py",
+    "tooling/scripts/agent-integration-audit-test.py",
+    "tooling/scripts/agent-integration-control.py",
     "tooling/scripts/review/skill-check.sh",
 }
+
+
+@lru_cache(maxsize=1)
+def integration_control_module():
+    path = Path(__file__).resolve().with_name("agent-integration-control.py")
+    spec = importlib.util.spec_from_file_location(
+        "agent_integration_control",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("AGENT_INTEGRATION_CONTROL_INVALID")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def parse_args() -> argparse.Namespace:
@@ -178,6 +219,120 @@ def host_projection_findings(
                 findings.append(
                     {"path": relative, "issue": f"wrong-project-skill-target:{name}"}
                 )
+    plugin = root / "tooling" / "plugins" / PLUGIN_NAME
+    if required_host == "codex":
+        projected = root / ".agents" / "plugins" / PLUGIN_NAME
+        if not projected.is_symlink() or not projected.exists():
+            findings.append(
+                {
+                    "path": ".agents/plugins",
+                    "issue": f"missing-project-plugin:{PLUGIN_NAME}",
+                }
+            )
+        elif projected.resolve(strict=True) != plugin.resolve(strict=True):
+            findings.append(
+                {
+                    "path": ".agents/plugins",
+                    "issue": f"wrong-project-plugin-target:{PLUGIN_NAME}",
+                }
+            )
+    elif required_host == "cursor":
+        hooks_path = root / ".cursor" / "hooks.json"
+        try:
+            hooks_value = json.loads(hooks_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            findings.append(
+                {"path": ".cursor/hooks.json", "issue": "cursor-hooks-invalid"}
+            )
+        else:
+            hooks = hooks_value.get("hooks")
+            if (
+                hooks_value.get("version") != 1
+                or not isinstance(hooks, dict)
+            ):
+                findings.append(
+                    {"path": ".cursor/hooks.json", "issue": "cursor-hooks-invalid"}
+                )
+            else:
+                expected_script = str(
+                    (plugin / "scripts" / "hook-entry.mjs").resolve(strict=True)
+                )
+                for cursor_event, host_event in CURSOR_HOOK_EVENTS:
+                    entries = hooks.get(cursor_event)
+                    expected = (
+                        f'node "{expected_script}" --host cursor '
+                        f'--event {host_event}'
+                    )
+                    managed = [
+                        item
+                        for item in entries
+                        if isinstance(item, dict)
+                        and item.get("command") == expected
+                    ] if isinstance(entries, list) else []
+                    valid = (
+                        len(managed) == 1
+                        and managed[0].get("failClosed") is True
+                        and managed[0].get("timeout") == 5
+                        and (
+                            cursor_event != "preToolUse"
+                            or managed[0].get("matcher") == "*"
+                        )
+                        and (
+                            cursor_event != "stop"
+                            or managed[0].get("loop_limit") == 8
+                        )
+                    )
+                    if not valid:
+                        findings.append(
+                            {
+                                "path": ".cursor/hooks.json",
+                                "issue": f"managed-hook-invalid:{cursor_event}",
+                            }
+                        )
+    elif required_host == "trae":
+        hooks_path = root / ".trae" / "hooks.json"
+        try:
+            hooks_value = json.loads(hooks_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            findings.append(
+                {"path": ".trae/hooks.json", "issue": "trae-hooks-invalid"}
+            )
+        else:
+            hooks = hooks_value.get("hooks")
+            if not isinstance(hooks, dict):
+                findings.append(
+                    {"path": ".trae/hooks.json", "issue": "trae-hooks-invalid"}
+                )
+            else:
+                try:
+                    control = integration_control_module()
+                    for event in TRAE_HOOK_EVENTS:
+                        entries = hooks.get(event)
+                        managed = (
+                            [
+                                entry
+                                for entry in entries
+                                if control.is_managed_trae_hook_entry(entry)
+                            ]
+                            if isinstance(entries, list)
+                            else []
+                        )
+                        expected = control.canonical_trae_hook_entry(root, event)
+                        if managed == [expected]:
+                            continue
+                        findings.append(
+                            {
+                                "path": ".trae/hooks.json",
+                                "issue": f"managed-hook-invalid:{event}",
+                            }
+                        )
+                except Exception:
+                    findings.append(
+                        {
+                            "path": "tooling/scripts/agent-integration-control.py",
+                            "issue": "canonical-trae-hook-api-invalid",
+                        }
+                    )
     return findings
 
 
@@ -210,10 +365,27 @@ def canonical_source_findings(root: Path) -> list[dict[str, str]]:
                             "issue": "canonical-source-symlink",
                         }
                     )
+    plugin = root / "tooling" / "plugins" / PLUGIN_NAME
+    if plugin.is_symlink() or not plugin.is_dir():
+        findings.append(
+            {
+                "path": f"tooling/plugins/{PLUGIN_NAME}",
+                "issue": "canonical-plugin-invalid",
+            }
+        )
+    else:
+        for candidate in plugin.rglob("*"):
+            if candidate.is_symlink():
+                findings.append(
+                    {
+                        "path": candidate.relative_to(root).as_posix(),
+                        "issue": "canonical-plugin-invalid",
+                    }
+                )
     return findings
 
 
-def canonical_skill_catalog(root: Path) -> dict[str, object]:
+def canonical_integration_catalog(root: Path) -> dict[str, object]:
     source_root = root / "tooling" / "skills"
     findings = canonical_source_findings(root)
     if findings or not source_root.is_dir():
@@ -233,12 +405,54 @@ def canonical_skill_catalog(root: Path) -> dict[str, object]:
             content = candidate.read_bytes()
             entries.append(
                 {
-                    "path": candidate.relative_to(source_root).as_posix(),
+                    "path": candidate.relative_to(root).as_posix(),
                     "mode": candidate.stat().st_mode & 0o777,
                     "size": len(content),
                     "sha256": hashlib.sha256(content).hexdigest(),
                 }
             )
+    plugin = root / "tooling" / "plugins" / PLUGIN_NAME
+    required_plugin_files = (
+        plugin / ".codex-plugin" / "plugin.json",
+        plugin / "hooks.json",
+        plugin / "scripts" / "hook-entry.mjs",
+    )
+    kernel_sources = [root / relative for relative in WORKFLOW_KERNEL_FILES]
+    if (
+        any(not candidate.is_file() for candidate in required_plugin_files)
+        or any(source.is_symlink() or not source.is_file() for source in kernel_sources)
+    ):
+        return {
+            "status": "BLOCKED",
+            "findings": [
+                {
+                    "path": f"tooling/plugins/{PLUGIN_NAME}",
+                    "issue": "canonical-integration-invalid",
+                }
+            ],
+        }
+    for candidate in sorted(plugin.rglob("*")):
+        if not candidate.is_file():
+            continue
+        content = candidate.read_bytes()
+        entries.append(
+            {
+                "path": candidate.relative_to(root).as_posix(),
+                "mode": candidate.stat().st_mode & 0o777,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    for source in kernel_sources:
+        content = source.read_bytes()
+        entries.append(
+            {
+                "path": source.relative_to(root).as_posix(),
+                "mode": source.stat().st_mode & 0o777,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
     serialized = json.dumps(
         entries,
         separators=(",", ":"),
@@ -252,6 +466,8 @@ def canonical_skill_catalog(root: Path) -> dict[str, object]:
             "--untracked-files=all",
             "--",
             "tooling/skills",
+            "tooling/plugins",
+            *WORKFLOW_KERNEL_FILES,
         ],
         cwd=root,
         check=True,
@@ -260,10 +476,10 @@ def canonical_skill_catalog(root: Path) -> dict[str, object]:
     return {
         "status": "PASS",
         "findings": [],
-        "catalogDigest": hashlib.sha256(serialized).hexdigest(),
-        "catalogEntryCount": len(entries),
-        "catalogGitState": "CLEAN" if not status else "DIRTY",
-        "catalogStatusDigest": hashlib.sha256(status).hexdigest(),
+        "integrationDigest": hashlib.sha256(serialized).hexdigest(),
+        "integrationEntryCount": len(entries),
+        "integrationGitState": "CLEAN" if not status else "DIRTY",
+        "integrationStatusDigest": hashlib.sha256(status).hexdigest(),
     }
 
 
@@ -356,8 +572,10 @@ def resolved_plan_binding(root: Path) -> dict[str, object]:
             "canonicalRoot",
             "planId",
             "planPath",
+            "generation",
             "boundAt",
             "boundBy",
+            "recordDigest",
         )
     }
 
@@ -439,9 +657,6 @@ def workflow_identity(root: Path) -> dict[str, object]:
         if plan_legacy_claims:
             findings.append("plan-legacy-skill-claim")
         current_task = status.get("currentTaskId")
-        task_statuses = status.get("taskStatuses")
-        if not isinstance(task_statuses, dict):
-            task_statuses = {}
         if manifest.get("status") == "active" and current_task is None:
             findings.append("active-plan-current-task-missing")
         if binding.get("workspaceId") != workspace_id:
@@ -507,21 +722,7 @@ def workflow_identity(root: Path) -> dict[str, object]:
                         for value in locator
                     ):
                         findings.append("declaration-plan-locator-missing")
-                    declared_task_status = task_statuses.get(
-                        candidate.get("taskId")
-                    )
-                    task_matches_lifecycle = (
-                        candidate.get("taskId") == current_task
-                        or (
-                            manifest.get("status") == "completed"
-                            and declared_task_status == "done"
-                        )
-                        or (
-                            manifest.get("status") == "blocked"
-                            and declared_task_status == "blocked"
-                        )
-                    )
-                    if not task_matches_lifecycle:
+                    if candidate.get("taskId") != current_task:
                         findings.append("declaration-current-task-mismatch")
                     if (
                         candidate.get("planId") != binding.get("planId")
@@ -559,7 +760,7 @@ def acceptance_registry(root: Path) -> dict[str, object]:
             "status": "BLOCKED",
             "legacyMatchers": [],
             "canonicalMatchers": [],
-            "missingCanonicalMatchers": list(REQUIRED_SKILLS),
+            "missingCanonicalMatchers": list(REQUIRED_INTEGRATION_MATCHERS),
             "error": "registry-missing",
         }
     try:
@@ -582,15 +783,12 @@ def acceptance_registry(root: Path) -> dict[str, object]:
             "status": "BLOCKED",
             "legacyMatchers": [],
             "canonicalMatchers": [],
-            "missingCanonicalMatchers": list(REQUIRED_SKILLS),
+            "missingCanonicalMatchers": list(REQUIRED_INTEGRATION_MATCHERS),
             "error": "registry-schema-invalid",
         }
     matchers: list[str] = []
     canonical_with_gate: set[str] = set()
-    expected_matchers = {
-        name: f"tooling/skills/{name}/**"
-        for name in REQUIRED_SKILLS
-    }
+    expected_matchers = REQUIRED_INTEGRATION_MATCHERS
     for rule in rules:
         when = rule.get("when") if isinstance(rule, dict) else None
         paths = when.get("paths") if isinstance(when, dict) else None
@@ -601,7 +799,7 @@ def acceptance_registry(root: Path) -> dict[str, object]:
                 "status": "BLOCKED",
                 "legacyMatchers": [],
                 "canonicalMatchers": [],
-                "missingCanonicalMatchers": list(REQUIRED_SKILLS),
+                "missingCanonicalMatchers": list(REQUIRED_INTEGRATION_MATCHERS),
                 "error": "registry-path-matchers-invalid",
             }
         matchers.extend(paths)
@@ -613,10 +811,10 @@ def acceptance_registry(root: Path) -> dict[str, object]:
                 "status": "BLOCKED",
                 "legacyMatchers": [],
                 "canonicalMatchers": [],
-                "missingCanonicalMatchers": list(REQUIRED_SKILLS),
+                "missingCanonicalMatchers": list(REQUIRED_INTEGRATION_MATCHERS),
                 "error": "registry-require-invalid",
             }
-        if CANONICAL_ROLLOUT_GATE in required:
+        if CANONICAL_INTEGRATION_GATE in required:
             canonical_with_gate.update(paths)
     legacy = sorted({item for item in matchers if LEGACY_SKILL in item})
     canonical = sorted(
@@ -626,7 +824,7 @@ def acceptance_registry(root: Path) -> dict[str, object]:
     )
     missing_canonical = [
         name
-        for name in REQUIRED_SKILLS
+        for name in REQUIRED_INTEGRATION_MATCHERS
         if expected_matchers[name] not in canonical
     ]
     return {
@@ -637,10 +835,34 @@ def acceptance_registry(root: Path) -> dict[str, object]:
     }
 
 
-def rollout_receipt(
+def installed_callback_probe(
+    root: Path,
+    host: str | None,
+) -> dict[str, object]:
+    if host is None:
+        return {"status": "NOT_REQUESTED"}
+    if host != "trae":
+        return {"status": "NOT_APPLICABLE"}
+    try:
+        control = integration_control_module()
+        proof = control.probe_installed_trae_hook(root, root / ".trae")
+        expected = dict(control.TRAE_CALLBACK_PROOF)
+    except Exception as error:
+        return {"status": "BLOCKED", "code": str(error)}
+    if proof != expected:
+        return {
+            "status": "BLOCKED",
+            "code": "TRAE_HOOK_PROBE_PROOF_INVALID",
+            "proof": proof,
+        }
+    return {"status": "PASS", "proof": proof}
+
+
+def integration_receipt(
     identity: dict[str, object],
     host: str | None,
     catalog: dict[str, object],
+    callback_probe: dict[str, object],
 ) -> dict[str, object]:
     if host is None:
         return {"status": "NOT_REQUESTED", "findings": []}
@@ -649,12 +871,12 @@ def rollout_receipt(
         / "workspaces"
         / str(identity["workspaceId"])
         / "workflow"
-        / "skill-rollout.json"
+        / "agent-integration.json"
     )
     if not path.is_file():
         return {
             "status": "BLOCKED",
-            "findings": ["rollout-receipt-missing"],
+            "findings": ["integration-receipt-missing"],
             "path": str(path),
         }
     try:
@@ -662,18 +884,18 @@ def rollout_receipt(
     except (OSError, json.JSONDecodeError):
         return {
             "status": "BLOCKED",
-            "findings": ["rollout-receipt-invalid"],
+            "findings": ["integration-receipt-invalid"],
             "path": str(path),
         }
     if not isinstance(value, dict):
         return {
             "status": "BLOCKED",
-            "findings": ["rollout-receipt-invalid"],
+            "findings": ["integration-receipt-invalid"],
             "path": str(path),
         }
     findings = []
-    if set(value) != ROLLOUT_RECEIPT_KEYS:
-        findings.append("rollout-receipt-fields-invalid")
+    if set(value) != INTEGRATION_RECEIPT_KEYS:
+        findings.append("integration-receipt-fields-invalid")
     installed_at = None
     try:
         installed_at = datetime.fromisoformat(
@@ -681,73 +903,35 @@ def rollout_receipt(
         )
     except ValueError:
         pass
-    session_values = {
-        os.environ.get(name, "").strip()
-        for name in SESSION_ENV[host]
-        if os.environ.get(name, "").strip()
-    }
-    current_session = None
-    if len(session_values) > 1:
-        findings.append("rollout-session-id-ambiguous")
-    elif session_values:
-        current_session = hashlib.sha256(
-            f"{host}\0{next(iter(session_values))}".encode()
-        ).hexdigest()
-    if value.get("kind") != "peers-touch-skill-rollout":
-        findings.append("rollout-kind-mismatch")
-    if value.get("state") != "ACKNOWLEDGED":
-        findings.append("rollout-restart-required")
+    if value.get("kind") != "peers-touch-agent-integration":
+        findings.append("integration-kind-mismatch")
+    if value.get("state") != "INSTALLED":
+        findings.append("integration-state-mismatch")
     if value.get("host") != host:
-        findings.append("rollout-host-mismatch")
+        findings.append("integration-host-mismatch")
+    expected_callback_proof = (
+        callback_probe.get("proof")
+        if host == "trae"
+        else {"status": "NOT_APPLICABLE"}
+    )
+    if value.get("callbackProof") != expected_callback_proof:
+        findings.append("integration-callback-proof-invalid")
     if value.get("workspaceId") != identity["workspaceId"]:
-        findings.append("rollout-workspace-mismatch")
+        findings.append("integration-workspace-mismatch")
     if value.get("branch") != identity["branch"]:
-        findings.append("rollout-branch-mismatch")
+        findings.append("integration-branch-mismatch")
     if value.get("sourceHead") != identity["head"]:
-        findings.append("rollout-head-mismatch")
+        findings.append("integration-head-mismatch")
     for field in (
-        "catalogDigest",
-        "catalogEntryCount",
-        "catalogGitState",
-        "catalogStatusDigest",
+        "integrationDigest",
+        "integrationEntryCount",
+        "integrationGitState",
+        "integrationStatusDigest",
     ):
         if value.get(field) != catalog.get(field):
-            findings.append(f"rollout-{field}-mismatch")
-    installed_session_valid = re.fullmatch(
-        r"[0-9a-f]{64}",
-        str(value.get("installedSessionHash") or ""),
-    )
-    if installed_at is None or installed_session_valid is None:
-        findings.append("rollout-restart-evidence-invalid")
-    if value.get("state") == "ACKNOWLEDGED":
-        acknowledged_at = None
-        try:
-            acknowledged_at = datetime.fromisoformat(
-                str(value.get("acknowledgedAt")).replace("Z", "+00:00")
-            )
-        except ValueError:
-            pass
-        if (
-            acknowledged_at is None
-            or installed_at is None
-            or acknowledged_at < installed_at
-            or re.fullmatch(
-                r"[0-9a-f]{64}",
-                str(value.get("ackSessionHash") or ""),
-            )
-            is None
-            or value.get("installedSessionHash") == value.get("ackSessionHash")
-        ):
-            findings.append("rollout-restart-evidence-invalid")
-        if current_session is None:
-            findings.append("rollout-session-id-unavailable")
-        elif value.get("ackSessionHash") != current_session:
-            findings.append("rollout-session-mismatch")
-    elif (
-        value.get("acknowledgedAt") is not None
-        or value.get("ackSessionHash") is not None
-    ):
-        findings.append("rollout-restart-evidence-invalid")
+            findings.append(f"{field}-mismatch")
+    if installed_at is None:
+        findings.append("integration-installed-at-invalid")
     return {
         "status": "PASS" if not findings else "BLOCKED",
         "findings": findings,
@@ -772,30 +956,38 @@ def audit_root(root: Path, host: str | None = None) -> dict[str, object]:
         if isinstance(binding, dict) and isinstance(binding.get("planPath"), str)
         else ()
     )
-    catalog = canonical_skill_catalog(root)
+    catalog = canonical_integration_catalog(root)
+    callback_probe = installed_callback_probe(root, host)
     report = {
         "root": str(root),
         "status": "PASS",
         "missingCanonicalSkills": missing,
         "canonicalSourceFindings": catalog["findings"],
-        "canonicalCatalog": catalog,
+        "canonicalIntegrationCatalog": catalog,
         "legacySourcePresent": legacy_source.exists(),
         "legacyReferences": legacy_references(root, bound_plan_paths),
         "host": host,
         "hostProjectionFindings": host_projection_findings(root, host),
         "workflowIdentity": identity,
         "acceptanceRegistry": acceptance_registry(root),
-        "rolloutReceipt": rollout_receipt(identity, host, catalog),
+        "installedCallbackProbe": callback_probe,
+        "integrationReceipt": integration_receipt(
+            identity,
+            host,
+            catalog,
+            callback_probe,
+        ),
     }
     if (
         missing
-        or report["canonicalCatalog"]["status"] == "BLOCKED"
+        or report["canonicalIntegrationCatalog"]["status"] == "BLOCKED"
         or report["legacySourcePresent"]
         or report["legacyReferences"]
         or report["hostProjectionFindings"]
         or report["workflowIdentity"]["identityFindings"]
         or report["acceptanceRegistry"]["status"] == "BLOCKED"
-        or report["rolloutReceipt"]["findings"]
+        or report["installedCallbackProbe"]["status"] == "BLOCKED"
+        or report["integrationReceipt"]["findings"]
     ):
         report["status"] = "BLOCKED"
     return report

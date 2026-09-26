@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atomic, machine-local control plane for project Skill rollout."""
+"""Atomic control plane for worktree projections and conversation hooks."""
 
 from __future__ import annotations
 
@@ -18,32 +18,41 @@ from pathlib import Path
 
 LIVE_DECLARATION_STATES = {"DECLARED", "ACTIVE", "RELEASING"}
 LOCK_TIMEOUT_SECONDS = 10
-SESSION_ENV = {
-    "trae": ("ICUBE_CODEMAIN_SESSION", "PT_AGENT_SESSION_ID"),
-    "cursor": ("CURSOR_SESSION_ID", "CURSOR_TRACE_ID", "PT_AGENT_SESSION_ID"),
-    "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "PT_AGENT_SESSION_ID"),
+PLUGIN_NAME = "pt-ew-plugin"
+TRAE_HOOK_EVENTS = (
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "Stop",
+)
+CURSOR_HOOK_EVENTS = (
+    ("sessionStart", "sessionStart"),
+    ("beforeSubmitPrompt", "beforeSubmitPrompt"),
+    ("preToolUse", "preToolUse"),
+    ("stop", "stop"),
+)
+TRAE_CALLBACK_PROOF = {
+    "status": "PASS",
+    "hostEvent": "PreToolUse",
+    "permissionDecision": "deny",
+    "code": "TOOL_INTENT_UNSUPPORTED",
 }
-RECEIPT_KEYS = {
-    "kind",
-    "state",
-    "workspaceId",
-    "branch",
-    "sourceHead",
-    "host",
-    "installedAt",
-    "installedSessionHash",
-    "acknowledgedAt",
-    "ackSessionHash",
-    "catalogDigest",
-    "catalogEntryCount",
-    "catalogGitState",
-    "catalogStatusDigest",
-}
+WORKFLOW_KERNEL_FILES = (
+    "tooling/scripts/local-dev/workflow-action-store.mjs",
+    "tooling/scripts/local-dev/workflow-anchor.mjs",
+    "tooling/scripts/local-dev/workflow-conversation-binding.mjs",
+    "tooling/scripts/local-dev/workflow-host-adapters.mjs",
+    "tooling/scripts/local-dev/workflow-kernel.mjs",
+    "tooling/scripts/local-dev/workflow-state-inspector.mjs",
+    "tooling/scripts/local-dev/workflow-tool-intent.mjs",
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("install", "ack"))
+    parser.add_argument("action", choices=("install",))
     parser.add_argument("--root", required=True)
     parser.add_argument("--host", required=True, choices=("trae", "cursor", "codex"))
     return parser.parse_args()
@@ -76,26 +85,9 @@ def identity(root: Path) -> tuple[str, str, str]:
     return workspace_id, branch, head
 
 
-def host_session_hash(host: str) -> str:
-    values = {
-        os.environ.get(name, "").strip()
-        for name in SESSION_ENV[host]
-        if os.environ.get(name, "").strip()
-    }
-    if len(values) > 1:
-        raise RuntimeError("HOST_SESSION_ID_AMBIGUOUS")
-    if values:
-        value = next(iter(values))
-        return hashlib.sha256(f"{host}\0{value}".encode()).hexdigest()
-    raise RuntimeError(
-        "HOST_SESSION_ID_UNAVAILABLE: set PT_AGENT_SESSION_ID or use a "
-        f"{host} host that exposes a stable session identifier"
-    )
-
-
-def canonical_skill_catalog(
+def canonical_integration_catalog(
     root: Path,
-) -> tuple[list[Path], dict[str, object]]:
+) -> tuple[list[Path], Path, dict[str, object]]:
     source_root = root / "tooling" / "skills"
     if (
         source_root.is_symlink()
@@ -130,7 +122,7 @@ def canonical_skill_catalog(
             content = candidate.read_bytes()
             entries.append(
                 {
-                    "path": candidate.relative_to(source_root).as_posix(),
+                    "path": candidate.relative_to(root).as_posix(),
                     "mode": candidate.stat().st_mode & 0o777,
                     "size": len(content),
                     "sha256": hashlib.sha256(content).hexdigest(),
@@ -138,6 +130,50 @@ def canonical_skill_catalog(
             )
     if not sources:
         raise RuntimeError(f"canonical project Skills are missing: {source_root}")
+    plugin = root / "tooling" / "plugins" / PLUGIN_NAME
+    required_plugin_files = (
+        plugin / ".codex-plugin" / "plugin.json",
+        plugin / "hooks.json",
+        plugin / "scripts" / "hook-entry.mjs",
+    )
+    if plugin.is_symlink() or not plugin.is_dir():
+        raise RuntimeError(f"CANONICAL_PLUGIN_SOURCE_INVALID: {plugin}")
+    if plugin.resolve(strict=True).parent != root / "tooling" / "plugins":
+        raise RuntimeError(
+            f"CANONICAL_PLUGIN_SOURCE_INVALID: {plugin} escapes tooling/plugins"
+        )
+    for candidate in sorted(plugin.rglob("*")):
+        if candidate.is_symlink():
+            raise RuntimeError(
+                f"CANONICAL_PLUGIN_SOURCE_INVALID: {candidate} is a symlink"
+            )
+        if candidate.is_file():
+            content = candidate.read_bytes()
+            entries.append(
+                {
+                    "path": candidate.relative_to(root).as_posix(),
+                    "mode": candidate.stat().st_mode & 0o777,
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }
+            )
+    if any(not candidate.is_file() for candidate in required_plugin_files):
+        raise RuntimeError(
+            f"CANONICAL_PLUGIN_SOURCE_INVALID: required files are missing under {plugin}"
+        )
+    for relative in WORKFLOW_KERNEL_FILES:
+        source = root / relative
+        if source.is_symlink() or not source.is_file():
+            raise RuntimeError(f"CANONICAL_WORKFLOW_KERNEL_INVALID: {source}")
+        content = source.read_bytes()
+        entries.append(
+            {
+                "path": relative,
+                "mode": source.stat().st_mode & 0o777,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
     serialized = json.dumps(
         entries,
         separators=(",", ":"),
@@ -151,16 +187,18 @@ def canonical_skill_catalog(
             "--untracked-files=all",
             "--",
             "tooling/skills",
+            "tooling/plugins",
+            *WORKFLOW_KERNEL_FILES,
         ],
         cwd=root,
         check=True,
         capture_output=True,
     ).stdout
-    return sources, {
-        "catalogDigest": hashlib.sha256(serialized).hexdigest(),
-        "catalogEntryCount": len(entries),
-        "catalogGitState": "CLEAN" if not status else "DIRTY",
-        "catalogStatusDigest": hashlib.sha256(status).hexdigest(),
+    return sources, plugin, {
+        "integrationDigest": hashlib.sha256(serialized).hexdigest(),
+        "integrationEntryCount": len(entries),
+        "integrationGitState": "CLEAN" if not status else "DIRTY",
+        "integrationStatusDigest": hashlib.sha256(status).hexdigest(),
     }
 
 
@@ -170,7 +208,7 @@ def receipt_path(workspace_id: str) -> Path:
         / "workspaces"
         / workspace_id
         / "workflow"
-        / "skill-rollout.json"
+        / "agent-integration.json"
     )
 
 
@@ -351,7 +389,7 @@ class WorkLedgerLock:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         timeout = float(
             os.environ.get(
-                "PT_SKILL_ROLLOUT_LOCK_TIMEOUT_SECONDS",
+                "PT_AGENT_INTEGRATION_LOCK_TIMEOUT_SECONDS",
                 str(LOCK_TIMEOUT_SECONDS),
             )
         )
@@ -366,7 +404,9 @@ class WorkLedgerLock:
                 continue
             process_start = process_start_identity(os.getpid())
             if process_start is None:
-                raise RuntimeError("cannot establish rollout lock process identity")
+                raise RuntimeError(
+                    "cannot establish agent integration lock process identity"
+                )
             metadata = {
                 "pid": os.getpid(),
                 "processStart": process_start,
@@ -506,14 +546,6 @@ def timestamp(value: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
-def is_digest(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
-
-
 def require_no_live_declaration(root: Path, workspace_id: str) -> None:
     active = active_declaration(root, workspace_id)
     if active is None:
@@ -552,85 +584,394 @@ def retire(path: Path, retired_root: Path) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     destination = retired_root / f"{path.name}.{stamp}"
     path.rename(destination)
-    print(f"retired existing project skill: {destination}")
+    print(f"retired existing project integration: {destination}")
 
 
-def install(root: Path, host: str, workspace_id: str, branch: str, head: str) -> None:
-    installing_session = host_session_hash(host)
-    sources, catalog = canonical_skill_catalog(root)
-    target_root = host_root(root, host)
-    skills_root = target_root / "skills"
-    if skills_root.is_symlink():
-        skills_root.unlink()
-    skills_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if skills_root.resolve(strict=True).parent != target_root:
-        raise RuntimeError(f"HOST_PROJECTION_ESCAPE: {skills_root} leaves its host root")
-    retired_root = target_root / "retired-project-skills"
-    retire(skills_root / "pt-trae-goal-orchestrator", retired_root)
-    for source in sources:
-        destination = skills_root / source.name
-        retire(destination, retired_root)
-        destination.symlink_to(source.resolve(strict=True), target_is_directory=True)
-    now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+def canonical_trae_hook_entry(root: Path, event: str) -> dict[str, object]:
+    script = (
+        root
+        / "tooling"
+        / "plugins"
+        / PLUGIN_NAME
+        / "scripts"
+        / "hook-entry.mjs"
+    ).resolve(strict=True)
+    entry: dict[str, object] = {
+        "hooks": [
+            {
+                "type": "command",
+                "command": (
+                    f'node "{script}" --host trae --event {event}'
+                ),
+                "timeout": 5,
+            }
+        ]
+    }
+    if event == "PreToolUse":
+        entry["matcher"] = "*"
+    return entry
+
+
+def is_managed_trae_hook_entry(value: object) -> bool:
+    if not isinstance(value, dict) or not isinstance(value.get("hooks"), list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and PLUGIN_NAME in str(item.get("command") or "")
+        and "hook-entry.mjs" in str(item.get("command") or "")
+        for item in value["hooks"]
+    )
+
+
+def planned_trae_hooks(root: Path, target_root: Path) -> dict[str, object]:
+    hooks_file = target_root / "hooks.json"
+    if hooks_file.is_symlink():
+        raise RuntimeError(
+            f"HOST_PROJECTION_ESCAPE: {hooks_file} is a symlink"
+        )
+    if hooks_file.exists():
+        try:
+            value = json.loads(hooks_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("TRAE_HOOKS_INVALID") from error
+    else:
+        value = {"hooks": {}}
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("hooks"), dict)
+    ):
+        raise RuntimeError("TRAE_HOOKS_INVALID")
+    output = json.loads(json.dumps(value))
+    for event in TRAE_HOOK_EVENTS:
+        existing = output["hooks"].get(event, [])
+        if not isinstance(existing, list):
+            raise RuntimeError("TRAE_HOOKS_INVALID")
+        output["hooks"][event] = [
+            item for item in existing if not is_managed_trae_hook_entry(item)
+        ] + [canonical_trae_hook_entry(root, event)]
+    return output
+
+
+def installed_trae_pre_tool_invocation(
+    root: Path,
+    target_root: Path,
+) -> tuple[list[str], int]:
+    hooks_file = target_root / "hooks.json"
+    try:
+        value = json.loads(hooks_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("TRAE_HOOK_PROBE_PROJECTION_INVALID") from error
+    hooks = value.get("hooks") if isinstance(value, dict) else None
+    entries = hooks.get("PreToolUse") if isinstance(hooks, dict) else None
+    expected = canonical_trae_hook_entry(root, "PreToolUse")
+    managed = (
+        [entry for entry in entries if is_managed_trae_hook_entry(entry)]
+        if isinstance(entries, list)
+        else []
+    )
+    if managed != [expected]:
+        raise RuntimeError("TRAE_HOOK_PROBE_PROJECTION_INVALID")
+    timeout = expected["hooks"][0]["timeout"]
+    if not isinstance(timeout, int):
+        raise RuntimeError("TRAE_HOOK_PROBE_PROJECTION_INVALID")
+    script = (
+        root
+        / "tooling"
+        / "plugins"
+        / PLUGIN_NAME
+        / "scripts"
+        / "hook-entry.mjs"
+    ).resolve(strict=True)
+    return (
+        [
+            "node",
+            str(script),
+            "--host",
+            "trae",
+            "--event",
+            "PreToolUse",
+        ],
+        timeout,
+    )
+
+
+def probe_installed_trae_hook(
+    root: Path,
+    target_root: Path,
+) -> dict[str, object]:
+    command, timeout = installed_trae_pre_tool_invocation(root, target_root)
+    with tempfile.TemporaryDirectory(prefix="pt-trae-hook-probe-") as temporary:
+        probe_root = Path(temporary)
+        home = probe_root / "home"
+        machine = probe_root / "machine"
+        home.mkdir(mode=0o700)
+        machine.mkdir(mode=0o700)
+        environment = {
+            **os.environ,
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "PT_MACHINE_DEV_ROOT": str(machine),
+        }
+        payload = {
+            "session_id": f"pt-install-probe-{os.urandom(16).hex()}",
+            "repo_working_dir": str(root),
+            "tool_name": "pt_install_probe",
+            "tool_input": {},
+        }
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=target_root,
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=environment,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("TRAE_HOOK_PROBE_TIMEOUT") from error
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "TRAE_HOOK_PROBE_COMMAND_FAILED: "
+                f"exit={completed.returncode}"
+            )
+        try:
+            response = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("TRAE_HOOK_PROBE_RESPONSE_INVALID") from error
+        output = (
+            response.get("hookSpecificOutput")
+            if isinstance(response, dict)
+            else None
+        )
+        reason = (
+            output.get("permissionDecisionReason")
+            if isinstance(output, dict)
+            else None
+        )
+        supported = (
+            isinstance(output, dict)
+            and output.get("hookEventName") == "PreToolUse"
+            and output.get("permissionDecision") == "deny"
+            and isinstance(reason, str)
+            and reason.startswith("TOOL_INTENT_UNSUPPORTED:")
+        )
+        bindings = list(
+            machine.glob("conversations/trae/*/execution-binding.json")
+        )
+        if not supported:
+            raise RuntimeError("TRAE_HOOK_PROBE_RESPONSE_UNSUPPORTED")
+        if len(bindings) != 1:
+            raise RuntimeError("TRAE_HOOK_PROBE_BINDING_INVALID")
+        try:
+            binding = json.loads(bindings[0].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("TRAE_HOOK_PROBE_BINDING_INVALID") from error
+        if (
+            not isinstance(binding, dict)
+            or binding.get("host") != "trae"
+            or binding.get("executionRoot") != str(root.resolve(strict=True))
+        ):
+            raise RuntimeError("TRAE_HOOK_PROBE_BINDING_INVALID")
+    return dict(TRAE_CALLBACK_PROOF)
+
+
+def managed_cursor_hook(root: Path, host_event: str) -> dict[str, object]:
+    script = (
+        root
+        / "tooling"
+        / "plugins"
+        / PLUGIN_NAME
+        / "scripts"
+        / "hook-entry.mjs"
+    ).resolve(strict=True)
+    hook: dict[str, object] = {
+        "command": (
+            f'node "{script}" --host cursor --event {host_event}'
+        ),
+        "timeout": 5,
+        "failClosed": True,
+    }
+    if host_event == "preToolUse":
+        hook["matcher"] = "*"
+    if host_event == "stop":
+        hook["loop_limit"] = 8
+    return hook
+
+
+def is_managed_cursor_hook(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and PLUGIN_NAME in str(value.get("command") or "")
+        and "hook-entry.mjs" in str(value.get("command") or "")
+    )
+
+
+def planned_cursor_hooks(root: Path, target_root: Path) -> dict[str, object]:
+    hooks_file = target_root / "hooks.json"
+    if hooks_file.is_symlink():
+        raise RuntimeError(
+            f"HOST_PROJECTION_ESCAPE: {hooks_file} is a symlink"
+        )
+    if hooks_file.exists():
+        try:
+            value = json.loads(hooks_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("CURSOR_HOOKS_INVALID") from error
+    else:
+        value = {"version": 1, "hooks": {}}
+    if (
+        not isinstance(value, dict)
+        or value.get("version") != 1
+        or not isinstance(value.get("hooks"), dict)
+    ):
+        raise RuntimeError("CURSOR_HOOKS_INVALID")
+    output = json.loads(json.dumps(value))
+    for cursor_event, host_event in CURSOR_HOOK_EVENTS:
+        existing = output["hooks"].get(cursor_event, [])
+        if not isinstance(existing, list):
+            raise RuntimeError("CURSOR_HOOKS_INVALID")
+        output["hooks"][cursor_event] = [
+            item for item in existing if not is_managed_cursor_hook(item)
+        ] + [managed_cursor_hook(root, host_event)]
+    return output
+
+
+def install_codex_plugin(plugin: Path, target_root: Path) -> None:
+    plugins_root = target_root / "plugins"
+    if plugins_root.is_symlink():
+        raise RuntimeError(
+            f"HOST_PROJECTION_ESCAPE: {plugins_root} is a symlink"
+        )
+    plugins_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if plugins_root.resolve(strict=True).parent != target_root:
+        raise RuntimeError(
+            f"HOST_PROJECTION_ESCAPE: {plugins_root} leaves its host root"
+        )
+    destination = plugins_root / PLUGIN_NAME
+    retire(destination, target_root / "retired-project-plugins")
+    destination.symlink_to(plugin.resolve(strict=True), target_is_directory=True)
+
+
+def write_installation_receipt(
+    workspace_id: str,
+    branch: str,
+    head: str,
+    host: str,
+    state: str,
+    catalog: dict[str, object],
+    callback_proof: dict[str, object],
+) -> None:
+    installed_at = (
+        datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        if state == "INSTALLED"
+        else None
+    )
     write_receipt(
         receipt_path(workspace_id),
         {
-            "kind": "peers-touch-skill-rollout",
-            "state": "ROLLOUT_RESTART_REQUIRED",
+            "kind": "peers-touch-agent-integration",
+            "state": state,
             "workspaceId": workspace_id,
             "branch": branch,
             "sourceHead": head,
             "host": host,
-            "installedAt": now,
-            "installedSessionHash": installing_session,
-            "acknowledgedAt": None,
-            "ackSessionHash": None,
+            "installedAt": installed_at,
+            "callbackProof": callback_proof,
             **catalog,
         },
     )
-    print(f"linked {len(sources)} project pt-* skills under {skills_root}")
-    print(json.dumps({"status": "ROLLOUT_RESTART_REQUIRED"}))
 
 
-def acknowledge(
+def install(
     root: Path,
     host: str,
     workspace_id: str,
     branch: str,
     head: str,
 ) -> None:
-    receipt = receipt_path(workspace_id)
-    if not receipt.is_file():
-        raise RuntimeError("ROLLOUT_RECEIPT_MISSING")
-    value = json.loads(receipt.read_text(encoding="utf-8"))
-    current_session = host_session_hash(host)
-    _, catalog = canonical_skill_catalog(root)
-    installed_at = timestamp(value.get("installedAt"))
-    installed_session = value.get("installedSessionHash")
-    if (
-        set(value) != RECEIPT_KEYS
-        or value.get("kind") != "peers-touch-skill-rollout"
-        or value.get("state") != "ROLLOUT_RESTART_REQUIRED"
-        or value.get("workspaceId") != workspace_id
-        or value.get("branch") != branch
-        or value.get("sourceHead") != head
-        or value.get("host") != host
-        or installed_at is None
-        or not is_digest(installed_session)
-        or value.get("acknowledgedAt") is not None
-        or value.get("ackSessionHash") is not None
-        or any(value.get(key) != expected for key, expected in catalog.items())
-    ):
-        raise RuntimeError("ROLLOUT_ACK_MISMATCH")
-    if installed_session == current_session:
-        raise RuntimeError("ROLLOUT_RESTART_NOT_OBSERVED")
-    value["state"] = "ACKNOWLEDGED"
-    value["acknowledgedAt"] = datetime.now(timezone.utc).isoformat(
-        timespec="milliseconds"
+    sources, plugin, catalog = canonical_integration_catalog(root)
+    target_root = host_root(root, host)
+    trae_hooks = (
+        planned_trae_hooks(root, target_root)
+        if host == "trae"
+        else None
     )
-    value["ackSessionHash"] = current_session
-    write_receipt(receipt, value)
-    print(json.dumps({"status": "PASS", "path": str(receipt)}))
+    cursor_hooks = (
+        planned_cursor_hooks(root, target_root)
+        if host == "cursor"
+        else None
+    )
+    write_installation_receipt(
+        workspace_id,
+        branch,
+        head,
+        host,
+        "INSTALLING",
+        catalog,
+        {"status": "PENDING"},
+    )
+    skills_root = target_root / "skills"
+    try:
+        if skills_root.is_symlink():
+            skills_root.unlink()
+        skills_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if skills_root.resolve(strict=True).parent != target_root:
+            raise RuntimeError(
+                f"HOST_PROJECTION_ESCAPE: {skills_root} leaves its host root"
+            )
+        retired_root = target_root / "retired-project-skills"
+        retire(skills_root / "pt-trae-goal-orchestrator", retired_root)
+        for source in sources:
+            destination = skills_root / source.name
+            retire(destination, retired_root)
+            destination.symlink_to(
+                source.resolve(strict=True),
+                target_is_directory=True,
+            )
+        if host == "codex":
+            install_codex_plugin(plugin, target_root)
+        elif host == "trae":
+            write_receipt(target_root / "hooks.json", trae_hooks)
+        elif host == "cursor":
+            write_receipt(target_root / "hooks.json", cursor_hooks)
+        callback_proof = (
+            probe_installed_trae_hook(root, target_root)
+            if host == "trae"
+            else {"status": "NOT_APPLICABLE"}
+        )
+    except (OSError, RuntimeError, json.JSONDecodeError) as error:
+        write_installation_receipt(
+            workspace_id,
+            branch,
+            head,
+            host,
+            "BLOCKED",
+            catalog,
+            {"status": "BLOCKED", "code": str(error)},
+        )
+        raise
+    write_installation_receipt(
+        workspace_id,
+        branch,
+        head,
+        host,
+        "INSTALLED",
+        catalog,
+        callback_proof,
+    )
+    print(f"linked {len(sources)} project pt-* skills under {skills_root}")
+    if host in {"codex", "cursor", "trae"}:
+        print(f"installed {PLUGIN_NAME} integration for {host}")
+    print(
+        json.dumps(
+            {
+                "status": "INSTALLED",
+                "path": str(receipt_path(workspace_id)),
+            }
+        )
+    )
 
 
 def main() -> int:
@@ -640,10 +981,7 @@ def main() -> int:
     try:
         with WorkLedgerLock():
             require_no_live_declaration(root, workspace_id)
-            if options.action == "install":
-                install(root, options.host, workspace_id, branch, head)
-            else:
-                acknowledge(root, options.host, workspace_id, branch, head)
+            install(root, options.host, workspace_id, branch, head)
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
         print(json.dumps({"status": "BLOCKED", "code": str(error)}))
         return 2
