@@ -709,7 +709,7 @@ export function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
     message: raw?.message,
     gates: (raw?.gates ?? []).map((gate) => ({
       gateId: gate.gate_id ?? gate.gateId ?? '',
-      type: gate.type ?? 0,
+      type: gate.type ?? gate.gateType ?? 0,
       state: gate.state ?? 0,
       title: gate.title,
       description: gate.description,
