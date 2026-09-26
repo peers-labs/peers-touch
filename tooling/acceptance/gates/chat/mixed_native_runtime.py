@@ -113,18 +113,18 @@ def load_mixed_runtime_manifest(
         if (
             manifest.get("state") != "FIXTURE_READY"
             or not isinstance(reset, Mapping)
-            or reset.get("authorized") is not False
-            or reset.get("targetVerified") is not False
+            or reset.get("authorized") is not True
+            or reset.get("targetVerified") is not True
             or not isinstance(stations, Mapping)
             or not stations
             or any(
                 not isinstance(station, Mapping)
-                or station.get("existingActorsVerified") is not True
+                or station.get("targetVerified") is not True
                 for station in stations.values()
             )
         ):
             raise GateError(
-                "Station Access existing-actor fixture is not verified"
+                "Station Access reset fixture is not verified"
             )
     else:
         verify_runtime_fixture_ready(manifest, actor_manifest)
