@@ -15746,10 +15746,11 @@ async function runFoundationForbiddenActorAttempt(input: {
   conversationId: string;
   idempotencyKey: string;
   content: string;
+  requireRuntimeEvent?: boolean;
 }): Promise<{
   outcome: Record<string, unknown>;
-  runtimeEvent: FoundationRuntimeEventObservation;
-  rawPayloadHash: string;
+  runtimeEvent: FoundationRuntimeEventObservation | null;
+  rejectionHash: string;
   foreignContentFieldCount: number;
 }> {
   const rejectedRef: { current: Record<string, unknown> | null } = {
@@ -15804,8 +15805,9 @@ async function runFoundationForbiddenActorAttempt(input: {
     }
     await waitFor(
       () => (
-        rejectedRef.current !== null
-        && errorEventRef.current !== null
+        input.requireRuntimeEvent === false
+          ? rejectedRef.current !== null || errorEventRef.current !== null
+          : rejectedRef.current !== null && errorEventRef.current !== null
       ),
       'typed forbidden actor rejection',
       60_000,
@@ -15814,25 +15816,34 @@ async function runFoundationForbiddenActorAttempt(input: {
     unsubscribe();
   }
 
-  const outcome = rejectedRef.current;
   const errorEvent =
     errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const outcome = rejectedRef.current ?? errorEvent?.data ?? null;
   const sourceDelivery = errorEvent?.sourceDelivery;
   const actorPtid = authenticatedFoundationActorPtid();
+  if (!outcome) {
+    throw new Error(
+      'agent.acceptance.foundationForbiddenActorOutcomeMissing',
+    );
+  }
   if (
-    !outcome
-    || !errorEvent
-    || !sourceDelivery
-    || sourceDelivery.transport !== 'station-sse'
-    || sourceDelivery.ptid !== actorPtid
-    || sourceDelivery.conversationId !== input.conversationId
-    || sourceDelivery.turnId !== ''
-    || sourceDelivery.sequence !== 0
-    || sourceDelivery.rawPayload.eventType !== 'error'
-    || stableJson(
-      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
-    ) !== stableJson(
-      normalizeProjectedStationPayload(errorEvent.data),
+    input.requireRuntimeEvent !== false
+    && (
+      !errorEvent
+      || !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== input.conversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(errorEvent.data),
+      )
+      || stableJson(normalizeProjectedStationPayload(outcome))
+        !== stableJson(normalizeProjectedStationPayload(errorEvent.data))
     )
   ) {
     throw new Error(
@@ -15852,33 +15863,37 @@ async function runFoundationForbiddenActorAttempt(input: {
   ]);
   return {
     outcome,
-    runtimeEvent: {
-      eventId: await sha256Hex(stableJson({
-        streamId: errorEvent.streamId,
-        streamGeneration: errorEvent.streamGeneration,
-        conversationId: errorEvent.conversationId,
-        observationSequence: errorEvent.observationSequence,
-        eventType: errorEvent.eventType,
-        timestampMs: errorEvent.timestampMs,
-        data: errorEvent.data,
-      })),
-      eventType: errorEvent.eventType,
-      sequence: errorEvent.observationSequence,
-      observedAt: errorEvent.observedAt,
-      streamGeneration: errorEvent.streamGeneration,
-      streamIdHash: await sha256Hex(errorEvent.streamId),
-      conversationIdHash: await sha256Hex(errorEvent.conversationId),
-      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
-      errorType: String(errorEvent.data.error_type ?? ''),
-      sourceTransport: sourceDelivery.transport,
-      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
-      sourceConversationId: sourceDelivery.conversationId,
-      sourceTurnId: sourceDelivery.turnId,
-      sourceSequence: sourceDelivery.sequence,
-      sourceEventType: sourceDelivery.rawPayload.eventType,
-    },
-    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
-    foreignContentFieldCount: Object.keys(errorEvent.data)
+    runtimeEvent: errorEvent && sourceDelivery
+      ? {
+          eventId: await sha256Hex(stableJson({
+            streamId: errorEvent.streamId,
+            streamGeneration: errorEvent.streamGeneration,
+            conversationId: errorEvent.conversationId,
+            observationSequence: errorEvent.observationSequence,
+            eventType: errorEvent.eventType,
+            timestampMs: errorEvent.timestampMs,
+            data: errorEvent.data,
+          })),
+          eventType: errorEvent.eventType,
+          sequence: errorEvent.observationSequence,
+          observedAt: errorEvent.observedAt,
+          streamGeneration: errorEvent.streamGeneration,
+          streamIdHash: await sha256Hex(errorEvent.streamId),
+          conversationIdHash: await sha256Hex(errorEvent.conversationId),
+          payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+          errorType: String(errorEvent.data.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        }
+      : null,
+    rejectionHash: await sha256Hex(stableJson(
+      normalizeProjectedStationPayload(outcome),
+    )),
+    foreignContentFieldCount: Object.keys(outcome)
       .filter((key) => foreignContentFields.has(key)).length,
   };
 }
@@ -15926,7 +15941,28 @@ async function rejectFoundationForbiddenActor(input: {
     conversationId: resourceId,
     idempotencyKey,
     content,
+    requireRuntimeEvent: false,
   });
+  if (!first.runtimeEvent) {
+    throw new Error(
+      'agent.acceptance.foundationForbiddenActorRuntimeEventMissing',
+    );
+  }
+  // #region debug-point F-J:forbidden-actor-receiver
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'F-J',
+    'after-replayed-rejection',
+    forbiddenActorReceiverSnapshot(),
+  );
+  // #endregion
+  await useChatStore.getState().selectSession(resourceId);
+  // #region debug-point F-J:forbidden-actor-receiver
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'F-J',
+    'receiver-session-restored',
+    forbiddenActorReceiverSnapshot(),
+  );
+  // #endregion
 
   await waitFor(
     () => Boolean(document.querySelector(
@@ -16085,9 +16121,9 @@ async function rejectFoundationForbiddenActor(input: {
           first.foreignContentFieldCount + replayed.foreignContentFieldCount,
       },
       replay: {
-        sourceHash: first.rawPayloadHash,
-        replayHash: replayed.rawPayloadHash,
-        equal: first.rawPayloadHash === replayed.rawPayloadHash,
+        sourceHash: first.rejectionHash,
+        replayHash: replayed.rejectionHash,
+        equal: first.rejectionHash === replayed.rejectionHash,
       },
       cleanup: {
         localProjectionCleared:
