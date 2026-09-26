@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tooling.acceptance.gates.chat_storage.zero_legacy import (
     EXPECTED_DIMENSIONS,
+    _report,
     scan_repository,
 )
 
@@ -58,6 +59,16 @@ class ChatStorageZeroLegacyTests(unittest.TestCase):
 
         self.assertTrue(result.passed)
         self.assertEqual(set(result.dimensions), set(EXPECTED_DIMENSIONS))
+        report = _report("chat-storage-zero-legacy-e2e", result)
+        self.assertEqual(
+            report["artifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(report["reportKind"], "chat-storage-zero-legacy")
+        self.assertEqual(report["phase"], "CSG-06 Chat Storage Zero-Legacy Aggregate")
+        self.assertEqual(report["bom"], ["CSG-G06"])
+        self.assertEqual(report["spec"], ["chat-storage-governance"])
+        self.assertEqual(report["gate"], "chat-storage-zero-legacy-e2e")
 
     def test_owner_task_filter_scans_only_its_entries(self) -> None:
         self.inventory()
@@ -78,6 +89,11 @@ class ChatStorageZeroLegacyTests(unittest.TestCase):
             {violation.entry_id for violation in result.violations},
             {"LEGACY-A"},
         )
+        report = _report("chat-storage-dead-contract-zero-e2e", result)
+        self.assertEqual(report["phase"], "CSG-05 Chat Storage Legacy Hard Cut")
+        self.assertEqual(report["bom"], ["CSG-G04"])
+        self.assertEqual(report["spec"], ["chat-storage-conversation-clear"])
+        self.assertEqual(report["gate"], "chat-storage-dead-contract-zero-e2e")
 
     def test_untracked_test_and_docs_references_are_classified(self) -> None:
         self.inventory()
