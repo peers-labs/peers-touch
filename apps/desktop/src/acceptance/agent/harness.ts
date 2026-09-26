@@ -3534,6 +3534,643 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
   };
 }
 
+async function cleanupFoundationPermissionDeniedScenario(input: {
+  scenarioKey: string;
+  conversationId?: string;
+  turnId?: string;
+}): Promise<{
+  conversationDeleted: boolean;
+  localProjectionCleared: boolean;
+}> {
+  const locator = foundationPermissionDeniedScenarios.get(input.scenarioKey);
+  const conversationId = String(
+    input.conversationId || locator?.conversationId || '',
+  );
+  const turnId = String(input.turnId || locator?.turnId || '');
+  if (!conversationId) {
+    foundationPermissionDeniedScenarios.delete(input.scenarioKey);
+    return {
+      conversationDeleted: true,
+      localProjectionCleared: true,
+    };
+  }
+
+  clearFoundationLocalConversationProjection(conversationId);
+  try {
+    await cleanupFoundationToolConversation(conversationId, turnId);
+  } finally {
+    if (locator) {
+      useAgentStore.getState().setAgentSurface(
+        locator.agentName,
+        locator.priorSurface,
+      );
+    }
+    foundationPermissionDeniedScenarios.delete(input.scenarioKey);
+  }
+  return {
+    conversationDeleted: true,
+    localProjectionCleared: (
+      !useChatStore.getState().sessions.some(
+        (session) => session.id === conversationId,
+      )
+      && !useChatStore.getState().messages.some(
+        (message) => message.turnId === turnId,
+      )
+    ),
+  };
+}
+
+async function runDevelopmentClientPermissionDeniedScenario(input: {
+  sampleId: string;
+  capabilitySessionId: string;
+  deferConversationCleanup: boolean;
+  externalExecutorEvidence: boolean;
+  scenarioKey: string;
+  receiverPlatform: 'browser' | 'desktop_app';
+}): Promise<Record<string, unknown>> {
+  if (
+    !input.capabilitySessionId
+    || !input.deferConversationCleanup
+    || !input.externalExecutorEvidence
+    || !input.scenarioKey
+    || !['browser', 'desktop_app'].includes(input.receiverPlatform)
+  ) {
+    throw new Error(
+      'agent.acceptance.permissionDeniedCoordinatorContractMissing',
+    );
+  }
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const agentStore = useAgentStore.getState();
+  const priorSurface = agentStore.getAgentSurface(agent.name);
+  const fixture = await foundationToolFixture(agentId, 'desktop_app', {
+    toolName: 'local_file_read',
+    arguments: {
+      path: `permission-denied-${input.sampleId.replace(
+        /[^a-z0-9]/gi,
+        '-',
+      )}.txt`,
+    },
+  });
+  if (
+    fixture.manifest.capabilityId !== 'filesystem.read'
+    || fixture.manifest.version !== '1'
+  ) {
+    throw new Error('agent.acceptance.permissionDeniedManifestMismatch');
+  }
+  const stationSessions = await api.listAgentCapabilitySessions();
+  const targetSession = stationSessions.sessions.find(
+    (session) => session.session_id === input.capabilitySessionId,
+  );
+  const targetCapability = targetSession?.typed_capabilities.find(
+    (capability) =>
+      capability.capability_id === fixture.manifest.capabilityId
+      && capability.schema_version === fixture.manifest.version,
+  );
+  if (
+    !targetSession
+    || !targetCapability
+    || targetCapability.permission
+      !== 'CAPABILITY_PERMISSION_STATE_DENIED'
+    || targetCapability.permission_kind
+      !== 'CAPABILITY_PERMISSION_KIND_FILESYSTEM'
+  ) {
+    throw new Error('agent.acceptance.permissionDeniedLeaseMissing');
+  }
+  const receiverCapabilitySession = await capabilitySessionEvidence();
+  const receiverPlatform = input.receiverPlatform;
+  const localCapabilityCount =
+    receiverCapabilitySession.selectedLocalSession?.capability_ids.length ?? 0;
+  await reportFoundationCapabilityIsolationDebug(
+    'D-F',
+    'permission-denied-receiver-precondition',
+    {
+      receiverPlatform,
+      selectedLocalSessionPresent:
+        receiverCapabilitySession.selectedLocalSession !== null,
+      selectedLocalPlatform:
+        receiverCapabilitySession.selectedLocalSession?.platform ?? null,
+      localCapabilityCount,
+      localSessionCount: receiverCapabilitySession.local.sessions.length,
+      localSessions: receiverCapabilitySession.local.sessions.map(
+        (session) => ({
+          platform: session.platform,
+          capabilityCount: session.capability_ids.length,
+        }),
+      ),
+      stationSessionCount:
+        receiverCapabilitySession.station.sessions.length,
+    },
+  );
+  if (
+    (receiverPlatform === 'browser' && localCapabilityCount !== 0)
+    || (receiverPlatform === 'desktop_app' && localCapabilityCount <= 0)
+  ) {
+    throw new Error(
+      'agent.acceptance.permissionDeniedReceiverCapabilityIsolationInvalid',
+    );
+  }
+
+  const originalBinding = fixture.binding;
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  let result: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  const cleanupFailures: unknown[] = [];
+  const startedAt = performance.now();
+
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    agentStore.setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: input.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'client-permission-denied',
+      onConversationCreated: (conversationId) => {
+        foundationPermissionDeniedScenarios.set(input.scenarioKey, {
+          agentName: agent.name,
+          conversationId,
+          priorSurface,
+          turnId: '',
+        });
+      },
+    });
+    foundationPermissionDeniedScenarios.set(input.scenarioKey, {
+      agentName: agent.name,
+      conversationId: turn.conversationId,
+      priorSurface,
+      turnId: turn.turnId,
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const settled = await turn.observed.result;
+    if (settled.ok) {
+      throw new Error(
+        'agent.acceptance.permissionDeniedUnexpectedCompletion',
+      );
+    }
+
+    const terminalEvent = [...turn.observed.events].reverse().find((event) => {
+      const nested = event.data.outcome_error;
+      const outcome = (
+        nested && typeof nested === 'object' && !Array.isArray(nested)
+          ? nested
+          : event.data
+      ) as Record<string, unknown>;
+      return (
+        event.event === 'error'
+        && outcome.error_type === 'CLIENT_PERMISSION_DENIED'
+      );
+    });
+    const sourceDelivery = terminalEvent?.sourceDelivery;
+    const sourceOutcome = terminalEvent
+      ? evidenceRecord(
+          terminalEvent.data.outcome_error ?? terminalEvent.data,
+          'permissionDeniedRuntimeOutcome',
+        )
+      : null;
+    // #region debug-point A-E:foundation-runtime-identity
+    const sourceRuntimePayload = sourceDelivery
+      ? normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)
+      : null;
+    const receiverRuntimePayload = terminalEvent
+      ? normalizeProjectedStationPayload(terminalEvent.data)
+      : null;
+    await reportFoundationRuntimeIdentityDebug(
+      'A-E',
+      'source-delivery-identity-check',
+      {
+        receiverPlatform,
+        settledOk: settled.ok,
+        settledErrorCode: observedErrorCode(settled.error),
+        settledErrorIsSubmissionTimeout:
+          settled.error === 'agent.acceptance.turnSubmissionTimeout',
+        observedEventCount: turn.observed.events.length,
+        observedEvents: turn.observed.events.map((event) => {
+          const nestedOutcome = event.data.outcome_error;
+          return {
+            eventType: event.event,
+            sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+            sourceDeliveryPresent: Boolean(event.sourceDelivery),
+            sourceTransport: event.sourceDelivery?.transport ?? null,
+            directErrorType: event.data.error_type ?? null,
+            nestedErrorType:
+              nestedOutcome
+              && typeof nestedOutcome === 'object'
+              && !Array.isArray(nestedOutcome)
+                ? (nestedOutcome as Record<string, unknown>).error_type ?? null
+                : null,
+            dataKeys: Object.keys(event.data).sort(),
+          };
+        }),
+        terminalEventPresent: Boolean(terminalEvent),
+        sourceDeliveryPresent: Boolean(sourceDelivery),
+        sourceOutcomePresent: Boolean(sourceOutcome),
+        transportMatches: sourceDelivery?.transport === 'station-sse',
+        actorMatches:
+          sourceDelivery?.ptid === authenticatedFoundationActorPtid(),
+        conversationMatches:
+          sourceDelivery?.conversationId === turn.conversationId,
+        turnMatches: sourceDelivery?.turnId === turn.turnId,
+        sequencePositive: Number(sourceDelivery?.sequence ?? 0) > 0,
+        sourceEventType: sourceDelivery?.rawPayload.eventType ?? null,
+        receiverEventType: terminalEvent?.event ?? null,
+        eventTypeMatches: sourceDelivery?.rawPayload.eventType === 'error',
+        payloadMatches:
+          sourceRuntimePayload !== null
+          && receiverRuntimePayload !== null
+          && stableJson(sourceRuntimePayload)
+            === stableJson(receiverRuntimePayload),
+        sourcePayloadHash: sourceRuntimePayload === null
+          ? null
+          : await sha256Hex(stableJson(sourceRuntimePayload)),
+        receiverPayloadHash: receiverRuntimePayload === null
+          ? null
+          : await sha256Hex(stableJson(receiverRuntimePayload)),
+        sourcePayloadKeys: sourceRuntimePayload === null
+          ? []
+          : Object.keys(sourceRuntimePayload).sort(),
+        receiverPayloadKeys: receiverRuntimePayload === null
+          ? []
+          : Object.keys(receiverRuntimePayload).sort(),
+      },
+    );
+    // #endregion
+    if (
+      !terminalEvent
+      || !sourceDelivery
+      || !sourceOutcome
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+      || sourceDelivery.conversationId !== turn.conversationId
+      || sourceDelivery.turnId !== turn.turnId
+      || sourceDelivery.sequence <= 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(terminalEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.permissionDeniedRuntimeIdentityMismatch',
+      );
+    }
+
+    await useChatStore.getState().syncMessages();
+    const errorSurfaceSelector =
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="CLIENT_PERMISSION_DENIED"]';
+    const findVisibleErrorSurface = () => Array.from(
+      document.querySelectorAll<HTMLElement>(errorSurfaceSelector),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    await waitFor(
+      () => Boolean(findVisibleErrorSurface()),
+      'permission-denied typed receiver outcome',
+      FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+    );
+    let errorSurface = findVisibleErrorSurface();
+    const errorTextSelector =
+      '[data-pt-agent-message-error-text='
+      + '"agent.errors.clientPermissionDenied"]';
+    if (!errorSurface?.querySelector(errorTextSelector)) {
+      errorSurface?.querySelector<HTMLElement>(
+        '[data-pt-agent-message-error-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(
+          findVisibleErrorSurface()?.querySelector(errorTextSelector),
+        ),
+        'localized permission-denied text',
+        10_000,
+      );
+      errorSurface = findVisibleErrorSurface();
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(
+      errorTextSelector,
+    );
+    const recoveryAction = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="open-permission-settings"]',
+    );
+    if (!errorSurface || !errorText || !recoveryAction) {
+      throw new Error(
+        'agent.acceptance.permissionDeniedRecoverySurfaceMissing',
+      );
+    }
+
+    const readback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    const assistant = [...readback.messages].reverse().find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === turn?.turnId
+        && Boolean(message.errorJson)
+      ),
+    );
+    if (!assistant) {
+      throw new Error('agent.acceptance.permissionDeniedMessageMissing');
+    }
+    const persistedOutcome = evidenceRecord(
+      JSON.parse(String(assistant.errorJson || '{}')),
+      'permissionDeniedPersistedOutcome',
+    );
+    if (stableJson(persistedOutcome) !== stableJson(sourceOutcome)) {
+      throw new Error('agent.acceptance.permissionDeniedOutcomeMismatch');
+    }
+    const persistedDetails = evidenceRecord(
+      persistedOutcome.details,
+      'permissionDeniedPersistedDetails',
+    );
+    if (
+      Object.keys(persistedDetails).sort().join(',')
+        !== 'capability_id,permission_kind'
+      || persistedDetails.capability_id !== fixture.manifest.capabilityId
+      || persistedDetails.permission_kind !== 'filesystem'
+    ) {
+      throw new Error('agent.acceptance.permissionDeniedDetailsInvalid');
+    }
+
+    const diagnosticResponse = evidenceRecord(
+      evidenceValue(await api.exportAgentTurnDiagnostics(turn.turnId)),
+      'permissionDeniedDiagnostics',
+    );
+    const diagnosticReplay = evidenceRecord(
+      diagnosticResponse.replay,
+      'permissionDeniedDiagnosticReplay',
+    );
+    const diagnosticToolCalls = optionalEvidenceArray(
+      evidenceField(diagnosticReplay, 'toolCalls', 'tool_calls'),
+      'permissionDeniedDiagnosticToolCalls',
+    );
+    const diagnosticToolResultCount = diagnosticToolCalls.filter((value) => {
+      const fact = evidenceRecord(
+        value,
+        'permissionDeniedDiagnosticToolCall',
+      );
+      return Boolean(evidenceField(fact, 'resultId', 'result_id'));
+    }).length;
+    const executionBeforeRecovery =
+      await foundationIncompatibleExecutionSnapshot(
+        agentId,
+        turn.conversationId,
+      );
+    const beforeRecoveryMessageCount = readback.messages.length;
+    const replayDeliveries = await foundationStationReplayReadback({
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      streamId: turn.streamId,
+      streamGeneration: turn.observed.controller.streamGeneration,
+      actorPtid: authenticatedFoundationActorPtid(),
+      acknowledgedCursor: 0,
+    });
+    const replayed = replayDeliveries.find((delivery) => (
+      delivery.eventType === 'error'
+      && delivery.sourceTurnId === turn?.turnId
+      && delivery.sourceSequence === sourceDelivery.sequence
+    ));
+    if (!replayed) {
+      throw new Error('agent.acceptance.permissionDeniedReplayMissing');
+    }
+
+    const receiver = {
+      errorVisible: errorText.getClientRects().length > 0,
+      errorText: errorText.textContent?.trim() ?? '',
+      expectedErrorText: i18n.t(
+        'agent.errors.clientPermissionDenied',
+        { ns: 'agent' },
+      ),
+      recoveryVisible: recoveryAction.getClientRects().length > 0,
+      recoveryText: recoveryAction.textContent?.trim() ?? '',
+      expectedRecoveryText: i18n.t(
+        'agent.recovery.openPermissionSettings',
+        { ns: 'agent' },
+      ),
+      recoveryExecuted: false,
+      profileVisible: false,
+      capabilitiesTabVisible: false,
+      capabilityDetailVisible: false,
+      capabilityId: '',
+      permissionKind: '',
+    };
+    recoveryAction.click();
+    const capabilityKeyValue =
+      `${encodeURIComponent(fixture.manifest.capabilityId)}`
+      + `@${encodeURIComponent(fixture.manifest.version)}`;
+    const capabilityDetailSelector =
+      `[data-pt-agent-capability-detail="${capabilityKeyValue}"]`
+      + '[data-pt-agent-capability-permission-kind="filesystem"]';
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${agentId}"]`,
+        )?.getClientRects().length
+        && document.querySelector<HTMLElement>(
+          '[data-pt-agent-profile-tab="capabilities"]',
+        )?.getClientRects().length
+        && document.querySelector<HTMLElement>(
+          capabilityDetailSelector,
+        )?.getClientRects().length,
+      ),
+      'permission-denied Agent capability detail',
+      30_000,
+    );
+    const profileElement = document.querySelector<HTMLElement>(
+      `[data-pt-agent-profile="${agentId}"]`,
+    );
+    const capabilitiesTab = document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    );
+    const capabilityDetail = document.querySelector<HTMLElement>(
+      capabilityDetailSelector,
+    );
+    receiver.recoveryExecuted = true;
+    receiver.profileVisible = Boolean(profileElement?.getClientRects().length);
+    receiver.capabilitiesTabVisible = Boolean(
+      capabilitiesTab?.getClientRects().length,
+    );
+    receiver.capabilityDetailVisible = Boolean(
+      capabilityDetail?.getClientRects().length,
+    );
+    receiver.capabilityId = fixture.manifest.capabilityId;
+    receiver.permissionKind =
+      capabilityDetail?.dataset.ptAgentCapabilityPermissionKind ?? '';
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    const executionAfterRecovery =
+      await foundationIncompatibleExecutionSnapshot(
+        agentId,
+        turn.conversationId,
+      );
+    const afterRecoveryReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
+    const runtimePayload = evidenceValue(sourceDelivery.rawPayload);
+    const payloadHash = await sha256Hex(stableJson(runtimePayload));
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: turn.streamId,
+        streamGeneration: turn.observed.controller.streamGeneration,
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        sequence: sourceDelivery.sequence,
+        payloadHash,
+      })),
+      eventType: terminalEvent.event,
+      sequence: sourceDelivery.sequence,
+      observedAt: terminalEvent.observedAt,
+      streamGeneration: turn.observed.controller.streamGeneration,
+      streamIdHash: await sha256Hex(turn.streamId),
+      conversationIdHash: await sha256Hex(turn.conversationId),
+      payloadHash,
+      errorType: String(persistedOutcome.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+    const providerCallCount = executionBeforeRecovery.providerCallCount;
+    const facts = {
+      outcome: persistedOutcome,
+      runtimeEvent,
+      receiver,
+      station: {
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        turnStatus: foundationTurnStatusName(diagnosticReplay.status),
+        messageCount: readback.messages.length,
+        toolCallCount: diagnosticToolCalls.length,
+        toolResultCount: diagnosticToolResultCount,
+        providerCallCount,
+        providerContinuationCount: Math.max(0, providerCallCount - 1),
+        streamId: turn.streamId,
+        streamGeneration: turn.observed.controller.streamGeneration,
+        payloadHash,
+        sourceSequence: sourceDelivery.sequence,
+        runtimePayload,
+      },
+      executor: {
+        evidenceSource: 'external-coordinator',
+      },
+      lease: {
+        denied: {
+          capabilitySessionIdHash: await sha256Hex(
+            input.capabilitySessionId,
+          ),
+          permission: targetCapability.permission,
+          permissionKind: targetCapability.permission_kind,
+        },
+        restored: {},
+      },
+      browser: {
+        receiverPlatform,
+        localCapabilityCount,
+      },
+      recovery: {
+        turnCountBefore: executionBeforeRecovery.turnCount,
+        turnCountAfter: executionAfterRecovery.turnCount,
+        messageCountBefore: beforeRecoveryMessageCount,
+        messageCountAfter: afterRecoveryReadback.messages.length,
+        providerCallCountBefore:
+          executionBeforeRecovery.providerCallCount,
+        providerCallCountAfter:
+          executionAfterRecovery.providerCallCount,
+      },
+      replay: {
+        sourceHash: payloadHash,
+        replayHash: replayed.payloadHash,
+        equal: payloadHash === replayed.payloadHash,
+      },
+      cleanup: {
+        bindingRestored: false,
+        localProjectionCleared: false,
+        conversationDeleted: false,
+        permissionRestored: false,
+      },
+    };
+    result = {
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts,
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    if (currentBinding) {
+      try {
+        if (originalBinding) {
+          await updateFoundationToolPolicy(
+            agent,
+            fixture,
+            currentBinding,
+            originalBinding.approvalPolicy,
+            originalBinding.enabled,
+          );
+        } else {
+          await api.deleteAgentCapabilityBinding(
+            currentBinding.bindingId,
+            currentBinding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (turn && primaryError) {
+      try {
+        await cleanupFoundationPermissionDeniedScenario({
+          scenarioKey: input.scenarioKey,
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+        });
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+  }
+
+  if (cleanupFailures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.permissionDeniedCleanupFailed'),
+      { primaryError, cleanupFailures },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!result) {
+    throw new Error('agent.acceptance.permissionDeniedResultMissing');
+  }
+  const facts = evidenceRecord(result.facts, 'permissionDeniedFacts');
+  return {
+    ...result,
+    facts: {
+      ...facts,
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'permissionDeniedCleanup',
+        ),
+        bindingRestored: true,
+      },
+    },
+  };
+}
+
 function firstToolApprovalOutcome(
   observed: ObservedFoundationTurn,
 ) {
