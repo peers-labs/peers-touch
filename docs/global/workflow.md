@@ -1,8 +1,40 @@
 # Development Workflow
 
-> How to execute tasks in the current `apps/*` architecture.
+This is the operating guide for Peers-Touch development. It describes the
+commands that exist now, their state owners, and the failure states a developer
+must act on.
 
 ---
+
+## Start Here
+
+For a new or updated worktree integration:
+
+```bash
+make skills IDE=trae
+make workflow-doctor
+```
+
+The installer projects repository-owned Skills and supported blockable hooks
+into the current worktree. The Doctor verifies the public promises below. A
+`BLOCKED` result names the owner that must be repaired; it is not permission to
+bypass the workflow or create another worktree.
+
+| Promise ID | What must be true | Normal recovery |
+|---|---|---|
+| `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |
+| `dev.plan.binding` | This worktree resolves one current Plan generation whose workspace and branch match current source. | Bind generation 1, or explicitly advance a completed and quiescent generation. |
+| `dev.workflow.current` | Plan, current Task, Development Session, declaration, active-work, and reduced Action Receipt state agree. | Repair the typed owner mismatch; never edit machine state directly. |
+| `dev.review.current` | Active work has no failed or stale review; completed work has a current independent `PASS`. | Run a fresh independent Completion Review after source or obligation drift. |
+| `dev.server.live` | The machine-wide Peers Dev endpoint is live and exposes compatible source freshness. | Run `make dev-ui`; stop a stale incompatible listener first. |
+| `dev.docs.executable` | This guide and `apps/dev/README.md` declare each public promise exactly once. | Update code and both guides in the same change. |
+
+<!-- workflow-doctor:dev.integration.installed -->
+<!-- workflow-doctor:dev.plan.binding -->
+<!-- workflow-doctor:dev.workflow.current -->
+<!-- workflow-doctor:dev.review.current -->
+<!-- workflow-doctor:dev.server.live -->
+<!-- workflow-doctor:dev.docs.executable -->
 
 ## 1) Read before coding
 
@@ -38,6 +70,32 @@ Default rule:
 Cross-worktree comparison is allowed for investigation, conflict analysis, and
 PR review, but write scope remains bound to the active worktree.
 
+Agents must not create a worktree merely to bypass Plan binding, lifecycle, or
+resource conflicts. A worktree is created only when the user explicitly
+chooses isolation or concurrency.
+
+Before an explicitly authorized worktree removal, stop its runtime resources,
+release its declaration, and run `make env-unregister` from that worktree.
+Never delete a machine registry row by hand.
+
+Plan binding is immutable within one generation:
+
+```bash
+make plan-bind PLAN=<package-plan.md>
+make plan-binding
+```
+
+After that Plan is `completed` and its declaration, active-work projection, and
+runtime leases are released, the same workspace may explicitly advance:
+
+```bash
+make plan-binding-advance \
+  PLAN=<next-package-plan.md> \
+  EXPECTED_GENERATION=<current-generation>
+```
+
+There is no unbind or discovery-based replacement path.
+
 ---
 
 ## 3) Declare development resources
@@ -70,6 +128,36 @@ Rules:
 
 Architecture source:
 `docs/architecture/development-workflow/README.md`.
+
+### Tracked Task Command Path
+
+```text
+bind -> declare -> session -> implement -> functional proof
+     -> Acceptance -> independent review -> close -> release
+```
+
+Use owner commands rather than editing machine state or Plan lifecycle fields:
+
+```bash
+make dev-session-start \
+  WORK_ITEM=<stable-id> \
+  PLAN=<package-plan.md> \
+  TASK=<current-task-id> \
+  JOURNEY=<journey-id>
+
+make dev-check WORK_ITEM=<stable-id>
+make workflow-snapshot
+make completion-review-prepare WORK_ITEM=<stable-id> SCOPE=<task|plan>
+make completion-review-submit \
+  REVIEW=<review-id> \
+  VERDICT=PASS \
+  ASSESSMENT=<owner-only-json-file>
+make dev-release WORK_ITEM=<stable-id>
+```
+
+`make plan-advance` closes or parks a Task only after the required journal-backed
+Session and current Completion Review pass. `make plan-reopen` reopens the
+earliest completed closure invalidated by source or obligation drift.
 
 ### Development Skill responsibility chain
 

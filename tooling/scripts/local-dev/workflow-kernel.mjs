@@ -1,0 +1,527 @@
+import { createHash } from 'node:crypto';
+import { existsSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+
+import {
+  assistantContainsAnchor,
+  renderWorkflowAnchor,
+} from './workflow-anchor.mjs';
+import {
+  bindConversation,
+  readConversationBinding,
+  releaseConversation,
+  writeAnchorReceipt,
+} from './workflow-conversation-binding.mjs';
+import {
+  inspectStopContext,
+  inspectWorkflowContext,
+  resolveExecutionRoot,
+} from './workflow-state-inspector.mjs';
+import {
+  recordWorkflowAction,
+  startWorkflowActionHeartbeat,
+} from './workflow-action-store.mjs';
+import { classifyToolIntent } from './workflow-tool-intent.mjs';
+
+const STOPPABLE_SESSION_STATES = new Set([
+  'BLOCKED',
+  'FAILED',
+  'STALE',
+  'CANCELLED',
+]);
+
+function repositoryPath(root, cwd, value) {
+  const absolute = path.isAbsolute(value)
+    ? path.resolve(value)
+    : path.resolve(cwd ?? root, value);
+  const relative = path.relative(root, absolute).split(path.sep).join('/');
+  if (
+    relative === '' ||
+    relative === '..' ||
+    relative.startsWith('../') ||
+    path.isAbsolute(relative)
+  ) {
+    return null;
+  }
+  return relative;
+}
+
+function claimContains(claim, target) {
+  const prefix = claim.pathPrefix.replace(/\/+$/, '');
+  return (
+    claim.mode === 'exclusive-write' &&
+    (prefix === '.' || target === prefix || target.startsWith(`${prefix}/`))
+  );
+}
+
+function absoluteTarget(event, binding, target) {
+  return path.isAbsolute(target)
+    ? path.resolve(target)
+    : path.resolve(
+      event.toolWorkingDirectory ?? binding.executionRoot,
+      target,
+    );
+}
+
+function canonicalCandidate(candidate) {
+  const absolute = path.resolve(candidate);
+  let existing = absolute;
+  while (!existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return absolute;
+    existing = parent;
+  }
+  return path.join(realpathSync(existing), path.relative(existing, absolute));
+}
+
+function pathIsInside(root, candidate) {
+  const relative = path.relative(root, canonicalCandidate(candidate));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative))
+  );
+}
+
+function shellTargetLooksLikePath(event, binding, target) {
+  if (path.isAbsolute(target) || target.startsWith('.') || target.includes('/')) {
+    return true;
+  }
+  return existsSync(absoluteTarget(event, binding, target));
+}
+
+function mutationPaths(event, binding, intent) {
+  const targets =
+    intent.kind === 'WRITE'
+      ? intent.targets
+      : intent.targets.filter((target) =>
+        shellTargetLooksLikePath(event, binding, target));
+  return [
+    ...(intent.kind === 'WRITE' || !event.toolWorkingDirectory
+      ? []
+      : [path.resolve(event.toolWorkingDirectory)]),
+    ...targets.map((target) => absoluteTarget(event, binding, target)),
+  ];
+}
+
+function contextText(binding, inspection, enforcementMode) {
+  const lines = [
+    'PT_WORKFLOW_KERNEL_ACTIVE',
+    `enforcement=${enforcementMode}`,
+    `executionRoot=${binding?.executionRoot ?? 'pending'}`,
+    `workspaceId=${binding?.workspaceId ?? 'pending'}`,
+    binding
+      ? `entrySkill=${path.join(binding.executionRoot, 'tooling', 'skills', 'pt-ew', 'SKILL.md')}`
+      : 'entrySkill=pending-first-pre-tool-use',
+    'The conversation execution root is immutable after the first blockable PreToolUse.',
+    'Cross-worktree reads are allowed; cross-worktree writes are denied.',
+  ];
+  if (inspection?.status === 'READY') {
+    lines.push(
+      `workflow=${inspection.tracked ? 'TRACKED' : 'UNTRACKED'}`,
+      `workItemId=${inspection.declaration.workItemId}`,
+      `sessionId=${inspection.declaration.sessionId}`,
+    );
+    if (inspection.tracked) {
+      lines.push(
+        `planId=${inspection.binding.planId}`,
+        `taskId=${inspection.currentTask.id}`,
+        `devState=${inspection.session.state.state}`,
+      );
+    }
+  } else if (inspection) {
+    lines.push(
+      `workflow=${inspection.code ?? inspection.status}`,
+      `workflowReason=${inspection.message ?? inspection.status}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function deny(code, reason, binding = null) {
+  return {
+    action: 'DENY',
+    code,
+    reason,
+    enforcementMode: 'ENFORCED',
+    executionRoot: binding?.executionRoot ?? null,
+  };
+}
+
+function bindingDependencies(options) {
+  return {
+    read:
+      options.readConversationBinding ??
+      ((host, conversationId) =>
+        readConversationBinding(host, conversationId, {
+          machineRoot: options.machineRoot,
+        })),
+    bind:
+      options.bindConversation ??
+      ((host, conversationId, root) =>
+        bindConversation(host, conversationId, root, {
+          machineRoot: options.machineRoot,
+          now: options.now,
+        })),
+  };
+}
+
+async function resolveBinding(event, options) {
+  if (!event.stableConversationId) {
+    return { mode: 'OBSERVE_ONLY', binding: null };
+  }
+  const dependencies = bindingDependencies(options);
+  const existing = dependencies.read(event.host, event.stableConversationId);
+  if (existing !== null) return { mode: 'ENFORCED', binding: existing };
+  if (event.event !== 'PRE_TOOL_USE') {
+    return { mode: 'PREWARM', binding: null };
+  }
+  const root = options.executionRoot ?? resolveExecutionRoot(event);
+  if (root === null) return { mode: 'OUTSIDE_PROJECT', binding: null };
+  const created = dependencies.bind(
+    event.host,
+    event.stableConversationId,
+    root,
+  );
+  return { mode: 'ENFORCED', binding: created.binding };
+}
+
+async function evaluateWorkflowEventInternal(event, options = {}) {
+  if (!event.valid) {
+    return deny(
+      event.code,
+      'Hook payload is missing a supported host or event.',
+    );
+  }
+  const resolved = await resolveBinding(event, options);
+  if (resolved.mode === 'OUTSIDE_PROJECT') return { action: 'NOOP' };
+  if (resolved.mode === 'OBSERVE_ONLY') {
+    if (event.event === 'SESSION_START' || event.event === 'BEFORE_PROMPT') {
+      return {
+        action: 'CONTEXT',
+        additionalContext:
+          'PT_WORKFLOW_KERNEL_OBSERVE_ONLY\n' +
+          'The host supplied no stable conversation identifier; this session ' +
+          'must not claim workflow enforcement.',
+        enforcementMode: 'OBSERVE_ONLY',
+        executionRoot: resolveExecutionRoot(event),
+      };
+    }
+    if (event.event === 'PRE_TOOL_USE') {
+      const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+      if (intent.mutating) {
+        return {
+          action: 'DENY',
+          code: 'STABLE_CONVERSATION_ID_REQUIRED',
+          reason: 'A stable conversation identifier is required for mutation.',
+          enforcementMode: 'OBSERVE_ONLY',
+          executionRoot: resolveExecutionRoot(event),
+        };
+      }
+    }
+    return {
+      action: 'ALLOW',
+      code: 'OBSERVE_ONLY',
+      reason:
+        'The host supplied no stable conversation identifier; enforcement is unavailable.',
+      enforcementMode: 'OBSERVE_ONLY',
+      executionRoot: resolveExecutionRoot(event),
+    };
+  }
+  if (resolved.mode === 'PREWARM') {
+    const root = resolveExecutionRoot(event);
+    if (event.event !== 'SESSION_START' && event.event !== 'BEFORE_PROMPT') {
+      return {
+        action: 'ALLOW',
+        enforcementMode: 'PENDING_BINDING',
+        executionRoot: root,
+      };
+    }
+    return {
+      action: 'CONTEXT',
+      additionalContext: contextText(null, null, 'PENDING_BINDING'),
+      enforcementMode: 'PENDING_BINDING',
+      executionRoot: root,
+    };
+  }
+
+  const binding = resolved.binding;
+  const inspect = options.inspectWorkflowContext ?? inspectWorkflowContext;
+  if (event.event === 'SESSION_START' || event.event === 'BEFORE_PROMPT') {
+    const inspection = await inspectStopContext(binding, inspect);
+    return {
+      action: 'CONTEXT',
+      additionalContext: contextText(binding, inspection, 'ENFORCED'),
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+
+  if (event.event === 'PRE_TOOL_USE') {
+    const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+    if (intent.kind === 'DIRECT_RUNTIME_OWNER') {
+      return deny(
+        'DIRECT_RUNTIME_OWNER_DENIED',
+        'Development functional verification must run through make dev-functional-result.',
+        binding,
+      );
+    }
+    if (intent.kind === 'SHELL_UNSAFE') {
+      return deny(
+        intent.ast.code,
+        'Dynamic, multiline, or unsupported shell structure cannot be admitted.',
+        binding,
+      );
+    }
+    if (intent.kind === 'UNSUPPORTED') {
+      return deny(
+        'TOOL_INTENT_UNSUPPORTED',
+        'The host tool has no registered read/write intent adapter.',
+        binding,
+      );
+    }
+    if (!intent.mutating) {
+      return {
+        action: 'ALLOW',
+        enforcementMode: 'ENFORCED',
+        executionRoot: binding.executionRoot,
+      };
+    }
+
+    const paths = mutationPaths(event, binding, intent);
+    if (paths.some((candidate) => !pathIsInside(binding.executionRoot, candidate))) {
+      return deny(
+        'CROSS_WORKTREE_WRITE_DENIED',
+        'This conversation may write only inside its immutable execution root.',
+        binding,
+      );
+    }
+    if (intent.kind === 'OWNER_CONTROL') {
+      return {
+        action: 'ALLOW',
+        enforcementMode: 'ENFORCED',
+        executionRoot: binding.executionRoot,
+      };
+    }
+
+    const inspection = await inspect(binding);
+    if (inspection.status !== 'READY') {
+      return deny(inspection.code, inspection.message, binding);
+    }
+    if (intent.kind === 'WRITE' && intent.targets.length === 0) {
+      return deny(
+        'TOOL_WRITE_TARGET_UNRESOLVED',
+        'The write target cannot be resolved from the tool payload.',
+        binding,
+      );
+    }
+    const scopedTargets = intent.targets;
+    for (const target of scopedTargets) {
+      const relative = repositoryPath(
+        binding.executionRoot,
+        event.toolWorkingDirectory,
+        target,
+      );
+      if (
+        relative === null ||
+        !inspection.declaration.sourceClaims.some((claim) =>
+          claimContains(claim, relative),
+        )
+      ) {
+        return deny(
+          'SOURCE_SCOPE_DENIED',
+          `Write target is outside the active declaration: ${target}`,
+          binding,
+        );
+      }
+    }
+    return {
+      action: 'ALLOW',
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+
+  if (event.event === 'POST_TOOL_USE' || event.event === 'POST_TOOL_FAILURE') {
+    return {
+      action: 'ALLOW',
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+
+  const inspection = await inspectStopContext(binding, inspect);
+  if (inspection.status === 'IDLE') {
+    return {
+      action: 'ALLOW',
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  const active =
+    inspection.status === 'READY' &&
+    inspection.tracked &&
+    inspection.planPackage.manifest.status === 'active' &&
+    inspection.currentTask?.status === 'in_progress' &&
+    !STOPPABLE_SESSION_STATES.has(inspection.session.state.state);
+  const anchor = renderWorkflowAnchor(binding, inspection);
+  (options.writeAnchorReceipt ?? writeAnchorReceipt)(binding, anchor, {
+    machineRoot: options.machineRoot,
+    now: options.now,
+  });
+  if (active) {
+    return {
+      action: 'CONTINUE',
+      code: 'PLAN_RUN_CONTINUES',
+      reason:
+        `Continue Plan ${inspection.binding.planId} Task ` +
+        `${inspection.currentTask.id}; the Task closure is not durable yet.`,
+      followupMessage:
+        `Continue the active Plan Run. Do not stop at this internal boundary.\n\n${anchor.content}`,
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  if (!(options.assistantContainsAnchor ?? assistantContainsAnchor)(event, anchor)) {
+    return {
+      action: 'CONTINUE',
+      code: 'CONTEXT_ANCHOR_REQUIRED',
+      reason: 'The final response must include the exact machine-rendered anchor.',
+      followupMessage:
+        `Return the following exact machine-rendered block before stopping:\n\n${anchor.content}`,
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  (options.releaseConversation ?? releaseConversation)(
+    binding,
+    anchor.digest,
+    {
+      machineRoot: options.machineRoot,
+      now: options.now,
+    },
+  );
+  return {
+    action: 'ALLOW',
+    enforcementMode: 'RELEASED',
+    executionRoot: binding.executionRoot,
+  };
+}
+
+function digestProgress(binding, inspection) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        workspaceId: binding.workspaceId,
+        workItemId: inspection?.declaration?.workItemId ?? null,
+        planId: inspection?.declaration?.planId ?? null,
+        taskId: inspection?.declaration?.taskId ?? null,
+        sessionId: inspection?.declaration?.sessionId ?? null,
+        sessionDigest: inspection?.session?.eventDigest ?? null,
+        sessionState: inspection?.session?.state?.state ?? null,
+      }),
+    )
+    .digest('hex');
+}
+
+function safeActionTarget(event, binding, intent) {
+  const target = intent.targets.find((candidate) =>
+    shellTargetLooksLikePath(event, binding, candidate));
+  if (!target) return null;
+  return repositoryPath(
+    binding.executionRoot,
+    event.toolWorkingDirectory,
+    target,
+  );
+}
+
+async function reportWorkflowAction(event, result, options) {
+  if (
+    !['PRE_TOOL_USE', 'POST_TOOL_USE', 'POST_TOOL_FAILURE'].includes(
+      event.event,
+    ) ||
+    !event.stableConversationId ||
+    !result.executionRoot
+  ) {
+    return;
+  }
+  const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+  if (!intent.mutating && result.action !== 'DENY') return;
+  const dependencies = bindingDependencies(options);
+  const binding = dependencies.read(event.host, event.stableConversationId);
+  if (binding === null) return;
+  let inspection = null;
+  try {
+    inspection = await (
+      options.inspectWorkflowContext ?? inspectWorkflowContext
+    )(binding);
+  } catch {
+    // Admission already completed. Missing activity evidence is projected later.
+  }
+  const writer =
+    options.recordWorkflowAction === undefined
+      ? recordWorkflowAction
+      : options.recordWorkflowAction;
+  if (writer === false) return;
+  const postEvent =
+    event.event === 'POST_TOOL_USE' || event.event === 'POST_TOOL_FAILURE';
+  const receiptEvent =
+    result.action === 'DENY' || postEvent ? 'FINISHED' : 'STARTED';
+  const receiptResult =
+    result.action === 'DENY'
+      ? 'DENIED'
+      : event.event === 'POST_TOOL_FAILURE'
+        ? 'FAIL'
+        : postEvent
+          ? 'PASS'
+          : 'RUNNING';
+  const recordInput = {
+    machineRoot: options.machineRoot,
+    host: binding.host,
+    conversationHash: binding.conversationHash,
+    bindingDigest: binding.digest,
+    binding: {
+      workspaceId: binding.workspaceId,
+      workItemId: inspection?.declaration?.workItemId ?? null,
+      planId: inspection?.declaration?.planId ?? null,
+      taskId: inspection?.declaration?.taskId ?? null,
+      sessionId: inspection?.declaration?.sessionId ?? null,
+    },
+    actionId: event.actionId ?? undefined,
+    event: receiptEvent,
+    result: receiptResult,
+    operation: {
+      family: intent.kind,
+      label:
+        intent.kind === 'OWNER_CONTROL'
+          ? intent.ast.commands[0][1]
+          : event.toolName ?? 'tool',
+      targetRef: safeActionTarget(event, binding, intent),
+    },
+    progressStamp: digestProgress(binding, inspection),
+    now: options.now,
+  };
+  try {
+    const receipt = writer(recordInput);
+    const startHeartbeat =
+      options.startWorkflowActionHeartbeat === undefined
+        ? startWorkflowActionHeartbeat
+        : options.startWorkflowActionHeartbeat;
+    if (
+      receiptEvent === 'STARTED' &&
+      receipt?.actionId &&
+      startHeartbeat !== false
+    ) {
+      startHeartbeat({ ...recordInput, actionId: receipt.actionId });
+    }
+  } catch {
+    // Observability never changes the already-computed admission result.
+  }
+}
+
+export async function evaluateWorkflowEvent(event, options = {}) {
+  const result = await evaluateWorkflowEventInternal(event, options);
+  await reportWorkflowAction(event, result, options);
+  return result;
+}

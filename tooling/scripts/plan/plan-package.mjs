@@ -1619,6 +1619,10 @@ export function summarizePlanPackage(planPackage) {
     branch: planPackage.manifest.binding.branch,
     workspaceId: planPackage.manifest.binding.workspaceId,
     initialHead: planPackage.manifest.binding.initialHead,
+    sourceClaims: planPackage.manifest.scope.sourceClaims.map((claim) => ({
+      pathPrefix: claim.pathPrefix,
+      mode: claim.mode,
+    })),
     progress: summarizePlanProgress(planPackage),
     currentTaskId: currentManifestTask?.id ?? null,
     currentTaskPath: currentManifestTask?.path ?? null,

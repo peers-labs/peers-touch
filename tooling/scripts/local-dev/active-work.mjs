@@ -23,6 +23,10 @@ import {
 import { statusDevelopmentSession } from './dev-session.mjs';
 import { readLedger } from './dev-work-ledger.mjs';
 import { canonicalize } from './dev-work-schema.mjs';
+import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLock,
+} from './workspace-lifecycle-lock.mjs';
 
 const LIVE_DECLARATION_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
@@ -244,15 +248,43 @@ export async function deriveActiveWorkInput(options, dependencies = {}) {
 }
 
 export async function syncActiveWork(options, dependencies = {}) {
-  const input = await deriveActiveWorkInput(options, dependencies);
-  return updateActiveWorkRecord(input, {
-    home: options.home,
-    workspaceRoot: options.workspaceRoot ?? repoRoot,
-    expectedRevision: options.expectedRevision,
-    now: options.now,
-    clock: options.clock,
-    lockTimeoutMs: options.lockTimeoutMs,
-  });
+  const workspaceRoot =
+    dependencies.workspaceRoot ??
+    canonicalWorkspaceRoot(options.workspaceRoot ?? repoRoot);
+  const workspaceId =
+    dependencies.workspaceId ?? workspaceIdForRoot(workspaceRoot);
+  try {
+    return await withWorkspaceLifecycleLock(
+      {
+        home: options.home,
+        workspaceRoot,
+        workspaceId,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      async (lifecycleLease) => {
+        const input = await deriveActiveWorkInput(
+          { ...options, workspaceRoot },
+          { ...dependencies, workspaceRoot, workspaceId },
+        );
+        return updateActiveWorkRecord(input, {
+          home: options.home,
+          workspaceRoot,
+          lifecycleLease,
+          expectedRevision: options.expectedRevision,
+          now: options.now,
+          clock: options.clock,
+          lockTimeoutMs: options.lockTimeoutMs,
+        });
+      },
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
 }
 
 export function statusActiveWork(options = {}) {

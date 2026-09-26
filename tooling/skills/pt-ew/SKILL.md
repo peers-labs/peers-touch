@@ -46,7 +46,7 @@ make skill-overlay-install SOURCE=/absolute/path/to/overlay REPLACE=1
 ```
 
 Do not copy an overlay into `tooling/skills`, `.trae/skills`, `.cursor/skills`,
-or `.agents/skills`. Canonical project Skill rollout and user Overlay
+or `.agents/skills`. Canonical project agent integration and user Overlay
 installation are separate control planes.
 
 ## Runtime Workflow

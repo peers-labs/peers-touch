@@ -30,6 +30,10 @@ import {
   normalizePlanPath,
 } from './dev-work-schema.mjs';
 import { processStartIdentity } from './dev-work-ledger.mjs';
+import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLockSync,
+} from './workspace-lifecycle-lock.mjs';
 
 export const ACTIVE_WORK_SCHEMA_VERSION = 1;
 export const ACTIVE_WORK_KIND = 'peers-touch-workspace-active-work';
@@ -487,8 +491,7 @@ function expectedRevision(options, existing) {
   return expected;
 }
 
-export function updateActiveWorkRecord(input, options = {}) {
-  validateInput(input);
+function updateActiveWorkRecordUnderFence(input, options) {
   const paths = activeWorkStorePaths({
     ...options,
     workspaceId: input.workspaceId,
@@ -521,7 +524,38 @@ export function updateActiveWorkRecord(input, options = {}) {
   }
 }
 
-export function clearActiveWorkRecord(options = {}) {
+export function updateActiveWorkRecord(input, options = {}) {
+  validateInput(input);
+  const paths = activeWorkStorePaths({
+    ...options,
+    workspaceId: input.workspaceId,
+  });
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot: options.workspaceRoot,
+        workspaceId: paths.workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) =>
+        updateActiveWorkRecordUnderFence(input, {
+          ...options,
+          lifecycleLease,
+        }),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
+function clearActiveWorkRecordUnderFence(options) {
   const paths = activeWorkStorePaths(options);
   const now = operationDate(options);
   const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
@@ -543,6 +577,34 @@ export function clearActiveWorkRecord(options = {}) {
     return existing;
   } finally {
     release();
+  }
+}
+
+export function clearActiveWorkRecord(options = {}) {
+  const paths = activeWorkStorePaths(options);
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot: options.workspaceRoot,
+        workspaceId: paths.workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) =>
+        clearActiveWorkRecordUnderFence({
+          ...options,
+          workspaceId: paths.workspaceId,
+          lifecycleLease,
+        }),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
   }
 }
 

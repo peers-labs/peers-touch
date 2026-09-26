@@ -201,7 +201,8 @@ Pass the accepted model to `pt-plan-and-document`, which:
 - records verified binding and authorization;
 - runs `planctl validate`;
 - leaves the package `prepared`;
-- creates the immutable workspace Plan binding; runtime active-work is derived
+- creates the first workspace Plan generation, or explicitly advances a
+  completed and quiescent generation; runtime active-work is derived
   later by Dev Workflow after current Task, declaration, and Session exist.
 
 The persistence Skill may reject an invalid model but may not redesign it.

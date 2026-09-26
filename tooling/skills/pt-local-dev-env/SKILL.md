@@ -25,11 +25,10 @@ make restart       # Restart everything
 ```
 
 The agent's job is to resolve and activate an existing approved **profile** for
-the user's scenario. The verified canonical Profile ID is the sole reset-policy
-input: IDs containing `stable` case-insensitively are reset-protected; every
-other reviewed Profile is Agent-resettable. Creating a profile or deploy
-environment still requires explicit human approval for the exact environment
-name and target.
+the user's scenario. The reviewed profile's `PT_AGENT_CONTROL_MODE` determines
+whether registration and runtime operation are human-gated, managed, or
+disposable. Creating a profile or deploy environment still requires explicit
+human approval for the exact environment name and target.
 
 ## Environment Creation Authorization
 
@@ -94,19 +93,24 @@ Remote deploy environments resolve directly from exactly one Git-tracked, clean
 `env/peers-touch/<profile>/deploy/<name>.env.example`. A
 `.local/deploy/envs/` copy is not deployment authority.
 
-The profile directory name and `PT_DEV_PROFILE` value must match exactly. After
-that identity check, derive reset policy from the canonical ID:
+Every canonical profile declares:
 
-- ID contains `stable`, case-insensitive: `stable-protected`; never perform an
-  autonomous reset. The control plane returns `PROFILE_RESET_PROTECTED`.
-- ID does not contain `stable`: `agent-resettable`; the Agent may choose reset
-  without human involvement.
+```env
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
+```
 
-There is no reset-policy field or legacy fallback. Resettable does not mean
-unbounded: `station.reset` must still be present in the workspace binding and
-the live Development declaration, the declaration and command must name the
-same exact scope, topology and source identity must match, and the OS lease
-must be held. Profile creation and renaming remain human-reviewed.
+- `human-gated`: require an exact user or accepted Plan grant before
+  registration/binding changes or Station mutation. If that grant already
+  exists, execute directly without asking again.
+- `managed`: the Agent may register, bind, deploy, restart, and clean up without
+  repeated approval, within declaration, capability, lease, and source guards.
+- `disposable`: the Agent may additionally run exact-scope reset when
+  the user or accepted Plan explicitly authorizes the scope and
+  `station.reset` is declared, bound, and leased.
+
+The field is a maximum policy, not a lease or source of credentials. Missing or
+invalid mode fails closed. Profile creation and policy changes remain
+human-reviewed.
 
 One profile is bound per registered worktree in
 `~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
@@ -193,6 +197,7 @@ make mobile-stop / mobile-restart
 ```env
 PT_DEV_PROFILE=<name>
 PT_DEV_SLOT=<0-9>
+PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
 
 # Station
 PT_STATION_MODE=local|remote
@@ -359,8 +364,8 @@ switch profile, `make station`), then run acceptance from either profile.
 When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Inspect authority**: run `make env-status-all` and `make profiles`.
-2. **Resolve reset policy**: verify the directory name equals
-   `PT_DEV_PROFILE`, then apply a case-insensitive `stable` substring check.
+2. **Resolve Agent control**: read the canonical profile's
+   `PT_AGENT_CONTROL_MODE`; never infer authority from its name.
 3. **Select remote only**: reuse a canonical environment-repository profile that sets
    `PT_STATION_MODE=remote`.
 4. **Missing profile means stop**: report the missing topology and request
@@ -370,10 +375,11 @@ When the user says "set up environment for X" or "I want to debug against Y":
 5. **Configure**: set the approved remote Station URL and deploy environment in
    that canonical environment source only when the developer explicitly
    authorized creating or changing it.
-6. **Register or update the existing Profile**: the Agent may run
-   `make env-register`, `make profile`, or `make env-update` without a repeated
-   approval prompt. It may add `station.reset` for a non-stable Profile when
-   the task requires it. None of these commands creates an environment.
+6. **Register or update by policy**: for `managed` and `disposable`, the Agent
+   may run `make env-register`, `make profile`, or `make env-update` without a
+   repeated approval prompt. For `human-gated`, consume an existing exact user
+   or accepted Plan grant and do not ask again; request authorization only when
+   no exact grant exists. None of these commands creates an environment.
 7. **Fail-closed preflight**: run `make env-check` and `make config`; verify
    canonical workspace identity, tracked-clean definition, allocated slot,
    allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
@@ -382,8 +388,8 @@ When the user says "set up environment for X" or "I want to debug against Y":
    the exact profile and exclusive runtime resource before lease acquisition.
 9. **Execute**: only after preflight may the agent run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
-10. **Report**: include workspace ID, slot, capabilities, derived reset policy,
-    Station URL, deploy environment, and lease result.
+10. **Report**: include workspace ID, slot, capabilities, Agent control mode, Station
+   URL, deploy environment, and lease result.
 
 ## Remote Deployment
 
@@ -465,12 +471,12 @@ Source modes:
   repository; remote deploy resolves them directly.
 - Agents must not create or register profiles or deploy environments without
   explicit human developer approval for the exact name and target.
-- The canonical Profile ID is the only reset-policy source. A case-insensitive
-  `stable` substring blocks autonomous reset; every other reviewed Profile is
-  Agent-resettable.
-- Non-stable reset requires the binding capability, live declaration, exact
-  scope, matching topology/source identity, and live lease, but never a human
-  authorization prompt.
+- `managed` and `disposable` authorize repeated operation of an existing
+  reviewed profile; they do not authorize profile creation or policy changes.
+- `managed` never authorizes Station reset. `disposable` reset still requires
+  an exact user or accepted Plan `destructiveResetScopes` grant, declaration,
+  capability, reset scope, and live lease. Once they match, execute without
+  another approval prompt.
 - An accepted Plan `authorization.runtime.deployProfiles` entry is explicit
   deploy authorization for that existing reviewed profile. It must be consumed
   directly and never converted into another user confirmation.
@@ -515,21 +521,21 @@ authority.
 
 ### Lease API
 
-The destructive reset wrapper must call the generic canonical API and provide
-the exact declared reset scope:
+The later destructive reset wrapper must call the generic canonical API and
+provide the exact separately authorized reset scope:
 
 ```bash
 node tooling/scripts/local-dev/machine-dev.mjs lease \
   --resource-kind station.reset \
   --resource-id <station-fixture-scope> \
-  --reset-scope <station-fixture-scope> \
+  --reset-authorized-scope <station-fixture-scope> \
   --budget-seconds <seconds> \
   -- <reset-command>
 ```
 
 The wrapper must hold this one lease across pre-audit, deletion, nested
-canonical `make station`, and post-audit. The lease API rejects a different
-scope and does not implement deletion.
+canonical `make station`, and post-audit. The lease API does not grant reset
+authorization and cannot be called with a different scope.
 
 ## Test Accounts
 

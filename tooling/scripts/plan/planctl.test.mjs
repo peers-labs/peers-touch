@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -26,6 +26,12 @@ import {
   sha256,
   validatePlanMigrationJournal,
 } from './plan-migration.mjs';
+import {
+  activatePlan,
+  advancePlan,
+  invalidateSourcePlan,
+  reopenPlan,
+} from './planctl.mjs';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 import {
   createSessionStore,
@@ -33,9 +39,14 @@ import {
   transitionSessionStore,
 } from '../local-dev/dev-session-store.mjs';
 import { createInitialSessionState } from '../local-dev/dev-session-schema.mjs';
+import { bindWorkspacePlan } from './workspace-plan-binding.mjs';
 
 const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const PLANCTL = path.join(TEST_DIRECTORY, 'planctl.mjs');
+const DEV_WORK_LEDGER_URL = new URL(
+  '../local-dev/dev-work-ledger.mjs',
+  import.meta.url,
+).href;
 const INITIAL_HEAD = '3d4e858ce0c8e28969e01a736e2b238269aedb3b';
 const EXPECTED_HEAD = '771605c8d768ea3ef73a1b9b1a63befae354292f';
 const WORKSPACE_ID = 'b0a926025d2b25b9';
@@ -310,6 +321,193 @@ async function makeFixture(
     manifest,
     acceptance,
     taskSlices,
+  };
+}
+
+function planMutationOptions(fixture, overrides = {}) {
+  return {
+    home: path.join(fixture.root, 'home'),
+    async workspaceBindingResolver() {
+      return {
+        generation: 1,
+        workspaceId: fixture.manifest.binding.workspaceId,
+        planId: fixture.manifest.planId,
+        planPath: path
+          .relative(fixture.root, fixture.planPath)
+          .split(path.sep)
+          .join('/'),
+      };
+    },
+    ...overrides,
+  };
+}
+
+async function bindPlanctlFixture(fixture) {
+  execFileSync('git', ['init', '-b', fixture.manifest.binding.branch], {
+    cwd: fixture.root,
+    stdio: 'ignore',
+  });
+  execFileSync('git', ['config', 'user.email', 'planctl-test@example.invalid'], {
+    cwd: fixture.root,
+  });
+  execFileSync('git', ['config', 'user.name', 'Planctl Test'], {
+    cwd: fixture.root,
+  });
+  fixture.manifest.binding.workspaceId = workspaceIdForRoot(fixture.root);
+  await fsp.writeFile(
+    fixture.planPath,
+    planMarkdown(fixture.manifest, fixture.acceptance),
+  );
+  execFileSync('git', ['add', '.'], { cwd: fixture.root });
+  execFileSync('git', ['commit', '-m', 'test: initialize planctl fixture'], {
+    cwd: fixture.root,
+    stdio: 'ignore',
+  });
+  const home = path.join(fixture.root, 'home');
+  await bindWorkspacePlan({
+    repoRoot: fixture.root,
+    home,
+    plan: fixture.planPath,
+    owner: 'planctl-test@example.invalid',
+  });
+  return home;
+}
+
+async function waitForPath(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!fs.existsSync(file) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(fs.existsSync(file), true, `timed out waiting for ${file}`);
+}
+
+function createSessionFixture(
+  fixture,
+  {
+    taskId = 'task-a',
+    sessionId = `DWF-TEST-${taskId}-SESSION`,
+    workItemId = `DWF-TEST-${taskId}-WORK`,
+  } = {},
+) {
+  const home = path.join(fixture.root, 'home');
+  const task = fixture.taskSlices.get(taskId);
+  const initial = createInitialSessionState(
+    {
+      sessionId,
+      workItemId,
+      planId: fixture.manifest.planId,
+      taskId,
+      workspaceId: fixture.manifest.binding.workspaceId,
+      branch: fixture.manifest.binding.branch,
+      journeyId: task.journeyId,
+      executionMode: task.executionMode,
+    },
+    FIXED_TIME,
+  );
+  let tick = 0;
+  const options = {
+    home,
+    workspaceRoot: fixture.root,
+    workspaceId: fixture.manifest.binding.workspaceId,
+    workItemId,
+    expected: {
+      sessionId,
+      workItemId,
+      planId: initial.planId,
+      taskId,
+      workspaceId: initial.workspaceId,
+      branch: initial.branch,
+    },
+  };
+  const context = {
+    task,
+    acceptance: fixture.acceptance,
+    authorization: fixture.manifest.authorization,
+  };
+  createSessionStore(initial, {
+    ...options,
+    now: FIXED_TIME,
+    reason: 'start Plan handoff fixture',
+  });
+
+  function transition(to, updates = {}) {
+    tick += 1;
+    return transitionSessionStore({
+      ...options,
+      now: new Date(Date.parse(FIXED_TIME) + tick * 1_000).toISOString(),
+      context,
+      to,
+      reason: `advance fixture to ${to}`,
+      updates,
+    });
+  }
+
+  function verification(verificationClass, result = 'PASS') {
+    return {
+      id: `${taskId}-${verificationClass.toLowerCase()}`,
+      verificationClass,
+      result,
+      startedAt: FIXED_TIME,
+      durationMs: 10,
+      artifactRefs: [],
+    };
+  }
+
+  function complete() {
+    transition('IMPLEMENTING');
+    transition('FOCUSED_CHECKING');
+    transition('FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK'),
+    });
+    if (task.completionClass === 'source') {
+      transition('SOURCE_READY');
+      return;
+    }
+    transition('FUNCTIONAL_RUNNING');
+    transition('FUNCTIONAL_PASS', {
+      verification: verification('FUNCTIONAL_CHECK'),
+    });
+    if (fixture.acceptance.closures[task.closureId].length === 0) {
+      transition('DELIVERY_READY');
+      return;
+    }
+    transition('ACCEPTANCE_READY');
+    transition('FINAL_CHECKPOINTED', {
+      source: {
+        commit: INITIAL_HEAD,
+        tree: '8'.repeat(40),
+        branch: fixture.manifest.binding.branch,
+        clean: true,
+        createdAt: FIXED_TIME,
+        purpose: 'development-runtime',
+      },
+    });
+    transition('ACCEPTANCE_RUNNING');
+    transition('ACCEPTANCE_PASS', {
+      verification: verification('ACCEPTANCE_PROOF'),
+    });
+    transition('DELIVERY_READY');
+  }
+
+  function block(evidenceRef = 'evidence/task-a.json') {
+    transition('BLOCKED', {
+      failure: {
+        kind: 'SOURCE_CHECK_FAILED',
+        stage: 'BOUND',
+        owner: 'source',
+        summary: 'blocked handoff fixture',
+        retryable: false,
+        diagnosticRef: evidenceRef,
+      },
+    });
+  }
+
+  return {
+    path: sessionStorePaths(options).session,
+    complete,
+    block,
+    transition,
+    verification,
   };
 }
 
@@ -1319,70 +1517,119 @@ test('progress projection has no post-Next target without an active current task
 
 test('planctl advance atomically hands off and completes without changing immutable binding', async (t) => {
   const fixture = await makeFixture(t);
-  const common = [
-    '--plan',
-    fixture.planPath,
-    '--repo-root',
-    fixture.root,
-    '--session',
-    'NONE',
-  ];
   const original = await fsp.readFile(fixture.planPath);
 
-  const missingSession = parseCliFailure(
-    invokeCli([
-      'advance',
-      '--plan',
-      fixture.planPath,
-      '--repo-root',
-      fixture.root,
-      '--task',
-      'task-a',
-      '--to',
-      'done',
-      '--next',
-      'task-b',
-    ]),
+  for (const session of [undefined, 'NONE', path.join(fixture.root, 'missing.json')]) {
+    const sessionArguments =
+      session === undefined ? [] : ['--session', session];
+    const rejected = parseCliFailure(
+      invokeCli([
+        'advance',
+        '--plan',
+        fixture.planPath,
+        '--repo-root',
+        fixture.root,
+        '--work-item',
+        'DWF-TEST-task-a-WORK',
+        ...sessionArguments,
+        '--task',
+        'task-a',
+        '--to',
+        'done',
+        '--next',
+        'task-b',
+      ]),
+    );
+    assert.equal(rejected.error.code, 'PLAN_ADVANCE_INVALID');
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  }
+
+  const taskASession = createSessionFixture(fixture);
+  taskASession.complete();
+  await expectPlanError(
+    advancePlan(fixture.planPath, {
+      ...planMutationOptions(fixture),
+      'repo-root': fixture.root,
+      'work-item': 'DWF-TEST-task-a-WORK',
+      sessionHome: path.join(fixture.root, 'home'),
+      session: taskASession.path,
+      task: 'task-a',
+      to: 'done',
+      next: 'task-b',
+      completionReviewDependencies: {
+        machineRoot: path.join(fixture.root, 'machine'),
+        inspectWorkspace() {
+          return {
+            workspaceId: WORKSPACE_ID,
+            branch: fixture.manifest.binding.branch,
+            commit: INITIAL_HEAD,
+            tree: '8'.repeat(40),
+            clean: true,
+            stable: true,
+            workspaceDigest: 'clean',
+          };
+        },
+      },
+    }),
+    'COMPLETION_REVIEW_REQUIRED',
   );
-  assert.equal(missingSession.error.code, 'PLAN_ADVANCE_INVALID');
   assert.deepEqual(await fsp.readFile(fixture.planPath), original);
 
-  const rejected = parseCliFailure(
-    invokeCli([
-      'advance',
-      ...common,
-      '--task',
-      'task-a',
-      '--to',
-      'done',
-      '--next',
-      'missing',
-    ]),
+  await expectPlanError(
+    advancePlan(fixture.planPath, {
+      ...planMutationOptions(fixture),
+      'repo-root': fixture.root,
+      'work-item': 'DWF-TEST-task-a-WORK',
+      sessionHome: path.join(fixture.root, 'home'),
+      session: taskASession.path,
+      task: 'task-a',
+      to: 'done',
+      next: 'missing',
+      completionReviewValidator: async () => {},
+    }),
+    'PLAN_ADVANCE_INVALID',
   );
-  assert.equal(rejected.error.code, 'PLAN_ADVANCE_INVALID');
   assert.deepEqual(await fsp.readFile(fixture.planPath), original);
 
-  const handedOff = parseCliSuccess(
-    invokeCli([
-      'advance',
-      ...common,
-      '--task',
-      'task-a',
-      '--to',
-      'done',
-      '--next',
-      'task-b',
-    ]),
-  );
-  assert.equal(handedOff.status, 'active');
-  assert.equal(handedOff.currentTaskId, 'task-b');
-  assert.equal(handedOff.initialHead, INITIAL_HEAD);
+  const reviewed = [];
+  const handedOff = await advancePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    'work-item': 'DWF-TEST-task-a-WORK',
+    sessionHome: path.join(fixture.root, 'home'),
+    session: taskASession.path,
+    task: 'task-a',
+    to: 'done',
+    next: 'task-b',
+    async completionReviewValidator(context) {
+      assert.equal(fs.existsSync(`${fixture.planPath}.lock`), true);
+      assert.match(context.candidatePlanDigest, /^[0-9a-f]{64}$/);
+      reviewed.push(context.session.state.taskId);
+    },
+  });
+  assert.equal(handedOff.manifest.status, 'active');
+  assert.equal(handedOff.currentTask.taskId, 'task-b');
+  assert.equal(handedOff.manifest.binding.initialHead, INITIAL_HEAD);
 
-  const completed = parseCliSuccess(
-    invokeCli(['advance', ...common, '--task', 'task-b', '--to', 'done']),
-  );
-  assert.equal(completed.status, 'completed');
-  assert.equal(completed.currentTaskId, null);
+  const taskBSession = createSessionFixture(fixture, { taskId: 'task-b' });
+  taskBSession.complete();
+  const completed = await advancePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    'work-item': 'DWF-TEST-task-b-WORK',
+    sessionHome: path.join(fixture.root, 'home'),
+    session: taskBSession.path,
+    task: 'task-b',
+    to: 'done',
+    async completionReviewValidator(context) {
+      assert.equal(fs.existsSync(`${fixture.planPath}.lock`), true);
+      assert.match(context.candidatePlanDigest, /^[0-9a-f]{64}$/);
+      reviewed.push(context.session.state.taskId);
+    },
+  });
+  assert.equal(completed.manifest.status, 'completed');
+  assert.equal(completed.currentTask, null);
+  assert.deepEqual(reviewed, ['task-a', 'task-b']);
   const loaded = await loadPlanPackage(fixture.planPath, { repoRoot: fixture.root });
   assert.ok(loaded.manifest.tasks.every((task) => task.status === 'done'));
 });
@@ -1403,24 +1650,20 @@ test('planctl advance validates Session terminal state against completion class'
       acceptance.closures['closure-task-a'] = [];
     },
   });
-  const sourceAdvance = parseCliSuccess(
-    invokeCli([
-      'advance',
-      '--plan',
-      sourceFixture.planPath,
-      '--repo-root',
-      sourceFixture.root,
-      '--session',
-      'NONE',
-      '--task',
-      'task-a',
-      '--to',
-      'done',
-      '--next',
-      'task-b',
-    ]),
-  );
-  assert.equal(sourceAdvance.currentTaskId, 'task-b');
+  const sourceSession = createSessionFixture(sourceFixture);
+  sourceSession.complete();
+  const sourceAdvance = await advancePlan(sourceFixture.planPath, {
+    ...planMutationOptions(sourceFixture),
+    'repo-root': sourceFixture.root,
+    'work-item': 'DWF-TEST-task-a-WORK',
+    sessionHome: path.join(sourceFixture.root, 'home'),
+    session: sourceSession.path,
+    task: 'task-a',
+    to: 'done',
+    next: 'task-b',
+    completionReviewValidator: async () => {},
+  });
+  assert.equal(sourceAdvance.currentTask.taskId, 'task-b');
 
   const functionalFixture = await makeFixture(t);
   const wrongSession = path.join(functionalFixture.root, 'wrong-session.json');
@@ -1441,6 +1684,8 @@ test('planctl advance validates Session terminal state against completion class'
       functionalFixture.planPath,
       '--repo-root',
       functionalFixture.root,
+      '--work-item',
+      'DWF-TEST-task-a-WORK',
       '--session',
       wrongSession,
       '--task',
@@ -1453,12 +1698,39 @@ test('planctl advance validates Session terminal state against completion class'
   );
   assert.equal(rejected.error.code, 'PLAN_ADVANCE_INVALID');
 
+  const cancelledSession = createSessionFixture(functionalFixture);
+  cancelledSession.transition('CLEANING');
+  cancelledSession.transition('CANCELLED');
+  await expectPlanError(
+    advancePlan(functionalFixture.planPath, {
+      ...planMutationOptions(functionalFixture),
+      'repo-root': functionalFixture.root,
+      'work-item': 'DWF-TEST-task-a-WORK',
+      sessionHome: path.join(functionalFixture.root, 'home'),
+      session: cancelledSession.path,
+      task: 'task-a',
+      to: 'done',
+      next: 'task-b',
+      completionReviewValidator: async () => {},
+    }),
+    'PLAN_ADVANCE_INVALID',
+  );
+
   const blockedFixture = await makeFixture(t, {
     mutateManifest(manifest) {
       manifest.tasks[1].dependsOn = [];
     },
   });
   const blockedSession = blockedSessionFor(blockedFixture);
+  const blockedEnvironment = {
+    ...process.env,
+    PT_MACHINE_DEV_ROOT: path.join(
+      blockedFixture.root,
+      'home',
+      '.peers-touch',
+      'dev',
+    ),
+  };
   for (const session of ['NONE', path.join(blockedFixture.root, 'missing-session.json')]) {
     const rejectedBlockedHandoff = parseCliFailure(
       invokeCli([
@@ -1467,6 +1739,8 @@ test('planctl advance validates Session terminal state against completion class'
         blockedFixture.planPath,
         '--repo-root',
         blockedFixture.root,
+        '--work-item',
+        'DWF-TEST-WORK',
         '--session',
         session,
         '--task',
@@ -1481,7 +1755,7 @@ test('planctl advance validates Session terminal state against completion class'
         'source',
         '--blocker-evidence-ref',
         'evidence/task-a.json',
-      ]),
+      ], PLANCTL, blockedEnvironment),
     );
     assert.equal(rejectedBlockedHandoff.error.code, 'PLAN_ADVANCE_INVALID');
   }
@@ -1492,6 +1766,8 @@ test('planctl advance validates Session terminal state against completion class'
       blockedFixture.planPath,
       '--repo-root',
       blockedFixture.root,
+      '--work-item',
+      'DWF-TEST-WORK',
       '--session',
       blockedSession,
       '--task',
@@ -1506,33 +1782,23 @@ test('planctl advance validates Session terminal state against completion class'
       'source',
       '--blocker-evidence-ref',
       'evidence/task-a.json',
-    ]),
+    ], PLANCTL, blockedEnvironment),
   );
   assert.equal(mismatchedBlocker.error.code, 'PLAN_ADVANCE_INVALID');
-  const parked = parseCliSuccess(
-    invokeCli([
-      'advance',
-      '--plan',
-      blockedFixture.planPath,
-      '--repo-root',
-      blockedFixture.root,
-      '--session',
-      blockedSession,
-      '--task',
-      'task-a',
-      '--to',
-      'blocked',
-      '--next',
-      'task-b',
-      '--blocker-code',
-      'SOURCE_CHECK_FAILED',
-      '--blocker-owner',
-      'source',
-      '--blocker-evidence-ref',
-      'evidence/task-a.json',
-    ]),
-  );
-  assert.equal(parked.currentTaskId, 'task-b');
+  const parked = await advancePlan(blockedFixture.planPath, {
+    ...planMutationOptions(blockedFixture),
+    'repo-root': blockedFixture.root,
+    'work-item': 'DWF-TEST-WORK',
+    sessionHome: path.join(blockedFixture.root, 'home'),
+    session: blockedSession,
+    task: 'task-a',
+    to: 'blocked',
+    next: 'task-b',
+    'blocker-code': 'SOURCE_CHECK_FAILED',
+    'blocker-owner': 'source',
+    'blocker-evidence-ref': 'evidence/task-a.json',
+  });
+  assert.equal(parked.currentTask.taskId, 'task-b');
   const parkedPlan = await loadPlanPackage(blockedFixture.planPath, {
     repoRoot: blockedFixture.root,
   });
@@ -1544,60 +1810,407 @@ test('planctl advance validates Session terminal state against completion class'
 
 test('planctl advance records typed exhaustion and can reactivate an explicit blocked Task', async (t) => {
   const fixture = await makeFixture(t);
-  const blockedSession = blockedSessionFor(fixture);
-  const common = [
-    '--plan',
-    fixture.planPath,
-    '--repo-root',
+  const blockedSession = createSessionFixture(fixture);
+  blockedSession.block();
+  const blocked = await advancePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    'work-item': 'DWF-TEST-task-a-WORK',
+    sessionHome: path.join(fixture.root, 'home'),
+    session: blockedSession.path,
+    task: 'task-a',
+    to: 'blocked',
+    'blocker-code': 'SOURCE_CHECK_FAILED',
+    'blocker-owner': 'source',
+    'blocker-evidence-ref': 'evidence/task-a.json',
+    'recorded-at': FIXED_TIME,
+    'exhaustion-decision-ref': ['DWF-D13'],
+    'exhaustion-evidence-ref': ['evidence/task-a.json'],
+  });
+  assert.equal(blocked.manifest.status, 'blocked');
+  assert.equal(blocked.currentTask, null);
+
+  const reactivated = await advancePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    to: 'reactivate',
+    next: 'task-a',
+  });
+  assert.equal(reactivated.manifest.status, 'active');
+  assert.equal(reactivated.currentTask.taskId, 'task-a');
+  const loaded = await loadPlanPackage(fixture.planPath, { repoRoot: fixture.root });
+  assert.equal(loaded.manifest.exhaustion, null);
+  assert.equal(lifecycleTask(loaded.manifest.tasks, 'task-a').blocker, null);
+});
+
+test('planctl activate starts an explicit dependency-ready Task from prepared', async (t) => {
+  const fixture = await makeFixture(t, { status: 'prepared' });
+  const original = await fsp.readFile(fixture.planPath);
+
+  await expectPlanError(
+    activatePlan(fixture.planPath, {
+      'repo-root': fixture.root,
+      task: 'task-b',
+    }),
+    'PLAN_ACTIVATE_INVALID',
+  );
+  assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+
+  const activated = await activatePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    task: 'task-a',
+  });
+  assert.equal(activated.manifest.status, 'active');
+  assert.equal(activated.currentTask.taskId, 'task-a');
+  assert.deepEqual(summarizePlanProgress(activated).nextProgressBoundary, {
+    taskId: 'task-a',
+    title: 'Task task-a',
+    transition: 'in_progress->done',
+    completedDelta: 1,
+    completedAfter: 1,
+    percentageAfter: 50,
+    percentagePointDelta: 50,
+    unlocksTaskIds: ['task-b'],
+  });
+});
+
+test('planctl CLI mutates the machine-bound current generation', async (t) => {
+  const fixture = await makeFixture(t, { status: 'prepared' });
+  const home = await bindPlanctlFixture(fixture);
+  const foreignDirectory = path.join(
     fixture.root,
-    '--session',
-    blockedSession,
-  ];
-  const blocked = parseCliSuccess(
+    'docs/architecture/test/execution-plans/foreign',
+  );
+  await fsp.cp(fixture.packageDirectory, foreignDirectory, {
+    recursive: true,
+  });
+  const foreignPlan = path.join(foreignDirectory, 'plan.md');
+  const rejected = parseCliFailure(
     invokeCli([
-      'advance',
-      ...common,
+      'activate',
+      '--plan',
+      foreignPlan,
+      '--repo-root',
+      fixture.root,
+      '--home',
+      home,
       '--task',
       'task-a',
-      '--to',
-      'blocked',
-      '--blocker-code',
-      'SOURCE_CHECK_FAILED',
-      '--blocker-owner',
-      'source',
-      '--blocker-evidence-ref',
-      'evidence/task-a.json',
-      '--recorded-at',
-      FIXED_TIME,
-      '--exhaustion-decision-ref',
-      'DWF-D13',
-      '--exhaustion-evidence-ref',
-      'evidence/task-a.json',
     ]),
   );
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.currentTaskId, null);
+  assert.equal(rejected.error.code, 'PLAN_TARGET_NOT_CURRENT');
+  assert.equal(
+    (await loadPlanPackage(foreignPlan, { repoRoot: fixture.root })).manifest
+      .status,
+    'prepared',
+  );
 
-  const reactivated = parseCliSuccess(
+  const activated = parseCliSuccess(
     invokeCli([
-      'advance',
+      'activate',
       '--plan',
       fixture.planPath,
       '--repo-root',
       fixture.root,
-      '--session',
-      'NONE',
-      '--to',
-      'reactivate',
-      '--next',
+      '--home',
+      home,
+      '--task',
       'task-a',
     ]),
   );
-  assert.equal(reactivated.status, 'active');
-  assert.equal(reactivated.currentTaskId, 'task-a');
-  const loaded = await loadPlanPackage(fixture.planPath, { repoRoot: fixture.root });
-  assert.equal(loaded.manifest.exhaustion, null);
-  assert.equal(lifecycleTask(loaded.manifest.tasks, 'task-a').blocker, null);
+  assert.equal(activated.status, 'active');
+  assert.equal(activated.currentTaskId, 'task-a');
+});
+
+test('Plan mutation serializes a concurrent declaration on the workspace lifecycle fence', async (t) => {
+  const fixture = await makeFixture(t, { status: 'prepared' });
+  const home = await bindPlanctlFixture(fixture);
+  const marker = path.join(fixture.root, 'declaration-started');
+  let child;
+  let childExit;
+  t.after(() => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+  });
+
+  const activated = await activatePlan(fixture.planPath, {
+    home,
+    'repo-root': fixture.root,
+    task: 'task-a',
+    async lifecycleFailpoint(name) {
+      if (name !== 'after-workspace-lifecycle-lock-acquired') return;
+      const script = `
+        import(${JSON.stringify(DEV_WORK_LEDGER_URL)}).then(({ startOrUpdateDeclaration }) => {
+          require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started');
+          const result = startOrUpdateDeclaration(${JSON.stringify({
+            home,
+            workspaceRoot: fixture.root,
+            workItemId: 'concurrent-declaration',
+            sessionId: 'concurrent-session',
+            planPath: path
+              .relative(fixture.root, fixture.planPath)
+              .split(path.sep)
+              .join('/'),
+            planId: fixture.manifest.planId,
+            taskId: 'task-a',
+            owner: 'planctl-test@example.invalid',
+            purpose: 'prove declaration serialization',
+            journeyId: 'journey-task-a',
+            sourceClaims: 'exclusive-write:tooling/scripts/plan',
+            runtimeClaims: '',
+          })});
+          process.stdout.write(JSON.stringify(result));
+        }).catch((error) => {
+          process.stderr.write(JSON.stringify({
+            code: error.code ?? null,
+            message: error.message,
+          }));
+          process.exitCode = 2;
+        });
+      `;
+      child = spawn(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      childExit = new Promise((resolve) => {
+        let stdout = '';
+        let stderr = '';
+        child.stdout.setEncoding('utf8');
+        child.stderr.setEncoding('utf8');
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk;
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk;
+        });
+        child.once('close', (code) => resolve({ code, stdout, stderr }));
+      });
+      await waitForPath(marker);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(child.exitCode, null);
+    },
+  });
+
+  assert.equal(activated.currentTask.taskId, 'task-a');
+  const result = await childExit;
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).taskId, 'task-a');
+});
+
+test('planctl reopen selects the earliest invalid Task and resets transitive dependents', async (t) => {
+  const fixture = await makeFixture(t, {
+    status: 'completed',
+    mutateManifest(manifest) {
+      manifest.tasks.reverse();
+    },
+  });
+  const result = await reopenPlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    'work-item': 'DWF-TEST-WORK',
+    completionReviewDependencies: {
+      machineRoot: path.join(fixture.root, 'machine'),
+      inspectWorkspace() {
+        return {
+          workspaceId: WORKSPACE_ID,
+          branch: fixture.manifest.binding.branch,
+          commit: INITIAL_HEAD,
+          tree: '8'.repeat(40),
+          clean: true,
+          stable: true,
+          workspaceDigest: 'clean',
+        };
+      },
+    },
+  });
+  assert.equal(result.invalid.taskId, 'task-a');
+  assert.equal(result.planPackage.manifest.status, 'active');
+  assert.equal(
+    lifecycleTask(result.planPackage.manifest.tasks, 'task-a').status,
+    'in_progress',
+  );
+  assert.equal(
+    lifecycleTask(result.planPackage.manifest.tasks, 'task-b').status,
+    'pending',
+  );
+});
+
+test('Plan mutations reject targets outside the current workspace generation', async (t) => {
+  function mismatchedBinding(fixture, field) {
+    const base = planMutationOptions(fixture);
+    return {
+      ...base,
+      async workspaceBindingResolver() {
+        const binding = await base.workspaceBindingResolver();
+        return {
+          ...binding,
+          [field]:
+            field === 'workspaceId'
+              ? 'fedcba9876543210'
+              : field === 'planId'
+                ? 'OTHER-PLAN'
+                : 'docs/architecture/other/plan.md',
+        };
+      },
+    };
+  }
+
+  await t.test('activate', async (t) => {
+    const fixture = await makeFixture(t, { status: 'prepared' });
+    const original = await fsp.readFile(fixture.planPath);
+    await expectPlanError(
+      activatePlan(fixture.planPath, {
+        ...mismatchedBinding(fixture, 'planId'),
+        'repo-root': fixture.root,
+        task: 'task-a',
+      }),
+      'PLAN_TARGET_NOT_CURRENT',
+    );
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  });
+
+  await t.test('advance', async (t) => {
+    const fixture = await makeFixture(t);
+    const session = createSessionFixture(fixture);
+    session.complete();
+    const original = await fsp.readFile(fixture.planPath);
+    await expectPlanError(
+      advancePlan(fixture.planPath, {
+        ...mismatchedBinding(fixture, 'planPath'),
+        'repo-root': fixture.root,
+        'work-item': 'DWF-TEST-task-a-WORK',
+        sessionHome: path.join(fixture.root, 'home'),
+        session: session.path,
+        task: 'task-a',
+        to: 'done',
+        next: 'task-b',
+        completionReviewValidator: async () => {},
+      }),
+      'PLAN_TARGET_NOT_CURRENT',
+    );
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  });
+
+  await t.test('reopen', async (t) => {
+    const fixture = await makeFixture(t, { status: 'completed' });
+    const original = await fsp.readFile(fixture.planPath);
+    await expectPlanError(
+      reopenPlan(fixture.planPath, {
+        ...mismatchedBinding(fixture, 'workspaceId'),
+        'repo-root': fixture.root,
+        'work-item': 'DWF-TEST-WORK',
+      }),
+      'PLAN_TARGET_NOT_CURRENT',
+    );
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  });
+
+  await t.test('invalidate-source', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateManifest(manifest) {
+        manifest.tasks[0].status = 'done';
+        manifest.tasks[1].status = 'in_progress';
+      },
+      planSuffix: `
+
+## Source Invalidation Policy
+
+\`\`\`json
+{"kind":"peers-touch-source-invalidation-policy","sourceOwnerTaskId":"task-a","rootTaskIds":["task-b"]}
+\`\`\`
+`,
+    });
+    const original = await fsp.readFile(fixture.planPath);
+    await expectPlanError(
+      invalidateSourcePlan(fixture.planPath, {
+        ...mismatchedBinding(fixture, 'planId'),
+        'repo-root': fixture.root,
+        task: 'task-b',
+        'first-failure-ref': 'evidence/task-b-source-drift.json',
+      }),
+      'PLAN_TARGET_NOT_CURRENT',
+    );
+    assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+  });
+});
+
+test('Plan lock rejects live owners, takes over stale owners, and verifies release ownership', async (t) => {
+  const fixture = await makeFixture(t, { status: 'prepared' });
+  const lockPath = `${fixture.planPath}.lock`;
+  const liveLock = {
+    kind: 'peers-touch-plan-lock',
+    planPath: fixture.planPath,
+    ownerToken: 'a'.repeat(64),
+    pid: process.pid,
+    processIdentity: processIdentityForPid(process.pid),
+    createdAt: FIXED_TIME,
+  };
+  await fsp.writeFile(lockPath, `${JSON.stringify(liveLock)}\n`);
+  const original = await fsp.readFile(fixture.planPath);
+
+  await expectPlanError(
+    activatePlan(fixture.planPath, {
+      'repo-root': fixture.root,
+      task: 'task-a',
+    }),
+    'PLAN_ADVANCE_LOCKED',
+  );
+  assert.deepEqual(await fsp.readFile(lockPath, 'utf8'), `${JSON.stringify(liveLock)}\n`);
+  assert.deepEqual(await fsp.readFile(fixture.planPath), original);
+
+  const staleLock = {
+    ...liveLock,
+    ownerToken: 'b'.repeat(64),
+    pid: 2_147_483_647,
+    processIdentity: 'c'.repeat(64),
+  };
+  await fsp.writeFile(lockPath, `${JSON.stringify(staleLock)}\n`);
+  const activated = await activatePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    task: 'task-a',
+  });
+  assert.equal(activated.currentTask.taskId, 'task-a');
+  await assert.rejects(fsp.stat(lockPath), { code: 'ENOENT' });
+
+  const ownershipFixture = await makeFixture(t, { status: 'prepared' });
+  const ownershipLockPath = `${ownershipFixture.planPath}.lock`;
+  const replacementLock = {
+    kind: 'peers-touch-plan-lock',
+    planPath: ownershipFixture.planPath,
+    ownerToken: 'd'.repeat(64),
+    pid: process.pid,
+    processIdentity: processIdentityForPid(process.pid),
+    createdAt: FIXED_TIME,
+  };
+  await expectPlanError(
+    activatePlan(ownershipFixture.planPath, {
+      'repo-root': ownershipFixture.root,
+      task: 'task-a',
+      async failpoint(name) {
+        if (name === 'after-plan-lock-acquired') {
+          await fsp.writeFile(
+            ownershipLockPath,
+            `${JSON.stringify(replacementLock)}\n`,
+          );
+          throw new Error('interrupt after replacing the Plan lock');
+        }
+      },
+    }),
+    'PLAN_LOCK_OWNERSHIP_MISMATCH',
+  );
+  assert.deepEqual(
+    await fsp.readFile(ownershipLockPath, 'utf8'),
+    `${JSON.stringify(replacementLock)}\n`,
+  );
+  assert.equal(
+    (await loadPlanPackage(ownershipFixture.planPath, {
+      repoRoot: ownershipFixture.root,
+    })).manifest.status,
+    'prepared',
+  );
 });
 
 test('planctl invalidate-source reopens the declared owner and resets its closure', async (t) => {
@@ -1616,28 +2229,31 @@ test('planctl invalidate-source reopens the declared owner and resets its closur
 `,
   });
   const home = path.join(fixture.root, 'home');
-  const invalidated = parseCliSuccess(
-    invokeCli([
-      'invalidate-source',
-      '--plan',
-      fixture.planPath,
-      '--repo-root',
-      fixture.root,
-      '--task',
-      'task-b',
-      '--first-failure-ref',
-      'evidence/task-b-source-drift.json',
-      '--home',
-      home,
-    ]),
-  );
+  const invalidated = await invalidateSourcePlan(fixture.planPath, {
+    ...planMutationOptions(fixture),
+    'repo-root': fixture.root,
+    task: 'task-b',
+    'first-failure-ref': 'evidence/task-b-source-drift.json',
+    home,
+  });
 
-  assert.equal(invalidated.status, 'active');
-  assert.equal(invalidated.currentTaskId, 'task-a');
-  assert.equal(invalidated.invalidationProof.proofDigest.length, 64);
+  assert.equal(invalidated.planPackage.manifest.status, 'active');
+  assert.equal(invalidated.planPackage.currentTask.taskId, 'task-a');
+  assert.equal(invalidated.proof.proofDigest.length, 64);
   assert.equal(
-    fs.existsSync(invalidated.invalidationProof.proofPath),
+    fs.existsSync(invalidated.proof.proofPath),
     true,
+  );
+  const invalidationProof = JSON.parse(
+    await fsp.readFile(invalidated.proof.proofPath, 'utf8'),
+  );
+  assert.equal(invalidationProof.kind, 'peers-touch-source-invalidation-proof');
+  assert.equal(invalidationProof.sourceOwnerTaskId, 'task-a');
+  assert.deepEqual(invalidationProof.rootTaskIds, ['task-b']);
+  assert.deepEqual(invalidationProof.invalidatedTaskIds, ['task-b']);
+  assert.equal(
+    invalidationProof.firstFailureRef,
+    'evidence/task-b-source-drift.json',
   );
 
   const loaded = await loadPlanPackage(fixture.planPath, {

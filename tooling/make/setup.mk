@@ -11,7 +11,7 @@ init-dev:
 	@echo "[2/3] Setting up IDE config..."
 	/bin/bash tooling/scripts/ide-setup.sh $(IDE)
 	@echo ""
-	@echo "[3/3] Linking skills to IDE config..."
+	@echo "[3/3] Installing conversation-bound agent integration..."
 	@detect_ide() { \
 	  if echo "$${TERM_PRODUCT:-}" | grep -qi trae; then echo trae; return; fi; \
 	  if [ -n "$${TRAE_BRAND_NAME:-}" ]; then echo trae; return; fi; \
@@ -24,24 +24,24 @@ init-dev:
 	}; \
 	IDE_NAME="$${IDE:-$$(detect_ide)}"; \
 	if [ -z "$$IDE_NAME" ]; then echo "  Error: cannot detect host. Use: make init-dev IDE=trae|cursor|codex"; exit 1; fi; \
-	/bin/bash tooling/scripts/install-project-skills.sh --host "$$IDE_NAME" --root "$(CURDIR)"
+	$(MAKE) --no-print-directory skills IDE="$$IDE_NAME"
 	@echo ""
 	@echo "=== Done! Run 'make help' to see available commands. ==="
 
 skill-help:
 	@echo ""
-	@echo "Skills are in tooling/skills/. Run 'make skills' to install them."
+	@echo "Skills and host hooks are installed with 'make skills IDE=<host>'."
 	@echo "User overlays: make skill-overlay-install SOURCE=<directory>."
 	@echo "See AGENTS.md §13 for details."
 	@echo ""
 
-# ─── Skills Installation ─────────────────────────────────────────
+# ─── Skills And Workflow Hooks ───────────────────────────────────
 .PHONY: skills
 
 skills:
 	@echo ""
-	@echo "Install project skills to IDE environment"
-	@echo "=========================================="
+	@echo "Install conversation-bound agent integration"
+	@echo "========================================"
 	@echo ""
 	@IDE_NAME="$(IDE)"; \
 	if [ -z "$$IDE_NAME" ]; then \
@@ -52,24 +52,19 @@ skills:
 	  case "$$choice" in 1) IDE_NAME=trae ;; 2) IDE_NAME=cursor ;; 3) IDE_NAME=codex ;; *) echo "Invalid choice. Aborted."; exit 1 ;; esac; \
 	fi; \
 	case "$$IDE_NAME" in trae|cursor|codex) ;; *) echo "Invalid IDE: $$IDE_NAME"; exit 1 ;; esac; \
-	/bin/bash tooling/scripts/install-project-skills.sh --host "$$IDE_NAME" --root "$(CURDIR)"
+	/bin/bash tooling/scripts/install-agent-integration.sh --host "$$IDE_NAME" --root "$(CURDIR)"
 
-.PHONY: skill-rollout-ack skill-rollout-audit skill-rollout-audit-all
+.PHONY: agent-integration-audit agent-integration-audit-all
 .PHONY: skill-overlay-install skill-overlay-list skill-overlay-enable
 .PHONY: skill-overlay-disable skill-overlay-uninstall skill-overlay-resolve
 
-skill-rollout-ack:
-	@if [ -z "$(IDE)" ]; then echo "Usage: make skill-rollout-ack IDE=trae|cursor|codex"; exit 1; fi
-	@python3 tooling/scripts/skill-rollout-control.py \
-		ack --root "$(CURDIR)" --host "$(IDE)"
-
-skill-rollout-audit:
-	@python3 tooling/scripts/skill-rollout-audit.py \
+agent-integration-audit:
+	@python3 tooling/scripts/agent-integration-audit.py \
 		--root "$(or $(ROOT),$(CURDIR))" \
 		$(if $(IDE),--host "$(IDE)",)
 
-skill-rollout-audit-all:
-	@python3 tooling/scripts/skill-rollout-audit.py \
+agent-integration-audit-all:
+	@python3 tooling/scripts/agent-integration-audit.py \
 		--root "$(CURDIR)" \
 		--all-worktrees \
 		$(if $(IDE),--host "$(IDE)",)

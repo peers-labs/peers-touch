@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: accepted
-> **Created**: 2026-09-16 | **Updated**: 2026-09-21
+> **Created**: 2026-09-16 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -40,9 +40,34 @@ tooling/scripts/local-dev/
 ├── dev-session-schema.mjs
 ├── dev-session-store.mjs
 ├── dev-session.mjs
-└── dev-session.test.mjs
+├── dev-session.test.mjs
+├── completion-review.mjs
+├── completion-review.test.mjs
+├── workflow-action-store.mjs
+├── workflow-action-store.test.mjs
+├── workflow-anchor.mjs
+├── workflow-conversation-binding.mjs
+├── workflow-doctor.mjs
+├── workflow-host-adapters.mjs
+├── workflow-kernel.mjs
+├── workflow-snapshot-core.mjs
+├── workflow-snapshot.mjs
+├── workflow-state-inspector.mjs
+├── workflow-tool-intent.mjs
+└── workflow-*.test.mjs
+
+tooling/plugins/pt-ew-plugin/
+├── .codex-plugin/plugin.json
+├── hooks.json
+└── scripts/
+    ├── hook-entry.mjs
+    └── hook-entry.test.mjs
 
 tooling/scripts/
+├── agent-integration-control.py
+├── agent-integration-audit.py
+├── agent-integration-audit-test.py
+├── install-agent-integration.sh
 ├── skill-overlay-control.py
 └── skill-overlay-control-test.py
 
@@ -57,8 +82,11 @@ tooling/scripts/
 │       └── SKILL.md
 └── workspaces/<workspaceId>/workflow/
     ├── plan-binding.json
+    ├── plan-binding.lock
+    ├── plan-binding-history/generation-<N>.json
     ├── active-work.json
     ├── active-work.lock
+    ├── agent-integration.json
     ├── <workItemId>/
     │   ├── session.json
     │   ├── events.ndjson
@@ -70,6 +98,11 @@ tooling/scripts/
         ├── migration.json.reviewed
         ├── migration.lock
         └── migration.lock.recovery
+
+~/.peers-touch/dev/conversations/<host>/<conversationHash>/
+├── execution-binding.json
+├── anchor-receipt.json
+└── releases/<anchorDigest>.json
 ```
 
 ## 2. File Responsibilities
@@ -78,7 +111,7 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D25 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D31 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -86,10 +119,10 @@ tooling/scripts/
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
 | `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
-| `planctl.mjs` | `validate/current/next/status/advance/migrate` CLI |
+| `planctl.mjs` | `validate/current/next/status/activate/advance/reopen/migrate` CLI |
 | `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
-| `workspace-plan-binding.mjs` | One-time immutable workspace-to-Plan binding and direct resolution |
-| `workspace-plan-binding.test.mjs` | Same-branch isolation, idempotence, rebind denial and missing-bound-Plan regressions |
+| `workspace-plan-binding.mjs` | Generation-bound workspace-to-Plan ownership, immutable history, quiescent advance, and direct resolution |
+| `workspace-plan-binding.test.mjs` | Isolation, idempotence, generation CAS, quiescence, migration, tamper, and concurrency regressions |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
@@ -99,6 +132,18 @@ tooling/scripts/
 | `dev-session-store.mjs` | Atomic bounded event journal, multi-transition result commit, replay and snapshot materialization |
 | `dev-session.mjs` | Session `start/status/transition/functional-result` CLI |
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
+| `completion-review.mjs` | Independent current-source review request, assessment, receipt, and freshness owner |
+| `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
+| `workflow-host-adapters.mjs` | TRAE/Cursor/Codex payload normalization and native response rendering |
+| `workflow-conversation-binding.mjs` | Atomic immutable conversation execution-root binding, Anchor receipt, and create-once release |
+| `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
+| `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
+| `workflow-state-inspector.mjs` | Read-only declaration, Plan binding, active-work, Session, Git and terminal-state validation |
+| `workflow-kernel.mjs` | Host-neutral binding, subject-root, owner-state, source-scope, Stop and release policy |
+| `apps/dev/server/status.mjs` | Canonical read-only owner join consumed by Peers Dev and all workflow projections |
+| `workflow-snapshot.mjs` | Thin CLI/re-export over the canonical Peers Dev Snapshot owner |
+| `workflow-doctor.mjs` | Executable truth matrix for public workflow promises |
+| `tooling/plugins/pt-ew-plugin/` | Thin stdin/stdout adapter into the host-neutral Workflow Kernel |
 | `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
 | `session.json` | Replayable current Development transition projection |
 | `active-work.json` | One consuming workspace's resumable locator projection; never shared across workspace IDs |
@@ -112,9 +157,9 @@ tooling/scripts/
 | `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
-| `tooling/scripts/install-project-skills.sh` | Non-interactive per-host canonical `pt-*` projection and legacy Skill retirement |
-| `tooling/scripts/skill-rollout-audit.py` | Fail-closed single/fleet worktree source, registry matcher, recursive catalog, workflow identity, receipt, and host-projection audit |
-| `tooling/scripts/skill-rollout-control.py` | Work-ledger-locked installer, path-containment guard, stale-recovery exclusion, and catalog/session-bound restart receipt |
+| `tooling/scripts/install-agent-integration.sh` | Non-interactive worktree-local Skill, Codex plugin, and TRAE hook projection |
+| `tooling/scripts/agent-integration-audit.py` | Fail-closed single/fleet source, hook, recursive catalog, identity, receipt, and projection audit |
+| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked installer, merge/preservation guard, path containment, and source/session-bound receipt |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
 | `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |
@@ -135,7 +180,8 @@ planctl.mjs
 workspace-plan-binding.mjs
   -> plan-package.mjs
   -> machine-dev-paths.mjs
-  -> machine-local immutable plan-binding.json
+  -> owner-state quiescence checks
+  -> immutable generation records + atomic current plan-binding.json
 
 dev-session.mjs
   -> dev-session-store.mjs
@@ -162,8 +208,21 @@ pt-ew
   -> digest-verified installed SKILL.md
   -> pt-god-view
 
+pt-ew-plugin
+  -> host payload adapter
+  -> immutable conversation executionRoot
+  -> ToolIntent AST + subjectRoot
+  -> workflow-kernel.mjs
+       -> Plan binding / declaration / active-work / Session owner reads
+       -> machine-rendered Anchor + atomic release receipt
+
+Workflow Snapshot
+  -> Plan / declaration / active-work / Session / Git owner reads
+  -> Completion Review + bounded Action Receipt reduction
+  -> CLI / Context Anchor / Workflow Doctor / Peers Dev
+
 Acceptance execution_plan.py
-  -> immutable workspace Plan binding
+  -> current workspace Plan generation
   -> bound Plan Package manifest contract
   -> current Task status
 ```
@@ -178,7 +237,10 @@ Forbidden dependencies:
 - Host-specific scheduler -> project work graph or progress semantics;
 - user Overlay -> Plan, Task, Session, authorization, execution, evidence, or
   Acceptance mutation;
-- canonical Skill rollout -> user Overlay registry or installed copies;
+- canonical agent integration -> user Overlay registry or installed copies;
+- IDE plugin or hook -> Plan, Task, Session, declaration, active-work, or
+  evidence mutation;
+- tool `cwd` or target -> conversation execution-root rebinding;
 - archive parser -> current plan/task status;
 - Skills -> private parsing logic that bypasses `planctl`.
 

@@ -13,8 +13,19 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { machineLeasePath, machineRegistryPath } from '../lib/machine-dev-paths.mjs';
-import { startOrUpdateDeclaration } from './dev-work.mjs';
+import {
+  machineLeasePath,
+  machineRegistryPath,
+  workspaceIdForRoot,
+} from '../lib/machine-dev-paths.mjs';
+import {
+  releaseDeclaration,
+  startOrUpdateDeclaration,
+} from './dev-work.mjs';
+import {
+  clearActiveWorkRecord,
+  updateActiveWorkRecord,
+} from './active-work-store.mjs';
 import {
   buildLeaseCommand,
   MachineDevError,
@@ -22,8 +33,10 @@ import {
   observeLeases,
   registerWorkspace,
   statusAll,
+  unregisterWorkspace,
   updateWorkspace,
 } from './machine-dev-registry.mjs';
+import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
 
 const cli = fileURLToPath(new URL('./machine-dev.mjs', import.meta.url));
 const leaseCli = fileURLToPath(new URL('./machine-dev-lease.py', import.meta.url));
@@ -48,13 +61,15 @@ function initializeGitRepository(directory, branch = 'feat/test') {
 
 function profileText({
   name,
+  agentControlMode = 'disposable',
   mode = 'remote',
-  stationUrl = 'http://10.10.0.4:18080',
+  stationUrl = 'http://192.0.2.4:18080',
   deployEnvironment = 'station-four',
 }) {
   return [
     `PT_DEV_PROFILE=${name}`,
     'PT_DEV_SLOT=1',
+    `PT_AGENT_CONTROL_MODE=${agentControlMode}`,
     `PT_STATION_MODE=${mode}`,
     `PT_STATION_NAME=${name}`,
     `PT_STATION_URL=${stationUrl}`,
@@ -74,6 +89,7 @@ function addProfile(
   scope,
   {
     name,
+    agentControlMode,
     mode,
     stationUrl,
     deployEnvironment,
@@ -88,6 +104,7 @@ function addProfile(
     path.join(profileDirectory, 'profile.env.example'),
     profileText({
       name,
+      agentControlMode,
       mode,
       stationUrl,
       deployEnvironment,
@@ -133,15 +150,16 @@ function fixture() {
   };
   addProfile(scope, {
     name: 'four',
-    stationUrl: 'http://10.10.0.4:18080',
+    stationUrl: 'http://192.0.2.4:18080',
     deployEnvironment: 'station-four',
-    deployHost: '10.10.0.4',
+    deployHost: '192.0.2.4',
   });
   addProfile(scope, {
     name: 'fiveArm',
-    stationUrl: 'http://10.10.0.5:18080',
+    agentControlMode: 'managed',
+    stationUrl: 'http://192.0.2.5:18080',
     deployEnvironment: 'station-five',
-    deployHost: '10.10.0.5',
+    deployHost: '192.0.2.5',
   });
   return scope;
 }
@@ -204,7 +222,7 @@ function leaseArguments(scope, resourceKind, resourceId, budgetSeconds, command)
     String(budgetSeconds),
   ];
   if (resourceKind === 'station.reset') {
-    args.push('--reset-scope', resourceId);
+    args.push('--reset-authorized-scope', resourceId);
   }
   return [...args, '--', ...command];
 }
@@ -304,7 +322,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(checked.ports.desktopAppGateway, 3530);
     assert.equal(checked.ports.mobileWeb, 5673);
     assert.equal(checked.profile.stationDeployEnvironment, 'station-four');
-    assert.equal(checked.profile.resetPolicy, 'agent-resettable');
+    assert.equal(checked.profile.agentControlMode, 'disposable');
 
     const updated = updateWorkspace(
       registrationOptions(scope, {
@@ -316,14 +334,6 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(updated.profile, 'fiveArm');
     assert.equal(updated.slot, 5);
     assert.deepEqual(updated.allowedCapabilities, ['station.connect']);
-    expectCode('WORKSPACE_CAPABILITY_MISSING', () =>
-      checkWorkspace({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        envRepo: scope.envRepo,
-        capabilities: 'station.reset',
-      }),
-    );
 
     const status = statusAll({
       home: scope.home,
@@ -332,64 +342,157 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.authority, 'machine-control-plane');
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
-    assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+    assert.equal(status.registrations[0].agentControlMode, 'managed');
   } finally {
     scope.close();
   }
 });
 
-test('profile reset policy is derived from the canonical identifier', () => {
-  const stableScope = fixture();
+test('unregisters an idle owned workspace and rejects owner mismatch', () => {
+  const scope = fixture();
   try {
-    addProfile(stableScope, {
-      name: 'dailyStable',
-      stationUrl: 'http://10.10.0.7:18080',
-      deployEnvironment: 'station-stable',
-      deployHost: '10.10.0.7',
+    const registered = registerWorkspace(registrationOptions(scope));
+    expectCode('WORKSPACE_OWNER_MISMATCH', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: 'other@example.invalid',
+      }),
+    );
+    expectCode('STATION_CAPABILITY_CONFLICT', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: registered.owner,
+        observeLeases: () => ({
+          activeLeases: [
+            {
+              leaseId: 'lease-1',
+              workspaceId: registered.workspaceId,
+            },
+          ],
+        }),
+      }),
+    );
+    const declaration = declareLeaseIntent(scope);
+    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: registered.owner,
+      }),
+    );
+    releaseDeclaration({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      workItemId: declaration.workItemId,
+      sessionId: declaration.sessionId,
     });
-    expectCode('PROFILE_RESET_PROTECTED', () =>
+
+    const activeWork = updateActiveWorkRecord(
+      {
+        workspaceId: registered.workspaceId,
+        workItemId: 'machine-dev-test',
+        planId: 'MACHINE-DEV-PLAN',
+        planPath:
+          'docs/architecture/local-dev-control-plane/execution-plans/test/plan.md',
+        planStatus: 'completed',
+        currentTaskId: 'MACHINE-DEV-T1',
+        currentTaskPath:
+          'docs/architecture/local-dev-control-plane/execution-plans/test/tasks/MACHINE-DEV-T1.md',
+        taskStatus: 'done',
+        sessionId: 'machine-dev-session',
+        journeyId: 'MACHINE-DEV-J01',
+        devState: null,
+        branch: registered.branch,
+        initialHead: registered.head,
+        expectedHead: registered.head,
+      },
+      {
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+      },
+    );
+    expectCode('WORKSPACE_LIFECYCLE_CONFLICT', () =>
+      unregisterWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        owner: registered.owner,
+      }),
+    );
+    clearActiveWorkRecord({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      expectedRevision: activeWork.revision,
+      workItemId: activeWork.workItemId,
+    });
+
+    const removed = unregisterWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      owner: registered.owner,
+      now: new Date('2026-09-17T00:05:00.000Z'),
+    });
+    assert.equal(removed.workspaceId, registered.workspaceId);
+    assert.equal(removed.name, registered.name);
+    assert.equal(removed.unregisteredBy, registered.owner);
+    assert.equal(
+      statusAll({ home: scope.home, envRepo: scope.envRepo }).registrations.length,
+      0,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('profile Agent control mode is explicit and bounds autonomous reset', () => {
+  const invalidScope = fixture();
+  try {
+    addProfile(invalidScope, {
+      name: 'invalid-agent-policy',
+      agentControlMode: '',
+      stationUrl: 'http://192.0.2.6:18080',
+      deployEnvironment: 'station-invalid-agent-policy',
+      deployHost: '192.0.2.6',
+    });
+    expectCode('PROFILE_AGENT_CONTROL_INVALID', () =>
       registerWorkspace(
-        registrationOptions(stableScope, {
-          profile: 'dailyStable',
+        registrationOptions(invalidScope, {
+          profile: 'invalid-agent-policy',
+          capabilities: 'station.connect',
+        }),
+      ),
+    );
+  } finally {
+    invalidScope.close();
+  }
+
+  const managedScope = fixture();
+  try {
+    addProfile(managedScope, {
+      name: 'managed-profile',
+      agentControlMode: 'managed',
+      stationUrl: 'http://192.0.2.7:18080',
+      deployEnvironment: 'station-managed',
+      deployHost: '192.0.2.7',
+    });
+    expectCode('PROFILE_AGENT_CONTROL_DENIED', () =>
+      registerWorkspace(
+        registrationOptions(managedScope, {
+          profile: 'managed-profile',
           capabilities: 'station.connect,station.deploy,station.reset',
         }),
       ),
     );
     const registered = registerWorkspace(
-      registrationOptions(stableScope, {
-        profile: 'dailyStable',
+      registrationOptions(managedScope, {
+        profile: 'managed-profile',
         capabilities: 'station.connect,station.deploy',
       }),
     );
-    assert.equal(registered.profile, 'dailyStable');
-    const checked = checkWorkspace({
-      home: stableScope.home,
-      workspaceRoot: stableScope.workspaceA,
-      envRepo: stableScope.envRepo,
-    });
-    assert.equal(checked.profile.resetPolicy, 'stable-protected');
+    assert.equal(registered.profile, 'managed-profile');
   } finally {
-    stableScope.close();
-  }
-});
-
-test('agent-resettable profiles still require exact reset scope identity', () => {
-  const scope = fixture();
-  try {
-    registerWorkspace(registrationOptions(scope));
-    declareLeaseIntent(scope);
-    expectCode('RESET_SCOPE_MISMATCH', () =>
-      buildLeaseCommand({
-        ...registrationOptions(scope),
-        resourceKind: 'station.reset',
-        resourceId: 'station-four-fixture',
-        resetScope: 'station-other-fixture',
-        budgetSeconds: 5,
-        command: [process.execPath, '-e', 'process.exit(0)'],
-      }),
-    );
-  } finally {
-    scope.close();
+    managedScope.close();
   }
 });
 
@@ -477,7 +580,7 @@ test('fails closed for dirty and untracked selected profile definitions', () => 
       ),
       `${profileText({
         name: 'four',
-        stationUrl: 'http://10.10.0.4:18080',
+        stationUrl: 'http://192.0.2.4:18080',
         deployEnvironment: 'station-four',
       })}# dirty\n`,
     );
@@ -492,9 +595,9 @@ test('fails closed for dirty and untracked selected profile definitions', () => 
   try {
     addProfile(untrackedScope, {
       name: 'untracked',
-      stationUrl: 'http://10.10.0.8:18080',
+      stationUrl: 'http://192.0.2.8:18080',
       deployEnvironment: 'station-untracked',
-      deployHost: '10.10.0.8',
+      deployHost: '192.0.2.8',
       tracked: false,
     });
     expectCode('PROFILE_UNAVAILABLE', () =>
@@ -536,9 +639,9 @@ test('rejects local, compose, loopback, and mismatched deploy targets for Statio
     {
       name: 'mismatch-profile',
       mode: 'remote',
-      stationUrl: 'http://10.10.0.9:18080',
+      stationUrl: 'http://192.0.2.9:18080',
       deployEnvironment: 'station-mismatch',
-      deployHost: '10.10.0.10',
+      deployHost: '192.0.2.10',
       code: 'DEPLOY_TARGET_MISMATCH',
     },
   ]) {
@@ -770,6 +873,77 @@ for (const leaseCase of [
     }
   });
 }
+
+test('lease acquisition waits for the workspace lifecycle fence before validation', async () => {
+  const scope = fixture();
+  let child;
+  let lifecycle;
+  try {
+    registerWorkspace(registrationOptions(scope));
+    declareLeaseIntent(scope);
+    lifecycle = acquireWorkspaceLifecycleLockSync({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+    });
+    const marker = path.join(scope.root, 'lease-command-ran');
+    const runner = buildLeaseCommand({
+      ...registrationOptions(scope),
+      resourceKind: 'local.slot',
+      resourceId: '5',
+      budgetSeconds: 10,
+      command: [
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`,
+      ],
+    });
+    child = spawn(runner.executable, runner.arguments, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const childExit = new Promise((resolve) => {
+      child.once('close', (code) => resolve({ code, stdout, stderr }));
+    });
+
+    const deadline = Date.now() + 5_000;
+    let active = [];
+    while (Date.now() < deadline) {
+      active = observeLeases({ home: scope.home }).activeLeases;
+      if (active.some((lease) => lease.workspaceId === workspaceIdForRoot(scope.workspaceA))) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(
+      active.some((lease) => lease.workspaceId === workspaceIdForRoot(scope.workspaceA)),
+      true,
+    );
+    assert.equal(existsSync(marker), false);
+    assert.equal(child.exitCode, null);
+
+    lifecycle.release();
+    lifecycle = null;
+    const result = await childExit;
+    child = null;
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(existsSync(marker), true);
+  } finally {
+    if (lifecycle) lifecycle.release();
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+    scope.close();
+  }
+});
 
 test('post-lock validation rejects a binding changed after lease preparation', () => {
   const scope = fixture();

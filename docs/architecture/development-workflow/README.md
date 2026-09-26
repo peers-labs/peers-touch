@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
 > **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Created**: 2026-09-13 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -74,6 +74,14 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
     超出授权包或实际外部权限失败才提出权限问题。
 17. 个人交互习惯通过 machine-local Overlay 选择性叠加；共享 `pt-ew` 与
     canonical Skill rollout 不携带任何用户专属策略。
+18. 每个 IDE conversation 在首次可阻断 `PreToolUse` 时原子绑定一个不可变
+    `executionRoot`；工具目标作为独立 `subjectRoot` 校验，跨 worktree 只读
+    允许、写入拒绝。
+19. Workflow Snapshot 是 CLI、Context Anchor、Doctor 与 Peers Dev 的统一
+    只读投影；Action Receipt 只描述活动，不替代 Task 进度。
+20. Task 和 Plan 完成必须有独立、当前源码绑定的 Completion Review。
+21. completed 且已释放的 workspace 通过显式 generation advance 承接下一
+    Plan；Agent 不得把新建 worktree 当作绕过绑定的手段。
 
 ## 4. Document Navigation
 
@@ -81,19 +89,27 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D25 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D31 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
-| [host-neutral-skill-rollout.md](./host-neutral-skill-rollout.md) | DWF-D21/DWF-D22 按 worktree 语义集成、审计、宿主投影和会话重启流程 |
+| [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D26 的 Kernel、宿主投影和 rollout 流程 |
+| [product-definition.md](./product-definition.md) | Peers Dev 产品能力、用户和 Journey |
+| [experience-contract.md](./experience-contract.md) | Peers Dev 可见状态与交互合同 |
+| [product-state-model.md](./product-state-model.md) | Stage、Plan、Task、Review 与 Agent activity 状态 |
+| [acceptance-matrix.md](./acceptance-matrix.md) | Peers Dev 产品验收映射 |
+| [completion-review.md](./completion-review.md) | 独立 Completion Review 合同 |
+| [progress-observability.md](./progress-observability.md) | Snapshot、Action Receipt 与 UI 投影边界 |
 | [Progress-bearing workflow plan](./execution-plans/20260917-progress-bearing-development-loop/plan.md) | Anchor、Goal、profile policy 与环境看板的落地计划 |
 | [Immutable workspace Plan binding](./execution-plans/20260918-immutable-workspace-plan-binding/plan.md) | 多 Plan 同仓库下的 workspace 单一不可换绑 hard cut |
 | [Mobile Shell plan](../mobile/execution-plans/20260827-mobile-shell-implementation.md) | `DWF-B` 自举闭环与首个真实 Plan Package pilot |
 
 ## 5. Current Status
 
-DWF-D01..DWF-D25 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
-workspace 只解析机器级不可变绑定指向的一个 Plan；同步进入分支的外来 Plan 不
-参与本 workspace 的发现。Plan Package 只保留 immutable initial HEAD；当前
+DWF-D01..DWF-D31 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+workspace 只解析机器级当前 generation 指向的一个 Plan；同步进入分支的外来
+Plan 不参与本 workspace 的发现。completed 且 quiescent 的 generation 可由
+显式 owner command 原子推进，不能由 repository discovery 或 Agent 新建
+worktree 代替。Plan Package 只保留 immutable initial HEAD；当前
 source HEAD 由 Git、Development declaration、Session checkpoint 与
 消费 worktree 的 machine-local active-work projection 在各自生命周期中持有。
 `peers-dev-workflow` 只负责规范实现和 rollout，不持有消费 worktree 的可变

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -10,23 +11,34 @@ import path from 'node:path';
 
 import {
   developmentWorkLedgerPath,
+  machineDevRoot,
   repoRoot,
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
 import { readAllActiveWorkRecords } from '../../../tooling/scripts/local-dev/active-work-store.mjs';
+import { statusCompletionReviews } from '../../../tooling/scripts/local-dev/completion-review.mjs';
+import { loadSessionStore } from '../../../tooling/scripts/local-dev/dev-session-store.mjs';
 import { readLedger } from '../../../tooling/scripts/local-dev/dev-work-ledger.mjs';
 import {
-  resetPolicyForProfile,
+  AGENT_CONTROL_MODES,
   statusAll as machineStatusAll,
 } from '../../../tooling/scripts/local-dev/machine-dev-registry.mjs';
+import {
+  readWorkspaceActions,
+  reduceWorkflowActivity,
+} from '../../../tooling/scripts/local-dev/workflow-action-store.mjs';
+import { projectStages } from '../../../tooling/scripts/local-dev/workflow-snapshot-core.mjs';
 import {
   loadPlanPackage,
   summarizePlanProgress,
 } from '../../../tooling/scripts/plan/plan-package.mjs';
 import { resolveWorkspacePlanBinding } from '../../../tooling/scripts/plan/workspace-plan-binding.mjs';
+import { readAllWorktreeObservations } from '../../../tooling/scripts/local-dev/worktree-observation-store.mjs';
+import { discoverGitWorktrees } from './worktree-discovery.mjs';
 
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
   'PT_DEV_SLOT',
+  'PT_AGENT_CONTROL_MODE',
   'PT_STATION_MODE',
   'PT_STATION_NAME',
   'PT_STATION_URL',
@@ -39,6 +51,27 @@ const VISIBLE_DECLARATION_STATES = new Set([
   ...LIVE_DECLARATION_STATES,
   'STALE',
 ]);
+const SESSION_STATES = [
+  'BOUND',
+  'REPRODUCING',
+  'REPRODUCED',
+  'IMPLEMENTING',
+  'FOCUSED_CHECKING',
+  'FOCUSED_PASS',
+  'SOURCE_READY',
+  'CHECKPOINTING',
+  'CHECKPOINTED',
+  'DEPLOYING',
+  'DEPLOYED',
+  'FUNCTIONAL_RUNNING',
+  'FUNCTIONAL_PASS',
+  'ACCEPTANCE_READY',
+  'ACCEPTANCE_UPDATING',
+  'FINAL_CHECKPOINTED',
+  'ACCEPTANCE_RUNNING',
+  'ACCEPTANCE_PASS',
+  'DELIVERY_READY',
+];
 
 function parseSelectedProfile(text) {
   const values = {};
@@ -97,6 +130,226 @@ function containedPath(root, relativePath) {
   return target;
 }
 
+function stateReached(state, target) {
+  const stateIndex = SESSION_STATES.indexOf(state);
+  const targetIndex = SESSION_STATES.indexOf(target);
+  return stateIndex >= 0 && targetIndex >= 0 && stateIndex >= targetIndex;
+}
+
+function segmentState(done, active) {
+  return done ? 'done' : active ? 'active' : 'pending';
+}
+
+function taskSegments(task, sessionState, reviewState, acceptanceRequired) {
+  const sourceDone = stateReached(sessionState, 'FOCUSED_PASS');
+  const sourceActive = ['IMPLEMENTING', 'FOCUSED_CHECKING'].includes(
+    sessionState,
+  );
+  const functionalRequired = task?.completionClass !== 'source';
+  const functionalDone = stateReached(sessionState, 'FUNCTIONAL_PASS');
+  const functionalActive = [
+    'CHECKPOINTING',
+    'CHECKPOINTED',
+    'DEPLOYING',
+    'DEPLOYED',
+    'FUNCTIONAL_RUNNING',
+  ].includes(sessionState);
+  const acceptanceDone = stateReached(sessionState, 'ACCEPTANCE_PASS');
+  const acceptanceActive = [
+    'ACCEPTANCE_READY',
+    'ACCEPTANCE_UPDATING',
+    'FINAL_CHECKPOINTED',
+    'ACCEPTANCE_RUNNING',
+  ].includes(sessionState);
+  return [
+    {
+      id: 'source',
+      label: 'Source',
+      state: segmentState(sourceDone, sourceActive),
+    },
+    {
+      id: 'functional',
+      label: 'Functional',
+      state: functionalRequired
+        ? segmentState(functionalDone, functionalActive)
+        : 'not_required',
+    },
+    {
+      id: 'acceptance',
+      label: 'Acceptance',
+      state: acceptanceRequired
+        ? segmentState(acceptanceDone, acceptanceActive)
+        : 'not_required',
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      state:
+        reviewState === 'PASS'
+          ? 'done'
+          : reviewState === 'PENDING'
+            ? 'active'
+            : ['FAIL', 'STALE'].includes(reviewState)
+              ? 'blocked'
+              : 'pending',
+    },
+  ];
+}
+
+function safeSession(session) {
+  if (!session?.state) return null;
+  return {
+    state: session.state.state ?? null,
+    updatedAt: session.state.updatedAt ?? null,
+    eventDigest: session.eventDigest ?? null,
+    lastVerification: session.state.lastVerification
+      ? {
+          verificationClass:
+            session.state.lastVerification.verificationClass ?? null,
+          result: session.state.lastVerification.result ?? null,
+          durationMs: session.state.lastVerification.durationMs ?? null,
+        }
+      : null,
+    currentFailure: session.state.currentFailure
+      ? {
+          kind: session.state.currentFailure.kind ?? null,
+          stage: session.state.currentFailure.stage ?? null,
+          owner: session.state.currentFailure.owner ?? null,
+          retryable: session.state.currentFailure.retryable ?? false,
+        }
+      : null,
+  };
+}
+
+async function readSessionProjection(declaration, workspaceRoot, options) {
+  if (!declaration.sessionId) return { session: null, errorCode: null };
+  try {
+    const session = options.readSession
+      ? await options.readSession({ declaration, workspaceRoot })
+      : loadSessionStore({
+          home: options.home,
+          workspaceRoot,
+          workspaceId: declaration.workspaceId,
+          workItemId: declaration.workItemId,
+          expected: {
+            sessionId: declaration.sessionId,
+            workItemId: declaration.workItemId,
+            planId: declaration.planId,
+            taskId: declaration.taskId,
+            workspaceId: declaration.workspaceId,
+            branch: declaration.branch,
+          },
+        });
+    return { session, errorCode: null };
+  } catch (error) {
+    return {
+      session: null,
+      errorCode: error?.code ?? 'SESSION_UNAVAILABLE',
+    };
+  }
+}
+
+async function readReviewProjection(
+  declaration,
+  planPackage,
+  workspaceRoot,
+  session,
+  options,
+) {
+  const missing = { state: 'MISSING', reviewedAt: null, reviewId: null };
+  if (!['SOURCE_READY', 'DELIVERY_READY'].includes(session?.state?.state)) {
+    return missing;
+  }
+  if (options.readReview) {
+    return options.readReview({
+      declaration,
+      planPackage,
+      workspaceRoot,
+      session,
+    });
+  }
+  try {
+    const reviewStatus = await statusCompletionReviews(
+      {
+        repoRoot: workspaceRoot,
+        workItemId: declaration.workItemId,
+      },
+      {
+        machineRoot: options.machineRoot ?? machineDevRoot(options.home),
+        loadPlanContext: async () => planPackage,
+        loadSession: async () => session,
+      },
+    );
+    const currentReviews = reviewStatus.reviews
+      .filter(
+        (review) =>
+          review.scope === reviewStatus.current.scope &&
+          review.taskId === reviewStatus.current.taskId,
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const selected =
+      currentReviews.find((review) => review.state === 'PASS') ??
+      currentReviews[0];
+    return selected
+      ? {
+          state: reviewStatus.state,
+          reviewedAt: selected.reviewedAt,
+          reviewId: selected.reviewId,
+        }
+      : missing;
+  } catch (error) {
+    return {
+      ...missing,
+      state: 'UNAVAILABLE',
+      errorCode: error?.code ?? 'COMPLETION_REVIEW_UNAVAILABLE',
+    };
+  }
+}
+
+async function resolveExecutionDetail(
+  planPackage,
+  declaration,
+  workspaceRoot,
+  options,
+) {
+  const sessionProjection = await readSessionProjection(
+    declaration,
+    workspaceRoot,
+    options,
+  );
+  const review = await readReviewProjection(
+    declaration,
+    planPackage,
+    workspaceRoot,
+    sessionProjection.session,
+    options,
+  );
+  const task = planPackage.currentTask;
+  const acceptanceRequired =
+    (planPackage.acceptance?.closures?.[task?.closureId] ?? []).length > 0;
+  return {
+    task:
+      task == null
+        ? null
+        : {
+            id: task.taskId,
+            title: task.title,
+            workstreamId: task.workstreamId,
+            completionClass: task.completionClass,
+            runtimeClass: task.runtimeClass,
+            segments: taskSegments(
+              task,
+              sessionProjection.session?.state?.state ?? null,
+              review.state,
+              acceptanceRequired,
+            ),
+          },
+    session: safeSession(sessionProjection.session),
+    sessionErrorCode: sessionProjection.errorCode,
+    review,
+  };
+}
+
 function unavailablePlan(status, locator = {}, errorCode = null) {
   return {
     status,
@@ -105,7 +358,12 @@ function unavailablePlan(status, locator = {}, errorCode = null) {
     taskId: locator.taskId ?? null,
     planStatus: null,
     currentTaskId: null,
+    stages: [],
     progress: null,
+    task: null,
+    session: null,
+    sessionErrorCode: null,
+    review: { state: 'MISSING', reviewedAt: null, reviewId: null },
     errorCode,
   };
 }
@@ -224,6 +482,12 @@ export async function resolveDeclarationPlan(
     return unavailablePlan('mismatch', locator, 'PLAN_LOCATOR_MISMATCH');
   }
 
+  const execution = await resolveExecutionDetail(
+    planPackage,
+    declaration,
+    workspaceRoot,
+    options,
+  );
   return {
     status: 'available',
     locatorSource: locator.locatorSource,
@@ -231,7 +495,9 @@ export async function resolveDeclarationPlan(
     taskId: locator.taskId,
     planStatus: planPackage.manifest.status,
     currentTaskId,
+    stages: projectStages(planPackage.manifest.status),
     progress: summarizePlanProgress(planPackage),
+    ...execution,
     errorCode: null,
   };
 }
@@ -268,24 +534,19 @@ export function collectProfiles(envRepo) {
           : 'tracked-clean'
         : 'untracked';
       const declaredName = values.PT_DEV_PROFILE ?? null;
-      let resetPolicy = null;
+      const agentControlMode = values.PT_AGENT_CONTROL_MODE ?? null;
       let error = null;
       if (declaredName !== entry.name) {
         error = {
           code: 'PROFILE_IDENTITY_MISMATCH',
           message: 'Profile directory and declared name differ',
         };
-      } else {
-        try {
-          resetPolicy = resetPolicyForProfile(entry.name);
-        } catch {
-          error = {
-            code: 'PROFILE_IDENTITY_INVALID',
-            message: 'Profile name is not a canonical identifier',
-          };
-        }
-      }
-      if (!error && sourceState !== 'tracked-clean') {
+      } else if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
+        error = {
+          code: 'PROFILE_AGENT_CONTROL_INVALID',
+          message: 'Agent control mode is missing or unsupported',
+        };
+      } else if (sourceState !== 'tracked-clean') {
         error = {
           code: 'PROFILE_SOURCE_UNREVIEWED',
           message: 'Profile source is not Git-tracked and clean',
@@ -297,7 +558,7 @@ export function collectProfiles(envRepo) {
         slot: Number.isInteger(Number(values.PT_DEV_SLOT))
           ? Number(values.PT_DEV_SLOT)
           : null,
-        resetPolicy,
+        agentControlMode: agentControlMode ?? 'invalid',
         stationMode: values.PT_STATION_MODE ?? null,
         stationName: values.PT_STATION_NAME ?? null,
         stationUrl: publicEndpoint(values.PT_STATION_URL),
@@ -323,8 +584,9 @@ function safeRegistration(registration) {
     allowedCapabilities: registration.allowedCapabilities ?? [],
     purpose: registration.purpose ?? null,
     owner: registration.owner ?? null,
+    updatedAt: registration.updatedAt ?? null,
     activity: registration.activity ?? 'stale',
-    resetPolicy: registration.resetPolicy ?? null,
+    agentControlMode: registration.agentControlMode ?? null,
     profileState: registration.profileState ?? 'blocked',
     profileError: registration.profileError ?? null,
   };
@@ -334,6 +596,7 @@ function safeDeclaration(declaration) {
   return {
     declarationId: declaration.declarationId,
     workItemId: declaration.workItemId,
+    sessionId: declaration.sessionId ?? null,
     workspaceId: declaration.workspaceId,
     branch: declaration.branch,
     owner: declaration.owner,
@@ -342,6 +605,7 @@ function safeDeclaration(declaration) {
     planId: declaration.planId ?? null,
     taskId: declaration.taskId ?? null,
     state: declaration.state,
+    heartbeatAt: declaration.heartbeatAt ?? null,
     expiresAt: declaration.expiresAt,
     runtimeClaims: declaration.runtimeClaims,
   };
@@ -435,7 +699,7 @@ export function deriveOccupancy(
     return {
       profile: profile.name,
       station: profile.stationUrl,
-      resetPolicy: profile.resetPolicy,
+      agentControlMode: profile.agentControlMode,
       workspaceIds,
       slots,
       workItemIds: [
@@ -477,12 +741,247 @@ function firstClaim(claims, kind) {
   return claims.find((claim) => claim.kind === kind) ?? null;
 }
 
+function latestTimestamp(values, fallback) {
+  const valid = values
+    .filter(Boolean)
+    .map((value) => Date.parse(value))
+    .filter(Number.isFinite);
+  return valid.length > 0
+    ? new Date(Math.max(...valid)).toISOString()
+    : fallback;
+}
+
+function deriveFreshness({
+  discovery,
+  discoveryAvailable,
+  observation,
+  observationError,
+  stateUpdatedAt,
+  checkedAt,
+}) {
+  const issues = [];
+  let state;
+  if (observationError) {
+    state = 'invalid';
+    issues.push(observationError.code);
+  } else if (discoveryAvailable && !discovery) {
+    state = 'missing';
+    issues.push('WORKTREE_MISSING');
+  } else if (!observation) {
+    state = 'unreported';
+  } else {
+    const identityMismatch =
+      discovery &&
+      (observation.head !== discovery.head ||
+        (discovery.branch !== null &&
+          observation.branch !== discovery.branch));
+    const ageMs = Date.parse(checkedAt) - Date.parse(observation.reportedAt);
+    if (identityMismatch) {
+      state = 'stale';
+      issues.push('WORKTREE_REPORT_STALE');
+    } else if (ageMs <= 30_000) {
+      state = 'fresh';
+    } else if (ageMs <= 300_000) {
+      state = 'recent';
+    } else {
+      state = 'stale';
+    }
+  }
+  const lastReportedAt = observation?.reportedAt ?? null;
+  return {
+    state,
+    issues,
+    lastReportedAt,
+    stateUpdatedAt,
+    checkedAt,
+    updatedAt: latestTimestamp(
+      [lastReportedAt, stateUpdatedAt, checkedAt],
+      checkedAt,
+    ),
+  };
+}
+
+function fallbackTask(activeWork, review) {
+  if (!activeWork?.currentTaskId) return null;
+  return {
+    id: activeWork.currentTaskId,
+    title: activeWork.currentTaskId,
+    workstreamId: null,
+    completionClass: null,
+    runtimeClass: null,
+    segments: taskSegments(
+      null,
+      activeWork.devState,
+      review.state,
+      true,
+    ),
+  };
+}
+
+export function workflowProjection({
+  work,
+  issues,
+  freshness,
+  activeWork,
+  workspaceId,
+  options,
+}) {
+  const primary =
+    work.find(
+      (declaration) =>
+        LIVE_DECLARATION_STATES.has(declaration.state) &&
+        declaration.plan?.status === 'available',
+    ) ??
+    work.find((declaration) => LIVE_DECLARATION_STATES.has(declaration.state)) ??
+    work[0] ??
+    null;
+  const plan = primary?.plan ?? null;
+  const review = plan?.review ?? {
+    state: 'MISSING',
+    reviewedAt: null,
+    reviewId: null,
+  };
+  const planStatus = plan?.planStatus ?? activeWork?.planStatus ?? null;
+  const session =
+    plan?.session ??
+    (activeWork?.devState
+      ? {
+          state: activeWork.devState,
+          updatedAt: activeWork.updatedAt,
+          eventDigest: null,
+          lastVerification: null,
+          currentFailure: null,
+        }
+      : null);
+  const findings = issues.map((code) => ({
+    code,
+    owner: 'environment',
+    severity: code === 'WORKSPACE_UNREGISTERED' ? 'warning' : 'error',
+  }));
+  for (const code of freshness.issues) {
+    findings.push({
+      code,
+      owner: 'observation',
+      severity: code === 'WORKFLOW_SOURCE_STALE' ? 'error' : 'warning',
+    });
+  }
+  if (plan && plan.status !== 'available') {
+    findings.push({
+      code: plan.errorCode ?? 'PLAN_UNAVAILABLE',
+      owner: 'plan',
+      severity: 'error',
+    });
+  }
+  if (plan?.sessionErrorCode) {
+    findings.push({
+      code: plan.sessionErrorCode,
+      owner: 'session',
+      severity: 'error',
+    });
+  }
+  if (review.errorCode) {
+    findings.push({
+      code: review.errorCode,
+      owner: 'completion-review',
+      severity: 'warning',
+    });
+  }
+
+  const terminalReviewMissing =
+    planStatus === 'completed' && review.state !== 'PASS';
+  const drift =
+    plan?.status === 'mismatch' ||
+    session?.state === 'STALE' ||
+    review.state === 'STALE' ||
+    freshness.issues.includes('WORKFLOW_SOURCE_STALE') ||
+    issues.includes('WORKTREE_IDENTITY_MISMATCH');
+  const blocked =
+    planStatus === 'blocked' ||
+    ['BLOCKED', 'FAILED'].includes(session?.state) ||
+    review.state === 'FAIL' ||
+    terminalReviewMissing;
+  const completed =
+    planStatus === 'superseded' ||
+    (planStatus === 'completed' && review.state === 'PASS');
+
+  let receipts = [];
+  try {
+    const readActions = options.readActions ?? readWorkspaceActions;
+    receipts = readActions({
+      home: options.home,
+      workspaceId,
+    });
+  } catch (error) {
+    findings.push({
+      code: error?.code ?? 'WORKFLOW_ACTION_STORE_UNAVAILABLE',
+      owner: 'action',
+      severity: 'warning',
+    });
+  }
+  const agentActivity = reduceWorkflowActivity(receipts, {
+    now: options.now,
+    drift,
+    blocked,
+    completed,
+    runningPlan: planStatus === 'active',
+  });
+  const hasError = findings.some((finding) => finding.severity === 'error');
+  const verdict = drift
+    ? 'DRIFT'
+    : blocked || hasError
+      ? 'BLOCKED'
+      : findings.length > 0
+        ? 'SUSPENDED'
+        : 'HEALTHY';
+  const continuation = drift || blocked || hasError
+    ? 'HARD_BLOCK'
+    : completed
+      ? 'COMPLETE'
+      : 'CONTINUE';
+
+  return {
+    workflow: {
+      verdict,
+      continuation,
+      stages:
+        plan?.stages ??
+        (planStatus ? projectStages(planStatus) : []),
+      plan:
+        plan?.status === 'available'
+          ? {
+              id: plan.planId,
+              status: plan.planStatus,
+              progress: plan.progress,
+            }
+          : activeWork
+            ? {
+                id: activeWork.planId,
+                status: activeWork.planStatus,
+                progress: null,
+              }
+            : null,
+      task: plan?.task ?? fallbackTask(activeWork, review),
+      session,
+      review,
+      action: agentActivity,
+      findings,
+    },
+    agentActivity,
+  };
+}
+
 export function deriveWorktrees(
   profiles,
   registrations,
   declarations,
   activeLeases,
   activeWorkRecords = [],
+  discoveredWorktrees = [],
+  observations = [],
+  observationErrors = [],
+  checkedAt = new Date().toISOString(),
+  discoveryAvailable = true,
+  projectionOptions = {},
 ) {
   const profileByName = new Map(
     profiles.map((profile) => [profile.name, profile]),
@@ -491,6 +990,15 @@ export function deriveWorktrees(
     registrations
       .filter((registration) => registration.workspaceId)
       .map((registration) => [registration.workspaceId, registration]),
+  );
+  const discoveryByWorkspace = new Map(
+    discoveredWorktrees.map((record) => [record.workspaceId, record]),
+  );
+  const observationByWorkspace = new Map(
+    observations.map((record) => [record.workspaceId, record]),
+  );
+  const observationErrorByWorkspace = new Map(
+    observationErrors.map((error) => [error.workspaceId, error]),
   );
   const visibleDeclarations = declarations.filter((declaration) =>
     VISIBLE_DECLARATION_STATES.has(declaration.state),
@@ -505,6 +1013,15 @@ export function deriveWorktrees(
   for (const record of activeWorkRecords) {
     workspaceIds.add(record.workspaceId);
   }
+  for (const record of discoveredWorktrees) {
+    workspaceIds.add(record.workspaceId);
+  }
+  for (const record of observations) {
+    workspaceIds.add(record.workspaceId);
+  }
+  for (const error of observationErrors) {
+    workspaceIds.add(error.workspaceId);
+  }
 
   const slotOwners = new Map();
   for (const registration of registrations) {
@@ -517,6 +1034,10 @@ export function deriveWorktrees(
   return [...workspaceIds]
     .map((workspaceId) => {
       const registration = registrationByWorkspace.get(workspaceId) ?? null;
+      const discovery = discoveryByWorkspace.get(workspaceId) ?? null;
+      const observation = observationByWorkspace.get(workspaceId) ?? null;
+      const observationError =
+        observationErrorByWorkspace.get(workspaceId) ?? null;
       const work = visibleDeclarations.filter(
         (declaration) => declaration.workspaceId === workspaceId,
       );
@@ -529,6 +1050,11 @@ export function deriveWorktrees(
       const activeWork =
         activeWorkRecords.find((record) => record.workspaceId === workspaceId) ??
         null;
+      const activeWorkIdentityMismatch =
+        activeWork &&
+        discovery &&
+        (activeWork.branch !== discovery.branch ||
+          activeWork.expectedHead !== discovery.head);
       const claims = projectRuntimeClaims(liveWork);
       const profileClaim = firstClaim(claims, 'profile');
       const slotClaim = firstClaim(claims, 'local.slot');
@@ -561,7 +1087,9 @@ export function deriveWorktrees(
               ? 'unregistered'
               : 'ready';
       const workState = activeWork
-        ? activeWork.planStatus === 'blocked'
+        ? activeWorkIdentityMismatch
+          ? 'stale'
+          : activeWork.planStatus === 'blocked'
           ? 'blocked'
           : ['completed', 'superseded'].includes(activeWork.planStatus)
             ? 'completed'
@@ -574,23 +1102,81 @@ export function deriveWorktrees(
             : 'in-progress'
           : work.some((declaration) => declaration.state === 'STALE')
             ? 'stale'
-            : 'reserved';
+            : registration
+              ? 'reserved'
+              : 'observed';
+      const stateUpdatedAt = latestTimestamp(
+        [
+          registration?.updatedAt,
+          ...work.map((declaration) => declaration.heartbeatAt),
+          activeWork?.updatedAt,
+        ],
+        null,
+      );
+      const freshness = deriveFreshness({
+        discovery,
+        discoveryAvailable,
+        observation,
+        observationError,
+        stateUpdatedAt,
+        checkedAt,
+      });
+      if (activeWorkIdentityMismatch) {
+        freshness.state = 'stale';
+        freshness.issues.push('WORKFLOW_SOURCE_STALE');
+      }
+      const observationMatchesGit =
+        observation &&
+        discovery &&
+        observation.head === discovery.head &&
+        (discovery.branch === null ||
+          observation.branch === discovery.branch);
+      const projection = workflowProjection({
+        work,
+        issues,
+        freshness,
+        activeWork,
+        workspaceId,
+        options: {
+          ...projectionOptions,
+          now: projectionOptions.now ?? new Date(checkedAt),
+        },
+      });
 
       return {
         workspaceId,
-        name: registration?.name ?? null,
+        name: discovery?.name ?? observation?.name ?? registration?.name ?? null,
         activeWork: activeWork ? safeActiveWork(activeWork) : null,
+        git: discovery
+          ? {
+              branch: discovery.branch,
+              head: discovery.head,
+              detached: discovery.detached,
+              dirty: observationMatchesGit ? observation.dirty : null,
+            }
+          : null,
         branches: [
           ...new Set(
-            activeWork
-              ? [activeWork.branch]
+            discovery
+              ? [
+                  discovery.branch ??
+                    `detached@${discovery.head.slice(0, 8)}`,
+                ]
+              : activeWork
+                ? [activeWork.branch]
               : work.length > 0
-              ? work.map((declaration) => declaration.branch)
-              : [registration?.branch].filter(Boolean),
+                ? work.map((declaration) => declaration.branch)
+                : [
+                    observation?.branch,
+                    registration?.branch,
+                  ].filter(Boolean),
           ),
         ],
+        freshness,
         workState,
         activity: registration?.activity ?? 'unregistered',
+        agentActivity: projection.agentActivity,
+        workflow: projection.workflow,
         environmentHealth: {
           state: environmentState,
           issues,
@@ -606,9 +1192,9 @@ export function deriveWorktrees(
         environment: {
           profile: profileName,
           slot,
-          resetPolicy:
-            registration?.resetPolicy ??
-            profile?.resetPolicy ??
+          agentControlMode:
+            registration?.agentControlMode ??
+            profile?.agentControlMode ??
             null,
           sourceState: profile?.sourceState ?? null,
         },
@@ -648,6 +1234,43 @@ export async function buildDevSnapshot(options = {}) {
     options.envRepo ?? path.resolve(repoRoot, '..', 'env'),
   );
   const now = options.now ?? new Date();
+  let discovery;
+  if (options.discovery) {
+    discovery = options.discovery;
+  } else if (options.machineStatus) {
+    discovery = {
+      checkedAt: now.toISOString(),
+      records: [],
+      error: null,
+      available: false,
+    };
+  } else {
+    try {
+      discovery = {
+        ...discoverGitWorktrees({
+          repoRoot: options.repoRoot ?? repoRoot,
+          now,
+        }),
+        error: null,
+        available: true,
+      };
+    } catch (error) {
+      discovery = {
+        checkedAt: now.toISOString(),
+        records: [],
+        error: {
+          code: error.code ?? 'WORKTREE_DISCOVERY_UNAVAILABLE',
+          message: error.message,
+        },
+        available: false,
+      };
+    }
+  }
+  const observations =
+    options.observations ??
+    (options.machineStatus
+      ? { records: [], errors: [] }
+      : readAllWorktreeObservations({ home: options.home }));
   const profiles = collectProfiles(envRepo);
   const machine =
     options.machineStatus ??
@@ -686,18 +1309,77 @@ export async function buildDevSnapshot(options = {}) {
         plan: await planResolver(
           declaration,
           rawRegistrationByWorkspace.get(declaration.workspaceId) ?? null,
-          { home: options.home },
+          {
+            home: options.home,
+            readReview: options.readReview,
+            readSession: options.readSession,
+          },
         ),
       };
     }),
   );
   const activeLeases = (machine.activeLeases ?? []).map(safeLease);
-
-  return {
+  const worktrees = deriveWorktrees(
+    profiles,
+    registrations,
+    declarations,
+    activeLeases,
+    activeWork.records,
+    discovery.records,
+    observations.records,
+    observations.errors,
+    discovery.checkedAt,
+    discovery.available !== false,
+    {
+      home: options.home,
+      now,
+      readActions: options.readActions,
+    },
+  );
+  const occupancy = deriveOccupancy(
+    profiles,
+    registrations,
+    declarations,
+    activeLeases,
+  );
+  const continuations = worktrees.map(
+    (worktree) => worktree.workflow.continuation,
+  );
+  const continuation = continuations.includes('HARD_BLOCK')
+    ? 'HARD_BLOCK'
+    : continuations.length > 0 &&
+        continuations.every((value) => value === 'COMPLETE')
+      ? 'COMPLETE'
+      : 'CONTINUE';
+  const verdicts = worktrees.map((worktree) => worktree.workflow.verdict);
+  const verdict = verdicts.includes('DRIFT')
+    ? 'DRIFT'
+    : verdicts.includes('BLOCKED')
+      ? 'BLOCKED'
+      : verdicts.includes('SUSPENDED')
+        ? 'SUSPENDED'
+        : 'HEALTHY';
+  const findings = worktrees.flatMap((worktree) =>
+    worktree.workflow.findings.map((finding) => ({
+      workspaceId: worktree.workspaceId,
+      ...finding,
+    })),
+  );
+  const snapshot = {
     kind: 'peers-touch-dev-snapshot',
     observedAt: now.toISOString(),
     server: options.server ?? null,
+    serverFreshness: options.serverFreshness ?? null,
     authority: machine.authority ?? 'missing',
+    verdict,
+    continuation,
+    findings,
+    discovery: {
+      checkedAt: discovery.checkedAt,
+      count: discovery.records.length,
+      error: discovery.error,
+    },
+    observations,
     profiles,
     registrations,
     declarations,
@@ -708,18 +1390,47 @@ export async function buildDevSnapshot(options = {}) {
     activeLeases,
     staleLeaseCount: (machine.staleLeaseMetadata ?? []).length,
     unregisteredObservationCount: machine.unregisteredObservations ? 1 : 0,
-    worktrees: deriveWorktrees(
-      profiles,
-      registrations,
-      declarations,
-      activeLeases,
-      activeWork.records,
-    ),
-    occupancy: deriveOccupancy(
-      profiles,
-      registrations,
-      declarations,
-      activeLeases,
-    ),
+    worktrees,
+    occupancy,
+  };
+  const semantic = {
+    ...snapshot,
+    observedAt: null,
+    server: snapshot.server
+      ? { ...snapshot.server, startedAt: null }
+      : null,
+    serverFreshness: snapshot.serverFreshness
+      ? { ...snapshot.serverFreshness, checkedAt: null }
+      : null,
+    discovery: { ...snapshot.discovery, checkedAt: null },
+    worktrees: snapshot.worktrees.map((worktree) => ({
+      ...worktree,
+      freshness: {
+        ...worktree.freshness,
+        checkedAt: null,
+        updatedAt: null,
+      },
+      agentActivity: {
+        ...worktree.agentActivity,
+        lastAction: worktree.agentActivity.lastAction
+          ? { ...worktree.agentActivity.lastAction, ageMs: null }
+          : null,
+      },
+      workflow: {
+        ...worktree.workflow,
+        action: {
+          ...worktree.workflow.action,
+          lastAction: worktree.workflow.action.lastAction
+            ? { ...worktree.workflow.action.lastAction, ageMs: null }
+            : null,
+        },
+      },
+    })),
+  };
+  return {
+    ...snapshot,
+    digest: createHash('sha256')
+      .update(JSON.stringify(semantic))
+      .digest('hex'),
   };
 }

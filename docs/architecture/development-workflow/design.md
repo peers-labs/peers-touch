@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
 > **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Created**: 2026-09-13 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -24,8 +24,9 @@
    Task 的 Progress Slice，不是单条命令、检查或授权动作。
 10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
     修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
-11. **Workspace-owned Plan**: 仓库和 PR 可包含多个 active Plan；每个
-    workspace 只消费一次建立且不可换绑的 Plan foreign key。
+11. **Generation-bound Plan**: 仓库和 PR 可包含多个 active Plan；每个
+    workspace 在一个 generation 内只消费一次建立且不可换绑的 Plan foreign
+    key，前一 Plan 完成并释放全部 owner state 后才能显式推进下一 generation。
 12. **Stable Plan, advancing source**: Plan 只记录 immutable initial HEAD；
     当前 Git HEAD、mutation source 与 runtime checkpoint 由外部 Owner 管理。
 13. **Continuous Plan Run**: 一次执行授权在 Plan 已接受范围内连续跨越多个
@@ -45,6 +46,15 @@
     问题。
 18. **Personal policy stays local**: 用户专属的语言、措辞和 coaching 偏好只
     通过 machine-local Overlay 注入；共享 Skill 与项目执行语义不携带个人策略。
+19. **Conversation-bound execution**: 一个宿主 conversation 只绑定一个不可变
+    `executionRoot`；每次工具调用单独解析 `subjectRoot`，允许跨 worktree 读取，
+    拒绝跨 worktree 写入。
+20. **Capability-honest enforcement**: 只有稳定 conversation ID 和可阻断
+    `PreToolUse` 同时存在时才声明 `ENFORCED`；其他宿主只能明确标记为
+    `OBSERVE_ONLY`。
+21. **No worktree as a workaround**: Agent 不得为了绕过 Plan binding、
+    lifecycle 或并发错误自行创建 worktree；worktree 创建只来自用户明确选择的
+    隔离或并行需求。
 
 ## 2. Evidence Ledger
 
@@ -60,6 +70,8 @@
 | `planctl status` 未输出 Task closure 进度和下一关闭效果 | `verified_fact` | `tooling/scripts/plan/plan-package.mjs` | high | none |
 | canonical `pt-ew` 强制所有消费者执行英语翻译和纠正 | `verified_fact` | pre-DWF-D25 `tooling/skills/pt-ew/SKILL.md` | high | machine-local Overlay regression |
 | digest-addressed installed copy 可隔离安装后的 source mutation | `accepted_decision` | DWF-D25 | high | control-plane unit tests |
+| hook `cwd` 同时承担聊天身份和工具作用路径会导致跨 worktree 权限漂移 | `verified_fact` | pre-DWF-D26 `workflow-guard.mjs`; adversarial kernel fixtures | high | none |
+| Cursor project hooks 提供稳定 `conversation_id`、`workspace_roots`、可阻断 `preToolUse` 和 `failClosed` | `verified_fact` | Cursor Hooks official documentation; adapter fixtures | high | live Cursor session |
 
 ## 3. System Architecture
 
@@ -110,9 +122,13 @@ accepted product + architecture
 | Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
 | Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
 | Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
-| Workspace Plan ownership | Development Workflow | machine-local immutable `plan-binding.json` | Plan/declaration/workspace active-work consistency checks |
+| Workspace Plan ownership | Development Workflow | machine-local generation records plus atomic current `plan-binding.json` | Plan/declaration/workspace active-work consistency checks |
 | Current tracked locator | Plan Package | current Task entry | workspace active-work + Context Anchor |
 | Distributed workflow implementation | `peers-dev-workflow` | canonical source and rollout receipts | installed worktree-local tools and Skills |
+| Read-only workflow projection | Peers Dev status owner | `apps/dev/server/status.mjs` | Workflow Snapshot CLI, Context Anchor, Doctor, UI |
+| Conversation execution identity | Workflow Kernel | machine-local immutable `execution-binding.json` | host adapter context |
+| Tool action target | Workflow Kernel | normalized Tool Intent AST plus resolved `subjectRoot` | admission result |
+| Final handoff completeness | Workflow Kernel | rendered Anchor receipt plus create-once release receipt | host-native Stop continuation |
 | User interaction preferences | user Overlay registry | `~/.peers-touch/dev/skill-overlays/registry.json` + digest-addressed installed copy | `pt-ew` resolution |
 | Chat status | Context Anchor | derived projection only | none |
 
@@ -122,8 +138,9 @@ No owner may copy another owner's complete state. In particular:
 - Task files do not copy current Task selection, Session events or raw output.
 - workspace active-work mirrors the manifest/session locator; disagreement
   fails sync and is repaired at the owning source before execution.
-- Plan, declaration and workspace active-work cannot select or replace the workspace
-  Plan binding.
+- Plan, declaration and workspace active-work cannot select or replace the
+  workspace Plan binding. Only the binding owner may advance a completed,
+  quiescent generation by compare-and-swap.
 - Plan does not own an advancing HEAD. Declaration and Session own their
   distinct current-source responsibilities; workspace active-work projects
   them directly from Git.
@@ -139,7 +156,7 @@ No owner may copy another owner's complete state. In particular:
 | Facade/router | `pt-god-view` | No |
 | Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/workspace active-work commands |
 | Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
-| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents/package and immutable workspace Plan binding |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents/package and generation-bound workspace Plan ownership |
 | Scheduler / WHAT runs next | `pt-goal-orchestrator` | No |
 | Policy / MAY this action run | `pt-execution-plan-guardian` | No |
 | Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` | Yes, through runtime and Session owner commands |
@@ -158,11 +175,9 @@ Dev Workflow -> admitted Host Capability Request -> optional Host Adapter
 ```
 
 No scheduler or policy result is itself a Task/Session transition. No
-projection repairs its inputs. A Host Adapter supplies actions or observations
-only; it cannot define a Journey result, run a repository-native fallback, or
-write project state. Runtime Handoff reports the missing capability;
-`pt-goal-orchestrator` alone projects the Host Capability Request, and only Dev
-Workflow invokes the adapter after Guardian admission.
+projection repairs its inputs. Host adapters supply actions or observations
+only; they cannot define Journey results, run repository-native fallback, or
+write project state.
 
 ### 4.2 User Skill Overlay Boundary
 
@@ -184,10 +199,10 @@ user request -> pt-ew host -> ordered interaction transforms
                          project-owned workflow
 ```
 
-The Overlay control plane is distinct from canonical project Skill rollout:
+The Overlay control plane is distinct from canonical project agent integration:
 
-- `make skills` projects only tracked `tooling/skills/pt-*` into the detected
-  host discovery directory.
+- `make skills` projects tracked `tooling/skills/pt-*` plus the
+  supported host hook surface into the selected worktree.
 - `skill-overlay-control.py` writes only under the machine Dev root and never
   edits a host discovery directory.
 - The registry owns enablement and ordering. The source directory is only
@@ -202,6 +217,47 @@ The Overlay control plane is distinct from canonical project Skill rollout:
 - An empty resolution is valid passthrough. A malformed registry, unexpected
   symlink, or digest mismatch is a typed failure and never degrades silently to
   passthrough.
+
+### 4.3 Conversation-Bound Workflow Kernel
+
+```text
+TRAE / Cursor / Codex payload
+  -> host adapter
+  -> canonical HookEvent + ToolIntent AST
+  -> immutable conversation executionRoot
+  -> independently resolved subjectRoot(s)
+  -> workflow owner-state inspection
+  -> ALLOW | typed DENY | machine-rendered continuation
+```
+
+The first blockable `PreToolUse` atomically creates
+`~/.peers-touch/dev/conversations/<host>/<conversationHash>/execution-binding.json`.
+The raw conversation ID is never persisted. `SessionStart` and prompt hooks
+only prewarm context and cannot create or replace the binding.
+
+The Kernel distinguishes identity from action:
+
+- `executionRoot` comes from the installed project integration and remains
+  immutable for the conversation;
+- `subjectRoot` comes from structured tool paths, shell working directory and
+  parsed shell arguments;
+- reads may cross roots;
+- writes must stay inside `executionRoot` and, for explicit file writes, inside
+  the active declaration's `exclusive-write` claims;
+- multiline commands, command substitution and unsupported shell operators
+  fail closed instead of passing through regex classification.
+
+The Kernel does not mutate workflow owner state. Its only writes are its own
+conversation binding, latest rendered Anchor receipt, and create-once release
+receipt. Stop on an active Plan produces a continuation. Terminal or blocked
+Stop requires the exact machine-rendered Anchor to be observable before the
+release receipt is committed.
+
+TRAE and Codex use their native plugin-compatible hook response shape. Cursor
+uses project-native `sessionStart`, `beforeSubmitPrompt`, `preToolUse` and
+`stop` entries with `failClosed: true`. A host without a stable conversation ID
+or a blockable pre-tool event is reported as `OBSERVE_ONLY`; the project never
+mislabels that mode as enforcement.
 
 ## 5. Plan Package Contract
 
@@ -219,7 +275,7 @@ execution-plans/<date>-<slug>/
 `plan.md` owns:
 
 - plan identity and its claimed worktree binding, verified against the
-  machine-local immutable workspace Plan binding;
+  machine-local current workspace Plan generation;
 - immutable initial HEAD only, never the advancing source commit;
 - current-worktree binding only; sibling worktree inventory remains
   non-authoritative machine topology;
@@ -361,8 +417,9 @@ accepted Plan + authorization envelope
 ```
 
 The Plan Run owns no duplicate durable state. `pt-dev-workflow` derives it from
-the user's execution intent, the immutable workspace Plan binding, the Plan
-Package DAG, active declaration, current Session, and accepted authorization.
+the user's execution intent, current workspace Plan generation, Plan DAG, active
+declaration, current Session, and accepted authorization. Task closure, review,
+Context Anchor output, and context compaction do not consume authorization.
 
 Already-authorized operations execute directly. Authorization admission is
 exact and reusable:
@@ -381,43 +438,10 @@ explicit allowed Plan field is authorization and cannot be discarded merely
 because the operation is commit, deploy, reset, merge, release, or another
 sensitive category.
 
-After each Task closes or parks, Dev Workflow atomically updates owner state,
-asks the scheduler for `NEXT`, selects a legal successor through the Plan owner
-command, refreshes the declaration locator, and continues. Task closure,
-stage transition, internal review success, Context Anchor emission, or context
-compaction does not consume the Plan Run authorization.
-
-At each required quality boundary, Dev Workflow executes an agent-led review
-loop:
-
-```text
-focused verification
-  -> pt-quality-check
-  -> pt-completion-auditor
-  -> pt-github-review
-  -> fix source-backed findings
-  -> rerun affected checks and review
-```
-
-The exact Skills vary by stage and change profile, but the user is not the
-default reviewer. Human escalation is valid only for:
-
-- an operation outside or explicitly denied by every exact grant;
-- an admitted operation whose attempted execution returns an actual external
-  permission, credential, or scope failure with no legal in-scope remediation;
-- force push, history rewrite, merge, release, production mutation, data
-  deletion/reset, environment creation, permission expansion, version/schema
-  bump, worktree add/remove/prune, or secret access only when its exact grant is
-  absent;
-- unresolved product, architecture, security, privacy, compatibility, or
-  rollout choices with multiple materially valid outcomes;
-- unavailable external resources or credentials;
-- fixed-point exhaustion after every dependency-ready Task and legal
-  remediation has been drained.
-
-Review findings, implementation defects, failed checks, mechanical plan repair,
-successor activation, and non-destructive retries remain internal Run work.
-Status projections may report them but do not ask `Continue?`.
+Review is agent-led. Source-backed findings are fixed and re-reviewed inside the
+Run. Only destructive or irreversible work, missing external authorization or
+resources, unresolved material semantic choices, or fixed-point exhaustion
+reach the user.
 
 ## 7. Development Session State Machine
 
@@ -466,13 +490,10 @@ Transition guards are closed, work-class aware and fail-closed:
 - documentation work may close at `FOCUSED_PASS` without a product-functional claim;
 - transition commit atomically replaces the bounded event log, then materializes
   `session.json`; a stale/missing snapshot is rebuilt by replay;
-- the runtime result-commit operation binds one source/runtime/Journey result to
-  its Session, starts only from `FUNCTIONAL_RUNNING`, publishes the
-  content-addressed evidence seal with create-once fsync semantics, and makes
-  `FUNCTIONAL_CHECK/PASS -> FUNCTIONAL_PASS` durable before Task closure. A
-  pre-journal failure may retain an unreferenced orphan seal; an exposed journal
-  never references a deleted seal. A PASS report beside an earlier Session
-  state is `SESSION_PROJECTION_STALE`;
+- the runtime result owner starts the complete current closure only from
+  `FUNCTIONAL_RUNNING`, validates source/runtime/Journey identity, publishes a
+  create-once evidence seal, and commits
+  `FUNCTIONAL_CHECK/PASS -> FUNCTIONAL_PASS` before Task closure;
 - unknown fields, unknown states and source/task mismatch reject before mutation.
 
 The event log is the transition transaction journal. Every event carries the full
@@ -516,10 +537,9 @@ Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 
 - Manifest, active pointer, shared parser, generated outputs, commit, deployment,
   Fixture mutation and final Gates have one integrator owner.
-- Goal scheduling is host-neutral. Detected TRAE, Cursor, Codex, or future host
-  adapters may provide worker or UI transport only after scheduling and
-  Guardian admission; missing optional capability degrades to serial or
-  repository-native execution.
+- Goal scheduling is host-neutral. Detected host adapters may provide worker or
+  UI transport only after scheduling and Guardian admission; missing optional
+  capability degrades to serial or repository-native execution.
 - Development and Acceptance execution consume the same Journey/provisioning
   adapters. The runner selects an explicit `development` or `acceptance`
   execution policy. Development writes only under the current machine Dev
@@ -634,7 +654,8 @@ The architecture is implemented only when:
 - unrelated sibling worktree add/remove/prune operations do not invalidate the
   selected worktree's binding;
 - multiple active Plans may coexist in one repository/PR while each workspace
-  resolves only its immutable binding and rebind attempts fail closed;
+  resolves only its current immutable generation; unfinished replacement and
+  discovery-based reassignment fail closed;
 - an authorized checkpoint can advance declaration, Session and workspace
   active-work source identity without editing the tracked Plan or dirtying the
   checkpoint;
@@ -657,6 +678,13 @@ The architecture is implemented only when:
   digest-verified `pt-ew` inputs;
 - with no enabled Overlay, `pt-ew` passes the original user intent to
   `pt-god-view` unchanged;
+- one conversation cannot change `executionRoot` after its first blockable
+  tool event; cross-worktree reads pass while writes fail with
+  `CROSS_WORKTREE_WRITE_DENIED`;
+- Session start does not create authority, missing stable conversation identity
+  reports `OBSERVE_ONLY`, and unsupported shell structure fails closed;
+- terminal/blocked Stop cannot release until the machine-rendered Anchor is
+  observed and a create-once release receipt is committed;
 - a deterministic runner PASS cannot coexist with a pre-functional Session
   projection at Task closure;
 - two independent reviews find no unresolved source-of-truth or runnable gap.

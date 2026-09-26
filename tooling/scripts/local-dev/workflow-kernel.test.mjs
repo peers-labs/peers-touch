@@ -1,0 +1,563 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+import { evaluateWorkflowEvent } from './workflow-kernel.mjs';
+
+function projectRoot(parent, name) {
+  const root = path.join(parent, name);
+  mkdirSync(path.join(root, 'tooling/skills/pt-ew'), { recursive: true });
+  mkdirSync(path.join(root, 'tooling/scripts/local-dev'), { recursive: true });
+  writeFileSync(path.join(root, 'tooling/skills/pt-ew/SKILL.md'), '# test\n');
+  writeFileSync(path.join(root, 'tooling/scripts/local-dev/dev-work.mjs'), '');
+  execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+  return realpathSync(root);
+}
+
+function event(overrides = {}) {
+  return {
+    valid: true,
+    host: 'cursor',
+    event: 'PRE_TOOL_USE',
+    hostEvent: 'preToolUse',
+    stableConversationId: 'conversation-1',
+    executionRootHints: [],
+    workspaceRoots: [],
+    repositoryWorkingDirectory: null,
+    toolWorkingDirectory: null,
+    toolName: 'Read',
+    toolInput: {},
+    command: null,
+    willEditFilepaths: [],
+    lastAssistantMessage: null,
+    transcriptPath: null,
+    stopHookActive: false,
+    loopCount: null,
+    ...overrides,
+  };
+}
+
+function binding(root) {
+  return {
+    kind: 'peers-touch-workflow-conversation-binding',
+    host: 'cursor',
+    conversationHash: 'a'.repeat(64),
+    executionRoot: root,
+    workspaceId: '0123456789abcdef',
+    boundAt: '2026-09-23T00:00:00.000Z',
+    bindingEvent: 'PRE_TOOL_USE',
+    digest: 'b'.repeat(64),
+  };
+}
+
+function injectedBinding(root, extras = {}) {
+  return {
+    readConversationBinding: () => binding(root),
+    recordWorkflowAction: false,
+    ...extras,
+  };
+}
+
+test('SessionStart prewarms but never creates the immutable binding', async () => {
+  let bindCalls = 0;
+  const result = await evaluateWorkflowEvent(
+    event({ event: 'SESSION_START', hostEvent: 'sessionStart' }),
+    {
+      readConversationBinding: () => null,
+      bindConversation: () => {
+        bindCalls += 1;
+      },
+    },
+  );
+  assert.equal(result.action, 'CONTEXT');
+  assert.equal(result.enforcementMode, 'PENDING_BINDING');
+  assert.equal(bindCalls, 0);
+});
+
+test('missing stable conversation identity denies mutation but permits safe reads', async () => {
+  const mutation = await evaluateWorkflowEvent(
+    event({
+      stableConversationId: null,
+      toolName: 'Write',
+      toolInput: { file_path: '/tmp/file' },
+    }),
+  );
+  assert.equal(mutation.action, 'DENY');
+  assert.equal(mutation.enforcementMode, 'OBSERVE_ONLY');
+  assert.equal(mutation.code, 'STABLE_CONVERSATION_ID_REQUIRED');
+
+  const read = await evaluateWorkflowEvent(
+    event({
+      stableConversationId: null,
+      toolName: 'Read',
+      toolInput: { file_path: '/tmp/file' },
+    }),
+  );
+  assert.equal(read.action, 'ALLOW');
+  assert.equal(read.enforcementMode, 'OBSERVE_ONLY');
+  assert.equal(read.code, 'OBSERVE_ONLY');
+});
+
+test('first PreToolUse binds once and later cross-worktree reads remain legal', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-roots-'));
+  try {
+    const first = projectRoot(temporary, 'first');
+    const second = projectRoot(temporary, 'second');
+    const machineRoot = path.join(temporary, 'machine');
+    const initial = await evaluateWorkflowEvent(
+      event({
+        executionRootHints: [first],
+        toolWorkingDirectory: first,
+      }),
+      { machineRoot },
+    );
+    assert.equal(initial.action, 'ALLOW');
+    assert.equal(initial.executionRoot, realpathSync(first));
+
+    const read = await evaluateWorkflowEvent(
+      event({
+        executionRootHints: [second],
+        toolWorkingDirectory: second,
+        toolName: 'Read',
+        toolInput: { file_path: path.join(second, 'README.md') },
+      }),
+      { machineRoot },
+    );
+    assert.equal(read.action, 'ALLOW');
+    assert.equal(read.executionRoot, realpathSync(first));
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('an existing conversation binding denies cross-worktree writes', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-cross-write-'));
+  try {
+    const first = projectRoot(temporary, 'first');
+    const second = projectRoot(temporary, 'second');
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: second,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(second, 'new.txt') },
+      }),
+      injectedBinding(first),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('shell arguments cannot move a mutation into a sibling worktree', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-shell-root-'));
+  try {
+    const first = projectRoot(temporary, 'first');
+    const second = projectRoot(temporary, 'second');
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: first,
+        toolName: 'exec_command',
+        command: `rm ${path.join(second, 'new.txt')}`,
+        toolInput: { command: `rm ${path.join(second, 'new.txt')}` },
+      }),
+      injectedBinding(first),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('shell mutation cwd cannot leave the execution root', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-shell-cwd-'));
+  try {
+    const root = projectRoot(temporary, 'root');
+    const outside = path.join(temporary, 'outside');
+    mkdirSync(outside);
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: outside,
+        toolName: 'exec_command',
+        command: 'touch new.txt',
+        toolInput: { command: 'touch new.txt' },
+      }),
+      injectedBinding(root),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('file writes cannot escape through a symlink inside the execution root', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-symlink-'));
+  try {
+    const root = projectRoot(temporary, 'root');
+    const outside = path.join(temporary, 'outside');
+    mkdirSync(outside);
+    symlinkSync(outside, path.join(root, 'escaped'));
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: root,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(root, 'escaped', 'new.txt') },
+      }),
+      injectedBinding(root),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'CROSS_WORKTREE_WRITE_DENIED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('explicit file writes still enforce declaration source claims', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({
+      toolWorkingDirectory: '/workspace',
+      toolName: 'apply_patch',
+      toolInput: {
+        patch: '*** Update File: /workspace/apps/desktop/file.ts\n',
+      },
+    }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => ({
+        status: 'READY',
+        tracked: false,
+        declaration: {
+          sourceClaims: [
+            {
+              mode: 'exclusive-write',
+              pathPrefix: 'tooling/scripts',
+            },
+          ],
+        },
+      }),
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'SOURCE_SCOPE_DENIED');
+});
+
+test('shell mutations enforce declaration scope from parsed targets', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-shell-scope-'));
+  try {
+    const root = projectRoot(temporary, 'root');
+    const target = path.join(root, 'apps/desktop/file.ts');
+    const command = `touch ${target}`;
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: root,
+        toolName: 'exec_command',
+        command,
+        toolInput: { command },
+      }),
+      injectedBinding(root, {
+        inspectWorkflowContext: async () => ({
+          status: 'READY',
+          tracked: false,
+          declaration: {
+            sourceClaims: [
+              { mode: 'exclusive-write', pathPrefix: 'tooling/scripts' },
+            ],
+          },
+        }),
+      }),
+    );
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'SOURCE_SCOPE_DENIED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
+test('multiline shell injection is denied before owner-state inspection', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({
+      toolName: 'exec_command',
+      command: 'cat README.md\nrm generated.txt',
+      toolInput: { command: 'cat README.md\nrm generated.txt' },
+    }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => {
+        throw new Error('must not inspect');
+      },
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'SHELL_DYNAMIC_SYNTAX_DENIED');
+});
+
+test('unknown host tools fail closed instead of bypassing intent policy', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({
+      toolName: 'UnknownMutationTool',
+      toolInput: { destination: '/workspace/file' },
+    }),
+    injectedBinding('/workspace'),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'TOOL_INTENT_UNSUPPORTED');
+});
+
+test('Stop blocks an active Plan even when an anchor is already present', async () => {
+  const root = '/workspace';
+  const result = await evaluateWorkflowEvent(
+    event({
+      event: 'STOP',
+      hostEvent: 'stop',
+      lastAssistantMessage: '**Context Anchor**',
+    }),
+    injectedBinding(root, {
+      inspectWorkflowContext: async () => ({
+        status: 'READY',
+        tracked: true,
+        binding: { planId: 'PLAN-1', planPath: 'plan.md' },
+        planPackage: {
+          manifest: {
+            status: 'active',
+            binding: { initialHead: 'head' },
+            tasks: [{ id: 'TASK-1', status: 'in_progress' }],
+          },
+        },
+        currentTask: { id: 'TASK-1', status: 'in_progress' },
+        declaration: { workItemId: 'WORK-1', sessionId: 'SESSION-1' },
+        session: { state: { state: 'IMPLEMENTING' } },
+        branch: 'main',
+        head: 'head',
+      }),
+      writeAnchorReceipt: () => {},
+    }),
+  );
+  assert.equal(result.action, 'CONTINUE');
+  assert.equal(result.code, 'PLAN_RUN_CONTINUES');
+  assert.match(result.followupMessage, /Context Anchor/);
+});
+
+test('Stop requires the exact rendered anchor before atomic release', async () => {
+  const root = '/workspace';
+  let releaseCount = 0;
+  const options = injectedBinding(root, {
+    inspectWorkflowContext: async () => ({
+      status: 'TERMINAL',
+      tracked: true,
+      binding: { planId: 'PLAN-1', planPath: 'plan.md' },
+      planPackage: {
+        manifest: {
+          status: 'completed',
+          binding: { initialHead: 'head' },
+          tasks: [{ id: 'TASK-1', status: 'done' }],
+        },
+      },
+      branch: 'main',
+      head: 'head',
+    }),
+    writeAnchorReceipt: () => {},
+    releaseConversation: () => {
+      releaseCount += 1;
+    },
+  });
+  const first = await evaluateWorkflowEvent(
+    event({ event: 'STOP', hostEvent: 'stop' }),
+    options,
+  );
+  assert.equal(first.action, 'CONTINUE');
+  assert.equal(first.code, 'CONTEXT_ANCHOR_REQUIRED');
+  assert.equal(releaseCount, 0);
+
+  const second = await evaluateWorkflowEvent(
+    event({
+      event: 'STOP',
+      hostEvent: 'stop',
+      lastAssistantMessage: first.followupMessage,
+    }),
+    options,
+  );
+  assert.equal(second.action, 'ALLOW');
+  assert.equal(second.enforcementMode, 'RELEASED');
+  assert.equal(releaseCount, 1);
+});
+
+test('bound mutations emit one redacted action receipt without changing admission', async () => {
+  const receipts = [];
+  const result = await evaluateWorkflowEvent(
+    event({
+      toolWorkingDirectory: '/workspace',
+      toolName: 'Write',
+      toolInput: { file_path: '/workspace/tooling/scripts/file.mjs' },
+    }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => ({
+        status: 'READY',
+        tracked: true,
+        declaration: {
+          workItemId: 'WORK-1',
+          planId: 'PLAN-1',
+          taskId: 'TASK-1',
+          sessionId: 'SESSION-1',
+          sourceClaims: [
+            { mode: 'exclusive-write', pathPrefix: 'tooling/scripts' },
+          ],
+        },
+        session: {
+          eventDigest: 'c'.repeat(64),
+          state: { state: 'IMPLEMENTING' },
+        },
+      }),
+      recordWorkflowAction: (receipt) => receipts.push(receipt),
+    }),
+  );
+  assert.equal(result.action, 'ALLOW');
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].event, 'STARTED');
+  assert.equal(receipts[0].operation.family, 'WRITE');
+  assert.equal(receipts[0].operation.targetRef, 'tooling/scripts/file.mjs');
+  assert.equal('toolInput' in receipts[0], false);
+});
+
+test('PreToolUse starts heartbeat and PostToolUse records terminal completion', async () => {
+  const recorded = [];
+  const heartbeats = [];
+  const inspection = {
+    status: 'READY',
+    tracked: true,
+    declaration: {
+      workItemId: 'WORK-1',
+      planId: 'PLAN-1',
+      taskId: 'TASK-1',
+      sessionId: 'SESSION-1',
+      sourceClaims: [
+        { mode: 'exclusive-write', pathPrefix: 'tooling/scripts' },
+      ],
+    },
+    session: {
+      eventDigest: 'c'.repeat(64),
+      state: { state: 'IMPLEMENTING' },
+    },
+  };
+  const options = injectedBinding('/workspace', {
+    inspectWorkflowContext: async () => inspection,
+    recordWorkflowAction: (input) => {
+      recorded.push(input);
+      return { actionId: input.actionId ?? 'tool-call-1' };
+    },
+    startWorkflowActionHeartbeat: (input) => heartbeats.push(input),
+  });
+  const pre = await evaluateWorkflowEvent(
+    event({
+      actionId: 'tool-call-1',
+      toolWorkingDirectory: '/workspace',
+      toolName: 'Write',
+      toolInput: { file_path: '/workspace/tooling/scripts/file.mjs' },
+    }),
+    options,
+  );
+  const post = await evaluateWorkflowEvent(
+    event({
+      actionId: 'tool-call-1',
+      event: 'POST_TOOL_USE',
+      hostEvent: 'PostToolUse',
+      toolWorkingDirectory: '/workspace',
+      toolName: 'Write',
+      toolInput: { file_path: '/workspace/tooling/scripts/file.mjs' },
+    }),
+    options,
+  );
+  assert.equal(pre.action, 'ALLOW');
+  assert.equal(post.action, 'ALLOW');
+  assert.deepEqual(
+    recorded.map((item) => [item.event, item.result]),
+    [
+      ['STARTED', 'RUNNING'],
+      ['FINISHED', 'PASS'],
+    ],
+  );
+  assert.equal(heartbeats.length, 1);
+  assert.equal(heartbeats[0].actionId, 'tool-call-1');
+});
+
+test('PostToolUse cannot create the first binding or emit an action receipt', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-post-bind-'));
+  try {
+    const root = projectRoot(temporary, 'root');
+    let bindCalls = 0;
+    let receiptCalls = 0;
+    const result = await evaluateWorkflowEvent(
+      event({
+        event: 'POST_TOOL_USE',
+        hostEvent: 'PostToolUse',
+        actionId: 'tool-call-1',
+        executionRootHints: [root],
+        toolWorkingDirectory: root,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(root, 'file.txt') },
+      }),
+      {
+        readConversationBinding: () => null,
+        bindConversation: () => {
+          bindCalls += 1;
+          throw new Error('PostToolUse must not bind');
+        },
+        recordWorkflowAction: () => {
+          receiptCalls += 1;
+        },
+      },
+    );
+
+    assert.equal(result.action, 'ALLOW');
+    assert.equal(result.enforcementMode, 'PENDING_BINDING');
+    assert.equal(bindCalls, 0);
+    assert.equal(receiptCalls, 0);
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});

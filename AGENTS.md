@@ -469,7 +469,7 @@ Current project skills:
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
-| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create the immutable workspace Plan binding |
+| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create or advance the workspace Plan generation |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -489,19 +489,22 @@ storage.
 Agent responsibilities at startup:
 
 1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
-2. **Sync**: project the discovered skills into the host's own feature
-   directory or registry, for example Cursor `.cursor/skills/`, TRAE
-   `.trae/skills/`, or Codex `.agents/skills/`.
+2. **Integrate**: run `make skills IDE=<trae|cursor|codex>` at a durable
+   boundary. It projects Skills plus supported worktree-local hooks.
 3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
 4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
+5. **Never mutate global hooks**: host integration writes only this worktree's
+   `.trae`, `.cursor`, or `.agents` projection. The first blockable tool event
+   binds the host conversation to that installed root; later tool `cwd` and
+   targets are subject roots and cannot rebind write authority.
 
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 
 After a governance-source update, follow
-`docs/architecture/development-workflow/host-neutral-skill-rollout.md`.
+`docs/architecture/development-workflow/host-neutral-agent-integration.md`.
 Installation rejects an active declaration; persist a Context Anchor, release
-the declaration, install, start a new agent session, acknowledge the new
-catalog, audit, then resume. Do not hot-swap Skills during an in-flight action.
+the declaration, run `make skills IDE=<host>`, restart the IDE when hooks
+changed, audit, then resume. Do not hot-swap Skills during an in-flight action.
 
 ### 13.3 Hard Constraints
 
@@ -529,7 +532,7 @@ Any non-trivial development task (cross-module, new feature, architecture change
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + immutable Plan binding + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Package |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + generation-bound Plan ownership + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Package |
 | **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates host-neutral scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
@@ -597,27 +600,32 @@ Any non-trivial development task (cross-module, new feature, architecture change
     `QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the blocked
     observation; unchanged requests cannot retry at zero progress.
 
-#### 13.5.1 Execution Worktree Binding Contract
+#### 13.5.1 Conversation And Execution Worktree Binding Contract
 
 This contract is fail-closed and applies before stage dispatch, execution,
 edits, status claims, and completion claims.
 
-1. The path used to load a skill is only the instruction source. It MUST NOT
-   select, replace, or imply an execution worktree. The current verified
-   worktree remains bound.
-2. If the current worktree is ambiguous, including when the session exposes
-   multiple candidate roots without one explicit selection, stop and ask the
-   user to identify the worktree. Do not infer it from a skill path, plan path,
-   branch name, or nearby repository.
-3. From the explicitly selected current worktree root, capture its identity:
+1. A stable host conversation binds exactly once to one canonical
+   `executionRoot`. The first blockable `PreToolUse` creates the binding
+   atomically from the installed project integration root. `SessionStart`,
+   prompts, tool `cwd`, target paths, Plan state, and sibling worktrees cannot
+   create or replace it.
+2. The conversation binding is not a worktree lease or cross-agent lock. It
+   constrains only that conversation: reads may use another `subjectRoot`, while
+   every cross-worktree write is denied.
+3. If the host exposes no stable conversation ID or no blockable pre-tool
+   event, report `OBSERVE_ONLY`; never claim that hook enforcement is active.
+   If a manual execution root remains ambiguous, stop and ask the user rather
+   than inferring it from a Skill path, Plan path, branch name, or nearby repo.
+4. From the bound current worktree root, capture its identity:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
-4. Reconcile the captured identity with this workspace's active-work record,
+5. Reconcile the captured identity with this workspace's active-work record,
    the formal plan, and the latest Context Anchor. Any mismatch,
    or any later root, branch, HEAD, or `workspaceId` drift,
    returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
    automatically changing directories, switching branches, or selecting a
    different worktree.
-5. From the same root, immediately verify all captured values:
+6. From the same root, immediately verify all captured values:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
    Every materialized value must be one POSIX shell-safe argument.
    Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
@@ -625,30 +633,36 @@ edits, status claims, and completion claims.
    A missing verifier or unresolved field is
    `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
    mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
-6. Every mutating tool call must carry the bound canonical root as its explicit
+7. Every mutating tool call must carry the bound canonical root as its explicit
    `workdir`. File mutation tools must use absolute paths beneath that same
    root. Subagents inherit the complete immutable binding and must run the
    verifier against it before writing.
-7. Re-run the verifier after resume or context compaction and before every
+8. Re-run the verifier after resume or context compaction and before every
    status, readiness, handoff, or completion report.
-8. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
+9. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
    after a commit, rebase, or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
-9. Do not run `git switch`, `git checkout`, `git worktree add`,
+10. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-10. A repository or PR may contain multiple active Plan Packages. Each
+    A Plan binding or lifecycle conflict is never implicit permission to create
+    another worktree.
+11. A repository or PR may contain multiple active Plan Packages. Each
     workspace resolves only
     `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
     branch scans, directory order, active status and synchronized foreign Plans
     never select execution ownership.
-11. `make plan-bind PLAN=<path>` creates the workspace's `planId + planPath`
-    binding once. The same tuple is idempotent. A different tuple returns
-    `WORKSPACE_PLAN_REBIND_DENIED`; there is no unbind/rebind command. A new
-    Plan requires a new worktree.
-12. Plan manifest, tracked declaration, workspace active-work record, Session
+12. `make plan-bind PLAN=<path>` creates the workspace's first
+    `planId + planPath` generation. The same tuple is idempotent; a different
+    tuple returns `WORKSPACE_PLAN_REBIND_DENIED`.
+13. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
+    next-Plan path for an existing workspace. It requires the current Plan to
+    be completed and the workspace to have no live declaration, active-work
+    projection, or runtime lease. It atomically advances one generation and
+    retains immutable history.
+14. Plan manifest, tracked declaration, workspace active-work record, Session
     and Context Anchor must match the immutable binding. A bound workspace
     cannot publish untracked work. CI has no machine binding and must receive
     an explicit Plan.
@@ -718,10 +732,12 @@ arbitrary replacement JSON.
 
 - **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
   placeholder record or fabricate a plan path.
-- **Plan created** → validate it, create the workspace's immutable Plan binding,
-  publish the tracked declaration, then derive this workspace's record.
-- **Plan already bound** → the same tuple is idempotent; a different Plan must
-  use another worktree and cannot replace the record in place.
+- **First Plan created** → validate it, create generation 1, publish the tracked
+  declaration, then derive this workspace's record.
+- **Next Plan created** → after the current Plan is completed and declaration,
+  active-work, and runtime leases are released, explicitly advance the
+  generation with expected-generation CAS. Never create a worktree as an Agent
+  workaround.
 - **Worktree binding created** → record the verified `workspace_id`,
   `initial_head`, and `expected_head`; initially both HEAD fields are
   identical. Never derive identity from a skill path or copy it from another
@@ -748,6 +764,10 @@ Context Anchor rules:
   Session, declaration and Git remain the state owners.
 - Execution plans MUST NOT contain a `## Context Anchor` section.
 - Context Anchor validates and projects; it never writes or repairs active-work.
+- The Workflow Kernel renders the exact Anchor at Stop and stores only its
+  machine-local receipt. A terminal or blocked conversation releases only
+  after that exact projection is observable in the assistant response or host
+  transcript.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
   `workspaceId`, initial HEAD, and expected/verified HEAD.
   It never persists a developer or CI user-home absolute path or an ambiguous

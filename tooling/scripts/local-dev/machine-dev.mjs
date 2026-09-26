@@ -11,6 +11,7 @@ import {
   checkWorkspace,
   registerWorkspace,
   statusAll,
+  unregisterWorkspace,
   updateWorkspace,
   validateLeaseRequest,
   verifyHeldLease,
@@ -29,7 +30,7 @@ const OPTION_NAMES = new Map([
   ['budget-seconds', 'budgetSeconds'],
   ['resource-kind', 'resourceKind'],
   ['resource-id', 'resourceId'],
-  ['reset-scope', 'resetScope'],
+  ['reset-authorized-scope', 'resetAuthorizedScope'],
   ['format', 'format'],
 ]);
 
@@ -187,6 +188,10 @@ export async function runCli(argv) {
     case 'update':
       output(updateWorkspace(options));
       return 0;
+    case 'unregister':
+      requireOption(options, 'owner');
+      output(unregisterWorkspace(options));
+      return 0;
     case 'check':
       output(checkWorkspace(options));
       return 0;
@@ -218,7 +223,7 @@ export async function runCli(argv) {
     default:
       throw new MachineDevError(
         'INVALID_ARGUMENT',
-        'action must be register, update, check, resolve, status-all, validate-lease, verify-held, or lease',
+        'action must be register, update, unregister, check, resolve, status-all, validate-lease, verify-held, or lease',
       );
   }
 }

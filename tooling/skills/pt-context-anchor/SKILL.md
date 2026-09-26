@@ -15,6 +15,10 @@ durable owner state -> validate -> project to chat
 ```
 
 It does not synchronize, repair, or write durable state.
+At a host Stop boundary, `workflow-anchor.mjs` is the rendering owner: the
+Skill emits the exact machine-rendered block and does not reconstruct or edit
+it. The Kernel stores the machine-local receipt and validates response
+completeness before release.
 
 ## Invoke When
 
@@ -47,6 +51,7 @@ It must not:
 - acquire resources or execute work;
 - infer missing facts from chat;
 - write a `## Context Anchor` section into any repository document.
+- rewrite, abbreviate, or manually recreate a Kernel-rendered Stop Anchor.
 
 When sources disagree, return `CONTEXT_PROJECTION_STALE` with the mismatched
 fields and their owning writer. `pt-dev-workflow` coordinates repair through
@@ -85,7 +90,7 @@ Tracked work reads exactly:
 Validation rules:
 
 - schema, revision and digest validate;
-- `planId/planPath` match the immutable workspace binding;
+- `planId/planPath` match the current workspace Plan generation;
 - `currentTaskId/currentTaskPath/taskStatus` mirror the manifest-selected Task;
 - `devState` mirrors `session.json` or is `null`;
 - branch, workspace and expected HEAD match declaration and verified Git state;
@@ -96,10 +101,10 @@ not an input.
 
 ## Read Procedure
 
-1. Resolve the workspace's immutable machine Plan binding and read only that
+1. Resolve the workspace's current machine Plan generation and read only that
    workspace's active-work record with `make active-work-status`.
-2. Verify the persisted worktree and Plan bindings. Do not recapture a new
-   baseline or rebind the workspace.
+2. Verify the persisted worktree and Plan generation. Do not recapture a new
+   baseline or replace an unfinished generation.
 3. Run `planctl validate`, `planctl current`, and `planctl status`.
 4. Read compact `plan.md`, only `current_task_path`, and matching
    `session.json`.
@@ -114,6 +119,10 @@ not an input.
    frontier or the Plan terminal state. Never derive the target by adding a
    rounded percentage or by counting unlocked Tasks as complete.
 8. Render one final chat block.
+
+When invoked by the Workflow Kernel at Stop, steps 1-8 are already represented
+by the supplied receipt. Emit its `content` byte-for-byte; do not append fields
+or replace unknown values.
 
 Do not scan archive files, every Task body, raw command logs, or conversation
 history.
@@ -190,6 +199,8 @@ Each error names the mismatched field and owning writer.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
 - No file, registry, plan, Session, or runtime state was mutated.
 - The response ends with one fenced chat projection.
+- A terminal or blocked host Stop has a matching machine-local Anchor receipt
+  and create-once release receipt.
 
 ## Anti-Patterns
 

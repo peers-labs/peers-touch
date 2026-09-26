@@ -20,6 +20,9 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      shell-quote:
+        specifier: ^1.10.0
+        version: 1.10.0
       vite:
         specifier: ^7.3.1
         version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(terser@5.49.0)

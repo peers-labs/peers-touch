@@ -41,6 +41,10 @@ import {
   validateDeclaration,
   validateSourcePathContainment,
 } from './dev-work-schema.mjs';
+import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLockSync,
+} from './workspace-lifecycle-lock.mjs';
 import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const LOCK_TIMEOUT_MS = 5_000;
@@ -996,7 +1000,7 @@ function buildDeclaration(options, existing, now) {
   return declaration;
 }
 
-function mutateLedger(options, mutation) {
+function mutateLedgerUnderFence(options, mutation) {
   const home = options.home ?? homedir();
   const file = options.ledgerPath ?? developmentWorkLedgerPath(home);
   const lockFile = options.lockPath ?? developmentWorkLockPath(home);
@@ -1012,6 +1016,49 @@ function mutateLedger(options, mutation) {
     writeLedgerAtomic(file, ledger);
     const readback = readLedger(file, now);
     return { output, ledger: readback, file };
+  } finally {
+    release();
+  }
+}
+
+function mutateLedger(options, mutation) {
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) =>
+        mutateLedgerUnderFence(
+          { ...options, workspaceRoot, lifecycleLease },
+          mutation,
+        ),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
+function inspectLedger(options, inspection) {
+  const home = options.home ?? homedir();
+  const file = options.ledgerPath ?? developmentWorkLedgerPath(home);
+  const lockFile = options.lockPath ?? developmentWorkLockPath(home);
+  const now = toOperationDate(options);
+  ensurePrivateDirectory(path.dirname(file));
+  ensurePrivateDirectory(path.dirname(lockFile));
+  const release = acquireLock(lockFile, options.lockTimeoutMs, now);
+  try {
+    const ledger = readLedger(file, now);
+    reconcileExpired(ledger, now);
+    return inspection(ledger, now);
   } finally {
     release();
   }
@@ -1153,12 +1200,12 @@ export function releaseDeclaration(options) {
 }
 
 export function statusAll(options = {}) {
-  return mutateLedger(options, (ledger, now) => ({
+  return inspectLedger(options, (ledger, now) => ({
     observedAt: now.toISOString(),
     declarations: Object.values(ledger.declarations).sort((left, right) =>
       left.declarationId.localeCompare(right.declarationId),
     ),
-  })).output;
+  }));
 }
 
 export function statusCurrent(options) {

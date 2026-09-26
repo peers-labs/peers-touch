@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Created**: 2026-09-13 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -326,33 +326,45 @@ Rules:
 - plain Acceptance runs only the current Task closure;
 - completion/full remain explicit and never derive from diff expansion.
 
-## 5.1 Immutable Workspace Plan Binding
+## 5.1 Generation-Bound Workspace Plan Binding
 
 ```ts
 interface WorkspacePlanBinding {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: 'peers-touch-workspace-plan-binding';
+  generation: number;
   workspaceId: string;
   canonicalRoot: string;
   planId: string;
   planPath: string;
   boundAt: string;
   boundBy: string;
+  recordDigest: string;
 }
 ```
 
-The record is stored at:
+The current pointer and immutable generation history are stored at:
 
 ```text
 ~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding-history/generation-<N>.json
 ```
 
 Rules:
 
-- creation is explicit and atomic;
-- the same `planId + planPath` request is idempotent;
-- a different tuple returns `WORKSPACE_PLAN_REBIND_DENIED`;
-- no unbind or rebind operation exists;
+- generation 1 creation is explicit and atomic;
+- the same `planId + planPath` request is idempotent within the current
+  generation;
+- ordinary bind with a different tuple returns `WORKSPACE_PLAN_REBIND_DENIED`;
+- only explicit generation advance may change the tuple;
+- advance requires current status `completed`, expected-generation CAS, no live
+  declaration, no active-work record, and no live runtime lease;
+- every generation record is create-once, digest-verified, and owner-controlled;
+- the current pointer is atomically replaced only after the next immutable
+  generation record is durable;
+- a schema-1 record resolves as generation 1 without rewriting it and migrates
+  only during successful advance;
+- there is no unbind operation;
 - `planPath` is repository-relative and resolves inside `canonicalRoot`;
 - the referenced package must claim the same `workspaceId`;
 - repository/branch scans, Plan status and declaration recency never select a
@@ -401,7 +413,7 @@ Ownership:
   not any consuming worktree's record.
 - The installed implementation derives `workspaceId` from the consuming
   worktree's canonical root.
-- `planId/planPath` must equal the immutable workspace Plan binding. The record
+- `planId/planPath` must equal the current workspace Plan generation. The record
   cannot establish, replace or repair that binding.
 - `currentTaskId/currentTaskPath/taskStatus` mirror the declaration-selected
   Task and its manifest lifecycle.
@@ -483,6 +495,68 @@ Rules:
 - no registry or manifest field carries a workflow or schema version;
 - the registry controls interaction policy only and is not Plan, Session,
   declaration, authorization, or Acceptance state.
+
+## 6.2 Conversation Execution Binding
+
+The Workflow Kernel stores no raw host conversation identifier. It derives
+`conversationHash = sha256(host + NUL + stableConversationId)` and uses:
+
+```text
+~/.peers-touch/dev/conversations/<host>/<conversationHash>/
+├── execution-binding.json
+├── anchor-receipt.json
+└── releases/<anchorDigest>.json
+```
+
+The create-once binding is:
+
+```ts
+interface ConversationExecutionBinding {
+  kind: 'peers-touch-workflow-conversation-binding';
+  host: 'trae' | 'cursor' | 'codex';
+  conversationHash: string;
+  executionRoot: string;
+  workspaceId: string;
+  boundAt: string;
+  bindingEvent: 'PRE_TOOL_USE';
+  digest: string;
+}
+```
+
+`executionRoot` is machine-local and canonicalized through Git plus
+`realpath`. It is immutable for the conversation. It is not a lease, resource
+claim, Plan binding, or declaration.
+
+The latest Anchor receipt is atomically replaceable because it projects current
+owner state:
+
+```ts
+interface WorkflowAnchorReceipt {
+  kind: 'peers-touch-workflow-anchor-receipt';
+  bindingDigest: string;
+  anchorDigest: string;
+  renderedAt: string;
+  status: string;
+  content: string;
+  digest: string;
+}
+```
+
+The release receipt is create-once:
+
+```ts
+interface ConversationRelease {
+  kind: 'peers-touch-workflow-conversation-release';
+  bindingDigest: string;
+  anchorDigest: string;
+  releasedAt: string;
+  digest: string;
+}
+```
+
+Release succeeds only when the exact rendered Anchor is observable in the
+assistant response or host transcript. A conflicting second release fails
+closed.
 
 ## 7. Development Work Item
 
@@ -567,7 +641,7 @@ The Plan locator fields are an all-or-none tuple. Null means the declaration is
 explicitly untracked; it never means "discover a Plan". A non-null
 `planPath` is repository-relative, resolves inside the declared worktree, and
 must identify a package whose `planId`, binding, and current `taskId` match the
-declaration and immutable workspace Plan binding. Once a workspace is bound,
+declaration and current workspace Plan generation. Once a workspace is bound,
 locator-less declarations are rejected with
 `WORKSPACE_PLAN_DECLARATION_REQUIRED`. During the mixed-version rollout,
 legacy terminal records may omit the tuple; they are historical only and
@@ -603,16 +677,6 @@ interface ExecutionAuthorization {
 Local commit does not imply push; deploy does not imply reset; PR does not imply
 merge; merge does not imply history rewrite.
 
-`DevelopmentFunctionalResult.runtimeIdentity.profile` identifies the selected
-single runtime Profile when the Environment has one. A composite Acceptance
-Environment may instead identify itself there; in that case every
-`runtimeIdentity.services.*` entry MUST carry `kind` and
-`deploymentEnvironment`, and the Development declaration MUST contain the exact
-`<kind>.connect` or `<kind>.deploy` claim for that deployment environment.
-Composite Environment IDs MUST NOT be compared to `deployProfiles` as though
-they were canonical Profile IDs. Every reported service `liveCommit` that is
-present MUST still equal the Session source checkpoint.
-
 A proposed operation resolves authorization from two explicit sources:
 
 1. an exact user grant in the current Development Run; and
@@ -632,20 +696,14 @@ operation is denied or outside every explicit grant. Session failure
 scope failure returned after an admitted operation was attempted. The latter
 cannot be manufactured preemptively from the operation category.
 
-A Plan Run adds no second authorization schema. One explicit continue/execute
-request consumes this accepted envelope across multiple Task and Goal Slice
-transitions. Task handoff, agent review, source-backed remediation, Context
-Anchor output, and context compaction do not reset the envelope. Operations
-outside it remain typed hard boundaries and are never inferred from the Plan
-Run request.
+A Plan Run adds no second authorization schema. One explicit continuation
+request consumes this accepted envelope across Task and Goal Slice transitions;
+Task handoff, agent review, source-backed remediation, Context Anchor output,
+and context compaction do not reset it.
 
 ### 9.1 Host Adapter Contract
 
-Host transport is not execution authority:
-
 ```ts
-type AgentHost = 'trae' | 'cursor' | 'codex' | string;
-
 interface HostCapabilityRequest {
   requestId: string;
   actionId: string;
@@ -657,74 +715,20 @@ interface HostCapabilityRequest {
   journeyId: string;
   sourceCommit: string;
   runtimeBindingRef: string | null;
-  host: AgentHost;
+  host: string;
   operation: 'execute' | 'cleanup' | 'inspect-quarantine';
   capability: 'worker' | 'browser-ui' | 'desktop-ui' | 'diagnostic';
   nativeAttempted: boolean;
   expectedPostcondition: string;
-  worktree: WorktreeBinding;
-  resourceId?: string;
   cleanupHandle?: string;
   cleanupAttempt?: 1;
 }
-
-interface HostCapabilityResult {
-  status:
-    | 'HOST_ADAPTER_READY'
-    | 'HOST_CAPABILITY_UNAVAILABLE'
-    | 'HOST_TOOL_CALL_FAILED'
-    | 'HOST_CLEANUP_QUARANTINED'
-    | 'HOST_CLEANUP_ESCALATION_REQUIRED'
-    | 'HOST_DIAGNOSTIC_RETAINED';
-  requestId: HostCapabilityRequest['requestId'];
-  actionId: HostCapabilityRequest['actionId'];
-  sessionId: HostCapabilityRequest['sessionId'];
-  workItemId: HostCapabilityRequest['workItemId'];
-  planId: HostCapabilityRequest['planId'];
-  taskId: HostCapabilityRequest['taskId'];
-  workspaceId: HostCapabilityRequest['workspaceId'];
-  journeyId: HostCapabilityRequest['journeyId'];
-  sourceCommit: HostCapabilityRequest['sourceCommit'];
-  runtimeBindingRef: HostCapabilityRequest['runtimeBindingRef'];
-  host: AgentHost;
-  capability: HostCapabilityRequest['capability'];
-  nativeAttempted: HostCapabilityRequest['nativeAttempted'];
-  adapterAttempted: true;
-  tool: string | null;
-  observationRef: string | null;
-  retryable: boolean;
-  possibleLiveSideEffect: boolean;
-  cleanupHandle: string | null;
-  cleanupAttempt: 1 | null;
-  resourceId: string | null;
-  cleanupOwner: 'host-adapter';
-  cleanup: 'released' | 'retained-bounded' | 'not-acquired';
-  leaseExpiresAt: string | null;
-}
 ```
 
-The scheduler projects the request but does not invoke the adapter. After the
-Guardian allows the action, Dev Workflow selects and invokes the adapter.
-Host metadata selects an adapter; directories and installed binaries do not.
-The result can describe transport, retryability, cleanup and observation, but
-cannot mutate authorization, Task progress, verification class, Session, or
-Acceptance evidence.
-
-When `possibleLiveSideEffect=true`, `cleanupHandle` is mandatory. Dev Workflow
-must submit one idempotent `operation=cleanup` request to the same adapter and
-observe `cleanup=released` before retry or fallback. Cleanup has exactly one
-admitted attempt and never recursively creates another cleanup request. A
-failed cleanup returns `HOST_CLEANUP_QUARANTINED`,
-`cleanup=retained-bounded`, the unchanged handle, an observation reference and
-a concrete `leaseExpiresAt`. Dev Workflow persists that quarantine, parks the
-current resource-dependent Task, and continues independent ready Tasks. After
-expiry it submits one read-only `operation=inspect-quarantine` request. That
-observation maps to `HOST_CLEANUP_RELEASED` when the adapter returns
-`HOST_ADAPTER_READY` with `cleanup=released`, or to
-`HOST_CLEANUP_ESCALATION_REQUIRED` when the side effect remains. It never
-performs or requests a second cleanup. An unbounded retained side effect is
-invalid adapter output and becomes an external-resource hard boundary only
-after the independent frontier is drained.
+The scheduler projects the request but never invokes the adapter. Dev Workflow
+invokes it only after Guardian admission and owns retries, cleanup, parking, and
+durable state. Cleanup has one admitted attempt; failure becomes a bounded
+quarantine followed by one read-only post-expiry observation.
 
 ## 10. Development Session
 
@@ -768,7 +772,7 @@ interface DevelopmentSessionState {
   source: SourceCheckpoint | null;
   runtimeBindingRef: string | null;
   currentFailure: DevelopmentFailure | null;
-  hostRequests?: DevelopmentFailure[]; // bounded durable request tombstones
+  hostRequests?: DevelopmentFailure[];
   lastVerification: VerificationRecord | null;
   startedAt: string;
   updatedAt: string;
@@ -790,8 +794,8 @@ from `in_progress` to `done`.
 
 Only one state is current. The bounded event log owns transition order;
 `session.json` is its materialized current projection. Neither is duplicated in
-a Task. `hostRequests` is an additive bounded field: legacy states without it
-read as an empty history, and the first host observation materializes it.
+a Task. `hostRequests` is additive and bounded; legacy states without it read as
+an empty history.
 
 ## 11. Transition Event
 
@@ -873,37 +877,14 @@ interface VerificationRecord {
 }
 ```
 
-`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS` and the owner command may
-commit it only from `FUNCTIONAL_RUNNING`.
-
-The Session owner runs the current Task closure and commits its source-bound
-functional result and matching Session transition in one result slice. The
-command accepts no caller-selected Gate or result file. It starts the
-Acceptance Development runner with the bound Plan and receives one private
-reference to a canonical aggregate run manifest. That manifest must bind the
-complete closure Gate set, Plan, Task, Journey, work item, workspace and clean
-source. The Session owner resolves every content-addressed Gate run, source
-report, runtime manifest and cleanup artifact required by the Task's
-`runtimeClass`; `source-only` rejects runtime identity, while runtime-backed
-classes require the existing source checkpoint and runtime binding. It then
-seals the complete content as one self-contained bundle under `checks/` before
-committing the Session journal. Seal publication is create-once, fsynced and
-content-addressed. A failure before journal publication may retain an
-unreferenced orphan seal, but a published journal never references a deleted
-seal. Static/local Gate results require `traceability=not-required`; typed
-environment evidence requires complete traceability. Static/local results also
-require `cleanupStatus=not-required` and no cleanup artifact; runtime-backed
-results require `cleanupStatus=passed` plus a durable cleanup artifact. The
-command does not accept a caller-authored PASS record.
-
-Runtime evidence matches the Task class: `browser` requires a browser client,
-`native-desktop` requires a native Tauri desktop client, `native-mobile`
-requires an iOS or Android Tauri runtime, and `service` requires a declared
-runtime profile without substituting a client class.
-A machine result that reports `FUNCTIONAL_CHECK/PASS` while the Session remains
-before `FUNCTIONAL_PASS` is `SESSION_PROJECTION_STALE`; it is not a valid Task
-closure. Stale, substituted, replayed or out-of-order source/runtime/Journey
-identity is `SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
+`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS` and may be committed only
+from `FUNCTIONAL_RUNNING` by the owner-run current-closure Development runner.
+The owner validates Plan/Task/Journey/work item/workspace/source identity and
+every required Gate/source/runtime/cleanup artifact, publishes a create-once
+content-addressed evidence seal, then commits the Session journal. Callers
+cannot submit their own PASS file or select only part of the closure.
+`SESSION_PROJECTION_STALE` and `SESSION_EVIDENCE_OUT_OF_SEQUENCE` prevent stale,
+substituted, or partial evidence from closing the Task.
 `ACCEPTANCE_PASS` requires `ACCEPTANCE_PROOF/PASS`.
 
 ## 13. Failure
@@ -966,26 +947,10 @@ interface DevelopmentFailure {
 ```
 
 Only the current first failure lives in `session.json`. Resolution appends a new
-transition event and clears `currentFailure`. Initial `FAILED` or `BLOCKED`
-entry requires `failure.stage` to equal the Session state that observed it.
-Host transport records require
-immutable request/action/host/capability identity, explicit native and adapter
-attempt state, a new observation reference, `owner=host-adapter`, and
-`retryable=false`. Host cleanup quarantine/release/escalation additionally
-requires every bounded resource identity field, `cleanupAttempt=1`, and a lease
-expiry; non-host failures cannot carry host fields.
-
-While blocked, host observations are monotonic and one-shot:
-
-- `HOST_CAPABILITY_UNAVAILABLE -> HOST_CAPABILITY_AVAILABLE`;
-- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_RELEASED`;
-- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_ESCALATION_REQUIRED`.
-
-Cleanup inspection cannot occur before lease expiry. Only AVAILABLE or RELEASED
-may recover to `BOUND`; unchanged unavailable, quarantined, repeated, or
-escalated records remain blocked. The scheduler may advance other
-dependency-ready Tasks, but it cannot erase the blocked Task's transport record
-to manufacture progress.
+transition event and clears `currentFailure`. Host transport records bind
+immutable request/action/session/Plan/Task/workspace/Journey/source/runtime
+identity. While blocked, only `UNAVAILABLE -> AVAILABLE` or post-expiry
+`QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the observation.
 
 ## 14. State Transition Guards
 
@@ -1248,6 +1213,11 @@ Rules:
     ├── migration.json.reviewed
     ├── migration.lock
     └── migration.lock.recovery
+
+~/.peers-touch/dev/conversations/<host>/<conversationHash>/
+├── execution-binding.json
+├── anchor-receipt.json
+└── releases/<anchorDigest>.json
 ```
 
 Constraints:
@@ -1257,5 +1227,6 @@ Constraints:
 - logically append-only bounded events with replay repair;
 - injected clock for deterministic tests;
 - no credential or private key;
+- no raw host conversation identifier;
 - no repository writer;
 - no fallback to Acceptance Evidence Store.

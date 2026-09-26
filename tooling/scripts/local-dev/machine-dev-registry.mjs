@@ -27,8 +27,13 @@ import {
   workspaceIdForRoot,
   workspaceStatePath,
 } from '../lib/machine-dev-paths.mjs';
+import { readActiveWorkRecord } from './active-work-store.mjs';
 import { processStartIdentity, readLedger } from './dev-work-ledger.mjs';
 import { LIVE_STATES } from './dev-work-schema.mjs';
+import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLockSync,
+} from './workspace-lifecycle-lock.mjs';
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
@@ -37,6 +42,11 @@ export const STATION_CAPABILITIES = new Set([
   'station.connect',
   'station.deploy',
   'station.reset',
+]);
+export const AGENT_CONTROL_MODES = new Set([
+  'human-gated',
+  'managed',
+  'disposable',
 ]);
 export const LEASE_RESOURCE_KINDS = new Set([
   'local.slot',
@@ -128,13 +138,6 @@ function requiredIdentifier(value, field) {
     fail('INVALID_ARGUMENT', `${field} has an invalid identifier`, { field });
   }
   return normalized;
-}
-
-export function resetPolicyForProfile(profile) {
-  const profileId = requiredIdentifier(profile, 'profile');
-  return profileId.toLowerCase().includes('stable')
-    ? 'stable-protected'
-    : 'agent-resettable';
 }
 
 function requiredSlot(value) {
@@ -452,6 +455,18 @@ export function resolveProfileDefinition(options) {
       declared: values.PT_DEV_PROFILE ?? null,
     });
   }
+  const agentControlMode = values.PT_AGENT_CONTROL_MODE?.trim();
+  if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
+    fail(
+      'PROFILE_AGENT_CONTROL_INVALID',
+      'profile has an unsupported Agent control mode',
+      {
+        profile,
+        agentControlMode,
+        allowed: [...AGENT_CONTROL_MODES],
+      },
+    );
+  }
   const stationMode = requiredText(
     values.PT_STATION_MODE,
     'PT_STATION_MODE',
@@ -480,7 +495,7 @@ export function resolveProfileDefinition(options) {
     profileFile,
     sourceState,
     envRepo,
-    resetPolicy: resetPolicyForProfile(profile),
+    agentControlMode,
     stationMode,
     stationUrl,
     stationHost,
@@ -492,15 +507,15 @@ export function resolveProfileDefinition(options) {
 
 function validateProfileCapabilities(definition, capabilities) {
   if (
-    definition.resetPolicy === 'stable-protected' &&
+    definition.agentControlMode === 'managed' &&
     capabilities.includes('station.reset')
   ) {
     fail(
-      'PROFILE_RESET_PROTECTED',
-      'stable profiles cannot grant autonomous Station reset',
+      'PROFILE_AGENT_CONTROL_DENIED',
+      'managed profiles cannot grant autonomous Station reset',
       {
         profile: definition.profile,
-        resetPolicy: definition.resetPolicy,
+        agentControlMode: definition.agentControlMode,
       },
     );
   }
@@ -812,7 +827,7 @@ function writeRegistryAtomic(file, registry) {
   }
 }
 
-function mutateRegistry(options, mutation) {
+function mutateRegistryUnderFence(options, mutation) {
   const home = options.home;
   const file = options.registryPath ?? machineRegistryPath(home);
   const lock = options.lockPath ?? machineRegistryLockPath(home);
@@ -829,6 +844,39 @@ function mutateRegistry(options, mutation) {
     return { output, registry: readback };
   } finally {
     release();
+  }
+}
+
+function mutateRegistry(options, mutation) {
+  const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot: workspace.canonicalRoot,
+        workspaceId: workspace.workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) => {
+        const currentWorkspace = captureWorkspace(workspace.canonicalRoot);
+        return mutateRegistryUnderFence(
+          {
+            ...options,
+            workspaceRoot: currentWorkspace.canonicalRoot,
+            lifecycleLease,
+          },
+          (registry, now) => mutation(registry, now, currentWorkspace),
+        );
+      },
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
   }
 }
 
@@ -890,7 +938,7 @@ export function observeLeases(options = {}) {
 }
 
 function assertWorkspaceHasNoLease(options, workspaceId) {
-  const observation = observeLeases(options);
+  const observation = (options.observeLeases ?? observeLeases)(options);
   const active = observation.activeLeases.filter(
     (lease) => lease.workspaceId === workspaceId,
   );
@@ -903,21 +951,61 @@ function assertWorkspaceHasNoLease(options, workspaceId) {
   }
 }
 
+function assertWorkspaceHasNoLifecycleState(options, workspace, now) {
+  const ledger = (options.readLedger ?? readLedger)(
+    options.workLedgerPath ?? developmentWorkLedgerPath(options.home),
+    now,
+  );
+  const liveDeclarations = Object.values(ledger.declarations).filter(
+    (declaration) =>
+      declaration.workspaceId === workspace.workspaceId &&
+      LIVE_STATES.has(declaration.state) &&
+      Date.parse(declaration.expiresAt) > now.getTime(),
+  );
+  if (liveDeclarations.length > 0) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while declarations are live',
+      {
+        declarations: liveDeclarations.map((declaration) => ({
+          declarationId: declaration.declarationId,
+          state: declaration.state,
+        })),
+      },
+    );
+  }
+  const activeWork = (options.readActiveWorkRecord ?? readActiveWorkRecord)({
+    home: options.home,
+    workspaceRoot: workspace.canonicalRoot,
+    workspaceId: workspace.workspaceId,
+  });
+  if (activeWork !== null) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while active-work exists',
+      {
+        workItemId: activeWork.workItemId,
+        revision: activeWork.revision,
+      },
+    );
+  }
+  assertWorkspaceHasNoLease(options, workspace.workspaceId);
+}
+
 export function registerWorkspace(options) {
-  const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
   const profile = requiredIdentifier(options.profile, 'profile');
   const slot = requiredSlot(options.slot);
   const allowedCapabilities = parseCapabilities(options.capabilities);
   const purpose = requiredText(options.purpose, 'purpose', 1024);
   const owner = requiredText(options.owner, 'owner', 256);
-  const definition = resolveProfileDefinition({
-    workspaceRoot: workspace.canonicalRoot,
-    envRepo: options.envRepo,
-    profile,
-  });
-  validateProfileCapabilities(definition, allowedCapabilities);
 
-  return mutateRegistry(options, (registry, now) => {
+  return mutateRegistry(options, (registry, now, workspace) => {
+    const definition = resolveProfileDefinition({
+      workspaceRoot: workspace.canonicalRoot,
+      envRepo: options.envRepo,
+      profile,
+    });
+    validateProfileCapabilities(definition, allowedCapabilities);
     if (
       registry.registrations.some(
         (entry) => entry.workspaceId === workspace.workspaceId,
@@ -949,8 +1037,7 @@ export function registerWorkspace(options) {
 }
 
 export function updateWorkspace(options) {
-  const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
-  return mutateRegistry(options, (registry, now) => {
+  return mutateRegistry(options, (registry, now, workspace) => {
     assertWorkspaceHasNoLease(options, workspace.workspaceId);
     const current = registrationForWorkspace(registry, workspace.workspaceId);
     if (current.canonicalRoot !== workspace.canonicalRoot) {
@@ -1001,6 +1088,35 @@ export function updateWorkspace(options) {
       )
     ] = updated;
     return updated;
+  }).output;
+}
+
+export function unregisterWorkspace(options) {
+  const owner = requiredText(options.owner, 'owner', 256);
+  return mutateRegistry(options, (registry, now, workspace) => {
+    const current = registrationForWorkspace(registry, workspace.workspaceId);
+    if (current.canonicalRoot !== workspace.canonicalRoot) {
+      fail(
+        'WORKTREE_IDENTITY_MISMATCH',
+        'registered root does not match current canonical root',
+      );
+    }
+    if (current.owner !== owner) {
+      fail('WORKSPACE_OWNER_MISMATCH', 'owner does not own workspace registration', {
+        expected: current.owner,
+        actual: owner,
+      });
+    }
+    assertWorkspaceHasNoLifecycleState(options, workspace, now);
+    registry.registrations = registry.registrations.filter(
+      (entry) => entry.workspaceId !== workspace.workspaceId,
+    );
+    return {
+      workspaceId: workspace.workspaceId,
+      name: current.name,
+      unregisteredAt: now.toISOString(),
+      unregisteredBy: owner,
+    };
   }).output;
 }
 
@@ -1065,7 +1181,7 @@ export function checkWorkspace(options = {}) {
   );
   if (missingCapabilities.length > 0) {
     fail(
-      'WORKSPACE_CAPABILITY_MISSING',
+      'AUTHORIZATION_REQUIRED',
       'workspace binding does not allow requested Station capabilities',
       { missingCapabilities },
     );
@@ -1177,11 +1293,11 @@ export function prepareLease(options) {
   }
   if (
     resourceKind === 'station.reset' &&
-    options.resetScope !== resourceId
+    options.resetAuthorizedScope !== resourceId
   ) {
     fail(
-      'RESET_SCOPE_MISMATCH',
-      'station.reset requires an exact run-scoped resource identity',
+      'AUTHORIZATION_REQUIRED',
+      'station.reset requires an exact run-scoped authorization',
       { resourceId },
     );
   }
@@ -1229,15 +1345,39 @@ function registrationState(registration) {
   }
 }
 export function validateLeaseRequest(options) {
-  const home = options.home;
-  const release = acquireRegistryLock(
-    options.lockPath ?? machineRegistryLockPath(home),
-    options.lockTimeoutMs,
-  );
+  const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
   try {
-    return prepareLease(options);
-  } finally {
-    release();
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot: workspace.canonicalRoot,
+        workspaceId: workspace.workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) => {
+        const release = acquireRegistryLock(
+          options.lockPath ?? machineRegistryLockPath(options.home),
+          options.lockTimeoutMs,
+        );
+        try {
+          return prepareLease({
+            ...options,
+            workspaceRoot: workspace.canonicalRoot,
+            lifecycleLease,
+          });
+        } finally {
+          release();
+        }
+      },
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
   }
 }
 
@@ -1298,8 +1438,8 @@ export function verifyHeldLease(options) {
     validateLeaseRequest({
       ...options,
       budgetSeconds: options.budgetSeconds ?? 1,
-      resetScope:
-        options.resetScope ??
+      resetAuthorizedScope:
+        options.resetAuthorizedScope ??
         process.env.PT_MACHINE_LEASE_RESET_SCOPE,
     });
     return {
@@ -1345,14 +1485,14 @@ export function statusAll(options = {}) {
     }
     let profileState = 'available';
     let profileError = null;
-    let resetPolicy = null;
+    let agentControlMode = null;
     try {
       const definition = resolveProfileDefinition({
         workspaceRoot: normalized.canonicalRoot,
         envRepo: options.envRepo,
         profile: normalized.profile,
       });
-      resetPolicy = definition.resetPolicy;
+      agentControlMode = definition.agentControlMode;
     } catch (error) {
       profileState = 'blocked';
       profileError = {
@@ -1363,7 +1503,7 @@ export function statusAll(options = {}) {
     return {
       ...normalized,
       ...state,
-      resetPolicy,
+      agentControlMode,
       profileState,
       profileError,
     };
@@ -1408,10 +1548,10 @@ export function buildLeaseCommand(options) {
   if (options.home) {
     validationCommand.push('--home', options.home);
   }
-  if (options.resetScope) {
+  if (options.resetAuthorizedScope) {
     validationCommand.push(
-      '--reset-scope',
-      options.resetScope,
+      '--reset-authorized-scope',
+      options.resetAuthorizedScope,
     );
   }
   const arguments_ = [
@@ -1430,10 +1570,10 @@ export function buildLeaseCommand(options) {
     '--validation-command-json',
     JSON.stringify(validationCommand),
   ];
-  if (options.resetScope) {
+  if (options.resetAuthorizedScope) {
     arguments_.push(
-      '--reset-scope',
-      options.resetScope,
+      '--reset-authorized-scope',
+      options.resetAuthorizedScope,
     );
   }
   arguments_.push('--', ...options.command);
