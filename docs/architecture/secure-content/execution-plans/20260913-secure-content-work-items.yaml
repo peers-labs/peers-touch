@@ -532,7 +532,7 @@ items:
     architectureRefs: [SC-A04, SC-D22, SC-D24]
     journeyIds: [sc-dj-mobile-matrix]
     scope:
-      include: [apps/desktop/src-tauri/src/interface/http_gateway/mod.rs, apps/desktop/src-tauri/src/interface/tauri_commands/station.rs, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/src/commands/mod.rs, apps/mobile/src-tauri/src/secure_content, apps/mobile/src-tauri/src/social, apps/mobile/src/features/auth/authSession.test.ts, apps/mobile/src/features/auth/authSession.ts, apps/mobile/src/runtimes/privateMomentsRuntime.ts, apps/mobile/src/services/mobileCommands.ts, apps/mobile/src/acceptance, tooling/development/secure_content/source_projection.py, tooling/development/secure_content/test_source_projection.py, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
+      include: [apps/desktop/src-tauri/src/interface/http_gateway/mod.rs, apps/desktop/src-tauri/src/interface/tauri_commands/station.rs, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/src/commands/mod.rs, apps/mobile/src-tauri/src/secure_content, apps/mobile/src-tauri/src/social, apps/mobile/src/features/auth/authSession.test.ts, apps/mobile/src/features/auth/authSession.ts, apps/mobile/src/features/social/socialRuntime.ts, apps/mobile/src/runtimes/privateMomentsRuntime.ts, apps/mobile/src/services/mobileCommands.ts, apps/mobile/src/acceptance, tooling/development/secure_content/source_projection.py, tooling/development/secure_content/test_source_projection.py, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
       exclude: [runtime provisioning, product proof, formal Acceptance, Station authority changes]
     resources:
       sourceClaims:
@@ -545,6 +545,7 @@ items:
         - { pathPrefix: apps/mobile/src-tauri/src/social, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src/features/auth/authSession.test.ts, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src/features/auth/authSession.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/features/social/socialRuntime.ts, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src/runtimes/privateMomentsRuntime.ts, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src/services/mobileCommands.ts, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src/acceptance, mode: exclusive-write }

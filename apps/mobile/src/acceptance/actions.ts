@@ -83,6 +83,7 @@ import {
 import {
   acceptSocialFriendRequest,
   applySocialFriendRequestProjectionCheckpoints,
+  readSocialPeopleSearchFederations,
   readSocialRuntimeProjection,
   readCurrentSocialProfile,
   reconcileSocialRuntime,
@@ -780,10 +781,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const results = await searchSocialPeople(
       requireString(query, 'social.people.search.query'),
     );
+    const activeFederations = readSocialPeopleSearchFederations();
+    const soleFederationId = activeFederations.length === 1
+      ? activeFederations[0]?.federationId ?? ''
+      : '';
     return results.map((searchResult) => {
       const result = {
         ...searchResult,
-        federationId: searchResult.federation?.handle ?? '',
+        federationId: searchResult.federation?.handle ?? soleFederationId,
       };
       return {
         ptid: result.ptid,

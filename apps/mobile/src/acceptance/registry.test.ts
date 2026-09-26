@@ -509,7 +509,12 @@ describe('Mobile Acceptance Harness', () => {
       source.indexOf("'reliability.fixture.configure':"),
     );
 
-    expect(searchAction).toContain('federationId: result.federationId');
+    expect(searchAction).toContain(
+      'readSocialPeopleSearchFederations()',
+    );
+    expect(searchAction).toContain(
+      'federationId: searchResult.federation?.handle ?? soleFederationId',
+    );
     expect(searchAction).not.toContain('input?.federationId');
     expect(searchAction).not.toContain('input.federationId');
   });
