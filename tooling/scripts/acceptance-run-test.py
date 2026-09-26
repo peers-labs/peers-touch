@@ -112,8 +112,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--run-id",
                     run_id,
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value=source,
             ), mock.patch.object(
                 module.subprocess,
@@ -207,8 +208,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--run-id",
                     run_id,
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value=source,
             ), mock.patch.object(
                 module.subprocess,
@@ -270,9 +272,14 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--work-item",
                     "dwf-test",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value=source,
+            ), mock.patch.object(
+                module,
+                "workspace_id",
+                return_value="b0a926025d2b25b9",
             ), mock.patch.object(
                 module.subprocess,
                 "run",
@@ -455,8 +462,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--gate",
                     "synthetic-gate",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 side_effect=(expected, observed, expected),
             ), mock.patch.object(
                 module.subprocess,
@@ -534,8 +542,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--gate",
                     "synthetic-gate",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 side_effect=(expected, expected, observed),
             ), mock.patch.object(
                 module.subprocess,
@@ -800,8 +809,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--runtime-cell",
                     "desktop-linux-native",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch.object(
                 module,
@@ -1008,8 +1018,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--runtime-cell",
                     "desktop-linux-native",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch.object(
                 module,
@@ -1119,8 +1130,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--gate",
                     "synthetic-context-gate",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch.object(
                 module,
@@ -1283,8 +1295,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--runtime-cell",
                     "desktop-linux-native",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch.object(
                 module,
@@ -1374,8 +1387,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--gate",
                     "synthetic-argv-gate",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch(
                 "tooling.acceptance.core.GateProcessLauncher.run",
@@ -1563,8 +1577,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "--runtime-cell",
                     "desktop-linux-native",
                 ],
-            ), mock.patch(
-                "tooling.acceptance.core.source_identity",
+            ), mock.patch.object(
+                module,
+                "source_identity",
                 return_value={"commit": "abc123", "workspaceDigest": "clean"},
             ), mock.patch.object(
                 module,

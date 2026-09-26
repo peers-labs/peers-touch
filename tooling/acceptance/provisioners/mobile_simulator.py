@@ -6456,7 +6456,7 @@ class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
     service_profile_keys = {}
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
-    requires_actor_reset = False
+    requires_actor_reset = True
     derives_fixture_federation_id = False
     actor_manifest_kind = "station-access-native-actor-manifest"
     actor_manifest_path = "runtime/station-access-native-actors.json"

@@ -12,7 +12,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
 
 
 class StationAccessProvisioningContractTest(unittest.TestCase):
-    def test_resolves_non_destructive_native_environment(self) -> None:
+    def test_resolves_reset_isolated_native_environment(self) -> None:
         contract = EnvironmentContract.from_yaml(
             REPO_ROOT
             / "tooling"
@@ -25,7 +25,7 @@ class StationAccessProvisioningContractTest(unittest.TestCase):
             station_profiles={"station": "chat-native-disposable"},
         )
         self.assertIsInstance(provisioner, StationAccessNativeProvisioner)
-        self.assertFalse(provisioner.requires_actor_reset)
+        self.assertTrue(provisioner.requires_actor_reset)
         self.assertFalse(provisioner.derives_fixture_federation_id)
         self.assertEqual(
             provisioner.gate_ids,
