@@ -378,6 +378,14 @@
       "tier": "env-evidence",
       "description": "Prove scoped four-preset retention, durable-only pruning, sequence/hash floors, Recovery exclusion, physical reclamation, and restart-stable native Mobile behavior."
     },
+    "chat-storage-redaction-recovery-e2e": {
+      "command": "cargo test --manifest-path packages/messaging-core/Cargo.toml storage_governance::redaction --offline && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop messaging::store::tests::redaction --offline -- --test-threads=1 && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop messaging::recovery::tests --offline -- --test-threads=1 && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop messaging::store::tests::recovery_reconciliation_redacts_staging_without_advancing_the_replay_head --offline -- --test-threads=1 && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml --lib redaction_ --offline -- --test-threads=1 && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/nativeBridge.test.ts && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.chat.storage_governance_runner_test && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_redaction_recovery_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_redaction_recovery_e2e",
+      "timeout_seconds": 3600,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "tier": "env-evidence",
+      "description": "Prove actor-scoped hide and participant-wide retract commit durable local redaction before ACK, survive native restart, and remain redacted after restoring older Recovery archives."
+    },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,

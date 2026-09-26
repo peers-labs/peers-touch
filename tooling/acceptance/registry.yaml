@@ -344,6 +344,33 @@
       ]
     },
     {
+      "id": "chat-storage-redaction-recovery",
+      "features": [
+        "chat-storage-redaction-recovery"
+      ],
+      "when": {
+        "paths": [
+          "packages/messaging-core/src/storage_governance/redaction.rs",
+          "packages/messaging-core/src/store/schema.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/messaging/recovery.rs",
+          "apps/desktop/src-tauri/src/messaging/public_event.rs",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/acceptance/chat/**",
+          "apps/mobile/src-tauri/src/messaging/engine.rs",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs",
+          "tooling/acceptance/features/chat-storage-redaction-recovery.yaml",
+          "tooling/acceptance/environments/chat-storage-native.yaml",
+          "tooling/acceptance/provisioners/chat_storage_native.py",
+          "tooling/acceptance/gates/chat/storage_redaction_recovery_*.py"
+        ]
+      },
+      "require": [
+        "chat-storage-redaction-recovery-e2e"
+      ]
+    },
+    {
       "id": "station-messaging",
       "features": [
         "chat-service-contract",
