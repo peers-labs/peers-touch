@@ -20005,6 +20005,210 @@ function evaluateBaseInvalidResourceReference(
   };
 }
 
+async function evaluateBasePermissionDenied(
+  ctx: DirectCellAssertionContext,
+): Promise<Record<string, boolean>> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationPermissionDeniedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationPermissionDeniedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationPermissionDeniedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationPermissionDeniedReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationPermissionDeniedStation',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationPermissionDeniedExecutor',
+  );
+  const executorBefore = evidenceRecord(
+    executor.before,
+    'foundationPermissionDeniedExecutorBefore',
+  );
+  const executorAfter = evidenceRecord(
+    executor.after,
+    'foundationPermissionDeniedExecutorAfter',
+  );
+  const lease = evidenceRecord(
+    facts.lease,
+    'foundationPermissionDeniedLease',
+  );
+  const denied = evidenceRecord(
+    lease.denied,
+    'foundationPermissionDeniedLeaseDenied',
+  );
+  const restored = evidenceRecord(
+    lease.restored,
+    'foundationPermissionDeniedLeaseRestored',
+  );
+  const browser = evidenceRecord(
+    facts.browser,
+    'foundationPermissionDeniedBrowser',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationPermissionDeniedRecovery',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationPermissionDeniedReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationPermissionDeniedCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationPermissionDeniedRuntimeEvent',
+  );
+  const runtimePayload = evidenceRecord(
+    station.runtimePayload,
+    'foundationPermissionDeniedRuntimePayload',
+  );
+  const runtimePayloadData = evidenceRecord(
+    runtimePayload.data,
+    'foundationPermissionDeniedRuntimePayloadData',
+  );
+  const sourceOutcome = projectAgentTurnOutcomeErrorPayload(runtimePayloadData)
+    ?? projectAgentTypedErrorPayload(runtimePayloadData);
+  const conversationId = String(station.conversationId ?? '');
+  const turnId = String(station.turnId ?? '');
+  const streamId = String(station.streamId ?? '');
+  const streamGeneration = Number(station.streamGeneration ?? 0);
+  const sourceSequence = Number(station.sourceSequence ?? 0);
+  const payloadHash = String(station.payloadHash ?? '');
+  const expectedEventId = await sha256Hex(stableJson({
+    streamId,
+    streamGeneration,
+    conversationId,
+    turnId,
+    sequence: sourceSequence,
+    payloadHash,
+  }));
+
+  return {
+    typedPermissionDenied: (
+      outcome.error === 'agent.errors.clientPermissionDenied'
+      && outcome.error_type === 'CLIENT_PERMISSION_DENIED'
+      && outcome.locale_key === 'agent.errors.clientPermissionDenied'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && sourceOutcome !== undefined
+      && stableJson(sourceOutcome) === stableJson(outcome)
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CLIENT_PERMISSION_DENIED'
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && runtimeEvent.sourceEventType === 'error'
+      && Number(runtimeEvent.sequence) === sourceSequence
+      && Number(runtimeEvent.sourceSequence) === sourceSequence
+      && sourceSequence > 0
+      && runtimeEvent.eventId === expectedEventId
+      && runtimeEvent.streamIdHash === await sha256Hex(streamId)
+      && runtimeEvent.conversationIdHash
+        === await sha256Hex(conversationId)
+      && runtimeEvent.payloadHash === payloadHash
+      && payloadHash === await sha256Hex(stableJson(runtimePayload))
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.sourcePtidHash))
+      && runtimeEvent.sourceConversationId === conversationId
+      && runtimeEvent.sourceTurnId === turnId
+    ),
+    boundedDetails: (
+      Object.keys(details).sort().join(',')
+        === 'capability_id,permission_kind'
+      && details.capability_id === 'filesystem.read'
+      && details.permission_kind === 'filesystem'
+    ),
+    deniedLeaseObserved: (
+      denied.permission === 'CAPABILITY_PERMISSION_STATE_DENIED'
+      && denied.permissionKind
+        === 'CAPABILITY_PERMISSION_KIND_FILESYSTEM'
+      && denied.capabilitySessionIdHash
+        === executor.capabilitySessionIdHash
+      && denied.sourceCapabilitySessionIdHash
+        !== denied.capabilitySessionIdHash
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    permissionDetailOpened: (
+      receiver.recoveryExecuted === true
+      && receiver.profileVisible === true
+      && receiver.capabilitiesTabVisible === true
+      && receiver.capabilityDetailVisible === true
+      && receiver.capabilityId === details.capability_id
+      && receiver.permissionKind === details.permission_kind
+    ),
+    browserCapabilityIsolation: (
+      (
+        browser.receiverPlatform === 'browser'
+        && Number(browser.localCapabilityCount) === 0
+      )
+      || (
+        browser.receiverPlatform === 'desktop_app'
+        && Number(browser.localCapabilityCount) > 0
+      )
+    ),
+    zeroToolCallPersistence: (
+      Number(station.toolCallCount) === 0
+      && Number(station.toolResultCount) === 0
+    ),
+    zeroLocalExecution: (
+      executor.evidenceSource === 'native-executor-coordinator'
+      && executor.targetCapabilityId === 'filesystem.read'
+      && executor.targetPlatform === 'desktop'
+      && Number(executorBefore.executionAttemptCount)
+        === Number(executorAfter.executionAttemptCount)
+      && Number(executorBefore.sideEffectCount)
+        === Number(executorAfter.sideEffectCount)
+    ),
+    zeroProviderContinuation: (
+      Number(station.providerCallCount) === 1
+      && Number(station.providerContinuationCount) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === payloadHash
+    ),
+    noAutomaticResend: (
+      Number(recovery.turnCountBefore) === Number(recovery.turnCountAfter)
+      && Number(recovery.messageCountBefore)
+        === Number(recovery.messageCountAfter)
+      && Number(recovery.providerCallCountBefore)
+        === Number(recovery.providerCallCountAfter)
+    ),
+    permissionRestored: (
+      restored.permission === 'CAPABILITY_PERMISSION_STATE_GRANTED'
+      && restored.permissionKind
+        === 'CAPABILITY_PERMISSION_KIND_FILESYSTEM'
+      && restored.sourceCapabilitySessionIdHash
+        === denied.capabilitySessionIdHash
+      && restored.capabilitySessionIdHash
+        !== restored.sourceCapabilitySessionIdHash
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.permissionRestored === true
+    ),
+  };
+}
+
 function evaluateBaseDuplicateConflict(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {

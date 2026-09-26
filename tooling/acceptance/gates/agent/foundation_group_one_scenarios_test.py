@@ -4016,6 +4016,107 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_base_invalid_resource_reference(capture)
 
+    def test_permission_denied_accepts_exact_product_facts(self) -> None:
+        for platform in ("desktop_app", "browser"):
+            with self.subTest(platform=platform):
+                assertions = evaluate_base_permission_denied(
+                    valid_permission_denied_capture(platform)
+                )
+
+                self.assertEqual(len(assertions), 13)
+                self.assertTrue(all(assertions.values()))
+
+    def test_permission_denied_accepts_flat_stream_error_envelope(self) -> None:
+        capture = valid_permission_denied_capture()
+        station = capture["station"]
+        runtime_event = capture["runtimeEvent"]
+        outcome = capture["outcome"]
+        runtime_payload = {
+            "eventType": "error",
+            "data": {
+                **outcome,
+                "agentId": "agent-permission-denied",
+                "attemptId": "attempt-permission-denied",
+                "conversationId": station["conversationId"],
+                "seq": station["sourceSequence"],
+                "stage": "tool_dispatch_failed",
+                "turnId": station["turnId"],
+                "type": "error",
+            },
+        }
+        payload_hash = canonical_payload_hash(runtime_payload)
+        station["runtimePayload"] = runtime_payload
+        station["payloadHash"] = payload_hash
+        runtime_event["payloadHash"] = payload_hash
+        capture["replay"]["sourceHash"] = payload_hash
+        capture["replay"]["replayHash"] = payload_hash
+        runtime_event["eventId"] = canonical_payload_hash(
+            {
+                "streamId": station["streamId"],
+                "streamGeneration": station["streamGeneration"],
+                "conversationId": station["conversationId"],
+                "turnId": station["turnId"],
+                "sequence": station["sourceSequence"],
+                "payloadHash": payload_hash,
+            }
+        )
+
+        assertions = evaluate_base_permission_denied(capture)
+
+        self.assertTrue(all(assertions.values()))
+
+    def test_permission_denied_rejects_payload_or_detail_drift(self) -> None:
+        for path, value in (
+            (("outcome", "retryable"), True),
+            (("outcome", "terminal"), False),
+            (("outcome", "details", "permission_kind"), "camera"),
+        ):
+            with self.subTest(path=path):
+                capture = valid_permission_denied_capture()
+                target = capture
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedPermissionDenied|boundedDetails",
+                ):
+                    evaluate_base_permission_denied(capture)
+
+    def test_permission_denied_requires_browser_capability_isolation(self) -> None:
+        capture = valid_permission_denied_capture("browser")
+        capture["browser"]["localCapabilityCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "browserCapabilityIsolation",
+        ):
+            evaluate_base_permission_denied(capture)
+
+    def test_permission_denied_rejects_execution_or_automatic_resend(self) -> None:
+        for section, key, value, assertion in (
+            ("station", "toolCallCount", 1, "zeroToolCallPersistence"),
+            ("executor", "after", {
+                "executionAttemptCount": 4,
+                "sideEffectCount": 2,
+            }, "zeroLocalExecution"),
+            ("recovery", "turnCountAfter", 2, "noAutomaticResend"),
+            ("lease", "restored", {
+                "sourceCapabilitySessionIdHash": "2" * 64,
+                "capabilitySessionIdHash": "3" * 64,
+                "permission": "CAPABILITY_PERMISSION_STATE_DENIED",
+                "permissionKind": "CAPABILITY_PERMISSION_KIND_FILESYSTEM",
+            }, "permissionRestored"),
+        ):
+            with self.subTest(assertion=assertion):
+                capture = valid_permission_denied_capture()
+                capture[section][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_permission_denied(capture)
+
     def test_lease_expired_accepts_exact_product_facts(self) -> None:
         assertions = evaluate_base_lease_expired(
             valid_lease_expired_capture()
