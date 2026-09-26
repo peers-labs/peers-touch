@@ -306,42 +306,35 @@ class EnvironmentContractTests(unittest.TestCase):
         )
         self.assertFalse(contract.fixtures[0].authorization_required)
 
-    def test_current_profile_actor_resolution_logs_out_discovery_session(self):
+    def test_current_profile_actor_resolution_uses_shared_fixture_owner(self):
         from tooling.acceptance.provisioners import (
             native_tauri_current_profile,
         )
 
-        login_response = mock.MagicMock()
-        login_response.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "session-token"},
-                }
-            }
-        ).encode("utf-8")
-        logout_response = mock.MagicMock()
         with mock.patch.object(
-            native_tauri_current_profile.urllib.request,
-            "urlopen",
-            side_effect=[login_response, logout_response],
-        ) as urlopen:
+            native_tauri_current_profile,
+            "resolve_actor_identity",
+            return_value=mock.Mock(
+                role="alice",
+                account_ref="alice@p.t",
+                ptid="ptid:alice",
+            ),
+        ) as resolve:
             actor = (
                 native_tauri_current_profile.NativeTauriCurrentProfileProvisioner
                 ._resolve_existing_actor(
                     "http://station.example",
+                    "profile-four",
                     "alice",
-                    "fixture-password",
                 )
             )
 
         self.assertEqual(actor.ptid, "ptid:alice")
         self.assertEqual(actor.device_policy, "persistent-acceptance")
-        self.assertEqual(urlopen.call_count, 2)
-        logout_request = urlopen.call_args_list[1].args[0]
-        self.assertEqual(
-            logout_request.headers["Authorization"],
-            "Bearer session-token",
+        resolve.assert_called_once_with(
+            "http://station.example",
+            "profile-four",
+            "alice",
         )
 
     def test_current_profile_runtime_ports_use_each_worktree_allocation(self):

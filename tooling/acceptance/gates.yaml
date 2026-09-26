@@ -16,14 +16,14 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner and report semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
     "acceptance-workflow-contract": {
-      "command": "node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs apps/dev/server/status.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/skill-rollout-audit-test.py && tooling/scripts/review/skill-check.sh",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'node --test tooling/scripts/lib/machine-dev-paths.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/plan/workspace-plan-binding.test.mjs tooling/scripts/local-dev/active-work-store.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs apps/dev/server/status.test.mjs && python3 tooling/scripts/review/pr-plan-input-test.py && python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py && python3 -m unittest tooling/scripts/skill-rollout-audit-test.py && tooling/scripts/review/skill-check.sh'",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
@@ -301,11 +301,19 @@
       "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
     },
     "mobile-native-build": {
-      "command": "pnpm --dir apps/mobile exec tauri ios build --ci --target aarch64-sim",
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.mobile_native_build"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
       "timeout_seconds": 3600,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Build the Mobile Tauri application in release mode for the native iOS Simulator target."
+      "environment": "mobile-simulator",
+      "provisioner": "mobile-simulator",
+      "tier": "env-evidence",
+      "description": "Build and verify the source-bound Mobile Tauri iOS Simulator application through the canonical isolated native provisioner."
     },
     "station-access-lifecycle-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
