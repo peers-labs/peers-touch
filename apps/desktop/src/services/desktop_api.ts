@@ -32,6 +32,7 @@ import {
   SendSocialFriendRequestResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
 import {
+  ChatStorageConversationRequestSchema,
   ChatStorageResultSchema,
   ChatStorageRetentionRequestSchema,
   ChatStorageSnapshotRequestSchema,
@@ -7229,6 +7230,28 @@ export const api = {
           deviceId: input.deviceId,
         },
         scopeRevision: input.scopeRevision,
+      }),
+    ),
+
+  chatStorageClearConversation: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+    conversationId: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_clear_conversation',
+      ChatStorageConversationRequestSchema,
+      ChatStorageResultSchema,
+      create(ChatStorageConversationRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+        conversationId: input.conversationId,
       }),
     ),
 

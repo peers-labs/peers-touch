@@ -91,7 +91,6 @@ describe('social chat profile hydration', () => {
       sticky: true,
       background: 'paper' as const,
       backgroundImage: 'oss://self/background.png',
-      clearedAt: 0,
     },
   };
 

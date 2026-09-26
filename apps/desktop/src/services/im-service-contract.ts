@@ -34,7 +34,6 @@ export interface MemberSettingsResult {
   pinned: boolean
   background: string
   backgroundImage: string
-  clearedAtUnixMs: number
 }
 
 // --- KeyPackage Service Contract (v1) ---

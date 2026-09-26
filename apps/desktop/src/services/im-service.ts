@@ -742,7 +742,6 @@ const messagingService: MessagingServiceContract = {
       pinned: response.pinned ?? false,
       background: response.background ?? 'default',
       backgroundImage: response.backgroundImage ?? '',
-      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
     }
   },
 
@@ -756,7 +755,6 @@ const messagingService: MessagingServiceContract = {
         pinned?: boolean
         background?: string
         background_image?: string
-        cleared_at_unix_ms?: number
       },
       MemberSettingsResult
     >('messaging_update_member_settings', {
@@ -767,7 +765,6 @@ const messagingService: MessagingServiceContract = {
       pinned: settings.pinned,
       background: settings.background,
       background_image: settings.backgroundImage,
-      cleared_at_unix_ms: settings.clearedAtUnixMs,
     })
     return {
       nickname: response.nickname ?? '',
@@ -776,7 +773,6 @@ const messagingService: MessagingServiceContract = {
       pinned: response.pinned ?? false,
       background: response.background ?? 'default',
       backgroundImage: response.backgroundImage ?? '',
-      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
     }
   },
 

@@ -172,10 +172,6 @@ class LifecycleRegressionContractTest(unittest.TestCase):
             REPO_ROOT
             / "tooling/acceptance/gates/chat/lifecycle_direct.py"
         ).read_text(encoding="utf-8")
-        station_settings = (
-            REPO_ROOT
-            / "apps/station/app/subserver/conversation/application/command/projections.go"
-        ).read_text(encoding="utf-8")
         messaging_schema = (
             REPO_ROOT / "packages/messaging-core/src/store/schema.rs"
         ).read_text(encoding="utf-8")
@@ -189,8 +185,7 @@ class LifecycleRegressionContractTest(unittest.TestCase):
         self.assertIn("setConversationBackgroundPreview", detail_panel)
         self.assertIn("resolveMessageSearchTargets(", social_chat)
         self.assertIn("data-chat-message-search-clear", search_modal)
-        self.assertIn("historyRestoreWindow", station_settings)
-        self.assertIn("message-search-backfill-v1", messaging_schema)
+        self.assertNotIn("message-search-backfill-v1", messaging_schema)
         self.assertIn("messaging_search_messages_result", desktop_gateway)
         self.assertIn("conversation_summary_projection", messaging_store)
         self.assertIn("conversation_message_page", messaging_store)
@@ -214,15 +209,11 @@ class LifecycleRegressionContractTest(unittest.TestCase):
         )
         self.assertIn("new MutationObserver", direct_gate)
         self.assertIn(
-            "Direct clear-history confirmation dismissal",
+            "Direct local-data clear confirmation dismissal",
             direct_gate,
         )
         self.assertIn(
-            "enabled Direct history restore control",
-            direct_gate,
-        )
-        self.assertIn(
-            "visible Direct restore-history confirmation",
+            "direct_local_conversation_clear",
             direct_gate,
         )
         for assertion in (

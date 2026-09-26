@@ -219,7 +219,6 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
             ...(input.isPinned !== undefined ? { pinned: input.isPinned } : {}),
             ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
             ...(input.background !== undefined ? { background: input.background } : {}),
-            ...(input.clearedAt !== undefined ? { cleared_at_ms: input.clearedAt } : {}),
           },
         },
       });
@@ -417,13 +416,6 @@ function normalizeConversationSettings(
     isPinned: Boolean(record.pinned ?? record.isPinned ?? record.is_pinned),
     alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
     background: normalizeChatBackgroundId(record.background),
-    clearedAt: Number(
-      record.clearedAtMs
-      ?? record.cleared_at_ms
-      ?? record.clearedAtUnixMs
-      ?? record.cleared_at_unix_ms
-      ?? 0,
-    ),
   };
 }
 

@@ -18,7 +18,6 @@ type ConversationModel struct {
 	Description            string    `gorm:"column:description;type:text"`
 	AvatarObjectID         string    `gorm:"column:avatar_object_id;size:255"`
 	Visibility             string    `gorm:"column:visibility;size:32"`
-	DisappearTimerSeconds  uint32    `gorm:"column:disappear_timer_seconds;not null"`
 	CreatedAt              time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt              time.Time `gorm:"column:updated_at;not null"`
 }
@@ -120,16 +119,15 @@ func (*ConversationAuthorityPlanModel) TableName() string {
 }
 
 type ConversationMemberSettingsModel struct {
-	ConversationID      string    `gorm:"column:conversation_id;size:128;primaryKey"`
-	PTID                string    `gorm:"column:ptid;size:255;primaryKey"`
-	Nickname            string    `gorm:"column:nickname;size:255"`
-	Muted               bool      `gorm:"column:muted;not null"`
-	Pinned              bool      `gorm:"column:pinned;not null"`
-	AlertEnabled        bool      `gorm:"column:alert_enabled;not null"`
-	Background          string    `gorm:"column:background;size:32;not null"`
-	BackgroundImage     string    `gorm:"column:background_image;size:2048"`
-	ClearedAtUnixMillis int64     `gorm:"column:cleared_at_unix_ms;not null"`
-	UpdatedAt           time.Time `gorm:"column:updated_at;not null"`
+	ConversationID  string    `gorm:"column:conversation_id;size:128;primaryKey"`
+	PTID            string    `gorm:"column:ptid;size:255;primaryKey"`
+	Nickname        string    `gorm:"column:nickname;size:255"`
+	Muted           bool      `gorm:"column:muted;not null"`
+	Pinned          bool      `gorm:"column:pinned;not null"`
+	AlertEnabled    bool      `gorm:"column:alert_enabled;not null"`
+	Background      string    `gorm:"column:background;size:32;not null"`
+	BackgroundImage string    `gorm:"column:background_image;size:2048"`
+	UpdatedAt       time.Time `gorm:"column:updated_at;not null"`
 }
 
 func (*ConversationMemberSettingsModel) TableName() string {

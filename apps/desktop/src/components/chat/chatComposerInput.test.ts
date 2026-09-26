@@ -39,7 +39,6 @@ import {
   enqueueChatOutboxItem,
   failChatOutboxItem,
   filterUnreadChatNotifications,
-  filterChatMessagesAfterClearedAt,
   formatChatAttachmentSize,
   completeChatOutboxItem,
   markChatOutboxSending,
@@ -237,14 +236,6 @@ describe('chat surface projection helpers', () => {
 
     expect(surface.map((item) => item.showDateSeparator)).toEqual([true, false, false, true]);
     expect(surface.map((item) => item.timelineGap)).toEqual([false, false, true, false]);
-  });
-
-  it('filters cleared messages using the same timestamp resolver', () => {
-    expect(filterChatMessagesAfterClearedAt(
-      messages,
-      base + 10 * 60_000,
-      (message) => message.sentAtMs,
-    ).map((message) => message.ulid)).toEqual(['late', 'tomorrow']);
   });
 
   it('counts loaded thread replies by shared thread root semantics', () => {

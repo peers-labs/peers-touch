@@ -250,6 +250,5 @@ export function friendPatchFromActionPatch(patch: Partial<ChatActionState>): Upd
     ...(patch.sticky !== undefined ? { isPinned: patch.sticky } : {}),
     ...(patch.alertEnabled !== undefined ? { alertEnabled: patch.alertEnabled } : {}),
     ...(patch.background !== undefined ? { background: patch.background } : {}),
-    ...(patch.clearedAt !== undefined ? { clearedAt: patch.clearedAt } : {}),
   };
 }

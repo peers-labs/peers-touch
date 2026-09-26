@@ -443,11 +443,10 @@ func SortKeyPackageReservations(
 }
 
 type ConversationSettings struct {
-	Name                  string
-	Description           string
-	AvatarObjectID        string
-	Visibility            ConversationVisibility
-	DisappearTimerSeconds uint32
+	Name           string
+	Description    string
+	AvatarObjectID string
+	Visibility     ConversationVisibility
 }
 
 type ConversationVisibility string
@@ -458,11 +457,10 @@ const (
 )
 
 type SettingsPatch struct {
-	Name                  *string
-	Description           *string
-	AvatarObjectID        *string
-	Visibility            *ConversationVisibility
-	DisappearTimerSeconds *uint32
+	Name           *string
+	Description    *string
+	AvatarObjectID *string
+	Visibility     *ConversationVisibility
 }
 
 func (s ConversationSettings) Validate() error {
@@ -507,9 +505,6 @@ func (s ConversationSettings) Apply(patch SettingsPatch) ConversationSettings {
 	}
 	if patch.Visibility != nil {
 		updated.Visibility = *patch.Visibility
-	}
-	if patch.DisappearTimerSeconds != nil {
-		updated.DisappearTimerSeconds = *patch.DisappearTimerSeconds
 	}
 	return updated
 }

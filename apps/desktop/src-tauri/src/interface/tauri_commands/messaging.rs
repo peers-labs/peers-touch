@@ -100,7 +100,6 @@ pub struct MessagingUpdateMemberSettingsInput {
     pub pinned: Option<bool>,
     pub background: Option<String>,
     pub background_image: Option<String>,
-    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -424,7 +423,6 @@ fn member_settings_json(settings: &MemberSettings) -> Value {
         "pinned": settings.pinned,
         "background": settings.background,
         "backgroundImage": settings.background_image,
-        "clearedAtUnixMs": settings.cleared_at_ms,
     })
 }
 
@@ -532,7 +530,6 @@ pub(crate) fn messaging_update_member_settings_result(
         alert_enabled: input.alert_enabled.unwrap_or(current.alert_enabled),
         pinned: input.pinned.unwrap_or(current.pinned),
         background: input.background.unwrap_or(current.background),
-        cleared_at_ms: input.cleared_at_unix_ms.unwrap_or(current.cleared_at_ms),
         background_image: input.background_image.unwrap_or(current.background_image),
     };
     let response = match crate::infrastructure::station_client::request_proto_for_device::<
@@ -718,6 +715,78 @@ pub async fn chat_storage_clear_cache(
     })
     .await
     .map_err(|error| format!("chat cache cleanup worker failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn chat_storage_clear_conversation(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageConversationRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat conversation cleanup request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    if request.conversation_id.trim().is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "chat conversation ID is required",
+            None,
+        ));
+    }
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    let conversation_id = request.conversation_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_clear_conversation(&station_peer_id, &revision, &conversation_id)
+            .map(|result| AppResult::success(result.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat conversation cleanup worker failed: {error}"))
 }
 
 #[tauri::command]
@@ -2388,7 +2457,6 @@ mod tests {
             alert_enabled: false,
             pinned: true,
             background: "mint".to_string(),
-            cleared_at_ms: 42,
             background_image: "oss://station/background".to_string(),
         });
         assert_eq!(settings["nickname"], "Alias");
@@ -2396,7 +2464,6 @@ mod tests {
         assert_eq!(settings["alertEnabled"], false);
         assert_eq!(settings["pinned"], true);
         assert_eq!(settings["background"], "mint");
-        assert_eq!(settings["clearedAtUnixMs"], 42);
         assert_eq!(settings["backgroundImage"], "oss://station/background");
     }
 

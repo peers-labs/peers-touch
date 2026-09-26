@@ -313,7 +313,7 @@
           "Direct header/list/detail Station identity and authoritative presence",
           "Immediate local background preview with asynchronous durable persistence",
           "Canonical local message search with bounded clear affordance",
-          "Clear-history and bounded restore convergence",
+          "Device-local conversation clearing and later-message continuity",
           "recoverable visible Group creation failure"
         ],
         "proven_by": [
@@ -681,6 +681,56 @@
         "unproven_scope": [
           "Native Mobile visible redaction remains covered structurally until the final CSG aggregate closure",
           "Whole-conversation local clear and physical database reclamation are owned by CSG-05"
+        ]
+      }
+    },
+    {
+      "id": "chat-storage-conversation-clear",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-conversation-clear"],
+      "required_gates": [
+        "chat-storage-delete-reclaim-e2e",
+        "chat-storage-dead-contract-zero-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/storage.proto",
+        "packages/messaging-core/src/storage_governance/conversation_clear.rs",
+        "packages/messaging-core/src/store/schema.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/messaging/store.rs",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src-tauri/src/messaging/adapter.rs",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/ChatPage.tsx",
+        "apps/mobile/src/acceptance/actions.ts",
+        "tooling/acceptance/gates/mobile/simulator_social_e2e.py",
+        "tooling/acceptance/gates/chat_storage/zero_legacy.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Device Messaging Engine authority head and sequence/hash floor",
+          "Device Messaging Engine SQLCipher projections and cleanup journal",
+          "post-compaction physical storage snapshot"
+        ],
+        "surfaces": [
+          "Desktop Conversation details > Clear local chat data",
+          "Mobile Conversation actions > Clear local chat data"
+        ],
+        "proven_by": [
+          "chat-storage-delete-reclaim-e2e",
+          "chat-storage-dead-contract-zero-e2e"
+        ],
+        "proven_scope": [
+          "Shared Core and both SQLCipher adapters perform one sequence/hash-bound device-local clear",
+          "Native Mobile proves confirmation, plaintext and search removal, restart stability, and physical byte reclamation",
+          "Source-wide structural proof rejects the retired marker, restore, disappearing-message, backfill, and compatibility-schema contracts"
+        ],
+        "unproven_scope": [
+          "Station authority deletion and cross-device deletion are intentionally outside this capability",
+          "Desktop native physical byte reclamation remains scheduled for the final CSG aggregate closure"
         ]
       }
     }
