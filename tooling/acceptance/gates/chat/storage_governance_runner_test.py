@@ -138,6 +138,39 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
             redaction_snapshot_is_valid(snapshot, kind="retracted")
         )
 
+    def test_accepts_terminal_file_cleanup_without_rolling_back_redaction(
+        self,
+    ) -> None:
+        snapshot = {
+            "projection": {
+                "plaintextEmpty": True,
+                "hiddenForActor": False,
+                "retracted": True,
+            },
+            "redactionTombstones": [
+                {
+                    "kind": "retracted",
+                    "authoritySequence": 3,
+                    "authorityEventHash": "cd" * 32,
+                }
+            ],
+            "redactionCleanup": [
+                {
+                    "scopeKind": "retract",
+                    "state": "failed_terminal",
+                }
+            ],
+            "searchEntryCount": 0,
+            "attachmentProjectionCount": 0,
+            "attachmentTransferCount": 0,
+            "consumptionCount": 1,
+            "laneSequence": 3,
+        }
+
+        self.assertTrue(
+            redaction_snapshot_is_valid(snapshot, kind="retracted")
+        )
+
     def test_redaction_gate_uses_the_single_station_native_environment(
         self,
     ) -> None:
