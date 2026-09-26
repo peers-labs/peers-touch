@@ -45,6 +45,7 @@ REDACTION_REQUIRED_STEPS = {
     "redaction.restart",
     "redaction.restore",
 }
+MAX_REDACTION_SUBMIT_ATTEMPTS = 3
 SELECTORS = {
     "settings_nav": '[data-pt-primary-nav="settings"]',
     "security_section": '[data-pt-section-item="security"]',
@@ -132,6 +133,26 @@ def redaction_snapshot_is_valid(
         and int(snapshot.get("consumptionCount") or 0) > 0
         and int(snapshot.get("laneSequence") or 0) > 0
     )
+
+
+def redaction_command_disposition(
+    snapshot: object,
+    *,
+    kind: str,
+) -> str:
+    if redaction_snapshot_is_valid(snapshot, kind=kind):
+        return "committed"
+    if not isinstance(snapshot, dict):
+        return "pending"
+    intent = snapshot.get("intent")
+    outbox = snapshot.get("outbox")
+    if not isinstance(intent, dict) or not isinstance(outbox, dict):
+        return "pending"
+    if intent.get("state") != "failed" and outbox.get("state") != "failed":
+        return "pending"
+    if outbox.get("lastErrorCode") == "authority_head_stale":
+        return "retry_authority_head"
+    return "failed"
 
 
 class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
@@ -446,6 +467,80 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
                 f"{error}; lastSnapshot={json.dumps(latest, sort_keys=True)}"
             ) from error
 
+    def submit_redaction(
+        self,
+        *,
+        actor: str,
+        message_id: str,
+        interaction: str,
+        kind: str,
+    ) -> str:
+        last_snapshot: dict[str, Any] = {}
+        for attempt in range(1, MAX_REDACTION_SUBMIT_ATTEMPTS + 1):
+            response = async_harness(
+                self.clients[actor],
+                "submitMetadataInteraction",
+                {
+                    "conversationId": self.storage_conversation_id,
+                    "kind": "friend",
+                    "messageId": message_id,
+                    "interaction": interaction,
+                    "remove": False,
+                },
+            )
+            command_id = str(
+                (response or {}).get("command_id")
+                or (response or {}).get("commandId")
+                or ""
+            )
+            if not command_id:
+                raise GateError(
+                    f"{interaction} returned no command identity"
+                )
+
+            def probe() -> tuple[str, dict[str, Any]] | None:
+                self.sync_actor(actor)
+                snapshot = self.engine_snapshot(
+                    actor,
+                    message_id,
+                    command_id,
+                )
+                last_snapshot.clear()
+                last_snapshot.update(snapshot)
+                disposition = redaction_command_disposition(
+                    snapshot,
+                    kind=kind,
+                )
+                return (
+                    (disposition, snapshot)
+                    if disposition != "pending"
+                    else None
+                )
+
+            try:
+                disposition, _ = wait_until(
+                    probe,
+                    f"{actor} {interaction} command outcome",
+                    timeout=120,
+                )
+            except GateError as error:
+                raise GateError(
+                    f"{error}; lastSnapshot="
+                    f"{json.dumps(last_snapshot, sort_keys=True)}"
+                ) from error
+            if disposition == "committed":
+                return command_id
+            if (
+                disposition == "retry_authority_head"
+                and attempt < MAX_REDACTION_SUBMIT_ATTEMPTS
+            ):
+                continue
+            raise GateError(
+                f"{actor} {interaction} command failed after attempt {attempt}; "
+                f"lastSnapshot={json.dumps(last_snapshot, sort_keys=True)}"
+            )
+        raise GateError(f"{actor} {interaction} retry budget exhausted")
+
     def assert_redacted_dom(
         self,
         *,
@@ -589,51 +684,21 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
         )
 
         def apply_redactions() -> dict[str, str]:
-            hide = async_harness(
-                alice,
-                "submitMetadataInteraction",
-                {
-                    "conversationId": conversation_id,
-                    "kind": "friend",
-                    "messageId": hide_message_id,
-                    "interaction": "hideForActor",
-                    "remove": False,
-                },
+            hide_command_id = self.submit_redaction(
+                actor="alice",
+                message_id=hide_message_id,
+                interaction="hideForActor",
+                kind="hidden_for_actor",
             )
-            hide_command_id = str(
-                (hide or {}).get("command_id")
-                or (hide or {}).get("commandId")
-                or ""
+            retract_command_id = self.submit_redaction(
+                actor="alice",
+                message_id=retract_message_id,
+                interaction="retract",
+                kind="retracted",
             )
-            if not hide_command_id:
-                raise GateError("actor hide returned no command identity")
-            self.wait_for_redaction(
-                "alice",
-                hide_message_id,
-                "hidden_for_actor",
-                hide_command_id,
-            )
-            retract = async_harness(
-                alice,
-                "submitMetadataInteraction",
-                {
-                    "conversationId": conversation_id,
-                    "kind": "friend",
-                    "messageId": retract_message_id,
-                    "interaction": "retract",
-                    "remove": False,
-                },
-            )
-            command_id = str(
-                (retract or {}).get("command_id")
-                or (retract or {}).get("commandId")
-                or ""
-            )
-            if not command_id:
-                raise GateError("retract returned no command identity")
             return {
                 "hide": hide_command_id,
-                "retract": command_id,
+                "retract": retract_command_id,
             }
 
         redaction_commands = self.step(
