@@ -304,6 +304,58 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-PERMISSION_DENIED": frozenset(
+        {
+            "typedPermissionDenied",
+            "boundedDetails",
+            "deniedLeaseObserved",
+            "localizedRecoveryVisible",
+            "permissionDetailOpened",
+            "browserCapabilityIsolation",
+            "zeroToolCallPersistence",
+            "zeroLocalExecution",
+            "zeroProviderContinuation",
+            "replayEqual",
+            "noAutomaticResend",
+            "permissionRestored",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-LOOP_BUDGET_EXHAUSTED": frozenset(
+        {
+            "stationTypedPayload",
+            "typedLoopBudget",
+            "localizedInspectBudgetVisible",
+            "budgetIdentityProjected",
+            "inspectBudgetOpenedTurnDetails",
+            "terminalAtExactLimit",
+            "inspectBudgetHasNoAutomaticRetry",
+        }
+    ),
+    "BASE-MODEL_UNAVAILABLE": frozenset(
+        {
+            "typedModelUnavailable",
+            "localizedRecoveryVisible",
+            "chooseModelOpened",
+            "oneTerminalProviderAttempt",
+            "zeroSuccessfulCompletion",
+            "queueUnchanged",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-PROVIDER_TIMEOUT": frozenset(
+        {
+            "typedProviderTimeout",
+            "localizedRetryVisible",
+            "deadlineProjected",
+            "oneTerminalProviderAttempt",
+            "upstreamTimeoutCancelled",
+            "providerDeadlinePrecedesTurnBudget",
+            "zeroSuccessfulCompletion",
+            "queueUnchanged",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",
