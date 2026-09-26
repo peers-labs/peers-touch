@@ -160,6 +160,7 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
 }
 LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
 LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
+F12_PREPARE_TIMEOUT_SECONDS = 900
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -2122,7 +2123,7 @@ class FoundationF12Coordinator:
                     "locale": probe_input.locale,
                     "sampleId": probe_input.sample_id,
                 },
-                timeout=300,
+                timeout=F12_PREPARE_TIMEOUT_SECONDS,
             )
             candidate_conversation_ids = (
                 preparation.get("conversationIds")
