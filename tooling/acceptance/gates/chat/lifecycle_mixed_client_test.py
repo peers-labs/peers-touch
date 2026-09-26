@@ -304,6 +304,61 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             "bound",
         )
 
+    def test_desktop_restart_projects_authenticated_state(self) -> None:
+        predecessor = object()
+        successor = object()
+        identity = MixedClientIdentity(
+            client_id="desktop-bob",
+            actor="bob",
+            runtime="desktop-macos-native",
+            station_service_id="station",
+            station_peer_id="station-peer",
+            ptid="ptid:bob",
+            account_ref="station-account:bob",
+            federation_id="fed-1",
+            device_id="desktop-device-digest",
+        )
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.client_specs = {
+            "desktop-bob": {
+                "actor": "bob",
+                "runtime": "native-tauri",
+            },
+        }
+        runtime.desktop_sessions = {"desktop-bob": predecessor}
+        runtime.identities = {"desktop-bob": identity}
+        runtime.desktop_binding = MagicMock()
+        runtime.desktop_binding.create_bound_session.return_value = successor
+        runtime.desktop_instances = []
+        runtime.desktop_lifecycles = MagicMock()
+        runtime._desktop_identity_action = MagicMock(
+            return_value={
+                "authenticated": True,
+                "actorPtid": "ptid:bob",
+            }
+        )
+        runtime.wait_until = MagicMock(
+            side_effect=lambda predicate, _description, **_kwargs: predicate()
+        )
+        runtime._actor_for_client = MagicMock(
+            return_value={"ptid": "ptid:bob"}
+        )
+        runtime._identity_with_device = MagicMock(return_value=identity)
+
+        result = runtime.restart_desktop_session(
+            "desktop-bob",
+            window_slot=0,
+            window_count=1,
+        )
+
+        self.assertTrue(result["authenticated"])
+        self.assertEqual(result["actorPtid"], identity.ptid)
+        self.assertEqual(result["stationPeerId"], identity.station_peer_id)
+        self.assertEqual(
+            result["deviceIdentityDigest"],
+            identity.device_id,
+        )
+
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:
         runtime = object.__new__(MixedNativeRuntime)
         runtime.gate_id = "chat-mixed-native-lifecycle-e2e"
