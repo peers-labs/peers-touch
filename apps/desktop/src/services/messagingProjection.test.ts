@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   loadMessages: vi.fn(),
   loadSessions: vi.fn(),
   markFriendRead: vi.fn(),
+  applyMessageMutation: vi.fn(),
   clearChatUnread: vi.fn(),
   bumpChatUnread: vi.fn(),
   reconcile: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock('../store/socialChat', () => ({
       loadMessages: mocks.loadMessages,
       loadSessions: mocks.loadSessions,
       markFriendRead: mocks.markFriendRead,
+      applyMessageMutation: mocks.applyMessageMutation,
     }),
   },
 }));
@@ -136,6 +138,37 @@ describe('messaging projection read cursor', () => {
     expect(mocks.markFriendRead).not.toHaveBeenCalled();
   });
 
+  it('removes an actor-hidden message after its durable projection commits', async () => {
+    projectionHandler({
+      payload: {
+        schemaVersion: 1,
+        actorPtid: 'ptid:self',
+        homeStationPeerId: 'station-a',
+        deviceId: 'device-a',
+        conversationId: 'direct-1',
+        eventId: 'event-hide',
+        laneSequence: '2',
+        kind: 'MESSAGING_PROJECTION_KIND_MESSAGE',
+        messageId: 'message-hidden',
+        messageRemovedFromProjection: true,
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.applyMessageMutation).toHaveBeenCalledWith(
+        'direct-1',
+        'message-hidden',
+        'DELETE',
+        {
+          newContent: '',
+          newCiphertext: expect.any(Uint8Array),
+          mutatedTsUnixMs: 0,
+        },
+      );
+      expect(mocks.loadMessages).toHaveBeenCalledWith('direct-1', 'friend');
+    });
+  });
+
   it('drops projection invalidation from a stale identity scope', async () => {
     mocks.invalidationMatches = false;
 
@@ -184,10 +217,18 @@ describe('messaging projection read cursor', () => {
         eventId: 'event-3',
         laneSequence: '3',
         kind: 'MESSAGING_PROJECTION_KIND_MESSAGE',
+        messageId: 'message-hidden-during-gap',
+        messageRemovedFromProjection: true,
       },
     });
 
     await vi.waitFor(() => {
+      expect(mocks.applyMessageMutation).toHaveBeenCalledWith(
+        'direct-1',
+        'message-hidden-during-gap',
+        'DELETE',
+        expect.any(Object),
+      );
       expect(mocks.reconcile).toHaveBeenCalledWith('projection-invalidation');
     });
   });

@@ -269,4 +269,8 @@ message MessagingProjectionInvalidation {
   string event_id = 6;
   int64 lane_sequence = 7;
   MessagingProjectionKind kind = 8;
+  // Identifies the affected message when kind is MESSAGE.
+  string message_id = 9;
+  // True only after the local durable projection no longer exposes message_id.
+  bool message_removed_from_projection = 10;
 }
