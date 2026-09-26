@@ -306,9 +306,6 @@
         "-m",
         "tooling.acceptance.gates.station_access.mobile_native_build"
       ],
-      "ephemeralCapabilities": [
-        "mobile.simulator.appium-session"
-      ],
       "timeout_seconds": 3600,
       "environment": "mobile-simulator",
       "provisioner": "mobile-simulator",
