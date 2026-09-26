@@ -117,6 +117,7 @@ def redaction_snapshot_is_valid(
             "compaction_pending",
             "succeeded",
             "failed_retryable",
+            "failed_terminal",
         }
     ]
     return (
@@ -417,26 +418,33 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
         *,
         require_cleanup: bool = True,
     ) -> dict[str, Any]:
-        return wait_until(
-            lambda: (
+        latest: dict[str, Any] = {}
+
+        def probe() -> dict[str, Any] | None:
+            self.sync_actor(actor)
+            snapshot = self.engine_snapshot(actor, message_id, command_id)
+            latest.clear()
+            latest.update(snapshot)
+            return (
                 snapshot
-                if (
-                    self.sync_actor(actor) is None
-                    and redaction_snapshot_is_valid(
-                        snapshot := self.engine_snapshot(
-                            actor,
-                            message_id,
-                            command_id,
-                        ),
-                        kind=kind,
-                        require_cleanup=require_cleanup,
-                    )
+                if redaction_snapshot_is_valid(
+                    snapshot,
+                    kind=kind,
+                    require_cleanup=require_cleanup,
                 )
                 else None
-            ),
-            f"{actor} durable {kind} redaction",
-            timeout=120,
-        )
+            )
+
+        try:
+            return wait_until(
+                probe,
+                f"{actor} durable {kind} redaction",
+                timeout=120,
+            )
+        except GateError as error:
+            raise GateError(
+                f"{error}; lastSnapshot={json.dumps(latest, sort_keys=True)}"
+            ) from error
 
     def assert_redacted_dom(
         self,
@@ -465,6 +473,7 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
         hide_plaintext: str,
         retract_message_id: str,
         retract_plaintext: str,
+        hide_command_id: str,
         retract_command_id: str,
         require_cleanup: bool = True,
     ) -> dict[str, Any]:
@@ -472,6 +481,7 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             "alice",
             hide_message_id,
             "hidden_for_actor",
+            hide_command_id,
             require_cleanup=require_cleanup,
         )
         self.assert_redacted_dom(
@@ -578,15 +588,30 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             },
         )
 
-        def apply_redactions() -> str:
-            async_harness(
+        def apply_redactions() -> dict[str, str]:
+            hide = async_harness(
                 alice,
-                "deleteLocalInteractionMessage",
+                "submitMetadataInteraction",
                 {
                     "conversationId": conversation_id,
                     "kind": "friend",
                     "messageId": hide_message_id,
+                    "interaction": "hideForActor",
+                    "remove": False,
                 },
+            )
+            hide_command_id = str(
+                (hide or {}).get("command_id")
+                or (hide or {}).get("commandId")
+                or ""
+            )
+            if not hide_command_id:
+                raise GateError("actor hide returned no command identity")
+            self.wait_for_redaction(
+                "alice",
+                hide_message_id,
+                "hidden_for_actor",
+                hide_command_id,
             )
             retract = async_harness(
                 alice,
@@ -606,9 +631,12 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             )
             if not command_id:
                 raise GateError("retract returned no command identity")
-            return command_id
+            return {
+                "hide": hide_command_id,
+                "retract": command_id,
+            }
 
-        retract_command_id = self.step(
+        redaction_commands = self.step(
             "redaction.apply",
             apply_redactions,
             "alice",
@@ -618,7 +646,8 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             hide_plaintext=hide_plaintext,
             retract_message_id=retract_message_id,
             retract_plaintext=retract_plaintext,
-            retract_command_id=retract_command_id,
+            hide_command_id=redaction_commands["hide"],
+            retract_command_id=redaction_commands["retract"],
         )
         self.assert_condition("actor_hide_scope", True)
         self.assert_condition("retract_scope", True)
@@ -646,7 +675,8 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             hide_plaintext=hide_plaintext,
             retract_message_id=retract_message_id,
             retract_plaintext=retract_plaintext,
-            retract_command_id=retract_command_id,
+            hide_command_id=redaction_commands["hide"],
+            retract_command_id=redaction_commands["retract"],
         )
         self.assert_condition("redaction_restart_stability", True)
 
@@ -665,7 +695,8 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             hide_plaintext=hide_plaintext,
             retract_message_id=retract_message_id,
             retract_plaintext=retract_plaintext,
-            retract_command_id=retract_command_id,
+            hide_command_id=redaction_commands["hide"],
+            retract_command_id=redaction_commands["retract"],
             require_cleanup=False,
         )
         self.assert_condition("recovery_redaction_reconciliation", True)
@@ -684,7 +715,8 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
             "conversationId": conversation_id,
             "hideMessageId": hide_message_id,
             "retractMessageId": retract_message_id,
-            "retractCommandId": retract_command_id,
+            "hideCommandId": redaction_commands["hide"],
+            "retractCommandId": redaction_commands["retract"],
             "immediate": immediate,
             "restarted": restarted,
             "restored": restored,
