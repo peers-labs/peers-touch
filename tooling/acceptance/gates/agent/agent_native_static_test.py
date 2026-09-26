@@ -1760,6 +1760,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("runFoundationForbiddenActorAttempt({", scenario)
         self.assertIn("OWNERSHIP_FORBIDDEN_ACTOR", scenario)
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn("requireRuntimeEvent?: boolean", scenario)
+        self.assertIn("input.requireRuntimeEvent === false", scenario)
+        self.assertIn(
+            "rejectedRef.current !== null || errorEventRef.current !== null",
+            scenario,
+        )
+        self.assertIn("requireRuntimeEvent: false", scenario)
+        self.assertIn(
+            "normalizeProjectedStationPayload(outcome)",
+            scenario,
+        )
+        self.assertIn("sourceHash: first.rejectionHash", scenario)
+        self.assertIn("replayHash: replayed.rejectionHash", scenario)
         self.assertIn(
             '[data-pt-agent-message-error-recovery="switch-account"]',
             scenario,
