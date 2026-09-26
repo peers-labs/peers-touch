@@ -644,7 +644,9 @@ items:
       exclude: [source mutation outside Plan lifecycle, W12 FINAL_CUT, product Journeys, formal Acceptance]
     resources:
       sourceClaims:
+        - { pathPrefix: apps/station/app/go.sum, mode: exclusive-write }
         - { pathPrefix: apps/station/app/cmd/secure_content_maintenance/main_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/conversation/ddd_composition_test.go, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/social/application/secure_content_reset_test.go, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/social/infrastructure/secure_content_reset_store_test.go, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/social/infrastructure/secure_content_reset_types.go, mode: exclusive-write }
