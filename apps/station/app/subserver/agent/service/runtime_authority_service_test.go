@@ -1729,6 +1729,7 @@ func TestExecuteTurnEnforcesCapabilityReadinessAdmission(t *testing.T) {
 		requiredRuntimeCapabilities []string
 		modelCapabilities           string
 		clientSessionID             string
+		clientCapabilities          []*model.ClientCapability
 		wantState                   model.CapabilityReadinessState
 		wantReasonCode              string
 		wantRejected                bool
@@ -1795,6 +1796,36 @@ func TestExecuteTurnEnforcesCapabilityReadinessAdmission(t *testing.T) {
 			wantState:       model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
 			wantReasonCode:  "client_capability_unavailable",
 			wantRejected:    true,
+		},
+		{
+			name:            "denied client capability reaches dispatch validation",
+			databaseName:    "capability_admission_client_permission_denied",
+			executionOwner:  model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
+			clientSessionID: "client-session-denied",
+			clientCapabilities: []*model.ClientCapability{{
+				CapabilityId:   "tool:skills_list",
+				SchemaVersion:  "1",
+				Permission:     model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_DENIED,
+				PermissionKind: model.CapabilityPermissionKind_CAPABILITY_PERMISSION_KIND_FILESYSTEM,
+			}},
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+			wantReasonCode: "capability_ready",
+			wantAuthorized: true,
+		},
+		{
+			name:            "prompt client capability remains unavailable",
+			databaseName:    "capability_admission_client_permission_prompt",
+			executionOwner:  model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY,
+			clientSessionID: "client-session-prompt",
+			clientCapabilities: []*model.ClientCapability{{
+				CapabilityId:   "tool:skills_list",
+				SchemaVersion:  "1",
+				Permission:     model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_PROMPT,
+				PermissionKind: model.CapabilityPermissionKind_CAPABILITY_PERMISSION_KIND_FILESYSTEM,
+			}},
+			wantState:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			wantReasonCode: "client_capability_unavailable",
+			wantRejected:   true,
 		},
 		{
 			name:                        "runtime capability unavailable rejects",
@@ -1968,9 +1999,10 @@ func TestExecuteTurnEnforcesCapabilityReadinessAdmission(t *testing.T) {
 				readiness.SetCapabilitySessionResolver(
 					capabilityAdmissionSessionResolver{
 						session: &model.ClientCapabilitySession{
-							SessionId:     test.clientSessionID,
-							ConnectionId:  "connection-capability-admission",
-							LeaseRevision: 1,
+							SessionId:         test.clientSessionID,
+							ConnectionId:      "connection-capability-admission",
+							LeaseRevision:     1,
+							TypedCapabilities: test.clientCapabilities,
 						},
 					},
 				)

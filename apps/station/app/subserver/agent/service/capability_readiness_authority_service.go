@@ -380,7 +380,9 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 		if !ok {
 			permission, ok = clientCapabilities[manifest.SourceInstanceID]
 		}
-		if !ok || permission != model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_GRANTED {
+		if !ok ||
+			(permission != model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_GRANTED &&
+				permission != model.CapabilityPermissionState_CAPABILITY_PERMISSION_STATE_DENIED) {
 			return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
 				"client_capability_unavailable", connectionRevision, nil
 		}
