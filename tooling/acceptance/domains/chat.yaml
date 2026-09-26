@@ -17,6 +17,7 @@
     "chat-storage-retention",
     "chat-storage-redaction-recovery",
     "chat-storage-conversation-clear",
+    "chat-storage-governance-integrity",
     "chat-message-interactions",
     "chat-typing-presence"
   ],
