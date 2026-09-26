@@ -141,24 +141,6 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public — federation surface
 		},
 		{
-			RouterURL: RouterURLFederationMe,
-			Handler:   FederationMe,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLFederationVisibility,
-			Handler:   FederationUpdateVisibility,
-			Method:    server.PUT,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLFederationResolve,
-			Handler:   FederationResolve,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
 			RouterURL: RouterURLFederationHealth,
 			Handler:   FederationHealth,
 			Method:    server.GET,

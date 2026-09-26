@@ -593,6 +593,9 @@ class CallResolutionGate(AcceptanceGate):
                 lambda: self.runtime.create_direct(
                     "desktop-alice",
                     "desktop-bob",
+                    federation_id=self.runtime.identities[
+                        "desktop-alice"
+                    ].federation_id,
                     timeout_seconds=STEP_TIMEOUT,
                 ),
             )

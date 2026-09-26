@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
   readCurrentSocialProfile: vi.fn(),
+  readFederationContexts: vi.fn(),
   updateCurrentSocialProfile: vi.fn(),
 }));
 const projectionMocks = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ vi.mock('../features/social/socialRuntime', () => ({
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
+  readFederationContexts: socialMocks.readFederationContexts,
   reconcileSocialRuntime: vi.fn(),
   searchSocialPeople: vi.fn(),
   sendSocialFriendRequest: vi.fn(),
@@ -47,6 +49,23 @@ import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('reads Federation contexts through the active Social runtime', async () => {
+    socialMocks.readFederationContexts.mockResolvedValue([{
+      federationId: 'fed-1',
+      name: 'Primary',
+      status: 'active',
+    }]);
+
+    await expect(mobileAcceptanceActions['federation.context.read']())
+      .resolves.toEqual({
+        federations: [{
+          federationId: 'fed-1',
+          name: 'Primary',
+          status: 'active',
+        }],
+      });
   });
 
   it('routes Moments mutations through the active owner runtime', async () => {

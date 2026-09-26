@@ -203,14 +203,9 @@ export function ChatSessionList({
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
-  const {
-    actorStationEntries,
-    federations,
-    memberStationsByFederation,
-  } = useActiveChatFederationSlice((state) => ({
+  const { actorStationEntries, federations } = useActiveChatFederationSlice((state) => ({
     actorStationEntries: state.actorStationEntries,
     federations: state.federations,
-    memberStationsByFederation: state.memberStationsByFederation,
   }));
 
   const [searchText, setSearchText] = useState('');
@@ -218,11 +213,10 @@ export function ChatSessionList({
   const [showFindPeople, setShowFindPeople] = useState(false);
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
-    Object.values(memberStationsByFederation)
-      .flat()
-      .map((station) => [station.stationPeerId.trim(), station.stationName.trim()])
+    Object.values(actorStationEntries)
+      .map((entry) => [entry.homeStationPeerId.trim(), entry.homeStationName.trim()])
       .filter(([peerId, name]) => Boolean(peerId && name)),
-  ), [memberStationsByFederation]);
+  ), [actorStationEntries]);
   const stationNamesByActorPtid = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
       .map((entry) => [entry.actorPtid.trim(), entry.homeStationName.trim()])

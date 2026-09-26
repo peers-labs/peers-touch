@@ -1,6 +1,6 @@
 use crate::contracts::{
-    AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput,
-    AccessSubmitLoginInput, AuthSessionPayload, AuthValidateTokenInput,
+    AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput,
+    AuthSessionPayload, AuthValidateTokenInput,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};

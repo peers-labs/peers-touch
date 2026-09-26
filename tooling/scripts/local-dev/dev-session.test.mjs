@@ -27,6 +27,7 @@ import {
   DevSessionError,
   readSessionJournal,
   runCli,
+  runtimeIdentitiesMatchDeclaration,
   sessionStorePaths,
   startDevelopmentSession,
   statusDevelopmentSession,
@@ -1250,6 +1251,78 @@ test('functional result accepts a declared composite service runtime', async () 
   } finally {
     scope.close();
   }
+});
+
+test('runtime identity set accepts auxiliary local clients beside a declared service', () => {
+  const runtimeClaims = [
+    {
+      mode: 'exclusive',
+      kind: 'station.deploy',
+      resourceId: 'chat-native-four',
+    },
+  ];
+  assert.equal(
+    runtimeIdentitiesMatchDeclaration(
+      [
+        {
+          profile: 'station-access-native',
+          services: {
+            station: {
+              kind: 'station',
+              deploymentEnvironment: 'chat-native-four',
+            },
+          },
+          clientRuntimes: ['native-tauri', 'tauri-ios-simulator'],
+        },
+        {
+          profile: 'mobile-simulator',
+          services: {},
+          clientRuntimes: ['tauri-ios-simulator'],
+        },
+      ],
+      ['chat-native-four'],
+      runtimeClaims,
+    ),
+    true,
+  );
+  assert.equal(
+    runtimeIdentitiesMatchDeclaration(
+      [
+        {
+          profile: 'mobile-simulator',
+          services: {},
+          clientRuntimes: ['tauri-ios-simulator'],
+        },
+      ],
+      ['chat-native-four'],
+      runtimeClaims,
+    ),
+    false,
+  );
+  assert.equal(
+    runtimeIdentitiesMatchDeclaration(
+      [
+        {
+          profile: 'chat-native-four',
+          services: {},
+          clientRuntimes: ['native-tauri'],
+        },
+        {
+          profile: 'undeclared-composite',
+          services: {
+            station: {
+              kind: 'station',
+              deploymentEnvironment: 'chat-native-five',
+            },
+          },
+          clientRuntimes: ['tauri-ios-simulator'],
+        },
+      ],
+      ['chat-native-four'],
+      runtimeClaims,
+    ),
+    false,
+  );
 });
 
 test('functional result rejects an undeclared composite service runtime', async () => {

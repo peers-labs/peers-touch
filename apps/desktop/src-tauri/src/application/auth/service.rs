@@ -11,11 +11,10 @@ use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault::{self, SessionVaultError};
 use crate::infrastructure::station_client;
 use crate::model::access_gate::{
-    submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateState,
-    AccessGateType, AccessGateClientInfo, CancelAccessAttemptRequest,
-    CancelAccessAttemptResponse, GetAccessDecisionRequest, GetAccessDecisionResponse,
-    StartAccessAttemptRequest, StartAccessAttemptResponse, SubmitAccessGateRequest,
-    SubmitAccessGateResponse,
+    submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateClientInfo,
+    AccessGateState, AccessGateType, CancelAccessAttemptRequest, CancelAccessAttemptResponse,
+    GetAccessDecisionRequest, GetAccessDecisionResponse, StartAccessAttemptRequest,
+    StartAccessAttemptResponse, SubmitAccessGateRequest, SubmitAccessGateResponse,
 };
 use crate::model::actor::ActorProfile;
 use crate::model::auth::{LoginRequest, LoginResponse};
@@ -225,16 +224,14 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             None,
         )
     })?;
-    let device_id =
-        crate::application::key_exchange::device_install::get_or_create_device_id().map_err(
-            |error| {
-                AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("Canonical device identity is unavailable: {error}"),
-                    None,
-                )
-            },
-        )?;
+    let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+        .map_err(|error| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                format!("Canonical device identity is unavailable: {error}"),
+                None,
+            )
+        })?;
     station_client::set_device_id(device_id.clone());
     let generation = binding.generation;
     if generation == 0 {
@@ -247,8 +244,7 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
     Ok((station_peer_id, device_id, generation))
 }
 
-fn start_access_attempt<T: serde::Serialize>(
-) -> Result<StartAccessAttemptResponse, AppResult<T>> {
+fn start_access_attempt<T: serde::Serialize>() -> Result<StartAccessAttemptResponse, AppResult<T>> {
     let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
     access_post::<_, StartAccessAttemptResponse, T>(
         "/actor/access/start",
@@ -279,8 +275,7 @@ fn submit_request<T: serde::Serialize>(
     submission_id: String,
     action_input: submit_access_gate_request::ActionInput,
 ) -> Result<SubmitAccessGateResponse, AppResult<T>> {
-    let (station_peer_id, device_id, lifecycle_generation) =
-        access_scope::<T>()?;
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
     access_post::<_, SubmitAccessGateResponse, T>(
         "/actor/access/submit",
         &SubmitAccessGateRequest {
@@ -303,11 +298,7 @@ fn submit_request<T: serde::Serialize>(
 
 pub fn access_start() -> AppResult<AccessDecisionPayload> {
     match start_access_attempt::<AccessDecisionPayload>() {
-        Ok(response) => decision_payload(
-            "access_start",
-            "ready",
-            response.decision,
-        ),
+        Ok(response) => decision_payload("access_start", "ready", response.decision),
         Err(error) => error,
     }
 }
@@ -332,11 +323,7 @@ pub fn access_submit_invite_code(
         Ok(response) => response,
         Err(error) => return error,
     };
-    decision_payload(
-        "access_submit_invite_code",
-        "evaluated",
-        response.decision,
-    )
+    decision_payload("access_submit_invite_code", "evaluated", response.decision)
 }
 
 pub fn access_submit_login(
@@ -372,11 +359,7 @@ pub fn access_submit_login(
         );
     };
     if decision.state != AccessDecisionState::Granted as i32 {
-        return AppResult::fail(
-            ErrorCode::Forbidden,
-            decision_block_reason(decision),
-            None,
-        );
+        return AppResult::fail(ErrorCode::Forbidden, decision_block_reason(decision), None);
     }
     let Some(login_response) = response.login_response else {
         return AppResult::fail(
@@ -405,11 +388,7 @@ pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPa
         ErrorCode::Unauthorized,
         "Access decision failed",
     ) {
-        Ok(response) => decision_payload(
-            "access_decision",
-            "evaluated",
-            response.decision,
-        ),
+        Ok(response) => decision_payload("access_decision", "evaluated", response.decision),
         Err(error) => error,
     }
 }
@@ -466,9 +445,7 @@ fn decision_payload(
     }
 }
 
-fn project_access_decision(
-    decision: &AccessDecision,
-) -> Result<AccessDecisionProjection, String> {
+fn project_access_decision(decision: &AccessDecision) -> Result<AccessDecisionProjection, String> {
     let state = AccessDecisionState::try_from(decision.state)
         .map_err(|_| "Access decision has an unknown state".to_string())?;
     let gates = decision

@@ -112,6 +112,7 @@ class MixedClientMultiDeviceGate(AcceptanceGate):
             conversation_id = self.runtime.create_direct(
                 "desktop-alice",
                 "desktop-bob",
+                federation_id=alice.federation_id,
                 timeout_seconds=STEP_TIMEOUT,
             )
             first_text = f"ccu-multi-device-{time.time_ns()}"

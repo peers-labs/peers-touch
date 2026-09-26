@@ -2,6 +2,7 @@ import type {
   Actor,
   ActorProfile,
 } from '../../gen/proto/domain/actor/actor_pb';
+import type { FederationCatalogEntry } from '../../gen/proto/domain/federation/federation_discovery_pb';
 import type {
   ActorSearchResult,
   FederationResolveView,
@@ -195,6 +196,29 @@ export function federationViewToResult(view: FederationResolveInput): ActorSearc
   };
 }
 
+export function federationCatalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult {
+  const handle = entry.federatedHandle.trim();
+  const normalized = handle.replace(/^@/, '');
+  const separator = normalized.indexOf('@');
+  const username = separator >= 0 ? normalized.slice(0, separator) : normalized;
+  const homeStationDomain = separator >= 0 ? normalized.slice(separator + 1) : '';
+  return {
+    id: entry.actorPtid,
+    ptid: entry.actorPtid,
+    homeStationPeerId: entry.homeStationPeerId,
+    username,
+    displayName: entry.displayName || username,
+    avatar: entry.avatarUrl,
+    federation: {
+      handle,
+      homeStationDomain,
+      fromCache: false,
+      isLocal: false,
+      locatorSeq: 0,
+    },
+  };
+}
+
 export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
   const record = raw as Record<string, unknown>;
   const peersTouch = record.peers_touch as Record<string, unknown> | undefined;
@@ -224,7 +248,17 @@ export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
     messagePermission: String(raw.messagePermission ?? record.message_permission ?? ''),
     autoExpireDays: Number(raw.autoExpireDays ?? record.auto_expire_days ?? 0),
     networkId: String(raw.networkId ?? peersTouch?.network_id ?? ''),
+    federatedHandle: String(raw.federatedHandle ?? record.federated_handle ?? ''),
+    homeStationPeerId: String(raw.homeStationPeerId ?? record.home_station_peer_id ?? ''),
+    homeStationDomain: String(raw.homeStationDomain ?? record.home_station_domain ?? ''),
+    discoverability: normalizeDiscoverability(raw.discoverability ?? record.discoverability),
   };
+}
+
+function normalizeDiscoverability(value: unknown): PeerProfile['discoverability'] {
+  if (value === 1 || value === 'ACTOR_VISIBILITY_HIDDEN' || value === 'hidden') return 'hidden';
+  if (value === 3 || value === 'ACTOR_VISIBILITY_INDEXED' || value === 'indexed') return 'indexed';
+  return 'by_handle';
 }
 
 function normalizePositiveRevision(value: unknown): bigint {
