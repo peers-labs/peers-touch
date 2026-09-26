@@ -54,6 +54,72 @@ var productionAdapterTestTime = time.Date(
 	time.UTC,
 )
 
+func TestProductionPrepareCommandRequestPreservesActorScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		kind        chatmodel.ConversationCommandKind
+		actorScoped bool
+	}{
+		{
+			name:        "hide for actor",
+			kind:        chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR,
+			actorScoped: true,
+		},
+		{
+			name: "retract",
+			kind: chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE,
+		},
+		{
+			name: "reaction",
+			kind: chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT,
+		},
+		{
+			name: "member authority",
+			kind: chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := productionPrepareCommandRequest(
+				"conversation-1",
+				valueobject.Endpoint{
+					Actor:  "ptid:alice",
+					Device: "alice-device",
+				},
+				"station-a",
+				[]ports.EndpointRoute{{
+					Endpoint: valueobject.Endpoint{
+						Actor:  "ptid:alice",
+						Device: "alice-device",
+					},
+					HomeStation: "station-a",
+				}},
+				test.kind,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if request.ActorScoped != test.actorScoped {
+				t.Fatalf(
+					"actor scoped = %t, want %t",
+					request.ActorScoped,
+					test.actorScoped,
+				)
+			}
+		})
+	}
+
+	if _, err := productionPrepareCommandRequest(
+		"conversation-1",
+		valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-device"},
+		"station-a",
+		nil,
+		chatmodel.ConversationCommandKind(999),
+	); err == nil {
+		t.Fatal("unsupported command kind was accepted")
+	}
+}
+
 type productionAdapterTestClock struct {
 	now time.Time
 }

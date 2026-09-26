@@ -42,6 +42,52 @@ const (
 	maximumConversationQueryLimit     = 500
 )
 
+func productionCommandActorScoped(
+	kind chatmodel.ConversationCommandKind,
+) (bool, error) {
+	switch kind {
+	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE:
+		return false, nil
+	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
+		return true, nil
+	default:
+		return false, server.BadRequest(
+			"Conversation command preparation kind is unsupported",
+		)
+	}
+}
+
+func productionPrepareCommandRequest(
+	conversationID valueobject.ConversationID,
+	sender valueobject.Endpoint,
+	senderHomeStation valueobject.StationID,
+	verifiedRoutes []ports.EndpointRoute,
+	kind chatmodel.ConversationCommandKind,
+) (command.PrepareCommandRequest, error) {
+	actorScoped, err := productionCommandActorScoped(kind)
+	if err != nil {
+		return command.PrepareCommandRequest{}, err
+	}
+	return command.PrepareCommandRequest{
+		ConversationID:    conversationID,
+		Sender:            sender,
+		SenderHomeStation: senderHomeStation,
+		VerifiedRoutes:    verifiedRoutes,
+		ActorScoped:       actorScoped,
+	}, nil
+}
+
 func (s *subServer) handleCreateDirectConversation(
 	ctx context.Context,
 	request *chatmodel.CreateDirectConversationRequest,
@@ -400,27 +446,6 @@ func (s *subServer) handlePrepareCommand(
 
 		return response, mapProductionConversationError(ctx, err)
 	}
-	actorScoped := false
-	switch request.GetCommandKind() {
-	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE:
-	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
-		actorScoped = true
-	default:
-		return nil, server.BadRequest(
-			"Conversation command preparation kind is unsupported",
-		)
-	}
 	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -434,15 +459,19 @@ func (s *subServer) handlePrepareCommand(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		s.localStation,
+		verifiedRoutes,
+		request.GetCommandKind(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: s.localStation,
-			VerifiedRoutes:    verifiedRoutes,
-			ActorScoped:       actorScoped,
-		},
+		prepareRequest,
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -1384,14 +1413,19 @@ func (s *subServer) localCommandPreparation(
 	if err != nil {
 		return aggregate.CommandPreparation{}, nil, err
 	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		s.localStation,
+		verifiedRoutes,
+		productionWireCommandKind(wireCommand),
+	)
+	if err != nil {
+		return aggregate.CommandPreparation{}, nil, err
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: s.localStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
+		prepareRequest,
 	)
 	return preparation, verifiedRoutes, err
 }
