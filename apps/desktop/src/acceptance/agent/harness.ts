@@ -3732,10 +3732,8 @@ async function runDevelopmentClientPermissionDeniedScenario(input: {
     });
     const sourceDelivery = terminalEvent?.sourceDelivery;
     const sourceOutcome = terminalEvent
-      ? evidenceRecord(
-          terminalEvent.data.outcome_error ?? terminalEvent.data,
-          'permissionDeniedRuntimeOutcome',
-        )
+      ? projectAgentTurnOutcomeErrorPayload(terminalEvent.data)
+        ?? projectAgentTypedErrorPayload(terminalEvent.data)
       : null;
     // #region debug-point A-E:foundation-runtime-identity
     const sourceRuntimePayload = sourceDelivery
