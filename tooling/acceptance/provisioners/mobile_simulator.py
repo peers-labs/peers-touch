@@ -71,6 +71,14 @@ from tooling.acceptance.provisioners.mobile_service_bindings import (
     MobileServiceBinding,
     resolve_mobile_service_bindings,
 )
+from tooling.acceptance.provisioners.mobile_native_build import (
+    MobileNativeBuildError,
+    SourceIdentity,
+    canonical_build_inputs_digest,
+    canonical_json_bytes,
+    canonical_value_digest,
+    create_build_identity,
+)
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
 )
@@ -161,6 +169,27 @@ MOBILE_DIRECT_STATION_PROFILE_KEYS = {
     ),
 }
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+SELECTED_BUILD_ENVIRONMENT_KEYS = frozenset(
+    {
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT",
+        "CARGO_HOME",
+        "CARGO_TARGET_DIR",
+        "DEVELOPER_DIR",
+        "GRADLE_USER_HOME",
+        "HOME",
+        "JAVA_HOME",
+        "MOBILE_TAURI_STATIC_BUNDLE_BUILD",
+        "NDK_HOME",
+        "PATH",
+        "RUSTUP_HOME",
+        "SDKROOT",
+        "TARGET_RANLIB",
+        "TMPDIR",
+        "VITE_ACCEPTANCE_HARNESS",
+    }
+)
 
 
 IOS_LAYOUT_CLIENTS = {
@@ -3196,6 +3225,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         contract: EnvironmentContract,
         *,
         clients: Sequence[SimulatorClientSpec],
+        runtime_source_commit: str,
         executor: CommandExecutor | None = None,
         repo_root: Path = REPO_ROOT,
         runtime_base: Path | None = None,
@@ -3243,7 +3273,52 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
             raise ProvisioningError(
                 "Selected Mobile simulator runtime clients are invalid"
             )
+        if not GIT_COMMIT_PATTERN.fullmatch(runtime_source_commit):
+            raise ProvisioningError(
+                "Selected Mobile simulator runtime source commit is invalid"
+            )
         self.selected_clients = selected
+        self.runtime_source_commit = runtime_source_commit
+
+    def _build_inputs_digest(self, platform: str) -> str:
+        return canonical_build_inputs_digest(self.repo_root, platform)
+
+    def _platform_build_identity(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        platform: str,
+        command_env: Mapping[str, str],
+    ) -> dict[str, Any]:
+        if manifest.workspace_digest != "clean":
+            raise BlockedError(
+                reason=(
+                    "Selected Mobile simulator builds require a clean "
+                    "source projection"
+                ),
+                resource="mobile-simulator:source-identity",
+            )
+        environment = {
+            name: command_env[name]
+            for name in sorted(SELECTED_BUILD_ENVIRONMENT_KEYS)
+            if name in command_env
+        }
+        try:
+            return create_build_identity(
+                build_id=f"{manifest.run_id}-{platform}",
+                platform=platform,
+                source=SourceIdentity(
+                    source_commit=self.runtime_source_commit,
+                    workspace_state="clean",
+                    workspace_digest="clean",
+                ),
+                build_inputs_digest=self._build_inputs_digest(platform),
+                environment_digest=canonical_value_digest(environment),
+            )
+        except MobileNativeBuildError as error:
+            raise ProvisioningError(
+                f"Selected Mobile simulator build identity is invalid: {error}"
+            ) from error
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -3258,6 +3333,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 )
             spec = load_mobile_simulator_spec(self.contract_path)
             command_env = {**os.environ, **spec.build_environment}
+            command_env.pop("PT_MOBILE_BUILD_IDENTITY_JSON", None)
             platforms = tuple(
                 sorted({client.platform for client in self.selected_clients})
             )
@@ -3310,6 +3386,14 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 command_env,
                 runtime_root,
             )
+            build_identities = {
+                platform: self._platform_build_identity(
+                    manifest,
+                    platform=platform,
+                    command_env=command_env,
+                )
+                for platform in platforms
+            }
             first_ios = next(
                 (
                     resource["device"]
@@ -3322,57 +3406,70 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 "ios_udid": str(first_ios),
                 "runtime_root": str(runtime_root),
             }
-            for name in ("web", *platforms):
-                if name in spec.artifact_patterns:
-                    self._remove_artifact_matches(
-                        spec,
-                        name,
-                        runtime_root,
-                    )
-                    self.register_cleanup(
-                        f"build-artifact:{name}",
-                        lambda platform=name: self._remove_artifact_matches(
+            for platform in platforms:
+                platform_env = {
+                    **command_env,
+                    "PT_MOBILE_BUILD_IDENTITY_JSON": (
+                        canonical_json_bytes(
+                            build_identities[platform]
+                        ).decode("ascii")
+                    ),
+                }
+                for name in ("web", platform):
+                    if name in spec.artifact_patterns:
+                        self._remove_artifact_matches(
                             spec,
-                            platform,
+                            name,
                             runtime_root,
-                        ),
-                    )
-                command = tuple(
-                    item.replace(
-                        "{ios_udid}",
-                        substitutions["ios_udid"],
-                    ).replace(
-                        "{runtime_root}",
-                        substitutions["runtime_root"],
-                    )
-                    for item in spec.build_commands[name]
-                )
-                try:
-                    self._run_checked(
-                        command,
-                        env=command_env,
-                        timeout=1800,
-                        resource=f"mobile-simulator:build:{name}",
-                    )
-                    if name == "web":
-                        apple_assets_guard.stage(
-                            self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
                         )
-                finally:
-                    if (
-                        name == "android"
-                        and android_manifest_guard is not None
-                    ):
-                        android_manifest_guard.restore()
+                        self.register_cleanup(
+                            f"build-artifact:{name}",
+                            lambda build_target=name: (
+                                self._remove_artifact_matches(
+                                    spec,
+                                    build_target,
+                                    runtime_root,
+                                )
+                            ),
+                        )
+                    command = tuple(
+                        item.replace(
+                            "{ios_udid}",
+                            substitutions["ios_udid"],
+                        ).replace(
+                            "{runtime_root}",
+                            substitutions["runtime_root"],
+                        )
+                        for item in spec.build_commands[name]
+                    )
+                    try:
+                        self._run_checked(
+                            command,
+                            env=platform_env,
+                            timeout=1800,
+                            resource=f"mobile-simulator:build:{name}",
+                        )
+                        if name == "web" and platform == "ios":
+                            apple_assets_guard.stage(
+                                self.repo_root
+                                / MOBILE_WEB_DIST_RELATIVE_PATH
+                            )
+                    finally:
+                        if (
+                            name == "android"
+                            and android_manifest_guard is not None
+                        ):
+                            android_manifest_guard.restore()
 
-            applications = {
-                platform: self._stage_application(
+            applications: dict[str, dict[str, Any]] = {}
+            for platform in platforms:
+                application = self._stage_application(
                     spec,
                     platform,
                     runtime_root,
                 )
-                for platform in platforms
-            }
+                application["buildIdentity"] = build_identities[platform]
+                applications[platform] = application
             for client in self.selected_clients:
                 resource = device_resources[client.id]
                 if client.platform == "ios":

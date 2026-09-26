@@ -3896,6 +3896,7 @@ class W7RuntimeOwner:
             provisioner = SelectedMobileSimulatorProvisioner(
                 base_contract,
                 clients=command.mobile_clients,
+                runtime_source_commit=str(identity["head"]),
                 repo_root=self.repo_root,
                 runtime_base=owner_root / "simulator",
             )

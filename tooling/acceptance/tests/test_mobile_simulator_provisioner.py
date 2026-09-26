@@ -378,7 +378,12 @@ class TestSelectedMobileSimulatorProvisioner(
         return "source-commit"
 
     def _git_workspace_digest(self) -> str:
-        return "sha256:workspace"
+        return "clean"
+
+    @staticmethod
+    def _build_inputs_digest(platform: str) -> str:
+        marker = "1" if platform == "ios" else "2"
+        return f"sha256:{marker * 64}"
 
     def acquire_profile_lease(self, resource: str, owner: str) -> None:
         del owner
@@ -3299,6 +3304,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
     def test_secure_content_provisioner_owns_selected_platform_clients(
         self,
     ) -> None:
+        runtime_source_commit = "1" * 40
         clients = (
             mobile_simulator_module.SimulatorClientSpec(
                 id="ios_alice",
@@ -3320,6 +3326,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         provisioner = TestSelectedMobileSimulatorProvisioner(
             self.contract,
             clients=clients,
+            runtime_source_commit=runtime_source_commit,
             executor=self.executor,
             repo_root=self.repo_root,
             runtime_base=self.root / "secure-content-runtime",
@@ -3348,6 +3355,39 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertEqual(
             set(resources["appium"]["drivers"]),
             {"ios", "android"},
+        )
+        build_identities = [
+            json.loads(environment["PT_MOBILE_BUILD_IDENTITY_JSON"])
+            for environment in self.executor.environments
+            if "PT_MOBILE_BUILD_IDENTITY_JSON" in environment
+        ]
+        self.assertEqual(
+            [identity["platform"] for identity in build_identities],
+            ["android", "android", "ios", "ios"],
+        )
+        self.assertEqual(build_identities[0], build_identities[1])
+        self.assertEqual(build_identities[2], build_identities[3])
+        self.assertNotEqual(build_identities[0], build_identities[2])
+        self.assertTrue(
+            all(
+                identity["sourceCommit"] == runtime_source_commit
+                and identity["workspaceState"] == "clean"
+                and identity["workspaceDigest"] == "clean"
+                and identity["harnessEnabled"] is True
+                for identity in build_identities
+            )
+        )
+        self.assertEqual(
+            {
+                platform: application["buildIdentity"]
+                for platform, application in resources[
+                    "applications"
+                ].items()
+            },
+            {
+                "android": build_identities[0],
+                "ios": build_identities[2],
+            },
         )
         self.assertNotEqual(
             resources["clients"]["ios_alice"]["device"],
