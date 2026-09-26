@@ -1,6 +1,6 @@
 # Station 接入生命周期
 
-> **Status**: active
+> **Status**: completed
 > **Version**: v1.0
 > **Created**: 2026-09-26 | **Updated**: 2026-09-26
 > **Owner**: Identity and Access
@@ -57,7 +57,7 @@ Station identity 与 Access Gate，形成第二套语义和多余实体。
 | [decisions.md](./decisions.md) | 关键设计决策 |
 | [integration.md](./integration.md) | 当前实现映射与硬切范围 |
 | [legacy-inventory.json](./legacy-inventory.json) | 接入遗产 matcher 与 owner |
-| [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已绑定并执行中的 Plan |
+| [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
 | [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
 | [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
 
@@ -74,5 +74,5 @@ Station identity 与 Access Gate，形成第二套语义和多余实体。
 
 - Product：`accepted`
 - Architecture：`accepted`
-- Plan：`active`，当前 Task 为 `SAL-01-access-hard-cut`
+- Plan：`completed`，3/3 Task 已关闭
 - `CCU-20260922`：保持 `completed`
