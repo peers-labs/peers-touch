@@ -719,6 +719,51 @@ pub struct MessagingStore {
     database_path: Option<PathBuf>,
 }
 
+struct RecoveryDirectPreKeyBundle {
+    signed_prekey_id: i32,
+    signed_prekey_private: Zeroizing<Vec<u8>>,
+    state: String,
+    created_at_unix_ms: i64,
+    one_time_prekey_high_watermark: i64,
+}
+
+struct RecoveryOneTimePreKey {
+    prekey_id: i32,
+    private_key: Zeroizing<Vec<u8>>,
+    state: String,
+}
+
+struct RecoveryMlsActorIdentity {
+    ptid: String,
+    device_id: String,
+    identity_state: Zeroizing<Vec<u8>>,
+}
+
+struct RecoveryMlsJoinProviderPool {
+    provider_pool_state: Zeroizing<Vec<u8>>,
+    updated_at_unix_ms: i64,
+}
+
+struct RecoveryMlsKeyPackage {
+    package_id: String,
+    data: Zeroizing<Vec<u8>>,
+    state: String,
+    created_at_unix_ms: i64,
+}
+
+struct RecoveryMlsRetiredCheckpoint {
+    conversation_id: String,
+    transition_id: String,
+    event_id: String,
+    retirement_sequence: i64,
+    retirement_hash: Vec<u8>,
+    endpoint_ptid: String,
+    endpoint_device_id: String,
+    membership_epoch: i64,
+    mls_epoch: i64,
+    retired_at_unix_ms: i64,
+}
+
 struct PreparedMessageRedactionCleanup {
     candidates: Vec<PreparedMessageRedactionPath>,
     physical_bytes_before: u64,
@@ -5702,6 +5747,569 @@ impl MessagingStore {
                         trust.peer_ptid,
                         trust.fingerprint,
                         trust.verified_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub(super) fn install_in_place_recovery_continuity_from(
+        &self,
+        source: &Self,
+        expected_device_identity: &FreshDeviceIdentityState,
+    ) -> Result<(), String> {
+        if std::ptr::eq(self, source) {
+            return Err("messaging recovery continuity source must be distinct".to_string());
+        }
+        let source_enrollment = source
+            .device_enrollment()?
+            .ok_or_else(|| "messaging recovery continuity device is unavailable".to_string())?;
+        let (source_signing_seed, source_signing_key_id) =
+            source.device_signing_seed()?.ok_or_else(|| {
+                "messaging recovery continuity signing key is unavailable".to_string()
+            })?;
+        if source_enrollment != expected_device_identity.enrollment
+            || source_signing_seed.as_slice()
+                != expected_device_identity.device_signing_seed.as_slice()
+            || source_signing_key_id
+                != expected_device_identity
+                    .enrollment
+                    .certificate
+                    .signing_key_id
+        {
+            return Err("messaging recovery continuity device binding mismatch".to_string());
+        }
+        let staged_enrollment = self
+            .device_enrollment()?
+            .ok_or_else(|| "messaging recovery staging device is unavailable".to_string())?;
+        let (staged_signing_seed, staged_signing_key_id) = self
+            .device_signing_seed()?
+            .ok_or_else(|| "messaging recovery staging signing key is unavailable".to_string())?;
+        if staged_enrollment != expected_device_identity.enrollment
+            || staged_signing_seed.as_slice()
+                != expected_device_identity.device_signing_seed.as_slice()
+            || staged_signing_key_id
+                != expected_device_identity
+                    .enrollment
+                    .certificate
+                    .signing_key_id
+        {
+            return Err("messaging recovery staging device binding mismatch".to_string());
+        }
+        let expected_device = expected_device_identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging recovery continuity endpoint is missing".to_string())?;
+        let expected_ptid = actor_device_ptid(expected_device)?;
+
+        let (
+            enrollment_status,
+            lane_cursor,
+            consumption_markers,
+            authority_heads,
+            direct_prekey_bundle,
+            direct_one_time_prekeys,
+            mls_actor_identity,
+            mls_join_provider_pool,
+            mls_key_packages,
+            mls_retired_checkpoints,
+        ) = {
+            let connection = source.connection()?;
+            let enrollment_status = connection
+                .query_row(
+                    "SELECT status FROM messaging_recovery_state WHERE id = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    "messaging recovery continuity enrollment state is unavailable".to_string()
+                })?;
+            let lane_cursor = connection
+                .query_row(
+                    "SELECT lane_sequence, consumer_epoch, updated_at_unix_ms
+                     FROM messaging_lane_cursor WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let consumption_markers = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT item_id, event_id, conversation_id,
+                                payload_sha256, consumed_at_unix_ms
+                         FROM messaging_consumption_markers
+                         ORDER BY consumed_at_unix_ms, item_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Vec<u8>>(3)?,
+                            row.get::<_, i64>(4)?,
+                        ))
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let authority_heads = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                         FROM messaging_authority_heads
+                         ORDER BY conversation_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                            row.get::<_, i64>(3)?,
+                        ))
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let direct_prekey_bundle = connection
+                .query_row(
+                    "SELECT signed_prekey_id, signed_prekey_private, state,
+                            created_at_unix_ms, one_time_prekey_high_watermark
+                     FROM messaging_prekey_bundle WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryDirectPreKeyBundle {
+                            signed_prekey_id: row.get(0)?,
+                            signed_prekey_private: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                            created_at_unix_ms: row.get(3)?,
+                            one_time_prekey_high_watermark: row.get(4)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let direct_one_time_prekeys = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT prekey_id, private_key, state
+                         FROM messaging_one_time_prekeys
+                         ORDER BY prekey_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryOneTimePreKey {
+                            prekey_id: row.get(0)?,
+                            private_key: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let mls_actor_identity = connection
+                .query_row(
+                    "SELECT ptid, device_id, identity_state
+                     FROM messaging_mls_actor_identity WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryMlsActorIdentity {
+                            ptid: row.get(0)?,
+                            device_id: row.get(1)?,
+                            identity_state: Zeroizing::new(row.get(2)?),
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let mls_join_provider_pool = connection
+                .query_row(
+                    "SELECT provider_pool_state, updated_at_unix_ms
+                     FROM messaging_mls_join_provider_pool WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryMlsJoinProviderPool {
+                            provider_pool_state: Zeroizing::new(row.get(0)?),
+                            updated_at_unix_ms: row.get(1)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let mls_key_packages = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT package_id, data, state, created_at_unix_ms
+                         FROM messaging_mls_key_packages
+                         ORDER BY package_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryMlsKeyPackage {
+                            package_id: row.get(0)?,
+                            data: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                            created_at_unix_ms: row.get(3)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let mls_retired_checkpoints = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT conversation_id, transition_id, event_id,
+                                retirement_sequence, retirement_hash,
+                                endpoint_ptid, endpoint_device_id,
+                                membership_epoch, mls_epoch, retired_at_unix_ms
+                         FROM messaging_mls_retired_checkpoints
+                         ORDER BY conversation_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryMlsRetiredCheckpoint {
+                            conversation_id: row.get(0)?,
+                            transition_id: row.get(1)?,
+                            event_id: row.get(2)?,
+                            retirement_sequence: row.get(3)?,
+                            retirement_hash: row.get(4)?,
+                            endpoint_ptid: row.get(5)?,
+                            endpoint_device_id: row.get(6)?,
+                            membership_epoch: row.get(7)?,
+                            mls_epoch: row.get(8)?,
+                            retired_at_unix_ms: row.get(9)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            (
+                enrollment_status,
+                lane_cursor,
+                consumption_markers,
+                authority_heads,
+                direct_prekey_bundle,
+                direct_one_time_prekeys,
+                mls_actor_identity,
+                mls_join_provider_pool,
+                mls_key_packages,
+                mls_retired_checkpoints,
+            )
+        };
+
+        if !matches!(
+            enrollment_status.as_str(),
+            "awaiting_device_enrollment" | "active"
+        ) {
+            return Err("messaging recovery continuity enrollment state is invalid".to_string());
+        }
+        if lane_cursor.is_some_and(|(sequence, epoch, updated_at)| {
+            sequence < 0 || epoch <= 0 || updated_at <= 0
+        }) {
+            return Err("messaging recovery continuity lane cursor is invalid".to_string());
+        }
+        if consumption_markers.iter().any(
+            |(item_id, event_id, conversation_id, payload_sha256, consumed_at)| {
+                item_id.trim().is_empty()
+                    || event_id.trim().is_empty()
+                    || conversation_id.trim().is_empty()
+                    || payload_sha256.len() != 32
+                    || *consumed_at <= 0
+            },
+        ) {
+            return Err("messaging recovery continuity marker is invalid".to_string());
+        }
+        if authority_heads
+            .iter()
+            .any(|(conversation_id, sequence, hash, updated_at)| {
+                conversation_id.trim().is_empty()
+                    || *sequence <= 0
+                    || hash.len() != 32
+                    || *updated_at <= 0
+            })
+        {
+            return Err("messaging recovery continuity authority head is invalid".to_string());
+        }
+        match direct_prekey_bundle.as_ref() {
+            Some(bundle) => {
+                if bundle.signed_prekey_id <= 0
+                    || bundle.signed_prekey_private.len() != 32
+                    || !matches!(bundle.state.as_str(), "awaiting_publication" | "published")
+                    || bundle.created_at_unix_ms <= 0
+                    || bundle.one_time_prekey_high_watermark <= 0
+                    || i64::try_from(direct_one_time_prekeys.len()).ok()
+                        != Some(bundle.one_time_prekey_high_watermark)
+                    || direct_one_time_prekeys
+                        .iter()
+                        .enumerate()
+                        .any(|(index, prekey)| {
+                            usize::try_from(prekey.prekey_id).ok() != Some(index + 1)
+                                || prekey.private_key.len() != 32
+                                || !matches!(
+                                    prekey.state.as_str(),
+                                    "awaiting_publication"
+                                        | "available"
+                                        | "consumed"
+                                        | "awaiting_replenishment"
+                                )
+                        })
+                {
+                    return Err(
+                        "messaging recovery continuity Direct prekeys are invalid".to_string()
+                    );
+                }
+            }
+            None if !direct_one_time_prekeys.is_empty() => {
+                return Err(
+                    "messaging recovery continuity Direct prekey bundle is missing".to_string(),
+                )
+            }
+            None => {}
+        }
+        if enrollment_status != "active"
+            && (direct_prekey_bundle.is_some() || !mls_key_packages.is_empty())
+        {
+            return Err(
+                "messaging recovery continuity key material requires active enrollment".to_string(),
+            );
+        }
+        if mls_actor_identity.as_ref().is_some_and(|identity| {
+            identity.ptid != expected_ptid
+                || identity.device_id != expected_device.device_id
+                || identity.identity_state.is_empty()
+        }) {
+            return Err("messaging recovery continuity MLS identity is invalid".to_string());
+        }
+        if mls_join_provider_pool
+            .as_ref()
+            .is_some_and(|pool| pool.provider_pool_state.is_empty() || pool.updated_at_unix_ms <= 0)
+            || mls_key_packages.iter().any(|package| {
+                package.package_id.trim().is_empty()
+                    || package.data.is_empty()
+                    || !matches!(package.state.as_str(), "awaiting_publication" | "published")
+                    || package.created_at_unix_ms <= 0
+            })
+            || (!mls_key_packages.is_empty()
+                && (mls_actor_identity.is_none() || mls_join_provider_pool.is_none()))
+        {
+            return Err("messaging recovery continuity MLS bootstrap is invalid".to_string());
+        }
+        if mls_retired_checkpoints.iter().any(|checkpoint| {
+            checkpoint.conversation_id.trim().is_empty()
+                || checkpoint.transition_id.trim().is_empty()
+                || checkpoint.event_id.trim().is_empty()
+                || checkpoint.retirement_sequence <= 0
+                || checkpoint.retirement_hash.len() != 32
+                || checkpoint.endpoint_ptid != expected_ptid
+                || checkpoint.endpoint_device_id != expected_device.device_id
+                || checkpoint.membership_epoch < 0
+                || checkpoint.mls_epoch < 0
+                || checkpoint.retired_at_unix_ms <= 0
+        }) {
+            return Err(
+                "messaging recovery continuity MLS retirement checkpoint is invalid".to_string(),
+            );
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let updated = transaction
+            .execute(
+                "UPDATE messaging_recovery_state SET status = ?1 WHERE id = 1",
+                params![enrollment_status],
+            )
+            .map_err(|error| error.to_string())?;
+        if updated != 1 {
+            return Err(
+                "messaging recovery continuity enrollment state was not installed".to_string(),
+            );
+        }
+        if let Some((lane_sequence, consumer_epoch, updated_at_unix_ms)) = lane_cursor {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES(1, ?1, ?2, ?3)",
+                    params![lane_sequence, consumer_epoch, updated_at_unix_ms],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for (item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms) in
+            consumption_markers
+        {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id,
+                        payload_sha256, consumed_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        item_id,
+                        event_id,
+                        conversation_id,
+                        payload_sha256,
+                        consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for (conversation_id, event_sequence, event_hash, updated_at_unix_ms) in authority_heads {
+            let existing = transaction
+                .query_row(
+                    "SELECT event_sequence, event_hash
+                     FROM messaging_authority_heads
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if existing.as_ref().is_some_and(|(sequence, hash)| {
+                event_sequence < *sequence || (event_sequence == *sequence && event_hash != *hash)
+            }) {
+                return Err(
+                    "messaging recovery continuity authority head conflicts with archive"
+                        .to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4)
+                     ON CONFLICT(conversation_id) DO UPDATE SET
+                        event_sequence=excluded.event_sequence,
+                        event_hash=excluded.event_hash,
+                        updated_at_unix_ms=excluded.updated_at_unix_ms",
+                    params![
+                        conversation_id,
+                        event_sequence,
+                        event_hash,
+                        updated_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(bundle) = direct_prekey_bundle {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_prekey_bundle(
+                        id, signed_prekey_id, signed_prekey_private, state,
+                        created_at_unix_ms, one_time_prekey_high_watermark
+                     ) VALUES(1, ?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        bundle.signed_prekey_id,
+                        bundle.signed_prekey_private.as_slice(),
+                        bundle.state,
+                        bundle.created_at_unix_ms,
+                        bundle.one_time_prekey_high_watermark
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for prekey in direct_one_time_prekeys {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_one_time_prekeys(
+                        prekey_id, private_key, state
+                     ) VALUES(?1, ?2, ?3)",
+                    params![
+                        prekey.prekey_id,
+                        prekey.private_key.as_slice(),
+                        prekey.state
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(identity) = mls_actor_identity {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_actor_identity(
+                        id, ptid, device_id, identity_state
+                     ) VALUES(1, ?1, ?2, ?3)",
+                    params![
+                        identity.ptid,
+                        identity.device_id,
+                        identity.identity_state.as_slice()
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(pool) = mls_join_provider_pool {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_join_provider_pool(
+                        id, provider_pool_state, updated_at_unix_ms
+                     ) VALUES(1, ?1, ?2)",
+                    params![pool.provider_pool_state.as_slice(), pool.updated_at_unix_ms],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for package in mls_key_packages {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_key_packages(
+                        package_id, data, state, created_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4)",
+                    params![
+                        package.package_id,
+                        package.data.as_slice(),
+                        package.state,
+                        package.created_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for checkpoint in mls_retired_checkpoints {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_retired_checkpoints(
+                        conversation_id, transition_id, event_id,
+                        retirement_sequence, retirement_hash,
+                        endpoint_ptid, endpoint_device_id,
+                        membership_epoch, mls_epoch, retired_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        checkpoint.conversation_id,
+                        checkpoint.transition_id,
+                        checkpoint.event_id,
+                        checkpoint.retirement_sequence,
+                        checkpoint.retirement_hash,
+                        checkpoint.endpoint_ptid,
+                        checkpoint.endpoint_device_id,
+                        checkpoint.membership_epoch,
+                        checkpoint.mls_epoch,
+                        checkpoint.retired_at_unix_ms
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -15867,6 +16475,161 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(count, 0, "live table {table}");
+        }
+    }
+
+    #[test]
+    fn in_place_recovery_preserves_device_continuity_without_restoring_sessions() {
+        let source = MessagingStore::in_memory().unwrap();
+        let actor_identity = IdentityKeyPair::from_seed(&[42; 32]);
+        let device_identity =
+            generate_fresh_device_identity("ptid:alice", actor_identity.seed_bytes(), 3).unwrap();
+        let device_id = device_identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        source
+            .install_fresh_device_identity(&device_identity)
+            .unwrap();
+        source.complete_device_enrollment(&device_id).unwrap();
+        source
+            .install_fresh_prekey_bundle(7, &[7; 32], &[(1, [1; 32]), (2, [2; 32])], 100)
+            .unwrap();
+        source.complete_prekey_publication(7).unwrap();
+        source.consume_one_time_prekey(1).unwrap();
+        source
+            .save_mls_actor_identity("ptid:alice", &device_id, b"MLS actor identity")
+            .unwrap();
+        MlsKeyPackageRepository::install_fresh_mls_key_packages(
+            &source,
+            &[b"MLS KeyPackage".to_vec()],
+            b"MLS join provider pool",
+            101,
+        )
+        .unwrap();
+        let package_id = hex::encode(Sha256::digest(b"MLS KeyPackage"));
+        MlsKeyPackageRepository::complete_mls_key_package_publication(&source, &package_id)
+            .unwrap();
+        source.save_direct_session(&direct_session(3)).unwrap();
+        source
+            .save_mls_session_state("restored-conversation", b"live MLS group", 3, 3, 102)
+            .unwrap();
+        {
+            let connection = source.connection().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES(1, 12, 4, 103)",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id,
+                        payload_sha256, consumed_at_unix_ms
+                     ) VALUES('item-12', 'event-12', 'restored-conversation', ?1, 103)",
+                    params![[8_u8; 32].as_slice()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES('restored-conversation', 12, ?1, 103)",
+                    params![[12_u8; 32].as_slice()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_retired_checkpoints(
+                        conversation_id, transition_id, event_id,
+                        retirement_sequence, retirement_hash,
+                        endpoint_ptid, endpoint_device_id,
+                        membership_epoch, mls_epoch, retired_at_unix_ms
+                     ) VALUES(
+                        'retired-conversation', 'transition-12', 'event-12',
+                        12, ?1, 'ptid:alice', ?2, 4, 4, 103
+                     )",
+                    params![[12_u8; 32].as_slice(), device_id],
+                )
+                .unwrap();
+        }
+
+        let staging = MessagingStore::in_memory().unwrap();
+        staging
+            .populate_recovery_staging(&recovery_archive())
+            .unwrap();
+        staging
+            .install_fresh_device_identity(&device_identity)
+            .unwrap();
+        staging
+            .install_in_place_recovery_continuity_from(&source, &device_identity)
+            .unwrap();
+
+        assert_eq!(staging.pending_device_enrollment().unwrap(), None);
+        assert_eq!(staging.lane_checkpoint().unwrap(), (12, 4));
+        assert!(staging
+            .consumption_marker_matches("item-12", &[8; 32])
+            .unwrap());
+        assert_eq!(
+            staging.authority_head("restored-conversation").unwrap(),
+            (12, vec![12; 32])
+        );
+        assert_eq!(staging.load_signed_prekey(7).unwrap(), [7; 32]);
+        assert!(staging.load_one_time_prekey(1).is_err());
+        assert_eq!(staging.load_one_time_prekey(2).unwrap(), [2; 32]);
+        assert_eq!(staging.next_one_time_prekey_id().unwrap(), 3);
+        assert_eq!(
+            staging.load_mls_actor_identity().unwrap(),
+            Some((
+                "ptid:alice".to_string(),
+                device_id.clone(),
+                b"MLS actor identity".to_vec()
+            ))
+        );
+        assert_eq!(
+            staging.load_mls_join_provider_pool().unwrap(),
+            Some(b"MLS join provider pool".to_vec())
+        );
+        assert!(MlsKeyPackageRepository::pending_mls_key_packages(&staging)
+            .unwrap()
+            .is_empty());
+
+        let connection = staging.connection().unwrap();
+        for table in [
+            "direct_sessions",
+            "direct_skipped_message_keys",
+            "direct_session_bootstraps",
+            "messaging_mls_groups",
+            "messaging_mls_pending_transitions",
+            "messaging_mls_applied_transitions",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "session table {table}");
+        }
+        for table in [
+            "messaging_prekey_bundle",
+            "messaging_mls_actor_identity",
+            "messaging_mls_join_provider_pool",
+            "messaging_mls_key_packages",
+            "messaging_mls_retired_checkpoints",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "continuity table {table}");
         }
     }
 
