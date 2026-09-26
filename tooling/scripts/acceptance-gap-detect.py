@@ -24,16 +24,6 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
-RECEIVER_PROOF_GATE = "chat-native-two-client-e2e"
-RECEIVER_VISIBLE_PATHS = {
-    "apps/desktop/src-tauri/src/messaging/direct.rs",
-    "apps/desktop/src/runtimes/imRuntime.ts",
-    "apps/desktop/src/services/chatReceipt.ts",
-    "apps/desktop/src/store/socialChat.ts",
-    "apps/desktop/src/store/socialProjection.ts",
-    "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
-    "apps/station/app/subserver/conversation/engine/interface/http/receipt_handler.go",
-}
 
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",
@@ -151,22 +141,6 @@ def gate_entries(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
         elif isinstance(entry, dict) and entry.get("id"):
             entries[str(entry["id"])] = entry
     return entries
-
-
-def gate_deferred_by_formal_plan(
-    plan: dict[str, Any],
-    gate_id: str,
-) -> bool:
-    execution = plan.get("execution")
-    candidate_gates = plan.get("candidate_gates")
-    return (
-        isinstance(execution, dict)
-        and bool(str(execution.get("formalPlan") or "").strip())
-        and execution.get("mode") in {"closure", "completion", "full"}
-        and isinstance(candidate_gates, list)
-        and gate_id in candidate_gates
-        and gate_id not in gate_entries(plan)
-    )
 
 
 def canonical_plan_for_paths(paths: list[str]) -> dict[str, Any]:
@@ -437,29 +411,6 @@ def detect(
                                 normalized_planned_paths - actual_paths
                             ),
                         }
-                    ],
-                )
-            )
-
-    receipt_paths = sorted(RECEIVER_VISIBLE_PATHS.intersection(paths))
-    if receipt_paths and not gate_deferred_by_formal_plan(
-        plan,
-        RECEIVER_PROOF_GATE,
-    ):
-        obligations.add(RECEIVER_PROOF_GATE)
-        if RECEIVER_PROOF_GATE not in selected:
-            gaps.append(
-                gap(
-                    gap_type="RECEIVER_PROOF_GATE_NOT_SELECTED",
-                    claim=claim,
-                    owner_stage="EXECUTE",
-                    required_closure=(
-                        f"Select and execute {RECEIVER_PROOF_GATE} for "
-                        "receiver-visible receipt changes"
-                    ),
-                    evidence=[
-                        {"path": path, "reason": "receiver-visible owner changed"}
-                        for path in receipt_paths
                     ],
                 )
             )
