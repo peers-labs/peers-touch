@@ -86,6 +86,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.comment',
   'moments.comments.read',
   'storage.cache.seed',
+  'storage.retention.seed',
   'settings.profile.read',
   'settings.profile.update',
   'settings.notifications.read',
@@ -1274,6 +1275,15 @@ export interface MobileAcceptanceActionContract {
   'storage.cache.seed': {
     input: { sizeBytes: number };
     output: { sizeBytes: number };
+  };
+  'storage.retention.seed': {
+    input: { oldPlaintextBytes: number };
+    output: {
+      conversationId: string;
+      prunedMessageId: string;
+      protectedMessageId: string;
+      recentMessageId: string;
+    };
   };
   'settings.profile.read': {
     input: undefined;

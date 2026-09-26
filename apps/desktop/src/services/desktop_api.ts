@@ -33,10 +33,13 @@ import {
 } from '../gen/proto/domain/social/relationship_pb';
 import {
   ChatStorageResultSchema,
+  ChatStorageRetentionRequestSchema,
   ChatStorageSnapshotRequestSchema,
   ChatStorageSnapshotSchema,
+  type ChatRetentionPreset,
 } from '../gen/proto/domain/chat/storage_pb';
 export type {
+  ChatRetentionPreset,
   ChatStorageResult,
   ChatStorageSnapshot,
   ConversationStorageUsage,
@@ -7221,6 +7224,28 @@ export const api = {
           deviceId: input.deviceId,
         },
         scopeRevision: input.scopeRevision,
+      }),
+    ),
+
+  chatStorageSetRetention: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+    retentionPreset: ChatRetentionPreset;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_set_retention',
+      ChatStorageRetentionRequestSchema,
+      ChatStorageResultSchema,
+      create(ChatStorageRetentionRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+        retentionPreset: input.retentionPreset,
       }),
     ),
 

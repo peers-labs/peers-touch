@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod retention;
 
 use crate::proto::chat::{
     ChatStorageErrorCode, ChatStorageMeasurementIssue, ChatStorageScope, ChatStorageSnapshot,
@@ -178,6 +179,7 @@ pub fn measure_storage(
             ChatStorageSnapshotStatus::Partial as i32
         },
         issues,
+        retention_policy: None,
     })
 }
 

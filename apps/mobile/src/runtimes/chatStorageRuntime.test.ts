@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ChatStorageErrorCode,
   ChatStorageOperationState,
   ChatStorageResultSchema,
   ChatStorageSnapshotSchema,
@@ -73,5 +74,25 @@ describe('mobile chat storage runtime scope fencing', () => {
       result,
     )).toBe(false);
     expect(chatStorageReleasedBytes(result)).toBe(10_000n);
+  });
+
+  it('accepts a typed retention error without an operation for the current scope', () => {
+    const result = create(ChatStorageResultSchema, {
+      snapshot: {
+        scope: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          deviceId: scope.deviceId,
+        },
+        revision: chatStorageScopeRevision(scope),
+      },
+      error: {
+        code: ChatStorageErrorCode.INVALID_POLICY,
+        message: 'invalid retention policy',
+        retryable: false,
+      },
+    });
+
+    expect(isChatStorageResultForScope(scope, result)).toBe(true);
   });
 });

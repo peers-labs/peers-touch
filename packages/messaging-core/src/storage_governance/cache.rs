@@ -540,6 +540,32 @@ fn discover_cache_cleanup_items(
     Ok(items)
 }
 
+pub fn immutable_file_cleanup_item(
+    path: &Path,
+) -> Result<Option<CacheCleanupItem>, CacheCleanupError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(CacheCleanupError::Io(error.to_string())),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(CacheCleanupError::CandidateChanged(
+            path.to_string_lossy().to_string(),
+        ));
+    }
+    let path = normalized_path(path);
+    let expected_digest = digest_file(&path)?;
+    let expected_size_bytes = metadata.len();
+    Ok(Some(CacheCleanupItem {
+        item_id: cache_item_id(&path, expected_size_bytes, &expected_digest),
+        target_ref: path.to_string_lossy().to_string(),
+        expected_size_bytes,
+        expected_digest,
+        state: CacheCleanupItemState::Pending,
+        last_error_code: None,
+    }))
+}
+
 fn delete_cache_item(
     roots: &[PathBuf],
     protected: &HashSet<PathBuf>,

@@ -196,6 +196,79 @@ class StorageGovernanceContractTest(unittest.TestCase):
         )
         self.assertIn("--scenario storage-cache-cleanup", gate["command"])
 
+    def test_retention_is_shared_scope_fenced_and_native_visible(self) -> None:
+        proto = (ROOT / "model/domain/chat/storage.proto").read_text(encoding="utf-8")
+        core = (
+            ROOT / "packages/messaging-core/src/storage_governance/retention.rs"
+        ).read_text(encoding="utf-8")
+        schema = (
+            ROOT / "packages/messaging-core/src/store/schema.rs"
+        ).read_text(encoding="utf-8")
+        desktop_command = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        desktop_main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        mobile_command = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/commands.rs"
+        ).read_text(encoding="utf-8")
+        mobile_registry = (
+            ROOT / "apps/mobile/src-tauri/src/commands/mod.rs"
+        ).read_text(encoding="utf-8")
+        desktop_ui = (
+            ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+        mobile_ui = (
+            ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
+        ).read_text(encoding="utf-8")
+        recovery = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("message ChatStorageRetentionRequest", proto)
+        for symbol in (
+            "ChatRetentionPreset",
+            "RetentionRepository",
+            "build_retention_plan",
+            "sequence_is_above_retention_floor",
+        ):
+            self.assertIn(symbol, core)
+        for table in (
+            "chat_storage_policy",
+            "chat_retention_floor",
+            "messaging_authority_events",
+        ):
+            self.assertIn(table, schema)
+        self.assertIn("pub async fn chat_storage_set_retention(", desktop_command)
+        self.assertIn("messaging_commands::chat_storage_set_retention", desktop_main)
+        self.assertIn("pub async fn chat_storage_set_retention(", mobile_command)
+        self.assertEqual(mobile_registry.count("chat_storage_set_retention"), 2)
+        self.assertIn("chat_storage_acceptance_seed_retention", mobile_registry)
+        self.assertIn("data-chat-storage-retention-option", desktop_ui)
+        self.assertIn("data-chat-storage-retention-option", mobile_ui)
+        self.assertIn("MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 3", recovery)
+        self.assertIn("retention_floors", recovery)
+
+    def test_retention_gate_uses_one_station_mobile_runtime(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        gate = gates["chat-storage-retention-e2e"]
+        environment = json.loads(
+            (
+                ROOT
+                / "tooling/acceptance/environments/mobile-direct-simulator.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(gate["environment"], "mobile-direct-simulator")
+        self.assertEqual(gate["provisioner"], "mobile-direct-simulator")
+        self.assertEqual(set(environment["services"]), {"station"})
+        self.assertIn("storage.retention.seed", environment["harness"]["required_actions"])
+        self.assertIn("--scenario storage-retention", gate["command"])
+
     def test_accounting_gate_uses_single_profile_native_runtime(self) -> None:
         gates = json.loads(
             (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")

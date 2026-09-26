@@ -154,6 +154,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "recovery-ui": "mobile-simulator-recovery-ui-e2e",
                 "moments": "mobile-simulator-moments-e2e",
                 "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+                "storage-retention": "chat-storage-retention-e2e",
             },
         )
         self.assertNotEqual(
@@ -393,6 +394,80 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertTrue(result["draftPreserved"])
         self.assertTrue(result["messagingIdentityPreserved"])
         self.assertTrue(result["confirmationObserved"])
+
+    def test_storage_retention_journey_requires_prune_protection_and_restart(self) -> None:
+        fixture = {
+            "conversationId": "conversation-retention",
+            "prunedMessageId": "message-pruned",
+            "protectedMessageId": "message-protected",
+            "recentMessageId": "message-recent",
+        }
+
+        class Session:
+            def __init__(self) -> None:
+                self.snapshots = [
+                    {
+                        "physicalTotalBytes": 4_000_000,
+                        "messageBytes": 2_100_000,
+                        "conversationIds": ["conversation-retention"],
+                    },
+                    {
+                        "physicalTotalBytes": 1_500_000,
+                        "retentionPreset": "4",
+                        "retentionResultState": "succeeded",
+                        "retentionReleasedBytes": 2_500_000,
+                    },
+                    {
+                        "physicalTotalBytes": 1_500_000,
+                        "retentionPreset": "4",
+                    },
+                ]
+
+            def call_action(self, action: str, payload: object = None) -> object:
+                if action == "storage.retention.seed":
+                    return fixture
+                if action == "getRealtimeDevice":
+                    return {
+                        "actorPtid": "ptid:alice",
+                        "deviceId": "device-one",
+                        "active": True,
+                    }
+                if action == "navigation.apply":
+                    return {}
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "messaging.projection.read":
+                    return {
+                        "messages": {
+                            "conversation-retention": [
+                                {"messageId": "message-protected"},
+                                {"messageId": "message-recent"},
+                            ]
+                        }
+                    }
+                raise AssertionError(action)
+
+            def execute_script(self, script: str) -> object:
+                if "data-chat-storage-summary" in script:
+                    return self.snapshots.pop(0)
+                return True
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep",
+        ):
+            result = SimulatorSocialGate(
+                "storage-retention"
+            )._run_storage_retention_journey(
+                session=Session(),
+                journey_id="run",
+            )
+
+        self.assertEqual(result["retentionPreset"], "4")
+        self.assertEqual(result["releasedBytes"], 2_500_000)
+        self.assertTrue(result["prunedMessageAbsent"])
+        self.assertTrue(result["protectedMessagePreserved"])
+        self.assertTrue(result["recentMessagePreserved"])
+        self.assertTrue(result["restartStable"])
 
     def test_moments_journey_requires_receiver_and_rollback_readback(
         self,

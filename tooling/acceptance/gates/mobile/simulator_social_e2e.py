@@ -46,6 +46,7 @@ SCENARIO_GATES = {
     "recovery-ui": "mobile-simulator-recovery-ui-e2e",
     "moments": "mobile-simulator-moments-e2e",
     "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+    "storage-retention": "chat-storage-retention-e2e",
 }
 CLIENT_ASSIGNMENTS = {
     "sim-ios": ("station", "alice"),
@@ -81,6 +82,11 @@ SCENARIO_METADATA = {
         "phase": "CSG-02 Mobile Cache Cleanup",
         "bom": ["CSG-G02"],
         "spec": ["chat-storage-cache-cleanup"],
+    },
+    "storage-retention": {
+        "phase": "CSG-03 Mobile Retention",
+        "bom": ["CSG-G03"],
+        "spec": ["chat-storage-retention"],
     },
 }
 OPTIONAL_DIAGNOSTIC_SCOPE = (
@@ -306,6 +312,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
         elif self.scenario == "storage-cache-cleanup":
             journey_result = self._run_storage_cache_cleanup_journey(
+                session=sessions["sim-ios"],
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "storage-retention":
+            journey_result = self._run_storage_retention_journey(
                 session=sessions["sim-ios"],
                 journey_id=artifacts.run_id[-12:],
             )
@@ -573,6 +584,203 @@ return true;
             "confirmationObserved": True,
         }
 
+    def _run_storage_retention_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        fixture_size = 2 * 1024 * 1024
+        fixture = self._mapping(
+            session.call_action(
+                "storage.retention.seed",
+                {"oldPlaintextBytes": fixture_size},
+            ),
+            "storage retention fixture",
+        )
+        conversation_id = self._required_text(
+            fixture,
+            "conversationId",
+            "storage retention fixture",
+        )
+        pruned_message_id = self._required_text(
+            fixture,
+            "prunedMessageId",
+            "storage retention fixture",
+        )
+        protected_message_id = self._required_text(
+            fixture,
+            "protectedMessageId",
+            "storage retention fixture",
+        )
+        recent_message_id = self._required_text(
+            fixture,
+            "recentMessageId",
+            "storage retention fixture",
+        )
+        identity_before = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity before retention",
+        )
+        if not identity_before.get("active"):
+            raise GateError("messaging runtime is inactive before retention")
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "storage refresh action",
+        )
+        before = self._wait_for_storage_snapshot(
+            session,
+            lambda value: int(value.get("messageBytes") or 0) >= fixture_size
+            and conversation_id in value.get("conversationIds", []),
+            "seeded Mobile Chat retention measurement",
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const select = document.querySelector('[data-chat-storage-retention-select]');
+if (!select) return false;
+select.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+select.click();
+return true;
+"""
+            )
+            or None,
+            "retention selector",
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const label = document.querySelector(
+  '[data-chat-storage-retention-option="30"]'
+);
+const option = label?.closest('[role="option"], .ant-select-item-option') || label;
+if (!option) return false;
+option.click();
+return true;
+"""
+            )
+            or None,
+            "30 day retention option",
+        )
+        after = self._wait_for_storage_snapshot(
+            session,
+            lambda value: value.get("retentionPreset") == "4"
+            and value.get("retentionResultState") == "succeeded"
+            and int(value.get("retentionReleasedBytes") or 0) > 0,
+            "completed Mobile Chat retention",
+        )
+        projection = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            "messaging projection after retention",
+        )
+        messages_by_conversation = self._mapping(
+            projection.get("messages"),
+            "retention message projection map",
+        )
+        messages = messages_by_conversation.get(conversation_id)
+        if not isinstance(messages, list):
+            raise GateError("retention conversation messages are unavailable")
+        message_ids = {
+            str(message.get("messageId") or "")
+            for message in messages
+            if isinstance(message, Mapping)
+        }
+        if pruned_message_id in message_ids:
+            raise GateError("retention left pruned plaintext visible")
+        if protected_message_id not in message_ids or recent_message_id not in message_ids:
+            raise GateError("retention removed protected or recent message state")
+
+        restart = session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("retention restart was not acknowledged")
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_storage_snapshot(
+            session,
+            lambda value: value.get("retentionPreset") == "4",
+            "restart-stable Mobile Chat retention policy",
+        )
+        restored_projection = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            "messaging projection after retention restart",
+        )
+        restored_messages = self._mapping(
+            restored_projection.get("messages"),
+            "retention restart message projection map",
+        ).get(conversation_id)
+        if not isinstance(restored_messages, list):
+            raise GateError("retention restart messages are unavailable")
+        restored_ids = {
+            str(message.get("messageId") or "")
+            for message in restored_messages
+            if isinstance(message, Mapping)
+        }
+        if pruned_message_id in restored_ids:
+            raise GateError("retention-pruned plaintext returned after restart")
+        if protected_message_id not in restored_ids or recent_message_id not in restored_ids:
+            raise GateError("retention protection changed after restart")
+        identity_after = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity after retention",
+        )
+        if identity_after != identity_before:
+            raise GateError("retention changed the active messaging identity")
+        return {
+            "scenario": "storage-retention",
+            "journeyId": journey_id,
+            "conversationId": conversation_id,
+            "retentionPreset": after["retentionPreset"],
+            "physicalBytesBefore": int(before["physicalTotalBytes"]),
+            "physicalBytesAfter": int(after["physicalTotalBytes"]),
+            "releasedBytes": int(after["retentionReleasedBytes"]),
+            "prunedMessageAbsent": True,
+            "protectedMessagePreserved": True,
+            "recentMessagePreserved": True,
+            "restartStable": True,
+            "messagingIdentityPreserved": True,
+        }
+
     @classmethod
     def _wait_for_storage_snapshot(
         cls,
@@ -594,6 +802,8 @@ for (const item of document.querySelectorAll('[data-chat-storage-category]')) {
   );
 }
 const result = document.querySelector('[data-chat-storage-clear-result]');
+const retention = document.querySelector('[data-chat-storage-retention-preset]');
+const retentionResult = document.querySelector('[data-chat-storage-retention-result]');
 return {
   physicalTotalBytes: Number(
     summary.getAttribute('data-chat-storage-physical-bytes') || '0'
@@ -601,7 +811,18 @@ return {
   measuredAtUnixMs: Number(
     summary.getAttribute('data-chat-storage-measured-at') || '0'
   ),
+  messageBytes: Number(categories.message || 0),
   cacheBytes: Number(categories.cache || 0),
+  conversationIds: Array.from(document.querySelectorAll(
+    '[data-chat-storage-conversation]'
+  )).map((item) => item.getAttribute('data-chat-storage-conversation') || ''),
+  retentionPreset: retention?.getAttribute('data-chat-storage-retention-preset') || '',
+  retentionResultState: retentionResult?.getAttribute(
+    'data-chat-storage-retention-result'
+  ) || '',
+  retentionReleasedBytes: Number(
+    retentionResult?.getAttribute('data-chat-storage-retention-released-bytes') || '0'
+  ),
   confirmVisible: Boolean(
     document.querySelector('[data-chat-storage-clear-confirm]')
   ),

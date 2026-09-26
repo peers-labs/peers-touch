@@ -88,11 +88,18 @@ message ChatStorageSnapshot {
   uint64 protected_bytes = 11;
   ChatStorageSnapshotStatus status = 12;
   repeated ChatStorageMeasurementIssue issues = 13;
+  ChatStoragePolicy retention_policy = 14;
 }
 
 message ChatStorageSnapshotRequest {
   ChatStorageScope scope = 1;
   string scope_revision = 2;
+}
+
+message ChatStorageRetentionRequest {
+  ChatStorageScope scope = 1;
+  string scope_revision = 2;
+  ChatRetentionPreset retention_preset = 3;
 }
 
 message ChatStoragePolicy {

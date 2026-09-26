@@ -14,6 +14,7 @@
     "chat-client-unification-integrity",
     "chat-storage-observability",
     "chat-storage-cache-cleanup",
+    "chat-storage-retention",
     "chat-message-interactions",
     "chat-typing-presence"
   ],

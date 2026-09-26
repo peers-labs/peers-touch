@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 import { MobileNotice } from '../../components/MobileNotice';
 import type {
   DevicePermission,
@@ -551,7 +552,11 @@ export function StorageSection({
   const confirmingChatCacheClear = snapshot !== null
     && chatCacheConfirmationRevision === snapshot.revision;
   const releasedBytes = chatStorageReleasedBytes(projection.cleanup.result);
+  const retentionReleasedBytes = chatStorageReleasedBytes(projection.retention.result);
   const chatCleanupRunning = projection.cleanup.status === 'clearing';
+  const retentionSaving = projection.retention.status === 'saving';
+  const retentionPreset = snapshot?.retentionPolicy?.retentionPreset
+    ?? ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER;
 
   const conversations = useMemo(() => {
     if (!snapshot) return [];
@@ -668,6 +673,79 @@ export function StorageSection({
           />
         </div>
       )}
+      <div className="settings-dirty-actions" data-chat-storage-retention>
+        <div className="settings-row">
+          <div className="setting-copy">
+            <Text strong>{t('mobile.settings.storage.retentionTitle')}</Text>
+            <Text type="secondary">
+              {t('mobile.settings.storage.retentionDescription')}
+            </Text>
+          </div>
+          <Select<ChatRetentionPreset>
+            aria-label={t('mobile.settings.storage.retentionTitle')}
+            data-chat-storage-retention-select
+            disabled={!snapshot || retentionSaving || chatCleanupRunning}
+            loading={retentionSaving}
+            value={retentionPreset}
+            options={[
+              {
+                label: (
+                  <span data-chat-storage-retention-option="forever">
+                    {t('mobile.settings.storage.retentionForever')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="365">
+                    {t('mobile.settings.storage.retentionYear')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_365_DAYS,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="90">
+                    {t('mobile.settings.storage.retention90Days')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_90_DAYS,
+              },
+              {
+                label: (
+                  <span data-chat-storage-retention-option="30">
+                    {t('mobile.settings.storage.retention30Days')}
+                  </span>
+                ),
+                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_30_DAYS,
+              },
+            ]}
+            onChange={(value) => {
+              void mobileChatStorageProjectionRuntime.setRetention(value);
+            }}
+          />
+        </div>
+        <div data-chat-storage-retention-preset={String(retentionPreset)}>
+          {projection.retention.status === 'succeeded' ? (
+            <div
+              data-chat-storage-retention-result="succeeded"
+              data-chat-storage-retention-released-bytes={String(retentionReleasedBytes ?? 0n)}
+            >
+              <MobileNotice tone="success">
+                {t('mobile.settings.storage.retentionSaved')}
+              </MobileNotice>
+            </div>
+          ) : null}
+          {projection.retention.status === 'failed' ? (
+            <div data-chat-storage-retention-result="failed">
+              <MobileNotice tone="error">
+                {t('mobile.settings.storage.retentionFailed')}
+              </MobileNotice>
+            </div>
+          ) : null}
+        </div>
+      </div>
       <div
         className="settings-dirty-actions"
         data-chat-storage-cache-cleanup
