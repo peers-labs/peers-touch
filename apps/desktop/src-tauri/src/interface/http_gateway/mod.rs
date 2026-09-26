@@ -1388,6 +1388,19 @@ fn unauthorized_error() -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
 }
 
+fn timeline_token_from_state(
+    state: &AppState,
+    timeline_type: &str,
+) -> Result<Option<String>, Value> {
+    let token = gateway_session(state)
+        .map(|session| session.jwt)
+        .filter(|token| !token.trim().is_empty());
+    if timeline_type != "TIMELINE_PUBLIC" && token.is_none() {
+        return Err(to_json(unauthorized_error()));
+    }
+    Ok(token)
+}
+
 fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
     let session = gateway_session(state)?;
     Some(crate::domain::admin::AccessContext {
@@ -2036,11 +2049,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
+            let timeline_type = match input.station_timeline_type() {
+                Some(value) => value.to_string(),
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InvalidArgument,
+                        "timeline type is invalid",
+                        None,
+                    ))
+                }
+            };
+            let token = match timeline_token_from_state(state, &timeline_type) {
+                Ok(token) => token,
                 Err(e) => return e,
             };
-            let mut query: Vec<(&str, String)> = vec![("type", input.r#type)];
+            let mut query: Vec<(&str, String)> = vec![("type", timeline_type)];
             if let Some(cursor) = input.cursor.filter(|v| !v.is_empty()) {
                 query.push(("cursor", cursor));
             }
@@ -2050,10 +2073,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if let Some(sort) = input.sort.filter(|v| !v.is_empty()) {
                 query.push(("sort", sort));
             }
-            let resp = match station_client::request_proto::<(), model::social::GetTimelineResponse>(
+            let resp = match station_client::request_proto_optional_auth::<
+                (),
+                model::social::GetTimelineResponse,
+            >(
                 Method::GET,
                 "/api/v1/social/timeline",
-                &token,
+                token.as_deref(),
                 Some(&query),
                 None::<&()>,
             ) {
@@ -7829,6 +7855,40 @@ mod tests {
                 .and_then(|error| error.get("code"))
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
+        );
+    }
+
+    #[test]
+    fn public_timeline_allows_anonymous_gateway_context() {
+        let layout = temp_layout("public-timeline-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let anonymous = AppState::new(layout, I18nService::new(&config_dir));
+
+        assert_eq!(
+            timeline_token_from_state(&anonymous, "TIMELINE_PUBLIC")
+                .expect("PUBLIC timeline must allow anonymous reads"),
+            None
+        );
+        let home_error = timeline_token_from_state(&anonymous, "TIMELINE_HOME")
+            .expect_err("HOME timeline must require authentication");
+        assert_eq!(
+            home_error
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
+
+        let authenticated = test_state("authenticated-timeline");
+        assert_eq!(
+            timeline_token_from_state(&authenticated, "TIMELINE_HOME")
+                .expect("authenticated HOME timeline must carry its token")
+                .as_deref(),
+            Some("token-http-gateway-test")
         );
     }
 
