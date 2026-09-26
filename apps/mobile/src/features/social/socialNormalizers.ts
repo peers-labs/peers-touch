@@ -256,9 +256,11 @@ export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
 }
 
 function normalizeDiscoverability(value: unknown): PeerProfile['discoverability'] {
-  if (value === 1 || value === 'ACTOR_VISIBILITY_HIDDEN' || value === 'hidden') return 'hidden';
+  if (value === 2 || value === 'ACTOR_VISIBILITY_BY_HANDLE' || value === 'by_handle') {
+    return 'by_handle';
+  }
   if (value === 3 || value === 'ACTOR_VISIBILITY_INDEXED' || value === 'indexed') return 'indexed';
-  return 'by_handle';
+  return 'hidden';
 }
 
 function normalizePositiveRevision(value: unknown): bigint {

@@ -7,34 +7,34 @@
 
 | Domain | Features | Wired | Proven | Coverage |
 |--------|----------|-------|--------|----------|
-| Chat | 12 | 12 | 0 | 0% |
+| Chat | 12 | 12 | 1 | 8% |
 | Mobile | 9 | 9 | 0 | 0% |
-| Station Access | 3 | 3 | 0 | 0% |
-| Federation | 7 | 6 | 0 | 0% |
+| Station Access | 5 | 5 | 5 | 100% |
+| Federation | 6 | 6 | 0 | 0% |
 | Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 34 | 33 | 0 | 0% |
+| **Total** | 35 | 35 | 6 | 17% |
 
 ## Infra (Core Self-Validation)
 
 | Feature | Gates | Registered | Status |
 |---------|-------|------------|--------|
-| `acceptance-framework` | `acceptance-plan-self`, `acceptance-infra-validation`, `acceptance-workflow-contract`, `acceptance-runtime-provisioning-self` | 4/4 | WIRED |
+| `acceptance-framework` | `acceptance-plan-self`, `acceptance-infra-validation`, `acceptance-workflow-contract`, `acceptance-runtime-provisioning-self` | 4/4 | COMPLETE |
 
 ## Chat
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `chat-client-unification-integrity` | `chat-lifecycle-tree-zero-reference-e2e` | 1/1 | 0/1 | WIRED |
+| `chat-client-unification-integrity` | `chat-lifecycle-tree-zero-reference-e2e` | 1/1 | 1/1 | COMPLETE |
 | `chat-desktop-gateway-message-flow` | `chat-desktop-gateway-e2e` | 1/1 | 0/1 | WIRED |
 | `chat-direct-delivered-receipt` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-current-profile-two-client-e2e`, `chat-native-submitted-command-recovery-e2e`, `chat-native-two-client-e2e` | 7/7 | 0/7 | WIRED |
 | `chat-friend-request-gateway-lifecycle` | `chat-friend-request-gateway-e2e` | 1/1 | 0/1 | WIRED |
 | `chat-message-interactions` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-interactions-e2e` | 5/5 | 0/5 | WIRED |
 | `chat-mixed-client-convergence` | `chat-lifecycle-mixed-client-same-station-e2e`, `chat-lifecycle-mixed-client-cross-station-e2e`, `chat-lifecycle-mixed-client-multi-device-e2e`, `chat-lifecycle-call-resolution-e2e`, `chat-lifecycle-mixed-client-group-mls-e2e` | 5/5 | 0/5 | WIRED |
-| `chat-native-friendship-projection` | `proto-build`, `desktop-check`, `chat-native-visible-static`, `chat-native-group-mls-e2e` | 4/4 | 0/4 | WIRED |
+| `chat-native-friendship-projection` | `proto-build`, `desktop-check`, `chat-native-visible-static`, `chat-native-group-mls-e2e` | 4/4 | 1/4 | WIRED |
 | `chat-native-visible-clients` | `chat-native-visible-static`, `chat-lifecycle-onboarding-e2e`, `chat-lifecycle-direct-e2e`, `chat-native-current-profile-two-client-e2e`, `chat-native-two-client-e2e`, `chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, `chat-native-group-mls-e2e` | 8/8 | 0/8 | WIRED |
 | `chat-realtime-delivery` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check` | 3/3 | 0/3 | WIRED |
-| `chat-service-contract` | `proto-build`, `station-api-ownership`, `station-messaging-unit`, `messaging-platform-contract` | 4/4 | 0/4 | WIRED |
+| `chat-service-contract` | `proto-build`, `station-api-ownership`, `station-messaging-unit`, `messaging-platform-contract` | 4/4 | 2/4 | WIRED |
 | `chat-typing-presence` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-typing-e2e` | 5/5 | 0/5 | WIRED |
 | `desktop-chat-surface` | `desktop-check`, `chat-contact-message-resilience-e2e` | 2/2 | 0/2 | WIRED |
 
@@ -44,9 +44,9 @@
 |---------|---------------|------------|--------|--------|
 | `mobile-access-gate-oauth` | `mobile-contract-static`, `mobile-simulator-access-e2e` | 2/2 | 0/2 | WIRED |
 | `mobile-chat-contacts-groups` | `mobile-simulator-social-convergence-e2e`, `mobile-simulator-chat-contacts-e2e` | 2/2 | 0/2 | WIRED |
-| `mobile-command-draft-recovery` | `mobile-contract-static`, `mobile-hard-cut-static`, `mobile-simulator-recovery-e2e` | 3/3 | 0/3 | WIRED |
+| `mobile-command-draft-recovery` | `mobile-contract-static`, `mobile-hard-cut-static`, `mobile-simulator-recovery-e2e` | 3/3 | 1/3 | WIRED |
 | `mobile-moments-participation` | `mobile-contract-static`, `mobile-simulator-social-convergence-e2e`, `mobile-simulator-moments-e2e` | 3/3 | 0/3 | WIRED |
-| `mobile-native-accessibility-performance` | `mobile-ios-simulator-layout-accessibility-e2e`, `mobile-simulator-platform-e2e`, `mobile-hard-cut-static` | 3/3 | 0/3 | WIRED |
+| `mobile-native-accessibility-performance` | `mobile-ios-simulator-layout-accessibility-e2e`, `mobile-simulator-platform-e2e`, `mobile-hard-cut-static` | 3/3 | 2/3 | WIRED |
 | `mobile-profile-settings` | `mobile-contract-static`, `mobile-simulator-social-convergence-e2e`, `mobile-simulator-settings-e2e` | 3/3 | 0/3 | WIRED |
 | `mobile-recovery-degraded-states` | `mobile-simulator-recovery-e2e`, `mobile-simulator-recovery-ui-e2e` | 2/2 | 0/2 | WIRED |
 | `mobile-session-lifecycle` | `mobile-contract-static`, `mobile-simulator-runtime-lifecycle-e2e`, `mobile-simulator-station-lifecycle-e2e` | 3/3 | 0/3 | WIRED |
@@ -56,9 +56,11 @@
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `station-access-authentication` | `station-access-capability-contract`, `station-access-auth-e2e` | 2/2 | 0/2 | WIRED |
-| `station-access-scope-isolation` | `station-access-capability-contract`, `station-access-scope-isolation-e2e` | 2/2 | 0/2 | WIRED |
-| `station-access-wire-contract` | `proto-build`, `station-api-ownership`, `station-access-capability-contract` | 3/3 | 0/3 | WIRED |
+| `station-access-authentication` | `station-access-capability-contract`, `station-access-auth-e2e` | 2/2 | 2/2 | COMPLETE |
+| `station-access-federation-boundary` | `station-federation-unit`, `station-api-ownership`, `station-access-federation-boundary-e2e` | 3/3 | 3/3 | COMPLETE |
+| `station-access-scope-isolation` | `station-access-capability-contract`, `station-access-scope-isolation-e2e` | 2/2 | 2/2 | COMPLETE |
+| `station-access-wire-contract` | `proto-build`, `station-api-ownership`, `station-access-capability-contract` | 3/3 | 3/3 | COMPLETE |
+| `station-access-zero-legacy` | `station-access-zero-legacy-e2e`, `desktop-release-build`, `mobile-native-build`, `station-access-lifecycle-aggregate-e2e` | 4/4 | 4/4 | COMPLETE |
 
 ## Federation
 
@@ -66,10 +68,9 @@
 |---------|---------------|------------|--------|--------|
 | `desktop-federation-surfaces` | `desktop-check`, `federation-desktop-gateway-smoke` | 2/2 | 0/2 | WIRED |
 | `federation-dashboard-operations` | `station-dashboard-unit`, `federation-dashboard-operational-drilldown` | 2/2 | 0/2 | WIRED |
-| `federation-discovery-network` | `station-federation-unit`, `federation-surface-smoke` | 2/2 | 0/2 | WIRED |
-| `federation-full-lifecycle` | `station-build`, `desktop-typecheck` | 0/2 | 0/2 | PARTIAL |
-| `federation-governance` | `station-federation-unit`, `federation-three-node-e2e` | 2/2 | 0/2 | WIRED |
-| `federation-ledger` | `proto-build`, `station-federation-unit`, `federation-three-node-e2e` | 3/3 | 0/3 | WIRED |
+| `federation-discovery-network` | `station-federation-unit`, `federation-surface-smoke` | 2/2 | 1/2 | WIRED |
+| `federation-governance` | `station-federation-unit`, `federation-three-node-e2e` | 2/2 | 1/2 | WIRED |
+| `federation-ledger` | `proto-build`, `station-federation-unit`, `federation-three-node-e2e` | 3/3 | 2/3 | WIRED |
 | `federation-operational-observability` | `station-dashboard-unit`, `federation-dashboard-operational-drilldown` | 2/2 | 0/2 | WIRED |
 
 ## Applet
