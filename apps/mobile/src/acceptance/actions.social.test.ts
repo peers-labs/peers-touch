@@ -3,7 +3,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
+  readSocialPeopleSearchFederations: vi.fn(),
   readCurrentSocialProfile: vi.fn(),
+  searchSocialPeople: vi.fn(),
   updateCurrentSocialProfile: vi.fn(),
 }));
 const projectionMocks = vi.hoisted(() => ({
@@ -19,10 +21,12 @@ const deviceMocks = vi.hoisted(() => ({
 vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
+  readSocialPeopleSearchFederations:
+    socialMocks.readSocialPeopleSearchFederations,
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
   reconcileSocialRuntime: vi.fn(),
-  searchSocialPeople: vi.fn(),
+  searchSocialPeople: socialMocks.searchSocialPeople,
   sendSocialFriendRequest: vi.fn(),
   submitSocialFriendRequest: vi.fn(),
   updateCurrentSocialProfile: socialMocks.updateCurrentSocialProfile,
@@ -47,6 +51,29 @@ import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([]);
+  });
+
+  it('projects the sole active Federation for a local actor search', async () => {
+    socialMocks.searchSocialPeople.mockResolvedValue([{
+      id: 'ptid:bob',
+      ptid: 'ptid:bob',
+      homeStationPeerId: 'station-four',
+      username: 'bob',
+      displayName: 'Bob',
+      avatar: '',
+    }]);
+    socialMocks.readSocialPeopleSearchFederations.mockReturnValue([{
+      federationId: 'federation-1',
+    }]);
+
+    await expect(
+      mobileAcceptanceActions['social.people.search']({ query: 'bob' }),
+    ).resolves.toEqual([{
+      ptid: 'ptid:bob',
+      federationId: 'federation-1',
+      homeStationPeerId: 'station-four',
+    }]);
   });
 
   it('routes Moments mutations through the active owner runtime', async () => {
