@@ -5026,6 +5026,7 @@ async function prepareFoundationExecutorUnavailableScenario(input: {
     if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
       throw new Error('agent.acceptance.foundationToolApprovalInvalid');
     }
+    await useChatStore.getState().selectSession(turn.conversationId);
     await waitFor(
       () => Boolean(document.querySelector(
         `[data-pt-agent-tool-call="${toolCallId}"]`,
