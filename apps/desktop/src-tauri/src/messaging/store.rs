@@ -8495,7 +8495,8 @@ impl MessagingStore {
             .query_row(
                 "SELECT event_id, event_sequence, delivery_state,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted,
+                        plaintext = '', hidden_for_actor
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1 AND message_id = ?2",
                 params![conversation_id, message_id],
@@ -8512,6 +8513,8 @@ impl MessagingStore {
                             .unwrap_or_default(),
                         "editedAtUnixMs": row.get::<_, Option<i64>>(6)?.unwrap_or_default(),
                         "retracted": row.get::<_, i64>(7)? != 0,
+                        "plaintextEmpty": row.get::<_, i64>(8)? != 0,
+                        "hiddenForActor": row.get::<_, i64>(9)? != 0,
                     }))
                 },
             )
@@ -8690,6 +8693,83 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
             cursors
         };
+        let redaction_tombstones = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT kind, authority_sequence,
+                            lower(hex(authority_event_hash)), applied_at_unix_ms
+                     FROM message_redaction_tombstones
+                     WHERE conversation_id = ?1 AND message_id = ?2
+                     ORDER BY kind",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![conversation_id, message_id], |row| {
+                    Ok(serde_json::json!({
+                        "kind": row.get::<_, String>(0)?,
+                        "authoritySequence": row.get::<_, i64>(1)?,
+                        "authorityEventHash": row.get::<_, String>(2)?,
+                        "appliedAtUnixMs": row.get::<_, i64>(3)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let search_entry_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_message_search_fts
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let attachment_projection_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_attachment_projections
+                 WHERE message_id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let attachment_transfer_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_attachment_transfers
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let redaction_cleanup = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT operation_id, scope_kind, state,
+                            estimated_reclaimable_bytes, physical_bytes_before,
+                            physical_bytes_after, last_error_code
+                     FROM chat_cleanup_journal
+                     WHERE conversation_id = ?1
+                       AND scope_kind IN ('actor_hide', 'retract')
+                     ORDER BY created_at_unix_ms, operation_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![conversation_id], |row| {
+                    Ok(serde_json::json!({
+                        "operationId": row.get::<_, String>(0)?,
+                        "scopeKind": row.get::<_, String>(1)?,
+                        "state": row.get::<_, String>(2)?,
+                        "estimatedReclaimableBytes": row.get::<_, i64>(3)?,
+                        "physicalBytesBefore": row.get::<_, i64>(4)?,
+                        "physicalBytesAfter": row.get::<_, Option<i64>>(5)?,
+                        "lastErrorCode": row.get::<_, Option<String>>(6)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
         let consumption_count = connection
             .query_row(
                 "SELECT COUNT(*) FROM messaging_consumption_markers
@@ -8719,6 +8799,11 @@ impl MessagingStore {
             "reactions": reactions,
             "pins": pins,
             "readCursors": read_cursors,
+            "redactionTombstones": redaction_tombstones,
+            "searchEntryCount": search_entry_count,
+            "attachmentProjectionCount": attachment_projection_count,
+            "attachmentTransferCount": attachment_transfer_count,
+            "redactionCleanup": redaction_cleanup,
             "consumptionCount": consumption_count,
             "laneSequence": lane_sequence,
             "consumerEpoch": consumer_epoch,
@@ -14225,6 +14310,20 @@ mod tests {
             assert!(store
                 .consumption_marker_matches("redaction-item", &redaction_hash)
                 .unwrap());
+            let evidence = store
+                .acceptance_interaction_snapshot("conversation-1", "message-1", "")
+                .unwrap();
+            assert_eq!(evidence["projection"]["plaintextEmpty"], true);
+            assert_eq!(evidence["projection"]["retracted"], kind == "retracted");
+            assert_eq!(
+                evidence["projection"]["hiddenForActor"],
+                kind == "hidden_for_actor"
+            );
+            assert_eq!(evidence["redactionTombstones"][0]["kind"], kind);
+            assert_eq!(evidence["searchEntryCount"], 0);
+            assert_eq!(evidence["attachmentProjectionCount"], 0);
+            assert_eq!(evidence["attachmentTransferCount"], 0);
+            assert_eq!(evidence["redactionCleanup"][0]["scopeKind"], scope_kind);
         }
     }
 

@@ -301,6 +301,90 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(selector, desktop_storage)
 
+    def test_redaction_recovery_gate_is_connected_to_chat_domain(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        registry = json.loads(
+            (ROOT / "tooling/acceptance/registry.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["rules"]
+        domain = json.loads(
+            (ROOT / "tooling/acceptance/domains/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        capabilities = json.loads(
+            (ROOT / "tooling/acceptance/capabilities/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["capabilities"]
+        gate = gates["chat-storage-redaction-recovery-e2e"]
+        rule = next(
+            item
+            for item in registry
+            if item["id"] == "chat-storage-redaction-recovery"
+        )
+        capability = next(
+            item
+            for item in capabilities
+            if item["id"] == "chat-storage-redaction-recovery"
+        )
+
+        self.assertEqual(gate["environment"], "chat-storage-native")
+        self.assertEqual(gate["provisioner"], "chat-storage-native")
+        self.assertIn(
+            "chat-storage-redaction-recovery",
+            domain["capabilities"],
+        )
+        self.assertEqual(
+            capability["required_gates"],
+            ["chat-storage-redaction-recovery-e2e"],
+        )
+        self.assertEqual(
+            rule["require"],
+            ["chat-storage-redaction-recovery-e2e"],
+        )
+        self.assertIn(
+            "storage_redaction_recovery_runner",
+            gate["command"],
+        )
+
+    def test_redaction_snapshot_exposes_durable_proof_without_plaintext(
+        self,
+    ) -> None:
+        store = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        runner = (
+            ROOT
+            / "tooling/acceptance/gates/chat/"
+            "storage_redaction_recovery_runner.py"
+        ).read_text(encoding="utf-8")
+
+        for marker in (
+            '"plaintextEmpty"',
+            '"hiddenForActor"',
+            '"redactionTombstones"',
+            '"searchEntryCount"',
+            '"attachmentProjectionCount"',
+            '"attachmentTransferCount"',
+            '"redactionCleanup"',
+        ):
+            self.assertIn(marker, store)
+        self.assertNotIn('"plaintext": row.get', store)
+        for marker in (
+            '"redaction.restart"',
+            '"redaction.restore"',
+            '"recovery_redaction_reconciliation"',
+            '"redacted_plaintext_absent"',
+            "self.arm_recovery_feedback_probe(actor)",
+            "self.recovery_feedback_observed(actor)",
+            "self.stop_recovery_feedback_probe(actor)",
+        ):
+            self.assertIn(marker, runner)
+
 
 if __name__ == "__main__":
     unittest.main()
