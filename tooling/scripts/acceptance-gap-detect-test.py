@@ -349,6 +349,44 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertIn("RECEIVER_PROOF_GATE_NOT_SELECTED", gap_types)
         self.assertIn("REQUIRED_GATE_NOT_RUN", gap_types)
 
+    def test_formal_completion_may_defer_declared_receiver_proof_gate(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Formal completion schedule is proven",
+            paths=["apps/desktop/src/store/socialChat.ts"],
+            plan={
+                "changed_paths": ["apps/desktop/src/store/socialChat.ts"],
+                "candidate_gates": [
+                    "chat-native-two-client-e2e",
+                    "completion-gate",
+                ],
+                "execution": {
+                    "formalPlan": "docs/architecture/example/plan.md",
+                    "mode": "completion",
+                },
+                "selected_gates": [
+                    {
+                        "id": "completion-gate",
+                        "environment": "local",
+                        "tier": "ci-cheap",
+                    }
+                ],
+            },
+            canonical_plan={
+                "changed_paths": ["apps/desktop/src/store/socialChat.ts"],
+                "selected_gates": [
+                    "chat-native-two-client-e2e",
+                    "completion-gate",
+                ],
+            },
+            run={"results": [proven_result("completion-gate")]},
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
+
     def test_provisioned_gate_requires_ready_manifest(self) -> None:
         gate_id = "chat-native-two-client-e2e"
         report = MODULE.detect(
