@@ -951,6 +951,7 @@ class F12HarnessClient:
         self.fail_prepare = fail_prepare
         self.restart_count = 0
         self.prepare_calls: list[dict[str, object]] = []
+        self.prepare_timeouts: list[float] = []
         self.direct_calls: list[dict[str, object]] = []
         self.cleanup_calls: list[dict[str, object]] = []
 
@@ -964,13 +965,13 @@ class F12HarnessClient:
         payload: dict[str, object] | None = None,
         timeout: float = 120,
     ) -> dict[str, object]:
-        del timeout
         request = payload or {}
         self.call_log.append(f"{self.platform}:{method}")
         if method == "setFoundationLocale":
             return {"locale": request["locale"]}
         if method == "foundationF12Prepare":
             self.prepare_calls.append(request)
+            self.prepare_timeouts.append(timeout)
             if self.fail_prepare:
                 raise RuntimeError("prepare failed")
             scenario_key = str(request["scenarioKey"])
@@ -2721,6 +2722,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(browser.restart_count, 1)
         self.assertEqual(native.prepare_calls, [])
         self.assertEqual(len(browser.prepare_calls), 1)
+        self.assertEqual(
+            browser.prepare_timeouts,
+            [foundation_scenario_runner.F12_PREPARE_TIMEOUT_SECONDS],
+        )
         self.assertEqual(native.direct_calls, [])
         self.assertEqual(len(browser.direct_calls), 1)
         self.assertEqual(native.cleanup_calls, [])
