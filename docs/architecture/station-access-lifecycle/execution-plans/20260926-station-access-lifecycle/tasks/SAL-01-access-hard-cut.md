@@ -76,7 +76,7 @@
     "Never accept reachability metadata as Station identity",
     "Never retain compatibility parsing or migration reads"
   ],
-  "updatedAt": "2026-09-26T00:00:00.000Z",
+  "updatedAt": "2026-09-26T11:36:10.000Z",
   "durableEvidence": [
     {
       "verificationClass": "STRUCTURAL_CHECK",
@@ -95,8 +95,8 @@
     },
     {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Exact-source native runtime requires committed checkpoint"
+      "result": "PASS",
+      "ref": "acceptance-run 20260926T111207959347Z-954df736a40dd1ece23fafa431f124e9"
     }
   ]
 }
@@ -104,13 +104,9 @@
 
 ## Current Snapshot
 
-- State: in progress。
+- State: done。
 - Canonical Station identity、四个 protobuf Access Gate endpoints、双端 scope
-  tuple 和共享 typed outcomes 已落地。
-- `station-access` Acceptance Domain、Capability、Feature、Registry、Gate Catalog
-  与无服务端 reset 的双端原生环境已接入。
-- Next: 提交当前 exact-source checkpoint，部署已批准的远端 Station，运行两个
-  native Gates 后完成本 Task。
+  tuple 和共享 typed outcomes 已通过 exact-source native proof。
 
 ## Closure
 

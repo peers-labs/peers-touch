@@ -74,12 +74,12 @@
     "Do not delete operator APIs with a verified Dashboard or CLI consumer",
     "Do not move Federation or Relay truth into clients"
   ],
-  "updatedAt": "2026-09-26T00:00:00.000Z",
+  "updatedAt": "2026-09-26T11:36:10.000Z",
   "durableEvidence": [
     {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "result": "PASS",
+      "ref": "acceptance-run 20260926T111207959347Z-954df736a40dd1ece23fafa431f124e9"
     }
   ]
 }
@@ -87,8 +87,9 @@
 
 ## Current Snapshot
 
-- State: pending；未修改 Federation、Relay 或客户端入口。
-- Dependency: `SAL-01-access-hard-cut`。
+- State: done。
+- 普通客户端仅保留显式 Federation context 与发现能力；治理和 Relay surface
+  已收回 Station owner，并通过 exact-source boundary proof。
 
 ## Closure
 
