@@ -14,28 +14,31 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_rollout_control():
-    path = REPO_ROOT / "tooling/scripts/skill-rollout-control.py"
-    spec = importlib.util.spec_from_file_location("skill_rollout_control", path)
+def load_integration_control():
+    path = REPO_ROOT / "tooling/scripts/agent-integration-control.py"
+    spec = importlib.util.spec_from_file_location("agent_integration_control", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def load_rollout_audit():
-    path = REPO_ROOT / "tooling/scripts/skill-rollout-audit.py"
-    spec = importlib.util.spec_from_file_location("skill_rollout_audit", path)
+def load_integration_audit():
+    path = REPO_ROOT / "tooling/scripts/agent-integration-audit.py"
+    spec = importlib.util.spec_from_file_location("agent_integration_audit", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-class SkillRolloutTests(unittest.TestCase):
+class AgentIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        self.home = self.root / "home"
+        self.machine = self.root / "machine"
+        self.home.mkdir(mode=0o700)
         (self.root / ".git").mkdir()
         (self.root / "tooling/make").mkdir(parents=True)
         (self.root / "tooling/scripts").mkdir(parents=True)
@@ -44,18 +47,68 @@ class SkillRolloutTests(unittest.TestCase):
             self.root / "tooling/make/setup.mk",
         )
         for name in (
-            "install-project-skills.sh",
-            "skill-rollout-audit.py",
-            "skill-rollout-control.py",
+            "install-agent-integration.sh",
+            "agent-integration-audit.py",
+            "agent-integration-control.py",
         ):
             shutil.copy2(
                 REPO_ROOT / "tooling/scripts" / name,
                 self.root / "tooling/scripts" / name,
             )
+        shutil.copytree(
+            REPO_ROOT / "tooling/plugins/pt-ew-plugin",
+            self.root / "tooling/plugins/pt-ew-plugin",
+        )
         ledger_validator = (
             self.root / "tooling/scripts/local-dev/dev-work-ledger.mjs"
         )
         ledger_validator.parent.mkdir(parents=True)
+        for name in (
+            "active-work-store.mjs",
+            "dev-session-schema.mjs",
+            "dev-work-schema.mjs",
+            "workflow-anchor.mjs",
+            "workflow-action-store.mjs",
+            "workflow-snapshot-core.mjs",
+            "workflow-conversation-binding.mjs",
+            "workflow-host-adapters.mjs",
+            "workflow-kernel.mjs",
+            "workflow-state-inspector.mjs",
+            "workflow-tool-intent.mjs",
+            "workspace-lifecycle-lock.mjs",
+        ):
+            shutil.copy2(
+                REPO_ROOT / "tooling/scripts/local-dev" / name,
+                self.root / "tooling/scripts/local-dev" / name,
+            )
+        machine_paths = "tooling/scripts/lib/machine-dev-paths.mjs"
+        destination = self.root / machine_paths
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / machine_paths, destination)
+        module_stubs = {
+            "tooling/scripts/plan/plan-package.mjs":
+                "export function loadPlanPackage() { throw new Error('fixture only'); }\n",
+            "tooling/scripts/plan/workspace-plan-binding.mjs":
+                "export function resolveWorkspacePlanBinding() { throw new Error('fixture only'); }\n",
+            "tooling/scripts/local-dev/dev-session-store.mjs":
+                "export function loadSessionStore() { throw new Error('fixture only'); }\n",
+        }
+        for relative, source in module_stubs.items():
+            stub = self.root / relative
+            stub.parent.mkdir(parents=True, exist_ok=True)
+            stub.write_text(source, encoding="utf-8")
+        shell_quote_source = REPO_ROOT / "node_modules/shell-quote"
+        shell_quote_fixture = self.root / "node_modules/shell-quote"
+        shell_quote_fixture.mkdir(parents=True)
+        for name in ("index.js", "parse.js", "quote.js", "package.json"):
+            shutil.copy2(
+                shell_quote_source / name,
+                shell_quote_fixture / name,
+            )
+        (self.root / "tooling/scripts/local-dev/dev-work.mjs").write_text(
+            "",
+            encoding="utf-8",
+        )
         ledger_validator.write_text(
             """
 import { readFileSync } from 'node:fs';
@@ -73,6 +126,7 @@ export function readLedger(file) {
   }
   return value;
 }
+export function processStartIdentity() { return 'fixture'; }
 """.lstrip(),
             encoding="utf-8",
         )
@@ -80,6 +134,7 @@ export function readLedger(file) {
             "include tooling/make/setup.mk\n", encoding="utf-8"
         )
         for name in (
+            "pt-ew",
             "pt-goal-orchestrator",
             "pt-trae-host-adapter",
             "pt-cursor-host-adapter",
@@ -109,6 +164,9 @@ export function readLedger(file) {
                                         "pt-cursor-host-adapter",
                                         "pt-codex-host-adapter",
                                     )
+                                ] + [
+                                    "tooling/plugins/pt-ew-plugin/**",
+                                    "tooling/scripts/local-dev/workflow-*.mjs",
                                 ]
                             },
                             "require": ["acceptance-workflow-contract"],
@@ -148,11 +206,12 @@ export function readLedger(file) {
                     raise
                 time.sleep(0.05)
 
-    def environment(self, session: str) -> dict[str, str]:
+    def environment(self, _session: str = "") -> dict[str, str]:
         environment = {
             **os.environ,
-            "PT_MACHINE_DEV_ROOT": str(self.root / "machine"),
-            "PT_AGENT_SESSION_ID": session,
+            "HOME": str(self.home),
+            "USERPROFILE": str(self.home),
+            "PT_MACHINE_DEV_ROOT": str(self.machine),
         }
         for name in (
             "ICUBE_CODEMAIN_SESSION",
@@ -164,19 +223,42 @@ export function readLedger(file) {
             environment.pop(name, None)
         return environment
 
-    def test_atomic_lock_capture_declares_windows_no_replace(self) -> None:
+    def install_trae_fixture(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["make", "skills", "IDE=trae"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+    def audit_trae_fixture(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "trae",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+    def test_installer_atomic_lock_capture_declares_windows_no_replace(self) -> None:
         control = (
-            REPO_ROOT / "tooling/scripts/skill-rollout-control.py"
+            REPO_ROOT / "tooling/scripts/agent-integration-control.py"
         ).read_text(encoding="utf-8")
-        ledger = (
-            REPO_ROOT / "tooling/scripts/local-dev/dev-work-ledger.mjs"
-        ).read_text(encoding="utf-8")
-        for source in (control, ledger):
-            self.assertIn("MoveFileExW", source)
-            self.assertIn("0x00000008", source)
+        self.assertIn("MoveFileExW", control)
+        self.assertIn("0x00000008", control)
 
     def test_windows_atomic_lock_capture_uses_no_replace_semantics(self) -> None:
-        module = load_rollout_control()
+        module = load_integration_control()
         calls: list[tuple[str, str, int]] = []
 
         class MoveFile:
@@ -222,6 +304,9 @@ export function readLedger(file) {
         legacy = self.root / ".agents/skills/pt-trae-goal-orchestrator"
         legacy.mkdir(parents=True)
         (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
+        unrelated = self.root / ".agents/plugins/unrelated"
+        unrelated.mkdir(parents=True)
+        (unrelated / "keep.txt").write_text("keep\n", encoding="utf-8")
         environment = self.environment("installing-session")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
@@ -247,11 +332,21 @@ export function readLedger(file) {
             "pt-codex-host-adapter",
         ):
             self.assertTrue((self.root / ".agents/skills" / name).is_symlink())
+        self.assertEqual(
+            (
+                self.root / ".agents/plugins/pt-ew-plugin"
+            ).resolve(strict=True),
+            (self.root / "tooling/plugins/pt-ew-plugin").resolve(strict=True),
+        )
+        self.assertEqual(
+            (unrelated / "keep.txt").read_text(encoding="utf-8"),
+            "keep\n",
+        )
 
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -261,88 +356,28 @@ export function readLedger(file) {
             capture_output=True,
             text=True,
             env=environment,
-            check=False,
-        )
-        self.assertEqual(audit.returncode, 2, audit.stderr)
-        self.assertEqual(
-            json.loads(audit.stdout)["rolloutReceipt"]["findings"],
-            ["rollout-restart-required"],
-        )
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("ROLLOUT_RESTART_NOT_OBSERVED", acknowledged.stdout)
-        ambiguous_environment = self.environment("installing-session")
-        ambiguous_environment["CODEX_SESSION_ID"] = "different-session"
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=ambiguous_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("HOST_SESSION_ID_AMBIGUOUS", acknowledged.stdout)
-        renamed_environment = self.environment("unused-session")
-        renamed_environment.pop("PT_AGENT_SESSION_ID")
-        renamed_environment["CODEX_SESSION_ID"] = "installing-session"
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=renamed_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 2, acknowledged.stderr)
-        self.assertIn("ROLLOUT_RESTART_NOT_OBSERVED", acknowledged.stdout)
-        restarted_environment = self.environment("restarted-session")
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
-            check=False,
-        )
-        self.assertEqual(acknowledged.returncode, 0, acknowledged.stderr)
-        audit = subprocess.run(
-            [
-                "python3",
-                "tooling/scripts/skill-rollout-audit.py",
-                "--root",
-                str(self.root),
-                "--host",
-                "codex",
-            ],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            env=restarted_environment,
             check=False,
         )
         self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
         self.assertEqual(json.loads(audit.stdout)["status"], "PASS")
         receipt = next(
             (self.root / "machine/workspaces").glob(
-                "*/workflow/skill-rollout.json"
+                "*/workflow/agent-integration.json"
             )
         )
         receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(receipt_value["state"], "INSTALLED")
+        self.assertEqual(
+            receipt_value["callbackProof"],
+            {"status": "NOT_APPLICABLE"},
+        )
         self.assertNotIn("schemaVersion", receipt_value)
         receipt_value["schemaVersion"] = 3
         receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -351,18 +386,18 @@ export function readLedger(file) {
             cwd=self.root,
             capture_output=True,
             text=True,
-            env=restarted_environment,
+            env=environment,
             check=False,
         )
         self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-receipt-fields-invalid", audit.stdout)
+        self.assertIn("integration-receipt-fields-invalid", audit.stdout)
         receipt_value.pop("schemaVersion")
         receipt_value["branch"] = "other-branch"
         receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -371,18 +406,18 @@ export function readLedger(file) {
             cwd=self.root,
             capture_output=True,
             text=True,
-            env=restarted_environment,
+            env=environment,
             check=False,
         )
         self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-branch-mismatch", audit.stdout)
+        self.assertIn("integration-branch-mismatch", audit.stdout)
         receipt_value["branch"] = "main"
         receipt_value.pop("installedAt")
         receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -391,11 +426,363 @@ export function readLedger(file) {
             cwd=self.root,
             capture_output=True,
             text=True,
-            env=restarted_environment,
+            env=environment,
             check=False,
         )
         self.assertEqual(audit.returncode, 2)
-        self.assertIn("rollout-restart-evidence-invalid", audit.stdout)
+        self.assertIn("integration-receipt-fields-invalid", audit.stdout)
+
+    def test_trae_install_preserves_existing_workspace_files_and_merges_hooks(
+        self,
+    ) -> None:
+        trae = self.root / ".trae"
+        trae.mkdir()
+        existing_hook = {
+            "matcher": "Read",
+            "hooks": [{"type": "command", "command": "echo existing"}],
+        }
+        (trae / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "custom": {"preserved": True},
+                    "hooks": {
+                        "SessionStart": [existing_hook],
+                        "PostToolUse": [existing_hook],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (trae / "custom.json").write_text('{"preserved":true}\n', encoding="utf-8")
+
+        installed = subprocess.run(
+            ["make", "skills", "IDE=trae"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("installing-session"),
+            check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        hooks = json.loads((trae / "hooks.json").read_text(encoding="utf-8"))
+        self.assertEqual(hooks["custom"], {"preserved": True})
+        self.assertEqual(hooks["hooks"]["PostToolUse"][0], existing_hook)
+        self.assertEqual(hooks["hooks"]["SessionStart"][0], existing_hook)
+        for event in (
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "Stop",
+        ):
+            managed = [
+                hook
+                for entry in hooks["hooks"][event]
+                for hook in entry.get("hooks", [])
+                if "pt-ew-plugin" in hook.get("command", "")
+            ]
+            self.assertEqual(len(managed), 1)
+        self.assertEqual(
+            (trae / "custom.json").read_text(encoding="utf-8"),
+            '{"preserved":true}\n',
+        )
+
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "trae",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("restarted-session"),
+            check=False,
+        )
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+
+        receipt = next(
+            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        )
+        self.assertEqual(
+            json.loads(receipt.read_text(encoding="utf-8"))["callbackProof"],
+            {
+                "status": "PASS",
+                "hostEvent": "PreToolUse",
+                "permissionDecision": "deny",
+                "code": "TOOL_INTENT_UNSUPPORTED",
+            },
+        )
+
+    def test_trae_audit_rejects_missing_pre_tool_use_matcher(self) -> None:
+        installed = self.install_trae_fixture()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        hooks_path = self.root / ".trae/hooks.json"
+        hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
+        del hooks["hooks"]["PreToolUse"][-1]["matcher"]
+        hooks_path.write_text(json.dumps(hooks), encoding="utf-8")
+
+        audit = self.audit_trae_fixture()
+
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        payload = json.loads(audit.stdout)
+        self.assertIn(
+            {
+                "path": ".trae/hooks.json",
+                "issue": "managed-hook-invalid:PreToolUse",
+            },
+            payload["hostProjectionFindings"],
+        )
+        self.assertEqual(payload["installedCallbackProbe"]["status"], "BLOCKED")
+
+    def test_trae_audit_rejects_modified_pre_tool_use_entry_shape(self) -> None:
+        installed = self.install_trae_fixture()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        hooks_path = self.root / ".trae/hooks.json"
+        original = json.loads(hooks_path.read_text(encoding="utf-8"))
+        mutations = (
+            ("timeout", "timeout", 6),
+            ("type", "type", "shell"),
+            ("command", "command", "node invalid"),
+        )
+
+        for name, field, value in mutations:
+            with self.subTest(field=name):
+                hooks = json.loads(json.dumps(original))
+                hooks["hooks"]["PreToolUse"][-1]["hooks"][0][field] = value
+                hooks_path.write_text(json.dumps(hooks), encoding="utf-8")
+
+                audit = self.audit_trae_fixture()
+
+                self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+                payload = json.loads(audit.stdout)
+                self.assertIn(
+                    {
+                        "path": ".trae/hooks.json",
+                        "issue": "managed-hook-invalid:PreToolUse",
+                    },
+                    payload["hostProjectionFindings"],
+                )
+                self.assertEqual(
+                    payload["installedCallbackProbe"]["status"],
+                    "BLOCKED",
+                )
+
+        hooks = json.loads(json.dumps(original))
+        hooks["hooks"]["PreToolUse"][-1]["unexpected"] = True
+        hooks_path.write_text(json.dumps(hooks), encoding="utf-8")
+        audit = self.audit_trae_fixture()
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        self.assertIn(
+            {
+                "path": ".trae/hooks.json",
+                "issue": "managed-hook-invalid:PreToolUse",
+            },
+            json.loads(audit.stdout)["hostProjectionFindings"],
+        )
+
+    def test_trae_audit_reexecutes_callback_and_binding_probe(self) -> None:
+        installed = self.install_trae_fixture()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        receipt = next(
+            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        )
+        receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
+        stale_proof = dict(receipt_value["callbackProof"])
+        hook_entry = (
+            self.root
+            / "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        hook_entry.write_text(
+            "#!/usr/bin/env node\n"
+            "process.stdout.write(JSON.stringify({hookSpecificOutput:{"
+            "hookEventName:'PreToolUse',permissionDecision:'deny',"
+            "permissionDecisionReason:'TOOL_INTENT_UNSUPPORTED: stale'"
+            "}})+'\\n');\n",
+            encoding="utf-8",
+        )
+        catalog = load_integration_audit().canonical_integration_catalog(self.root)
+        self.assertEqual(catalog["status"], "PASS")
+        for field in (
+            "integrationDigest",
+            "integrationEntryCount",
+            "integrationGitState",
+            "integrationStatusDigest",
+        ):
+            receipt_value[field] = catalog[field]
+        receipt.write_text(json.dumps(receipt_value), encoding="utf-8")
+
+        audit = self.audit_trae_fixture()
+
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        payload = json.loads(audit.stdout)
+        self.assertEqual(payload["hostProjectionFindings"], [])
+        self.assertEqual(payload["canonicalIntegrationCatalog"]["status"], "PASS")
+        self.assertEqual(
+            payload["integrationReceipt"]["receipt"]["callbackProof"],
+            stale_proof,
+        )
+        self.assertEqual(
+            payload["installedCallbackProbe"],
+            {
+                "status": "BLOCKED",
+                "code": "TRAE_HOOK_PROBE_BINDING_INVALID",
+            },
+        )
+
+    def test_trae_install_does_not_leave_false_installed_receipt(
+        self,
+    ) -> None:
+        environment = self.environment("installing-session")
+        initial = subprocess.run(
+            ["make", "skills", "IDE=trae"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(initial.returncode, 0, initial.stdout + initial.stderr)
+        receipt = next(
+            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        )
+        self.assertEqual(
+            json.loads(receipt.read_text(encoding="utf-8"))["state"],
+            "INSTALLED",
+        )
+
+        hook_entry = (
+            self.root
+            / "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        hook_entry.write_text(
+            "#!/usr/bin/env node\nprocess.stdout.write('\\n{}\\n');\n",
+            encoding="utf-8",
+        )
+        failed = subprocess.run(
+            ["make", "skills", "IDE=trae"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(failed.returncode, 2, failed.stdout + failed.stderr)
+        self.assertIn("TRAE_HOOK_PROBE_RESPONSE_UNSUPPORTED", failed.stdout)
+        blocked = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(blocked["state"], "BLOCKED")
+        self.assertNotEqual(blocked["state"], "INSTALLED")
+        self.assertEqual(blocked["installedAt"], None)
+
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "trae",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        self.assertIn("integration-state-mismatch", audit.stdout)
+
+    def test_cursor_install_merges_native_fail_closed_hooks(self) -> None:
+        cursor = self.root / ".cursor"
+        cursor.mkdir()
+        existing_hook = {
+            "command": ".cursor/hooks/existing.sh",
+            "timeout": 10,
+        }
+        (cursor / "hooks.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "custom": {"preserved": True},
+                    "hooks": {
+                        "sessionStart": [existing_hook],
+                        "afterFileEdit": [existing_hook],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        installed = subprocess.run(
+            ["make", "skills", "IDE=cursor"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("installing-session"),
+            check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        hooks = json.loads((cursor / "hooks.json").read_text(encoding="utf-8"))
+        self.assertEqual(hooks["version"], 1)
+        self.assertEqual(hooks["custom"], {"preserved": True})
+        self.assertEqual(hooks["hooks"]["afterFileEdit"], [existing_hook])
+        self.assertEqual(hooks["hooks"]["sessionStart"][0], existing_hook)
+        for event in (
+            "sessionStart",
+            "beforeSubmitPrompt",
+            "preToolUse",
+            "stop",
+        ):
+            managed = [
+                item
+                for item in hooks["hooks"][event]
+                if "pt-ew-plugin" in item.get("command", "")
+            ]
+            self.assertEqual(len(managed), 1)
+            self.assertIs(managed[0]["failClosed"], True)
+        self.assertEqual(hooks["hooks"]["preToolUse"][-1]["matcher"], "*")
+
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "cursor",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("restarted-session"),
+            check=False,
+        )
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+        hooks["hooks"]["preToolUse"][-1]["failClosed"] = False
+        (cursor / "hooks.json").write_text(
+            json.dumps(hooks),
+            encoding="utf-8",
+        )
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "cursor",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("restarted-session"),
+            check=False,
+        )
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        self.assertIn("managed-hook-invalid:preToolUse", audit.stdout)
 
     def test_install_rejects_every_live_worktree_declaration(self) -> None:
         machine = self.root / "machine"
@@ -435,7 +822,7 @@ export function readLedger(file) {
                     (self.root / ".agents/skills/pt-goal-orchestrator").exists()
                 )
 
-    def test_ack_rejects_a_versioned_rollout_receipt(self) -> None:
+    def test_audit_rejects_a_versioned_integration_receipt(self) -> None:
         installed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -448,23 +835,30 @@ export function readLedger(file) {
         self.assertEqual(installed.returncode, 0, installed.stderr)
         receipt = next(
             (self.root / "machine/workspaces").glob(
-                "*/workflow/skill-rollout.json"
+                "*/workflow/agent-integration.json"
             )
         )
         value = json.loads(receipt.read_text(encoding="utf-8"))
         value["schemaVersion"] = 3
         receipt.write_text(json.dumps(value), encoding="utf-8")
 
-        acknowledged = subprocess.run(
-            ["make", "skill-rollout-ack", "IDE=codex"],
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "codex",
+            ],
             cwd=self.root,
             capture_output=True,
             text=True,
-            env=self.environment("restarted-session"),
+            env=self.environment(),
             check=False,
         )
-        self.assertEqual(acknowledged.returncode, 2)
-        self.assertIn("ROLLOUT_ACK_MISMATCH", acknowledged.stdout)
+        self.assertEqual(audit.returncode, 2)
+        self.assertIn("integration-receipt-fields-invalid", audit.stdout)
 
     def test_install_rejects_a_schema_invalid_work_ledger(self) -> None:
         machine = self.root / "machine"
@@ -543,7 +937,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -579,7 +973,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -607,7 +1001,7 @@ export function readLedger(file) {
             encoding="utf-8",
         )
         environment = self.environment("installing-session")
-        environment["PT_SKILL_ROLLOUT_LOCK_TIMEOUT_SECONDS"] = "0.05"
+        environment["PT_AGENT_INTEGRATION_LOCK_TIMEOUT_SECONDS"] = "0.05"
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -655,7 +1049,7 @@ export function readLedger(file) {
             encoding="utf-8",
         )
         environment = self.environment("installing-session")
-        environment["PT_SKILL_ROLLOUT_LOCK_TIMEOUT_SECONDS"] = "0.05"
+        environment["PT_AGENT_INTEGRATION_LOCK_TIMEOUT_SECONDS"] = "0.05"
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -697,7 +1091,7 @@ export function readLedger(file) {
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertFalse(recovery.exists())
 
-    def test_audit_binds_recursive_dirty_skill_catalog(self) -> None:
+    def test_audit_binds_recursive_dirty_integration_catalog(self) -> None:
         nested = self.root / "tooling/skills/pt-goal-orchestrator/references"
         nested.mkdir()
         content = nested / "contract.md"
@@ -717,7 +1111,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
                 "--host",
@@ -730,9 +1124,9 @@ export function readLedger(file) {
             check=False,
         )
         self.assertEqual(audit.returncode, 2)
-        findings = json.loads(audit.stdout)["rolloutReceipt"]["findings"]
-        self.assertIn("rollout-catalogDigest-mismatch", findings)
-        self.assertNotIn("rollout-catalogStatusDigest-mismatch", findings)
+        findings = json.loads(audit.stdout)["integrationReceipt"]["findings"]
+        self.assertIn("integrationDigest-mismatch", findings)
+        self.assertNotIn("integrationStatusDigest-mismatch", findings)
 
     def test_audit_propagates_registry_parse_failure(self) -> None:
         registry = self.root / "tooling/acceptance/registry.yaml"
@@ -740,7 +1134,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -764,7 +1158,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -784,7 +1178,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -804,6 +1198,8 @@ export function readLedger(file) {
                 "pt-trae-host-adapter",
                 "pt-cursor-host-adapter",
                 "pt-codex-host-adapter",
+                "pt-ew-plugin",
+                "workflow-kernel",
             ],
         )
 
@@ -834,7 +1230,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -851,7 +1247,7 @@ export function readLedger(file) {
                     "missingCanonicalMatchers"
                 ]
             ),
-            4,
+            6,
         )
 
     def test_audit_rejects_spoofed_registry_schema_and_matchers(self) -> None:
@@ -885,7 +1281,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -909,7 +1305,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -948,7 +1344,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -962,7 +1358,7 @@ export function readLedger(file) {
         self.assertIn("binding-canonical-invalid", audit.stdout)
 
     def test_legacy_scan_ignores_foreign_plans_but_checks_bound_plan(self) -> None:
-        module = load_rollout_audit()
+        module = load_integration_audit()
         foreign = (
             self.root
             / "docs/architecture/mobile/execution-plans/foreign-plan.md"
@@ -1006,14 +1402,16 @@ export function readLedger(file) {
             text=True,
         ).stdout.strip()
         binding = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "kind": "peers-touch-workspace-plan-binding",
             "workspaceId": workspace_id,
             "canonicalRoot": str(self.root.resolve()),
             "planId": "PLAN-01",
             "planPath": "plan.md",
+            "generation": 2,
             "boundAt": "2026-09-19T00:00:00.000Z",
             "boundBy": "test",
+            "recordDigest": "a" * 64,
         }
         binding_path = (
             machine
@@ -1048,7 +1446,7 @@ export function readLedger(file) {
             encoding="utf-8",
         )
         plan_scripts = self.root / "tooling/scripts/plan"
-        plan_scripts.mkdir()
+        plan_scripts.mkdir(exist_ok=True)
         (plan_scripts / "workspace-plan-binding.mjs").write_text(
             f"console.log({json.dumps(json.dumps({'ok': True, 'binding': binding}))});\n",
             encoding="utf-8",
@@ -1113,7 +1511,7 @@ export function readLedger(file) {
         audit = subprocess.run(
             [
                 "python3",
-                "tooling/scripts/skill-rollout-audit.py",
+                "tooling/scripts/agent-integration-audit.py",
                 "--root",
                 str(self.root),
             ],
@@ -1129,99 +1527,13 @@ export function readLedger(file) {
         ]
         self.assertIn("declaration-plan-locator-missing", findings)
         self.assertIn("declaration-current-task-mismatch", findings)
+        self.assertNotIn("binding-canonical-mismatch", findings)
         self.assertEqual(
             json.loads(audit.stdout)["workflowIdentity"][
                 "activeDeclaration"
             ]["workItemId"],
             "WORK-02",
         )
-
-    def test_blocked_plan_accepts_its_blocked_task_locator(self) -> None:
-        module = load_rollout_audit()
-        machine = self.root / "machine"
-        workspace_id = hashlib.sha256(
-            str(self.root.resolve()).encode()
-        ).hexdigest()[:16]
-        branch = "main"
-        head = "a" * 40
-        binding = {
-            "schemaVersion": 1,
-            "kind": "peers-touch-workspace-plan-binding",
-            "workspaceId": workspace_id,
-            "canonicalRoot": str(self.root.resolve()),
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "boundAt": "2026-09-19T00:00:00.000Z",
-            "boundBy": "test",
-        }
-        binding_path = (
-            machine
-            / "workspaces"
-            / workspace_id
-            / "workflow"
-            / "plan-binding.json"
-        )
-        binding_path.parent.mkdir(parents=True)
-        binding_path.write_text(json.dumps(binding), encoding="utf-8")
-        (machine / "work.json").write_text(
-            json.dumps({"declarations": {}}),
-            encoding="utf-8",
-        )
-        declaration = {
-            "workspaceId": workspace_id,
-            "branch": branch,
-            "sourceHead": head,
-            "sourceClaims": [
-                {
-                    "mode": "exclusive-write",
-                    "pathPrefix": "tooling/skills",
-                }
-            ],
-            "state": "ACTIVE",
-            "workItemId": "WORK-01",
-            "heartbeatAt": "2026-09-19T00:00:00.000Z",
-            "planId": "PLAN-01",
-            "planPath": "plan.md",
-            "taskId": "TASK-01",
-        }
-        status = {
-            "status": "blocked",
-            "currentTaskId": None,
-            "taskStatuses": {"TASK-01": "blocked"},
-        }
-        manifest = {
-            "status": "blocked",
-            "planId": "PLAN-01",
-            "binding": {
-                "workspaceId": workspace_id,
-                "branch": branch,
-            },
-            "scope": {
-                "sourceClaims": [
-                    {
-                        "mode": "exclusive-write",
-                        "pathPrefix": "tooling/skills",
-                    }
-                ]
-            },
-        }
-
-        def git_value(_root: Path, *args: str) -> str:
-            return branch if args == ("branch", "--show-current") else head
-
-        with mock.patch.object(module, "machine_dev_root", return_value=machine), \
-            mock.patch.object(module, "git_value", side_effect=git_value), \
-            mock.patch.object(module, "resolved_plan_binding", return_value=binding), \
-            mock.patch.object(module, "validated_plan_status", return_value=status), \
-            mock.patch.object(module, "structured_plan", return_value=manifest), \
-            mock.patch.object(module, "validated_work_ledger", return_value=[declaration]):
-            identity = module.workflow_identity(self.root)
-
-        self.assertNotIn(
-            "declaration-current-task-mismatch",
-            identity["identityFindings"],
-        )
-        self.assertEqual(identity["activeDeclaration"]["taskId"], "TASK-01")
 
 
 if __name__ == "__main__":

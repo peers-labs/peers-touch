@@ -12,10 +12,13 @@
           "tooling/skills/pt-trae-host-adapter/**",
           "tooling/skills/pt-cursor-host-adapter/**",
           "tooling/skills/pt-codex-host-adapter/**",
-          "tooling/scripts/skill-rollout-control.py",
-          "tooling/scripts/skill-rollout-audit.py",
-          "tooling/scripts/skill-rollout-audit-test.py",
-          "tooling/scripts/install-project-skills.sh"
+          "tooling/plugins/pt-ew-plugin/**",
+          "tooling/scripts/local-dev/workflow-*.mjs",
+          "tooling/scripts/agent-integration-control.py",
+          "tooling/scripts/agent-integration-audit.py",
+          "tooling/scripts/agent-integration-audit-test.py",
+          "tooling/scripts/install-agent-integration.sh",
+          "tooling/make/setup.mk"
         ]
       },
       "require": [
@@ -161,6 +164,62 @@
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",
         "station-access-domain-validation"
+      ]
+    },
+    {
+      "id": "dev-ui-worktree-observability",
+      "features": [
+        "development-workflow-control-plane"
+      ],
+      "when": {
+        "paths": [
+          "apps/dev/**",
+          "docs/architecture/local-dev-control-plane/**",
+          "tooling/scripts/local-dev/worktree-observation-store.mjs",
+          "tooling/scripts/local-dev/worktree-observation-store.test.mjs",
+          "tooling/scripts/local-dev/worktree-observe.mjs",
+          "tooling/scripts/lib/machine-dev-paths.mjs",
+          "tooling/make/local-dev.mk"
+        ]
+      },
+      "require": [
+        "dev-ui-browser-e2e",
+        "acceptance-workflow-contract",
+        "acceptance-runtime-provisioning-self"
+      ]
+    },
+    {
+      "id": "machine-dev-control-plane",
+      "features": [
+        "development-workflow-control-plane"
+      ],
+      "when": {
+        "paths": [
+          "tooling/scripts/local-dev/machine-dev*",
+          "tooling/make/local-dev.mk",
+          "Makefile"
+        ]
+      },
+      "require": [
+        "machine-dev-registry-self",
+        "acceptance-workflow-contract"
+      ]
+    },
+    {
+      "id": "workspace-plan-generation",
+      "features": [
+        "development-workflow-control-plane"
+      ],
+      "when": {
+        "paths": [
+          "tooling/scripts/plan/workspace-plan-binding*.mjs",
+          "docs/knowledge/invariants/workspace-plan-binding-is-generation-bound.md",
+          "tooling/skills/pt-plan-and-document/**"
+        ]
+      },
+      "require": [
+        "workspace-plan-generation-self",
+        "acceptance-workflow-contract"
       ]
     },
     {
@@ -2003,6 +2062,49 @@
         "station-agent-unit",
         "desktop-check",
         "agent-topic-comments-e2e"
+      ]
+    },
+    {
+      "id": "peers-dev-observability",
+      "features": [
+        "peers-dev-observability"
+      ],
+      "when": {
+        "paths": [
+          "apps/dev/**",
+          "tooling/scripts/local-dev/workflow-action-store*.mjs",
+          "tooling/scripts/local-dev/workflow-snapshot*.mjs",
+          "tooling/acceptance/gates/dev/**"
+        ]
+      },
+      "require": [
+        "acceptance-workflow-contract",
+        "peers-dev-ui-browser-e2e"
+      ]
+    },
+    {
+      "id": "peers-dev-product-truth",
+      "features": [
+        "development-workflow-control-plane",
+        "peers-dev-observability"
+      ],
+      "when": {
+        "paths": [
+          "apps/dev/**",
+          "docs/global/workflow.md",
+          "docs/architecture/development-workflow/**",
+          "tooling/scripts/local-dev/workflow-*.mjs",
+          "tooling/plugins/pt-ew-plugin/**",
+          "tooling/scripts/agent-integration-*.py",
+          "tooling/scripts/install-agent-integration.sh",
+          "tooling/make/local-dev.mk",
+          "tooling/make/setup.mk",
+          "tooling/acceptance/gates/dev/**",
+          "Makefile"
+        ]
+      },
+      "require": [
+        "peers-dev-product"
       ]
     }
   ]

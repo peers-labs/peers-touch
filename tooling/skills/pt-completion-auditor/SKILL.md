@@ -187,7 +187,7 @@ Check:
 - Old docs do not contradict new architecture.
 - The workspace active-work record matches the actual worktree and branch, and agrees with
   the plan status table, tracking source, evidence, blockers, and next action.
-- The immutable workspace binding resolves exactly one formal Plan, every closure is
+- The current workspace generation resolves exactly one formal Plan, every closure is
   complete before merge, and the plan's Acceptance Execution contract matches
   the actual diff impact.
 - workspace active-work, dashboards, and chat projections do not claim progress

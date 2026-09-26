@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -11,7 +12,12 @@ import {
 } from '../lib/machine-dev-paths.mjs';
 import { canonicalize } from '../local-dev/dev-work-schema.mjs';
 import {
+  WorkspaceLifecycleLockError,
+  withWorkspaceLifecycleLock,
+} from '../local-dev/workspace-lifecycle-lock.mjs';
+import {
   PlanPackageError,
+  atomicMoveFileNoReplace,
   atomicReplaceFile,
   isDirectInvocation,
   loadPlanPackage,
@@ -23,16 +29,28 @@ import {
   commitPlanMigration,
   getPlanMigrationPaths,
   preparePlanMigration,
+  processIdentityForPid,
   recoverPlanMigration,
   sha256,
 } from './plan-migration.mjs';
-import { loadSessionStoreFromPath } from '../local-dev/dev-session-store.mjs';
+import {
+  loadSessionStoreFromPath,
+  sessionStorePaths,
+} from '../local-dev/dev-session-store.mjs';
+import {
+  CompletionReviewError,
+  digestCompletionCandidate,
+  findEarliestInvalidCompletionReview,
+  requireCurrentCompletionReview,
+} from '../local-dev/completion-review.mjs';
+import { resolveWorkspacePlanBinding } from './workspace-plan-binding.mjs';
 
-const TERMINAL_SESSION_STATES = new Set([
+const SUCCESSFUL_SESSION_STATES = new Set([
   'SOURCE_READY',
   'DELIVERY_READY',
-  'CANCELLED',
 ]);
+const PLAN_LOCK_KIND = 'peers-touch-plan-lock';
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REPEATABLE_OPTIONS = new Set([
   'exhaustion-decision-ref',
   'exhaustion-evidence-ref',
@@ -118,20 +136,35 @@ function taskProjection(planPackage, task) {
 
 async function validateSessionHandoff(sessionPath, planPackage, options) {
   const transition = options.to;
+  if (transition === 'reactivate') return null;
   if (typeof sessionPath !== 'string' || sessionPath.length === 0) {
     fail(
       'PLAN_ADVANCE_INVALID',
-      'Task handoff requires explicit --session <path|NONE>',
+      'Task handoff requires an explicit journal-backed --session path',
     );
   }
   if (sessionPath.toUpperCase() === 'NONE') {
-    if (transition === 'blocked') {
-      fail(
-        'PLAN_ADVANCE_INVALID',
-        'Blocked Task handoff requires a journal-backed Session',
-      );
-    }
-    return;
+    fail(
+      'PLAN_ADVANCE_INVALID',
+      'Task handoff requires an existing journal-backed Session',
+    );
+  }
+  const workItemId = requireOption(options, 'work-item');
+  const canonicalSessionPath = sessionStorePaths({
+    home: options.sessionHome,
+    workspaceRoot: planPackage.repoRoot,
+    workspaceId: planPackage.manifest.binding.workspaceId,
+    workItemId,
+  }).session;
+  if (path.resolve(sessionPath) !== canonicalSessionPath) {
+    fail(
+      'PLAN_ADVANCE_INVALID',
+      'Task handoff Session must use the canonical workspace/work-item path',
+      {
+        requested: path.resolve(sessionPath),
+        expected: canonicalSessionPath,
+      },
+    );
   }
   let session;
   try {
@@ -141,16 +174,10 @@ async function validateSessionHandoff(sessionPath, planPackage, options) {
         taskId: planPackage.currentTask?.taskId,
         workspaceId: planPackage.manifest.binding.workspaceId,
         branch: planPackage.manifest.binding.branch,
+        workItemId,
       },
     });
   } catch (error) {
-    if (
-      transition !== 'blocked' &&
-      error.code === 'SESSION_UNAVAILABLE' &&
-      !fs.existsSync(path.resolve(sessionPath))
-    ) {
-      return;
-    }
     fail(
       'PLAN_ADVANCE_INVALID',
       'Task handoff Session is unavailable or invalid',
@@ -214,16 +241,15 @@ async function validateSessionHandoff(sessionPath, planPackage, options) {
         },
       );
     }
-    return;
+    return session;
   }
-  if (!TERMINAL_SESSION_STATES.has(state)) {
-    fail('PLAN_ADVANCE_INVALID', 'Current Development Session is not terminal', {
+  if (!SUCCESSFUL_SESSION_STATES.has(state)) {
+    fail('PLAN_ADVANCE_INVALID', 'Current Development Session is not successful', {
       sessionPath,
       state,
-      terminalStates: [...TERMINAL_SESSION_STATES],
+      successfulStates: [...SUCCESSFUL_SESSION_STATES],
     });
   }
-  if (state === 'CANCELLED') return;
   const expectedState =
     planPackage.currentTask.completionClass === 'source'
       ? 'SOURCE_READY'
@@ -239,36 +265,383 @@ async function validateSessionHandoff(sessionPath, planPackage, options) {
       },
     );
   }
+  return session;
 }
 
-async function acquirePlanLock(lockPath) {
-  let handle;
+function isPlainObject(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+async function syncDirectory(directory) {
   try {
-    handle = await fsp.open(lockPath, 'wx', 0o600);
-    await handle.writeFile(
-      `${JSON.stringify({
-        pid: process.pid,
-        createdAt: new Date().toISOString(),
-      })}\n`,
-    );
+    const handle = await fsp.open(directory, fs.constants.O_RDONLY);
     await handle.sync();
     await handle.close();
   } catch (error) {
-    if (handle) await handle.close();
-    if (error.code === 'EEXIST') {
-      fail('PLAN_ADVANCE_LOCKED', 'Plan manifest is already being advanced', { lockPath });
+    if (!['EINVAL', 'ENOTSUP', 'EISDIR'].includes(error.code)) throw error;
+  }
+}
+
+function planLockMetadata(planPath, ownerToken) {
+  const processIdentity = processIdentityForPid(process.pid);
+  if (processIdentity === null) {
+    fail(
+      'PLAN_LOCK_INVALID',
+      'Current process identity cannot be established',
+      { pid: process.pid },
+    );
+  }
+  return {
+    kind: PLAN_LOCK_KIND,
+    planPath,
+    ownerToken,
+    pid: process.pid,
+    processIdentity,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function validatePlanLockMetadata(metadata, planPath, context = 'Plan lock') {
+  const expectedKeys = [
+    'createdAt',
+    'kind',
+    'ownerToken',
+    'pid',
+    'planPath',
+    'processIdentity',
+  ];
+  if (
+    !isPlainObject(metadata) ||
+    Object.keys(metadata).sort().join(',') !== expectedKeys.join(',') ||
+    metadata.kind !== PLAN_LOCK_KIND ||
+    metadata.planPath !== planPath ||
+    !SHA256_PATTERN.test(metadata.ownerToken ?? '') ||
+    !Number.isInteger(metadata.pid) ||
+    metadata.pid < 1 ||
+    !SHA256_PATTERN.test(metadata.processIdentity ?? '') ||
+    typeof metadata.createdAt !== 'string' ||
+    Number.isNaN(Date.parse(metadata.createdAt))
+  ) {
+    fail('PLAN_LOCK_INVALID', `${context} metadata is invalid`, { planPath });
+  }
+  return metadata;
+}
+
+async function readPlanLock(lockPath, planPath, context = 'Plan lock') {
+  let raw;
+  let metadata;
+  try {
+    raw = await fsp.readFile(lockPath);
+    metadata = JSON.parse(raw.toString('utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    if (error instanceof SyntaxError) {
+      fail('PLAN_LOCK_INVALID', `${context} metadata is not valid JSON`, {
+        lockPath,
+      });
     }
+    throw error;
+  }
+  return {
+    raw,
+    metadata: validatePlanLockMetadata(metadata, planPath, context),
+  };
+}
+
+function planLockOwnerIsLive(metadata) {
+  try {
+    process.kill(metadata.pid, 0);
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+  }
+  const currentIdentity = processIdentityForPid(metadata.pid);
+  return (
+    currentIdentity === null ||
+    currentIdentity === metadata.processIdentity
+  );
+}
+
+async function invokePlanFailpoint(options, name) {
+  if (typeof options.failpoint === 'function') {
+    await options.failpoint(name);
+  }
+}
+
+async function createOwnedPlanFile(lockPath, planPath) {
+  await fsp.mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+  const ownerToken = randomBytes(32).toString('hex');
+  let handle;
+  let created = false;
+  try {
+    handle = await fsp.open(lockPath, 'wx', 0o600);
+    created = true;
+    await handle.writeFile(`${JSON.stringify(planLockMetadata(planPath, ownerToken))}\n`);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await syncDirectory(path.dirname(lockPath));
+    return { lockPath, ownerToken, planPath };
+  } catch (error) {
+    if (handle) await handle.close();
+    if (created) await fsp.rm(lockPath, { force: true });
     throw error;
   }
 }
 
-async function withPlanLock(planPath, callback) {
-  const lockPath = `${planPath}.lock`;
-  await acquirePlanLock(lockPath);
+async function restoreCapturedPlanFile(capturedPath, destinationPath, message) {
   try {
+    await atomicMoveFileNoReplace(capturedPath, destinationPath);
+  } catch (error) {
+    fail('PLAN_ADVANCE_LOCKED', message, {
+      lockPath: destinationPath,
+      capturedPath,
+      cause: error.code ?? error.message,
+    });
+  }
+}
+
+async function acquirePlanRecoveryClaim(lockPath, planPath, options) {
+  const claimPath = `${lockPath}.recovery`;
+  const ownerToken = randomBytes(32).toString('hex');
+  const candidatePath = `${claimPath}.${ownerToken}`;
+  await fsp.writeFile(
+    candidatePath,
+    `${JSON.stringify(planLockMetadata(planPath, ownerToken))}\n`,
+    { flag: 'wx', mode: 0o600 },
+  );
+  try {
+    while (true) {
+      try {
+        await fsp.link(candidatePath, claimPath);
+        await syncDirectory(path.dirname(claimPath));
+        return { lockPath: claimPath, ownerToken, planPath, candidatePath };
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+      }
+      const current = await readPlanLock(
+        claimPath,
+        planPath,
+        'Plan lock recovery claim',
+      );
+      if (current && planLockOwnerIsLive(current.metadata)) {
+        fail('PLAN_ADVANCE_LOCKED', 'Plan lock recovery is already active', {
+          lockPath: claimPath,
+          pid: current.metadata.pid,
+        });
+      }
+      await invokePlanFailpoint(options, 'after-stale-plan-recovery-claim-observed');
+      const stalePath = `${claimPath}.stale.${ownerToken}`;
+      try {
+        await atomicMoveFileNoReplace(claimPath, stalePath);
+      } catch (error) {
+        if (error.code === 'PLAN_CONCURRENT_MODIFICATION') continue;
+        throw error;
+      }
+      const captured = await readPlanLock(
+        stalePath,
+        planPath,
+        'Captured Plan lock recovery claim',
+      );
+      if (
+        !captured ||
+        !current ||
+        !captured.raw.equals(current.raw) ||
+        planLockOwnerIsLive(captured.metadata)
+      ) {
+        await restoreCapturedPlanFile(
+          stalePath,
+          claimPath,
+          'A competing Plan lock recovery claim changed during stale takeover',
+        );
+        continue;
+      }
+      await fsp.unlink(stalePath);
+      await syncDirectory(path.dirname(stalePath));
+    }
+  } catch (error) {
+    await fsp.rm(candidatePath, { force: true });
+    throw error;
+  }
+}
+
+async function releaseOwnedPlanFile(lease) {
+  const releasePath = `${lease.lockPath}.release.${lease.ownerToken}`;
+  try {
+    await atomicMoveFileNoReplace(lease.lockPath, releasePath);
+  } catch (error) {
+    fail(
+      'PLAN_LOCK_OWNERSHIP_MISMATCH',
+      'Owned Plan lock is unavailable during release',
+      {
+        lockPath: lease.lockPath,
+        expectedOwnerToken: lease.ownerToken,
+        cause: error.code ?? error.message,
+      },
+    );
+  }
+  const captured = await readPlanLock(
+    releasePath,
+    lease.planPath,
+    'Captured Plan lock release',
+  );
+  if (!captured || captured.metadata.ownerToken !== lease.ownerToken) {
+    await restoreCapturedPlanFile(
+      releasePath,
+      lease.lockPath,
+      'Plan lock changed during owned release',
+    );
+    fail(
+      'PLAN_LOCK_OWNERSHIP_MISMATCH',
+      'Plan lock is not owned by this operation',
+      {
+        lockPath: lease.lockPath,
+        expectedOwnerToken: lease.ownerToken,
+        actualOwnerToken: captured?.metadata.ownerToken ?? null,
+      },
+    );
+  }
+  await fsp.unlink(releasePath);
+  if (lease.candidatePath) {
+    await fsp.rm(lease.candidatePath, { force: true });
+  }
+  await syncDirectory(path.dirname(lease.lockPath));
+}
+
+async function acquirePlanLock(planPath, options) {
+  const lockPath = `${planPath}.lock`;
+  const recoveryClaim = await acquirePlanRecoveryClaim(lockPath, planPath, options);
+  try {
+    const current = await readPlanLock(lockPath, planPath);
+    if (current && planLockOwnerIsLive(current.metadata)) {
+      fail('PLAN_ADVANCE_LOCKED', 'Plan manifest is already being changed', {
+        lockPath,
+        pid: current.metadata.pid,
+      });
+    }
+    if (current) {
+      await invokePlanFailpoint(options, 'after-stale-plan-lock-observed');
+      const stalePath = `${lockPath}.stale.${recoveryClaim.ownerToken}`;
+      await atomicMoveFileNoReplace(lockPath, stalePath);
+      const captured = await readPlanLock(
+        stalePath,
+        planPath,
+        'Captured stale Plan lock',
+      );
+      if (
+        !captured ||
+        !captured.raw.equals(current.raw) ||
+        planLockOwnerIsLive(captured.metadata)
+      ) {
+        await restoreCapturedPlanFile(
+          stalePath,
+          lockPath,
+          'A competing Plan lock changed during stale takeover',
+        );
+        fail(
+          captured && planLockOwnerIsLive(captured.metadata)
+            ? 'PLAN_ADVANCE_LOCKED'
+            : 'PLAN_LOCK_OWNERSHIP_MISMATCH',
+          'Captured Plan lock is not the reviewed stale lock',
+          { lockPath },
+        );
+      }
+      await fsp.unlink(stalePath);
+      await syncDirectory(path.dirname(stalePath));
+    }
+    const lease = await createOwnedPlanFile(lockPath, planPath);
+    lease.recoveryClaim = recoveryClaim;
+    return lease;
+  } catch (error) {
+    await releaseOwnedPlanFile(recoveryClaim);
+    throw error;
+  }
+}
+
+async function releasePlanLock(lease) {
+  try {
+    await releaseOwnedPlanFile(lease);
+  } finally {
+    await releaseOwnedPlanFile(lease.recoveryClaim);
+  }
+}
+
+async function withPlanLock(planPath, options, callback) {
+  const lease = await acquirePlanLock(planPath, options);
+  try {
+    await invokePlanFailpoint(options, 'after-plan-lock-acquired');
     return await callback();
   } finally {
-    await fsp.rm(lockPath, { force: true });
+    await releasePlanLock(lease);
+  }
+}
+
+async function assertCurrentPlanGeneration(planPackage, options) {
+  const resolveBinding =
+    options.workspaceBindingResolver ?? resolveWorkspacePlanBinding;
+  const binding = await resolveBinding({
+    home: options.home,
+    repoRoot: planPackage.repoRoot,
+  });
+  const planPath = path
+    .relative(planPackage.repoRoot, planPackage.path)
+    .split(path.sep)
+    .join('/');
+  const mismatches = {};
+  for (const [field, expected, actual] of [
+    ['planId', binding.planId, planPackage.manifest.planId],
+    ['planPath', binding.planPath, planPath],
+    [
+      'workspaceId',
+      binding.workspaceId,
+      planPackage.manifest.binding.workspaceId,
+    ],
+  ]) {
+    if (expected !== actual) mismatches[field] = { expected, actual };
+  }
+  if (Object.keys(mismatches).length > 0) {
+    fail(
+      'PLAN_TARGET_NOT_CURRENT',
+      'Plan mutation target is not the current workspace generation',
+      {
+        generation: binding.generation,
+        mismatches,
+      },
+    );
+  }
+  return binding;
+}
+
+async function withCurrentPlanMutation(planPath, options, callback) {
+  const initial = await loadPlanPackage(planPath, loadOptions(options));
+  try {
+    return await withWorkspaceLifecycleLock(
+      {
+        home: options.home,
+        workspaceRoot: initial.repoRoot,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      async (lifecycleLease) =>
+        withPlanLock(initial.path, options, async () => {
+          const current = await loadPlanPackage(
+            initial.path,
+            loadOptions(options),
+          );
+          return callback(current, lifecycleLease);
+        }),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
   }
 }
 
@@ -393,6 +766,93 @@ function applyAdvance(planPackage, options) {
   }
   manifest.status = 'blocked';
   manifest.exhaustion = exhaustionFromOptions(options, manifest);
+  return manifest;
+}
+
+function applyActivation(planPackage, options) {
+  if (planPackage.manifest.status !== 'prepared') {
+    fail('PLAN_ACTIVATE_INVALID', 'Only a prepared Plan Package may be activated', {
+      status: planPackage.manifest.status,
+    });
+  }
+  const taskId = requireOption(options, 'task');
+  const manifest = structuredClone(planPackage.manifest);
+  const tasksById = new Map(manifest.tasks.map((task) => [task.id, task]));
+  const task = tasksById.get(taskId);
+  if (
+    !task ||
+    task.status !== 'pending' ||
+    !dependenciesDone(task, tasksById)
+  ) {
+    fail('PLAN_ACTIVATE_INVALID', 'Activation Task is not dependency-ready', {
+      taskId,
+    });
+  }
+  manifest.status = 'active';
+  task.status = 'in_progress';
+  task.blocker = null;
+  manifest.exhaustion = null;
+  return manifest;
+}
+
+function transitiveDependents(manifest, taskId) {
+  const dependents = new Set();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const task of manifest.tasks) {
+      if (
+        !dependents.has(task.id) &&
+        task.dependsOn.some(
+          (dependency) =>
+            dependency === taskId || dependents.has(dependency),
+        )
+      ) {
+        dependents.add(task.id);
+        changed = true;
+      }
+    }
+  }
+  return dependents;
+}
+
+function applyReopen(planPackage, invalidTaskId) {
+  if (!new Set(['active', 'blocked', 'completed']).has(planPackage.manifest.status)) {
+    fail(
+      'PLAN_REOPEN_INVALID',
+      'Only an active, blocked, or completed Plan may be reopened',
+      { status: planPackage.manifest.status },
+    );
+  }
+  const manifest = structuredClone(planPackage.manifest);
+  const target = lifecycleTask({ manifest }, invalidTaskId);
+  if (!target || target.status !== 'done') {
+    fail('PLAN_REOPEN_INVALID', 'Reopen target must be a completed Task', {
+      taskId: invalidTaskId,
+      status: target?.status ?? null,
+    });
+  }
+  const dependents = transitiveDependents(manifest, invalidTaskId);
+  const current = manifest.tasks.find((task) => task.status === 'in_progress');
+  if (current && !dependents.has(current.id)) {
+    fail(
+      'PLAN_REOPEN_CONFLICT',
+      'An unrelated current Task must reach a lifecycle boundary before reopen',
+      {
+        currentTaskId: current.id,
+        invalidTaskId,
+      },
+    );
+  }
+  target.status = 'in_progress';
+  target.blocker = null;
+  for (const task of manifest.tasks) {
+    if (!dependents.has(task.id)) continue;
+    task.status = 'pending';
+    task.blocker = null;
+  }
+  manifest.status = 'active';
+  manifest.exhaustion = null;
   return manifest;
 }
 
@@ -644,14 +1104,37 @@ async function validateCandidateDocument(planPackage, candidateDocument, options
 }
 
 export async function advancePlan(planPath, options) {
-  const initial = await loadPlanPackage(planPath, loadOptions(options));
-  await validateSessionHandoff(options.session, initial, options);
-  return withPlanLock(initial.path, async () => {
-    const current = await loadPlanPackage(initial.path, loadOptions(options));
+  return withCurrentPlanMutation(planPath, options, async (current, lifecycleLease) => {
+    const session = await validateSessionHandoff(
+      options.session,
+      current,
+      options,
+    );
     const originalDocument = await fsp.readFile(current.path);
     const nextManifest = applyAdvance(current, options);
-    const candidateDocument = renderPlanDocument(originalDocument.toString('utf8'), nextManifest);
+    const candidateDocument = renderPlanDocument(
+      originalDocument.toString('utf8'),
+      nextManifest,
+    );
     await validateCandidateDocument(current, candidateDocument, options);
+    await assertCurrentPlanGeneration(current, {
+      ...options,
+      lifecycleLease,
+    });
+    if (options.to === 'done') {
+      const validateCompletion =
+        options.completionReviewValidator ?? requireCurrentCompletionReview;
+      await validateCompletion(
+        {
+          repoRoot: current.repoRoot,
+          planPackage: current,
+          session,
+          workItemId: session.state.workItemId,
+          candidatePlanDigest: digestCompletionCandidate(candidateDocument),
+        },
+        options.completionReviewDependencies,
+      );
+    }
     await atomicReplaceFile(current.path, candidateDocument, {
       expectedContent: originalDocument,
     });
@@ -659,10 +1142,65 @@ export async function advancePlan(planPath, options) {
   });
 }
 
+export async function activatePlan(planPath, options) {
+  return withCurrentPlanMutation(planPath, options, async (current, lifecycleLease) => {
+    const originalDocument = await fsp.readFile(current.path);
+    const nextManifest = applyActivation(current, options);
+    const candidateDocument = renderPlanDocument(
+      originalDocument.toString('utf8'),
+      nextManifest,
+    );
+    await validateCandidateDocument(current, candidateDocument, options);
+    await assertCurrentPlanGeneration(current, {
+      ...options,
+      lifecycleLease,
+    });
+    await atomicReplaceFile(current.path, candidateDocument, {
+      expectedContent: originalDocument,
+    });
+    return loadPlanPackage(current.path, loadOptions(options));
+  });
+}
+
+export async function reopenPlan(planPath, options) {
+  return withCurrentPlanMutation(planPath, options, async (current, lifecycleLease) => {
+    await assertCurrentPlanGeneration(current, {
+      ...options,
+      lifecycleLease,
+    });
+    const invalid = await findEarliestInvalidCompletionReview(
+      {
+        repoRoot: current.repoRoot,
+        planPackage: current,
+        workItemId: requireOption(options, 'work-item'),
+      },
+      options.completionReviewDependencies,
+    );
+    if (invalid === null) {
+      fail(
+        'PLAN_REOPEN_NOT_REQUIRED',
+        'No completed Task has a missing or stale Completion Review',
+      );
+    }
+    const originalDocument = await fsp.readFile(current.path);
+    const nextManifest = applyReopen(current, invalid.taskId);
+    const candidateDocument = renderPlanDocument(
+      originalDocument.toString('utf8'),
+      nextManifest,
+    );
+    await validateCandidateDocument(current, candidateDocument, options);
+    await atomicReplaceFile(current.path, candidateDocument, {
+      expectedContent: originalDocument,
+    });
+    return {
+      planPackage: await loadPlanPackage(current.path, loadOptions(options)),
+      invalid,
+    };
+  });
+}
+
 export async function invalidateSourcePlan(planPath, options) {
-  const initial = await loadPlanPackage(planPath, loadOptions(options));
-  return withPlanLock(initial.path, async () => {
-    const current = await loadPlanPackage(initial.path, loadOptions(options));
+  return withCurrentPlanMutation(planPath, options, async (current, lifecycleLease) => {
     const originalDocument = await fsp.readFile(current.path);
     const policy = parseSourceInvalidationPolicy(
       originalDocument.toString('utf8'),
@@ -673,6 +1211,10 @@ export async function invalidateSourcePlan(planPath, options) {
       invalidation.manifest,
     );
     await validateCandidateDocument(current, candidateDocument, options);
+    await assertCurrentPlanGeneration(current, {
+      ...options,
+      lifecycleLease,
+    });
     const proof = await writeSourceInvalidationProof(
       invalidation.proof,
       options,
@@ -733,7 +1275,9 @@ async function advanceCommand(options) {
   assertAllowedOptions(options, [
     'plan',
     'repo-root',
+    'home',
     'task',
+    'work-item',
     'to',
     'next',
     'session',
@@ -746,6 +1290,22 @@ async function advanceCommand(options) {
   ]);
   const planPackage = await advancePlan(requireOption(options, 'plan'), options);
   return summarizePlanPackage(planPackage);
+}
+
+async function activateCommand(options) {
+  assertAllowedOptions(options, ['plan', 'repo-root', 'home', 'task']);
+  const planPackage = await activatePlan(requireOption(options, 'plan'), options);
+  return summarizePlanPackage(planPackage);
+}
+
+async function reopenCommand(options) {
+  assertAllowedOptions(options, ['plan', 'repo-root', 'home', 'work-item']);
+  const result = await reopenPlan(requireOption(options, 'plan'), options);
+  return {
+    ...summarizePlanPackage(result.planPackage),
+    reopenedTaskId: result.invalid.taskId,
+    invalidReviews: result.invalid.reviews,
+  };
 }
 
 async function invalidateSourceCommand(options) {
@@ -916,7 +1476,9 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
   if (command === 'current') return currentCommand(options);
   if (command === 'next') return nextCommand(options);
   if (command === 'status') return statusCommand(options);
+  if (command === 'activate') return activateCommand(options);
   if (command === 'advance') return advanceCommand(options);
+  if (command === 'reopen') return reopenCommand(options);
   if (command === 'invalidate-source') return invalidateSourceCommand(options);
   if (command === 'migrate') return migrateCommand(options);
   fail('PLAN_CLI_USAGE', 'Unknown command', {
@@ -926,7 +1488,9 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
       'current',
       'next',
       'status',
+      'activate',
       'advance',
+      'reopen',
       'invalidate-source',
       'migrate',
     ],
@@ -934,7 +1498,11 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
 }
 
 function typedError(error) {
-  if (error instanceof PlanPackageError || error instanceof PlanMigrationError) {
+  if (
+    error instanceof PlanPackageError ||
+    error instanceof PlanMigrationError ||
+    error instanceof CompletionReviewError
+  ) {
     return error;
   }
   return new PlanPackageError('PLAN_INTERNAL_ERROR', error?.message ?? String(error));

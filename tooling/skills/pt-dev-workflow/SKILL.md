@@ -28,7 +28,7 @@ Architecture source:
 | Product Journey and visible states | `pt-product-design-methodology` |
 | Architecture boundaries and contracts | `pt-architecture-design-methodology` |
 | Vertical dependency plan model | `pt-architecture-execution-methodology` |
-| Plan Package persistence and immutable workspace Plan binding | `pt-plan-and-document` |
+| Plan Package persistence and generation-bound workspace Plan binding | `pt-plan-and-document` |
 | Ready/Parked selection and concurrency lanes | `pt-goal-orchestrator` |
 | Whether a proposed action may run | `pt-execution-plan-guardian` |
 | Plan/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
@@ -123,18 +123,26 @@ are internal Run work, not user approval boundaries.
 
 Before mutation:
 
-1. Bind one explicitly selected worktree. Never infer it from a Skill path,
-   branch name, plan path, or nearby repository.
-2. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
+1. When the Workflow Kernel reports `ENFORCED`, consume its immutable
+   conversation `executionRoot`; tool `cwd`, target paths, Skill paths, Plan
+   paths and sibling repositories cannot replace it. The binding is not a
+   worktree lease and says nothing about another conversation's ownership.
+2. In `OBSERVE_ONLY`, bind one explicitly selected worktree. Never infer it
+   from a Skill path, branch name, Plan path, or nearby repository.
+3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
    and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
    Unrelated sibling worktree inventory is not execution identity.
-3. Resolve the workspace's immutable Plan binding when present. Repository or
-   PR contents may contain many active Plans; only the bound `planId + planPath`
-   belongs to this workspace. Never scan by branch or rebind in place.
-4. Resolve user intent, authorization envelope, existing accepted sources, and
+4. Resolve the workspace's current Plan binding generation when present.
+   Repository or PR contents may contain many active Plans; only the bound
+   `planId + planPath` belongs to this workspace. Never scan by branch. Advance
+   only through the binding owner after the previous generation is completed
+   and quiescent.
+5. Resolve user intent, authorization envelope, existing accepted sources, and
    whether the work is tracked.
-5. Preserve unrelated dirty files. Never switch branches or worktrees
-   implicitly.
+6. Preserve unrelated dirty files. Never switch branches or worktrees
+   implicitly. Never create a worktree to bypass a Plan binding, lifecycle
+   state, or resource conflict; only an explicit user-selected isolation or
+   concurrency operation authorizes worktree creation.
 
 Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
 `WORKTREE_IDENTITY_MISMATCH`.
@@ -157,7 +165,7 @@ Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
-  Plan ID, immutable workspace Plan binding, expected HEAD, and single current
+  Plan ID, current workspace Plan generation, expected HEAD, and single current
   Task. An unbound workspace may publish untracked pre-Plan work; a bound
   workspace cannot publish a locator-less declaration.
 - Run `make dev-update` before expanding scope/resources and after Task handoff.
@@ -175,8 +183,9 @@ Rules:
 - A declaration is public intent, not a runtime lease or operation
   authorization.
 - `peers-dev-workflow` is the canonical source and rollout owner only. Every
-  installed copy executes from the consuming worktree and writes only that
-  worktree's workspace active-work record.
+  installed copy executes from the conversation-bound worktree. Workflow owner
+  state remains worktree-local; the Kernel writes only its separate
+  machine-local binding/Anchor/release receipts.
 
 ## 3. Dispatch Stages
 
@@ -241,23 +250,16 @@ Host adapters return transport observations to Dev Workflow:
 - `HOST_ADAPTER_READY`: consume the result and continue the action.
 - `HOST_CAPABILITY_UNAVAILABLE`: for optional workers, recompute serial/hybrid;
   for UI, attempt the repository-native driver once if it has not already been
-  attempted for this capability request, then record the capability unavailable
-  in the Session and park the current Task only when the interaction is
-  mandatory and no legal driver exists. Do not reissue the same native or
-  adapter request unless a new `HOST_CAPABILITY_AVAILABLE` observation with the
-  same immutable request identity is committed.
-- `HOST_TOOL_CALL_FAILED`: when a side effect may remain, submit one idempotent
-  cleanup request with the returned `cleanupHandle` to the same adapter and
-  require `cleanup=released`; retry once only when the adapter classifies the
-  failure retryable, then degrade exactly as unavailable.
-- `HOST_CLEANUP_QUARANTINED`: never issue recursive cleanup. Persist the
-  bounded lease, handle, expiry and observation in the Session failure record;
-  park the current resource-dependent Task, continue independent ready Tasks,
-  and submit one read-only `inspect-quarantine` request after expiry.
-- `HOST_CLEANUP_ESCALATION_REQUIRED`: the post-expiry observation still found
-  the side effect. Do not retry cleanup; keep that resource branch parked and
-  treat it as an external-resource hard boundary only after the independent
-  frontier is drained.
+  attempted for this request. Persist the unavailable observation and park only
+  when the interaction is mandatory and no legal driver exists.
+- `HOST_TOOL_CALL_FAILED`: if a side effect may remain, submit one idempotent
+  cleanup request with the returned `cleanupHandle`; retry once only when the
+  adapter classifies the failure retryable.
+- `HOST_CLEANUP_QUARANTINED`: never issue recursive cleanup. Persist the bounded
+  lease and continue independent ready Tasks. After expiry, submit one read-only
+  `inspect-quarantine` request.
+- `HOST_CLEANUP_ESCALATION_REQUIRED`: keep the resource branch parked and treat
+  it as an external-resource hard boundary only after independent work drains.
 - `HOST_DIAGNOSTIC_RETAINED`: accept only
   `blocksPlanRun=false`, `cleanup=retained-bounded`, and a concrete
   `leaseExpiresAt`. Commit deterministic project evidence, Session transition,
@@ -268,9 +270,9 @@ Host adapters return transport observations to Dev Workflow:
 
 The scheduler and adapter do not persist these transitions. Dev Workflow owns
 retry budgets, parking, cleanup, Session failure records, and reconciliation.
-An unavailable capability with no new external observation is a terminal result
-for that request, so schedule recomputation must either select independent work
-or park the dependent action instead of producing a zero-progress retry loop.
+An unavailable capability without a new external observation cannot enter a
+zero-progress retry loop; recompute serial/hybrid work or park its dependent
+action.
 The only in-place blocked observation changes are
 `UNAVAILABLE -> AVAILABLE` and
 `QUARANTINED -> RELEASED | ESCALATION_REQUIRED`; repeated or pre-expiry
@@ -294,19 +296,15 @@ Before each Slice, read the machine-derived baseline and completion effect from
 effect before reporting successful progress.
 
 Do not return control merely because an internal action, Task, review, or stage
-gate succeeded. Continue the Plan Run until:
-
-- the Plan reaches its accepted terminal state and owned resources are released;
-  or
-- a Plan Run hard boundary prevents progress and no other dependency-ready Task
-  or legal remediation can advance.
+gate succeeded. Continue until the Plan reaches its accepted terminal state or
+a hard boundary prevents progress and no dependency-ready Task or legal
+remediation remains.
 
 If a successful action produces no Task progress, keep it inside the current
-Slice. If a completed Task unlocks a successor, advance and start the successor
-Slice inside the same Run. If the Task is too large to close within one bounded
-Slice, return `PLAN_AMENDMENT_REQUIRED` so the plan owner can split it; after
-the agent-led amendment review passes, resume the Run without asking the user.
-Never invent a partial percentage.
+Slice. If a completed Task unlocks a successor, activate it inside the same
+Run. If the Task is too large to close within one bounded Slice, return
+`PLAN_AMENDMENT_REQUIRED`; after agent-led amendment review passes, resume
+without asking the user. Never invent a partial percentage.
 
 ## 5. Product-Functional Fence
 
@@ -320,16 +318,16 @@ REPRODUCE
   -> EXACT-SOURCE DEPLOY
   -> REAL JOURNEY
   -> FUNCTIONAL_PASS
-```
 
 - Use the real required runtime and receiver perspective.
+- On failure, return the first actionable failure to implementation.
 - Dispatch runtime work through `pt-dev-runtime-handoff`. Repository-native
-  Make/Harness/WebDriver/Appium paths are authoritative; detected TRAE, Cursor,
-  Codex, or future host adapters supply only missing tool transport.
-- Commit a source-bound `FUNCTIONAL_CHECK/PASS` and the corresponding
-  `FUNCTIONAL_PASS` Session projection in the same owner-controlled result
+  Make/Harness/WebDriver/Appium paths are authoritative; host adapters supply
+  only missing tool transport.
+- Commit source-bound `FUNCTIONAL_CHECK/PASS` and the matching
+  `FUNCTIONAL_PASS` Session projection through the same owner-controlled result
   slice. A PASS report with an earlier Session state is
-  `SESSION_PROJECTION_STALE` and must be repaired before Task closure.
+  `SESSION_PROJECTION_STALE`.
 - On failure, return the first actionable failure to implementation.
 - Park an external/authorization edge without blocking independent ready work.
 - Focused source checks, Gate count, coverage, and test count cannot establish
@@ -355,21 +353,16 @@ Plan Package.
 Review is an internal quality gate, not a default user handoff:
 
 1. Generate the owning methodology or delivery review prompt.
-2. Invoke the applicable project review path, normally:
+2. Invoke the applicable project review path, normally
    `pt-quality-check` -> `pt-completion-auditor` -> `pt-github-review`.
-   Before `FUNCTIONAL_PASS`, keep review scoped to the current evidence class;
-   do not run broad completion or Acceptance checks forbidden by the
-   Product-Functional Fence.
 3. Treat findings that accepted sources resolve as Run work.
 4. Fix them at the owning layer, rerun affected checks, and repeat review.
 5. Advance automatically when the review passes.
-6. Escalate only the precise unresolved DWF-D20 hard-boundary decision; never
-   ask the user to redo the entire review.
+6. Escalate only the precise unresolved DWF-D20 hard-boundary decision.
 
-An independent subagent may perform the review when available and safely
-isolated. Otherwise the current agent performs a separate findings-first review
-pass under the same Skills. Automation supplies evidence; the reviewing agent
-owns judgment.
+An independent subagent may review when available and safely isolated.
+Otherwise the current agent performs a separate findings-first review pass.
+Automation supplies evidence; the reviewing agent owns judgment.
 
 ## 8. Acceptance Promotion
 
@@ -408,7 +401,7 @@ authorizations.
 
 ## Resume
 
-On resume, verify the persisted worktree and immutable Plan bindings, run
+On resume, verify the persisted worktree and current Plan generation, run
 `make dev-check`, validate the bound Plan Package, reconcile current
 Task/Session/workspace active-work, then resume the earliest legal action and
 continue the Plan Run. Synchronized foreign Plans are ignored. Do not pause

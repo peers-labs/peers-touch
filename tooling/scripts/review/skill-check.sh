@@ -34,10 +34,15 @@ acceptance_registry="tooling/acceptance/registry.yaml"
 local_dev_make="tooling/make/local-dev.mk"
 ide_setup_script="tooling/scripts/ide-setup.sh"
 setup_make="tooling/make/setup.mk"
-skill_rollout_audit="tooling/scripts/skill-rollout-audit.py"
-skill_installer="tooling/scripts/install-project-skills.sh"
-skill_rollout_test="tooling/scripts/skill-rollout-audit-test.py"
-skill_rollout_control="tooling/scripts/skill-rollout-control.py"
+agent_integration_audit="tooling/scripts/agent-integration-audit.py"
+agent_installer="tooling/scripts/install-agent-integration.sh"
+agent_integration_test="tooling/scripts/agent-integration-audit-test.py"
+agent_integration_control="tooling/scripts/agent-integration-control.py"
+agent_plugin="tooling/plugins/pt-ew-plugin/.codex-plugin/plugin.json"
+agent_plugin_hooks="tooling/plugins/pt-ew-plugin/hooks.json"
+agent_plugin_entry="tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+workflow_kernel="tooling/scripts/local-dev/workflow-kernel.mjs"
+workflow_kernel_tests="tooling/scripts/local-dev/workflow-*.test.mjs"
 skill_overlay_test="tooling/scripts/skill-overlay-control-test.py"
 skill_overlay_control="tooling/scripts/skill-overlay-control.py"
 context_anchor_skill="tooling/skills/pt-context-anchor/SKILL.md"
@@ -97,10 +102,21 @@ require_file "$acceptance_registry"
 require_file "$local_dev_make"
 require_file "$ide_setup_script"
 require_file "$setup_make"
-require_file "$skill_rollout_audit"
-require_file "$skill_installer"
-require_file "$skill_rollout_test"
-require_file "$skill_rollout_control"
+require_file "$agent_integration_audit"
+require_file "$agent_installer"
+require_file "$agent_integration_test"
+require_file "$agent_integration_control"
+require_file "$agent_plugin"
+require_file "$agent_plugin_hooks"
+require_file "$agent_plugin_entry"
+require_file "$workflow_kernel"
+for kernel_test in $workflow_kernel_tests; do
+  require_file "$kernel_test"
+done
+if [[ -e tooling/scripts/local-dev/workflow-guard.mjs ]] ||
+  [[ -e tooling/scripts/local-dev/workflow-guard.test.mjs ]]; then
+  fail "removed cwd-derived workflow guard still exists"
+fi
 require_file "$skill_overlay_test"
 require_file "$skill_overlay_control"
 require_file "$context_anchor_skill"
@@ -216,158 +232,6 @@ for marker in \
     fail "explicit PR Plan input is missing marker: $marker"
   fi
 done
-if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
-  fail "$planctl_script must permit only evidence-backed blocked Task handoff"
-fi
-for marker in \
-  "ACTIVE_ACTION_IN_FLIGHT" \
-  "ROLLOUT_RESTART_REQUIRED" \
-  "ACKNOWLEDGED"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
-  fi
-done
-
-for marker in \
-  "functional-result" \
-  "commitFunctionalResult" \
-  "runDevelopmentClosure" \
-  "development-run-manifest" \
-  "gateIds" \
-  "development-functional-evidence-bundle" \
-  "functional result may commit only from FUNCTIONAL_RUNNING" \
-  "source changed between Development evidence validation and Session commit" \
-  "SESSION_EVIDENCE_OUT_OF_SEQUENCE"; do
-  if ! grep -Fq "$marker" "$dev_session_script"; then
-    fail "$dev_session_script missing functional result commit marker: $marker"
-  fi
-done
-for marker in \
-  "HOST_CAPABILITY_UNAVAILABLE" \
-  "HOST_CAPABILITY_AVAILABLE" \
-  "HOST_CLEANUP_QUARANTINED" \
-  "HOST_CLEANUP_RELEASED" \
-  "HOST_CLEANUP_ESCALATION_REQUIRED" \
-  "repeated BLOCKED transition is not a legal host observation update"; do
-  if ! grep -Fq "$marker" tooling/scripts/local-dev/dev-session-schema.mjs; then
-    fail "tooling/scripts/local-dev/dev-session-schema.mjs missing durable host observation marker: $marker"
-  fi
-done
-for marker in \
-  "--development-manifest-out" \
-  "finalize_development_run" \
-  "gate_run.finalize" \
-  "development-run-manifest"; do
-  if ! grep -Fq -- "$marker" tooling/scripts/acceptance-run.py; then
-    fail "tooling/scripts/acceptance-run.py missing runner provenance marker: $marker"
-  fi
-done
-if grep -Fq -- "--result-file" "$dev_session_script"; then
-  fail "$dev_session_script still accepts caller-authored functional result files"
-fi
-if ! python3 -m unittest "$skill_rollout_test" >/tmp/pt-skill-rollout-test.$$ 2>&1; then
-  cat /tmp/pt-skill-rollout-test.$$
-  fail "$skill_rollout_test failed"
-fi
-rm -f /tmp/pt-skill-rollout-test.$$
-for marker in \
-  "transitionSessionSequenceStore" \
-  "writeDurableFileAtomic" \
-  "linkSync(temp, file)"; do
-  if ! grep -Fq "$marker" "$dev_session_store"; then
-    fail "$dev_session_store missing durable result commit marker: $marker"
-  fi
-done
-for marker in "declared_incomplete" 'standardized["proofStatus"] = "UNPROVEN"'; do
-  if ! grep -Fq "$marker" "$acceptance_run"; then
-    fail "$acceptance_run missing incomplete Development result marker: $marker"
-  fi
-done
-for marker in "dev-functional-result:" "RUNTIME_CELL"; do
-  if ! grep -Fq "$marker" "$local_dev_make"; then
-    fail "$local_dev_make missing functional result command marker: $marker"
-  fi
-done
-if grep -Fq "RESULT_FILE" "$local_dev_make"; then
-  fail "$local_dev_make still accepts caller-authored functional result files"
-fi
-
-for setup_file in "$ide_setup_script" "$setup_make"; do
-  for marker in "trae" "cursor" "codex"; do
-    if ! grep -Fqi "$marker" "$setup_file"; then
-      fail "$setup_file missing supported host marker: $marker"
-    fi
-  done
-done
-if ! grep -Fq ".agents" "$skill_rollout_control"; then
-  fail "$skill_rollout_control must project Codex skills through .agents/skills"
-fi
-for marker in \
-  'IDE_NAME="$(IDE)"' \
-  "skill-rollout-audit:"; do
-  if ! grep -Fq "$marker" "$setup_make"; then
-    fail "$setup_make missing non-interactive rollout marker: $marker"
-  fi
-done
-for marker in \
-  "retired-project-skills" \
-  "pt-trae-goal-orchestrator" \
-  "project pt-* skills under"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing non-interactive install marker: $marker"
-  fi
-done
-for marker in \
-  "missingCanonicalSkills" \
-  "canonicalSourceFindings" \
-  "legacyReferences" \
-  "hostProjectionFindings" \
-  "workflowIdentity" \
-  "planBinding" \
-  "currentTaskId" \
-  "planLegacyClaims" \
-  "declarationLegacyClaims" \
-  "acceptanceRegistry" \
-  "missingCanonicalMatchers" \
-  "canonicalCatalog" \
-  "rolloutReceipt"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing rollout audit marker: $marker"
-  fi
-done
-for marker in \
-  "binding-canonical-invalid" \
-  "declaration-plan-locator-missing" \
-  "declaration-current-task-mismatch" \
-  "registry-missing" \
-  "rollout-branch-mismatch" \
-  "rollout-{field}-mismatch" \
-  "rollout-restart-evidence-invalid" \
-  "wrong-project-skill-target"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
-  fi
-done
-for marker in \
-  "staleRecoveryPath" \
-  "claimAndRemoveStaleLock" \
-  "readRecoveryMetadata" \
-  "clearStaleRecovery" \
-  "lstatSync"; do
-  if ! grep -Fq "$marker" "$dev_work_ledger"; then
-    fail "$dev_work_ledger missing inode-safe stale lock recovery marker: $marker"
-  fi
-done
-for marker in \
-  "acceptance-workflow-contract" \
-  "tooling/skills/pt-goal-orchestrator/**" \
-  "tooling/skills/pt-trae-host-adapter/**" \
-  "tooling/skills/pt-cursor-host-adapter/**" \
-  "tooling/skills/pt-codex-host-adapter/**"; do
-  if ! grep -Fq "$marker" "$acceptance_registry"; then
-    fail "$acceptance_registry missing canonical host-neutral matcher: $marker"
-  fi
-done
 
 if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
   fail "$planctl_script must permit only evidence-backed blocked Task handoff"
@@ -375,10 +239,11 @@ fi
 
 for marker in \
   "ACTIVE_ACTION_IN_FLIGHT" \
-  "ROLLOUT_RESTART_REQUIRED" \
-  "ACKNOWLEDGED"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
+  "INSTALLING" \
+  "BLOCKED" \
+  "INSTALLED"; do
+  if ! grep -Fq "$marker" "$agent_integration_control"; then
+    fail "$agent_integration_control missing integration lifecycle marker: $marker"
   fi
 done
 
@@ -423,11 +288,29 @@ if grep -Fq -- "--result-file" "$dev_session_script"; then
   fail "$dev_session_script still accepts caller-authored functional result files"
 fi
 
-if ! python3 -m unittest "$skill_rollout_test" >/tmp/pt-skill-rollout-test.$$ 2>&1; then
-  cat /tmp/pt-skill-rollout-test.$$
-  fail "$skill_rollout_test failed"
+if ! python3 -m unittest "$agent_integration_test" >/tmp/pt-agent-integration-test.$$ 2>&1; then
+  cat /tmp/pt-agent-integration-test.$$
+  fail "$agent_integration_test failed"
 fi
-rm -f /tmp/pt-skill-rollout-test.$$
+rm -f /tmp/pt-agent-integration-test.$$
+
+if ! node --test $workflow_kernel_tests \
+  "tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs" \
+  >/tmp/pt-agent-hook-test.$$ 2>&1; then
+  cat /tmp/pt-agent-hook-test.$$
+  fail "conversation-bound workflow kernel tests failed"
+fi
+rm -f /tmp/pt-agent-hook-test.$$
+
+for marker in \
+  "CROSS_WORKTREE_WRITE_DENIED" \
+  "OBSERVE_ONLY" \
+  "CONTEXT_ANCHOR_REQUIRED" \
+  "releaseConversation"; do
+  if ! grep -Fq "$marker" "$workflow_kernel"; then
+    fail "$workflow_kernel missing conversation-bound enforcement marker: $marker"
+  fi
+done
 
 if ! python3 -m unittest "$skill_overlay_test" >/tmp/pt-skill-overlay-test.$$ 2>&1; then
   cat /tmp/pt-skill-overlay-test.$$
@@ -466,22 +349,25 @@ for setup_file in "$ide_setup_script" "$setup_make"; do
     fi
   done
 done
-if ! grep -Fq ".agents" "$skill_rollout_control"; then
-  fail "$skill_rollout_control must project Codex skills through .agents/skills"
+if ! grep -Fq ".agents" "$agent_integration_control"; then
+  fail "$agent_integration_control must project Codex integration through .agents"
 fi
 for marker in \
   'IDE_NAME="$(IDE)"' \
-  "skill-rollout-audit:"; do
+  "agent-integration-audit:"; do
   if ! grep -Fq "$marker" "$setup_make"; then
-    fail "$setup_make missing non-interactive rollout marker: $marker"
+    fail "$setup_make missing non-interactive integration marker: $marker"
   fi
 done
 for marker in \
   "retired-project-skills" \
   "pt-trae-goal-orchestrator" \
+  "pt-ew-plugin" \
+  "planned_cursor_hooks" \
+  '"failClosed": True' \
   "project pt-* skills under"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing non-interactive install marker: $marker"
+  if ! grep -Fq "$marker" "$agent_integration_control"; then
+    fail "$agent_integration_control missing install marker: $marker"
   fi
 done
 
@@ -497,10 +383,10 @@ for marker in \
   "declarationLegacyClaims" \
   "acceptanceRegistry" \
   "missingCanonicalMatchers" \
-  "canonicalCatalog" \
-  "rolloutReceipt"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing rollout audit marker: $marker"
+  "canonicalIntegrationCatalog" \
+  "integrationReceipt"; do
+  if ! grep -Fq "$marker" "$agent_integration_audit"; then
+    fail "$agent_integration_audit missing integration audit marker: $marker"
   fi
 done
 
@@ -509,12 +395,12 @@ for marker in \
   "declaration-plan-locator-missing" \
   "declaration-current-task-mismatch" \
   "registry-missing" \
-  "rollout-branch-mismatch" \
-  "rollout-{field}-mismatch" \
-  "rollout-restart-evidence-invalid" \
+  "integration-branch-mismatch" \
+  'findings.append(f"{field}-mismatch")' \
+  "integration-callback-proof-invalid" \
   "wrong-project-skill-target"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
+  if ! grep -Fq "$marker" "$agent_integration_audit"; then
+    fail "$agent_integration_audit missing fail-closed audit marker: $marker"
   fi
 done
 
@@ -641,12 +527,11 @@ done
 
 for marker in \
   "authorization.runtime.deployProfiles" \
-  "case-insensitive \`stable\` substring" \
-  "without human involvement" \
-  "PROFILE_RESET_PROTECTED" \
+  "destructiveResetScopes" \
+  "another approval prompt." \
   "never converted into another user confirmation"; do
   if ! grep -Fq "$marker" "$local_dev_env_skill"; then
-    fail "$local_dev_env_skill missing Profile admission marker: $marker"
+    fail "$local_dev_env_skill missing authorization-reuse marker: $marker"
   fi
 done
 
@@ -1001,19 +886,19 @@ done
 for marker in \
   "WorkLedgerLock" \
   "RELEASING" \
-  "ROLLOUT_RESTART_NOT_OBSERVED" \
-  "HOST_SESSION_ID_AMBIGUOUS" \
-  "installedSessionHash" \
-  "catalogDigest" \
-  "catalogStatusDigest" \
+  "INSTALLING" \
+  "INSTALLED" \
+  "callbackProof" \
+  "integrationDigest" \
+  "integrationStatusDigest" \
   "validated_work_ledger" \
   "HOST_PROJECTION_ESCAPE"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing fail-closed rollout marker: $marker"
+  if ! grep -Fq "$marker" "$agent_integration_control"; then
+    fail "$agent_integration_control missing fail-closed integration marker: $marker"
   fi
 done
-if grep -Fq "schemaVersion" "$skill_rollout_control"; then
-  fail "$skill_rollout_control must not publish a rollout format version"
+if grep -Fq "schemaVersion" "$agent_integration_control"; then
+  fail "$agent_integration_control must not publish a integration format version"
 fi
 for marker in \
   "peers-touch-skill-overlay-registry" \
@@ -1042,7 +927,7 @@ done
 for marker in \
   "interaction policy only" \
   "immutable installed copy" \
-  "Canonical project Skill rollout"; do
+  "Canonical project agent integration"; do
   if ! grep -Fq "$marker" "$skill_overlay_invariant"; then
     fail "$skill_overlay_invariant missing Overlay boundary marker: $marker"
   fi

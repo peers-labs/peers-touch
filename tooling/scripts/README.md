@@ -48,6 +48,7 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
+| `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
 | `../../apps/dev/server/index.mjs` | 推荐 | 提供 Peers Dev 只读开发控制面 | `make dev-ui` 在固定 `127.0.0.1:4177` 上启动或复用机器唯一实例；应用源码与界面统一归属 `apps/dev/`，不暴露 canonical root、原始 profile/credential 或写接口 |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
@@ -59,6 +60,13 @@ export VITE_PORT=3000
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
+| `agent-integration-control.py` | 推荐 | 通过 `make skills IDE=<host>` 安装 worktree-local Agent 集成 | 投影 canonical Skills、Codex `pt-ew-plugin` 或 host workspace hooks；拒绝 active declaration 和路径逃逸，不存在独立 ACK 流程 |
+| `agent-integration-audit.py` | 推荐 | 审计单 worktree 或 fleet Agent 集成 | 校验 Skill/plugin/hook 精确投影、receipt、Plan binding、声明与 Acceptance matcher |
+| `local-dev/workflow-{kernel,state-inspector,host-adapters,conversation-binding,tool-intent,anchor}.mjs` | 内部依赖 | conversation-bound IDE 工具准入与 Stop/Anchor 协议 | 首次可阻断工具调用绑定 `executionRoot`；独立解析 `subjectRoot`、owner state 和 source scope |
+| `local-dev/workflow-snapshot.mjs` | 推荐 | 生成统一只读 workflow owner projection | `make workflow-snapshot`；CLI、Context Anchor、Doctor 与 Peers Dev 共享语义 |
+| `local-dev/workflow-action-store.mjs` | 内部依赖 | 写入并归约有界、脱敏的 Action Receipt | activity 不替代 Plan Task closure progress |
+| `local-dev/completion-review.mjs` | 推荐 | 创建、提交并验证独立 current-source Completion Review | 通过 `make completion-review-{prepare,submit,status}` 调用 |
+| `local-dev/workflow-doctor.mjs` | 推荐 | 检查公开工作流承诺与实际安装/状态/服务 | `make workflow-doctor IDE=<host>` |
 | `skill-overlay-control.py` | 推荐 | 管理 machine-local 用户 Skill Overlay | 提供 install/list/enable/disable/uninstall/resolve；安装为 digest-addressed immutable copy，不写 host Skill 投影 |
 | `skill-overlay-control-test.py` | 可用 | 回归验证用户 Overlay 控制面 | 覆盖生命周期、排序、显式替换、symlink 拒绝、registry 校验和 installed-copy 篡改 |
 | `review/submit-pipeline.sh` | 推荐 | 用户请求提交 MR/PR 时的提交前质量流水线 | 通过 `make review-submit REVIEW_BASE=<base>` 调用；生成 quality evidence 并运行 review/acceptance gates |
@@ -66,7 +74,7 @@ export VITE_PORT=3000
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
 | `execution-plan.py` | 推荐 | 解析当前 workspace 不可变绑定的 formal Plan；CI 需显式输入 | 校验 current closure，并在 PR 前执行 `--require-complete` |
-| `plan/workspace-plan-binding.mjs` | 推荐 | 一次性建立/解析 workspace 的 `planId + planPath` | `make plan-bind PLAN=<path>`；同值幂等，拒绝换绑 |
+| `plan/workspace-plan-binding.mjs` | 推荐 | 建立/解析 generation-bound workspace Plan ownership | `make plan-bind PLAN=<path>` 创建首代；completed 且 quiescent 后用 `make plan-binding-advance` 显式推进 |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表 | CI 对每个声明路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |

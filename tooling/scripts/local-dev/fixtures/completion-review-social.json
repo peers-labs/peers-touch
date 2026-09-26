@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "peers-touch-completion-review-regression-fixture",
+  "name": "social-false-completion",
+  "claim": "Desktop and Mobile Social legacy paths are removed",
+  "omittedLegacyPaths": [
+    "apps/desktop/src/legacy/socialGateway.ts",
+    "apps/mobile/src/legacy/socialStore.ts",
+    "tooling/scripts/social-legacy-route.sh",
+    "tooling/acceptance/gates/social/legacy_route_test.py",
+    "docs/client/social/legacy-routing.md"
+  ],
+  "expectedVerdict": "FAIL",
+  "expectedFindingId": "forbidden-reference"
+}
