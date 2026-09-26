@@ -612,12 +612,13 @@ items:
     architectureRefs: [SC-D21, SC-D22, SC-D28]
     journeyIds: [sc-dj-runtime-manifest-v3]
     scope:
-      include: [tooling/development/secure_content, tooling/acceptance/provisioners/mobile_simulator.py, tooling/acceptance/environments, tooling/acceptance/gates/mobile, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
+      include: [tooling/development/secure_content, tooling/acceptance/provisioners/mobile_simulator.py, tooling/acceptance/tests/test_mobile_simulator_provisioner.py, tooling/acceptance/environments, tooling/acceptance/gates/mobile, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
       exclude: [product semantics, Station reset, formal Acceptance execution]
     resources:
       sourceClaims:
         - { pathPrefix: tooling/development/secure_content, mode: exclusive-write }
         - { pathPrefix: tooling/acceptance/provisioners/mobile_simulator.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/tests/test_mobile_simulator_provisioner.py, mode: exclusive-write }
         - { pathPrefix: tooling/acceptance/environments, mode: exclusive-write }
         - { pathPrefix: tooling/acceptance/gates/mobile, mode: exclusive-write }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
