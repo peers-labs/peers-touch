@@ -57,6 +57,7 @@ from tooling.development.secure_content.runtime_owner import (
     _publish_canonical_private_schema_attestation,
     _provision_runtime_accounts,
     _register_runtime_account,
+    _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
     _restart_lease,
     _runtime_cleanup_scope,
@@ -857,6 +858,33 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(3, len(set(names)))
         self.assertTrue(all(name.startswith("sc-") for name in names))
         self.assertTrue(all(len(name) == 20 for name in names))
+
+    def test_runtime_account_search_uses_registered_preferred_username(
+        self,
+    ) -> None:
+        response = MagicMock()
+        response.status = 201
+        response.read.return_value = b"{}"
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "urllib.request.urlopen",
+            return_value=response,
+        ) as open_request:
+            account = _register_runtime_account(
+                "http://127.0.0.1:4101",
+                role="bob",
+                suffix="a" * 10,
+                password="password",
+            )
+
+        registered = json.loads(open_request.call_args.args[0].data)
+        self.assertEqual(
+            registered["name"],
+            _runtime_account_search_query(account, role="bob"),
+        )
 
     def test_accepted_friendship_uses_social_authority_flow(self) -> None:
         alice = MagicMock()
