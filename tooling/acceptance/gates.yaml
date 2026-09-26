@@ -401,6 +401,39 @@
       "tier": "ci-cheap",
       "description": "Scan every declared Chat storage legacy dimension and reject all retired conversation-marker, restore, disappearing-message, backfill, and compatibility-schema references owned by CSG-05."
     },
+    "chat-storage-zero-legacy-e2e": {
+      "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.zero_legacy_test && python3 -m tooling.acceptance.gates.chat_storage.zero_legacy",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Scan every Chat storage legacy matcher across all nine declared dimensions and fail on any current tracked or untracked reference."
+    },
+    "desktop-release-build": {
+      "command": "pnpm --dir apps/desktop exec tauri build --ci --no-bundle",
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
+    },
+    "mobile-native-build": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.chat_storage.mobile_native_build"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "mobile-simulator",
+      "provisioner": "mobile-simulator",
+      "tier": "env-evidence",
+      "description": "Build and verify the source-bound Mobile Tauri iOS Simulator application through the canonical isolated native provisioner."
+    },
+    "chat-storage-governance-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat_storage.governance_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for every Chat storage governance and release Gate."
+    },
     "chat-lifecycle-safety-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
       "timeout_seconds": 120,

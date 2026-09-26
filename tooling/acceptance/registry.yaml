@@ -409,6 +409,25 @@
       ]
     },
     {
+      "id": "chat-storage-governance-integrity",
+      "features": [
+        "chat-storage-governance-integrity"
+      ],
+      "when": {
+        "paths": [
+          "docs/architecture/chat-storage-governance/legacy-inventory.json",
+          "tooling/acceptance/features/chat-storage-governance-integrity.yaml",
+          "tooling/acceptance/gates/chat_storage/**"
+        ]
+      },
+      "require": [
+        "chat-storage-zero-legacy-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "chat-storage-governance-aggregate-e2e"
+      ]
+    },
+    {
       "id": "station-messaging",
       "features": [
         "chat-service-contract",
