@@ -26,7 +26,9 @@
     "docs/architecture/messaging-platform",
     "docs/architecture/encryption",
     "docs/client/chat",
-    "tooling/acceptance"
+    "docs/knowledge",
+    "tooling/acceptance",
+    "tooling/scripts"
   ],
   "readSet": [
     "docs/architecture/chat-storage-governance/data-model.md",
