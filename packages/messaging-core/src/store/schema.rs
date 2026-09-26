@@ -262,6 +262,15 @@ CREATE TABLE IF NOT EXISTS messaging_authority_heads (
     event_hash BLOB NOT NULL CHECK(length(event_hash) = 32),
     updated_at_unix_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS messaging_authority_events (
+    conversation_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_sequence INTEGER NOT NULL,
+    event_hash BLOB NOT NULL CHECK(length(event_hash) = 32),
+    committed_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, event_sequence),
+    UNIQUE(conversation_id, event_id)
+);
 CREATE TABLE IF NOT EXISTS messaging_message_projections (
     conversation_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
@@ -371,6 +380,26 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     attachment_filenames,
     tokenize = 'unicode61'
 );
+CREATE TABLE IF NOT EXISTS chat_storage_policy (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    station_peer_id TEXT NOT NULL,
+    actor_ptid TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    retention_preset INTEGER NOT NULL CHECK(retention_preset IN (1, 2, 3, 4)),
+    updated_at_unix_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_retention_floor (
+    station_peer_id TEXT NOT NULL,
+    actor_ptid TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    pruned_through_sequence INTEGER NOT NULL,
+    authority_event_hash BLOB NOT NULL CHECK(length(authority_event_hash) = 32),
+    policy_cutoff_unix_ms INTEGER,
+    reason TEXT NOT NULL CHECK (reason IN ('policy', 'manual_clear')),
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(station_peer_id, actor_ptid, device_id, conversation_id)
+);
 CREATE TABLE IF NOT EXISTS chat_cleanup_journal (
     operation_id TEXT PRIMARY KEY,
     scope_kind TEXT NOT NULL CHECK (
@@ -388,6 +417,8 @@ CREATE TABLE IF NOT EXISTS chat_cleanup_journal (
     estimated_reclaimable_bytes INTEGER NOT NULL,
     physical_bytes_before INTEGER NOT NULL,
     physical_bytes_after INTEGER,
+    retention_preset INTEGER,
+    policy_cutoff_unix_ms INTEGER,
     last_error_code TEXT,
     created_at_unix_ms INTEGER NOT NULL,
     updated_at_unix_ms INTEGER NOT NULL
@@ -603,6 +634,16 @@ pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
         table: "messaging_prekey_bundle",
         column: "one_time_prekey_high_watermark",
         definition: "INTEGER NOT NULL DEFAULT 0",
+    },
+    RequiredColumn {
+        table: "chat_cleanup_journal",
+        column: "retention_preset",
+        definition: "INTEGER",
+    },
+    RequiredColumn {
+        table: "chat_cleanup_journal",
+        column: "policy_cutoff_unix_ms",
+        definition: "INTEGER",
     },
 ];
 

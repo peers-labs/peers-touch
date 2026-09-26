@@ -720,6 +720,71 @@ pub async fn chat_storage_clear_cache(
     .map_err(|error| format!("chat cache cleanup worker failed: {error}"))
 }
 
+#[tauri::command]
+pub async fn chat_storage_set_retention(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageRetentionRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat retention request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    let retention_preset = request.retention_preset;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_set_retention(&station_peer_id, &revision, retention_preset)
+            .map(|result| AppResult::success(result.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat retention worker failed: {error}"))
+}
+
 fn leave_intent_json(intent: &MlsLeaveIntent) -> Value {
     json!({
         "version": intent.version,

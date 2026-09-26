@@ -55,10 +55,10 @@ use messaging_core::outbox::{
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, conversation_event, ActorReadCursor, AttachmentTransferState, ChatCommand,
-    ChatStorageOperationState, ChatStorageResult, ChatStorageScope, ChatStorageSnapshot,
-    Conversation, ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
-    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
+    ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
+    ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
+    CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
@@ -78,7 +78,11 @@ use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::storage_governance::cache::{
     cache_cleanup_error_proto, cache_cleanup_operation_proto, execute_cache_cleanup,
     finalize_cache_cleanup, prepare_cache_cleanup, storage_error_code_name, CacheCleanupError,
-    CacheCleanupJournalRepository, CacheCleanupPlanInput,
+    CacheCleanupJournalRepository, CacheCleanupOperation, CacheCleanupPlanInput,
+};
+use messaging_core::storage_governance::retention::{
+    apply_retention, retention_error_proto, retention_operation_proto, RetentionApplyInput,
+    RetentionRepository,
 };
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
@@ -97,10 +101,11 @@ use ulid::Ulid;
 use zeroize::Zeroizing;
 
 use super::adapter::{
-    AttachmentDownloadProjection, CompletedSenderAttachmentSource, ConversationCommandCommit,
-    ConversationMutation, ConversationMutationReceiveCommit, ConversationSummary,
-    MobileConversationProjection, MobileMemberAuthorityProjection, MobileMessagingStore,
-    MobileOutboxStore, PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
+    load_storage_retention_policy, AttachmentDownloadProjection, CompletedSenderAttachmentSource,
+    ConversationCommandCommit, ConversationMutation, ConversationMutationReceiveCommit,
+    ConversationSummary, MobileConversationProjection, MobileMemberAuthorityProjection,
+    MobileMessagingStore, MobileOutboxStore, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft,
 };
 use super::attachment_blob::FilesystemAttachmentBlob;
 use super::mls_leave_intent::StationMlsLeaveIntentTransport;
@@ -560,18 +565,22 @@ impl MobileMessagingEngine {
                 .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
         );
 
-        measure_storage(StorageAccountingInput {
-            scope: ChatStorageScope {
-                station_peer_id: self.scope.station_peer_id.clone(),
-                actor_ptid: self.scope.actor_ptid.clone(),
-                device_id: self.scope.device_id.clone(),
-            },
+        let scope = ChatStorageScope {
+            station_peer_id: self.scope.station_peer_id.clone(),
+            actor_ptid: self.scope.actor_ptid.clone(),
+            device_id: self.scope.device_id.clone(),
+        };
+        let mut snapshot = measure_storage(StorageAccountingInput {
+            scope: scope.clone(),
             revision: scope_revision.to_string(),
             measured_at_unix_ms: now_unix_ms(),
             physical_paths,
             conversations: self.store.storage_logical_usage()?,
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        snapshot.retention_policy =
+            Some(load_storage_retention_policy(self.store.as_ref(), &scope)?);
+        Ok(snapshot)
     }
 
     pub fn chat_storage_clear_cache(
@@ -634,6 +643,155 @@ impl MobileMessagingEngine {
             progress.error = execution_error;
         }
         Ok(cache_cleanup_result(after, progress))
+    }
+
+    pub fn chat_storage_set_retention(
+        &self,
+        scope_revision: &str,
+        retention_preset: i32,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "mobile chat storage governance lock poisoned".to_string())?;
+        let mut before = self.chat_storage_snapshot(scope_revision)?;
+        let scope = before
+            .scope
+            .clone()
+            .ok_or_else(|| "mobile chat retention scope is unavailable".to_string())?;
+        let cache_root = self.attachment_root.join("cache");
+
+        if let Some(resume) = self
+            .store
+            .load_resumable_retention(&scope, scope_revision)?
+        {
+            let resumed_preset = resume.policy.retention_preset;
+            let resumed = self.finish_retention_operation(
+                scope_revision,
+                resume.policy,
+                resume.operation,
+                &cache_root,
+            )?;
+            let resumed_succeeded = resumed.operation.as_ref().is_some_and(|operation| {
+                operation.state == ChatStorageOperationState::Succeeded as i32
+            });
+            if !resumed_succeeded || resumed_preset == retention_preset {
+                return Ok(resumed);
+            }
+            before = resumed.snapshot.clone().ok_or_else(|| {
+                "mobile chat retention resume snapshot is unavailable".to_string()
+            })?;
+        }
+
+        let retention = match apply_retention(
+            self.store.as_ref(),
+            RetentionApplyInput {
+                scope,
+                scope_revision: scope_revision.to_string(),
+                retention_preset,
+                physical_bytes_before: before.physical_total_bytes,
+                now_unix_ms: now_unix_ms(),
+            },
+        ) {
+            Ok(retention) => retention,
+            Err(error) => {
+                return Ok(ChatStorageResult {
+                    snapshot: Some(before),
+                    policy: None,
+                    operation: None,
+                    error: Some(retention_error_proto(&error)),
+                })
+            }
+        };
+        self.finish_retention_operation(
+            scope_revision,
+            retention.policy,
+            retention.commit.operation,
+            &cache_root,
+        )
+    }
+
+    fn finish_retention_operation(
+        &self,
+        scope_revision: &str,
+        policy: ChatStoragePolicy,
+        mut operation: CacheCleanupOperation,
+        cache_root: &PathBuf,
+    ) -> Result<ChatStorageResult, String> {
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let mut cleanup_error = None;
+        let mut failed_item_count = 0;
+        if matches!(
+            operation.state,
+            ChatStorageOperationState::DeletingFiles
+                | ChatStorageOperationState::CompactionPending
+                | ChatStorageOperationState::PausedScopeInactive
+                | ChatStorageOperationState::FailedRetryable
+        ) {
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                std::slice::from_ref(cache_root),
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = progress.error;
+            failed_item_count = progress.failed_item_count;
+        }
+        if operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_compact().is_err() {
+                operation = self.store.update_cache_cleanup_operation(
+                    &operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    None,
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                cleanup_error = Some(CacheCleanupError::CompactionPending);
+            }
+        }
+        let after = self.chat_storage_snapshot(scope_revision)?;
+        if operation.state == ChatStorageOperationState::Compacting {
+            let progress = finalize_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                after.physical_total_bytes,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = cleanup_error.or(progress.error);
+            failed_item_count = failed_item_count.max(progress.failed_item_count);
+        }
+        Ok(retention_result(
+            after,
+            policy,
+            operation,
+            cleanup_error,
+            failed_item_count,
+        ))
+    }
+
+    #[cfg(any(test, feature = "acceptance-harness"))]
+    pub fn seed_acceptance_storage_retention(
+        &self,
+        old_plaintext_bytes: usize,
+    ) -> Result<(String, String, String, String), String> {
+        let fixture = self.store.seed_acceptance_retention_fixture(
+            &self.scope.station_peer_id,
+            old_plaintext_bytes,
+            now_unix_ms(),
+        )?;
+        Ok((
+            fixture.conversation_id,
+            fixture.pruned_message_id,
+            fixture.protected_message_id,
+            fixture.recent_message_id,
+        ))
     }
 
     #[cfg(any(test, feature = "acceptance-harness"))]
@@ -3406,6 +3564,32 @@ fn hex_bytes(bytes: &[u8]) -> String {
         encoded.push(HEX[(byte & 0x0f) as usize] as char);
     }
     encoded
+}
+
+fn retention_result(
+    snapshot: ChatStorageSnapshot,
+    policy: messaging_core::proto::chat::ChatStoragePolicy,
+    operation: messaging_core::storage_governance::cache::CacheCleanupOperation,
+    cleanup_error: Option<CacheCleanupError>,
+    failed_item_count: usize,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = cleanup_error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} retention media item(s) remain",
+                value.message, failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: Some(policy),
+        operation: Some(retention_operation_proto(scope, &operation)),
+        error,
+    }
 }
 
 fn cache_cleanup_result(
