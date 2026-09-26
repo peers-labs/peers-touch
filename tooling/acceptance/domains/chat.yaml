@@ -15,6 +15,7 @@
     "chat-storage-observability",
     "chat-storage-cache-cleanup",
     "chat-storage-retention",
+    "chat-storage-redaction-recovery",
     "chat-message-interactions",
     "chat-typing-presence"
   ],

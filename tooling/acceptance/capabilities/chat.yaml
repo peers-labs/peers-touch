@@ -642,6 +642,47 @@
           "Cross-device deletion is intentionally not claimed by device-local retention"
         ]
       }
+    },
+    {
+      "id": "chat-storage-redaction-recovery",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-redaction-recovery"],
+      "required_gates": ["chat-storage-redaction-recovery-e2e"],
+      "synthetic_paths": [
+        "packages/messaging-core/src/storage_governance/redaction.rs",
+        "packages/messaging-core/src/store/schema.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/messaging/store.rs",
+        "apps/desktop/src-tauri/src/messaging/recovery.rs",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/desktop/src/acceptance/chat/harness.ts",
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src-tauri/src/messaging/adapter.rs",
+        "tooling/acceptance/gates/chat/storage_redaction_recovery_runner.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Conversation actor-hide and retract authority events",
+          "Device Messaging Engine redaction tombstones, cleanup journal, and ordered consumption cursor",
+          "Device Messaging Engine encrypted Recovery v4 archive"
+        ],
+        "surfaces": [
+          "Native Desktop Direct message rows before and after restart",
+          "Native Desktop Direct message rows after restoring an older Recovery archive"
+        ],
+        "proven_by": ["chat-storage-redaction-recovery-e2e"],
+        "proven_scope": [
+          "Actor-scoped hide removes plaintext only for the selected actor",
+          "Author retract leaves a participant-visible tombstone without original plaintext",
+          "Redaction commits tombstone, content and search removal, cleanup journal, consumption marker, and cursor before ACK",
+          "Restart and Recovery of an older archive do not resurrect redacted plaintext"
+        ],
+        "unproven_scope": [
+          "Native Mobile visible redaction remains covered structurally until the final CSG aggregate closure",
+          "Whole-conversation local clear and physical database reclamation are owned by CSG-05"
+        ]
+      }
     }
   ]
 }

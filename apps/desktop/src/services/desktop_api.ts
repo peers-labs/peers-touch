@@ -2191,6 +2191,11 @@ export interface MessagingAcceptanceInteractionSnapshot {
   reactions: Array<Record<string, unknown>>;
   pins: Array<Record<string, unknown>>;
   readCursors: Array<Record<string, unknown>>;
+  redactionTombstones: Array<Record<string, unknown>>;
+  searchEntryCount: number;
+  attachmentProjectionCount: number;
+  attachmentTransferCount: number;
+  redactionCleanup: Array<Record<string, unknown>>;
   consumptionCount: number;
   laneSequence: number;
   consumerEpoch: number;
