@@ -468,6 +468,55 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             ],
         )
 
+    def test_station_access_mobile_scope_preserves_logout_projections(
+        self,
+    ) -> None:
+        identity = MixedClientIdentity(
+            client_id="sim-ios",
+            actor="bob",
+            runtime="tauri-ios-simulator",
+            station_service_id="station",
+            station_peer_id="station-peer",
+            ptid="ptid:bob",
+            account_ref="station-account:bob",
+            federation_id="fed-1",
+            device_id="mobile-device-digest",
+        )
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.gate_id = "station-access-scope-isolation-e2e"
+        runtime.client_specs = {
+            "sim-ios": {"runtime": "tauri-ios-simulator"},
+        }
+        runtime.identities = {"sim-ios": identity}
+        runtime.call_action = MagicMock(
+            return_value={
+                "phase": "ACTIVE",
+                "launchState": "station-selection",
+                "generation": 4,
+                "activeStationPeerId": "station-peer",
+                "activeActorPtid": None,
+                "runtimeStationPeerId": None,
+                "deviceIdentityDigest": None,
+                "social": {
+                    "stationPeerId": None,
+                    "actorPtid": None,
+                    "sessionCount": 0,
+                    "requestCount": 0,
+                    "messageThreadCount": 0,
+                },
+                "navigation": {
+                    "primaryRouteId": "tab:chat",
+                    "detailKeys": [],
+                    "overlayRouteId": None,
+                },
+            }
+        )
+
+        result = runtime.scope_snapshot("sim-ios")
+
+        self.assertEqual(result["social"]["sessionCount"], 0)
+        self.assertEqual(result["navigation"]["detailKeys"], [])
+
     @patch(
         "tooling.acceptance.gates.chat.mixed_native_runtime."
         "MOBILE_WRITE_ADMISSION_STABLE_SECONDS",
