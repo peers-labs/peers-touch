@@ -119,7 +119,8 @@ pub use receipt::DeliveryReceiptProcessor;
 pub use recovery::{
     decode_recovery_revision, encode_recovery_revision, DecodedRecoveryRevision,
     EncodedRecoveryRevision, MessagingRecoveryArchive, RecoveryAttachmentMetadata,
-    RecoveryConversationProjection, RecoveryMessageProjection, RecoveryTrustRecord,
+    RecoveryAuthorityHead, RecoveryConversationProjection, RecoveryMessageProjection,
+    RecoveryMessageRedactionTombstone, RecoveryReconciliation, RecoveryTrustRecord,
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{

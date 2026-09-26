@@ -1659,50 +1659,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
   closeThread: () => set({ openThreadRootUlid: null }),
 
-  deleteMessage: async (ulid, messageUlid, kind) => {
-    const tab = kind ?? get().activeTab;
-    const key = conversationKey(tab, ulid);
-    set((state) => {
-      const currentLocalState = state.conversationLocalState[key] ?? {};
-      const nextLocalState = {
-        ...state.conversationLocalState,
-        [key]: {
-          ...currentLocalState,
-          deletedMessageUlids: {
-            ...(currentLocalState.deletedMessageUlids ?? {}),
-            [messageUlid]: true as true,
-          },
-        },
-      };
-      const nextMessagesForConversation = (state.messages[ulid] ?? [])
-        .filter((message) => message.ulid !== messageUlid);
-      const nextThreadMessages = Object.fromEntries(
-        Object.entries(state.threadMessages).map(([threadKey, threadMessages]) => [
-          threadKey,
-          threadKey.startsWith(`${tab}:${ulid}:`)
-            ? threadMessages.filter((message) => message.ulid !== messageUlid)
-            : threadMessages,
-        ]),
-      );
-      const nextPreviews = { ...state.lastPreviews };
-      if (nextMessagesForConversation.length > 0) {
-        nextPreviews[ulid] = previewFromMessage(
-          nextMessagesForConversation[nextMessagesForConversation.length - 1],
-        );
-      } else {
-        delete nextPreviews[ulid];
-      }
-      saveConversationLocalState(state.currentUserPtid, nextLocalState);
-      return {
-        conversationLocalState: nextLocalState,
-        messages: {
-          ...state.messages,
-          [ulid]: nextMessagesForConversation,
-        },
-        threadMessages: nextThreadMessages,
-        lastPreviews: nextPreviews,
-      };
-    });
+  deleteMessage: async (ulid, messageUlid) => {
+    await messagingInteractions.mutateMetadata(ulid, messageUlid, 'hideForActor');
   },
 
   recallFriendMessage: async (sessionUlid, messageUlid) => {
@@ -2438,7 +2396,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .filter(message => {
             const localState = state.conversationLocalState[conversationKey(scope, conversationId)];
             const clearedAt = localState?.clearedAt ?? 0;
-            if (localState?.deletedMessageUlids?.[message.messageId]) return false;
             return !clearedAt || message.timestampUnixMs >= clearedAt;
           })
           .map(message => ({
