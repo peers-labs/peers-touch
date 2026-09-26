@@ -733,6 +733,48 @@
           "Desktop native physical byte reclamation remains scheduled for the final CSG aggregate closure"
         ]
       }
+    },
+    {
+      "id": "chat-storage-governance-integrity",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-governance-integrity"],
+      "required_gates": [
+        "chat-storage-zero-legacy-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "chat-storage-governance-aggregate-e2e"
+      ],
+      "synthetic_paths": [
+        "docs/architecture/chat-storage-governance/legacy-inventory.json",
+        "tooling/acceptance/gates/chat_storage/governance_aggregate.py",
+        "tooling/acceptance/gates/chat_storage/mobile_native_build.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Chat storage governance legacy inventory",
+          "Acceptance Evidence Store authoritative latest manifests",
+          "source-bound Desktop and Mobile native build artifacts"
+        ],
+        "surfaces": [
+          "CSG-06 exact-source aggregate report"
+        ],
+        "proven_by": [
+          "chat-storage-zero-legacy-e2e",
+          "desktop-release-build",
+          "mobile-native-build",
+          "chat-storage-governance-aggregate-e2e"
+        ],
+        "proven_scope": [
+          "All nine inventory dimensions reject current-source legacy matches",
+          "Desktop release and Mobile native applications build from one clean source",
+          "Every preceding CSG Gate is current, DONE, PROVEN, redacted, and secret-scan clean"
+        ],
+        "unproven_scope": [
+          "Product journey semantics remain owned by the preceding CSG capabilities and their runtime Gates",
+          "Browser parity and Station authority deletion remain outside Chat storage governance"
+        ]
+      }
     }
   ]
 }
