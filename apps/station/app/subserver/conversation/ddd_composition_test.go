@@ -1941,13 +1941,22 @@ func TestConversationDDDMessageIdentityAndAuthorRules(t *testing.T) {
 			created.Conversation.ID,
 			sender,
 		)
-		prepareRequest.ActorScoped = wire.GetHideMessageForActor() != nil
 		preparation, err := fixture.commands.PrepareCommand(
 			context.Background(),
 			prepareRequest,
 		)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if wire.GetHideMessageForActor() != nil &&
+			!valueobject.EqualEndpointSets(
+				preparation.RequiredEndpoints,
+				[]valueobject.Endpoint{alice, bob},
+			) {
+			t.Fatalf(
+				"hide required endpoints = %+v, want every active endpoint",
+				preparation.RequiredEndpoints,
+			)
 		}
 		wire.CommandId = commandID
 		wire.ConversationId = string(created.Conversation.ID)
