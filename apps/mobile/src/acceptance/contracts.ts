@@ -51,6 +51,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'session.logout',
   'native.deliverDeepLink',
   'projection.read',
+  'federation.context.read',
   'messaging.createDirect',
   'messaging.createGroup',
   'messaging.attachment.stage',
@@ -398,9 +399,17 @@ export interface LifecycleRestartOutput {
 
 export interface LifecycleWaitReadyInput {
   minimumGeneration?: number;
+  includeDiagnostics?: boolean;
 }
 
 export type PublicLifecycleSnapshot = LifecycleKernelSnapshot;
+
+export interface LifecycleWaitReadyOutput extends LifecycleKernelSnapshot {
+  runtimeErrors?: readonly {
+    runtimeId: string;
+    error: string;
+  }[];
+}
 
 export interface SecureStorageDeleteFailureOutput {
   outcome: 'blocked';
@@ -881,6 +890,11 @@ export interface SocialRequestSendActionInput {
 
 export interface SocialPeopleSearchActionInput {
   query: string;
+  federationId: string;
+}
+
+export interface FederationContextReadOutput {
+  federations: Array<{ federationId: string; name: string; status: string }>;
 }
 
 export interface PublicActorSearchResult {
@@ -1043,7 +1057,7 @@ export interface MobileAcceptanceActionContract {
   };
   'lifecycle.waitReady': {
     input: LifecycleWaitReadyInput;
-    output: PublicLifecycleSnapshot;
+    output: LifecycleWaitReadyOutput;
   };
   'lifecycle.suspend': {
     input: undefined;
@@ -1108,6 +1122,10 @@ export interface MobileAcceptanceActionContract {
   'projection.read': {
     input: undefined;
     output: MobilePublicProjection;
+  };
+  'federation.context.read': {
+    input: undefined;
+    output: FederationContextReadOutput;
   };
   'messaging.createDirect': {
     input: MessagingCreateDirectActionInput;

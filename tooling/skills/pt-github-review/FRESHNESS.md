@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-25
-covered_docs_hash: 04baf18f24b67a5ab6dbb6f6170711ea58bd702695fcc7542d88f378b4f63024
+last_verified_at: 2026-09-26
+covered_docs_hash: c8d4209a9f9d4564e11c31743cadc32f12ae6e052a214832d3498cc98a093f92
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,13 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-26 Review
+
+The current upstream source set retains the existing review behavior for
+runtime identity, profile authorization, Development Session evidence, and
+continuous Plan execution. No `SKILL.md`, fixture, or knowledge change is
+required; this refresh records the post-history-migration source bytes.
 
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`

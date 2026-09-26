@@ -122,6 +122,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('platform.permission.checkAll');
     expect(actionNames).toContain('platform.network.read');
     expect(actionNames).toContain('session.logout');
+    expect(actionNames).toContain('federation.context.read');
     expect(actionNames).toContain('messaging.createDirect');
     expect(actionNames).toContain('messaging.createGroup');
     expect(actionNames).toContain('messaging.attachment.stage');
@@ -271,13 +272,27 @@ describe('Mobile Acceptance Harness', () => {
         });
         const restarted = await harness['lifecycle.waitReady']({
           minimumGeneration: failed.generation + 1,
+          includeDiagnostics: true,
         });
         expect(restarted.generation).toBe(failed.generation + 1);
         expect(restarted.runtimes[0].status).toBe('ready');
         expect(restarted.runtimes.slice(1).map((runtime) => runtime.status))
           .toEqual(persistentFailure ? ['failed', 'failed'] : ['ready', 'ready']);
+        expect(restarted.runtimeErrors).toEqual(persistentFailure
+          ? [
+              { runtimeId: 'messaging', error: 'private Station detail' },
+              {
+                runtimeId: 'social',
+                error: 'mobile.lifecycle.dependencyFailed:messaging',
+              },
+            ]
+          : []);
         expect(failed.runtimes[1].status).toBe('failed');
-        expect(JSON.stringify(restarted)).not.toContain('private');
+        const publicRestarted = await harness['lifecycle.waitReady']({
+          minimumGeneration: restarted.generation,
+        });
+        expect(publicRestarted).not.toHaveProperty('runtimeErrors');
+        expect(JSON.stringify(publicRestarted)).not.toContain('private');
         expect(invokeMock).not.toHaveBeenCalled();
       } finally {
         await kernel.stopRuntimeGraph();
@@ -496,7 +511,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/window\.location\.reload/);
   });
 
-  it('derives searched Federation identity from observed runtime output', () => {
+  it('requires and projects the explicit Federation search context', () => {
     const source = readFileSync(
       new URL('./actions.ts', import.meta.url),
       'utf8',
@@ -506,9 +521,11 @@ describe('Mobile Acceptance Harness', () => {
       source.indexOf("'reliability.fixture.configure':"),
     );
 
-    expect(searchAction).toContain('federationId: result.federationId');
-    expect(searchAction).not.toContain('input?.federationId');
-    expect(searchAction).not.toContain('input.federationId');
+    expect(searchAction).toContain(
+      "federationId,\n      'social.people.search.federationId'",
+    );
+    expect(searchAction).toContain('federationId: contextId');
+    expect(searchAction).not.toContain('result.federationId');
   });
 
   it('routes platform evidence through production Rust commands', async () => {

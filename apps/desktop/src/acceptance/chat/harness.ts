@@ -30,6 +30,11 @@ interface SyncFriendInput {
   maxPages?: number;
 }
 
+interface FederationSearchInput {
+  federationId: string;
+  prefix: string;
+}
+
 interface OnboardingPeerInput {
   peerPtid: string;
 }
@@ -371,14 +376,7 @@ export function installAcceptanceHarness(): void {
           identityRuntime.completeCurrentSession(),
       }, account, password);
       const actorPtid = activeActorPtid();
-      // #region debug-point A-D:harness-runtime-boundary
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-start', msg: '[DEBUG] Chat Harness critical runtime install started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       await installAuthenticatedCriticalRuntimes(actorPtid);
-      // #region debug-point A-D:harness-runtime-boundary
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/acceptance/chat/harness.ts:runtime-install-end', msg: '[DEBUG] Chat Harness critical runtime install completed', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
-      void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'D', location: 'apps/desktop/src/acceptance/chat/harness.ts:social-hydrate-start', msg: '[DEBUG] Chat Harness social hydration started', data: { actorPresent: Boolean(actorPtid) }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       await hydrateSocialForActiveActor();
       return {
         authenticated: true,
@@ -394,9 +392,9 @@ export function installAcceptanceHarness(): void {
     },
 
     async federationContext() {
-      const response = await api.federationListFederations();
+      const response = await api.federationListContexts();
       return {
-        federations: response.federations.map((federation) => ({
+        federations: response.contexts.map((federation) => ({
           federationId: federation.federationId,
           name: federation.name,
           status: federation.status,
@@ -404,15 +402,29 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async searchFederationContext({ federationId, prefix }: FederationSearchInput) {
+      const response = await api.federationCatalogSearch({
+        federation_id: federationId,
+        prefix,
+        page_size: 20,
+      });
+      return {
+        entries: response.entries.map((entry) => ({
+          actorPtid: entry.actorPtid,
+          federationId,
+          homeStationPeerId: entry.homeStationPeerId,
+        })),
+      };
+    },
+
     async onboardingIdentity() {
-      const identity = await api.federationGetSelf();
+      const identity = await api.profileGet();
       return {
         actorPtid: activeActorPtid(),
-        preferredUsername: identity.preferredUsername,
-        federatedHandle: identity.federatedHandle,
-        homeStationPeerId: identity.homeStationPeerId,
-        homeStationDomain: identity.homeStationDomain,
-        locatorSeq: Number(identity.locatorSeq),
+        preferredUsername: identity.username,
+        federatedHandle: identity.federated_handle,
+        homeStationPeerId: identity.home_station_peer_id,
+        homeStationDomain: identity.home_station_domain,
       };
     },
 
@@ -459,32 +471,6 @@ export function installAcceptanceHarness(): void {
     async refreshOnboardingProjection({ peerPtid }: OnboardingPeerInput) {
       await refreshSocialProjection('acceptance:onboarding-readback', true);
       const snapshot = await onboardingSnapshot(peerPtid);
-      // #region debug-point C-E:friend-request-retry-readback
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'C-E',
-          location: 'harness.ts:refreshOnboardingProjection',
-          msg: '[DEBUG] Onboarding projection read back',
-          data: snapshot,
-        }),
-      }).catch(() => {});
-      // #endregion
-      // #region debug-point D-E:friend-request-accept-readback
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'post-fix',
-          hypothesisId: 'D-E',
-          location: 'harness.ts:refreshOnboardingProjection',
-          msg: '[DEBUG] Onboarding accept projection read back',
-          data: snapshot,
-        }),
-      }).catch(() => {});
-      // #endregion
       return snapshot;
     },
 

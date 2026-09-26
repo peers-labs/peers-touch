@@ -206,6 +206,10 @@ export interface PeerProfile {
   messagePermission: string;
   autoExpireDays: number;
   networkId: string;
+  federatedHandle: string;
+  homeStationPeerId: string;
+  homeStationDomain: string;
+  discoverability: 'hidden' | 'by_handle' | 'indexed';
 }
 
 export interface SocialApiErrorContext {

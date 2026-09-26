@@ -87,6 +87,7 @@ class MixedClientCrossStationGate(AcceptanceGate):
             direct_id = self.runtime.create_direct(
                 desktop_id,
                 mobile_id,
+                federation_id=desktop.federation_id,
                 timeout_seconds=STEP_TIMEOUT,
             )
             self.runtime.submit_typing(desktop_id, direct_id, True)
@@ -225,6 +226,7 @@ class MixedClientCrossStationGate(AcceptanceGate):
             group_id = self.runtime.create_group(
                 desktop_id,
                 (mobile_id,),
+                federation_id=desktop.federation_id,
                 name="CCU Cross Station",
                 timeout_seconds=STEP_TIMEOUT,
             )

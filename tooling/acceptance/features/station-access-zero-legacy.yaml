@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "station-access-zero-legacy",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "docs/architecture/station-access-lifecycle/legacy-inventory.json",
+    "apps/desktop/**",
+    "apps/mobile/**",
+    "apps/station/frame/touch/**",
+    "apps/station/app/subserver/federation/**",
+    "model/domain/access_gate/**",
+    "model/domain/federation/**",
+    "model/domain/peer/**",
+    "tooling/acceptance/gates/station_access/zero_legacy.py",
+    "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+  ],
+  "truth_sources": [
+    "Station Access legacy inventory",
+    "signed Station and Access Gate contracts",
+    "current-source Desktop and Mobile build outputs"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "release-build"},
+    {"type": "native-mobile", "route": "ios-simulator-release-build"}
+  ],
+  "required_gates": [
+    "station-access-zero-legacy-e2e",
+    "desktop-release-build",
+    "mobile-native-build",
+    "station-access-lifecycle-aggregate-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "all nine Station Access legacy dimensions contain zero forbidden references",
+      "all preceding Station Access Gates carry current-source DONE and PROVEN evidence"
+    ],
+    "surface": [
+      "Desktop release and Mobile native builds complete from the same clean source"
+    ]
+  },
+  "negative": [
+    "the inventory source is not treated as a production legacy reference",
+    "negative assertion allowlists must not suppress legacy matches",
+    "stale or dirty-source Gate evidence must not satisfy the aggregate"
+  ]
+}

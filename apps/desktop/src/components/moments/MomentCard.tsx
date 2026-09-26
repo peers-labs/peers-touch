@@ -213,7 +213,7 @@ export function MomentCard({
 }: MomentCardProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.homeStationDomain);
+  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.home_station_domain);
   const {
     privateProjection,
     privatePlatform,

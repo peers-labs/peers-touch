@@ -304,6 +304,27 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
             },
         )
 
+    def test_federation_read_actions_are_child_callable(self) -> None:
+        client = RecordingClient()
+        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
+
+        for action, payload in (
+            ("lifecycle.waitReady", {}),
+            ("federation.context.read", {}),
+            (
+                "social.people.search",
+                {
+                    "query": "@alice@station.example",
+                    "federationId": "federation-1",
+                },
+            ),
+        ):
+            with self.subTest(action=action):
+                self.assertEqual(
+                    binding.call_action("sim-ios", action, payload),
+                    {"ok": True},
+                )
+
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]

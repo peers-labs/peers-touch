@@ -159,6 +159,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'federation.context.read',
+    mobileAcceptanceActions['federation.context.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'messaging.createDirect',
     mobileAcceptanceActions['messaging.createDirect'],
     registry,

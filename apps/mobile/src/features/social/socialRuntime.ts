@@ -22,6 +22,7 @@ import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
 import {
   readableErrorMessage,
+  SocialApiError,
   type ActorSearchResult,
   type PeerProfile,
 } from './socialTypes';
@@ -197,9 +198,22 @@ export async function reconcileSocialRuntime(): Promise<SocialRuntimePublicProje
   return readSocialRuntimeProjection();
 }
 
-export async function searchSocialPeople(query: string): Promise<ActorSearchResult[]> {
+export async function readFederationContexts() {
   requireActiveSocialRuntime();
-  await useSocialStore.getState().searchPeople(query);
+  const gateway = useSocialStore.getState().profileGateway;
+  if (!gateway) throw new Error('mobile.social.runtimeUnavailable');
+  const result = await gateway.listFederationContexts();
+  if (!result.ok) throw new SocialApiError(result.error);
+  return result.data.map((context) => ({
+    federationId: context.federationId,
+    name: context.name,
+    status: context.status,
+  }));
+}
+
+export async function searchSocialPeople(query: string, federationId: string): Promise<ActorSearchResult[]> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().searchPeople(query, federationId);
   const state = useSocialStore.getState();
   if (state.peopleSearchError) throw state.peopleSearchError;
   return [...state.peopleSearchResults];
