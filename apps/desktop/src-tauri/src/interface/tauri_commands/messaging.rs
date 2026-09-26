@@ -1891,6 +1891,7 @@ pub fn messaging_submit_metadata_interaction(
         Err(error) => return error,
     };
     let interaction = match input.kind.as_str() {
+        "hideForActor" => crate::messaging::MetadataInteraction::HideForActor,
         "retract" => crate::messaging::MetadataInteraction::Retract,
         "reaction" => crate::messaging::MetadataInteraction::Reaction {
             reaction: &input.reaction,

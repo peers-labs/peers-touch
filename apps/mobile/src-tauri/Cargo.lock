@@ -3182,6 +3182,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "rustix",
  "secure-content-core",
  "serde",
  "serde_json",

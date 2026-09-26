@@ -275,7 +275,7 @@ export const messagingInteractions = {
   mutateMetadata: (
     conversationId: string,
     messageId: string,
-    kind: 'retract' | 'reaction' | 'pin',
+    kind: 'hideForActor' | 'retract' | 'reaction' | 'pin',
     options: { reaction?: string; remove?: boolean } = {},
   ) => messagingDomainRuntime.runScoped(
     () => api.messagingMetadataInteraction(

@@ -2791,6 +2791,9 @@ impl MobileMessagingEngine {
             .drain_lock
             .lock()
             .map_err(|_| "mobile messaging drain lock poisoned".to_string())?;
+        if let Err(error) = self.resume_redaction_file_cleanup() {
+            log::warn!("mobile messaging redaction file cleanup remains pending: {error}");
+        }
         let token = self.access_token()?;
         let (cursor, _) = MessagingRepository::lane_checkpoint(self.store.as_ref())?;
         let expected_epoch = self.consumer_epoch.load(Ordering::Acquire);
@@ -2815,7 +2818,83 @@ impl MobileMessagingEngine {
         let progress = drain.drain_once(cursor, expected_epoch)?;
         self.consumer_epoch
             .store(progress.consumer_epoch, Ordering::Release);
+        if let Err(error) = self.resume_redaction_file_cleanup() {
+            log::warn!("mobile messaging redaction file cleanup remains pending: {error}");
+        }
         Ok(progress)
+    }
+
+    fn resume_redaction_file_cleanup(&self) -> Result<(), String> {
+        let roots = [
+            self.attachment_root.join("cache"),
+            self.attachment_root.join("sources"),
+        ];
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        for operation in self.store.pending_redaction_cleanup_operations()? {
+            if matches!(
+                operation.state,
+                ChatStorageOperationState::Compacting
+                    | ChatStorageOperationState::CompactionPending
+                    | ChatStorageOperationState::FailedTerminal
+            ) {
+                self.finalize_redaction_cleanup_operation(&operation)?;
+                continue;
+            }
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                &roots,
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            if matches!(
+                progress.operation.state,
+                ChatStorageOperationState::Compacting | ChatStorageOperationState::FailedTerminal
+            ) {
+                self.finalize_redaction_cleanup_operation(&progress.operation)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize_redaction_cleanup_operation(
+        &self,
+        operation: &CacheCleanupOperation,
+    ) -> Result<(), String> {
+        let now = now_unix_ms();
+        let compacting = if operation.state == ChatStorageOperationState::Compacting {
+            operation.clone()
+        } else {
+            self.store.update_cache_cleanup_operation(
+                &operation.operation_id,
+                ChatStorageOperationState::Compacting,
+                operation.physical_bytes_after,
+                operation.last_error_code.as_deref(),
+                now,
+            )?
+        };
+        if let Err(error) = self.store.storage_compact() {
+            self.store.update_cache_cleanup_operation(
+                &operation.operation_id,
+                ChatStorageOperationState::CompactionPending,
+                operation.physical_bytes_after,
+                Some(storage_error_code_name(
+                    CacheCleanupError::CompactionPending.code(),
+                )),
+                now_unix_ms(),
+            )?;
+            return Err(error);
+        }
+        let physical_bytes_after = self.store.storage_redaction_physical_bytes()?;
+        finalize_cache_cleanup(
+            self.store.as_ref(),
+            &compacting,
+            physical_bytes_after,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     pub fn dispatch_command_once(&self) -> Result<CommandDispatchProgress, String> {
