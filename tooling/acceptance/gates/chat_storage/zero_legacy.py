@@ -289,9 +289,25 @@ def scan_repository(
 
 
 def _report(gate_id: str, result: ScanResult) -> dict[str, Any]:
+    scoped = result.owner_task is not None
     return {
-        "artifactKind": "chat-storage-zero-legacy-report",
+        "artifactKind": "acceptance-gate-evidence-report",
+        "reportKind": "chat-storage-zero-legacy",
         "gateId": gate_id,
+        "gate": gate_id,
+        "phase": (
+            "CSG-05 Chat Storage Legacy Hard Cut"
+            if scoped
+            else "CSG-06 Chat Storage Zero-Legacy Aggregate"
+        ),
+        "bom": ["CSG-G04" if scoped else "CSG-G06"],
+        "spec": [
+            (
+                "chat-storage-conversation-clear"
+                if scoped
+                else "chat-storage-governance"
+            )
+        ],
         "status": "PASS" if result.passed else "FAIL",
         "completionStatus": "DONE" if result.passed else "PARTIAL",
         "proofStatus": "PROVEN" if result.passed else "UNPROVEN",
