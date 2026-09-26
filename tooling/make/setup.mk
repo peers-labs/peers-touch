@@ -54,14 +54,9 @@ skills:
 	case "$$IDE_NAME" in trae|cursor|codex) ;; *) echo "Invalid IDE: $$IDE_NAME"; exit 1 ;; esac; \
 	/bin/bash tooling/scripts/install-project-skills.sh --host "$$IDE_NAME" --root "$(CURDIR)"
 
-.PHONY: skill-rollout-ack skill-rollout-audit skill-rollout-audit-all
+.PHONY: skill-rollout-audit skill-rollout-audit-all
 .PHONY: skill-overlay-install skill-overlay-list skill-overlay-enable
 .PHONY: skill-overlay-disable skill-overlay-uninstall skill-overlay-resolve
-
-skill-rollout-ack:
-	@if [ -z "$(IDE)" ]; then echo "Usage: make skill-rollout-ack IDE=trae|cursor|codex"; exit 1; fi
-	@python3 tooling/scripts/skill-rollout-control.py \
-		ack --root "$(CURDIR)" --host "$(IDE)"
 
 skill-rollout-audit:
 	@python3 tooling/scripts/skill-rollout-audit.py \

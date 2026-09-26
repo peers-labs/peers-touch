@@ -92,8 +92,17 @@ impl ConversationStateProcessor {
                 ptid: member.ptid.clone(),
                 role: match member.role.as_str() {
                     "owner" => MemberRole::Owner as i32,
+                    "admin" => MemberRole::Admin as i32,
                     _ => MemberRole::Member as i32,
                 },
+                home_station_peer_id: member.home_station_peer_id.clone(),
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until.as_ref().map(|value| {
+                    value
+                        .seconds
+                        .saturating_mul(1_000)
+                        .saturating_add(i64::from(value.nanos) / 1_000_000)
+                }),
             })
             .collect();
         let projection = ConversationProjection {
@@ -102,6 +111,8 @@ impl ConversationStateProcessor {
             federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
+            description: post_state.description.clone(),
+            avatar_object_id: post_state.avatar_object_id.clone(),
             owner_ptid: created.owner_ptid.clone(),
             members,
             membership_epoch: event.membership_epoch,

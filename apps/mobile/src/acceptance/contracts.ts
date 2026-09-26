@@ -12,7 +12,17 @@ import type {
 import type {
   MobileOAuthProvider,
   OAuthPublicPhase,
+  PrivateCommentIntent,
+  PrivateMomentKind,
+  PrivateSocialAudience,
+  PrivateSocialMomentIntent,
+  PrivateSocialPublishState,
+  PrivateSocialReadState,
 } from '../services/mobileCommands';
+import type {
+  PrivateSocialVisiblePublishState,
+  PrivateSocialVisibleReadState,
+} from '../runtimes/privateMomentsRuntime';
 import type {
   NetworkState,
   PermissionCheckResult,
@@ -79,6 +89,18 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'social.contact.open',
   'social.reconcile',
   'social.projection.read',
+  'moments.private.publish',
+  'moments.private.publishText',
+  'moments.private.read',
+  'moments.private.readText',
+  'moments.private.media.open',
+  'moments.private.comment.submit',
+  'moments.private.comments.read',
+  'moments.private.storeRecoveryPhrase',
+  'moments.private.recover',
+  'moments.private.recoverText',
+  'moments.private.reconcile',
+  'moments.private.snapshot',
   'moments.feed.read',
   'moments.publish',
   'moments.react',
@@ -891,6 +913,98 @@ export interface SocialRequestAcceptActionInput {
   requestId: string;
 }
 
+export interface PrivateMomentPublishActionInput {
+  draftId: string;
+  draftRevision: number;
+  text: string;
+  audience: PrivateSocialAudience;
+}
+
+export type PrivateMomentGenericPublishActionInput = PrivateSocialMomentIntent;
+
+export interface PrivateMomentPublishActionOutput {
+  draftId: string;
+  draftRevision: number;
+  generation: number;
+  audienceKind: PrivateSocialAudience['kind'];
+  state: PrivateSocialPublishState;
+  postId?: string;
+  textSha256?: string;
+  errorCode?: number;
+}
+
+export interface PrivateMomentReadActionInput {
+  postId: string;
+}
+
+export interface PrivateMomentMediaOpenActionInput extends PrivateMomentReadActionInput {
+  objectId: string;
+}
+
+export type PrivateCommentSubmitActionInput = PrivateCommentIntent;
+
+export interface PrivateCommentReadActionInput {
+  postId: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PrivateCommentActionOutput {
+  commentId?: string;
+  contentId?: string;
+  postId: string;
+  state: string;
+  textSha256?: string;
+  mentionCount: number;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+}
+
+export interface PrivateCommentPageActionOutput {
+  postId: string;
+  comments: PrivateCommentActionOutput[];
+  nextCursor: string;
+  hasMore: boolean;
+}
+
+export interface PrivateMomentRecoveryPhraseActionInput {
+  recoveryPhrase: string;
+  recoveryEpoch?: number;
+}
+
+export interface PrivateMomentReadActionOutput {
+  postId: string;
+  contentId: string;
+  generation: string;
+  authorPtid: string;
+  audienceKind: string;
+  state: PrivateSocialReadState;
+  contentKind?: PrivateMomentKind;
+  textSha256?: string;
+  mentionCount?: number;
+  mediaStates?: string[];
+  errorCode?: string;
+  retryAfterSeconds?: number;
+}
+
+export interface PrivateMomentSnapshotActionOutput {
+  active: boolean;
+  reconciling: boolean;
+  stationPeerId: string | null;
+  actorPtid: string | null;
+  publish: PrivateMomentPublishActionOutput[];
+  reads: PrivateMomentReadActionOutput[];
+  publishStateHistory: PrivateSocialVisiblePublishState[];
+  readStateHistoryByPostId: Record<string, PrivateSocialVisibleReadState[]>;
+  report: {
+    endpointPrekeysAvailable: number;
+    submissionsProcessed: number;
+    submissionsUnknown: number;
+    submissionsTerminal: number;
+  } | null;
+  errorPresent: boolean;
+}
+
 export interface PublicMomentProjection {
   postId: string;
   authorPtid: string;
@@ -978,6 +1092,7 @@ export interface PublicNotificationPreferences {
 
 export interface SettingsNotificationUpdateActionInput
   extends PublicNotificationPreference {}
+
 
 export interface CleanupOutput {
   oauthPurge: OAuthPurgeOutput;
@@ -1229,6 +1344,54 @@ export interface MobileAcceptanceActionContract {
   'social.projection.read': {
     input: undefined;
     output: PublicSocialRuntimeProjection;
+  };
+  'moments.private.publish': {
+    input: PrivateMomentGenericPublishActionInput;
+    output: PrivateMomentPublishActionOutput;
+  };
+  'moments.private.publishText': {
+    input: PrivateMomentPublishActionInput;
+    output: PrivateMomentPublishActionOutput;
+  };
+  'moments.private.read': {
+    input: PrivateMomentReadActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.readText': {
+    input: PrivateMomentReadActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.media.open': {
+    input: PrivateMomentMediaOpenActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.comment.submit': {
+    input: PrivateCommentSubmitActionInput;
+    output: PrivateCommentActionOutput;
+  };
+  'moments.private.comments.read': {
+    input: PrivateCommentReadActionInput;
+    output: PrivateCommentPageActionOutput;
+  };
+  'moments.private.storeRecoveryPhrase': {
+    input: PrivateMomentRecoveryPhraseActionInput;
+    output: { stored: true; recoveryEpoch: number };
+  };
+  'moments.private.recover': {
+    input: PrivateMomentReadActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.recoverText': {
+    input: PrivateMomentReadActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.reconcile': {
+    input: undefined;
+    output: PrivateMomentSnapshotActionOutput;
+  };
+  'moments.private.snapshot': {
+    input: undefined;
+    output: PrivateMomentSnapshotActionOutput;
   };
   'moments.feed.read': {
     input: undefined;

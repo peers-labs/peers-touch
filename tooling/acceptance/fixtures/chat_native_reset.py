@@ -1023,6 +1023,8 @@ def duplicate_acceptance_queue_delivery(
     source_item_id: str,
     recipient_ptid: str,
     recipient_device_id: str,
+    *,
+    deployment_environment: str = "",
 ) -> dict[str, object]:
     if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
         raise RuntimeError(
@@ -1031,7 +1033,10 @@ def duplicate_acceptance_queue_delivery(
     if not source_item_id or not recipient_ptid or not recipient_device_id:
         raise RuntimeError("queue replay requires source item and recipient endpoint")
 
-    environment = acceptance_station_environment(station_url)
+    environment = acceptance_station_environment(
+        station_url,
+        deployment_environment or None,
+    )
     verify_disposable_station_runtime(environment)
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
         database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
@@ -1148,7 +1153,7 @@ BEGIN
   );
   INSERT INTO device_queue_items (
     item_id, recipient_ptid, recipient_device_id, lane_sequence,
-    idempotency_key, event_id, conversation_id, payload_type,
+    idempotency_key, event_id, event_sequence, conversation_id, payload_type,
     opaque_payload, payload_sha256, state, attempt_count,
     lease_consumer_id, lease_consumer_epoch, lease_expires_at,
     first_queued_at, next_attempt_at, expires_at, consumed_at,
@@ -1156,11 +1161,12 @@ BEGIN
   ) VALUES (
     duplicate_item_id, source_row.recipient_ptid,
     source_row.recipient_device_id, lane_row.next_sequence + 1,
-    duplicate_item_id, source_row.event_id, source_row.conversation_id,
+    duplicate_item_id, source_row.event_id, source_row.event_sequence,
+    source_row.conversation_id,
     source_row.payload_type, source_row.opaque_payload,
     source_row.payload_sha256, 1, 0, '', 0, NULL,
     clock_timestamp(), clock_timestamp(), source_row.expires_at,
-    NULL, NULL, 'acceptance_duplicate_delivery'
+    NULL, NULL, ''
   );
   UPDATE device_queue_lanes
   SET next_sequence = next_sequence + 1

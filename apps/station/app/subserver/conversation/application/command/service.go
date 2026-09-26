@@ -2704,9 +2704,17 @@ func canonicalizeMembershipChanges(
 		homeByActor[member.Actor] = member.HomeStation
 	}
 	homeByEndpoint := make(map[string]valueobject.StationID, len(routes))
+	routesByActor := make(map[valueobject.PTID][]ports.EndpointRoute, len(routes))
 	for _, route := range routes {
 		homeByActor[route.Endpoint.Actor] = route.HomeStation
 		homeByEndpoint[route.Endpoint.Key()] = route.HomeStation
+		routesByActor[route.Endpoint.Actor] = append(routesByActor[route.Endpoint.Actor], route)
+	}
+	for actor := range routesByActor {
+		sort.Slice(routesByActor[actor], func(left int, right int) bool {
+			return routesByActor[actor][left].Endpoint.Key() <
+				routesByActor[actor][right].Endpoint.Key()
+		})
 	}
 	explicitAddDevices := make(map[string]struct{}, len(changes))
 	for _, change := range changes {
@@ -2719,35 +2727,14 @@ func canonicalizeMembershipChanges(
 		}
 	}
 
-	canonical := make([]entity.MembershipChange, 0, len(changes)+len(routes))
+	canonical := make([]entity.MembershipChange, 0, len(changes))
 	for _, requested := range changes {
 		change := requested
 		switch change.Action {
 		case entity.MembershipActionAddActor:
-			var actorRoutes []ports.EndpointRoute
-			for _, route := range routes {
-				if route.Endpoint.Actor == change.Actor {
-					actorRoutes = append(actorRoutes, route)
-				}
-			}
-			if len(actorRoutes) == 0 {
-				return nil, conversationdomain.NewError(
-					conversationdomain.ErrorCodeDeviceConflict,
-					"application.canonicalize_membership_changes",
-					"endpoint",
-					"does not resolve to an active identity route",
-				)
-			}
-			primaryIndex := 0
-			if change.Device != "" {
-				primaryIndex = -1
-				for index, route := range actorRoutes {
-					if route.Endpoint.Device == change.Device {
-						primaryIndex = index
-						break
-					}
-				}
-				if primaryIndex < 0 {
+			if change.Device == "" {
+				actorRoutes := routesByActor[change.Actor]
+				if len(actorRoutes) == 0 {
 					return nil, conversationdomain.NewError(
 						conversationdomain.ErrorCodeDeviceConflict,
 						"application.canonicalize_membership_changes",
@@ -2755,28 +2742,23 @@ func canonicalizeMembershipChanges(
 						"does not resolve to an active identity route",
 					)
 				}
-			}
-			for index, route := range actorRoutes {
-				if index != primaryIndex {
+				change.Device = actorRoutes[0].Endpoint.Device
+				change.HomeStation = actorRoutes[0].HomeStation
+				canonical = append(canonical, change)
+				for _, route := range actorRoutes[1:] {
 					if _, explicit := explicitAddDevices[route.Endpoint.Key()]; explicit {
 						continue
 					}
+					canonical = append(canonical, entity.MembershipChange{
+						Action:      entity.MembershipActionAddDevice,
+						Actor:       change.Actor,
+						Device:      route.Endpoint.Device,
+						HomeStation: route.HomeStation,
+					})
 				}
-				action := entity.MembershipActionAddDevice
-				role := valueobject.MemberRole("")
-				if index == primaryIndex {
-					action = entity.MembershipActionAddActor
-					role = change.Role
-				}
-				canonical = append(canonical, entity.MembershipChange{
-					Action:      action,
-					Actor:       change.Actor,
-					Device:      route.Endpoint.Device,
-					HomeStation: route.HomeStation,
-					Role:        role,
-				})
+				continue
 			}
-			continue
+			fallthrough
 		case entity.MembershipActionAddDevice,
 			entity.MembershipActionRemoveDevice:
 			endpoint := valueobject.Endpoint{Actor: change.Actor, Device: change.Device}

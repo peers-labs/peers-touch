@@ -1,7 +1,7 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
+import { groupCallManager } from '../../modules/groupCall';
 import { api } from '../../services/desktop_api';
-import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import {
@@ -10,7 +10,7 @@ import {
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
-import { useSocialChatStore } from '../../store/socialChat';
+import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import { callP2p } from '../../modules/p2p/callP2p';
@@ -49,6 +49,10 @@ interface CreateGroupInput {
   description?: string;
   memberPtids?: string[];
   initialFederatedMembers?: GroupChatFederatedActorInput[];
+}
+
+interface GroupChatFederatedActorInput {
+  ptid: string;
 }
 
 interface SyncGroupInput {
@@ -109,6 +113,20 @@ interface AddFederatedGroupMemberInput {
   member: GroupChatFederatedActorInput;
 }
 
+interface UpdateGroupInput {
+  groupUlid: string;
+  name?: string;
+  description?: string;
+}
+
+interface UpdateGroupMemberInput {
+  groupUlid: string;
+  memberPtid: string;
+  role?: number;
+  muted?: boolean;
+  mutedUntilUnixMs?: number;
+}
+
 type ConversationKind = 'friend' | 'group';
 
 interface SendInteractionMessageInput {
@@ -119,10 +137,19 @@ interface SendInteractionMessageInput {
   threadRootMessageId?: string;
 }
 
+interface SendInteractionMessageBatchInput {
+  conversationId: string;
+  kind: ConversationKind;
+  prefix: string;
+  count: number;
+  startIndex?: number;
+}
+
 interface MessageInteractionInput {
   conversationId: string;
   kind: ConversationKind;
   messageId: string;
+  threadRootMessageId?: string;
 }
 
 interface EditMessageInput extends MessageInteractionInput {
@@ -169,12 +196,20 @@ function interactionProjection(
   kind: ConversationKind,
   conversationId: string,
   messageId: string,
+  threadRootMessageId = '',
 ) {
   const state = useSocialChatStore.getState();
-  const message = state
-    .getIMMessages(kind, conversationId)
+  const messages = threadRootMessageId
+    ? state.getIMThreadMessages(kind, conversationId, threadRootMessageId)
+    : state.getIMMessages(kind, conversationId);
+  const rawMessages = threadRootMessageId
+    ? state.threadMessages[
+      socialThreadKey(kind, conversationId, threadRootMessageId)
+    ] ?? []
+    : state.messages[conversationId] ?? [];
+  const message = messages
     .find((item) => item.id === messageId);
-  const raw = (state.messages[conversationId] ?? [])
+  const raw = rawMessages
     .find((item) => item.ulid === messageId);
   if (!message || !raw) return null;
   return {
@@ -202,6 +237,29 @@ function activeActorPtid(): string {
   return requireCanonicalAcceptancePtid(
     useSocialChatStore.getState().currentUserPtid,
   );
+}
+
+function acceptanceCallSnapshot(snapshot: ReturnType<typeof callP2p.getCall>) {
+  const tracks = (stream?: MediaStream) => (
+    stream?.getTracks().map((track) => ({
+      kind: track.kind,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    })) ?? []
+  );
+  if (!snapshot) return null;
+  return {
+    callId: snapshot.callId,
+    mediaKind: snapshot.mediaKind,
+    state: snapshot.state,
+    startedAt: snapshot.startedAt ?? null,
+    micMuted: snapshot.micMuted ?? false,
+    cameraOff: snapshot.cameraOff ?? false,
+    endReason: snapshot.endReason ?? null,
+    localTracks: tracks(snapshot.localStream),
+    remoteTracks: tracks(snapshot.remoteStream),
+  };
 }
 
 async function waitForIdentityState(
@@ -451,34 +509,7 @@ export function installAcceptanceHarness(): void {
 
     async refreshOnboardingProjection({ peerPtid }: OnboardingPeerInput) {
       await refreshSocialProjection('acceptance:onboarding-readback', true);
-      const snapshot = await onboardingSnapshot(peerPtid);
-      // #region debug-point C-E:friend-request-retry-readback
-      void fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-retry',
-          runId: 'post-fix',
-          hypothesisId: 'C-E',
-          location: 'harness.ts:refreshOnboardingProjection',
-          msg: '[DEBUG] Onboarding projection read back',
-          data: snapshot,
-        }),
-      }).catch(() => {});
-      // #endregion
-      // #region debug-point D-E:friend-request-accept-readback
-      void fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'friend-request-accept',
-          runId: 'pre-fix',
-          hypothesisId: 'D-E',
-          location: 'harness.ts:refreshOnboardingProjection',
-          msg: '[DEBUG] Onboarding accept projection read back',
-          data: snapshot,
-        }),
-      }).catch(() => {});
-      // #endregion
-      return snapshot;
+      return onboardingSnapshot(peerPtid);
     },
 
     async createDirectConversation({
@@ -581,6 +612,60 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async updateGroup({ groupUlid, name, description }: UpdateGroupInput) {
+      return imServiceV1.messaging.updateConversation(groupUlid, { name, description });
+    },
+
+    async updateGroupMember({
+      groupUlid,
+      memberPtid,
+      role,
+      muted,
+      mutedUntilUnixMs,
+    }: UpdateGroupMemberInput) {
+      return imServiceV1.messaging.updateMemberAuthority(groupUlid, memberPtid, {
+        role,
+        muted,
+        mutedUntilUnixMs,
+      });
+    },
+
+    async transferGroupOwnership({
+      groupUlid,
+      memberPtid,
+    }: RemoveGroupMemberInput) {
+      return imServiceV1.messaging.transferOwnership(groupUlid, memberPtid);
+    },
+
+    async leaveGroup({ groupUlid }: { groupUlid: string }) {
+      return imServiceV1.messaging.leaveConversation(groupUlid);
+    },
+
+    async dissolveGroup({ groupUlid }: { groupUlid: string }) {
+      return imServiceV1.messaging.dissolveConversation(groupUlid);
+    },
+
+    async groupLifecycleSnapshot({ groupUlid }: { groupUlid: string }) {
+      const conversation = (await imServiceV1.messaging.listConversations())
+        .find(candidate => candidate.conversationId === groupUlid);
+      return conversation
+        ? {
+            conversationId: conversation.conversationId,
+            name: conversation.name,
+            ownerPtid: conversation.ownerPtid,
+            membershipEpoch: conversation.membershipEpoch,
+            mlsEpoch: conversation.mlsEpoch,
+            mlsStatus: conversation.mlsStatus,
+            active: conversation.active,
+            members: conversation.members.map(member => ({
+              ptid: member.ptid,
+              role: member.role,
+              muted: member.muted,
+            })),
+          }
+        : null;
+    },
+
     async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncGroupInput) {
       const social = useSocialChatStore.getState();
       await imServiceV1.conversation.syncFromStation(groupUlid, _limit).catch(() => {});
@@ -629,6 +714,38 @@ export function installAcceptanceHarness(): void {
       return {
         ...outcome,
         projection: interactionProjection(kind, conversationId, outcome.messageId),
+      };
+    },
+
+    async sendInteractionMessageBatch({
+      conversationId,
+      kind,
+      prefix,
+      count,
+      startIndex = 1,
+    }: SendInteractionMessageBatchInput) {
+      if (count < 1 || count > 100) {
+        throw new Error('interaction message batch count must be between 1 and 100');
+      }
+      if (startIndex < 1) {
+        throw new Error('interaction message batch startIndex must be positive');
+      }
+      const messageIds: string[] = [];
+      for (let offset = 0; offset < count; offset += 1) {
+        const index = startIndex + offset;
+        const outcome = await imServiceV1.messaging.sendMessage(
+          conversationId,
+          kind === 'friend' ? 'direct' : 'group',
+          `${prefix}-${String(index).padStart(3, '0')}`,
+        );
+        messageIds.push(outcome.messageId);
+      }
+      return {
+        conversationId,
+        count: messageIds.length,
+        firstMessageId: messageIds[0] ?? '',
+        lastMessageId: messageIds[messageIds.length - 1] ?? '',
+        messageIds,
       };
     },
 
@@ -707,9 +824,22 @@ export function installAcceptanceHarness(): void {
       conversationId,
       kind,
       messageId,
+      threadRootMessageId = '',
     }: MessageInteractionInput) {
       await refreshConversation(kind, conversationId);
-      return interactionProjection(kind, conversationId, messageId);
+      if (threadRootMessageId) {
+        await useSocialChatStore.getState().loadThreadMessages(
+          conversationId,
+          threadRootMessageId,
+          kind,
+        );
+      }
+      return interactionProjection(
+        kind,
+        conversationId,
+        messageId,
+        threadRootMessageId,
+      );
     },
 
     async openInteractionThread({
@@ -935,13 +1065,22 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async addFederatedGroupMember({ groupUlid, member: _member }: AddFederatedGroupMemberInput) {
-      // CCU-03: groupChatAddFederatedMember was removed during proto migration.
-      // This acceptance harness entry is retained as a placeholder for the
-      // replacement API integration.
-      throw new Error(
-        `addFederatedGroupMember: groupChatAddFederatedMember API removed in CCU-03 (group ${groupUlid})`,
-      );
+    async addFederatedGroupMember({ groupUlid, member }: AddFederatedGroupMemberInput) {
+      await imServiceV1.messaging.submitMembershipIntent({
+        conversationId: groupUlid,
+        action: 'add_actor',
+        targetPtid: member.ptid,
+      });
+      const social = useSocialChatStore.getState();
+      await social.loadGroups();
+      await social.loadGroupMembers(groupUlid);
+      social.selectGroup(groupUlid);
+      social.setActiveTab('group');
+      return {
+        groupUlid,
+        success: true,
+        memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
+      };
     },
 
     async inviteToGroup({ groupUlid, memberPtids }: { groupUlid: string; memberPtids: string[] }) {
@@ -1082,6 +1221,132 @@ export function installAcceptanceHarness(): void {
     async dispatchRealtimeFrame({ eventId = '', dataB64 }: { eventId?: string; dataB64: string }) {
       dispatchRealtimeFrameForAcceptance({ event_id: eventId, data_b64: dataB64 });
       return { accepted: Boolean(dataB64) };
+    },
+
+    async callStart({ peerPtid, mediaKind }: { peerPtid: string; mediaKind: 'audio' | 'video' }) {
+      const myPtid = activeActorPtid();
+      await callP2p.startCall(myPtid, peerPtid, mediaKind);
+      return { actorPtid: myPtid, peerPtid, mediaKind, started: true };
+    },
+
+    async callAccept({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.acceptCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, accepted: true };
+    },
+
+    async callReject({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.rejectCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, rejected: true };
+    },
+
+    async callEnd({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.endCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, ended: true };
+    },
+
+    async callSnapshot({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callToggleMic({ peerPtid, muted }: { peerPtid: string; muted: boolean }) {
+      const myPtid = activeActorPtid();
+      callP2p.toggleMic(myPtid, peerPtid, muted);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callToggleCamera({ peerPtid, off }: { peerPtid: string; off: boolean }) {
+      const myPtid = activeActorPtid();
+      callP2p.toggleCamera(myPtid, peerPtid, off);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callRestartConnection({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      callP2p.restartCallConnection(myPtid, peerPtid);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callSwitchVideoDevice({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const before = callP2p.getCall(myPtid, peerPtid);
+      const beforeTrackId = before?.localStream?.getVideoTracks()[0]?.id ?? '';
+      const currentDeviceId = (
+        before?.localStream?.getVideoTracks()[0]?.getSettings().deviceId
+        ?? before?.videoDeviceId
+        ?? ''
+      );
+      const devices = await callP2p.listMediaDevices();
+      const selected = devices.videoInputs.find(
+        (device) => device.deviceId !== currentDeviceId,
+      );
+      if (!selected) {
+        return { actorPtid: myPtid, peerPtid, available: false, switched: false };
+      }
+      await callP2p.switchVideoDevice(myPtid, peerPtid, selected.deviceId);
+      const after = callP2p.getCall(myPtid, peerPtid);
+      const afterTrack = after?.localStream?.getVideoTracks()[0];
+      return {
+        actorPtid: myPtid,
+        peerPtid,
+        available: true,
+        deviceCount: devices.videoInputs.length,
+        switched: Boolean(beforeTrackId && afterTrack?.id && beforeTrackId !== afterTrack.id),
+        newTrackLive: afterTrack?.readyState === 'live',
+      };
+    },
+
+    async groupCallStart({
+      groupUlid,
+      mediaKind,
+    }: {
+      groupUlid: string;
+      mediaKind: 'audio' | 'video';
+    }) {
+      await groupCallManager.joinGroupCall(groupUlid, mediaKind);
+      return {
+        actorPtid: activeActorPtid(),
+        mediaKind,
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallLeave() {
+      groupCallManager.leaveGroupCall();
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallToggleMic({ enabled }: { enabled: boolean }) {
+      await groupCallManager.setMicEnabled(enabled);
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallToggleCamera({ enabled }: { enabled: boolean }) {
+      await groupCallManager.setCameraEnabled(enabled);
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallSnapshot() {
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
     },
   });
 }

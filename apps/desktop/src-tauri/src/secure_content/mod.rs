@@ -1,4 +1,6 @@
 pub mod adapter;
+#[cfg(feature = "acceptance-webdriver")]
+pub mod barrier;
 pub mod recovery;
 pub mod station_trust;
 pub mod store;
@@ -294,7 +296,8 @@ pub struct SecureContentSupervisor {
     media_grants: Mutex<HashMap<String, PrivateMediaGrant>>,
     app_handle: RwLock<Option<tauri::AppHandle>>,
     lifecycle_epoch: AtomicU64,
-    next_generation: AtomicU64,
+    #[cfg(feature = "acceptance-webdriver")]
+    barrier_controller: RwLock<Option<Arc<barrier::LifecycleBarrierController>>>,
 }
 
 struct PrivateMediaGrant {
@@ -324,7 +327,8 @@ impl SecureContentSupervisor {
             media_grants: Mutex::new(HashMap::new()),
             app_handle: RwLock::new(None),
             lifecycle_epoch: AtomicU64::new(1),
-            next_generation: AtomicU64::new(1),
+            #[cfg(feature = "acceptance-webdriver")]
+            barrier_controller: RwLock::new(None),
         }
     }
 
@@ -333,6 +337,24 @@ impl SecureContentSupervisor {
             .app_handle
             .write()
             .unwrap_or_else(|error| error.into_inner()) = Some(app_handle);
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn arm_barrier_controller(&self, boot_identity: String, session_generation: u64) {
+        *self
+            .barrier_controller
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(Arc::new(
+            barrier::LifecycleBarrierController::new(boot_identity, session_generation),
+        ));
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn barrier_controller(&self) -> Option<Arc<barrier::LifecycleBarrierController>> {
+        self.barrier_controller
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
     }
 
     fn app_handle(&self) -> Option<tauri::AppHandle> {
@@ -380,6 +402,16 @@ impl SecureContentSupervisor {
         self.activate_with_store_if_epoch(session, renderer_generation, store, lifecycle_epoch)
     }
 
+    #[cfg(test)]
+    pub(crate) fn activate_with_store_for_test(
+        &self,
+        session: SecureContentSession,
+        renderer_generation: u64,
+        store: Arc<SecureContentStore>,
+    ) -> Result<SecureContentLease, String> {
+        self.activate_with_store(session, renderer_generation, store)
+    }
+
     fn activate_with_store_if_epoch(
         &self,
         mut session: SecureContentSession,
@@ -409,7 +441,7 @@ impl SecureContentSupervisor {
             return Err("secure content lifecycle changed during activation".to_string());
         }
 
-        let generation = self.next_generation.fetch_add(1, Ordering::AcqRel);
+        let generation = store.claim_session_generation()?;
         session.key.session_generation = generation;
         #[cfg(not(test))]
         {
@@ -420,7 +452,6 @@ impl SecureContentSupervisor {
                 worker::clear_stale_plaintext_generations(&session.key.actor_ptid)?;
             }
         }
-        store.bind_session_generation(generation)?;
         store.recover_orphaned_leases()?;
         let lease = SecureContentLease {
             session: Arc::new(session),
@@ -508,7 +539,7 @@ impl SecureContentSupervisor {
             .map_err(|error| format!("resolve private Moment media: {error}"))?;
         if !matches!(
             media_type,
-            "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+            "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "video/mp4"
         ) || !path.is_file()
             || !path.starts_with(&expected_root)
         {
@@ -626,14 +657,10 @@ impl SecureContentSupervisor {
                 })
                 .collect::<Vec<_>>();
             self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
-            let previous = labels
+            labels
                 .into_iter()
                 .filter_map(|label| active.remove(&label))
-                .collect::<Vec<_>>();
-            if !previous.is_empty() {
-                self.next_generation.fetch_add(1, Ordering::AcqRel);
-            }
-            previous
+                .collect::<Vec<_>>()
         };
         self.media_grants
             .lock()
@@ -662,7 +689,6 @@ impl SecureContentSupervisor {
                 .map(|(_, runtime)| runtime)
                 .collect::<Vec<_>>();
             self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
-            self.next_generation.fetch_add(1, Ordering::AcqRel);
             previous
         };
         self.media_grants
@@ -785,23 +811,16 @@ mod tests {
     #[test]
     fn secure_content_supervisor_fences_renderer_and_session_generations() {
         let supervisor = SecureContentSupervisor::new();
+        let store = Arc::new(SecureContentStore::in_memory().unwrap());
         let first = supervisor
-            .activate_with_store(
-                session("ptid:alice"),
-                7,
-                Arc::new(SecureContentStore::in_memory().unwrap()),
-            )
+            .activate_with_store(session("ptid:alice"), 7, store.clone())
             .unwrap();
         assert!(supervisor.is_current(&first.session.key));
         assert!(supervisor.lease("ptid:alice", 8, "main").is_err());
         assert!(supervisor.lease("ptid:alice", 7, "other").is_err());
 
         let second = supervisor
-            .activate_with_store(
-                session("ptid:alice"),
-                8,
-                Arc::new(SecureContentStore::in_memory().unwrap()),
-            )
+            .activate_with_store(session("ptid:alice"), 8, store)
             .unwrap();
         assert!(second.session.key.session_generation > first.session.key.session_generation);
         assert!(first.session.is_cancelled());
@@ -857,19 +876,12 @@ mod tests {
     #[test]
     fn secure_content_current_gate_rejects_retired_generation() {
         let supervisor = SecureContentSupervisor::new();
+        let store = Arc::new(SecureContentStore::in_memory().unwrap());
         let first = supervisor
-            .activate_with_store(
-                session("ptid:alice"),
-                1,
-                Arc::new(SecureContentStore::in_memory().unwrap()),
-            )
+            .activate_with_store(session("ptid:alice"), 1, store.clone())
             .unwrap();
         supervisor
-            .activate_with_store(
-                session("ptid:alice"),
-                2,
-                Arc::new(SecureContentStore::in_memory().unwrap()),
-            )
+            .activate_with_store(session("ptid:alice"), 2, store)
             .unwrap();
 
         assert!(supervisor
@@ -937,11 +949,37 @@ mod tests {
         assert!(supervisor
             .read_private_media("bob-window", grant_id)
             .is_err());
+
+        let video_path = worker::secure_cache_dir(
+            &alice.session.key.actor_ptid,
+            alice.session.key.session_generation,
+        )
+        .unwrap()
+        .join(format!("{}.mp4", Ulid::new()));
+        std::fs::write(&video_path, b"private-video").unwrap();
+        let video_url = supervisor
+            .grant_private_media(&alice.session.key, &video_path, "video/mp4")
+            .unwrap();
+        let video_grant_id = video_url.rsplit('/').next().unwrap();
+        assert_eq!(
+            supervisor
+                .read_private_media("alice-window", video_grant_id)
+                .unwrap(),
+            (b"private-video".to_vec(), "video/mp4".to_string())
+        );
+        assert!(supervisor
+            .read_private_media("bob-window", video_grant_id)
+            .is_err());
+
         supervisor.teardown_actor(&alice_actor).unwrap();
         assert!(supervisor
             .read_private_media("alice-window", grant_id)
             .is_err());
+        assert!(supervisor
+            .read_private_media("alice-window", video_grant_id)
+            .is_err());
         let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(video_path);
     }
 
     #[test]

@@ -53,7 +53,6 @@ import {
 } from './useActiveSocialChatStore';
 import {
   messagingCommands,
-  messagingConversations,
 } from '../../messaging/runtime';
 import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache';
 import { resolveFederationStationName } from '../../store/federation';
@@ -605,7 +604,7 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadSessions, loadGroupMembers, loadMessages,
+    setShowDetail, selectGroup, loadSessions, loadGroupMembers, loadMessages,
     loadConversationPreviews,
     conversationLocalState, updateConversationLocalState,
     setConversationBackgroundPreview,
@@ -627,6 +626,7 @@ export function ChatDetailPanel() {
     groups: s.groups,
     groupMembers: s.groupMembers,
     setShowDetail: s.setShowDetail,
+    selectGroup: s.selectGroup,
     loadSessions: s.loadSessions,
     loadGroupMembers: s.loadGroupMembers,
     loadMessages: s.loadMessages,
@@ -881,17 +881,62 @@ export function ChatDetailPanel() {
   };
 
   const handleSaveGroupName = async () => {
+    if (!activeUlid || !editNameValue.trim()) {
+      setEditingName(false);
+      return;
+    }
+    try {
+      await messagingCommands.updateConversation(activeUlid, {
+        name: editNameValue.trim(),
+      });
+      await loadSessions();
+      toast.success(t('chat.social.detail.groupNameUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupNameUpdateFailed'));
+    }
     setEditingName(false);
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const handleSaveMyNickname = async () => {
+    if (!activeUlid) {
+      setEditingMyNickname(false);
+      return;
+    }
+    const nextNickname = editMyNicknameValue.trim();
+    try {
+      await messagingCommands.updateMemberSettings(activeUlid, {
+        nickname: nextNickname,
+      });
+      await loadGroupMembers(activeUlid);
+      toast.success(t('chat.social.detail.myNicknameUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
+    }
     setEditingMyNickname(false);
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
   };
 
   const handleGroupAvatarClick = async () => {
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
+    if (!activeUlid) return;
+    let filePath: string;
+    try {
+      filePath = await api.pickImageFile();
+    } catch {
+      return;
+    }
+    try {
+      const uploaded = await api.ossUploadAttachmentSocial(filePath);
+      const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
+      await messagingCommands.updateConversation(activeUlid, {
+        avatarObjectId: avatarPath,
+      });
+      toast.success(t('chat.social.detail.groupAvatarUpdated'));
+      loadSessions();
+    } catch (error) {
+      log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
+    }
   };
 
   const handleUploadBackgroundImage = async (filePath: string, previewUrl: string) => {
@@ -976,7 +1021,6 @@ export function ChatDetailPanel() {
           targetPtid: did,
         })
       }
-      setGroupSecurityState(activeUlid, 'ready');
       await loadSessions();
       setInviteDids([]);
       setInviteModalOpen(false);
@@ -1008,7 +1052,6 @@ export function ChatDetailPanel() {
             action: 'remove_actor',
             targetPtid: member.ptid,
           })
-          setGroupSecurityState(activeUlid, 'ready');
           await loadSessions();
           toast.success(t('chat.social.detail.removeMemberSuccess'));
         } catch (error) {
@@ -1021,8 +1064,17 @@ export function ChatDetailPanel() {
     });
   };
 
-  const updateGroupMember = async (_member: GroupMember, _input: { role?: number; muted?: boolean }) => {
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
+  const updateGroupMember = async (member: GroupMember, input: { role?: number; muted?: boolean }) => {
+    if (!activeUlid || !member.ptid) return;
+    try {
+      await messagingCommands.updateMemberAuthority(activeUlid, member.ptid, input);
+      await loadGroupMembers(activeUlid);
+      toast.success(t('chat.social.detail.updateMemberSuccess'));
+    } catch (error) {
+      log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
+      toast.error(t('chat.social.detail.updateMemberFailed'));
+      throw error;
+    }
   };
 
   const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
@@ -1042,8 +1094,27 @@ export function ChatDetailPanel() {
     void updateGroupMember(member, { muted: !member.muted });
   };
 
-  const confirmTransferGroupOwnership = (_member: GroupMember) => {
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
+  const confirmTransferGroupOwnership = (member: GroupMember) => {
+    if (!activeUlid || !member.ptid) return;
+    const memberName = getMemberDisplayName(member);
+    Modal.confirm({
+      title: t('chat.social.detail.transferOwnerConfirmTitle'),
+      content: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
+      okText: t('chat.social.detail.transferOwner'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await messagingCommands.transferOwnership(activeUlid, member.ptid);
+          await Promise.allSettled([loadGroupMembers(activeUlid), loadSessions()]);
+          toast.success(t('chat.social.detail.transferOwnerSuccess'));
+        } catch (error) {
+          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
+          toast.error(t('chat.social.detail.transferOwnerFailed'));
+          throw error;
+        }
+      },
+    });
   };
 
   const confirmLeaveGroup = () => {
@@ -1056,19 +1127,7 @@ export function ChatDetailPanel() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          const [conversation, federationSelf] = await Promise.all([
-            messagingConversations.getConversation(activeUlid),
-            api.federationGetSelf(),
-          ]);
-          await messagingCommands.requestLeaveIntent({
-            federationId: conversation.federationId,
-            authorityStationPeerId: conversation.authorityStationPeerId,
-            authorityEpoch: Number(conversation.authorityEpoch),
-            homeStationPeerId: federationSelf.homeStationPeerId,
-            conversationId: activeUlid,
-            observedMembershipEpoch: Number(conversation.membershipEpoch),
-            observedMlsEpoch: Number(conversation.mlsEpoch),
-          });
+          await messagingCommands.leaveConversation(activeUlid);
           setGroupSecurityState(activeUlid, 'establishing');
           setShowDetail(false);
         } catch (error) {
@@ -1081,7 +1140,27 @@ export function ChatDetailPanel() {
   };
 
   const confirmDissolveGroup = () => {
-    toast.error(t('chat.social.detail.groupAdminUnavailable'));
+    if (!activeUlid) return;
+    Modal.confirm({
+      title: t('chat.social.detail.dissolveGroupConfirmTitle'),
+      content: t('chat.social.detail.dissolveGroupConfirmBody'),
+      okText: t('chat.social.detail.dissolveGroup'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await messagingCommands.dissolveConversation(activeUlid);
+          await loadSessions();
+          selectGroup('');
+          setShowDetail(false);
+          toast.success(t('chat.social.detail.dissolveGroupSuccess'));
+        } catch (error) {
+          log.error('chat', 'dissolve group failed', { groupUlid: activeUlid, error });
+          toast.error(t('chat.social.detail.dissolveGroupFailed'));
+          throw error;
+        }
+      },
+    });
   };
 
   const openBackgroundModal = () => {

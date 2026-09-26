@@ -1,4 +1,4 @@
-import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useRef, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
 import { Popover, Spin, theme, Typography } from 'antd';
@@ -13,11 +13,14 @@ import {
 import {
   chatMessageRowMaxWidth,
   chatVisualLayoutForSurface,
-  countHiddenEarlierChatThreadReplies,
 } from '@peers-touch/client-chat-core';
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
 import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
+import {
+  CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+  CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+} from '../chatGeometry';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
@@ -66,7 +69,6 @@ interface ChatMessageRowProps {
   pinned?: boolean;
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
-  threadPreviewMessages: ChatMessage[];
   threadReplyCount: number;
   threadReplyIds: string[];
   threadUnreadCount: number;
@@ -141,180 +143,228 @@ function ReplyBlock({
   );
 }
 
-function ThreadReplyPreviewList({
-  activeConversationId,
-  activeKind,
-  currentUserPtid,
-  getSenderProfile,
-  isOwnRoot,
-  messages,
+function MessageInteractionRail({
+  isOwn,
+  message,
   onOpenThread,
-  totalCount,
-  unreadCount,
+  onPin,
+  onReact,
+  onRetryReaction,
+  pinned,
+  reactionMutationEmoji,
+  reactionMutationPhase,
+  reactions,
+  showThreadSummary,
+  threadReplyCount,
+  threadUnreadCount,
 }: {
-  activeConversationId: string;
-  activeKind: ChatSurfaceKind;
-  currentUserPtid: string | null;
-  getSenderProfile: (
-    kind: ChatSurfaceKind,
-    conversationUlid: string,
-    senderPtid: string,
-  ) => DesktopIMSenderProfileProjection;
-  isOwnRoot: boolean;
-  messages: ChatMessage[];
+  isOwn: boolean;
+  message: ChatMessage;
   onOpenThread: () => void;
-  totalCount: number;
-  unreadCount: number;
+  onPin: () => void;
+  onReact: (emoji: string) => void;
+  onRetryReaction: () => void;
+  pinned: boolean;
+  reactionMutationEmoji?: string;
+  reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
+  reactions: { actorPtid: string; emoji: string }[];
+  showThreadSummary: boolean;
+  threadReplyCount: number;
+  threadUnreadCount: number;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const previewMessages = messages;
-  const hiddenEarlierCount = countHiddenEarlierChatThreadReplies(totalCount, previewMessages.length);
-  const hasHiddenEarlierReplies = previewMessages.length > 0 && hiddenEarlierCount > 0;
-  const openLabel = unreadCount > 0
-    ? t('chat.social.thread.summaryUnread', { count: totalCount, unread: unreadCount })
-    : t('chat.social.thread.summary', { count: totalCount });
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    onOpenThread();
-  };
+  const reactionCounts = Object.entries(
+    reactions.reduce<Record<string, number>>((acc, reaction) => {
+      acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  const visibleReactions = reactionCounts.slice(0, 3);
+  const hiddenReactionCount = reactionCounts
+    .slice(visibleReactions.length)
+    .reduce((total, [, count]) => total + count, 0);
+  const threadVisible = showThreadSummary && threadReplyCount > 0;
+  const hasContent = pinned
+    || reactionCounts.length > 0
+    || Boolean(reactionMutationPhase)
+    || threadVisible;
+  const openLabel = threadUnreadCount > 0
+    ? t('chat.social.thread.summaryUnread', {
+        count: threadReplyCount,
+        unread: threadUnreadCount,
+      })
+    : t('chat.social.thread.summary', { count: threadReplyCount });
 
   return (
     <Flexbox
-      align="flex-start"
+      data-message-metadata-rail={message.ulid}
+      data-message-metadata-state={hasContent ? 'populated' : 'reserved'}
+      horizontal
+      align="center"
+      gap={4}
+      aria-hidden={hasContent ? undefined : true}
       style={{
-        alignSelf: isOwnRoot ? 'flex-end' : 'flex-start',
-        marginTop: 5,
+        alignSelf: isOwn ? 'flex-end' : 'flex-start',
+        boxSizing: 'border-box',
+        width: '100%',
         maxWidth: '100%',
-        paddingLeft: isOwnRoot ? 0 : 4,
-        paddingRight: isOwnRoot ? 4 : 0,
+        height: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+        minHeight: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+        maxHeight: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+        marginTop: 2,
+        paddingLeft: isOwn ? 0 : 4,
+        paddingRight: isOwn ? 4 : 0,
+        overflow: 'hidden',
+        visibility: hasContent ? 'visible' : 'hidden',
+        pointerEvents: hasContent ? 'auto' : 'none',
       }}
     >
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpenThread}
-        onKeyDown={handleKeyDown}
-        aria-label={openLabel}
-        title={openLabel}
+      <Flexbox
+        horizontal
+        align="center"
+        gap={4}
         style={{
-          display: 'grid',
-          gridTemplateColumns: '9px minmax(0, 1fr)',
-          columnGap: 7,
-          maxWidth: 'min(320px, 100%)',
-          padding: '1px 0 0',
-          border: 0,
-          outline: 'none',
-          cursor: 'pointer',
+          minWidth: 0,
+          flex: 1,
+          height: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 1,
-            minHeight: previewMessages.length > 0 ? '100%' : 18,
-            marginLeft: 4,
-            background: unreadCount > 0 ? token.colorErrorBorder : token.colorBorderSecondary,
-            opacity: unreadCount > 0 ? 0.9 : 0.72,
-          }}
-        />
-        <Flexbox
-          gap={3}
-          style={{
-            maxWidth: '100%',
-            minWidth: 0,
-          }}
-        >
-          {previewMessages.length === 0 ? (
-            <Flexbox
-              horizontal
-              align="center"
-              gap={5}
+        {pinned && (
+          <Tooltip title={t('chat.social.contextMenu.unpin')}>
+            <Button
+              data-message-pinned="true"
+              aria-label={t('chat.social.contextMenu.unpin')}
+              type="text"
+              size="small"
+              icon={<Pin size={11} />}
+              onClick={onPin}
               style={{
-                height: 18,
+                width: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+                minWidth: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+                height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+                padding: 0,
                 color: token.colorTextQuaternary,
+              }}
+            />
+          </Tooltip>
+        )}
+        {visibleReactions.map(([emoji, count]) => (
+          <button
+            type="button"
+            data-message-reaction={emoji}
+            key={emoji}
+            aria-label={`${t('chat.social.messageArea.actionReact')} ${emoji}`}
+            onClick={() => onReact(emoji)}
+            style={{
+              boxSizing: 'border-box',
+              flexShrink: 0,
+              height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+              padding: '0 5px',
+              border: 0,
+              borderRadius: 8,
+              background: token.colorFillTertiary,
+              color: token.colorTextSecondary,
+              cursor: 'pointer',
+              fontSize: 11,
+              lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {emoji}{count > 1 ? ` ${count}` : ''}
+          </button>
+        ))}
+        {hiddenReactionCount > 0 && (
+          <Tooltip title={reactionCounts.slice(3).map(([emoji, count]) => `${emoji} ${count}`).join(' · ')}>
+            <span
+              data-message-reaction-overflow={hiddenReactionCount}
+              style={{
+                flexShrink: 0,
+                height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+                padding: '0 5px',
+                borderRadius: 8,
+                background: token.colorFillQuaternary,
+                color: token.colorTextTertiary,
                 fontSize: 11,
-                lineHeight: '18px',
+                lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
               }}
             >
-              <MessagesSquare size={11} />
-              <Text
-                ellipsis
-                style={{
-                  color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
-                  fontSize: 11,
-                  lineHeight: '18px',
-                  maxWidth: 220,
-                }}
-              >
-                {openLabel}
-              </Text>
-            </Flexbox>
-          ) : (
-            <>
-              {hasHiddenEarlierReplies && (
-                <Text
-                  ellipsis
-                  style={{
-                    maxWidth: '100%',
-                    color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
-                    fontSize: 11,
-                    lineHeight: '18px',
-                  }}
-                >
-                  {t('chat.social.thread.loadEarlierPreview', { count: hiddenEarlierCount })}
-                </Text>
-              )}
-              {previewMessages.map((reply) => {
-                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderPtid);
-                const ownReply = isOwnMessage(reply, currentUserPtid);
-                return (
-                  <div
-                    key={reply.ulid}
-                    data-thread-preview-message-id={reply.ulid}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'max-content minmax(0, 1fr)',
-                      alignItems: 'baseline',
-                      columnGap: 5,
-                      width: '100%',
-                      minHeight: 18,
-                      color: token.colorTextSecondary,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <Text
-                      ellipsis
-                      style={{
-                        maxWidth: 92,
-                        fontSize: 11,
-                        color: token.colorTextTertiary,
-                        fontWeight: 500,
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      {ownReply ? t('chat.social.thread.you') : profile.name}
-                    </Text>
-                    <Text
-                      data-thread-preview-message-content={reply.ulid}
-                      ellipsis
-                      style={{
-                        minWidth: 0,
-                        fontSize: 11,
-                        color: token.colorTextSecondary,
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      {reply.content || reply.attachments?.[0]?.filename || t('chat.social.thread.attachment')}
-                    </Text>
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </Flexbox>
-      </div>
+              +{hiddenReactionCount}
+            </span>
+          </Tooltip>
+        )}
+        {threadVisible && (
+          <button
+            type="button"
+            data-message-thread-summary={threadReplyCount}
+            aria-label={openLabel}
+            title={openLabel}
+            onClick={onOpenThread}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              boxSizing: 'border-box',
+              flexShrink: 0,
+              height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
+              padding: '0 6px',
+              border: 0,
+              borderRadius: 8,
+              background: threadUnreadCount > 0
+                ? token.colorErrorBg
+                : token.colorFillQuaternary,
+              color: threadUnreadCount > 0
+                ? token.colorError
+                : token.colorTextTertiary,
+              cursor: 'pointer',
+              fontSize: 11,
+              lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <MessagesSquare size={11} aria-hidden />
+            <span>{threadReplyCount}</span>
+          </button>
+        )}
+      </Flexbox>
+      <span
+        data-message-reaction-state={reactionMutationPhase || 'idle'}
+        data-message-reaction-emoji={reactionMutationEmoji}
+        aria-live="polite"
+        aria-busy={Boolean(reactionMutationPhase && reactionMutationPhase !== 'error')}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 24,
+          minWidth: 24,
+          height: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+          overflow: 'hidden',
+        }}
+      >
+        {reactionMutationPhase === 'error' ? (
+          <Tooltip title={t('chat.message.resolution.actionFailed')}>
+            <Button
+              data-message-reaction-retry={message.ulid}
+              aria-label={t('chat.message.action.retry')}
+              type="text"
+              size="small"
+              icon={<RotateCcw size={11} />}
+              onClick={onRetryReaction}
+              style={{ width: 20, minWidth: 20, height: 20, padding: 0 }}
+            />
+          </Tooltip>
+        ) : reactionMutationPhase ? (
+          <Spin size="small" />
+        ) : (
+          <span
+            aria-hidden
+            style={{ width: CHAT_MESSAGE_REACTION_CHIP_HEIGHT, height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT }}
+          />
+        )}
+      </span>
     </Flexbox>
   );
 }
@@ -357,7 +407,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   pinned = false,
   showHoverActions = true,
   showThreadSummary = true,
-  threadPreviewMessages,
   threadReplyCount,
   threadReplyIds,
   threadUnreadCount,
@@ -562,109 +611,21 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           />
         </Flexbox>
 
-        {pinned && (
-          <Tooltip title={t('chat.social.contextMenu.unpin')}>
-            <Pin
-              data-message-pinned="true"
-              size={12}
-              style={{
-                marginTop: 3,
-                color: token.colorTextTertiary,
-                cursor: 'pointer',
-              }}
-              onClick={() => onPin(message)}
-            />
-          </Tooltip>
-        )}
-
-        {reactions && reactions.length > 0 && (
-          <Flexbox
-            horizontal
-            wrap="wrap"
-            gap={4}
-            style={{ marginTop: 2, paddingLeft: isOwn ? 0 : 4, paddingRight: isOwn ? 4 : 0 }}
-          >
-            {Object.entries(
-              reactions.reduce<Record<string, number>>((acc, r) => {
-                acc[r.emoji] = (acc[r.emoji] ?? 0) + 1;
-                return acc;
-              }, {}),
-            ).map(([emoji, count]) => (
-              <button
-                type="button"
-                data-message-reaction={emoji}
-                key={emoji}
-                style={{
-                  fontSize: 12,
-                  padding: '1px 5px',
-                  border: 0,
-                  borderRadius: 10,
-                  background: token.colorFillTertiary,
-                  cursor: 'pointer',
-                }}
-                aria-label={`${t('chat.social.messageArea.actionReact')} ${emoji}`}
-                onClick={() => onReact(message, emoji)}
-              >
-                {emoji} {count > 1 ? count : ''}
-              </button>
-            ))}
-          </Flexbox>
-        )}
-
-        {reactionMutationPhase && (
-          <Flexbox
-            data-message-reaction-state={reactionMutationPhase}
-            data-message-reaction-emoji={reactionMutationEmoji}
-            horizontal
-            align="center"
-            gap={6}
-            aria-live="polite"
-            aria-busy={reactionMutationPhase !== 'error'}
-            style={{
-              alignSelf: isOwn ? 'flex-end' : 'flex-start',
-              marginTop: 3,
-              paddingLeft: isOwn ? 0 : 4,
-              paddingRight: isOwn ? 4 : 0,
-              color: reactionMutationPhase === 'error'
-                ? token.colorError
-                : token.colorTextTertiary,
-              fontSize: 11,
-            }}
-          >
-            {reactionMutationPhase === 'error' ? (
-              <>
-                <Text type="danger" style={{ fontSize: 11 }}>
-                  {t('chat.message.resolution.actionFailed')}
-                </Text>
-                <Button
-                  data-message-reaction-retry={message.ulid}
-                  type="text"
-                  size="small"
-                  onClick={() => onRetryReaction(message)}
-                  style={{ height: 24, paddingInline: 6 }}
-                >
-                  {t('chat.message.action.retry')}
-                </Button>
-              </>
-            ) : (
-              <Spin size="small" />
-            )}
-          </Flexbox>
-        )}
-
-        {showThreadSummary && threadReplyCount > 0 && !isRecalled && (
-          <ThreadReplyPreviewList
-            activeConversationId={activeConversationId}
-            activeKind={activeKind}
-            currentUserPtid={currentUserPtid}
-            getSenderProfile={getSenderProfile}
-            isOwnRoot={isOwn}
-            messages={threadPreviewMessages}
-            onOpenThread={() => onOpenThread(threadRootUlid)}
-            totalCount={threadReplyCount}
-            unreadCount={threadUnreadCount}
-          />
-        )}
+        <MessageInteractionRail
+          isOwn={isOwn}
+          message={message}
+          onOpenThread={() => onOpenThread(threadRootUlid)}
+          onPin={() => onPin(message)}
+          onReact={(emoji) => onReact(message, emoji)}
+          onRetryReaction={() => onRetryReaction(message)}
+          pinned={pinned}
+          reactionMutationEmoji={reactionMutationEmoji}
+          reactionMutationPhase={reactionMutationPhase}
+          reactions={reactions ?? []}
+          showThreadSummary={showThreadSummary && !isRecalled}
+          threadReplyCount={threadReplyCount}
+          threadUnreadCount={threadUnreadCount}
+        />
 
         <Flexbox
           horizontal
@@ -676,7 +637,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             marginTop: compact ? 3 : 4,
             paddingLeft: isOwn ? 0 : 4,
             paddingRight: isOwn ? 4 : 0,
+            boxSizing: 'border-box',
+            height: 16,
+            minHeight: 16,
+            maxHeight: 16,
             maxWidth: '100%',
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
           }}
         >
           <Text

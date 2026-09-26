@@ -29,6 +29,8 @@ dev_session_script="tooling/scripts/local-dev/dev-session.mjs"
 dev_session_store="tooling/scripts/local-dev/dev-session-store.mjs"
 dev_session_test="tooling/scripts/local-dev/dev-session.test.mjs"
 planctl_script="tooling/scripts/plan/planctl.mjs"
+acceptance_admission="tooling/scripts/plan/acceptance-admission.mjs"
+acceptance_admission_adapter="tooling/scripts/plan/acceptance_admission.py"
 acceptance_run="tooling/scripts/acceptance-run.py"
 acceptance_registry="tooling/acceptance/registry.yaml"
 local_dev_make="tooling/make/local-dev.mk"
@@ -92,6 +94,8 @@ require_file "$dev_session_script"
 require_file "$dev_session_store"
 require_file "$dev_session_test"
 require_file "$planctl_script"
+require_file "$acceptance_admission"
+require_file "$acceptance_admission_adapter"
 require_file "$acceptance_run"
 require_file "$acceptance_registry"
 require_file "$local_dev_make"
@@ -216,169 +220,16 @@ for marker in \
     fail "explicit PR Plan input is missing marker: $marker"
   fi
 done
-if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
-  fail "$planctl_script must permit only evidence-backed blocked Task handoff"
-fi
-for marker in \
-  "ACTIVE_ACTION_IN_FLIGHT" \
-  "ROLLOUT_RESTART_REQUIRED" \
-  "ACKNOWLEDGED"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
-  fi
-done
-
-for marker in \
-  "functional-result" \
-  "commitFunctionalResult" \
-  "runDevelopmentClosure" \
-  "development-run-manifest" \
-  "gateIds" \
-  "development-functional-evidence-bundle" \
-  "functional result may commit only from FUNCTIONAL_RUNNING" \
-  "source changed between Development evidence validation and Session commit" \
-  "SESSION_EVIDENCE_OUT_OF_SEQUENCE"; do
-  if ! grep -Fq "$marker" "$dev_session_script"; then
-    fail "$dev_session_script missing functional result commit marker: $marker"
-  fi
-done
-for marker in \
-  "HOST_CAPABILITY_UNAVAILABLE" \
-  "HOST_CAPABILITY_AVAILABLE" \
-  "HOST_CLEANUP_QUARANTINED" \
-  "HOST_CLEANUP_RELEASED" \
-  "HOST_CLEANUP_ESCALATION_REQUIRED" \
-  "repeated BLOCKED transition is not a legal host observation update"; do
-  if ! grep -Fq "$marker" tooling/scripts/local-dev/dev-session-schema.mjs; then
-    fail "tooling/scripts/local-dev/dev-session-schema.mjs missing durable host observation marker: $marker"
-  fi
-done
-for marker in \
-  "--development-manifest-out" \
-  "finalize_development_run" \
-  "gate_run.finalize" \
-  "development-run-manifest"; do
-  if ! grep -Fq -- "$marker" tooling/scripts/acceptance-run.py; then
-    fail "tooling/scripts/acceptance-run.py missing runner provenance marker: $marker"
-  fi
-done
-if grep -Fq -- "--result-file" "$dev_session_script"; then
-  fail "$dev_session_script still accepts caller-authored functional result files"
-fi
-if ! python3 -m unittest "$skill_rollout_test" >/tmp/pt-skill-rollout-test.$$ 2>&1; then
-  cat /tmp/pt-skill-rollout-test.$$
-  fail "$skill_rollout_test failed"
-fi
-rm -f /tmp/pt-skill-rollout-test.$$
-for marker in \
-  "transitionSessionSequenceStore" \
-  "writeDurableFileAtomic" \
-  "linkSync(temp, file)"; do
-  if ! grep -Fq "$marker" "$dev_session_store"; then
-    fail "$dev_session_store missing durable result commit marker: $marker"
-  fi
-done
-for marker in "declared_incomplete" 'standardized["proofStatus"] = "UNPROVEN"'; do
-  if ! grep -Fq "$marker" "$acceptance_run"; then
-    fail "$acceptance_run missing incomplete Development result marker: $marker"
-  fi
-done
-for marker in "dev-functional-result:" "RUNTIME_CELL"; do
-  if ! grep -Fq "$marker" "$local_dev_make"; then
-    fail "$local_dev_make missing functional result command marker: $marker"
-  fi
-done
-if grep -Fq "RESULT_FILE" "$local_dev_make"; then
-  fail "$local_dev_make still accepts caller-authored functional result files"
-fi
-
-for setup_file in "$ide_setup_script" "$setup_make"; do
-  for marker in "trae" "cursor" "codex"; do
-    if ! grep -Fqi "$marker" "$setup_file"; then
-      fail "$setup_file missing supported host marker: $marker"
-    fi
-  done
-done
-if ! grep -Fq ".agents" "$skill_rollout_control"; then
-  fail "$skill_rollout_control must project Codex skills through .agents/skills"
-fi
-for marker in \
-  'IDE_NAME="$(IDE)"' \
-  "skill-rollout-audit:"; do
-  if ! grep -Fq "$marker" "$setup_make"; then
-    fail "$setup_make missing non-interactive rollout marker: $marker"
-  fi
-done
-for marker in \
-  "retired-project-skills" \
-  "pt-trae-goal-orchestrator" \
-  "project pt-* skills under"; do
-  if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing non-interactive install marker: $marker"
-  fi
-done
-for marker in \
-  "missingCanonicalSkills" \
-  "canonicalSourceFindings" \
-  "legacyReferences" \
-  "hostProjectionFindings" \
-  "workflowIdentity" \
-  "planBinding" \
-  "currentTaskId" \
-  "planLegacyClaims" \
-  "declarationLegacyClaims" \
-  "acceptanceRegistry" \
-  "missingCanonicalMatchers" \
-  "canonicalCatalog" \
-  "rolloutReceipt"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing rollout audit marker: $marker"
-  fi
-done
-for marker in \
-  "binding-canonical-invalid" \
-  "declaration-plan-locator-missing" \
-  "declaration-current-task-mismatch" \
-  "registry-missing" \
-  "rollout-branch-mismatch" \
-  "rollout-{field}-mismatch" \
-  "rollout-restart-evidence-invalid" \
-  "wrong-project-skill-target"; do
-  if ! grep -Fq "$marker" "$skill_rollout_audit"; then
-    fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
-  fi
-done
-for marker in \
-  "staleRecoveryPath" \
-  "claimAndRemoveStaleLock" \
-  "readRecoveryMetadata" \
-  "clearStaleRecovery" \
-  "lstatSync"; do
-  if ! grep -Fq "$marker" "$dev_work_ledger"; then
-    fail "$dev_work_ledger missing inode-safe stale lock recovery marker: $marker"
-  fi
-done
-for marker in \
-  "acceptance-workflow-contract" \
-  "tooling/skills/pt-goal-orchestrator/**" \
-  "tooling/skills/pt-trae-host-adapter/**" \
-  "tooling/skills/pt-cursor-host-adapter/**" \
-  "tooling/skills/pt-codex-host-adapter/**"; do
-  if ! grep -Fq "$marker" "$acceptance_registry"; then
-    fail "$acceptance_registry missing canonical host-neutral matcher: $marker"
-  fi
-done
 
 if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script"; then
   fail "$planctl_script must permit only evidence-backed blocked Task handoff"
 fi
 
 for marker in \
-  "ACTIVE_ACTION_IN_FLIGHT" \
-  "ROLLOUT_RESTART_REQUIRED" \
-  "ACKNOWLEDGED"; do
+  '"state": "INSTALLED"' \
+  '"status": "INSTALLED"'; do
   if ! grep -Fq "$marker" "$skill_rollout_control"; then
-    fail "$skill_rollout_control missing rollout lifecycle marker: $marker"
+    fail "$skill_rollout_control missing out-of-band rollout marker: $marker"
   fi
 done
 
@@ -511,7 +362,8 @@ for marker in \
   "registry-missing" \
   "rollout-branch-mismatch" \
   "rollout-{field}-mismatch" \
-  "rollout-restart-evidence-invalid" \
+  "rollout-state-mismatch" \
+  "rollout-installed-at-invalid" \
   "wrong-project-skill-target"; do
   if ! grep -Fq "$marker" "$skill_rollout_audit"; then
     fail "$skill_rollout_audit missing fail-closed audit marker: $marker"
@@ -543,6 +395,19 @@ done
 for marker in "make quality-evidence" "run.sh --range" "--strict-knowledge" "make acceptance-run-ci" "acceptance-gap-detect.py"; do
   if ! grep -q -- "$marker" "$submit_pipeline"; then
     fail "$submit_pipeline missing required command marker: $marker"
+  fi
+done
+
+for target in "$acceptance_run" "$gap_detector"; do
+  for marker in "require_acceptance_admission" "--session"; do
+    if ! grep -Fq -- "$marker" "$target"; then
+      fail "$target missing broad Acceptance admission marker: $marker"
+    fi
+  done
+done
+for marker in "--session" "ACCEPTANCE_SESSION_REQUIRED"; do
+  if ! grep -Fq -- "$marker" "$submit_pipeline"; then
+    fail "$submit_pipeline missing Session-bound review marker: $marker"
   fi
 done
 
@@ -825,6 +690,21 @@ for contract_file in "${tracked_locator_files[@]}"; do
 done
 
 for marker in \
+  "currentObservation" \
+  "Always render current and recent observations independently." \
+  "current[<task-id|none>|<measured|not-started|none|unavailable>]" \
+  "recent[<task-id|none>|<measured|not-observed|none|unavailable>]" \
+  "not-scheduled"; do
+  if ! grep -Fq "$marker" "$context_anchor_skill"; then
+    fail "$context_anchor_skill missing current/recent observation marker: $marker"
+  fi
+done
+
+if grep -Fq '**Cost**: <recent|current>' "$context_anchor_skill"; then
+  fail "$context_anchor_skill must not collapse current and recent Cost"
+fi
+
+for marker in \
   "Workspace active-work record" \
   "Plan/Task locator" \
   "devState"; do
@@ -999,19 +879,27 @@ for marker in \
 done
 
 for marker in \
-  "WorkLedgerLock" \
-  "RELEASING" \
-  "ROLLOUT_RESTART_NOT_OBSERVED" \
-  "HOST_SESSION_ID_AMBIGUOUS" \
-  "installedSessionHash" \
   "catalogDigest" \
   "catalogStatusDigest" \
-  "validated_work_ledger" \
   "HOST_PROJECTION_ESCAPE"; do
   if ! grep -Fq "$marker" "$skill_rollout_control"; then
     fail "$skill_rollout_control missing fail-closed rollout marker: $marker"
   fi
 done
+for retired_marker in \
+  "ROLLOUT_RESTART_REQUIRED" \
+  "ACKNOWLEDGED" \
+  "ROLLOUT_RESTART_NOT_OBSERVED" \
+  "HOST_SESSION_ID_AMBIGUOUS" \
+  "installedSessionHash" \
+  "ackSessionHash"; do
+  if grep -Fq "$retired_marker" "$skill_rollout_control" "$skill_rollout_audit"; then
+    fail "retired rollout marker remains: $retired_marker"
+  fi
+done
+if grep -Fq "skill-rollout-ack" "$setup_make"; then
+  fail "$setup_make still exposes the retired rollout ACK target"
+fi
 if grep -Fq "schemaVersion" "$skill_rollout_control"; then
   fail "$skill_rollout_control must not publish a rollout format version"
 fi

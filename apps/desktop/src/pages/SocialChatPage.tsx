@@ -9,6 +9,8 @@ import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPa
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
+import { CallSurface } from '../components/chat/CallSurface';
+import { GroupCallSurface } from '../components/chat/GroupCallSurface';
 import {
   beginDirectConversationOpen,
   failDirectConversationOpen,
@@ -34,12 +36,6 @@ interface OwnedContactSelection {
   actorPtid: string;
   contact: ContactSelection;
 }
-
-// #region debug-point A-C:cross-station-direct-open
-function reportDirectOpenDebug(detail: Record<string, unknown>): void {
-  window.dispatchEvent(new CustomEvent('pt:direct-open-debug', { detail }));
-}
-// #endregion
 
 // Page contract:
 //   • Messaging projection state is owned by `runtimes/messagingRuntime.ts`;
@@ -136,23 +132,11 @@ export function SocialChatPage() {
     selectSession('');
     setSubPage('chats');
 
-    // #region debug-point C:cross-station-direct-open
-    reportDirectOpenDebug({
-      kind: 'create-direct-start',
-      peerPtid: contact.peerPtid,
-      federationId: contact.federationId,
-    });
-    // #endregion
-
     void messagingCommands.createDirect({
       peerPtid: contact.peerPtid,
       federationId: contact.federationId,
     }).then((conversation) => {
       if (directOpenGenerationRef.current !== requestGeneration) return;
-      reportDirectOpenDebug({
-        kind: 'create-direct-success',
-        conversationId: conversation.conversationId,
-      });
       selectSession(conversation.conversationId);
       restoreConversation('friend', conversation.conversationId);
       setDirectOpenIntent(null);
@@ -164,10 +148,6 @@ export function SocialChatPage() {
       });
     }).catch((error) => {
       if (directOpenGenerationRef.current !== requestGeneration) return;
-      reportDirectOpenDebug({
-        kind: 'create-direct-failure',
-        error: error instanceof Error ? error.message : String(error),
-      });
       const presentation = presentError(error, {
         mode: 'inline',
         mapper: mapChatError,
@@ -278,7 +258,7 @@ export function SocialChatPage() {
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
       horizontal
-      style={{ height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}
+      style={{ position: 'relative', height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}
     >
       <style>
         {`
@@ -399,6 +379,10 @@ export function SocialChatPage() {
           onMessage={handleContactMessage}
         />
       )}
+      {/* Voice / video call surface — page-level so a ringing call
+          stays visible regardless of which conversation is open. */}
+      <CallSurface />
+      <GroupCallSurface />
     </Flexbox>
   );
 }

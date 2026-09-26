@@ -26,6 +26,7 @@ const (
 	SocialPrivateObjectPartWriting          = "WRITING"
 	SocialPrivateObjectPartStored           = "STORED"
 	SocialPrivateDeliveryIntentStatePending = "PENDING"
+	SocialPrivateDeliveryIntentStateRevoked = "REVOKED"
 )
 
 // SocialPrivateContentPlan is Social's durable authority for prepare replay.
@@ -39,27 +40,34 @@ type SocialPrivateContentPlan struct {
 	ContentID        string `gorm:"column:content_id;size:128;not null;uniqueIndex:uidx_social_private_plan_resource,priority:1"`
 	Generation       uint64 `gorm:"column:generation;not null;uniqueIndex:uidx_social_private_plan_resource,priority:2"`
 
-	ResourceKind                string     `gorm:"column:resource_kind;size:16;not null"`
-	AuthorDeviceID              string     `gorm:"column:author_device_id;size:128;not null"`
-	AuthorHomeStationPeerID     string     `gorm:"column:author_home_station_peer_id;size:255;not null"`
-	AudienceSnapshotID          string     `gorm:"column:audience_snapshot_id;size:128;not null"`
-	AuthorizationSnapshotSHA256 []byte     `gorm:"column:authorization_snapshot_sha256;not null"`
-	CanonicalPrepareBytes       []byte     `gorm:"column:canonical_prepare_bytes;not null"`
-	CanonicalPrepareSHA256      []byte     `gorm:"column:canonical_prepare_sha256;not null"`
-	ClaimRequestBytes           []byte     `gorm:"column:claim_request_bytes;not null"`
-	ClaimRequestSHA256          []byte     `gorm:"column:claim_request_sha256;not null"`
-	ClaimResponseBytes          []byte     `gorm:"column:claim_response_bytes"`
-	ClaimResponseSHA256         []byte     `gorm:"column:claim_response_sha256"`
-	SignedPlanBytes             []byte     `gorm:"column:signed_plan_bytes"`
-	SignedPlanSHA256            []byte     `gorm:"column:signed_plan_sha256"`
-	CanonicalPlanSHA256         []byte     `gorm:"column:canonical_plan_sha256"`
-	State                       string     `gorm:"column:state;size:32;not null;index:idx_social_private_plan_state_expiry"`
-	DomainCommitID              string     `gorm:"column:domain_commit_id;size:128;index"`
-	ExpiresAt                   time.Time  `gorm:"column:expires_at;not null;index:idx_social_private_plan_state_expiry"`
-	PreparedAt                  *time.Time `gorm:"column:prepared_at"`
-	ConsumedAt                  *time.Time `gorm:"column:consumed_at"`
-	CreatedAt                   time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt                   time.Time  `gorm:"column:updated_at;not null"`
+	ResourceKind                  string     `gorm:"column:resource_kind;size:16;not null"`
+	AudienceKind                  string     `gorm:"column:audience_kind;size:32;not null;default:'FRIENDS'"`
+	AuthorDeviceID                string     `gorm:"column:author_device_id;size:128;not null"`
+	AuthorHomeStationPeerID       string     `gorm:"column:author_home_station_peer_id;size:255;not null"`
+	AudienceSnapshotID            string     `gorm:"column:audience_snapshot_id;size:128;not null"`
+	AuthorizationSnapshotSHA256   []byte     `gorm:"column:authorization_snapshot_sha256;not null"`
+	CanonicalPrepareBytes         []byte     `gorm:"column:canonical_prepare_bytes;not null"`
+	CanonicalPrepareSHA256        []byte     `gorm:"column:canonical_prepare_sha256;not null"`
+	AudienceBytes                 []byte     `gorm:"column:audience_bytes"`
+	AudienceSHA256                []byte     `gorm:"column:audience_sha256"`
+	GroupRecipientSnapshotBytes   []byte     `gorm:"column:group_recipient_snapshot_bytes"`
+	GroupRecipientSnapshotSHA256  []byte     `gorm:"column:group_recipient_snapshot_sha256"`
+	SubtypePrepareAuthorityBytes  []byte     `gorm:"column:subtype_prepare_authority_bytes"`
+	SubtypePrepareAuthoritySHA256 []byte     `gorm:"column:subtype_prepare_authority_sha256"`
+	ClaimRequestBytes             []byte     `gorm:"column:claim_request_bytes;not null"`
+	ClaimRequestSHA256            []byte     `gorm:"column:claim_request_sha256;not null"`
+	ClaimResponseBytes            []byte     `gorm:"column:claim_response_bytes"`
+	ClaimResponseSHA256           []byte     `gorm:"column:claim_response_sha256"`
+	SignedPlanBytes               []byte     `gorm:"column:signed_plan_bytes"`
+	SignedPlanSHA256              []byte     `gorm:"column:signed_plan_sha256"`
+	CanonicalPlanSHA256           []byte     `gorm:"column:canonical_plan_sha256"`
+	State                         string     `gorm:"column:state;size:32;not null;index:idx_social_private_plan_state_expiry"`
+	DomainCommitID                string     `gorm:"column:domain_commit_id;size:128;index"`
+	ExpiresAt                     time.Time  `gorm:"column:expires_at;not null;index:idx_social_private_plan_state_expiry"`
+	PreparedAt                    *time.Time `gorm:"column:prepared_at"`
+	ConsumedAt                    *time.Time `gorm:"column:consumed_at"`
+	CreatedAt                     time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt                     time.Time  `gorm:"column:updated_at;not null"`
 }
 
 func (SocialPrivateContentPlan) TableName() string {
@@ -113,8 +121,8 @@ func (SocialPrivateCommandReceipt) TableName() string {
 }
 
 // SocialPrivateContentPost is the encrypted private Post fact. Its distinct Go
-// name avoids coupling the hard-cut persistence substrate to the legacy
-// plaintext SocialPrivatePost model while retaining the accepted table name.
+// name keeps the hard-cut persistence substrate independent from the retired
+// plaintext model while retaining the accepted table name.
 type SocialPrivateContentPost struct {
 	PostID    string `gorm:"column:post_id;primaryKey;size:128;uniqueIndex:uidx_social_private_post_id"`
 	ContentID string `gorm:"column:content_id;size:128;not null;uniqueIndex:uidx_social_private_post_content"`
@@ -126,6 +134,7 @@ type SocialPrivateContentPost struct {
 	EncryptedPayloadBytes     []byte     `gorm:"column:encrypted_payload_bytes;not null"`
 	EncryptedPayloadSHA256    []byte     `gorm:"column:encrypted_payload_sha256;not null"`
 	ObjectDescriptorSetSHA256 []byte     `gorm:"column:object_descriptor_set_sha256;not null"`
+	MentionRoutingBytes       []byte     `gorm:"column:mention_routing_bytes"`
 	MentionRoutingSHA256      []byte     `gorm:"column:mention_routing_sha256"`
 	SubtypeAuthoritySHA256    []byte     `gorm:"column:subtype_authority_sha256"`
 	LifecycleState            string     `gorm:"column:lifecycle_state;size:32;not null"`
@@ -153,6 +162,7 @@ type SocialPrivateContentComment struct {
 	EncryptedPayloadBytes     []byte     `gorm:"column:encrypted_payload_bytes;not null"`
 	EncryptedPayloadSHA256    []byte     `gorm:"column:encrypted_payload_sha256;not null"`
 	ObjectDescriptorSetSHA256 []byte     `gorm:"column:object_descriptor_set_sha256;not null"`
+	MentionRoutingBytes       []byte     `gorm:"column:mention_routing_bytes"`
 	MentionRoutingSHA256      []byte     `gorm:"column:mention_routing_sha256"`
 	LifecycleState            string     `gorm:"column:lifecycle_state;size:32;not null"`
 	ReactionsCount            int64      `gorm:"column:reactions_count;not null;default:0"`
@@ -173,7 +183,7 @@ type SocialPrivateAudienceSnapshot struct {
 	ResourceID              string    `gorm:"column:resource_id;size:128;not null;uniqueIndex:uidx_social_private_snapshot_resource,priority:2"`
 	PostID                  string    `gorm:"column:post_id;size:128;not null;index"`
 	AudienceKind            string    `gorm:"column:audience_kind;size:32;not null"`
-	AudienceTargetID        string    `gorm:"column:audience_target_id;size:128"`
+	AudienceTarget          string    `gorm:"column:audience_target_id;size:128"`
 	SourceRevision          uint64    `gorm:"column:source_revision;not null"`
 	CanonicalSnapshotSHA256 []byte    `gorm:"column:canonical_snapshot_sha256;not null"`
 	CreatedAt               time.Time `gorm:"column:created_at;not null"`

@@ -127,12 +127,32 @@ impl StationBindingService {
             .clone()
     }
 
+    pub fn selection_changes(&self, registry: &StationRegistry, target_url: &str) -> bool {
+        let target_url = normalize_url(target_url);
+        let persisted_active_url = registry.active_url();
+        let state = self.state();
+        let current_url = state
+            .bound_url
+            .as_deref()
+            .or(persisted_active_url.as_deref());
+        current_url
+            .map(|url| normalize_url(url) != target_url)
+            .unwrap_or(true)
+    }
+
     pub fn switch(
         &self,
         registry: &StationRegistry,
         target_url: &str,
     ) -> Result<StationBindingState, StationBindingError> {
         self.switch_with_hooks(registry, target_url, &SystemStationBindingHooks)
+    }
+
+    pub fn resume_persisted(
+        &self,
+        registry: &StationRegistry,
+    ) -> Result<StationBindingState, StationBindingError> {
+        self.resume_persisted_with_hooks(registry, &SystemStationBindingHooks)
     }
 
     pub fn mark_bound(&self) -> Result<StationBindingState, StationBindingError> {
@@ -197,6 +217,109 @@ impl StationBindingService {
             });
         }
         Ok((self.state(), was_selected))
+    }
+
+    fn resume_persisted_with_hooks(
+        &self,
+        registry: &StationRegistry,
+        hooks: &dyn StationBindingHooks,
+    ) -> Result<StationBindingState, StationBindingError> {
+        let _transition = self.transition.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => StationBindingError::new(
+                "station_switch_in_progress",
+                "Another Station binding transition is already in progress",
+                true,
+            ),
+            TryLockError::Poisoned(_) => StationBindingError::new(
+                "station_switch_failed",
+                "The Station binding coordinator is unavailable",
+                true,
+            ),
+        })?;
+
+        let current = self.state();
+        if matches!(
+            current.phase,
+            StationBindingPhase::AccessGate | StationBindingPhase::Bound
+        ) && current.bound_url.is_some()
+        {
+            return Ok(current);
+        }
+
+        let target_url = current.selected_url.clone().ok_or_else(|| {
+            StationBindingError::new(
+                "station_unselected",
+                "Select a Station before continuing",
+                false,
+            )
+        })?;
+        if !matches!(
+            current.phase,
+            StationBindingPhase::Connecting | StationBindingPhase::Failed
+        ) || current.bound_url.is_some()
+        {
+            return Err(StationBindingError::new(
+                "station_binding_not_ready",
+                "The persisted Station binding cannot be resumed from its current phase",
+                false,
+            ));
+        }
+        if registry.active_url().as_deref() != Some(target_url.as_str()) {
+            return Err(StationBindingError::new(
+                "station_selection_changed",
+                "The persisted Station selection no longer matches the active registry entry",
+                false,
+            ));
+        }
+
+        self.update_state(|state| {
+            state.generation += 1;
+            state.phase = StationBindingPhase::Connecting;
+            state.target_url = Some(target_url.clone());
+            state.error = None;
+        });
+
+        let handshake = match hooks.handshake(&target_url) {
+            Ok(handshake) => handshake,
+            Err(error) => {
+                self.update_state(|state| {
+                    state.phase = StationBindingPhase::Failed;
+                    state.bound_url = None;
+                    state.target_url = Some(target_url.clone());
+                    state.error = Some(error.clone());
+                });
+                return Err(error);
+            }
+        };
+
+        if let Err(error) = registry.update_probe(
+            &target_url,
+            handshake.label,
+            handshake.peer_id,
+            handshake.peers_count,
+            true,
+        ) {
+            let binding_error = StationBindingError::new(
+                "station_switch_failed",
+                format!("Could not persist Station metadata: {}", error.kind()),
+                true,
+            );
+            self.update_state(|state| {
+                state.phase = StationBindingPhase::Failed;
+                state.bound_url = None;
+                state.target_url = Some(target_url.clone());
+                state.error = Some(binding_error.clone());
+            });
+            return Err(binding_error);
+        }
+
+        self.update_state(|state| {
+            state.phase = StationBindingPhase::AccessGate;
+            state.bound_url = Some(target_url);
+            state.target_url = None;
+            state.error = None;
+        });
+        Ok(self.state())
     }
 
     fn switch_with_hooks(
@@ -454,13 +577,72 @@ mod tests {
 
     #[test]
     fn persisted_selection_starts_connecting_not_bound() {
-        let service = StationBindingService::new(Some("http://a.example".to_string()));
+        let registry = registry_with(&["http://a.example"]);
+        registry.set_active("http://a.example").unwrap();
+        let service = StationBindingService::new(registry.active_url());
         let state = service.state();
 
         assert_eq!(state.phase, StationBindingPhase::Connecting);
         assert_eq!(state.selected_url.as_deref(), Some("http://a.example"));
         assert_eq!(state.target_url.as_deref(), Some("http://a.example"));
         assert_eq!(state.bound_url, None);
+        assert!(!service.selection_changes(&registry, "http://a.example/"));
+        assert!(service.selection_changes(&registry, "http://b.example"));
+    }
+
+    #[test]
+    fn live_binding_takes_precedence_over_persisted_selection() {
+        let registry = registry_with(&["http://a.example", "http://b.example"]);
+        let service = bound_service(&registry, "http://a.example");
+        registry.set_active("http://b.example").unwrap();
+
+        assert!(!service.selection_changes(&registry, "http://a.example"));
+        assert!(service.selection_changes(&registry, "http://b.example"));
+    }
+
+    #[test]
+    fn persisted_selection_resumes_without_switch_teardown() {
+        let registry = registry_with(&["http://a.example"]);
+        registry.set_active("http://a.example").unwrap();
+        let service = StationBindingService::new(Some("http://a.example".to_string()));
+        let hooks = TestHooks::success();
+
+        let state = service
+            .resume_persisted_with_hooks(&registry, &hooks)
+            .unwrap();
+
+        assert_eq!(state.phase, StationBindingPhase::AccessGate);
+        assert_eq!(state.bound_url.as_deref(), Some("http://a.example"));
+        assert_eq!(registry.active_url().as_deref(), Some("http://a.example"));
+        assert!(!hooks.teardown_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn persisted_selection_resume_can_retry_after_handshake_failure() {
+        let registry = registry_with(&["http://a.example"]);
+        registry.set_active("http://a.example").unwrap();
+        let service = StationBindingService::new(Some("http://a.example".to_string()));
+        let failing_hooks = TestHooks {
+            handshake_error: Some(StationBindingError::new(
+                "station_unreachable",
+                "offline",
+                true,
+            )),
+            ..TestHooks::success()
+        };
+
+        service
+            .resume_persisted_with_hooks(&registry, &failing_hooks)
+            .unwrap_err();
+        let failed = service.state();
+        assert_eq!(failed.phase, StationBindingPhase::Failed);
+        assert_eq!(failed.selected_url.as_deref(), Some("http://a.example"));
+
+        let resumed = service
+            .resume_persisted_with_hooks(&registry, &TestHooks::success())
+            .unwrap();
+        assert_eq!(resumed.phase, StationBindingPhase::AccessGate);
+        assert_eq!(resumed.bound_url.as_deref(), Some("http://a.example"));
     }
 
     #[test]

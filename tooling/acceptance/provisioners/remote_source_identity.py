@@ -10,12 +10,12 @@ from tooling.acceptance.core.provisioner import (
     load_env_file,
     resolve_deployment_environment_path,
 )
-from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+from tooling.acceptance.transports.ssh import SshTarget, SshTransport, SshTunnel
 
 
-def resolve_remote_source_identity(
+def _reviewed_remote_transport(
     deploy_environment: str,
-) -> tuple[str, str, str]:
+) -> tuple[SshTransport, dict[str, str]]:
     environment_path = resolve_deployment_environment_path(deploy_environment)
     environment = load_env_file(environment_path)
     host = environment.get("PT_DEPLOY_HOST", "")
@@ -44,6 +44,39 @@ def resolve_remote_source_identity(
             reason=f"SSH contract is invalid: {error}",
             resource=f"deployment-source:{deploy_environment}",
         ) from error
+    return transport, environment
+
+
+def reviewed_remote_transport(
+    deploy_environment: str,
+) -> tuple[SshTransport, dict[str, str]]:
+    return _reviewed_remote_transport(deploy_environment)
+
+
+def open_reviewed_remote_tunnel(
+    deploy_environment: str,
+    *,
+    remote_port: int,
+    timeout: float = 10,
+) -> SshTunnel:
+    transport, _environment = _reviewed_remote_transport(deploy_environment)
+    try:
+        return transport.start_local_forward(
+            remote_port=remote_port,
+            timeout=timeout,
+        )
+    except ProvisioningError as error:
+        raise BlockedError(
+            reason=f"Cannot open deployment tunnel {deploy_environment}: {error}",
+            resource=f"deployment-tunnel:{deploy_environment}",
+        ) from error
+
+
+def resolve_remote_source_identity(
+    deploy_environment: str,
+) -> tuple[str, str, str]:
+    transport, environment = _reviewed_remote_transport(deploy_environment)
+    deploy_path = environment.get("PT_DEPLOY_PATH", "")
 
     protocol_pathspecs = repr(list(PROTOCOL_SOURCE_PATHS))
     digest_script = (

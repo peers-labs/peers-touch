@@ -16,8 +16,8 @@
 //     the desktop frontend has already standardised on for typed wire
 //     responses.
 //
-// All commands require an authenticated session — `token_from_state_proto`
-// returns Unauthorized early when the session token is missing.
+// Mutations and private reads require an authenticated session. Public-readable
+// GETs preserve Station's strict optional-auth contract.
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,8 +31,9 @@ use crate::contracts::{
     SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
     SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput, SocialGetMomentInput,
     SocialGetRelationshipInput, SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
-    SocialStationModerationDeleteInput, SocialStationModerationListInput,
-    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialRelationshipMutationInput, SocialStationModerationDeleteInput,
+    SocialStationModerationListInput, SocialStationModerationUpsertInput,
+    SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -47,25 +48,28 @@ use ulid::Ulid;
 
 const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
 const FRIEND_REQUEST_COMMAND_LIFETIME_SECONDS: i64 = 300;
+const SOCIAL_RELATIONSHIP_COMMAND_FORMAT_VERSION: u32 = 1;
+const SOCIAL_RELATIONSHIP_COMMAND_LIFETIME_SECONDS: i64 = 300;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn optional_token_from_state_proto(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Option<String> {
+    session_resolver::token_for_window(state.inner(), window)
+        .filter(|token| !token.trim().is_empty())
+}
 
 /// Extract the bearer token tied to the calling window.
 fn token_from_state_proto(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
 ) -> Result<String, AppResult<Vec<u8>>> {
-    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return Err(AppResult::fail(
-            ErrorCode::Unauthorized,
-            "authentication required",
-            None,
-        ));
-    }
-    Ok(token)
+    optional_token_from_state_proto(state, window)
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))
 }
 
 fn friend_request_session(
@@ -236,6 +240,98 @@ pub(crate) fn friend_request_command_device_id(
         .ok_or_else(|| "friend request command authorizing device is unavailable".to_string())
 }
 
+fn sign_social_relationship_command(
+    state: &AppState,
+    account_id: &str,
+    authenticated_ptid: &str,
+    input: SocialRelationshipMutationInput,
+    action: model::social::SocialRelationshipAction,
+) -> Result<model::social::SocialRelationshipCommand, String> {
+    if account_id.trim().is_empty()
+        || !authenticated_ptid.starts_with("ptid:")
+        || !input.target_actor_ptid.starts_with("ptid:")
+        || input.target_actor_ptid == authenticated_ptid
+        || input.target_home_station_peer_id.trim().is_empty()
+        || input.observed_revision < 0
+        || !matches!(
+            action,
+            model::social::SocialRelationshipAction::Block
+                | model::social::SocialRelationshipAction::Unblock
+        )
+    {
+        return Err("Social relationship command identity is incomplete".to_string());
+    }
+    let actor_home_station_peer_id = station_client::active_station_peer_id()
+        .ok_or_else(|| "Social relationship command requires the active Station".to_string())?;
+    let engine = state.messaging_engines.get(account_id)?.ok_or_else(|| {
+        "Social relationship command requires an active messaging engine".to_string()
+    })?;
+    if engine.endpoint().ptid != authenticated_ptid {
+        return Err("Social relationship command engine identity mismatch".to_string());
+    }
+    if engine.store().pending_device_enrollment()?.is_some() {
+        return Err("Social relationship command requires an enrolled device identity".to_string());
+    }
+    let (signing_key_id, signing_key) = engine.device_signing_identity()?.ok_or_else(|| {
+        "Social relationship command device signing identity is unavailable".to_string()
+    })?;
+    let now_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "Social relationship command clock is before the Unix epoch".to_string())?
+        .as_secs()
+        .try_into()
+        .map_err(|_| "Social relationship command timestamp exceeds i64".to_string())?;
+    let actor = person_actor_ref(authenticated_ptid.to_string());
+    let body = model::social::SocialRelationshipCommandBody {
+        format_version: SOCIAL_RELATIONSHIP_COMMAND_FORMAT_VERSION,
+        command_id: format!(
+            "social-relationship:{}:{}",
+            action.as_str_name().to_ascii_lowercase(),
+            Ulid::new(),
+        ),
+        action: action as i32,
+        actor: Some(actor.clone()),
+        target_actor: Some(person_actor_ref(input.target_actor_ptid)),
+        actor_home_station_peer_id,
+        target_home_station_peer_id: input.target_home_station_peer_id,
+        observed_revision: input.observed_revision,
+        created_at: Some(prost_types::Timestamp {
+            seconds: now_seconds,
+            nanos: 0,
+        }),
+        expires_at: Some(prost_types::Timestamp {
+            seconds: now_seconds.saturating_add(SOCIAL_RELATIONSHIP_COMMAND_LIFETIME_SECONDS),
+            nanos: 0,
+        }),
+        authorizing_device: Some(model::actor::ActorDeviceRef {
+            actor: Some(actor),
+            device_id: engine.endpoint().device_id.clone(),
+        }),
+    };
+    let signing_input = model::social::SocialRelationshipCommandSigningInput {
+        body: Some(body.clone()),
+        signing_key_id: signing_key_id.clone(),
+    };
+    let signature = signing_key.sign(&signing_input.encode_to_vec());
+    Ok(model::social::SocialRelationshipCommand {
+        body: Some(body),
+        signing_key_id,
+        actor_device_signature: signature.to_bytes().to_vec(),
+    })
+}
+
+fn social_relationship_command_device_id(
+    command: &model::social::SocialRelationshipCommand,
+) -> Result<&str, String> {
+    command
+        .body
+        .as_ref()
+        .and_then(|body| body.authorizing_device.as_ref())
+        .map(|device| device.device_id.as_str())
+        .filter(|device_id| !device_id.trim().is_empty())
+        .ok_or_else(|| "Social relationship command authorizing device is unavailable".to_string())
+}
+
 fn person_actor_ref(ptid: String) -> model::actor::ActorRef {
     model::actor::ActorRef {
         ptid,
@@ -254,6 +350,14 @@ fn get_proto<Resp: Message + Default>(
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, station_client::StationClientError> {
     station_client::request_proto::<(), Resp>(Method::GET, path, token, query, None)
+}
+
+fn get_proto_optional_auth<Resp: Message + Default>(
+    path: &str,
+    token: Option<&str>,
+    query: Option<&[(&str, String)]>,
+) -> Result<Resp, station_client::StationClientError> {
+    station_client::request_proto_optional_auth::<(), Resp>(Method::GET, path, token, query, None)
 }
 
 fn post_proto<Req: Message, Resp: Message + Default>(
@@ -306,7 +410,8 @@ fn parse_circle_id(raw: &str) -> Result<u64, AppResult<Vec<u8>>> {
 /// them disabled until OSS / P3 land.
 ///
 /// Audience routing:
-///   - The proto `Audience { kind, target_id?, base_kind?, actor_ptids[] }`
+///   - The proto `Audience { kind, target: circle_id | group_conversation_id,
+///     base_kind?, actor_ptids[] }`
 ///     is constructed on the TS side. The Rust shim is intentionally a
 ///     dumb forwarder so the audience contract isn't double-encoded.
 #[tauri::command]
@@ -350,18 +455,16 @@ pub fn social_get_moment(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    let token = optional_token_from_state_proto(&state, &window);
     if input.id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let path = format!("/api/v1/social/moments/{}", input.id);
-    let resp: model::social::GetPostResponse = match get_proto(&path, &token, None) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "get moment failed"),
-    };
+    let resp: model::social::GetPostResponse =
+        match get_proto_optional_auth(&path, token.as_deref(), None) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "get moment failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -405,12 +508,18 @@ pub fn social_get_timeline(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
+    let timeline_type = match input.station_timeline_type() {
+        Some(value) => value.to_string(),
+        None => {
+            return AppResult::fail(ErrorCode::InvalidArgument, "timeline type is invalid", None)
+        }
     };
+    let token = optional_token_from_state_proto(&state, &window);
+    if timeline_type != "TIMELINE_PUBLIC" && token.is_none() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
     let mut query: Vec<(&str, String)> = Vec::new();
-    query.push(("type", input.r#type));
+    query.push(("type", timeline_type));
     if let Some(c) = input.cursor {
         if !c.is_empty() {
             query.push(("cursor", c));
@@ -423,7 +532,7 @@ pub fn social_get_timeline(
         query.push(("sort", s));
     }
     let resp: model::social::GetTimelineResponse =
-        match get_proto("/api/v1/social/timeline", &token, Some(&query)) {
+        match get_proto_optional_auth("/api/v1/social/timeline", token.as_deref(), Some(&query)) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "get timeline failed"),
         };
@@ -566,14 +675,14 @@ pub fn social_list_by_author(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    let token = optional_token_from_state_proto(&state, &window);
     if input.author_ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "author_ptid is required", None);
     }
-    let mut query: Vec<(&str, String)> = Vec::new();
+    let mut query: Vec<(&str, String)> = vec![
+        ("type", "TIMELINE_USER".to_string()),
+        ("actor_ptid", input.author_ptid),
+    ];
     if let Some(c) = input.cursor {
         if !c.is_empty() {
             query.push(("cursor", c));
@@ -582,11 +691,11 @@ pub fn social_list_by_author(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let path = format!("/api/v1/social/users/{}/posts", input.author_ptid);
-    let resp: model::social::ListPostsResponse = match get_proto(&path, &token, Some(&query)) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "list by author failed"),
-    };
+    let resp: model::social::ListPostsResponse =
+        match get_proto_optional_auth("/api/v1/social/timeline", token.as_deref(), Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "list by author failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -594,10 +703,7 @@ pub fn social_list_by_author(
 // Reactions
 // ---------------------------------------------------------------------------
 
-/// Note: the wire route is `/api/v1/social/posts/:id/react` — the
-/// legacy `/posts/` prefix is retained on the station alongside the
-/// `/moments/` family (handler.go preserves both). Once all clients
-/// are off `/posts/`, P4 will collapse the alias.
+/// Reactions use the canonical Moments route family.
 #[tauri::command]
 pub fn social_react(
     input: SocialReactInput,
@@ -622,7 +728,7 @@ pub fn social_react(
         post_id: input.post_id.clone(),
         kind: input.kind,
     };
-    let path = format!("/api/v1/social/posts/{}/react", input.post_id);
+    let path = format!("/api/v1/social/moments/{}/react", input.post_id);
     let resp: model::social::ReactToPostResponse = match post_proto(&path, &token, &req) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "react failed"),
@@ -647,7 +753,7 @@ pub fn social_unreact(
         post_id: input.post_id.clone(),
         kind: input.kind,
     };
-    let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
+    let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
     let resp: model::social::UnreactToPostResponse = match post_proto(&path, &token, &req) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "unreact failed"),
@@ -665,12 +771,17 @@ pub fn social_get_comments(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    let token = optional_token_from_state_proto(&state, &window);
     if input.post_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "post_id is required", None);
+    }
+    let limit = input.limit.unwrap_or(20);
+    if !(1..=100).contains(&limit) {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "comment limit must be between 1 and 100",
+            None,
+        );
     }
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(c) = input.cursor {
@@ -678,14 +789,13 @@ pub fn social_get_comments(
             query.push(("cursor", c));
         }
     }
-    if let Some(l) = input.limit {
-        query.push(("limit", l.to_string()));
-    }
+    query.push(("limit", limit.to_string()));
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-    let resp: model::social::GetCommentsResponse = match get_proto(&path, &token, Some(&query)) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "get comments failed"),
-    };
+    let resp: model::social::ListMomentCommentsResponse =
+        match get_proto_optional_auth(&path, token.as_deref(), Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "get comments failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -893,6 +1003,110 @@ pub fn social_get_relationship(
             Err(e) => return station_error_proto(e, "get relationship failed"),
         };
     AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_block_actor(
+    input: SocialRelationshipMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    if input.target_actor_ptid.trim().is_empty()
+        || input.target_home_station_peer_id.trim().is_empty()
+        || input.observed_revision < 0
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Social relationship block input is incomplete",
+            None,
+        );
+    }
+    let command = match sign_social_relationship_command(
+        state.inner(),
+        &account_id,
+        &actor_ptid,
+        input,
+        model::social::SocialRelationshipAction::Block,
+    ) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let device_id = match social_relationship_command_device_id(&command) {
+        Ok(device_id) => device_id.to_string(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let request = model::social::BlockSocialActorRequest {
+        command: Some(command),
+    };
+    let response: model::social::BlockSocialActorResponse =
+        match station_client::request_proto_for_device(
+            Method::POST,
+            "/api/v1/social/relationships/block",
+            &token,
+            None,
+            Some(&request),
+            &device_id,
+        ) {
+            Ok(response) => response,
+            Err(error) => return station_error_proto(error, "block Social actor failed"),
+        };
+    AppResult::success(response.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_unblock_actor(
+    input: SocialRelationshipMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
+        Ok(session) => session,
+        Err(error) => return error,
+    };
+    if input.target_actor_ptid.trim().is_empty()
+        || input.target_home_station_peer_id.trim().is_empty()
+        || input.observed_revision < 0
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Social relationship unblock input is incomplete",
+            None,
+        );
+    }
+    let command = match sign_social_relationship_command(
+        state.inner(),
+        &account_id,
+        &actor_ptid,
+        input,
+        model::social::SocialRelationshipAction::Unblock,
+    ) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let device_id = match social_relationship_command_device_id(&command) {
+        Ok(device_id) => device_id.to_string(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let request = model::social::UnblockSocialActorRequest {
+        command: Some(command),
+    };
+    let response: model::social::UnblockSocialActorResponse =
+        match station_client::request_proto_for_device(
+            Method::POST,
+            "/api/v1/social/relationships/unblock",
+            &token,
+            None,
+            Some(&request),
+            &device_id,
+        ) {
+            Ok(response) => response,
+            Err(error) => return station_error_proto(error, "unblock Social actor failed"),
+        };
+    AppResult::success(response.encode_to_vec())
 }
 
 // ---------------------------------------------------------------------------

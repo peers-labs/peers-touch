@@ -17,7 +17,7 @@
     "check:social-runtime-boundaries": "node ../../tooling/devctl/index.mjs check social-runtime-boundaries --root ../..",
     "check": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "vitest run src",
+    "test": "vitest run src buildSourceIdentity.test.ts",
     "test:chat-visual": "vitest run src/components/chat/chatComposerInput.test.ts",
     "test:applet": "vitest run src/applet/*.test.ts",
     "preview": "vite preview"
@@ -53,6 +53,7 @@
     "es-toolkit": "^1.20.0",
     "eventemitter3": "^5.0.1",
     "i18next": "^23.7.16",
+    "livekit-client": "^2.22.3",
     "lucide-react": "^0.577.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",

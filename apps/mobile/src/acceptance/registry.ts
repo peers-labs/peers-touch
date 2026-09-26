@@ -324,6 +324,66 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'moments.private.publish',
+    mobileAcceptanceActions['moments.private.publish'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.publishText',
+    mobileAcceptanceActions['moments.private.publishText'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.read',
+    mobileAcceptanceActions['moments.private.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.readText',
+    mobileAcceptanceActions['moments.private.readText'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.media.open',
+    mobileAcceptanceActions['moments.private.media.open'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.comment.submit',
+    mobileAcceptanceActions['moments.private.comment.submit'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.comments.read',
+    mobileAcceptanceActions['moments.private.comments.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.storeRecoveryPhrase',
+    mobileAcceptanceActions['moments.private.storeRecoveryPhrase'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.recover',
+    mobileAcceptanceActions['moments.private.recover'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.recoverText',
+    mobileAcceptanceActions['moments.private.recoverText'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.reconcile',
+    mobileAcceptanceActions['moments.private.reconcile'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.snapshot',
+    mobileAcceptanceActions['moments.private.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'settings.profile.read',
     mobileAcceptanceActions['settings.profile.read'],
     registry,

@@ -2195,7 +2195,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 post_id: input.post_id.clone(),
                 kind: input.kind,
             };
-            let path = format!("/api/v1/social/posts/{}/react", input.post_id);
+            let path = format!("/api/v1/social/moments/{}/react", input.post_id);
             let resp = match station_client::request_proto::<
                 model::social::ReactToPostRequest,
                 model::social::ReactToPostResponse,
@@ -2226,7 +2226,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 post_id: input.post_id.clone(),
                 kind: input.kind,
             };
-            let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
+            let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
             let resp = match station_client::request_proto::<
                 model::social::UnreactToPostRequest,
                 model::social::UnreactToPostResponse,

@@ -24,6 +24,7 @@ import {
   messagingConversations,
   messagingInteractions,
 } from '../messaging/runtime';
+import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
   MessagingLocalAttachmentIntent,
   MessagingProjection,
@@ -169,6 +170,10 @@ function projectMessagingProjection(
       filename: attachment.filename,
       mimeType: attachment.mimeType,
       mime_type: attachment.mimeType,
+      contentKind: attachment.contentKind,
+      content_kind: attachment.contentKind,
+      durationMs: attachment.durationMs,
+      duration_ms: attachment.durationMs,
       size: attachment.plaintextSize,
       plaintextSize: attachment.plaintextSize,
       ciphertextSize: attachment.ciphertextSize,
@@ -405,8 +410,9 @@ interface SocialChatState {
    * by the unified `/events/stream`.
    */
   peerOnline: Record<string, boolean>;
-  setPeerOnline: (did: string, online: boolean) => void;
-  clearPeerPresence: (actorPtids: readonly string[]) => void;
+  peerPresenceRevision: Record<string, number>;
+  setPeerOnline: (did: string, online: boolean, revision: number) => void;
+  clearPeerPresence: (actorPtids: readonly string[], revision: number) => void;
 
   /**
    * Per-session typing-state map.
@@ -821,6 +827,7 @@ const initialSocialState: Pick<
   | 'pendingGroupCreations'
   | 'friendP2pStatus'
   | 'peerOnline'
+  | 'peerPresenceRevision'
   | 'typingPeers'
   | 'reactions'
   | 'pinnedMessages'
@@ -881,6 +888,7 @@ const initialSocialState: Pick<
   pendingGroupCreations: {},
   friendP2pStatus: {},
   peerOnline: {},
+  peerPresenceRevision: {},
   typingPeers: {},
 };
 
@@ -999,25 +1007,44 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   // Skip the set() if the value is already what we'd write. React+
   // Zustand will otherwise re-render every consumer for a no-op flip,
   // which is hot when SSE delivers many transitions in quick succession.
-  setPeerOnline: (did, online) => {
+  setPeerOnline: (did, online, revision) => {
     if (!did) return;
     set((state) => {
+      if (!shouldApplyPresenceRevision(state.peerPresenceRevision[did], revision)) {
+        return state;
+      }
       const next = applyPresenceToMap(state.peerOnline, did, online);
-      return next ? { peerOnline: next } : state;
+      if (!next && state.peerPresenceRevision[did] === revision) return state;
+      return {
+        ...(next ? { peerOnline: next } : {}),
+        peerPresenceRevision: {
+          ...state.peerPresenceRevision,
+          [did]: revision,
+        },
+      };
     });
   },
-  clearPeerPresence: (actorPtids) => {
+  clearPeerPresence: (actorPtids, revision) => {
     const requested = new Set(actorPtids.filter(Boolean));
     if (requested.size === 0) return;
     set((state) => {
       const next = { ...state.peerOnline };
+      const nextRevision = { ...state.peerPresenceRevision };
       let changed = false;
+      let accepted = false;
       for (const actorPtid of requested) {
+        if (!shouldApplyPresenceRevision(state.peerPresenceRevision[actorPtid], revision)) {
+          continue;
+        }
+        accepted = true;
+        nextRevision[actorPtid] = revision;
         if (!(actorPtid in next)) continue;
         delete next[actorPtid];
         changed = true;
       }
-      return changed ? { peerOnline: next } : state;
+      return changed || accepted
+        ? { peerOnline: next, peerPresenceRevision: nextRevision }
+        : state;
     });
   },
 
@@ -1083,6 +1110,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         mls_epoch: conversation.mlsEpoch,
         status: conversation.active ? 1 : 0,
         name: conversation.name,
+        description: conversation.description,
+        avatar_cid: conversation.avatarObjectId,
         owner_ptid: conversation.ownerPtid,
         updated_at: new Date(Math.max(
           conversation.updatedAtUnixMs,

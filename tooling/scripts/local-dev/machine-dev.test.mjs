@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -49,7 +50,7 @@ function initializeGitRepository(directory, branch = 'feat/test') {
 function profileText({
   name,
   mode = 'remote',
-  stationUrl = 'http://10.10.0.4:18080',
+  stationUrl = 'http://192.0.2.4:18080',
   deployEnvironment = 'station-four',
 }) {
   return [
@@ -133,15 +134,15 @@ function fixture() {
   };
   addProfile(scope, {
     name: 'four',
-    stationUrl: 'http://10.10.0.4:18080',
+    stationUrl: 'http://192.0.2.4:18080',
     deployEnvironment: 'station-four',
-    deployHost: '10.10.0.4',
+    deployHost: '192.0.2.4',
   });
   addProfile(scope, {
     name: 'fiveArm',
-    stationUrl: 'http://10.10.0.5:18080',
+    stationUrl: 'http://192.0.2.5:18080',
     deployEnvironment: 'station-five',
-    deployHost: '10.10.0.5',
+    deployHost: '192.0.2.5',
   });
   return scope;
 }
@@ -338,14 +339,68 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   }
 });
 
+test('CLI inherits an explicit environment repository across nested commands', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope));
+    writeFileSync(
+      path.join(
+        scope.envRepo,
+        'peers-touch',
+        'four',
+        'profile.env.example',
+      ),
+      `${profileText({ name: 'four' })}\n`,
+    );
+
+    const reviewedEnv = path.join(scope.root, 'reviewed-env');
+    initializeGitRepository(reviewedEnv, 'main');
+    addProfile(
+      { ...scope, envRepo: reviewedEnv },
+      {
+        name: 'four',
+        stationUrl: 'http://192.0.2.4:18080',
+        deployEnvironment: 'station-four',
+        deployHost: '192.0.2.4',
+      },
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli,
+        'check',
+        '--home',
+        scope.home,
+        '--workspace-root',
+        scope.workspaceA,
+        '--capabilities',
+        'station.connect',
+      ],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, PT_ENV_REPO: reviewedEnv },
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      JSON.parse(result.stdout).profile.envRepo,
+      realpathSync(reviewedEnv),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('profile reset policy is derived from the canonical identifier', () => {
   const stableScope = fixture();
   try {
     addProfile(stableScope, {
       name: 'dailyStable',
-      stationUrl: 'http://10.10.0.7:18080',
+      stationUrl: 'http://192.0.2.7:18080',
       deployEnvironment: 'station-stable',
-      deployHost: '10.10.0.7',
+      deployHost: '192.0.2.7',
     });
     expectCode('PROFILE_RESET_PROTECTED', () =>
       registerWorkspace(
@@ -477,7 +532,7 @@ test('fails closed for dirty and untracked selected profile definitions', () => 
       ),
       `${profileText({
         name: 'four',
-        stationUrl: 'http://10.10.0.4:18080',
+        stationUrl: 'http://192.0.2.4:18080',
         deployEnvironment: 'station-four',
       })}# dirty\n`,
     );
@@ -492,9 +547,9 @@ test('fails closed for dirty and untracked selected profile definitions', () => 
   try {
     addProfile(untrackedScope, {
       name: 'untracked',
-      stationUrl: 'http://10.10.0.8:18080',
+      stationUrl: 'http://192.0.2.8:18080',
       deployEnvironment: 'station-untracked',
-      deployHost: '10.10.0.8',
+      deployHost: '192.0.2.8',
       tracked: false,
     });
     expectCode('PROFILE_UNAVAILABLE', () =>
@@ -536,9 +591,9 @@ test('rejects local, compose, loopback, and mismatched deploy targets for Statio
     {
       name: 'mismatch-profile',
       mode: 'remote',
-      stationUrl: 'http://10.10.0.9:18080',
+      stationUrl: 'http://192.0.2.9:18080',
       deployEnvironment: 'station-mismatch',
-      deployHost: '10.10.0.10',
+      deployHost: '192.0.2.10',
       code: 'DEPLOY_TARGET_MISMATCH',
     },
   ]) {

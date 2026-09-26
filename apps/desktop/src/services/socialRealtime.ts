@@ -6,6 +6,7 @@ import {
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
+  RealtimeConnectionStatePayload,
   RealtimePresenceFlipPayload,
   RealtimeSocialGraphEventPayload,
   RelationshipChangedPayload,
@@ -33,6 +34,7 @@ let bootstrapSequence = 0;
 let realtimeStreamActorPtid: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
 let socialRefreshInFlight: Promise<void> | null = null;
+let presenceRevision = 0;
 const seenSocialNotificationIds = new Set<string>();
 
 function runDetached(label: string, task: () => Promise<void>): void {
@@ -89,9 +91,27 @@ async function refreshFriendStationIdentities(): Promise<void> {
   ]);
 }
 
+function collectKnownPresencePeerPtids(): string[] {
+  const chat = useSocialChatStore.getState();
+  const relationships = useRelationshipsStore.getState();
+  return Array.from(new Set(
+    [
+      ...Object.values(chat.conversationMembers)
+        .flat()
+        .map((member) => member.ptid),
+      ...relationships.mutualFriends.map((friend) => friend.actorPtid),
+    ]
+      .filter((ptid) => (
+        ptid.startsWith('ptid:')
+        && ptid !== chat.currentUserPtid
+      )),
+  ));
+}
+
 export async function refreshPeerPresence(peerPtids: readonly string[]): Promise<void> {
   const requested = Array.from(new Set(peerPtids.filter(Boolean)));
   if (requested.length === 0) return;
+  const revision = ++presenceRevision;
   const store = useSocialChatStore.getState();
   try {
     const statuses = await api.presenceQuery(requested);
@@ -99,13 +119,13 @@ export async function refreshPeerPresence(peerPtids: readonly string[]): Promise
     for (const actorPtid of requested) {
       const online = byActor.get(actorPtid);
       if (online == null) {
-        store.clearPeerPresence([actorPtid]);
+        store.clearPeerPresence([actorPtid], revision);
       } else {
-        store.setPeerOnline(actorPtid, online);
+        store.setPeerOnline(actorPtid, online, revision);
       }
     }
   } catch (error) {
-    store.clearPeerPresence(requested);
+    store.clearPeerPresence(requested, revision);
     throw error;
   }
 }
@@ -285,7 +305,15 @@ function onNotificationProjectionChanged(): void {
 function onPresenceFlip(payload: RealtimePresenceFlipPayload): void {
   if (!payload.actorPtid) return;
   const store = useSocialChatStore.getState();
-  store.setPeerOnline(payload.actorPtid, payload.online);
+  store.setPeerOnline(payload.actorPtid, payload.online, ++presenceRevision);
+}
+
+function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
+  if (!payload.connected) return;
+  runDetached('realtime reconnect presence reconciliation', async () => {
+    await api.presenceNotify('heartbeat');
+    await refreshPeerPresence(collectKnownPresencePeerPtids());
+  });
 }
 
 function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
@@ -301,9 +329,15 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
       Promise.allSettled([
         store.loadFriendRequests(),
         refreshFriendshipProjection(true),
-      ]).then(refreshFriendStationIdentities).catch(() => {});
+      ]).then(async () => {
+        await refreshFriendStationIdentities();
+        await refreshPeerPresence(collectKnownPresencePeerPtids());
+      }).catch(() => {});
       break;
     case 'conversation_created':
+      store.loadSessions()
+        .then(() => refreshPeerPresence(collectKnownPresencePeerPtids()))
+        .catch(() => {});
       break;
     case 'unfriended':
       Promise.allSettled([
@@ -342,6 +376,7 @@ export function installSocialRealtimeBridge(): void {
   const unsubs = [
     useSessionStore.subscribe(reconcileAuthenticatedRuntime),
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
+    eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
     useNotificationStore.subscribe(onNotificationProjectionChanged),

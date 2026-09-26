@@ -2020,9 +2020,13 @@ func (x *PrepareConversationMembershipResponse) GetAuthorityPlanSha256() []byte 
 }
 
 type PrepareFederatedConversationCommandRequest struct {
-	state                   protoimpl.MessageState             `protogen:"open.v1"`
-	Request                 *PrepareConversationCommandRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
-	SourceHomeStationPeerId string                             `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Preparation:
+	//
+	//	*PrepareFederatedConversationCommandRequest_Request
+	//	*PrepareFederatedConversationCommandRequest_MembershipRequest
+	Preparation             isPrepareFederatedConversationCommandRequest_Preparation `protobuf_oneof:"preparation"`
+	SourceHomeStationPeerId string                                                   `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -2057,9 +2061,27 @@ func (*PrepareFederatedConversationCommandRequest) Descriptor() ([]byte, []int) 
 	return file_domain_chat_conversation_api_proto_rawDescGZIP(), []int{28}
 }
 
+func (x *PrepareFederatedConversationCommandRequest) GetPreparation() isPrepareFederatedConversationCommandRequest_Preparation {
+	if x != nil {
+		return x.Preparation
+	}
+	return nil
+}
+
 func (x *PrepareFederatedConversationCommandRequest) GetRequest() *PrepareConversationCommandRequest {
 	if x != nil {
-		return x.Request
+		if x, ok := x.Preparation.(*PrepareFederatedConversationCommandRequest_Request); ok {
+			return x.Request
+		}
+	}
+	return nil
+}
+
+func (x *PrepareFederatedConversationCommandRequest) GetMembershipRequest() *PrepareConversationMembershipRequest {
+	if x != nil {
+		if x, ok := x.Preparation.(*PrepareFederatedConversationCommandRequest_MembershipRequest); ok {
+			return x.MembershipRequest
+		}
 	}
 	return nil
 }
@@ -2071,9 +2093,31 @@ func (x *PrepareFederatedConversationCommandRequest) GetSourceHomeStationPeerId(
 	return ""
 }
 
+type isPrepareFederatedConversationCommandRequest_Preparation interface {
+	isPrepareFederatedConversationCommandRequest_Preparation()
+}
+
+type PrepareFederatedConversationCommandRequest_Request struct {
+	Request *PrepareConversationCommandRequest `protobuf:"bytes,1,opt,name=request,proto3,oneof"`
+}
+
+type PrepareFederatedConversationCommandRequest_MembershipRequest struct {
+	MembershipRequest *PrepareConversationMembershipRequest `protobuf:"bytes,3,opt,name=membership_request,json=membershipRequest,proto3,oneof"`
+}
+
+func (*PrepareFederatedConversationCommandRequest_Request) isPrepareFederatedConversationCommandRequest_Preparation() {
+}
+
+func (*PrepareFederatedConversationCommandRequest_MembershipRequest) isPrepareFederatedConversationCommandRequest_Preparation() {
+}
+
 type PrepareFederatedConversationCommandResponse struct {
-	state         protoimpl.MessageState              `protogen:"open.v1"`
-	Plan          *PrepareConversationCommandResponse `protobuf:"bytes,1,opt,name=plan,proto3" json:"plan,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Preparation:
+	//
+	//	*PrepareFederatedConversationCommandResponse_Plan
+	//	*PrepareFederatedConversationCommandResponse_MembershipPlan
+	Preparation   isPrepareFederatedConversationCommandResponse_Preparation `protobuf_oneof:"preparation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2108,11 +2152,47 @@ func (*PrepareFederatedConversationCommandResponse) Descriptor() ([]byte, []int)
 	return file_domain_chat_conversation_api_proto_rawDescGZIP(), []int{29}
 }
 
-func (x *PrepareFederatedConversationCommandResponse) GetPlan() *PrepareConversationCommandResponse {
+func (x *PrepareFederatedConversationCommandResponse) GetPreparation() isPrepareFederatedConversationCommandResponse_Preparation {
 	if x != nil {
-		return x.Plan
+		return x.Preparation
 	}
 	return nil
+}
+
+func (x *PrepareFederatedConversationCommandResponse) GetPlan() *PrepareConversationCommandResponse {
+	if x != nil {
+		if x, ok := x.Preparation.(*PrepareFederatedConversationCommandResponse_Plan); ok {
+			return x.Plan
+		}
+	}
+	return nil
+}
+
+func (x *PrepareFederatedConversationCommandResponse) GetMembershipPlan() *PrepareConversationMembershipResponse {
+	if x != nil {
+		if x, ok := x.Preparation.(*PrepareFederatedConversationCommandResponse_MembershipPlan); ok {
+			return x.MembershipPlan
+		}
+	}
+	return nil
+}
+
+type isPrepareFederatedConversationCommandResponse_Preparation interface {
+	isPrepareFederatedConversationCommandResponse_Preparation()
+}
+
+type PrepareFederatedConversationCommandResponse_Plan struct {
+	Plan *PrepareConversationCommandResponse `protobuf:"bytes,1,opt,name=plan,proto3,oneof"`
+}
+
+type PrepareFederatedConversationCommandResponse_MembershipPlan struct {
+	MembershipPlan *PrepareConversationMembershipResponse `protobuf:"bytes,2,opt,name=membership_plan,json=membershipPlan,proto3,oneof"`
+}
+
+func (*PrepareFederatedConversationCommandResponse_Plan) isPrepareFederatedConversationCommandResponse_Preparation() {
+}
+
+func (*PrepareFederatedConversationCommandResponse_MembershipPlan) isPrepareFederatedConversationCommandResponse_Preparation() {
 }
 
 type SubmitConversationTypingRequest struct {
@@ -3784,12 +3864,16 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x11removed_endpoints\x18\v \x03(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x10removedEndpoints\x12o\n" +
 	"\x15reserved_key_packages\x18\f \x03(\v2;.peers_touch.model.key_exchange.v1.MlsKeyPackageReservationR\x13reservedKeyPackages\x12`\n" +
 	"\x12endpoint_manifests\x18\r \x03(\v21.peers_touch.model.actor.v1.ActorEndpointManifestR\x11endpointManifests\x122\n" +
-	"\x15authority_plan_sha256\x18\x0e \x01(\fR\x13authorityPlanSha256\"\xc2\x01\n" +
-	"*PrepareFederatedConversationCommandRequest\x12V\n" +
-	"\arequest\x18\x01 \x01(\v2<.peers_touch.model.chat.v1.PrepareConversationCommandRequestR\arequest\x12<\n" +
-	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x80\x01\n" +
-	"+PrepareFederatedConversationCommandResponse\x12Q\n" +
-	"\x04plan\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.PrepareConversationCommandResponseR\x04plan\"\x91\x02\n" +
+	"\x15authority_plan_sha256\x18\x0e \x01(\fR\x13authorityPlanSha256\"\xc5\x02\n" +
+	"*PrepareFederatedConversationCommandRequest\x12X\n" +
+	"\arequest\x18\x01 \x01(\v2<.peers_touch.model.chat.v1.PrepareConversationCommandRequestH\x00R\arequest\x12p\n" +
+	"\x12membership_request\x18\x03 \x01(\v2?.peers_touch.model.chat.v1.PrepareConversationMembershipRequestH\x00R\x11membershipRequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerIdB\r\n" +
+	"\vpreparation\"\xfe\x01\n" +
+	"+PrepareFederatedConversationCommandResponse\x12S\n" +
+	"\x04plan\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.PrepareConversationCommandResponseH\x00R\x04plan\x12k\n" +
+	"\x0fmembership_plan\x18\x02 \x01(\v2@.peers_touch.model.chat.v1.PrepareConversationMembershipResponseH\x00R\x0emembershipPlanB\r\n" +
+	"\vpreparation\"\x91\x02\n" +
 	"\x1fSubmitConversationTypingRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12B\n" +
 	"\x06sender\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06sender\x12)\n" +
@@ -4061,31 +4145,33 @@ var file_domain_chat_conversation_api_proto_depIdxs = []int32{
 	75, // 50: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.reserved_key_packages:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
 	72, // 51: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
 	25, // 52: peers_touch.model.chat.v1.PrepareFederatedConversationCommandRequest.request:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandRequest
-	26, // 53: peers_touch.model.chat.v1.PrepareFederatedConversationCommandResponse.plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
-	60, // 54: peers_touch.model.chat.v1.SubmitConversationTypingRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	74, // 55: peers_touch.model.chat.v1.SubmitConversationTypingRequest.expires_at:type_name -> google.protobuf.Timestamp
-	74, // 56: peers_touch.model.chat.v1.SubmitConversationTypingResponse.expires_at:type_name -> google.protobuf.Timestamp
-	2,  // 57: peers_touch.model.chat.v1.FederatedConversationTypingSignal.phase:type_name -> peers_touch.model.chat.v1.FederatedConversationTypingPhase
-	60, // 58: peers_touch.model.chat.v1.FederatedConversationTypingSignal.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	74, // 59: peers_touch.model.chat.v1.FederatedConversationTypingSignal.expires_at:type_name -> google.protobuf.Timestamp
-	77, // 60: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	77, // 61: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	77, // 62: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	77, // 63: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	77, // 64: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	77, // 65: peers_touch.model.chat.v1.ListFederatedMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	62, // 66: peers_touch.model.chat.v1.ListConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 67: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 68: peers_touch.model.chat.v1.ListConversationMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 69: peers_touch.model.chat.v1.ListThreadMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	53, // 70: peers_touch.model.chat.v1.GetThreadCountsResponse.counts:type_name -> peers_touch.model.chat.v1.ThreadCountEntry
-	55, // 71: peers_touch.model.chat.v1.GetMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
-	55, // 72: peers_touch.model.chat.v1.UpdateMemberSettingsRequest.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
-	73, // [73:73] is the sub-list for method output_type
-	73, // [73:73] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	29, // 53: peers_touch.model.chat.v1.PrepareFederatedConversationCommandRequest.membership_request:type_name -> peers_touch.model.chat.v1.PrepareConversationMembershipRequest
+	26, // 54: peers_touch.model.chat.v1.PrepareFederatedConversationCommandResponse.plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
+	30, // 55: peers_touch.model.chat.v1.PrepareFederatedConversationCommandResponse.membership_plan:type_name -> peers_touch.model.chat.v1.PrepareConversationMembershipResponse
+	60, // 56: peers_touch.model.chat.v1.SubmitConversationTypingRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	74, // 57: peers_touch.model.chat.v1.SubmitConversationTypingRequest.expires_at:type_name -> google.protobuf.Timestamp
+	74, // 58: peers_touch.model.chat.v1.SubmitConversationTypingResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 59: peers_touch.model.chat.v1.FederatedConversationTypingSignal.phase:type_name -> peers_touch.model.chat.v1.FederatedConversationTypingPhase
+	60, // 60: peers_touch.model.chat.v1.FederatedConversationTypingSignal.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	74, // 61: peers_touch.model.chat.v1.FederatedConversationTypingSignal.expires_at:type_name -> google.protobuf.Timestamp
+	77, // 62: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 63: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 64: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 65: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 66: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 67: peers_touch.model.chat.v1.ListFederatedMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	62, // 68: peers_touch.model.chat.v1.ListConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 69: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 70: peers_touch.model.chat.v1.ListConversationMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 71: peers_touch.model.chat.v1.ListThreadMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	53, // 72: peers_touch.model.chat.v1.GetThreadCountsResponse.counts:type_name -> peers_touch.model.chat.v1.ThreadCountEntry
+	55, // 73: peers_touch.model.chat.v1.GetMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
+	55, // 74: peers_touch.model.chat.v1.UpdateMemberSettingsRequest.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
+	75, // [75:75] is the sub-list for method output_type
+	75, // [75:75] is the sub-list for method input_type
+	75, // [75:75] is the sub-list for extension type_name
+	75, // [75:75] is the sub-list for extension extendee
+	0,  // [0:75] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_conversation_api_proto_init() }
@@ -4107,6 +4193,14 @@ func file_domain_chat_conversation_api_proto_init() {
 	file_domain_chat_conversation_api_proto_msgTypes[16].OneofWrappers = []any{
 		(*SubmitConversationAuthorityCommandRequest_Command)(nil),
 		(*SubmitConversationAuthorityCommandRequest_Proposal)(nil),
+	}
+	file_domain_chat_conversation_api_proto_msgTypes[28].OneofWrappers = []any{
+		(*PrepareFederatedConversationCommandRequest_Request)(nil),
+		(*PrepareFederatedConversationCommandRequest_MembershipRequest)(nil),
+	}
+	file_domain_chat_conversation_api_proto_msgTypes[29].OneofWrappers = []any{
+		(*PrepareFederatedConversationCommandResponse_Plan)(nil),
+		(*PrepareFederatedConversationCommandResponse_MembershipPlan)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

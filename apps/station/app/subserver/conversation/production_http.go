@@ -472,11 +472,7 @@ func (s *subServer) handlePrepareMembership(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
-	change, err := productionMembershipChange(request)
-	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
-	}
-	actors, err := s.composition.CommandService.CommandRouteActors(
+	view, err := s.composition.QueryService.Get(
 		ctx,
 		conversationID,
 		requester.Actor,
@@ -484,23 +480,70 @@ func (s *subServer) handlePrepareMembership(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	if view.Source == query.SourceFollower {
+		response, forwardErr := s.forwardPrepareMembership(
+			ctx,
+			request,
+			view.Conversation,
+		)
+
+		return response, mapProductionConversationError(ctx, forwardErr)
+	}
+	if view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != s.localStation {
+		return nil, mapProductionConversationError(
+			ctx,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeProposalBinding,
+				"production_http.prepare_membership",
+				"authority_station_peer_id",
+				"does not match the local authority projection",
+			),
+		)
+	}
+	response, err := s.prepareMembershipPlan(ctx, request, requester)
+
+	return response, mapProductionConversationError(ctx, err)
+}
+
+func (s *subServer) prepareMembershipPlan(
+	ctx context.Context,
+	request *chatmodel.PrepareConversationMembershipRequest,
+	requester valueobject.Endpoint,
+) (*chatmodel.PrepareConversationMembershipResponse, error) {
+	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
+	if err != nil {
+		return nil, err
+	}
+	change, err := productionMembershipChange(request)
+	if err != nil {
+		return nil, err
+	}
+	actors, err := s.composition.CommandService.CommandRouteActors(
+		ctx,
+		conversationID,
+		requester.Actor,
+	)
+	if err != nil {
+		return nil, err
+	}
 	actors = uniqueProductionActors(append(actors, change.Actor))
 	manifests, err := s.composition.productionEndpointManifests(ctx, actors)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		return nil, err
 	}
 	verifiedRoutes, err := productionEndpointRoutesFromManifests(
 		manifests,
 		actors,
 	)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		return nil, err
 	}
 	manifestSetHash, manifestStateHash, err := productionEndpointManifestSetHashes(
 		manifests,
 	)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		return nil, err
 	}
 	plan, err := s.composition.CommandService.PrepareMembership(
 		ctx,
@@ -515,7 +558,7 @@ func (s *subServer) handlePrepareMembership(
 		},
 	)
 	if err != nil {
-		return nil, mapProductionConversationError(ctx, err)
+		return nil, err
 	}
 
 	return s.productionMembershipPlanResponse(plan, manifests), nil

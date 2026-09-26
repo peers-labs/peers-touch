@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import path from 'node:path';
@@ -11,8 +10,8 @@ import { Worker } from 'node:worker_threads';
 import {
   isDirectInvocation,
   repoRoot,
-  workspaceIdForRoot,
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { inspectGitWorkspace } from '../../../tooling/scripts/local-dev/git-workspace.mjs';
 import { buildDevSnapshot } from './status.mjs';
 
 export const DEV_SERVER_KIND = 'peers-touch-dev-server';
@@ -63,40 +62,30 @@ function parseArguments(argv) {
   return { action, options };
 }
 
-function gitValue(root, args, field) {
-  try {
-    return execFileSync('git', args, {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  } catch (error) {
-    throw new PeersDevError(
-      'DEV_SERVER_SOURCE_IDENTITY_UNAVAILABLE',
-      `cannot resolve ${field}`,
-      { cause: error?.stderr?.toString().trim() || String(error) },
-    );
-  }
-}
-
 export function buildServerIdentity(options = {}) {
   const sourceRoot = realpathSync(options.sourceRoot ?? repoRoot);
   const host = options.host ?? DEV_SERVER_HOST;
   const port = options.port ?? DEV_SERVER_PORT;
+  let source;
+  try {
+    source = (options.inspectGitWorkspace ?? inspectGitWorkspace)(sourceRoot);
+  } catch (error) {
+    throw new PeersDevError(
+      'DEV_SERVER_SOURCE_IDENTITY_UNAVAILABLE',
+      'cannot resolve Peers Dev source identity',
+      { cause: error?.stderr?.toString().trim() || error.message },
+    );
+  }
   return {
     kind: DEV_SERVER_KIND,
     endpoint: `http://${host}:${port}`,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     source: {
-      workspaceId: workspaceIdForRoot(sourceRoot),
-      branch: gitValue(sourceRoot, ['branch', '--show-current'], 'branch'),
-      head: gitValue(sourceRoot, ['rev-parse', 'HEAD'], 'HEAD'),
-      dirty:
-        gitValue(
-          sourceRoot,
-          ['status', '--porcelain', '--untracked-files=normal'],
-          'worktree status',
-        ) !== '',
+      workspaceId: source.workspaceId,
+      branch: source.branch,
+      head: source.commit,
+      dirty: !source.clean,
+      sourceDigest: source.workspaceDigest,
     },
   };
 }
@@ -277,7 +266,13 @@ function compatibleIdentity(probe, host, port) {
     JSON.stringify(payloadKeys) ===
       JSON.stringify(['endpoint', 'kind', 'source', 'startedAt']) &&
     JSON.stringify(sourceKeys) ===
-      JSON.stringify(['branch', 'dirty', 'head', 'workspaceId']) &&
+      JSON.stringify([
+        'branch',
+        'dirty',
+        'head',
+        'sourceDigest',
+        'workspaceId',
+      ]) &&
     payload.kind === DEV_SERVER_KIND &&
     payload.endpoint === `http://${host}:${port}` &&
     typeof source?.workspaceId === 'string' &&
@@ -286,7 +281,15 @@ function compatibleIdentity(probe, host, port) {
     source.branch.length > 0 &&
     typeof source.head === 'string' &&
     /^[0-9a-f]{40}$/.test(source.head) &&
-    typeof source.dirty === 'boolean'
+    typeof source.dirty === 'boolean' &&
+    typeof source.sourceDigest === 'string' &&
+    /^(?:clean|sha256:[0-9a-f]{64})$/.test(source.sourceDigest)
+  );
+}
+
+function sameServerSource(actual, expected) {
+  return ['workspaceId', 'branch', 'head', 'dirty', 'sourceDigest'].every(
+    (field) => actual?.[field] === expected?.[field],
   );
 }
 
@@ -346,8 +349,25 @@ export async function ensureDevServer(options = {}) {
   const host = options.host ?? DEV_SERVER_HOST;
   const port = options.port ?? DEV_SERVER_PORT;
   const endpoint = `http://${host}:${port}`;
+  const identity =
+    options.identity ??
+    buildServerIdentity({
+      sourceRoot: options.sourceRoot,
+      host,
+      port,
+    });
   const initialProbe = await probeDevServer({ host, port });
   if (initialProbe.state === 'compatible') {
+    if (!sameServerSource(initialProbe.server.source, identity.source)) {
+      throw new PeersDevError(
+        'DEV_SERVER_SOURCE_MISMATCH',
+        'running Peers Dev does not match the requested source',
+        {
+          expected: identity.source,
+          actual: initialProbe.server.source,
+        },
+      );
+    }
     return {
       state: 'existing',
       endpoint,
@@ -359,13 +379,6 @@ export async function ensureDevServer(options = {}) {
     throw portConflict(initialProbe, host, port);
   }
 
-  const identity =
-    options.identity ??
-    buildServerIdentity({
-      sourceRoot: options.sourceRoot,
-      host,
-      port,
-    });
   const server = createDevHttpServer({
     ...options,
     identity,
@@ -382,6 +395,16 @@ export async function ensureDevServer(options = {}) {
     }
     const raceProbe = await probeAfterBindRace({ host, port });
     if (raceProbe.state === 'compatible') {
+      if (!sameServerSource(raceProbe.server.source, identity.source)) {
+        throw new PeersDevError(
+          'DEV_SERVER_SOURCE_MISMATCH',
+          'racing Peers Dev does not match the requested source',
+          {
+            expected: identity.source,
+            actual: raceProbe.server.source,
+          },
+        );
+      }
       return {
         state: 'existing',
         endpoint,

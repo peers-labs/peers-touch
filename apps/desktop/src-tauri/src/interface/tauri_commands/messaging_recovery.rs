@@ -290,11 +290,35 @@ pub fn messaging_recovery_create_revision(
                 "createdAtUnixMs": timestamp_ms(response.created_at.as_ref()),
                 "blobSizeBytes": request.encrypted_archive.len(),
             },
+            "recoveryEpoch": encoded.recovery_epoch,
             "messageCount": archive.messages.len(),
             "conversationCount": archive.conversations.len(),
             "attachmentCount": archive.attachments.len(),
             "verifiedFingerprintCount": archive.trust.len(),
         }),
+    )
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn messaging_recovery_acceptance_create_revision(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let recovery_phrase = match crypto::generate_recovery_mnemonic() {
+        Ok(phrase) => phrase,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("failed to generate acceptance recovery phrase: {error}"),
+                None,
+            )
+        }
+    };
+    messaging_recovery_create_revision(
+        MessagingRecoveryCreateInput { recovery_phrase },
+        state,
+        window,
     )
 }
 

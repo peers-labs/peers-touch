@@ -53,13 +53,11 @@ func TestMigrateTouchIdentityColumnsRollsBackAsASet(t *testing.T) {
 func TestMigrateSocialIdentityColumnsPreservesAliases(t *testing.T) {
 	rds := openIdentityMigrationDB(t, "social_preserves_aliases")
 	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE social_private_audience_grants (id INTEGER PRIMARY KEY, actor_did TEXT)`,
 		`CREATE TABLE social_circle_members (
 			id INTEGER PRIMARY KEY,
 			member_did TEXT,
 			actor_did TEXT
 		)`,
-		`INSERT INTO social_private_audience_grants (id, actor_did) VALUES (1, 'ptid:alice')`,
 		`INSERT INTO social_circle_members (id, member_did, actor_did)
 		 VALUES (1, 'ptid:bob', 'ptid:bob')`,
 	)
@@ -68,10 +66,8 @@ func TestMigrateSocialIdentityColumnsPreservesAliases(t *testing.T) {
 		t.Fatalf("migrate social identity columns: %v", err)
 	}
 
-	assertIdentityValue(t, rds, "social_private_audience_grants", "actor_ptid", "ptid:alice")
 	assertIdentityValue(t, rds, "social_circle_members", "actor_ptid", "ptid:bob")
-	if rds.Migrator().HasColumn("social_private_audience_grants", "actor_did") ||
-		rds.Migrator().HasColumn("social_circle_members", "member_did") ||
+	if rds.Migrator().HasColumn("social_circle_members", "member_did") ||
 		rds.Migrator().HasColumn("social_circle_members", "actor_did") {
 		t.Fatal("legacy social identity columns remain after migration")
 	}
@@ -80,26 +76,25 @@ func TestMigrateSocialIdentityColumnsPreservesAliases(t *testing.T) {
 func TestMigrateSocialIdentityColumnsRollsBackAsASet(t *testing.T) {
 	rds := openIdentityMigrationDB(t, "social_rolls_back")
 	mustExecuteMigrationSQL(t, rds,
-		`CREATE TABLE social_private_audience_grants (id INTEGER PRIMARY KEY, actor_did TEXT)`,
 		`CREATE TABLE social_circle_members (
 			id INTEGER PRIMARY KEY,
+			member_did TEXT,
 			actor_did TEXT,
 			actor_ptid TEXT
 		)`,
-		`INSERT INTO social_private_audience_grants (id, actor_did) VALUES (1, 'ptid:alice')`,
-		`INSERT INTO social_circle_members (id, actor_did, actor_ptid)
-		 VALUES (1, 'ptid:bob', 'ptid:mallory')`,
+		`INSERT INTO social_circle_members (id, member_did, actor_did, actor_ptid)
+		 VALUES (1, 'ptid:alice', 'ptid:bob', 'ptid:mallory')`,
 	)
 
 	err := migrateSocialIdentityColumns(rds)
 	if err == nil || !strings.Contains(err.Error(), "divergent") {
 		t.Fatalf("expected divergent identity error, got %v", err)
 	}
-	if !rds.Migrator().HasColumn("social_private_audience_grants", "actor_did") ||
-		rds.Migrator().HasColumn("social_private_audience_grants", "actor_ptid") {
-		t.Fatal("social audience migration was not rolled back with the module set")
+	if !rds.Migrator().HasColumn("social_circle_members", "member_did") ||
+		rds.Migrator().HasColumn("social_circle_members", "member_ptid") {
+		t.Fatal("social circle member migration was not rolled back with the module set")
 	}
-	assertIdentityValue(t, rds, "social_private_audience_grants", "actor_did", "ptid:alice")
+	assertIdentityValue(t, rds, "social_circle_members", "member_did", "ptid:alice")
 }
 
 func TestMigrateAccessGateIdentityBackfillsLegacyAttempt(t *testing.T) {

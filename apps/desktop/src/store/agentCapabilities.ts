@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 
 import type {
   AgentCapabilityBinding,
+  CapabilityCatalogIssue,
   CapabilityManifest,
   CapabilityReadiness,
   CapabilityReadinessSnapshot,
@@ -15,7 +16,12 @@ import type {
 import {
   ListKnowledgeResourceDescriptorsRequestSchema,
 } from '../gen/proto/domain/agent/capability_pb';
-import { api } from '../services/desktop_api';
+import {
+  api,
+  projectAgentTypedErrorPayload,
+  RustCommandException,
+  type AgentTypedErrorPayload,
+} from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { createDesktopStore } from './createDesktopStore';
 import {
@@ -54,6 +60,8 @@ export interface DeleteAgentCapabilityBindingIntent
 
 export interface AgentCapabilityState extends RevalidationState {
   manifests: CapabilityManifest[];
+  catalogIssues: CapabilityCatalogIssue[];
+  lastMutationError: AgentTypedErrorPayload | null;
   knowledgeDescriptors: KnowledgeResourceDescriptor[];
   bindingsByAgentId: Record<string, AgentCapabilityBinding[]>;
   readinessByAgentId: Record<string, CapabilityReadinessSnapshot | undefined>;
@@ -113,6 +121,11 @@ function requireIntentValue(value: string, field: string): void {
   }
 }
 
+function capabilityTypedError(error: unknown): AgentTypedErrorPayload | null {
+  if (!(error instanceof RustCommandException) || !error.details) return null;
+  return projectAgentTypedErrorPayload(error.details) ?? null;
+}
+
 async function reconcileKnowledgeProjection(
   state: AgentCapabilityState,
 ): Promise<void> {
@@ -126,6 +139,8 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
   'agentCapabilities',
   (set, get) => ({
     manifests: [],
+    catalogIssues: [],
+    lastMutationError: null,
     knowledgeDescriptors: [],
     bindingsByAgentId: {},
     readinessByAgentId: {},
@@ -141,11 +156,20 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
     loadCatalog: async (sourceKinds = []) => {
       const epoch = projectionEpoch;
       const sequence = ++catalogLoadSequence;
-      set({ loadingCatalog: true, loading: true, error: null });
+      set({
+        loadingCatalog: true,
+        loading: true,
+        error: null,
+        lastMutationError: null,
+      });
       try {
-        const manifests = await api.listCapabilityManifests(sourceKinds);
+        const inventory = await api.listCapabilityManifestInventory(sourceKinds);
         if (epoch !== projectionEpoch || sequence !== catalogLoadSequence) return;
-        set({ manifests, lastLoadedAt: Date.now() });
+        set({
+          manifests: inventory.manifests,
+          catalogIssues: inventory.issues,
+          lastLoadedAt: Date.now(),
+        });
       } catch (error) {
         const message = toStoreError(error);
         log.error('agentCapabilities', 'Failed to load capability catalog', {
@@ -304,6 +328,7 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
       const mutationKey = `upsert:${intent.agentId}:${intent.capabilityId}`;
       set((state) => ({
         error: null,
+        lastMutationError: null,
         pendingMutations: beginMutation(state.pendingMutations, mutationKey),
       }));
       try {
@@ -331,7 +356,12 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
           capabilityId: intent.capabilityId,
           error: message,
         });
-        if (epoch === projectionEpoch) set({ error: message });
+        if (epoch === projectionEpoch) {
+          set({
+            error: message,
+            lastMutationError: capabilityTypedError(error),
+          });
+        }
         throw error;
       } finally {
         if (epoch === projectionEpoch) {
@@ -350,6 +380,7 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
       const mutationKey = `delete:${intent.agentId}:${intent.bindingId}`;
       set((state) => ({
         error: null,
+        lastMutationError: null,
         pendingMutations: beginMutation(state.pendingMutations, mutationKey),
       }));
       try {
@@ -370,7 +401,12 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
           bindingId: intent.bindingId,
           error: message,
         });
-        if (epoch === projectionEpoch) set({ error: message });
+        if (epoch === projectionEpoch) {
+          set({
+            error: message,
+            lastMutationError: capabilityTypedError(error),
+          });
+        }
         throw error;
       } finally {
         if (epoch === projectionEpoch) {
@@ -493,6 +529,8 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
       agentLoadSequences.clear();
       set({
         manifests: [],
+        catalogIssues: [],
+        lastMutationError: null,
         knowledgeDescriptors: [],
         bindingsByAgentId: {},
         readinessByAgentId: {},

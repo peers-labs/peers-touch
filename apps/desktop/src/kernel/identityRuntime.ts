@@ -331,6 +331,7 @@ class IdentityRuntime {
         await this.loadAuthGate('session_missing', false);
         return;
       }
+      await api.stationBindingComplete();
       await this.acceptAuthenticatedEdgeFromCurrentSession(source === 'applet' ? 'applet_launch' : 'restored_session');
     } catch (error) {
       await this.loadAuthGate(classifyRestoreFailure(error), false);
@@ -343,6 +344,7 @@ class IdentityRuntime {
     const user = currentSessionUser();
     if (!user) return;
 
+    await api.stationBindingComplete();
     useOAuth2Store.getState().loadAll().catch(() => {});
     if (this.phase.kind === 'authenticatedPendingCompletion') {
       this.restoredUser = user;
@@ -402,13 +404,22 @@ class IdentityRuntime {
   };
 
   unlockWithPin = async (accountId: string, pin: string): Promise<void> => {
+    this.dispatch({ type: 'SESSION_RESOLVE_STARTED', source: 'live' });
     markLocalIdentityAction();
-    const resp = await api.accountUnlock(accountId, pin);
+    let resp: Awaited<ReturnType<typeof api.accountUnlock>>;
+    try {
+      resp = await api.accountUnlock(accountId, pin);
+    } catch (error) {
+      clearLocalIdentityAction();
+      this.dispatch({ type: 'PIN_REQUIRED', accountId });
+      throw error;
+    }
     await runIdentityPipeline({
       reason: 'unlock',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: resp.login_method ?? null,
     });
+    useSessionStore.getState().activateAuthenticatedSession(resp);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
   };

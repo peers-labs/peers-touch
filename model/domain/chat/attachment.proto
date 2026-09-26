@@ -47,6 +47,12 @@ enum AttachmentTransferErrorCode {
   ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER = 8;
 }
 
+enum AttachmentContentKind {
+  ATTACHMENT_CONTENT_KIND_UNSPECIFIED = 0;
+  ATTACHMENT_CONTENT_KIND_FILE = 1;
+  ATTACHMENT_CONTENT_KIND_VOICE_NOTE = 2;
+}
+
 message AttachmentTransferError {
   AttachmentTransferErrorCode code = 1;
   google.protobuf.Duration retry_after = 2;
@@ -98,7 +104,9 @@ message AttachmentPlaintextMetadata {
   bytes object_key = 6;
   bytes base_nonce = 7;
   EncryptedObjectDescriptor object = 8;
-  VoiceNoteMetadata voice_note = 9;
+  AttachmentContentKind content_kind = 9;
+  uint32 duration_ms = 10;
+  VoiceNoteMetadata voice_note = 11;
 }
 
 // The complete private message body encrypted by Double Ratchet or OpenMLS.

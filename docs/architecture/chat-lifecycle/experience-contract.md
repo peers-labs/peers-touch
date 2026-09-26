@@ -115,27 +115,36 @@ truthful and actionable.
 
 ```yaml
 surface: desktop.chat.direct
-scenario: truthful identity, responsive settings, durable search, and bounded history restore
+scenario: truthful identity, stable conversation geometry, durable search, and bounded history restore
 given:
   - an existing Direct conversation with durable plaintext and authoritative Station metadata
   - an authenticated peer whose presence may be online, offline, or unavailable
+  - conversation rows and messages whose unread, thread, reaction, or emoji state can change
 when:
   - the user opens the conversation and Details
+  - either peer switches window focus while both authenticated runtimes remain reachable
+  - unread counts or message interaction metadata change
   - the user selects a local background
   - the user searches for known message text
   - the user clears and restores visible history within 24 hours
 then:
   - human-readable names lead and raw identifiers remain expandable
-  - presence comes from Station snapshot or realtime events
+  - both active peers remain online from authoritative Home Station presence
+  - unresolved or unavailable presence remains unknown instead of offline
+  - unread and message interaction changes preserve the reading position
   - the local background preview appears before upload finishes
   - search reads the canonical local message projection and finds the message
   - restore removes the clear marker and reloads the same durable history
 visual_invariants:
+  - unread badge changes preserve conversation-row height and text-column geometry
+  - thread, reaction, and emoji metadata preserve neighboring message positions and the visible scroll anchor
   - the search clear control remains inside the input suffix boundary
   - background preview does not resize or remount the conversation pane
 forbidden:
   - raw Station peer ID as primary metadata
   - guessed presence
+  - window blur or minimization changing authoritative presence to offline
+  - dynamic badges or interaction metadata causing adjacent rows to jump
   - waiting for upload before local preview
   - legacy session arrays as message-search authority
   - treating accepted clear or restore commands as failed because refresh lags

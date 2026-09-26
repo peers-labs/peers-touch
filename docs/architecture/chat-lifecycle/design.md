@@ -1,8 +1,8 @@
 # Chat Lifecycle - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-22
+> **Version**: v1.4
+> **Created**: 2026-09-16 | **Updated**: 2026-09-26
 > **Owner**: Chat Product Team
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/app/subserver/`
 
@@ -36,6 +36,8 @@ Upstream sources:
 | Current Chat readiness is not proven | verified_fact | Stored evidence binds older source; current worktree has no matching aggregate | high |
 | A lifecycle-level integration owner is required | inference | Individual domains contain substantial code, but no source governs their user-facing composition | high |
 | Existing domain ownership should remain unchanged | accepted_decision | CHAT-D01 through CHAT-D06 | accepted |
+| Active peers can be rendered offline | verified_fact | Desktop sends offline on blur, renews every 300s against a 90s lease, and local Station queries cannot resolve remote authority | high |
+| Dynamic badges and interaction metadata shift Chat geometry | verified_fact | Conversation rows have no reserved unread lane; message virtualization remeasures conditionally inserted thread/reaction content | high |
 
 ## 3. Core Principles
 
@@ -110,6 +112,7 @@ flowchart LR
 | Plaintext, ratchet, MLS private state | Device Messaging Engine | Encrypted local store only |
 | Attachment and voice-note bytes | Encrypted object plane + Engine metadata | Verified local cache |
 | Typing | Authenticated ephemeral Realtime path | Receiver TTL state |
+| Presence | Actor Home Station lease | PTID-keyed Desktop runtime projection |
 | Live call lifecycle | Client call runtime plus sealed signaling facts | Runtime-owned call projection |
 | Live audio/video media | WebRTC peers | No Station media state |
 | Desktop Messaging lifecycle (CCU-D01) | `apps/desktop/src/messaging/runtime.ts` — owns Chat command admission, projection event consumption, reconciliation, actor/Station/endpoint generation and scope reset | Runtime-owned Desktop messaging projection; Kernel descriptor is composition only |
@@ -298,6 +301,28 @@ first-terminal-action-wins resolution per `(callee_actor_ptid, call_id)`.
   ends the call visibly and never reopens arbitration; retry uses a new
   `call_id`.
 
+### 6.13 Presence And Stable Conversation Geometry
+
+- Presence means authenticated runtime reachability, not foreground focus.
+  Window blur, minimization, or a hidden Chat page cannot mark an actor
+  offline.
+- The Desktop runtime renews its Home Station lease at no more than one third
+  of the Station TTL. Logout, shutdown, confirmed network loss, revocation, and
+  lease expiry are the only offline transitions.
+- Clients query only their own Station. The local Presence owner partitions
+  snapshots by Actor Identity's verified Home Station and uses the
+  authenticated Federation peer-call transport for remote reads.
+- Unknown routing, unavailable remote authority, invalid peer authentication,
+  and omitted results remain unknown. They are never converted to offline.
+- Same-Station `PresenceFlip` events update the PTID-keyed projection
+  immediately. Realtime reconnect, inbound conversation activity, relationship
+  changes, and the bounded runtime reconcile refresh remote snapshots.
+- Event application advances a per-PTID revision. A snapshot may update a PTID
+  only when no newer event was observed after that snapshot began.
+- Conversation rows reserve a fixed trailing lane for unread state. Message
+  rows keep interaction metadata in a bounded rail, and virtualized timelines
+  preserve the visible anchor when measured row geometry changes.
+
 ## 7. Failure Semantics
 
 | Failure | Required behavior |
@@ -316,6 +341,8 @@ first-terminal-action-wins resolution per `(callee_actor_ptid, call_id)`.
 | Call resolver restart/failover | Read the same durable CAS record and replay the committed terminal result |
 | Call resolver TTL expiry | Keep the old call terminal; a retry requires a new `call_id` |
 | Station/restart loss | Reopen durable projections and workers |
+| Presence authority unavailable | Render unknown; retry through bounded runtime reconciliation |
+| Message metadata changes row size | Preserve the tail or visible-message anchor; never jump neighboring content |
 | Evidence identity mismatch | Fail the Gate; never substitute fixture values |
 
 ## 8. Allowed And Forbidden Relationships
@@ -336,6 +363,8 @@ Forbidden:
 - Chunked file transfer -> claimed live voice stream.
 - Client fixture -> observed identity or success result.
 - Production source -> hard-coded debug/telemetry endpoint.
+- Window focus/visibility -> authoritative actor offline state.
+- Missing or failed remote presence read -> offline.
 - Legacy friend/group Chat route -> fallback business owner.
 - UI, store, or runtime -> direct crypto, ACK, sequence, or replay
   interpretation (CCU-D02).

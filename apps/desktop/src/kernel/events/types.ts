@@ -60,7 +60,12 @@ export type RealtimeCallSignalKind =
   | 'CALL_ACCEPT'
   | 'CALL_REJECT'
   | 'CALL_END'
-  | 'CALL_NO_ANSWER';
+  | 'CALL_NO_ANSWER'
+  // Group call room lifecycle — see CallSignal.Kind in
+  // model/domain/realtime/event.proto. These carry group_ulid and
+  // room_name instead of ciphertext payload.
+  | 'ROOM_ACTIVE'
+  | 'ROOM_ENDED';
 
 export interface RealtimeCallSignalPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
@@ -87,6 +92,11 @@ export interface RealtimeCallSignalPayload {
   /** Populated by Station after first-terminal-action-wins resolution.
    *  Present on the fan-out of the winning CALL_ACCEPT / CALL_REJECT. */
   winningDeviceId?: string;
+  /** Group ULID for group call events (ROOM_ACTIVE / ROOM_ENDED).
+   *  Empty string for 1-to-1 signaling. */
+  groupUlid?: string;
+  /** LiveKit room name for group call events. Empty string for 1-to-1. */
+  roomName?: string;
 }
 
 /**

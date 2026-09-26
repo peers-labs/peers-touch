@@ -14,15 +14,11 @@ import {
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
 import { readAllActiveWorkRecords } from '../../../tooling/scripts/local-dev/active-work-store.mjs';
 import { readLedger } from '../../../tooling/scripts/local-dev/dev-work-ledger.mjs';
+import { loadWorkflowSnapshot } from '../../../tooling/scripts/local-dev/workflow-snapshot.mjs';
 import {
   resetPolicyForProfile,
   statusAll as machineStatusAll,
 } from '../../../tooling/scripts/local-dev/machine-dev-registry.mjs';
-import {
-  loadPlanPackage,
-  summarizePlanProgress,
-} from '../../../tooling/scripts/plan/plan-package.mjs';
-import { resolveWorkspacePlanBinding } from '../../../tooling/scripts/plan/workspace-plan-binding.mjs';
 
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
@@ -82,158 +78,6 @@ function gitResult(envRepo, args) {
       output: error?.stderr?.toString().trim() || error.message,
     };
   }
-}
-
-function containedPath(root, relativePath) {
-  const target = path.resolve(root, ...relativePath.split('/'));
-  const relative = path.relative(root, target);
-  if (
-    relative === '..' ||
-    relative.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relative)
-  ) {
-    return null;
-  }
-  return target;
-}
-
-function unavailablePlan(status, locator = {}, errorCode = null) {
-  return {
-    status,
-    locatorSource: locator.locatorSource ?? null,
-    planId: locator.planId ?? null,
-    taskId: locator.taskId ?? null,
-    planStatus: null,
-    currentTaskId: null,
-    progress: null,
-    errorCode,
-  };
-}
-
-export async function resolveDeclarationPlan(
-  declaration,
-  registration,
-  options = {},
-) {
-  const workspaceRoot = registration?.canonicalRoot;
-  if (!workspaceRoot || !existsSync(workspaceRoot)) {
-    return unavailablePlan(
-      registration ? 'missing' : 'unregistered',
-      {},
-      registration ? 'WORKTREE_ROOT_UNAVAILABLE' : 'WORKSPACE_UNREGISTERED',
-    );
-  }
-
-  const resolvePlanBinding =
-    options.resolveWorkspacePlanBinding ?? resolveWorkspacePlanBinding;
-  let workspacePlanBinding;
-  try {
-    workspacePlanBinding = await resolvePlanBinding({
-      repoRoot: workspaceRoot,
-      home: options.home,
-    });
-  } catch (error) {
-    if (
-      !declaration.planPath &&
-      error?.code === 'WORKSPACE_PLAN_BINDING_REQUIRED'
-    ) {
-      return unavailablePlan('untracked');
-    }
-    return unavailablePlan(
-      'invalid',
-      {},
-      error?.code ?? 'WORKSPACE_PLAN_BINDING_INVALID',
-    );
-  }
-
-  if (!declaration.planPath) {
-    return unavailablePlan(
-      'mismatch',
-      {
-        locatorSource: 'binding',
-        planId: workspacePlanBinding.planId,
-      },
-      'WORKSPACE_PLAN_DECLARATION_REQUIRED',
-    );
-  }
-
-  const locator = {
-    locatorSource: 'declaration',
-    planId: declaration.planId,
-    taskId: declaration.taskId,
-  };
-  let planFile = containedPath(workspaceRoot, declaration.planPath);
-  if (!planFile || !existsSync(planFile)) {
-    return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
-  }
-  try {
-    const canonicalRoot = realpathSync(workspaceRoot);
-    const canonicalPlan = realpathSync(planFile);
-    const relative = path.relative(canonicalRoot, canonicalPlan);
-    if (
-      relative === '..' ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative)
-    ) {
-      return unavailablePlan('invalid', locator, 'PLAN_PATH_ESCAPE');
-    }
-    planFile = canonicalPlan;
-  } catch {
-    return unavailablePlan('missing', locator, 'PLAN_NOT_FOUND');
-  }
-
-  let planPackage;
-  try {
-    const loadPlan = options.loadPlanPackage ?? loadPlanPackage;
-    planPackage = await loadPlan(planFile, {
-      repoRoot: workspaceRoot,
-    });
-  } catch (error) {
-    return unavailablePlan(
-      'invalid',
-      locator,
-      error?.code ?? 'PLAN_INVALID',
-    );
-  }
-
-  const actualHead = gitResult(workspaceRoot, ['rev-parse', 'HEAD']);
-  const currentTaskId =
-    planPackage.manifest.tasks.find((task) => task.status === 'in_progress')
-      ?.id ?? null;
-  const expected = {
-    planId: locator.planId,
-    taskId: locator.taskId,
-    workspaceId: declaration.workspaceId,
-    branch: declaration.branch,
-    declarationSourceHead: declaration.sourceHead,
-    boundPlanId: locator.planId,
-    boundPlanPath: declaration.planPath,
-  };
-  const actual = {
-    planId: planPackage.manifest.planId,
-    taskId: currentTaskId,
-    workspaceId: planPackage.manifest.binding.workspaceId,
-    branch: planPackage.manifest.binding.branch,
-    declarationSourceHead: actualHead.ok ? actualHead.output : null,
-    boundPlanId: workspacePlanBinding.planId,
-    boundPlanPath: workspacePlanBinding.planPath,
-  };
-  if (
-    Object.keys(expected).some((field) => expected[field] !== actual[field])
-  ) {
-    return unavailablePlan('mismatch', locator, 'PLAN_LOCATOR_MISMATCH');
-  }
-
-  return {
-    status: 'available',
-    locatorSource: locator.locatorSource,
-    planId: locator.planId,
-    taskId: locator.taskId,
-    planStatus: planPackage.manifest.status,
-    currentTaskId,
-    progress: summarizePlanProgress(planPackage),
-    errorCode: null,
-  };
 }
 
 export function collectProfiles(envRepo) {
@@ -477,12 +321,31 @@ function firstClaim(claims, kind) {
   return claims.find((claim) => claim.kind === kind) ?? null;
 }
 
+function workflowPlanProjection(snapshot) {
+  const plan = snapshot?.owners?.plan;
+  if (!plan) return null;
+  const firstError = snapshot.findings.find(
+    (finding) => finding.severity === 'error',
+  );
+  return {
+    status: firstError ? 'mismatch' : 'available',
+    locatorSource: 'workflow-snapshot',
+    planId: plan.planId,
+    taskId: plan.currentTaskId,
+    planStatus: plan.status,
+    currentTaskId: plan.currentTaskId,
+    progress: plan.progress,
+    errorCode: firstError?.code ?? null,
+  };
+}
+
 export function deriveWorktrees(
   profiles,
   registrations,
   declarations,
   activeLeases,
   activeWorkRecords = [],
+  workflowSnapshots = [],
 ) {
   const profileByName = new Map(
     profiles.map((profile) => [profile.name, profile]),
@@ -491,6 +354,9 @@ export function deriveWorktrees(
     registrations
       .filter((registration) => registration.workspaceId)
       .map((registration) => [registration.workspaceId, registration]),
+  );
+  const workflowByWorkspace = new Map(
+    workflowSnapshots.map((snapshot) => [snapshot.workspaceId, snapshot]),
   );
   const visibleDeclarations = declarations.filter((declaration) =>
     VISIBLE_DECLARATION_STATES.has(declaration.state),
@@ -529,6 +395,7 @@ export function deriveWorktrees(
       const activeWork =
         activeWorkRecords.find((record) => record.workspaceId === workspaceId) ??
         null;
+      const workflow = workflowByWorkspace.get(workspaceId) ?? null;
       const claims = projectRuntimeClaims(liveWork);
       const profileClaim = firstClaim(claims, 'profile');
       const slotClaim = firstClaim(claims, 'local.slot');
@@ -560,7 +427,16 @@ export function deriveWorktrees(
             : !registration
               ? 'unregistered'
               : 'ready';
-      const workState = activeWork
+      const workState = workflow?.verdict === 'DRIFT'
+        ? 'drift'
+        : workflow?.verdict === 'BLOCKED'
+          ? 'blocked'
+          : workflow?.verdict === 'SUSPENDED' &&
+              ['completed', 'superseded'].includes(
+                workflow.owners.plan?.status,
+              )
+            ? 'completed'
+            : activeWork
         ? activeWork.planStatus === 'blocked'
           ? 'blocked'
           : ['completed', 'superseded'].includes(activeWork.planStatus)
@@ -579,6 +455,7 @@ export function deriveWorktrees(
       return {
         workspaceId,
         name: registration?.name ?? null,
+        workflow,
         activeWork: activeWork ? safeActiveWork(activeWork) : null,
         branches: [
           ...new Set(
@@ -665,33 +542,87 @@ export async function buildDevSnapshot(options = {}) {
     });
   const rawRegistrations = machine.registrations ?? [];
   const registrations = rawRegistrations.map(safeRegistration);
-  const rawRegistrationByWorkspace = new Map(
-    rawRegistrations.map((registration) => [
-      registration.workspaceId,
-      registration,
-    ]),
+  const activeLeases = (machine.activeLeases ?? []).map(safeLease);
+  const workflowLoader = options.loadWorkflowSnapshot ?? loadWorkflowSnapshot;
+  const workflowSnapshots =
+    options.workflowSnapshots ??
+    (
+      await Promise.all(
+        rawRegistrations
+          .filter(
+            (registration) =>
+              typeof registration.canonicalRoot === 'string' &&
+              existsSync(registration.canonicalRoot),
+          )
+          .map(async (registration) => {
+            try {
+              return await workflowLoader({
+                home: options.home,
+                envRepo,
+                now,
+                workspaceRoot: registration.canonicalRoot,
+                ledger,
+                activeWorkRecord:
+                  activeWork.records.find(
+                    (record) =>
+                      record.workspaceId === registration.workspaceId,
+                  ) ?? null,
+                machineStatus: machine,
+              });
+            } catch (error) {
+              return {
+                kind: 'peers-touch-workflow-snapshot',
+                observedAt: now.toISOString(),
+                workspaceId: registration.workspaceId,
+                verdict: 'DRIFT',
+                findings: [
+                  {
+                    severity: 'error',
+                    code: error?.code ?? 'WORKFLOW_SNAPSHOT_UNAVAILABLE',
+                    owner: 'workflow-snapshot',
+                    field: 'snapshot',
+                    expected: 'available',
+                    actual: 'unavailable',
+                  },
+                ],
+                owners: {
+                  git: null,
+                  binding: null,
+                  plan: null,
+                  declaration: null,
+                  session: null,
+                  activeWork: null,
+                  runtime: {
+                    registration: null,
+                    leases: [],
+                  },
+                  rollout: null,
+                },
+              };
+            }
+          }),
+      )
+    ).sort((left, right) =>
+      String(left.workspaceId).localeCompare(String(right.workspaceId)),
+    );
+  const workflowByWorkspace = new Map(
+    workflowSnapshots.map((snapshot) => [snapshot.workspaceId, snapshot]),
   );
-  const planResolver = options.resolvePlan ?? resolveDeclarationPlan;
   const rawDeclarations = Object.values(ledger.declarations ?? {}).sort(
     (left, right) => left.declarationId.localeCompare(right.declarationId),
   );
-  const declarations = await Promise.all(
-    rawDeclarations.map(async (declaration) => {
+  const declarations = rawDeclarations.map((declaration) => {
       const safe = safeDeclaration(declaration);
       if (!VISIBLE_DECLARATION_STATES.has(declaration.state)) {
         return { ...safe, plan: null };
       }
       return {
         ...safe,
-        plan: await planResolver(
-          declaration,
-          rawRegistrationByWorkspace.get(declaration.workspaceId) ?? null,
-          { home: options.home },
+        plan: workflowPlanProjection(
+          workflowByWorkspace.get(declaration.workspaceId),
         ),
       };
-    }),
-  );
-  const activeLeases = (machine.activeLeases ?? []).map(safeLease);
+    });
 
   return {
     kind: 'peers-touch-dev-snapshot',
@@ -705,6 +636,7 @@ export async function buildDevSnapshot(options = {}) {
       records: activeWork.records.map(safeActiveWork),
       errors: activeWork.errors,
     },
+    workflowSnapshots,
     activeLeases,
     staleLeaseCount: (machine.staleLeaseMetadata ?? []).length,
     unregisteredObservationCount: machine.unregisteredObservations ? 1 : 0,
@@ -714,6 +646,7 @@ export async function buildDevSnapshot(options = {}) {
       declarations,
       activeLeases,
       activeWork.records,
+      workflowSnapshots,
     ),
     occupancy: deriveOccupancy(
       profiles,

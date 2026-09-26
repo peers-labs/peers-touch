@@ -30,7 +30,9 @@ interface OptionDef {
 // first, most private last, then the disabled-in-P2 options grouped.
 const OPTIONS: OptionDef[] = [
   { kind: Audience_Kind.PUBLIC, i18nKey: 'moments.audience.public', Icon: Globe },
+  { kind: Audience_Kind.FOLLOWERS, i18nKey: 'moments.audience.followers', Icon: Users },
   { kind: Audience_Kind.FRIENDS, i18nKey: 'moments.audience.friends', Icon: Users },
+  { kind: Audience_Kind.SELF, i18nKey: 'moments.audience.self', Icon: Users },
 ];
 
 export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProps) {
@@ -66,7 +68,7 @@ export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProp
         // for cheap React equality checks.
         const next = create(AudienceSchema, {
           kind,
-          targetId: 0n,
+          target: { case: undefined },
           actorPtids: [],
         });
         onChange(next);

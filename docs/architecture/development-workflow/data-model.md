@@ -69,11 +69,11 @@ interface PlanPackage {
     workstreamId: string;
     path: string;
     dependsOn: string[];
-    status: 'pending' | 'in_progress' | 'blocked' | 'done';
+    status: 'pending' | 'in_progress' | 'blocked' | 'done' | 'descoped';
     blocker: null | {
       code: string;
       owner: string;
-      evidenceRef: string;
+      evidenceRef?: string;
     };
   }>;
   exhaustion: null | {
@@ -174,7 +174,8 @@ Status rules:
 - `active`: exactly one `in_progress` Task;
 - `blocked`: zero `in_progress` Tasks, at least one `blocked` Task, no ready
   Task, and non-null fixed-point `exhaustion`;
-- `completed`: every Task is `done`;
+- `completed`: every Task is terminal (`done` or `descoped`); only `done`
+  contributes to completed progress;
 - `superseded`: zero `in_progress` Tasks and no live discovery.
 
 Markdown metadata is a discovery projection. `Status`, `Branch`, `Workspace ID`
@@ -257,9 +258,16 @@ Task checks must make the Session path reachable:
   terminal source closures and do not require a runtime proof successor;
 - a `functional` Task declares at least one `FUNCTIONAL_CHECK`; when its
   Acceptance closure is non-empty it also declares `ACCEPTANCE_PROOF`;
+- a `functional` Task with an empty Acceptance closure runs its declared
+  `FUNCTIONAL_CHECK` commands directly through the Session owner, seals their
+  bounded output plus the stable Git/workspace content digest, and does not
+  invoke an Acceptance Gate;
 - an `acceptance-aggregate` Task declares no `FUNCTIONAL_CHECK`, declares
   `ACCEPTANCE_PROOF`, and owns a non-empty Acceptance closure; its
   `runtimeClass` names the strongest runtime class in the aggregate;
+- an `acceptance-aggregate` Task has at least one transitive
+  `completionClass=functional` predecessor, so formal proof cannot be scheduled
+  on a source-only frontier;
 - formal Gate ownership remains in `Acceptance Execution`; an
   `ACCEPTANCE_PROOF` record cannot substitute for `FUNCTIONAL_CHECK/PASS`.
 
@@ -414,11 +422,130 @@ Ownership:
   file, fsyncs the directory and reads back the record.
 - On owner disagreement, sync fails closed; the projection never repairs its
   owners.
+- A digest-invalid but otherwise well-formed record may be replaced only by the
+  active-work owner after it re-derives every projected field from the current
+  Plan binding, manifest, declaration, Session and Git owners. Repair requires
+  both the observed record revision and the SHA-256 of its exact raw bytes,
+  increments the revision, and rejects immutable Plan/workspace disagreement.
 - Project memory, Context Anchor and Peers Dev may read records but cannot write
   them. Legacy Markdown is migration-only input and has no compatibility
   writer.
 
-## 6.1 Machine-Local User Skill Overlays
+## 6.1 Workflow Snapshot
+
+`workflow-snapshot.mjs` is a pure, read-only join over the current owner
+records. It persists nothing and cannot repair a mismatch.
+
+```ts
+interface WorkflowSnapshot {
+  kind: 'peers-touch-workflow-snapshot';
+  observedAt: string;
+  workspaceId: string | null;
+  verdict: 'HEALTHY' | 'BLOCKED' | 'DRIFT' | 'SUSPENDED';
+  continuation: 'CONTINUE' | 'HARD_BLOCK' | 'COMPLETE';
+  findings: Array<{
+    severity: 'error' | 'blocker' | 'warning';
+    code: string;
+    owner: string;
+    field: string;
+    expected: unknown;
+    actual: unknown;
+  }>;
+  owners: {
+    git: GitWorkspaceIdentity | null;
+    binding: WorkspacePlanBinding | null;
+    plan: PlanProjection | null;
+    declaration: DevelopmentResourceDeclaration | null;
+    session: DevelopmentSessionProjection | null;
+    activeWork: WorkspaceActiveWork | null;
+    runtime: RuntimeProjection;
+    rollout: SkillRolloutProjection | null;
+  };
+}
+```
+
+Verdict priority is deterministic:
+
+1. owner absence, malformed state, or cross-owner contradiction -> `DRIFT`;
+2. consistent explicit Plan/Session/runtime blocker -> `BLOCKED`;
+3. prepared, completed, superseded, or untracked execution -> `SUSPENDED`;
+4. otherwise -> `HEALTHY`.
+
+Rollout drift is a warning only and cannot change a business workflow verdict.
+Peers Dev and Context Anchor consume this verdict and its typed findings rather
+than joining owner records independently.
+
+Continuation is derived from the same read:
+
+1. a valid `completed | superseded` Plan -> `COMPLETE`;
+2. an active Plan with a current Task -> `CONTINUE`, including owner-repair,
+   Task parking, review, Anchor, and context boundaries;
+3. a fixed-point blocked Plan, a non-running Plan, or critical Git/Plan
+   identity failure -> `HARD_BLOCK`.
+
+`CONTINUE` authorizes only the next owner-governed workflow action. It does not
+override a finding, declaration, Guardian decision, or operation authorization.
+
+## 6.2 Ephemeral Anchor Projection
+
+`make workflow-snapshot WORKFLOW_SNAPSHOT_PROJECTION=anchor` returns a bounded
+subset of the same read-only owner join. It is not persisted and does not
+introduce a state owner. The projection contains:
+
+- verdict and continuation;
+- Plan status and exact Task-closure progress;
+- current Task identity, completion/runtime class, and Session state;
+- verified workspace, branch, initial HEAD, expected/verified HEAD;
+- one `currentObservation` with current Task and Session identity, observation
+  status, evidence-class summary, and Session timing when derivable.
+
+`currentObservation.status` is `measured` when timing is available,
+`not-started` when the current Task has no Session, `none` when there is no
+current Task, and `unavailable` when the expected Session observation cannot be
+read safely. A `not-started` observation reports every evidence class as
+`NOT_RUN`; `none` has no evidence or timing.
+
+Timing is derived from consecutive Session event timestamps. The duration from
+one event to the next belongs to the state entered by the first event. The
+current state's open duration ends at `observedAt`.
+
+State groups are:
+
+| Output phase | Session states |
+|---|---|
+| `implement` | `REPRODUCING`, `REPRODUCED`, `IMPLEMENTING`, `ACCEPTANCE_UPDATING` |
+| `test` | `FOCUSED_CHECKING` |
+| `functional` | `CHECKPOINTING`, `CHECKPOINTED`, `DEPLOYING`, `DEPLOYED`, `FUNCTIONAL_RUNNING` |
+| `acceptance` | `ACCEPTANCE_READY`, `FINAL_CHECKPOINTED`, `ACCEPTANCE_RUNNING` |
+| `wait` | all remaining elapsed Session states |
+
+These values are state residence time, not exclusive Agent CPU time. A journal
+whose first retained event is `COMPACTED_BASELINE` reports
+`completeness: partial`. Non-monotonic event timestamps produce
+`completeness: unknown` timing rather than
+overlapping or negative phase totals.
+Verification evidence covers `SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`,
+`FUNCTIONAL_CHECK`, and `ACCEPTANCE_PROOF`. It keeps the distinct values
+`PASS`, `FAIL`, `BLOCKED`, `NOT_RUN`, and `UNPROVEN`; an evidence class lost
+behind a compacted baseline is `UNKNOWN`, not `UNPROVEN`.
+
+When `planctl advance --to done` validates a terminal Session, its command
+result may include the same timing and evidence summary as a transient
+`closureObservation`. Source-evidence-only closure reports
+`not-observed` timing.
+Neither Snapshot timing nor closure observation participates in lifecycle,
+continuation, authorization, or proof decisions.
+
+The compact frontier includes at most eight items in each category and reports
+the total and hidden counts. Terminal Plans expose no runnable frontier.
+Dependency-waiting Tasks are not labeled as scheduler-parked work; the current
+Development Run remains the owner of its Ready/Parked scheduling decision.
+
+Token usage is optional transient host input. Only a value supplied by the
+active host may be displayed; absent usage is `not-observed`. No workflow
+owner estimates or persists token counts.
+
+## 6.3 Machine-Local User Skill Overlays
 
 An external Overlay source contains one strict manifest beside its Skill:
 
@@ -603,16 +730,6 @@ interface ExecutionAuthorization {
 Local commit does not imply push; deploy does not imply reset; PR does not imply
 merge; merge does not imply history rewrite.
 
-`DevelopmentFunctionalResult.runtimeIdentity.profile` identifies the selected
-single runtime Profile when the Environment has one. A composite Acceptance
-Environment may instead identify itself there; in that case every
-`runtimeIdentity.services.*` entry MUST carry `kind` and
-`deploymentEnvironment`, and the Development declaration MUST contain the exact
-`<kind>.connect` or `<kind>.deploy` claim for that deployment environment.
-Composite Environment IDs MUST NOT be compared to `deployProfiles` as though
-they were canonical Profile IDs. Every reported service `liveCommit` that is
-present MUST still equal the Session source checkpoint.
-
 A proposed operation resolves authorization from two explicit sources:
 
 1. an exact user grant in the current Development Run; and
@@ -632,20 +749,14 @@ operation is denied or outside every explicit grant. Session failure
 scope failure returned after an admitted operation was attempted. The latter
 cannot be manufactured preemptively from the operation category.
 
-A Plan Run adds no second authorization schema. One explicit continue/execute
-request consumes this accepted envelope across multiple Task and Goal Slice
-transitions. Task handoff, agent review, source-backed remediation, Context
-Anchor output, and context compaction do not reset the envelope. Operations
-outside it remain typed hard boundaries and are never inferred from the Plan
-Run request.
+A Plan Run adds no second authorization schema. One explicit continuation
+request consumes this accepted envelope across Task and Goal Slice transitions;
+Task handoff, agent review, source-backed remediation, Context Anchor output,
+and context compaction do not reset it.
 
 ### 9.1 Host Adapter Contract
 
-Host transport is not execution authority:
-
 ```ts
-type AgentHost = 'trae' | 'cursor' | 'codex' | string;
-
 interface HostCapabilityRequest {
   requestId: string;
   actionId: string;
@@ -657,74 +768,20 @@ interface HostCapabilityRequest {
   journeyId: string;
   sourceCommit: string;
   runtimeBindingRef: string | null;
-  host: AgentHost;
+  host: string;
   operation: 'execute' | 'cleanup' | 'inspect-quarantine';
   capability: 'worker' | 'browser-ui' | 'desktop-ui' | 'diagnostic';
   nativeAttempted: boolean;
   expectedPostcondition: string;
-  worktree: WorktreeBinding;
-  resourceId?: string;
   cleanupHandle?: string;
   cleanupAttempt?: 1;
 }
-
-interface HostCapabilityResult {
-  status:
-    | 'HOST_ADAPTER_READY'
-    | 'HOST_CAPABILITY_UNAVAILABLE'
-    | 'HOST_TOOL_CALL_FAILED'
-    | 'HOST_CLEANUP_QUARANTINED'
-    | 'HOST_CLEANUP_ESCALATION_REQUIRED'
-    | 'HOST_DIAGNOSTIC_RETAINED';
-  requestId: HostCapabilityRequest['requestId'];
-  actionId: HostCapabilityRequest['actionId'];
-  sessionId: HostCapabilityRequest['sessionId'];
-  workItemId: HostCapabilityRequest['workItemId'];
-  planId: HostCapabilityRequest['planId'];
-  taskId: HostCapabilityRequest['taskId'];
-  workspaceId: HostCapabilityRequest['workspaceId'];
-  journeyId: HostCapabilityRequest['journeyId'];
-  sourceCommit: HostCapabilityRequest['sourceCommit'];
-  runtimeBindingRef: HostCapabilityRequest['runtimeBindingRef'];
-  host: AgentHost;
-  capability: HostCapabilityRequest['capability'];
-  nativeAttempted: HostCapabilityRequest['nativeAttempted'];
-  adapterAttempted: true;
-  tool: string | null;
-  observationRef: string | null;
-  retryable: boolean;
-  possibleLiveSideEffect: boolean;
-  cleanupHandle: string | null;
-  cleanupAttempt: 1 | null;
-  resourceId: string | null;
-  cleanupOwner: 'host-adapter';
-  cleanup: 'released' | 'retained-bounded' | 'not-acquired';
-  leaseExpiresAt: string | null;
-}
 ```
 
-The scheduler projects the request but does not invoke the adapter. After the
-Guardian allows the action, Dev Workflow selects and invokes the adapter.
-Host metadata selects an adapter; directories and installed binaries do not.
-The result can describe transport, retryability, cleanup and observation, but
-cannot mutate authorization, Task progress, verification class, Session, or
-Acceptance evidence.
-
-When `possibleLiveSideEffect=true`, `cleanupHandle` is mandatory. Dev Workflow
-must submit one idempotent `operation=cleanup` request to the same adapter and
-observe `cleanup=released` before retry or fallback. Cleanup has exactly one
-admitted attempt and never recursively creates another cleanup request. A
-failed cleanup returns `HOST_CLEANUP_QUARANTINED`,
-`cleanup=retained-bounded`, the unchanged handle, an observation reference and
-a concrete `leaseExpiresAt`. Dev Workflow persists that quarantine, parks the
-current resource-dependent Task, and continues independent ready Tasks. After
-expiry it submits one read-only `operation=inspect-quarantine` request. That
-observation maps to `HOST_CLEANUP_RELEASED` when the adapter returns
-`HOST_ADAPTER_READY` with `cleanup=released`, or to
-`HOST_CLEANUP_ESCALATION_REQUIRED` when the side effect remains. It never
-performs or requests a second cleanup. An unbounded retained side effect is
-invalid adapter output and becomes an external-resource hard boundary only
-after the independent frontier is drained.
+The scheduler projects the request but never invokes the adapter. Dev Workflow
+invokes it only after Guardian admission and owns retries, cleanup, parking, and
+durable state. Cleanup has one admitted attempt; failure becomes a bounded
+quarantine followed by one read-only post-expiry observation.
 
 ## 10. Development Session
 
@@ -768,7 +825,7 @@ interface DevelopmentSessionState {
   source: SourceCheckpoint | null;
   runtimeBindingRef: string | null;
   currentFailure: DevelopmentFailure | null;
-  hostRequests?: DevelopmentFailure[]; // bounded durable request tombstones
+  hostRequests?: DevelopmentFailure[];
   lastVerification: VerificationRecord | null;
   startedAt: string;
   updatedAt: string;
@@ -790,8 +847,8 @@ from `in_progress` to `done`.
 
 Only one state is current. The bounded event log owns transition order;
 `session.json` is its materialized current projection. Neither is duplicated in
-a Task. `hostRequests` is an additive bounded field: legacy states without it
-read as an empty history, and the first host observation materializes it.
+a Task. `hostRequests` is additive and bounded; legacy states without it read as
+an empty history.
 
 ## 11. Transition Event
 
@@ -853,6 +910,39 @@ interface SourceCheckpoint {
   createdAt: string;
   purpose: 'development-runtime';
 }
+```
+
+A checkpoint:
+
+- is a local Git commit;
+- may contain WIP-level commit history;
+- is not a readiness, delivery or review claim;
+- is required before remote deployment and exact-source functional execution;
+- becomes stale when HEAD changes before deployment or the runtime reports a
+  different source identity.
+
+For a Plan that freezes executable source before a sequence of functional
+Tasks, a functional aggregate may additionally bind:
+
+```ts
+interface PlanLifecycleSourceProjection {
+  kind: 'peers-touch-plan-lifecycle-source-projection';
+  runtimeSourceCommit: string;
+  controlHead: string;
+  transitionCount: number;
+  transitionDigest: string;
+  planPath: string;
+}
+```
+
+`runtimeSourceCommit` remains the exact deployed and activated commit.
+`controlHead` is the current clean Git HEAD. The projection is valid only when
+every intervening commit is a linear, contract-preserving lifecycle update to
+the bound `plan.md`. The Session independently revalidates the projection
+before sealing a functional aggregate. Any other drift invalidates the frozen
+source and returns control to the Plan-declared source owner.
+
+```ts
 
 interface VerificationRecord {
   id: string;
@@ -873,37 +963,20 @@ interface VerificationRecord {
 }
 ```
 
-`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS` and the owner command may
-commit it only from `FUNCTIONAL_RUNNING`.
-
-The Session owner runs the current Task closure and commits its source-bound
-functional result and matching Session transition in one result slice. The
-command accepts no caller-selected Gate or result file. It starts the
-Acceptance Development runner with the bound Plan and receives one private
-reference to a canonical aggregate run manifest. That manifest must bind the
-complete closure Gate set, Plan, Task, Journey, work item, workspace and clean
-source. The Session owner resolves every content-addressed Gate run, source
-report, runtime manifest and cleanup artifact required by the Task's
-`runtimeClass`; `source-only` rejects runtime identity, while runtime-backed
-classes require the existing source checkpoint and runtime binding. It then
-seals the complete content as one self-contained bundle under `checks/` before
-committing the Session journal. Seal publication is create-once, fsynced and
-content-addressed. A failure before journal publication may retain an
-unreferenced orphan seal, but a published journal never references a deleted
-seal. Static/local Gate results require `traceability=not-required`; typed
-environment evidence requires complete traceability. Static/local results also
-require `cleanupStatus=not-required` and no cleanup artifact; runtime-backed
-results require `cleanupStatus=passed` plus a durable cleanup artifact. The
-command does not accept a caller-authored PASS record.
-
-Runtime evidence matches the Task class: `browser` requires a browser client,
-`native-desktop` requires a native Tauri desktop client, `native-mobile`
-requires an iOS or Android Tauri runtime, and `service` requires a declared
-runtime profile without substituting a client class.
-A machine result that reports `FUNCTIONAL_CHECK/PASS` while the Session remains
-before `FUNCTIONAL_PASS` is `SESSION_PROJECTION_STALE`; it is not a valid Task
-closure. Stale, substituted, replayed or out-of-order source/runtime/Journey
-identity is `SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
+`FUNCTIONAL_PASS` requires `FUNCTIONAL_CHECK/PASS` and may be committed only
+from `FUNCTIONAL_RUNNING` by the owner-run current-closure Development runner.
+The owner validates Plan/Task/Journey/work item/workspace/source identity and
+every required Gate/source/runtime/cleanup artifact, publishes a create-once
+content-addressed evidence seal, then commits the Session journal. Callers
+cannot submit their own PASS file or select only part of the closure.
+When a functional Task intentionally owns no formal Acceptance Gates, the same
+owner command may consume one immutable task-result aggregate under that
+workspace's machine-local `development/` root. It requires an exact raw-file
+digest, validates the aggregate's Task/workstream/workspace/source identity and
+self-digest, then seals the result into the Session store before committing
+`FUNCTIONAL_PASS`. Arbitrary or repository-local result paths remain forbidden.
+`SESSION_PROJECTION_STALE` and `SESSION_EVIDENCE_OUT_OF_SEQUENCE` prevent stale,
+substituted, or partial evidence from closing the Task.
 `ACCEPTANCE_PASS` requires `ACCEPTANCE_PROOF/PASS`.
 
 ## 13. Failure
@@ -966,26 +1039,10 @@ interface DevelopmentFailure {
 ```
 
 Only the current first failure lives in `session.json`. Resolution appends a new
-transition event and clears `currentFailure`. Initial `FAILED` or `BLOCKED`
-entry requires `failure.stage` to equal the Session state that observed it.
-Host transport records require
-immutable request/action/host/capability identity, explicit native and adapter
-attempt state, a new observation reference, `owner=host-adapter`, and
-`retryable=false`. Host cleanup quarantine/release/escalation additionally
-requires every bounded resource identity field, `cleanupAttempt=1`, and a lease
-expiry; non-host failures cannot carry host fields.
-
-While blocked, host observations are monotonic and one-shot:
-
-- `HOST_CAPABILITY_UNAVAILABLE -> HOST_CAPABILITY_AVAILABLE`;
-- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_RELEASED`;
-- `HOST_CLEANUP_QUARANTINED -> HOST_CLEANUP_ESCALATION_REQUIRED`.
-
-Cleanup inspection cannot occur before lease expiry. Only AVAILABLE or RELEASED
-may recover to `BOUND`; unchanged unavailable, quarantined, repeated, or
-escalated records remain blocked. The scheduler may advance other
-dependency-ready Tasks, but it cannot erase the blocked Task's transport record
-to manufacture progress.
+transition event and clears `currentFailure`. Host transport records bind
+immutable request/action/session/Plan/Task/workspace/Journey/source/runtime
+identity. While blocked, only `UNAVAILABLE -> AVAILABLE` or post-expiry
+`QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the observation.
 
 ## 14. State Transition Guards
 
@@ -1030,6 +1087,17 @@ Work-class/runtime variants:
 - Tasks whose closure has no formal Gate:
   `FUNCTIONAL_PASS -> DELIVERY_READY`;
 - Tasks with formal Gates follow the Acceptance path above.
+
+Broad Acceptance admission is read-only and Session-backed:
+
+- completion/full or generated-plan execution requires an explicit Session for
+  the bound current Task in `ACCEPTANCE_RUNNING`;
+- Gap Detector requires that same Session in
+  `ACCEPTANCE_PASS | DELIVERY_READY`;
+- missing, mismatched, cancelled, pre-functional, or Gate-less current Sessions
+  fail before Evidence Store creation or Gate launch;
+- explicit single-Gate development diagnostics remain narrow and do not claim
+  completion/full readiness.
 
 Recovery edges:
 

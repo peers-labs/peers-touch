@@ -32,6 +32,10 @@ tooling/scripts/plan/
 ├── workspace-plan-binding.mjs
 └── workspace-plan-binding.test.mjs
 
+tooling/scripts/
+├── plan_lifecycle_source.py
+└── plan_lifecycle_source_test.py
+
 tooling/scripts/local-dev/
 ├── dev-work-schema.mjs
 ├── dev-work-ledger.mjs
@@ -78,7 +82,7 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D25 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D27 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -86,8 +90,12 @@ tooling/scripts/
 | `execution-plans/*/archive/*` | Historical input excluded from all live parsing |
 | `plan-package.mjs` | Structured Markdown parser, schema validation, DAG, bounds, and Task-closure progress projection |
 | `plan-migration.mjs` | Locked, journaled migration with global path-role exclusion, atomic exchange/no-replace writes, takeover and recovery |
-| `planctl.mjs` | `validate/current/next/status/advance/migrate` CLI |
-| `planctl.test.mjs` | Package, DAG, bounds and CLI regression coverage |
+| `planctl.mjs` | `validate/current/next/status/activate/advance/invalidate-source/migrate` CLI with owner-safe Plan mutation locks and transient closure observation output |
+| `planctl.test.mjs` | Package, DAG, bounds, activation, source invalidation, truthful Session closure and lock recovery coverage |
+| `tooling/scripts/plan_lifecycle_source.py` | Strict frozen-runtime/current-control Plan lifecycle validator |
+| `tooling/scripts/plan_lifecycle_source_test.py` | Positive and fail-closed lifecycle source projection coverage |
+| `acceptance-admission.mjs` | Bound Plan/current Task/Session readiness guard before broad Acceptance |
+| `acceptance_admission.py` | Shared Python adapter for Acceptance runner and Gap Detector admission |
 | `workspace-plan-binding.mjs` | One-time immutable workspace-to-Plan binding and direct resolution |
 | `workspace-plan-binding.test.mjs` | Same-branch isolation, idempotence, rebind denial and missing-bound-Plan regressions |
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
@@ -95,9 +103,12 @@ tooling/scripts/
 | `dev-work.mjs` | Resource declaration CLI |
 | `active-work-store.mjs` | Consuming-workspace active-work schema, revision/CAS, digest, lock and atomic storage |
 | `active-work.mjs` | Owner-derived active-work sync/status/close CLI |
+| `git-workspace.mjs` | Stable Git/worktree content identity and dirty-workspace digest |
+| `workflow-snapshot.mjs` | Pure cross-owner consistency projection, typed verdict, and optional compact Anchor projection |
+| `workflow-snapshot.test.mjs` | HEALTHY/BLOCKED/DRIFT/SUSPENDED and owner-join regressions |
 | `dev-session-schema.mjs` | Session, verification, failure and transition schemas |
-| `dev-session-store.mjs` | Atomic bounded event journal, multi-transition result commit, replay and snapshot materialization |
-| `dev-session.mjs` | Session `start/status/transition/functional-result` CLI |
+| `dev-session-store.mjs` | Atomic bounded event journal, terminal archive, owner repair, non-mutating projection reads, multi-transition result commit, snapshot materialization, and pure timing aggregation |
+| `dev-session.mjs` | Session `start/status/archive/transition/functional-result` CLI |
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
 | `tooling/scripts/acceptance-run.py` | Shared Journey/provisioning execution with explicit non-publishing development and formal Acceptance policies |
 | `session.json` | Replayable current Development transition projection |
@@ -114,7 +125,7 @@ tooling/scripts/
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
 | `tooling/scripts/install-project-skills.sh` | Non-interactive per-host canonical `pt-*` projection and legacy Skill retirement |
 | `tooling/scripts/skill-rollout-audit.py` | Fail-closed single/fleet worktree source, registry matcher, recursive catalog, workflow identity, receipt, and host-projection audit |
-| `tooling/scripts/skill-rollout-control.py` | Work-ledger-locked installer, path-containment guard, stale-recovery exclusion, and catalog/session-bound restart receipt |
+| `tooling/scripts/skill-rollout-control.py` | Out-of-band host projection installer, path-containment guard, and atomic catalog observation receipt |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
 | `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |

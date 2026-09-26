@@ -23,7 +23,10 @@ use crate::domain::crypto::identity_keys;
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
 
-use super::engine::{validate_account_scope, MessageDraftResumeProgress, MobileMessagingEngine};
+use super::engine::{
+    validate_account_scope, MessageDraftResumeProgress, MobileMessagingEngine,
+    SecureContentRuntimeIdentity,
+};
 
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
@@ -363,6 +366,16 @@ impl MobileMessagingRuntime {
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         validate_active_scope(&engine, station_peer_id, actor_ptid)?;
         Ok(engine)
+    }
+
+    pub(crate) fn secure_content_runtime_identity(
+        &self,
+        station_peer_id: &str,
+        actor_ptid: &str,
+    ) -> MobileResult<SecureContentRuntimeIdentity> {
+        self.active_engine(station_peer_id, actor_ptid)?
+            .secure_content_runtime_identity()
+            .map_err(MobileError::messaging)
     }
 }
 

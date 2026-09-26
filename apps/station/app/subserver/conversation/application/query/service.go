@@ -386,7 +386,7 @@ func (s *Service) ReadCursor(
 func (s *Service) PendingLeaveIntents(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	actor valueobject.PTID,
+	requester valueobject.PTID,
 	limit int,
 ) ([]repository.LeaveIntent, error) {
 	if limit <= 0 || limit > 100 {
@@ -403,7 +403,7 @@ func (s *Service) PendingLeaveIntents(
 			ctx,
 			transaction.Repositories,
 			conversationID,
-			actor,
+			requester,
 			"application.query_pending_leave_intents",
 		); err != nil {
 			return err
@@ -412,7 +412,7 @@ func (s *Service) PendingLeaveIntents(
 		intents, err = transaction.Repositories.LeaveIntents.ListPending(
 			ctx,
 			conversationID,
-			actor,
+			requester,
 			limit,
 		)
 		return err

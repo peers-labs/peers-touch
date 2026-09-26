@@ -7,17 +7,22 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
+import { projectedBuildSourceCommit } from './buildSourceIdentity'
+
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const lynxClientPath = require.resolve('@lynx-js/web-core/client.prod.js')
 const lynxStaticSourceDir = path.resolve(path.dirname(lynxClientPath), '..')
 
 function getWorktreeInfo() {
+  const sourceCommitOverride = projectedBuildSourceCommit(process.env)
+
   try {
     const toplevel = execSync('git rev-parse --show-toplevel', { cwd: configDir, encoding: 'utf8' }).trim()
     const worktreeName = path.basename(toplevel)
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
-    const sourceCommit = execSync('git rev-parse HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
+    const sourceCommit = sourceCommitOverride
+      ?? execSync('git rev-parse HEAD', { cwd: configDir, encoding: 'utf8' }).trim()
     return { worktreeName, branch, sourceCommit }
   } catch {
     return { worktreeName: 'unknown', branch: 'unknown', sourceCommit: 'unknown' }

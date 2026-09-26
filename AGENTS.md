@@ -475,7 +475,6 @@ Current project skills:
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
 | `pt-defect-closure` | Close the defect loop: debug → fix → acceptance injection; ensures every behavioral bug fix leaves behind a regression Gate |
 | `pt-frontend-component-tree-review` | Review frontend component tree structure, boundaries, and UI implementation quality |
-| `pt-debug-space-clean` | Audit and clean generated artifacts by current task, product surface, platform, and rebuild cost |
 | `pt-small-fix-discipline` | Govern small fixes so agents locate the governing spec, fix the correct architectural layer, keep changes surgical, and self-grade before claiming done |
 | `pt-skill-author` | Govern creation, naming, cleanup, and verification of Peers-Touch `pt-*` project skills |
 
@@ -499,9 +498,11 @@ This keeps `tooling/skills/` as the single git-tracked truth and prevents skill 
 
 After a governance-source update, follow
 `docs/architecture/development-workflow/host-neutral-skill-rollout.md`.
-Installation rejects an active declaration; persist a Context Anchor, release
-the declaration, install, start a new agent session, acknowledge the new
-catalog, audit, then resume. Do not hot-swap Skills during an in-flight action.
+Run the source audit, install the host projection, then run the host-aware
+audit. Distribution is out-of-band: it does not release a business declaration,
+consume progress, require a host process restart, or require acknowledgement.
+The current agent action continues with its already-loaded instructions; future
+host sessions naturally discover the installed catalog.
 
 ### 13.3 Hard Constraints
 
@@ -544,14 +545,9 @@ Any non-trivial development task (cross-module, new feature, architecture change
    Guardian decides whether one proposed action **may** run, and Dev Workflow
    executes allowed work and persists owner state. Context Anchor is read-only.
 4. Each stage MUST pass its gate before entering the next. No skipping gates.
-5. Review pattern is uniform across stages: generate a structured review prompt
-   → invoke the applicable project Review Skills → fix source-backed findings
-   → rerun affected checks/review → pass. The user is not the default reviewer.
-   Escalate only an operation absent from the accepted authorization envelope,
-   a destructive/irreversible or separately governed operation (including
-   version/schema bump and worktree topology), a missing external resource, or
-   a material product/architecture/security/privacy/compatibility/rollout
-   choice that accepted sources cannot resolve.
+5. Review pattern is uniform across stages: generate structured review input →
+   invoke the repository review Skills → remediate findings → rerun until pass.
+   The user is not the default reviewer. Escalate only a DWF-D20 hard boundary.
 6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
    Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
    `pt-small-fix-discipline`; only a trivial text-only correction may invoke
@@ -586,16 +582,9 @@ Any non-trivial development task (cross-module, new feature, architecture change
     Codex, or another host only when selecting an optional tool transport.
     `pt-goal-orchestrator` projects the capability request; after Guardian
     admission, `pt-dev-workflow` dispatches the matching `pt-*-host-adapter`.
-    Repository-native
-    Make/Harness/WebDriver/Appium paths take priority. Missing host capability
-    degrades only that transport and never changes the required proof. Adapters
-    do not execute repository-native fallback. Failed cleanup enters one
-    bounded `HOST_CLEANUP_QUARANTINED` state; it cannot recursively invoke
-    cleanup or block independent ready Tasks. Missing capability and cleanup
-    observations persist immutable request identity in the Development Session.
-    Only `UNAVAILABLE -> AVAILABLE` or post-expiry
-    `QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the blocked
-    observation; unchanged requests cannot retry at zero progress.
+    Repository-native Make/Harness/WebDriver/Appium paths take priority.
+    Missing host capability degrades only that transport and never changes the
+    required proof.
 
 #### 13.5.1 Execution Worktree Binding Contract
 

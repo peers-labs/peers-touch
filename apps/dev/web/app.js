@@ -129,6 +129,12 @@ function renderWorktrees(snapshot) {
 
     const workStateCell = document.createElement('td');
     workStateCell.append(makeState(item.workState));
+    appendLines(
+      workStateCell,
+      (item.workflow?.findings ?? []).map(
+        (finding) => `${finding.owner}: ${finding.code}`,
+      ),
+    );
 
     const environmentHealthCell = document.createElement('td');
     environmentHealthCell.append(makeState(item.environmentHealth.state));
@@ -258,7 +264,7 @@ function renderSummary(snapshot) {
     (item) => item.leases.length > 0,
   ).length;
   const blockedCount = snapshot.worktrees.filter((item) =>
-    item.workState === 'blocked' ||
+    ['blocked', 'drift'].includes(item.workState) ||
     ['blocked', 'conflict'].includes(item.environmentHealth.state),
   ).length;
 

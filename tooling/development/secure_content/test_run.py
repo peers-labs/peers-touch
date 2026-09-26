@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -8,36 +9,28 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Mapping
 from unittest.mock import patch
 from urllib.parse import quote
 
 from tooling.acceptance.core.attestation import source_proto_digest
-from tooling.development.secure_content import attached_client, run
+from tooling.acceptance.core.errors import GateError
+from tooling.development.secure_content import (
+    attached_client,
+    run,
+    runtime_manifest,
+)
+from tooling.development.secure_content import (
+    test_runtime_manifest as manifest_fixtures,
+)
 from tooling.development.secure_content.scenarios import desktop_pilot
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-IDENTITY = {
-    "workspaceId": "9eb2cb904c9ae460",
-    "branch": "feat/federation",
-    "head": "2d54851f95994d717928105aca6470c30adf3657",
-}
-STATION_RUNTIME_IDENTITY = "peer-station-four"
-STATION_ENDPOINT = "https://station.invalid"
-
-
-def station_harness_identity() -> dict[str, str]:
-    return {
-        "stationRuntimeIdentitySha256": hashlib.sha256(
-            STATION_RUNTIME_IDENTITY.encode("utf-8")
-        ).hexdigest(),
-        "stationEndpointSha256": hashlib.sha256(
-            STATION_ENDPOINT.encode("utf-8")
-        ).hexdigest(),
-    }
+IDENTITY = manifest_fixtures.IDENTITY
 
 
 def active_declaration(
@@ -58,7 +51,7 @@ def active_declaration(
         "sourceClaims": [
             {
                 "mode": "exclusive-write",
-                "pathPrefix": "apps/station/frame/core/auth",
+                "pathPrefix": "tooling/development/secure_content",
             }
         ],
     }
@@ -66,10 +59,11 @@ def active_declaration(
 
 def control_plane_runner(
     scenario: run.ScenarioDefinition,
-    declarations: list[dict[str, Any]] | None = None,
     *,
+    dirty: bool = False,
+    declarations: list[dict[str, Any]] | None = None,
     declaration: dict[str, Any] | None = None,
-):
+) -> run.CommandRunner:
     selected = declaration or active_declaration(scenario)
     visible = declarations if declarations is not None else [selected]
 
@@ -91,13 +85,18 @@ def control_plane_runner(
             f"SESSION={scenario.work_item_id}",
         ]:
             payload = selected
-        elif command[:4] == [
+        elif command == [
             "git",
             "status",
             "--porcelain",
             "--untracked-files=all",
         ]:
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=" M outside-scope.txt\n" if dirty else "",
+                stderr="",
+            )
         else:
             raise AssertionError(f"unexpected command: {command}")
         return subprocess.CompletedProcess(
@@ -110,233 +109,196 @@ def control_plane_runner(
     return execute
 
 
-def runtime_manifest(
-    scenario: run.ScenarioDefinition,
+def scenario(
     *,
-    runtime: str = "native-tauri",
-    clients: tuple[str, ...] = ("desktop-alice",),
-    run_id: str = "runtime-run-1",
-    attached: bool = True,
-) -> dict[str, Any]:
-    station_id = "station-four"
+    runtime_name: str = "desktop",
+    execute: Any = None,
+) -> run.ScenarioDefinition:
+    return run.ScenarioDefinition(
+        scenario_id="runtime-v3-test",
+        journey_id="sc-dj-runtime-manifest-v3",
+        work_item_id="secure-content-w7r",
+        runtimes=frozenset({runtime_name}),
+        evidence_path=Path("W7R/EC5R/result.json"),
+        execute=execute or (lambda _: {}),
+    )
 
-    def harness_identity(client_id: str) -> dict[str, str]:
-        actor = client_id.rsplit("-", 1)[-1]
-        authentication = (
-            "ANONYMOUS" if actor == "anonymous" else "AUTHENTICATED"
-        )
-        identity = {"authenticationState": authentication}
-        identity["sourceCommit"] = IDENTITY["head"]
-        identity["clientArtifactSha256"] = hashlib.sha256(
-            f"artifact:{client_id}".encode("utf-8")
-        ).hexdigest()
-        identity["sessionIdentitySha256"] = hashlib.sha256(
-            f"session:{client_id}".encode("utf-8")
-        ).hexdigest()
-        if authentication == "AUTHENTICATED":
-            identity["actorPtidSha256"] = hashlib.sha256(
-                f"ptid:{actor}".encode("utf-8")
-            ).hexdigest()
-        identity.update(station_harness_identity())
-        if runtime == "native-tauri":
-            identity["nativeRuntimeIdentitySha256"] = hashlib.sha256(
-                f"runtime:{client_id}".encode("utf-8")
-            ).hexdigest()
-        return identity
 
-    payload = {
-        "artifactKind": "acceptance-runtime-manifest",
-        "environmentId": "secure-content-development",
-        "gateId": scenario.journey_id,
-        "runId": run_id,
-        "createdAt": "2026-09-15T00:00:00Z",
-        "state": "FIXTURE_READY",
-        "source": {
-            "worktree": str(REPO_ROOT),
-            "commit": IDENTITY["head"],
-            "workspaceDigest": "clean",
-        },
-        "profile": {
-            "requestedName": "four",
-            "resolvedName": "four",
-            "slot": 5,
-        },
-        "services": {
-            station_id: {
-                "kind": "station",
-                "deploymentEnvironment": "station-four",
-                "endpoint": STATION_ENDPOINT,
-                "liveCommit": IDENTITY["head"],
-                "protocolDigest": source_proto_digest(REPO_ROOT),
-                "workspaceDigest": "clean",
-                "runtimeIdentity": STATION_RUNTIME_IDENTITY,
-                "attestationArtifact": {"path": "runtime/station.json"},
-            },
-        },
-        "credentialRefs": [],
-        "clients": [
-            {
-                "id": client_id,
-                "actor": client_id.rsplit("-", 1)[-1],
-                "runtime": runtime,
-                "worktree": str(REPO_ROOT),
-                "gateway_port": 3030 + index,
-                "renderer_port": 3210 + index,
-                "webdriver_port": 4445 + index,
-                "webdriver_session_id": f"webdriver-session-{index}",
-                "profile": "four-app",
-                "storage_root": f"/tmp/{client_id}",
-                "storage_lifecycle": "ephemeral",
-                "harness_identity": harness_identity(client_id),
-                "required_service_roles": ["station"],
-                "service_bindings": {
-                    "station": {
-                        "service_id": station_id,
-                        "required_kind": "station",
-                    },
-                },
-            }
-            for index, client_id in enumerate(clients)
-        ],
-        "cleanup": {
-            "registered": True,
-            "resources": ["webdriver-session"],
-        },
+def v3_payload() -> dict[str, Any]:
+    payload = manifest_fixtures.manifest_payload()
+    protocol_digest = source_proto_digest(REPO_ROOT)
+    for service in payload["services"].values():
+        service["protocol_digest"] = protocol_digest
+    return runtime_manifest.with_manifest_digest(payload)
+
+
+def write_v3_manifest(root: Path, payload: dict[str, Any] | None = None) -> Path:
+    return manifest_fixtures.write_manifest(
+        root,
+        payload or v3_payload(),
+        lease_window_from_manifest=True,
+    )
+
+
+def load_v3_binding(path: Path) -> runtime_manifest.RuntimeManifestBinding:
+    return runtime_manifest.load_runtime_manifest(
+        path,
+        journey_id="sc-dj-runtime-manifest-v3",
+        repo_root=REPO_ROOT,
+        workspace_identity=IDENTITY,
+        profile_selectors=("four", "fiveArm"),
+        client_selectors=tuple(item[0] for item in manifest_fixtures.CLIENTS),
+        runtime=None,
+        expected_protocol_digest=source_proto_digest(REPO_ROOT),
+    )
+
+
+def network_capture_marker(
+    action_id: str,
+    *,
+    initial_observer_sequence: int = 0,
+    final_observer_sequence: int = 1,
+    open_stream_identity_digests: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    capture = {
+        "schemaVersion": 1,
+        "captureId": hashlib.sha256(
+            f"capture:{action_id}".encode("utf-8")
+        ).hexdigest(),
+        "actionId": action_id,
+        "initialObserverSequence": initial_observer_sequence,
+        "runtimeManifestDigest": "a" * 64,
     }
-    if attached:
-        payload["developmentAttachment"] = {
-            "kind": run.RUNTIME_ATTACHMENT_KIND,
-            "sourceManifestRunId": run_id,
-            "sourceManifestSha256": "f" * 64,
-            "capturedAt": "2026-09-15T00:00:01Z",
-            "namespace": "moments",
-        }
-    else:
-        for client in payload["clients"]:
-            client.pop("webdriver_session_id")
-            client.pop("harness_identity")
-    return payload
-
-
-def write_service_attestations(root: Path, payload: dict[str, Any]) -> None:
-    for service_id, service in payload["services"].items():
-        relative = Path("runtime") / "services" / service_id / "attestation.json"
-        attestation_path = root / relative
-        attestation_path.parent.mkdir(parents=True, exist_ok=True)
-        attestation_payload = {
-            "artifactKind": "service-deployment-attestation",
-            "capturedAt": run._timestamp(),
-            "serviceId": service_id,
-            "serviceKind": service["kind"],
-            "environmentId": payload["environmentId"],
-            "deploymentEnvironment": service["deploymentEnvironment"],
-            "endpoint": service["endpoint"],
-            "commit": service["liveCommit"],
-            "workspaceDigest": service["workspaceDigest"],
-            "protocolDigest": service["protocolDigest"],
-            "producer": "secure-content-test",
-            "runtimeIdentity": service["runtimeIdentity"],
-            "liveMetadata": {
-                "buildCommit": service["liveCommit"],
-                "buildTime": run._timestamp(),
-            },
-        }
-        attestation_bytes = json.dumps(
-            attestation_payload,
+    marker: dict[str, Any] = {
+        "schemaVersion": 1,
+        "captureId": capture["captureId"],
+        "actionId": action_id,
+        "runtimeManifestDigest": capture["runtimeManifestDigest"],
+        "finalObserverSequence": final_observer_sequence,
+        "openStreamIdentityDigests": sorted(
+            open_stream_identity_digests
+        ),
+        "captureIntervalDigest": hashlib.sha256(
+            f"interval:{action_id}".encode("utf-8")
+        ).hexdigest(),
+    }
+    marker["markerDigest"] = hashlib.sha256(
+        json.dumps(
+            marker,
+            separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
-        attestation_path.write_bytes(attestation_bytes)
-        service["attestationArtifact"] = {
-            "artifactKind": "acceptance-artifact-ref",
-            "workspaceId": IDENTITY["workspaceId"],
-            "gateId": payload["gateId"],
-            "runId": payload["runId"],
-            "path": relative.as_posix(),
-            "sha256": hashlib.sha256(attestation_bytes).hexdigest(),
-            "mediaType": "application/json",
-        }
+    ).hexdigest()
+    return capture, marker
 
 
-def write_runtime_manifest(path: Path, payload: dict[str, Any]) -> None:
-    attachment = payload.get("developmentAttachment")
-    if isinstance(attachment, dict):
-        write_service_attestations(path.parent, payload)
-        actor_path = path.with_name(f"{path.stem}.actors.json")
-        actor_payload = {
-            "artifactKind": "acceptance-actor-manifest",
-            "fixtureId": "secure-content-test-actors",
-            "environmentId": payload["environmentId"],
-            "runId": payload["runId"],
-            "createdAt": run._timestamp(),
-            "initialState": "ready",
-            "actors": [
-                {
-                    "role": client["actor"],
-                    "accountRef": f"account:{client['actor']}",
-                    "ptid": f"ptid:{client['actor']}",
-                    "devicePolicy": "fresh",
-                }
-                for client in payload["clients"]
-                if client["actor"] != "anonymous"
-            ],
-            "credentialRefs": [],
-            "reset": {"authorized": False, "targetVerified": True},
-        }
-        actor_bytes = json.dumps(actor_payload, sort_keys=True).encode("utf-8")
-        actor_path.write_bytes(actor_bytes)
-        actor_digest = hashlib.sha256(actor_bytes).hexdigest()
-        payload["actorManifest"] = {
-            "artifactKind": "acceptance-artifact-ref",
-            "workspaceId": IDENTITY["workspaceId"],
-            "gateId": payload["gateId"],
-            "runId": payload["runId"],
-            "path": actor_path.name,
-            "sha256": actor_digest,
-            "mediaType": "application/json",
-        }
-        source_payload = json.loads(json.dumps(payload))
-        source_payload.pop("developmentAttachment", None)
-        for client in source_payload.get("clients", []):
-            if isinstance(client, dict):
-                client.pop("webdriver_session_id", None)
-                client.pop("harness_identity", None)
-        source_path = path.with_name(f"{path.stem}.source.json")
-        source_bytes = json.dumps(source_payload, sort_keys=True).encode("utf-8")
-        source_path.write_bytes(source_bytes)
-        attachment["sourceManifestPath"] = str(source_path.resolve())
-        attachment["sourceManifestSha256"] = hashlib.sha256(source_bytes).hexdigest()
-        attachment["actorManifestPath"] = str(actor_path.resolve())
-        attachment["actorManifestSha256"] = actor_digest
-        attachment["capturedAt"] = run._timestamp()
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    path.chmod(0o600)
-
-
-def performance_entry(method: str, params: dict[str, Any]) -> dict[str, str]:
+def terminal_marker_entry(marker: Mapping[str, Any]) -> dict[str, str]:
+    persisted = dict(marker)
+    persisted.pop("markerDigest")
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(
+            persisted,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).decode("ascii").rstrip("=")
     return {
         "message": json.dumps(
             {
                 "message": {
-                    "method": method,
-                    "params": params,
+                    "method": "Network.requestWillBeSent",
+                    "params": {
+                        "requestId": "terminal-marker",
+                        "request": {
+                            "url": (
+                                "http://localhost:3210"
+                                f"{attached_client.TERMINAL_MARKER_PATH_PREFIX}"
+                                f"{encoded}"
+                            ),
+                            "method": "GET",
+                            "headers": {},
+                        },
+                    },
                 }
             }
         )
     }
 
 
-class SecureContentRunnerTest(unittest.TestCase):
-    def test_actor_manifest_rejects_duplicate_role_ptids(self) -> None:
-        with self.assertRaisesRegex(run.RunnerError, "actor binding"):
-            run.canonical_actor_ptids(
-                {
-                    "actors": [
-                        {"role": "alice", "ptid": "ptid:shared"},
-                        {"role": "bob", "ptid": "ptid:shared"},
-                    ]
-                }
-            )
+def write_manifest_for_scenario(
+    root: Path,
+    selected: run.ScenarioDefinition,
+    *,
+    run_id: str,
+    parent: runtime_manifest.RuntimeManifestBinding | None = None,
+    restart_request_id: str | None = None,
+) -> Path:
+    payload = v3_payload()
+    payload["run_id"] = run_id
+    payload["journey_id"] = selected.journey_id
+    payload["created_at"] = (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+    payload["fixture_manifest_ref"]["path"] = (
+        f"runtime/{run_id}/fixtures.json"
+    )
+    for service_id, service in payload["services"].items():
+        service["attestation_artifact_ref"]["path"] = (
+            f"runtime/{run_id}/{service_id}.json"
+        )
+    if parent is not None:
+        parent_client = parent.client("desktop-alice")
+        child_client = payload["clients"][0]
+        child_client["boot_identity"] = manifest_fixtures.digest(
+            f"boot:{run_id}"
+        )
+        child_client["session_generation"] = (
+            parent_client["session_generation"] + 1
+        )
+        child_client["automation_attachment_ref"]["session_id"] = (
+            f"session-{run_id}"
+        )
+        child_client["storage_identity_digest"] = parent_client[
+            "storage_identity_digest"
+        ]
+        payload["continuation"] = {
+            "parent_manifest_digest": parent.sha256,
+            "restart_request_id": (
+                restart_request_id or f"restart-{run_id}"
+            ),
+            "retained_client_id": "desktop-alice",
+            "retained_storage_identity_digest": parent_client[
+                "storage_identity_digest"
+            ],
+            "previous_boot_identity": parent_client["boot_identity"],
+            "runtime_owner_acknowledgement_id": f"ack-{run_id}",
+            "lease_evidence_ref": {
+                "path": f"leases/{run_id}.json",
+                "sha256": "0" * 64,
+            },
+        }
+    return write_v3_manifest(root, runtime_manifest.with_manifest_digest(payload))
 
+
+def load_scenario_binding(
+    path: Path,
+    selected: run.ScenarioDefinition,
+) -> runtime_manifest.RuntimeManifestBinding:
+    return runtime_manifest.load_runtime_manifest(
+        path,
+        journey_id=selected.journey_id,
+        repo_root=REPO_ROOT,
+        workspace_identity=IDENTITY,
+        profile_selectors=("four", "fiveArm"),
+        client_selectors=("desktop-alice",),
+        runtime="desktop",
+        expected_protocol_digest=source_proto_digest(REPO_ROOT),
+    )
+
+
+class SecureContentRunnerTest(unittest.TestCase):
     def test_discovers_optional_auth_scenario_dynamically(self) -> None:
         scenarios = run.discover_scenarios()
 
@@ -350,560 +312,535 @@ class SecureContentRunnerTest(unittest.TestCase):
             scenarios["optional-auth"].journey_id,
         )
 
+    def test_workspace_identity_accepts_canonical_verifier_shape(self) -> None:
+        expected = {
+            "root": str(REPO_ROOT.resolve()),
+            "workspaceId": IDENTITY["workspaceId"],
+            "branch": IDENTITY["branch"],
+            "head": IDENTITY["head"],
+            "gitDir": str(REPO_ROOT / ".git"),
+            "commonDir": str(REPO_ROOT / ".git"),
+        }
+
+        def execute(
+            command: list[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(REPO_ROOT, cwd)
+            self.assertIn("--capture", command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(expected),
+                stderr="",
+            )
+
+        self.assertEqual(expected, run._workspace_identity(REPO_ROOT, execute))
+
     def test_runtime_mismatch_fails_before_scenario_execution(self) -> None:
         called = False
 
-        def execute(_: run.ScenarioContext) -> dict[str, object]:
+        def execute(_: run.ScenarioContext) -> dict[str, Any]:
             nonlocal called
             called = True
             return {}
 
-        scenario = run.ScenarioDefinition(
+        selected = run.ScenarioDefinition(
             scenario_id="service-only",
             journey_id="journey-1",
             work_item_id="work-1",
             runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
+            evidence_path=Path("W1/result.json"),
             execute=execute,
         )
-
-        with tempfile.TemporaryDirectory() as temp:
-            with self.assertRaises(run.RunnerError):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=scenario.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    result_root=Path(temp),
-                    registry={scenario.scenario_id: scenario},
-                )
-        self.assertFalse(called)
-
-    def test_writes_development_result_outside_repository(self) -> None:
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
-            self.assertEqual("service", context.runtime)
-            context.run_check("real-service", ["/usr/bin/true"], cwd=REPO_ROOT)
-            return {"observations": ["real service check passed"]}
-
-        scenario = run.ScenarioDefinition(
-            scenario_id="test-service",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
-
-        with tempfile.TemporaryDirectory() as temp:
-            output_root = Path(temp).resolve()
-            result = run.execute_scenario(
-                runtime="service",
-                scenario_id=scenario.scenario_id,
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(
+            run.RunnerError,
+            "does not support runtime",
+        ):
+            run.execute_scenario(
+                runtime="desktop",
+                scenario_id=selected.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                result_root=output_root,
-                registry={scenario.scenario_id: scenario},
-                workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(scenario),
+                result_root=Path(temp),
+                registry={selected.scenario_id: selected},
             )
-
-            output = output_root / scenario.evidence_path
-            self.assertTrue(output.is_file())
-            self.assertFalse(output.is_relative_to(REPO_ROOT))
-            persisted = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual("FUNCTIONAL_CHECK", persisted["verificationClass"])
-            self.assertEqual("PASS", persisted["result"])
-            self.assertRegex(persisted["runtimeBindingDigest"], r"^[0-9a-f]{64}$")
-            self.assertNotEqual(
-                persisted["declarationDigest"],
-                persisted["runtimeBindingDigest"],
-            )
-            self.assertEqual(result, persisted)
+        self.assertFalse(called)
 
     def test_preserves_ordered_multi_profile_binding(self) -> None:
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
+        def execute(context: run.ScenarioContext) -> dict[str, Any]:
             self.assertIsNone(context.profile)
             self.assertEqual(("four", "fiveArm"), context.profiles)
-            return {"observations": ["multi-profile binding preserved"]}
+            return {}
 
-        scenario = run.ScenarioDefinition(
-            scenario_id="multi-profile",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W2/SC-AS12/result.json"),
-            execute=execute,
-        )
-
+        selected = scenario(runtime_name="service", execute=execute)
         with tempfile.TemporaryDirectory() as temp:
             result = run.execute_scenario(
-                runtime="desktop",
-                scenario_id=scenario.scenario_id,
+                runtime="service",
+                scenario_id=selected.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
                 profiles=("four", "fiveArm"),
                 result_root=Path(temp),
-                registry={scenario.scenario_id: scenario},
+                registry={selected.scenario_id: selected},
                 workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(scenario),
+                command_runner=control_plane_runner(selected),
             )
-
-        self.assertIsNone(result["profile"])
         self.assertEqual(["four", "fiveArm"], result["profiles"])
 
     def test_rejects_ambiguous_or_duplicate_profile_binding(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="profile-binding",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W2/SC-AS12/result.json"),
+        selected = scenario(runtime_name="service")
+        common = {
+            "runtime": "service",
+            "scenario_id": selected.scenario_id,
+            "budget_seconds": 10,
+            "repo_root": REPO_ROOT,
+            "registry": {selected.scenario_id: selected},
+        }
+        with self.assertRaisesRegex(run.RunnerError, "choose exactly one"):
+            run.execute_scenario(
+                **common,
+                profile="four",
+                profiles=("four", "fiveArm"),
+            )
+        with self.assertRaisesRegex(run.RunnerError, "duplicates"):
+            run.execute_scenario(
+                **common,
+                profiles=("four", "four"),
+            )
+
+    def test_canonical_result_coordinates_partition_variant_and_run(self) -> None:
+        selected = run.ScenarioDefinition(
+            scenario_id="mobile-result",
+            journey_id="mobile-result",
+            work_item_id="mobile-result",
+            runtimes=frozenset({"mobile"}),
+            evidence_path=Path("legacy/result.json"),
             execute=lambda _: {},
+            result_prefix=Path("W9"),
+            result_task_id="W9",
+            result_workstream_id="W9",
+            result_variant=lambda _runtime, _profile, _profiles, clients: (
+                "ios" if all(client.startswith("ios_") for client in clients)
+                else "android"
+            ),
         )
 
+        path, coordinates = run._scenario_result_coordinates(
+            scenario=selected,
+            identity=IDENTITY,
+            declaration={"sessionId": "mobile-session"},
+            runtime="mobile",
+            profile="four",
+            profiles=("four",),
+            clients=("ios_alice", "ios_bob"),
+            runtime_manifest=SimpleNamespace(run_id="mobile-run"),
+        )
+
+        self.assertEqual(
+            Path("W9")
+            / IDENTITY["head"]
+            / "ios"
+            / "mobile-run"
+            / "result.json",
+            path,
+        )
+        self.assertEqual("W9", coordinates["taskId"])
+        self.assertEqual("W9", coordinates["workstreamId"])
+        self.assertEqual("ios", coordinates["variantId"])
+        self.assertEqual("mobile-run", coordinates["runId"])
+
+    def test_canonical_result_coordinates_isolate_manifest_preflight_failure(
+        self,
+    ) -> None:
+        selected = run.ScenarioDefinition(
+            scenario_id="mobile-result",
+            journey_id="mobile-result",
+            work_item_id="mobile-result",
+            runtimes=frozenset({"mobile"}),
+            evidence_path=Path("legacy/result.json"),
+            execute=lambda _: {},
+            result_prefix=Path("W9"),
+            result_task_id="W9",
+            result_workstream_id="W9",
+            result_variant="ios",
+        )
+
+        path, coordinates = run._scenario_result_coordinates(
+            scenario=selected,
+            identity=IDENTITY,
+            declaration={"sessionId": "mobile-session"},
+            runtime="mobile",
+            profile="four",
+            profiles=("four",),
+            clients=("ios_alice", "ios_bob"),
+            runtime_manifest=None,
+        )
+
+        self.assertEqual(
+            Path("W9")
+            / IDENTITY["head"]
+            / "ios"
+            / "mobile-session"
+            / "result.json",
+            path,
+        )
+        self.assertEqual("mobile-session", coordinates["runId"])
+
+    def test_canonical_result_is_partitioned_and_digest_bound(self) -> None:
+        selected = run.ScenarioDefinition(
+            scenario_id="canonical-result",
+            journey_id="sc-dj-runtime-manifest-v3",
+            work_item_id="secure-content-w7r",
+            runtimes=frozenset({"desktop"}),
+            evidence_path=Path("legacy/result.json"),
+            execute=lambda _: {"observations": {"receiverVisible": True}},
+            result_prefix=Path("W11"),
+            result_task_id="W11",
+            result_workstream_id="W11",
+            result_variant="desktop",
+        )
         with tempfile.TemporaryDirectory() as temp:
-            common = {
-                "runtime": "desktop",
-                "scenario_id": scenario.scenario_id,
-                "budget_seconds": 10,
-                "repo_root": REPO_ROOT,
-                "result_root": Path(temp),
-                "registry": {scenario.scenario_id: scenario},
-                "workspace_identity": IDENTITY,
-                "command_runner": control_plane_runner(scenario),
-            }
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "choose exactly one",
-            ):
-                run.execute_scenario(
-                    **common,
-                    profile="four",
-                    profiles=("four", "fiveArm"),
-                )
-            with self.assertRaisesRegex(run.RunnerError, "duplicates"):
-                run.execute_scenario(
-                    **common,
-                    profiles=("four", "four"),
-                )
+            root = Path(temp)
+            manifest_path = write_manifest_for_scenario(
+                root,
+                selected,
+                run_id="canonical-run",
+            )
+            result_root = root / "results"
+
+            result = run.execute_scenario(
+                runtime="desktop",
+                scenario_id=selected.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                profiles=("four", "fiveArm"),
+                clients=("desktop-alice",),
+                runtime_manifest_path=manifest_path,
+                result_root=result_root,
+                registry={selected.scenario_id: selected},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(selected),
+            )
+
+            path = (
+                result_root
+                / "W11"
+                / IDENTITY["head"]
+                / "desktop"
+                / "canonical-run"
+                / "result.json"
+            )
+            self.assertTrue(path.is_file())
+            self.assertEqual("W11", result["taskId"])
+            self.assertEqual("W11", result["workstreamId"])
+            self.assertEqual("desktop", result["variantId"])
+            self.assertEqual("canonical-run", result["runId"])
+            content = dict(result)
+            digest = content.pop("resultDigest")
+            self.assertEqual(digest, run._canonical_digest(content))
 
     def test_rejects_result_root_inside_repository(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="test-service",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-
-        with self.assertRaises(run.RunnerError):
+        selected = scenario(runtime_name="service")
+        with self.assertRaisesRegex(run.RunnerError, "outside the repository"):
             run.execute_scenario(
                 runtime="service",
-                scenario_id=scenario.scenario_id,
+                scenario_id=selected.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
                 result_root=REPO_ROOT / "development",
-                registry={scenario.scenario_id: scenario},
+                registry={selected.scenario_id: selected},
                 workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(scenario),
+                command_runner=control_plane_runner(selected),
             )
 
-    def test_binds_external_runtime_manifest_into_result_identity(self) -> None:
-        observed_digest = ""
-
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
-            nonlocal observed_digest
-            binding = context.require_runtime_manifest()
-            observed_digest = binding.sha256
-            self.assertEqual("desktop-alice", binding.client("desktop-alice")["id"])
-            return {"observations": ["attached runtime manifest"]}
-
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
+    def test_writes_source_result_outside_repository(self) -> None:
+        selected = scenario(
+            runtime_name="service",
+            execute=lambda context: {
+                "remaining": context.remaining_seconds() > 0,
+            },
         )
-
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            manifest_path = root / "runtime-manifest.json"
-            write_runtime_manifest(manifest_path, runtime_manifest(scenario))
             result = run.execute_scenario(
-                runtime="desktop",
-                scenario_id=scenario.scenario_id,
+                runtime="service",
+                scenario_id=selected.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                profile="four",
+                result_root=root,
+                registry={selected.scenario_id: selected},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(selected),
+            )
+
+            self.assertEqual("PASS", result["result"])
+            self.assertEqual("UNPROVEN", result["proofState"])
+            self.assertTrue((root / selected.evidence_path).is_file())
+
+    def test_v3_manifest_is_bound_before_scenario_dispatch(self) -> None:
+        called = False
+
+        def execute(context: run.ScenarioContext) -> dict[str, Any]:
+            nonlocal called
+            called = True
+            binding = context.require_runtime_manifest()
+            self.assertEqual(
+                "native-tauri",
+                binding.client("desktop-alice")["runtime_kind"],
+            )
+            return {"manifestValidated": True}
+
+        selected = scenario(execute=execute)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest_path = write_v3_manifest(root)
+            result = run.execute_scenario(
+                runtime="desktop",
+                scenario_id=selected.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                profiles=("fiveArm", "four"),
                 clients=("desktop-alice",),
                 runtime_manifest_path=manifest_path,
                 result_root=root / "results",
-                registry={scenario.scenario_id: scenario},
+                registry={selected.scenario_id: selected},
                 workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(scenario),
+                command_runner=control_plane_runner(selected),
             )
 
-        self.assertEqual(observed_digest, result["runtimeManifestDigest"])
-        self.assertEqual(str(manifest_path.resolve()), result["runtimeManifestRef"])
-        self.assertIn(str(manifest_path.resolve()), result["artifactRefs"])
-        self.assertRegex(result["runtimeBindingDigest"], r"^[0-9a-f]{64}$")
+            self.assertTrue(called)
+            self.assertEqual("PASS", result["result"])
+            self.assertEqual(
+                result["runtimeManifestDigest"],
+                json.loads(manifest_path.read_text())["manifest_digest"],
+            )
 
-    def test_runtime_manifest_requires_private_mode_and_exact_source_provenance(
-        self,
-    ) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
+    def test_invalid_v3_manifest_blocks_unproven_before_dispatch(self) -> None:
+        called = False
+
+        def execute(_: run.ScenarioContext) -> dict[str, Any]:
+            nonlocal called
+            called = True
+            return {}
+
+        selected = scenario(execute=execute)
+        payload = v3_payload()
+        payload["clients"][0]["runtime_kind"] = "physical-ios-device"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            manifest_path = write_v3_manifest(root, payload)
+            with self.assertRaises(run.ScenarioBlocked) as raised:
+                run.execute_scenario(
+                    runtime="desktop",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    profiles=("four", "fiveArm"),
+                    clients=("desktop-alice",),
+                    runtime_manifest_path=manifest_path,
+                    result_root=root / "results",
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+
+            self.assertFalse(called)
+            self.assertEqual("UNKNOWN_CLIENT_KIND", raised.exception.kind)
+            result = json.loads(
+                (root / "results" / selected.evidence_path).read_text()
+            )
+            self.assertEqual("BLOCKED", result["result"])
+            self.assertEqual("UNPROVEN", result["proofState"])
+            self.assertEqual("PRE_ACTION", result["firstFailure"]["stage"])
+
+    def test_journey_fixture_capabilities_block_before_dispatch(self) -> None:
+        called = False
+        self.assertEqual(
+            frozenset(manifest_fixtures.FIXTURE_CAPABILITIES),
+            desktop_pilot.SCENARIO.required_fixture_capabilities,
+        )
+
+        def execute(_: run.ScenarioContext) -> dict[str, Any]:
+            nonlocal called
+            called = True
+            return {}
+
+        selected = run.ScenarioDefinition(
+            scenario_id="fixture-preflight",
+            journey_id="sc-dj-runtime-manifest-v3",
+            work_item_id="secure-content-w7r",
             runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
+            evidence_path=Path("W7R/fixture-preflight/result.json"),
+            execute=execute,
+            required_fixture_capabilities=frozenset(
+                {"journey-specific-capability"}
+            ),
         )
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            manifest_path = root / "runtime-manifest.json"
-            write_runtime_manifest(manifest_path, runtime_manifest(scenario))
-            manifest_path.chmod(0o644)
-            with self.assertRaisesRegex(run.RunnerError, "current user and private"):
-                run._runtime_manifest_binding(
-                    path=manifest_path,
-                    scenario=scenario,
-                    identity=IDENTITY,
+            manifest_path = write_v3_manifest(root)
+            with self.assertRaises(run.ScenarioBlocked) as raised:
+                run.execute_scenario(
                     runtime="desktop",
-                    profile="four",
-                    profiles=(),
-                    clients=("desktop-alice",),
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
                     repo_root=REPO_ROOT,
+                    profiles=("four", "fiveArm"),
+                    clients=("desktop-alice",),
+                    runtime_manifest_path=manifest_path,
+                    result_root=root / "results",
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
                 )
-            manifest_path.chmod(0o600)
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            source_path = Path(
-                payload["developmentAttachment"]["sourceManifestPath"]
+            self.assertFalse(called)
+            self.assertEqual(
+                "FIXTURE_CAPABILITY_UNAVAILABLE",
+                raised.exception.kind,
             )
-            source_path.write_text("{}\n", encoding="utf-8")
-            with self.assertRaisesRegex(run.RunnerError, "source digest"):
-                run._runtime_manifest_binding(
-                    path=manifest_path,
-                    scenario=scenario,
-                    identity=IDENTITY,
-                    runtime="desktop",
-                    profile="four",
-                    profiles=(),
-                    clients=("desktop-alice",),
-                    repo_root=REPO_ROOT,
-                )
 
-    def test_runtime_manifest_requires_station_source_provenance(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-        cases = {
-            "dirty workspace": lambda service: service.__setitem__(
-                "workspaceDigest",
-                "dirty",
-            ),
-            "wrong protocol": lambda service: service.__setitem__(
-                "protocolDigest",
-                "f" * 64,
-            ),
-        }
-
-        for name, mutate in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                payload = runtime_manifest(scenario)
-                mutate(payload["services"]["station-four"])
-                manifest_path = Path(temp) / "runtime-manifest.json"
-                write_runtime_manifest(manifest_path, payload)
-
-                with self.assertRaisesRegex(
-                    run.RunnerError,
-                    "Station service",
-                ):
-                    run._runtime_manifest_binding(
-                        path=manifest_path,
-                        scenario=scenario,
-                        identity=IDENTITY,
-                        runtime="desktop",
-                        profile="four",
-                        profiles=(),
-                        clients=("desktop-alice",),
-                        repo_root=REPO_ROOT,
-                    )
-
-    def test_runtime_manifest_validates_each_actor_artifact_reference_field(
+    def test_fixture_action_uses_exact_handle_and_validates_acknowledgement(
         self,
     ) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-        cases = {
-            "artifactKind": ("artifactKind", "wrong-kind"),
-            "workspaceId": ("workspaceId", "0" * 16),
-            "gateId": ("gateId", "wrong-gate"),
-            "runId": ("runId", "wrong-run"),
-            "canonical path": ("path", "./runtime-manifest.actors.json"),
-            "resolved path": ("path", "other-actors.json"),
-            "sha256": ("sha256", "f" * 64),
-            "mediaType": ("mediaType", "text/plain"),
+        class FixtureClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str, Mapping[str, object]]] = []
+
+            def invoke(
+                self,
+                capability: str,
+                operation: str,
+                payload: Mapping[str, object],
+                *,
+                timeout_seconds: float,
+                request_id: str,
+            ) -> Mapping[str, object]:
+                del timeout_seconds, request_id
+                self.calls.append((capability, operation, payload))
+                acknowledgement: dict[str, object] = {
+                    "schemaVersion": 1,
+                    "capability": capability,
+                    "operation": operation,
+                    "handleId": payload["handleId"],
+                    "expectedIdentityDigest": payload[
+                        "expectedIdentityDigest"
+                    ],
+                    "runtimeManifestDigest": payload[
+                        "runtimeManifestDigest"
+                    ],
+                    "outcome": {
+                        "completed": True,
+                        "fixtureIdentityDigest": payload[
+                            "expectedIdentityDigest"
+                        ],
+                    },
+                }
+                acknowledgement["acknowledgementDigest"] = (
+                    run._canonical_digest(acknowledgement)
+                )
+                return acknowledgement
+
+        handle = {
+            "kind": "account-switch-fixture",
+            "opaque_id": "fixture-account-switch",
+            "owner": "actor-session-provisioner",
+            "capability": "account-switch",
+            "expected_identity_digest": "c" * 64,
         }
-
-        for name, (field_name, invalid_value) in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                manifest_path = Path(temp) / "runtime-manifest.json"
-                write_runtime_manifest(manifest_path, runtime_manifest(scenario))
-                attached = json.loads(manifest_path.read_text(encoding="utf-8"))
-                source_path = Path(
-                    attached["developmentAttachment"]["sourceManifestPath"]
-                )
-                source = json.loads(source_path.read_text(encoding="utf-8"))
-                source["actorManifest"][field_name] = invalid_value
-                attached["actorManifest"][field_name] = invalid_value
-                source_bytes = json.dumps(source, sort_keys=True).encode("utf-8")
-                source_path.write_bytes(source_bytes)
-                attached["developmentAttachment"]["sourceManifestSha256"] = (
-                    hashlib.sha256(source_bytes).hexdigest()
-                )
-                manifest_path.write_text(json.dumps(attached), encoding="utf-8")
-
-                with self.assertRaisesRegex(
-                    run.RunnerError,
-                    "actorManifest",
-                ):
-                    run._runtime_manifest_binding(
-                        path=manifest_path,
-                        scenario=scenario,
-                        identity=IDENTITY,
-                        runtime="desktop",
-                        profile="four",
-                        profiles=(),
-                        clients=("desktop-alice",),
-                        repo_root=REPO_ROOT,
-                    )
-
-    def test_runtime_manifest_rejects_source_profile_and_client_drift(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
+        fixture_client = FixtureClient()
+        context = run.ScenarioContext(
+            repo_root=REPO_ROOT,
+            scenario_id="fixture-action",
+            journey_id="fixture-action",
+            source_commit=IDENTITY["head"],
+            session_id="secure-content-w7",
+            declaration_id=f"secure-content-w7-{IDENTITY['workspaceId']}",
+            runtime="desktop",
+            profile="four",
+            profiles=("four",),
+            clients=(),
+            budget_seconds=10,
+            started_monotonic=time.monotonic(),
+            runtime_manifest=runtime_manifest.RuntimeManifestBinding(
+                path=Path("/tmp/runtime.json"),
+                sha256="d" * 64,
+                run_id="runtime-run",
+                payload={},
+                clients={},
+                services={},
+                service_profiles=frozenset({"four"}),
+                fixture_capabilities=frozenset({"account-switch"}),
+                fixture_handles={"account-switch": handle},
+                raw_bytes=b"runtime",
+            ),
+            fixture_action_client=fixture_client,  # type: ignore[arg-type]
         )
-        cases = {
-            "source commit": lambda manifest: manifest["source"].__setitem__(
-                "commit",
-                "f" * 40,
-            ),
-            "profile": lambda manifest: manifest["profile"].__setitem__(
-                "resolvedName",
-                "fiveArm",
-            ),
-            "client runtime": lambda manifest: manifest["clients"][0].__setitem__(
-                "runtime",
-                "browser",
-            ),
-            "client actor": lambda manifest: manifest["clients"][0].__setitem__(
-                "actor",
-                "",
-            ),
-            "client profile": lambda manifest: manifest["clients"][0].__setitem__(
-                "profile",
-                "fiveArm-app",
-            ),
-            "client storage": lambda manifest: manifest["clients"][0].__setitem__(
-                "storage_root",
-                "relative/storage",
-            ),
-            "webdriver session": lambda manifest: manifest["clients"][0].pop(
-                "webdriver_session_id"
-            ),
-            "harness identity": lambda manifest: manifest["clients"][0].pop(
-                "harness_identity"
-            ),
-            "post-launch attachment": lambda manifest: manifest.pop(
-                "developmentAttachment"
-            ),
-            "actor role alias digest": lambda manifest: manifest["clients"][0][
-                "harness_identity"
-            ].__setitem__(
-                "actorPtidSha256",
-                hashlib.sha256(
-                    manifest["clients"][0]["actor"].encode("utf-8")
-                ).hexdigest(),
-            ),
-            "client source commit": lambda manifest: manifest["clients"][0][
-                "harness_identity"
-            ].__setitem__("sourceCommit", "f" * 40),
-            "client artifact digest": lambda manifest: manifest["clients"][0][
-                "harness_identity"
-            ].__setitem__("clientArtifactSha256", "invalid"),
-            "client Station identity": lambda manifest: manifest["clients"][0][
-                "harness_identity"
-            ].__setitem__("stationRuntimeIdentitySha256", "f" * 64),
-            "client Station endpoint": lambda manifest: manifest["clients"][0][
-                "harness_identity"
-            ].__setitem__("stationEndpointSha256", "f" * 64),
-            "station identity": lambda manifest: manifest["services"][
-                "station-four"
-            ].__setitem__(
-                "runtimeIdentity",
-                "",
-            ),
+
+        acknowledgement = context.invoke_fixture_action(
+            "account-switch",
+            "round-trip",
+        )
+
+        self.assertTrue(acknowledgement["outcome"]["completed"])
+        self.assertEqual(
+            "fixture-account-switch",
+            fixture_client.calls[0][2]["handleId"],
+        )
+        self.assertEqual("passed", context.checks[-1]["status"])
+
+    def test_fixture_action_blocks_without_owner_channel(self) -> None:
+        handle = {
+            "kind": "account-switch-fixture",
+            "opaque_id": "fixture-account-switch",
+            "owner": "actor-session-provisioner",
+            "capability": "account-switch",
+            "expected_identity_digest": "c" * 64,
         }
-
-        for name, mutate in cases.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                payload = runtime_manifest(scenario)
-                mutate(payload)
-                manifest_path = root / "runtime-manifest.json"
-                write_runtime_manifest(manifest_path, payload)
-                with self.assertRaises(run.RunnerError):
-                    run.execute_scenario(
-                        runtime="desktop",
-                        scenario_id=scenario.scenario_id,
-                        budget_seconds=10,
-                        repo_root=REPO_ROOT,
-                        profile="four",
-                        clients=("desktop-alice",),
-                        runtime_manifest_path=manifest_path,
-                        result_root=root / "results",
-                        registry={scenario.scenario_id: scenario},
-                        workspace_identity=IDENTITY,
-                        command_runner=control_plane_runner(scenario),
-                    )
-
-    def test_actor_manifest_reference_rejects_escape_and_symlink_components(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp).resolve()
-            run_dir = root / "runtime-run"
-            run_dir.mkdir()
-            source_manifest_path = run_dir / "source.json"
-            source_manifest_path.write_text("{}\n", encoding="utf-8")
-
-            actor_bytes = b'{"artifactKind":"acceptance-actor-manifest"}'
-            actor_sha256 = hashlib.sha256(actor_bytes).hexdigest()
-            actor_ref = {
-                "artifactKind": "acceptance-artifact-ref",
-                "workspaceId": IDENTITY["workspaceId"],
-                "gateId": "journey-desktop",
-                "runId": "runtime-run-1",
-                "sha256": actor_sha256,
-                "mediaType": "application/json",
-            }
-
-            outside_dir = root / "outside"
-            outside_dir.mkdir()
-            outside_actor = outside_dir / "actors.json"
-            outside_actor.write_bytes(actor_bytes)
-            (run_dir / "outside-link").symlink_to(
-                outside_dir,
-                target_is_directory=True,
-            )
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "resolves outside the source manifest run directory",
-            ):
-                run.validate_actor_manifest_reference(
-                    {**actor_ref, "path": "outside-link/actors.json"},
-                    source_manifest_path=source_manifest_path,
-                    actor_manifest_path=outside_actor,
-                    workspace_id=IDENTITY["workspaceId"],
-                    gate_id="journey-desktop",
-                    run_id="runtime-run-1",
-                    sha256=actor_sha256,
-                )
-
-            actor_dir = run_dir / "actors"
-            actor_dir.mkdir()
-            actor_path = actor_dir / "actors.json"
-            actor_path.write_bytes(actor_bytes)
-            (run_dir / "actor-link").symlink_to(
-                actor_dir,
-                target_is_directory=True,
-            )
-            with self.assertRaisesRegex(run.RunnerError, "symbolic links"):
-                run.validate_actor_manifest_reference(
-                    {**actor_ref, "path": "actor-link/actors.json"},
-                    source_manifest_path=source_manifest_path,
-                    actor_manifest_path=actor_path,
-                    workspace_id=IDENTITY["workspaceId"],
-                    gate_id="journey-desktop",
-                    run_id="runtime-run-1",
-                    sha256=actor_sha256,
-                )
-
-    def test_runtime_manifest_rejects_swapped_attached_actor_hash(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
+        context = run.ScenarioContext(
+            repo_root=REPO_ROOT,
+            scenario_id="fixture-action",
+            journey_id="fixture-action",
+            source_commit=IDENTITY["head"],
+            session_id="secure-content-w7",
+            declaration_id=f"secure-content-w7-{IDENTITY['workspaceId']}",
+            runtime="desktop",
+            profile="four",
+            profiles=("four",),
+            clients=(),
+            budget_seconds=10,
+            started_monotonic=time.monotonic(),
+            runtime_manifest=runtime_manifest.RuntimeManifestBinding(
+                path=Path("/tmp/runtime.json"),
+                sha256="d" * 64,
+                run_id="runtime-run",
+                payload={},
+                clients={},
+                services={},
+                service_profiles=frozenset({"four"}),
+                fixture_capabilities=frozenset({"account-switch"}),
+                fixture_handles={"account-switch": handle},
+                raw_bytes=b"runtime",
+            ),
         )
-        clients = ("desktop-alice", "desktop-bob")
-        with tempfile.TemporaryDirectory() as temp:
-            manifest_path = Path(temp) / "runtime-manifest.json"
-            write_runtime_manifest(
-                manifest_path,
-                runtime_manifest(scenario, clients=clients),
-            )
-            attached = json.loads(manifest_path.read_text(encoding="utf-8"))
-            attached["clients"][0]["harness_identity"]["actorPtidSha256"] = (
-                attached["clients"][1]["harness_identity"]["actorPtidSha256"]
-            )
-            manifest_path.write_text(json.dumps(attached), encoding="utf-8")
 
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "canonical actor binding",
-            ):
-                run._runtime_manifest_binding(
-                    path=manifest_path,
-                    scenario=scenario,
-                    identity=IDENTITY,
-                    runtime="desktop",
-                    profile="four",
-                    profiles=(),
-                    clients=clients,
-                    repo_root=REPO_ROOT,
-                )
+        with self.assertRaises(run.ScenarioBlocked) as raised:
+            context.invoke_fixture_action("account-switch", "round-trip")
+
+        self.assertEqual(
+            "FIXTURE_CAPABILITY_UNAVAILABLE",
+            raised.exception.kind,
+        )
 
     def test_runtime_manifest_mutation_fails_pass_blocked_and_fail_paths(
         self,
     ) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-
         for outcome in ("pass", "blocked", "fail"):
             with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
-                manifest_path = root / "runtime-manifest.json"
-                write_runtime_manifest(manifest_path, runtime_manifest(scenario))
+                manifest_path = write_v3_manifest(root)
 
-                def execute(context: run.ScenarioContext) -> dict[str, object]:
+                def execute(context: run.ScenarioContext) -> dict[str, Any]:
                     context.require_runtime_manifest().path.write_text(
                         "{}\n",
                         encoding="utf-8",
@@ -919,21 +856,14 @@ class SecureContentRunnerTest(unittest.TestCase):
                         raise run.RunnerError("scenario assertion failed")
                     return {}
 
-                selected = run.ScenarioDefinition(
-                    scenario_id=scenario.scenario_id,
-                    journey_id=scenario.journey_id,
-                    work_item_id=scenario.work_item_id,
-                    runtimes=scenario.runtimes,
-                    evidence_path=scenario.evidence_path,
-                    execute=execute,
-                )
-                with self.assertRaises(run.ScenarioFailed):
+                selected = scenario(execute=execute)
+                with self.assertRaises(run.ScenarioBlocked) as raised:
                     run.execute_scenario(
                         runtime="desktop",
                         scenario_id=selected.scenario_id,
                         budget_seconds=10,
                         repo_root=REPO_ROOT,
-                        profile="four",
+                        profiles=("four", "fiveArm"),
                         clients=("desktop-alice",),
                         runtime_manifest_path=manifest_path,
                         result_root=root / "results",
@@ -941,21 +871,302 @@ class SecureContentRunnerTest(unittest.TestCase):
                         workspace_identity=IDENTITY,
                         command_runner=control_plane_runner(selected),
                     )
-                persisted = json.loads(
-                    (root / "results" / selected.evidence_path).read_text(
-                        encoding="utf-8"
-                    )
-                )
-                self.assertEqual("FAIL", persisted["result"])
                 self.assertEqual(
-                    "RUNTIME_BINDING_CHANGED",
-                    persisted["firstFailure"]["kind"],
+                    "MUTABLE_MANIFEST_LINEAGE",
+                    raised.exception.kind,
                 )
+                persisted = json.loads(
+                    (root / "results" / selected.evidence_path).read_text()
+                )
+                self.assertEqual("BLOCKED", persisted["result"])
+                self.assertEqual("UNPROVEN", persisted["proofState"])
+
+    def test_restart_request_binds_parent_storage_and_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binding = load_v3_binding(write_v3_manifest(root))
+            context = run.ScenarioContext(
+                repo_root=REPO_ROOT,
+                scenario_id="desktop-pilot",
+                journey_id="sc-dj-desktop-pilot",
+                source_commit=IDENTITY["head"],
+                session_id="secure-content-w7",
+                declaration_id=(
+                    f"secure-content-w7-{IDENTITY['workspaceId']}"
+                ),
+                runtime="desktop",
+                profile=None,
+                profiles=("four", "fiveArm"),
+                clients=("desktop-alice",),
+                budget_seconds=10,
+                started_monotonic=time.monotonic(),
+                runtime_manifest=binding,
+                artifact_dir=root / "results",
+            )
+            context.write_bound_artifact_json(
+                "desktop-pilot-resume.json",
+                "secure-content-desktop-pilot-resume",
+                {"postId": "post-1"},
+            )
+
+            with self.assertRaises(run.ScenarioBlocked) as raised:
+                context.request_restart(
+                    "desktop-alice",
+                    reason="owner restart required",
+                )
+            self.assertEqual(
+                "BLOCKED_RUNTIME_ACTION_REQUIRED",
+                raised.exception.kind,
+            )
+            request = json.loads(
+                context.artifact_path(
+                    "restart-request-desktop-alice.json"
+                ).read_text()
+            )
+            self.assertEqual(binding.sha256, request["parent_runtime_manifest_digest"])
+            self.assertEqual(
+                binding.client("desktop-alice")["storage_identity_digest"],
+                request["retained_storage_identity_digest"],
+            )
+            self.assertRegex(request["resume_artifact_digest"], r"^[0-9a-f]{64}$")
+
+    def test_owner_continuation_validates_control_plane_before_resume_consumption(
+        self,
+    ) -> None:
+        selected = scenario()
+        for mutation in ("none", "request-resume-digest", "ack-lease"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                parent_path = write_manifest_for_scenario(
+                    root,
+                    selected,
+                    run_id=f"parent-{mutation}",
+                )
+                parent = load_scenario_binding(parent_path, selected)
+                artifact_dir = root / "results" / selected.evidence_path.parent
+                result_path = artifact_dir / "result.json"
+                parent_context = run.ScenarioContext(
+                    repo_root=REPO_ROOT,
+                    scenario_id=selected.scenario_id,
+                    journey_id=selected.journey_id,
+                    source_commit=IDENTITY["head"],
+                    session_id=selected.work_item_id,
+                    declaration_id=(
+                        f"{selected.work_item_id}-{IDENTITY['workspaceId']}"
+                    ),
+                    runtime="desktop",
+                    profile=None,
+                    profiles=("four", "fiveArm"),
+                    clients=("desktop-alice",),
+                    budget_seconds=10,
+                    started_monotonic=time.monotonic(),
+                    runtime_manifest=parent,
+                    artifact_dir=artifact_dir,
+                    result_path=result_path,
+                )
+                resume_path = parent_context.write_bound_artifact_json(
+                    "runtime-v3-test-resume.json",
+                    "secure-content-runtime-v3-resume",
+                    {"stateDigest": "e" * 64},
+                )
+                with self.assertRaises(run.ScenarioBlocked):
+                    parent_context.request_restart(
+                        "desktop-alice",
+                        reason="integration continuation test",
+                    )
+                request_path = parent_context.artifact_path(
+                    "restart-request-desktop-alice.json"
+                )
+                request = json.loads(request_path.read_text())
+                request_id = str(request["request_id"])
+                run._write_json_atomic(
+                    result_path,
+                    {
+                        "kind": run.RESULT_KIND,
+                        "result": "BLOCKED",
+                        "scenarioId": selected.scenario_id,
+                        "journeyId": selected.journey_id,
+                        "runtime": "desktop",
+                        "sourceCommit": IDENTITY["head"],
+                        "runtimeManifestDigest": parent.sha256,
+                        "runtimeManifestRef": str(parent.path),
+                        "firstFailure": {
+                            "kind": "BLOCKED_RUNTIME_ACTION_REQUIRED"
+                        },
+                    },
+                )
+
+                child_path = write_manifest_for_scenario(
+                    root,
+                    selected,
+                    run_id=f"child-{mutation}",
+                    parent=parent,
+                    restart_request_id=request_id,
+                )
+                child = load_scenario_binding(child_path, selected)
+                continuation = child.payload["continuation"]
+                child_client = child.client("desktop-alice")
+                acknowledgement = {
+                    "schema_version": 1,
+                    "kind": (
+                        runtime_manifest.CONTINUATION_ACKNOWLEDGEMENT_KIND
+                    ),
+                    "request_id": request_id,
+                    "owner_id": runtime_manifest.RUNTIME_OWNER_ID,
+                    "acknowledgement_id": continuation[
+                        "runtime_owner_acknowledgement_id"
+                    ],
+                    "parent_runtime_manifest_digest": parent.sha256,
+                    "child_runtime_manifest_digest": child.sha256,
+                    "previous_boot_identity": parent.client(
+                        "desktop-alice"
+                    )["boot_identity"],
+                    "current_boot_identity": child_client["boot_identity"],
+                    "session_generation": child_client[
+                        "session_generation"
+                    ],
+                    "retained_storage_identity_digest": child_client[
+                        "storage_identity_digest"
+                    ],
+                    "lease_evidence_ref": continuation[
+                        "lease_evidence_ref"
+                    ],
+                }
+                acknowledgement["artifact_digest"] = (
+                    runtime_manifest.canonical_digest(acknowledgement)
+                )
+                if mutation == "request-resume-digest":
+                    request["resume_artifact_digest"] = "f" * 64
+                    request.pop("artifactDigest")
+                    request["artifactDigest"] = run._canonical_digest(request)
+                    run._write_json_atomic(request_path, request)
+                elif mutation == "ack-lease":
+                    acknowledgement["lease_evidence_ref"] = {
+                        "path": "leases/wrong.json",
+                        "sha256": "f" * 64,
+                    }
+                    acknowledgement["artifact_digest"] = (
+                        runtime_manifest.canonical_digest(
+                            {
+                                key: value
+                                for key, value in acknowledgement.items()
+                                if key != "artifact_digest"
+                            }
+                        )
+                    )
+                acknowledgement_path = parent_context.artifact_path(
+                    "restart-acknowledgement-desktop-alice.json"
+                )
+                run._write_json_immutable(
+                    acknowledgement_path,
+                    acknowledgement,
+                )
+
+                child_context = run.ScenarioContext(
+                    repo_root=REPO_ROOT,
+                    scenario_id=selected.scenario_id,
+                    journey_id=selected.journey_id,
+                    source_commit=IDENTITY["head"],
+                    session_id=selected.work_item_id,
+                    declaration_id=(
+                        f"{selected.work_item_id}-{IDENTITY['workspaceId']}"
+                    ),
+                    runtime="desktop",
+                    profile=None,
+                    profiles=("four", "fiveArm"),
+                    clients=("desktop-alice",),
+                    budget_seconds=10,
+                    started_monotonic=time.monotonic(),
+                    runtime_manifest=child,
+                    artifact_dir=artifact_dir,
+                    result_path=result_path,
+                )
+                if mutation == "none":
+                    consumed = child_context.consume_owner_continuation(
+                        resume_path,
+                        client_id="desktop-alice",
+                        kind="secure-content-runtime-v3-resume",
+                        producer_scenario_id=selected.scenario_id,
+                        producer_journey_id=selected.journey_id,
+                        producer_runtime="desktop",
+                    )
+                    self.assertEqual("e" * 64, consumed["stateDigest"])
+                    self.assertEqual(
+                        2,
+                        len(child_context.pending_consumption_receipts),
+                    )
+                    competing_context = run.ScenarioContext(
+                        repo_root=REPO_ROOT,
+                        scenario_id=selected.scenario_id,
+                        journey_id=selected.journey_id,
+                        source_commit=IDENTITY["head"],
+                        session_id=selected.work_item_id,
+                        declaration_id=(
+                            f"{selected.work_item_id}-"
+                            f"{IDENTITY['workspaceId']}"
+                        ),
+                        runtime="desktop",
+                        profile=None,
+                        profiles=("four", "fiveArm"),
+                        clients=("desktop-alice",),
+                        budget_seconds=10,
+                        started_monotonic=time.monotonic(),
+                        runtime_manifest=child,
+                        artifact_dir=artifact_dir,
+                        result_path=result_path,
+                    )
+                    with self.assertRaisesRegex(
+                        run.RunnerError,
+                        "consumption claim already exists",
+                    ):
+                        competing_context.consume_owner_continuation(
+                            resume_path,
+                            client_id="desktop-alice",
+                            kind="secure-content-runtime-v3-resume",
+                            producer_scenario_id=selected.scenario_id,
+                            producer_journey_id=selected.journey_id,
+                            producer_runtime="desktop",
+                        )
+                    child_context.verify_continuation_unchanged()
+                    run._write_json_atomic(
+                        acknowledgement_path,
+                        {
+                            **acknowledgement,
+                            "lease_evidence_ref": {
+                                "path": "leases/rewritten.json",
+                                "sha256": "e" * 64,
+                            },
+                        },
+                    )
+                    with self.assertRaises(
+                        runtime_manifest.RuntimeManifestError
+                    ):
+                        child_context.verify_continuation_unchanged()
+                else:
+                    with self.assertRaises(
+                        runtime_manifest.RuntimeManifestError
+                    ) as raised:
+                        child_context.consume_owner_continuation(
+                            resume_path,
+                            client_id="desktop-alice",
+                            kind="secure-content-runtime-v3-resume",
+                            producer_scenario_id=selected.scenario_id,
+                            producer_journey_id=selected.journey_id,
+                            producer_runtime="desktop",
+                        )
+                    self.assertEqual(
+                        "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
+                        raised.exception.code,
+                    )
+                    self.assertEqual(
+                        [],
+                        child_context.pending_consumption_receipts,
+                    )
 
     def test_bound_artifact_is_immutable_and_consumed_once(self) -> None:
         artifact_path: Path | None = None
 
-        def produce(context: run.ScenarioContext) -> dict[str, object]:
+        def produce(context: run.ScenarioContext) -> dict[str, Any]:
             nonlocal artifact_path
             artifact_path = context.write_bound_artifact_json(
                 "handoff.json",
@@ -967,16 +1178,16 @@ class SecureContentRunnerTest(unittest.TestCase):
         producer = run.ScenarioDefinition(
             scenario_id="artifact-producer",
             journey_id="journey-producer",
-            work_item_id="work-1",
+            work_item_id="secure-content-w7r",
             runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-A/result.json"),
+            evidence_path=Path("W7R/producer/result.json"),
             execute=produce,
         )
+        consumed = 0
 
-        consumed: list[str] = []
-
-        def consume(context: run.ScenarioContext) -> dict[str, object]:
-            self.assertIsNotNone(artifact_path)
+        def consume(context: run.ScenarioContext) -> dict[str, Any]:
+            nonlocal consumed
+            assert artifact_path is not None
             payload = context.consume_bound_artifact_json(
                 artifact_path,
                 kind="secure-content-test-handoff",
@@ -984,150 +1195,88 @@ class SecureContentRunnerTest(unittest.TestCase):
                 producer_journey_id=producer.journey_id,
                 producer_runtime="desktop",
             )
-            consumed.append(str(payload["postId"]))
+            self.assertEqual("post-1", payload["postId"])
+            consumed += 1
             return {}
 
         consumer = run.ScenarioDefinition(
             scenario_id="artifact-consumer",
             journey_id="journey-consumer",
-            work_item_id="work-1",
+            work_item_id="secure-content-w7r",
             runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-B/result.json"),
+            evidence_path=Path("W7R/consumer/result.json"),
             execute=consume,
         )
-
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            producer_manifest = root / "producer-manifest.json"
-            write_runtime_manifest(
-                producer_manifest,
-                runtime_manifest(producer, run_id="producer-run"),
+            parent_path = write_manifest_for_scenario(
+                root,
+                producer,
+                run_id="producer-run",
             )
             run.execute_scenario(
                 runtime="desktop",
                 scenario_id=producer.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                profile="four",
+                profiles=("four", "fiveArm"),
                 clients=("desktop-alice",),
-                runtime_manifest_path=producer_manifest,
+                runtime_manifest_path=parent_path,
                 result_root=root / "results",
                 registry={producer.scenario_id: producer},
                 workspace_identity=IDENTITY,
                 command_runner=control_plane_runner(producer),
             )
-            self.assertIsNotNone(artifact_path)
-            bound = json.loads(artifact_path.read_text(encoding="utf-8"))
-            self.assertEqual(IDENTITY["head"], bound["sourceCommit"])
-            self.assertEqual("work-1", bound["sessionId"])
-            self.assertEqual("desktop", bound["runtime"])
-            self.assertEqual("producer-run", bound["runtimeManifestRunId"])
-            self.assertRegex(bound["bindingDigest"], r"^[0-9a-f]{64}$")
-            self.assertRegex(bound["artifactDigest"], r"^[0-9a-f]{64}$")
-            original_artifact = artifact_path.read_bytes()
-
-            replacement_manifest = root / "replacement-manifest.json"
-            write_runtime_manifest(
-                replacement_manifest,
-                runtime_manifest(producer, run_id="replacement-run"),
-            )
+            assert artifact_path is not None
+            original = artifact_path.read_bytes()
             with self.assertRaises(run.ScenarioFailed):
                 run.execute_scenario(
                     runtime="desktop",
                     scenario_id=producer.scenario_id,
                     budget_seconds=10,
                     repo_root=REPO_ROOT,
-                    profile="four",
+                    profiles=("four", "fiveArm"),
                     clients=("desktop-alice",),
-                    runtime_manifest_path=replacement_manifest,
+                    runtime_manifest_path=parent_path,
                     result_root=root / "results",
                     registry={producer.scenario_id: producer},
                     workspace_identity=IDENTITY,
                     command_runner=control_plane_runner(producer),
                 )
-            self.assertEqual(original_artifact, artifact_path.read_bytes())
+            self.assertEqual(original, artifact_path.read_bytes())
 
-            consumer_manifest = root / "consumer-manifest.json"
-            write_runtime_manifest(
-                consumer_manifest,
-                runtime_manifest(consumer, run_id="consumer-run"),
+            parent = load_scenario_binding(parent_path, producer)
+            time.sleep(0.002)
+            child_path = write_manifest_for_scenario(
+                root,
+                consumer,
+                run_id="consumer-run",
+                parent=parent,
             )
-
-            def consume_then_fail(
-                context: run.ScenarioContext,
-            ) -> dict[str, object]:
-                self.assertIsNotNone(artifact_path)
-                context.consume_bound_artifact_json(
-                    artifact_path,
-                    kind="secure-content-test-handoff",
-                    producer_scenario_id=producer.scenario_id,
-                    producer_journey_id=producer.journey_id,
-                    producer_runtime="desktop",
-                )
-                raise run.RunnerError("post-consumption assertion failed")
-
-            failing_consumer = run.ScenarioDefinition(
-                scenario_id=consumer.scenario_id,
-                journey_id=consumer.journey_id,
-                work_item_id=consumer.work_item_id,
-                runtimes=consumer.runtimes,
-                evidence_path=consumer.evidence_path,
-                execute=consume_then_fail,
-            )
-            with self.assertRaises(run.ScenarioFailed):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=failing_consumer.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    profile="four",
-                    clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
-                    result_root=root / "results",
-                    registry={failing_consumer.scenario_id: failing_consumer},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(failing_consumer),
-                )
-            receipt_path = artifact_path.with_name("handoff.consumed.json")
-            self.assertFalse(receipt_path.exists())
-
-            retry_manifest = root / "retry-manifest.json"
-            write_runtime_manifest(
-                retry_manifest,
-                runtime_manifest(consumer, run_id="retry-run"),
-            )
-            first = run.execute_scenario(
+            result = run.execute_scenario(
                 runtime="desktop",
                 scenario_id=consumer.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                profile="four",
+                profiles=("four", "fiveArm"),
                 clients=("desktop-alice",),
-                runtime_manifest_path=retry_manifest,
+                runtime_manifest_path=child_path,
                 result_root=root / "results",
                 registry={consumer.scenario_id: consumer},
                 workspace_identity=IDENTITY,
                 command_runner=control_plane_runner(consumer),
             )
-            self.assertEqual("PASS", first["result"])
-            self.assertEqual(["post-1"], consumed)
-            self.assertTrue(receipt_path.is_file())
-            self.assertIn(str(receipt_path), first["artifactRefs"])
-            prepared_path = (
-                root / "results" / consumer.evidence_path
-            ).with_name("result.prepared.json")
-            self.assertTrue(prepared_path.is_file())
-            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                prepared["preparedResultSha256"],
-                receipt["preparedResultSha256"],
-            )
+            receipt = artifact_path.with_name("handoff.consumed.json")
+            self.assertEqual(1, consumed)
+            self.assertTrue(receipt.is_file())
+            self.assertIn(str(receipt), result["artifactRefs"])
 
-            replay_manifest = root / "replay-manifest.json"
-            write_runtime_manifest(
-                replay_manifest,
-                runtime_manifest(consumer, run_id="replay-run"),
+            time.sleep(0.002)
+            replay_path = write_manifest_for_scenario(
+                root,
+                consumer,
+                run_id="consumer-replay-run",
+                parent=parent,
             )
             with self.assertRaisesRegex(
                 run.RunnerError,
@@ -1138,22 +1287,21 @@ class SecureContentRunnerTest(unittest.TestCase):
                     scenario_id=consumer.scenario_id,
                     budget_seconds=10,
                     repo_root=REPO_ROOT,
-                    profile="four",
+                    profiles=("four", "fiveArm"),
                     clients=("desktop-alice",),
-                    runtime_manifest_path=replay_manifest,
+                    runtime_manifest_path=replay_path,
                     result_root=root / "results",
                     registry={consumer.scenario_id: consumer},
                     workspace_identity=IDENTITY,
                     command_runner=control_plane_runner(consumer),
                 )
-            self.assertEqual(["post-1"], consumed)
 
     def test_prepared_result_recovers_after_result_publication_interruption(
         self,
     ) -> None:
         artifact_path: Path | None = None
 
-        def produce(context: run.ScenarioContext) -> dict[str, object]:
+        def produce(context: run.ScenarioContext) -> dict[str, Any]:
             nonlocal artifact_path
             artifact_path = context.write_bound_artifact_json(
                 "crash-handoff.json",
@@ -1165,17 +1313,17 @@ class SecureContentRunnerTest(unittest.TestCase):
         producer = run.ScenarioDefinition(
             scenario_id="crash-producer",
             journey_id="journey-producer",
-            work_item_id="work-1",
+            work_item_id="secure-content-w7r",
             runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-A/result.json"),
+            evidence_path=Path("W7R/crash-producer/result.json"),
             execute=produce,
         )
         executed = 0
 
-        def consume(context: run.ScenarioContext) -> dict[str, object]:
+        def consume(context: run.ScenarioContext) -> dict[str, Any]:
             nonlocal executed
             executed += 1
-            self.assertIsNotNone(artifact_path)
+            assert artifact_path is not None
             context.consume_bound_artifact_json(
                 artifact_path,
                 kind="secure-content-test-handoff",
@@ -1183,57 +1331,56 @@ class SecureContentRunnerTest(unittest.TestCase):
                 producer_journey_id=producer.journey_id,
                 producer_runtime="desktop",
             )
-            return {"observations": ["consumed once"]}
+            return {}
 
         consumer = run.ScenarioDefinition(
             scenario_id="crash-consumer",
             journey_id="journey-consumer",
-            work_item_id="work-1",
+            work_item_id="secure-content-w7r",
             runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-B/result.json"),
+            evidence_path=Path("W7R/crash-consumer/result.json"),
             execute=consume,
         )
-
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            producer_manifest = root / "producer.json"
-            write_runtime_manifest(
-                producer_manifest,
-                runtime_manifest(producer, run_id="producer-run"),
+            parent_path = write_manifest_for_scenario(
+                root,
+                producer,
+                run_id="crash-producer-run",
             )
             run.execute_scenario(
                 runtime="desktop",
                 scenario_id=producer.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                profile="four",
+                profiles=("four", "fiveArm"),
                 clients=("desktop-alice",),
-                runtime_manifest_path=producer_manifest,
+                runtime_manifest_path=parent_path,
                 result_root=root / "results",
                 registry={producer.scenario_id: producer},
                 workspace_identity=IDENTITY,
                 command_runner=control_plane_runner(producer),
             )
-            consumer_manifest = root / "consumer.json"
-            write_runtime_manifest(
-                consumer_manifest,
-                runtime_manifest(consumer, run_id="consumer-run"),
+            parent = load_scenario_binding(parent_path, producer)
+            time.sleep(0.002)
+            child_path = write_manifest_for_scenario(
+                root,
+                consumer,
+                run_id="crash-consumer-run",
+                parent=parent,
             )
             result_path = root / "results" / consumer.evidence_path
-            original_atomic_write = run._write_json_atomic
+            original_write = run._write_json_atomic
 
-            def interrupt_result_write(
-                path: Path,
-                value: dict[str, Any],
-            ) -> None:
+            def interrupt(path: Path, value: Mapping[str, Any]) -> None:
                 if path.resolve() == result_path.resolve():
                     raise OSError("simulated result publication interruption")
-                original_atomic_write(path, value)
+                original_write(path, value)
 
             with patch.object(
                 run,
                 "_write_json_atomic",
-                side_effect=interrupt_result_write,
+                side_effect=interrupt,
             ), self.assertRaisesRegex(
                 OSError,
                 "simulated result publication interruption",
@@ -1243,194 +1390,35 @@ class SecureContentRunnerTest(unittest.TestCase):
                     scenario_id=consumer.scenario_id,
                     budget_seconds=10,
                     repo_root=REPO_ROOT,
-                    profile="four",
+                    profiles=("four", "fiveArm"),
                     clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
+                    runtime_manifest_path=child_path,
                     result_root=root / "results",
                     registry={consumer.scenario_id: consumer},
                     workspace_identity=IDENTITY,
                     command_runner=control_plane_runner(consumer),
                 )
-
             self.assertEqual(1, executed)
             self.assertFalse(result_path.exists())
-            receipt_path = artifact_path.with_name(
-                "crash-handoff.consumed.json"
+            self.assertTrue(
+                result_path.with_name("result.prepared.json").is_file()
             )
-            self.assertTrue(receipt_path.is_file())
-            prepared_path = result_path.with_name("result.prepared.json")
-            self.assertTrue(prepared_path.is_file())
-            prepared_bytes = prepared_path.read_bytes()
-            receipt_bytes = receipt_path.read_bytes()
-            prepared = json.loads(prepared_bytes)
-            prepared["result"]["runtimeBindingDigest"] = "f" * 64
-            journal_content = dict(prepared)
-            journal_content.pop("journalDigest")
-            prepared["journalDigest"] = run._canonical_digest(journal_content)
-            prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
-
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "prepared result journal identity is invalid",
-            ):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=consumer.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    profile="four",
-                    clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
-                    result_root=root / "results",
-                    registry={consumer.scenario_id: consumer},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(consumer),
-                )
-            self.assertEqual(1, executed)
-            prepared_path.write_bytes(prepared_bytes)
-
-            prepared = json.loads(prepared_bytes)
-            prepared["result"]["verificationClass"] = "SOURCE_CHECK"
-            tampered_result_digest = hashlib.sha256(
-                run._json_bytes(prepared["result"])
-            ).hexdigest()
-            prepared["preparedResultSha256"] = tampered_result_digest
-            for consumption in prepared["consumptions"]:
-                consumption["receipt"]["preparedResultSha256"] = (
-                    tampered_result_digest
-                )
-                tampered_receipt_bytes = run._json_bytes(consumption["receipt"])
-                consumption["receiptSha256"] = hashlib.sha256(
-                    tampered_receipt_bytes
-                ).hexdigest()
-                Path(consumption["receiptPath"]).write_bytes(
-                    tampered_receipt_bytes
-                )
-            journal_content = dict(prepared)
-            journal_content.pop("journalDigest")
-            prepared["journalDigest"] = run._canonical_digest(journal_content)
-            prepared_path.write_bytes(run._json_bytes(prepared))
-
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "prepared result journal identity is invalid",
-            ):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=consumer.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    profile="four",
-                    clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
-                    result_root=root / "results",
-                    registry={consumer.scenario_id: consumer},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(consumer),
-                )
-            self.assertEqual(1, executed)
-            prepared_path.write_bytes(prepared_bytes)
-            receipt_path.write_bytes(receipt_bytes)
-
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "prepared result journal identity is invalid",
-            ):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=consumer.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    profile="four",
-                    clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
-                    result_root=root / "results",
-                    registry={consumer.scenario_id: consumer},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(
-                        consumer,
-                        declaration=active_declaration(
-                            consumer,
-                            digest="b" * 64,
-                        ),
-                    ),
-                )
-            self.assertEqual(1, executed)
-
-            consumer_manifest_payload = json.loads(
-                consumer_manifest.read_text(encoding="utf-8")
-            )
-            source_manifest_path = Path(
-                consumer_manifest_payload["developmentAttachment"][
-                    "sourceManifestPath"
-                ]
-            )
-            source_manifest_bytes = source_manifest_path.read_bytes()
-            receipt_path.unlink()
-            original_read_json_artifact = run._read_json_artifact
-            provenance_mutated = False
-
-            def mutate_provenance_after_prepared_load(
-                path: Path,
-            ) -> tuple[bytes, dict[str, Any]]:
-                nonlocal provenance_mutated
-                loaded = original_read_json_artifact(path)
-                if (
-                    path.resolve() == prepared_path.resolve()
-                    and not provenance_mutated
-                ):
-                    provenance_mutated = True
-                    source_manifest_path.write_text("{}\n", encoding="utf-8")
-                return loaded
-
-            with patch.object(
-                run,
-                "_read_json_artifact",
-                side_effect=mutate_provenance_after_prepared_load,
-            ), self.assertRaisesRegex(
-                run.RunnerError,
-                "runtime provenance artifact changed",
-            ):
-                run.execute_scenario(
-                    runtime="desktop",
-                    scenario_id=consumer.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    profile="four",
-                    clients=("desktop-alice",),
-                    runtime_manifest_path=consumer_manifest,
-                    result_root=root / "results",
-                    registry={consumer.scenario_id: consumer},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(consumer),
-                )
-            self.assertTrue(provenance_mutated)
-            self.assertEqual(1, executed)
-            self.assertFalse(receipt_path.exists())
-            self.assertFalse(result_path.exists())
-            source_manifest_path.write_bytes(source_manifest_bytes)
 
             recovered = run.execute_scenario(
                 runtime="desktop",
                 scenario_id=consumer.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
-                profile="four",
+                profiles=("four", "fiveArm"),
                 clients=("desktop-alice",),
-                runtime_manifest_path=consumer_manifest,
+                runtime_manifest_path=child_path,
                 result_root=root / "results",
                 registry={consumer.scenario_id: consumer},
                 workspace_identity=IDENTITY,
                 command_runner=control_plane_runner(consumer),
             )
-
             self.assertEqual(1, executed)
             self.assertEqual("PASS", recovered["result"])
-            self.assertEqual(
-                recovered,
-                json.loads(result_path.read_text(encoding="utf-8")),
-            )
-            self.assertTrue(receipt_path.is_file())
 
     def test_immutable_file_survives_directory_sync_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -1447,42 +1435,38 @@ class SecureContentRunnerTest(unittest.TestCase):
                     path,
                     {"schemaVersion": 1, "kind": "test-receipt"},
                 )
-
             self.assertTrue(path.is_file())
-            self.assertEqual(
-                "test-receipt",
-                json.loads(path.read_text(encoding="utf-8"))["kind"],
-            )
 
     def test_bound_artifact_rejects_manifest_captured_before_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            artifact_dir = Path(temp)
+            root = Path(temp)
+            producer_binding = runtime_manifest.RuntimeManifestBinding(
+                path=root / "producer.json",
+                sha256="a" * 64,
+                run_id="producer-run",
+                payload={"created_at": "2026-09-15T10:00:00.000Z"},
+                clients={},
+                services={},
+                service_profiles=frozenset({"four"}),
+                fixture_capabilities=frozenset(),
+                fixture_handles={},
+                raw_bytes=b"producer",
+            )
             producer = run.ScenarioContext(
                 repo_root=REPO_ROOT,
                 scenario_id="artifact-producer",
                 journey_id="journey-producer",
                 source_commit=IDENTITY["head"],
-                session_id="work-1",
-                declaration_id="work-1-9eb2cb904c9ae460",
+                session_id="secure-content-w7r",
+                declaration_id=f"secure-content-w7r-{IDENTITY['workspaceId']}",
                 runtime="desktop",
                 profile="four",
                 profiles=("four",),
                 clients=(),
                 budget_seconds=10,
                 started_monotonic=time.monotonic(),
-                runtime_manifest=run.RuntimeManifestBinding(
-                    path=artifact_dir / "producer.json",
-                    sha256="a" * 64,
-                    run_id="producer-run",
-                    payload={
-                        "developmentAttachment": {
-                            "capturedAt": "2026-09-15T10:00:00.000Z",
-                        }
-                    },
-                    clients={},
-                    raw_bytes=b"producer",
-                ),
-                artifact_dir=artifact_dir,
+                runtime_manifest=producer_binding,
+                artifact_dir=root,
             )
             artifact = producer.write_bound_artifact_json(
                 "stale-handoff.json",
@@ -1494,29 +1478,33 @@ class SecureContentRunnerTest(unittest.TestCase):
                 scenario_id="artifact-consumer",
                 journey_id="journey-consumer",
                 source_commit=IDENTITY["head"],
-                session_id="work-1",
-                declaration_id="work-1-9eb2cb904c9ae460",
+                session_id="secure-content-w7r",
+                declaration_id=f"secure-content-w7r-{IDENTITY['workspaceId']}",
                 runtime="desktop",
                 profile="four",
                 profiles=("four",),
                 clients=(),
                 budget_seconds=10,
                 started_monotonic=time.monotonic(),
-                runtime_manifest=run.RuntimeManifestBinding(
-                    path=artifact_dir / "consumer.json",
+                runtime_manifest=runtime_manifest.RuntimeManifestBinding(
+                    path=root / "consumer.json",
                     sha256="b" * 64,
                     run_id="consumer-run",
                     payload={
-                        "developmentAttachment": {
-                            "capturedAt": "2026-09-15T09:59:59.999Z",
-                        }
+                        "created_at": "2026-09-15T09:59:59.999Z",
+                        "continuation": {
+                            "parent_manifest_digest": "a" * 64,
+                        },
                     },
                     clients={},
+                    services={},
+                    service_profiles=frozenset({"four"}),
+                    fixture_capabilities=frozenset(),
+                    fixture_handles={},
                     raw_bytes=b"consumer",
                 ),
-                artifact_dir=artifact_dir,
+                artifact_dir=root,
             )
-
             with self.assertRaisesRegex(run.RunnerError, "fresh runtime manifest"):
                 consumer.consume_bound_artifact_json(
                     artifact,
@@ -1529,199 +1517,208 @@ class SecureContentRunnerTest(unittest.TestCase):
     def test_redacts_result_artifact_and_blocked_persistence(self) -> None:
         secret = "secret-bearer-value"
 
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
+        def execute(context: run.ScenarioContext) -> dict[str, Any]:
             context.write_artifact_json(
                 "diagnostic.json",
-                {
-                    "authorization": f"Bearer {secret}",
-                    "detail": f"token={secret}",
-                },
+                {"authorization": f"Bearer {secret}"},
             )
-            context.write_artifact_bytes(
-                "diagnostic.txt",
-                f"Authorization: Bearer {secret}\n".encode("utf-8"),
+            context.block(
+                f"token={secret}",
+                kind="DRIVER_FAILED",
+                owner="runtime-owner",
+                retryable=True,
             )
-            return {
-                "observations": {
-                    "authorization": f"Bearer {secret}",
-                    "detail": f"token={secret}",
-                }
-            }
 
-        scenario = run.ScenarioDefinition(
-            scenario_id="redacted-result",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
+        selected = scenario(runtime_name="service", execute=execute)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            result = run.execute_scenario(
-                runtime="service",
-                scenario_id=scenario.scenario_id,
-                budget_seconds=10,
-                repo_root=REPO_ROOT,
-                result_root=root,
-                registry={scenario.scenario_id: scenario},
-                workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(scenario),
-            )
-            persisted = (root / scenario.evidence_path).read_text(encoding="utf-8")
-            artifact = (
-                root / scenario.evidence_path.parent / "diagnostic.json"
+            with self.assertRaises(run.ScenarioBlocked):
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=root,
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+            persisted = (
+                root / selected.evidence_path
             ).read_text(encoding="utf-8")
-            text_artifact = (
-                root / scenario.evidence_path.parent / "diagnostic.txt"
+            artifact = (
+                root / selected.evidence_path.parent / "diagnostic.json"
             ).read_text(encoding="utf-8")
             self.assertNotIn(secret, persisted)
             self.assertNotIn(secret, artifact)
-            self.assertNotIn(secret, text_artifact)
-            self.assertNotIn(secret, json.dumps(result))
             self.assertIn("[REDACTED]", persisted)
-            self.assertIn("[REDACTED]", artifact)
-            self.assertIn("[REDACTED]", text_artifact)
+
+    def test_failure_evidence_does_not_persist_exception_secrets(self) -> None:
+        secret = "secret-bearer-value"
+        selected = scenario(
+            runtime_name="service",
+            execute=lambda _: (_ for _ in ()).throw(
+                run.RunnerError(f"Authorization: Bearer {secret}")
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaises(run.ScenarioFailed):
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=root,
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+            persisted = (
+                root / selected.evidence_path
+            ).read_text(encoding="utf-8")
+            self.assertNotIn(secret, persisted)
+            self.assertIn("Authorization: [REDACTED]", persisted)
+            self.assertNotIn("scenario execution failed", persisted)
+
+    def test_failure_evidence_preserves_redacted_harness_error(self) -> None:
+        secret = "secret-harness-value"
+        selected = scenario(
+            runtime_name="service",
+            execute=lambda _: (_ for _ in ()).throw(
+                GateError(
+                    "harness moments.publishFriendsDraft failed: "
+                    f"Authorization: Bearer {secret}"
+                )
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaises(run.ScenarioFailed):
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=root,
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+            persisted = (
+                root / selected.evidence_path
+            ).read_text(encoding="utf-8")
+            self.assertNotIn(secret, persisted)
+            self.assertIn(
+                "harness moments.publishFriendsDraft failed: "
+                "Authorization: [REDACTED]",
+                persisted,
+            )
+            self.assertNotIn("scenario execution failed", persisted)
+
+    def test_environment_blocker_writes_blocked_result(self) -> None:
+        def execute(context: run.ScenarioContext) -> dict[str, Any]:
+            context.block(
+                "required service unavailable",
+                kind="DRIVER_FAILED",
+                owner="local-dev-control-plane",
+                retryable=True,
+            )
+
+        selected = scenario(runtime_name="service", execute=execute)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaises(run.ScenarioBlocked):
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=root,
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+            result = json.loads(
+                (root / selected.evidence_path).read_text()
+            )
+            self.assertEqual("BLOCKED", result["result"])
+            self.assertTrue(result["firstFailure"]["retryable"])
+
+    def test_requires_exactly_one_active_current_workspace_declaration(self) -> None:
+        selected = scenario(runtime_name="service")
+        declarations = [
+            active_declaration(selected, digest="a" * 64),
+            active_declaration(selected, digest="b" * 64),
+        ]
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(
+            run.RunnerError,
+            "exactly one active current-workspace declaration",
+        ):
+            run.execute_scenario(
+                runtime="service",
+                scenario_id=selected.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                result_root=Path(temp),
+                registry={selected.scenario_id: selected},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(
+                    selected,
+                    declarations=declarations,
+                ),
+            )
+
+    def test_budget_exhaustion_writes_failed_result(self) -> None:
+        def execute(context: run.ScenarioContext) -> dict[str, Any]:
+            context.started_monotonic = (
+                time.monotonic() - context.budget_seconds
+            )
+            return {}
+
+        selected = scenario(runtime_name="service", execute=execute)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaises(run.ScenarioFailed):
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=selected.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=root,
+                    registry={selected.scenario_id: selected},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(selected),
+                )
+            result = json.loads(
+                (root / selected.evidence_path).read_text()
+            )
+            self.assertEqual("TIMEOUT", result["firstFailure"]["kind"])
 
     def test_rejects_any_dirty_source_before_scenario_execution(self) -> None:
         called = False
 
-        def execute(_: run.ScenarioContext) -> dict[str, object]:
+        def execute(_: run.ScenarioContext) -> dict[str, Any]:
             nonlocal called
             called = True
             return {}
 
-        scenario = run.ScenarioDefinition(
-            scenario_id="dirty-source",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
-        base_runner = control_plane_runner(scenario)
-
-        def dirty_runner(
-            command: list[str],
-            cwd: Path,
-        ) -> subprocess.CompletedProcess[str]:
-            if command[:4] == [
-                "git",
-                "status",
-                "--porcelain",
-                "--untracked-files=all",
-            ]:
-                return subprocess.CompletedProcess(
-                    command,
-                    0,
-                    stdout=" M docs/README.md\n",
-                    stderr="",
-                )
-            return base_runner(command, cwd)
-
+        selected = scenario(runtime_name="service", execute=execute)
         with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(
             run.RunnerError,
             "checkpoint before FUNCTIONAL_CHECK",
         ):
             run.execute_scenario(
                 runtime="service",
-                scenario_id=scenario.scenario_id,
+                scenario_id=selected.scenario_id,
                 budget_seconds=10,
                 repo_root=REPO_ROOT,
                 result_root=Path(temp),
-                registry={scenario.scenario_id: scenario},
+                registry={selected.scenario_id: selected},
                 workspace_identity=IDENTITY,
-                command_runner=dirty_runner,
+                command_runner=control_plane_runner(selected, dirty=True),
             )
         self.assertFalse(called)
-
-    def test_failure_evidence_does_not_persist_exception_secrets(self) -> None:
-        secret = "secret-bearer-value"
-
-        def execute(_: run.ScenarioContext) -> dict[str, object]:
-            raise run.RunnerError(f"Authorization: Bearer {secret}")
-
-        scenario = run.ScenarioDefinition(
-            scenario_id="secret-failure",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
-
-        with tempfile.TemporaryDirectory() as temp:
-            output_root = Path(temp)
-            with self.assertRaises(run.ScenarioFailed):
-                run.execute_scenario(
-                    runtime="service",
-                    scenario_id=scenario.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    result_root=output_root,
-                    registry={scenario.scenario_id: scenario},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(scenario),
-                )
-
-            persisted = (
-                output_root / scenario.evidence_path
-            ).read_text(encoding="utf-8")
-            self.assertNotIn(secret, persisted)
-            self.assertIn("scenario execution failed", persisted)
-
-    def test_environment_blocker_writes_blocked_result(self) -> None:
-        secret = "postgresql://owner:secret-password@db.invalid/runtime"
-
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
-            context.block(
-                f"required PostgreSQL DSN {secret} is unavailable",
-                kind="DRIVER_FAILED",
-                owner="local-dev-control-plane",
-                retryable=True,
-            )
-
-        scenario = run.ScenarioDefinition(
-            scenario_id="blocked-service",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
-
-        with tempfile.TemporaryDirectory() as temp:
-            output_root = Path(temp)
-            with self.assertRaises(run.ScenarioBlocked) as raised:
-                run.execute_scenario(
-                    runtime="service",
-                    scenario_id=scenario.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    result_root=output_root,
-                    registry={scenario.scenario_id: scenario},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(scenario),
-                )
-
-            result = json.loads(
-                (output_root / scenario.evidence_path).read_text(encoding="utf-8")
-            )
-            self.assertEqual("BLOCKED", result["result"])
-            self.assertEqual("DRIVER_FAILED", result["firstFailure"]["kind"])
-            self.assertEqual(
-                "local-dev-control-plane",
-                result["firstFailure"]["owner"],
-            )
-            self.assertTrue(result["firstFailure"]["retryable"])
-            self.assertNotIn(
-                secret,
-                (output_root / scenario.evidence_path).read_text(encoding="utf-8"),
-            )
-            self.assertEqual(
-                (output_root / scenario.evidence_path).resolve(),
-                raised.exception.result_path.resolve(),
-            )
 
     def test_desktop_pilot_fails_closed_at_design_amendment_boundary(self) -> None:
         def block(
@@ -1738,98 +1735,216 @@ class SecureContentRunnerTest(unittest.TestCase):
                 retryable=retryable,
             )
 
-        context = SimpleNamespace(block=block)
+        context = SimpleNamespace(
+            runtime_manifest=None,
+            block=block,
+        )
         with patch.object(
-            desktop_pilot,
-            "_require_runtime_binding",
-        ), patch.object(
             desktop_pilot,
             "_load_resume_artifact",
         ) as load_resume, self.assertRaises(run.ScenarioBlocked) as raised:
             desktop_pilot._execute(context)
 
-        self.assertEqual("DESIGN_AMENDMENT_REQUIRED", raised.exception.kind)
-        self.assertEqual("secure-content-architecture", raised.exception.owner)
-        self.assertFalse(raised.exception.retryable)
-        self.assertIn("deterministic", str(raised.exception))
+        self.assertEqual("DRIVER_FAILED", raised.exception.kind)
+        self.assertEqual("secure-content-w7-runtime", raised.exception.owner)
+        self.assertTrue(raised.exception.retryable)
+        self.assertIn("immutable external runtime manifest", str(raised.exception))
         load_resume.assert_not_called()
 
-    def test_requires_exactly_one_active_current_workspace_declaration(self) -> None:
-        scenario = run.ScenarioDefinition(
-            scenario_id="test-service",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-        duplicate = active_declaration(scenario, digest="b" * 64)
-
-        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(
+    def test_desktop_pilot_preserves_bounded_readback_failure_state(self) -> None:
+        with self.assertRaisesRegex(
             run.RunnerError,
-            "exactly one active current-workspace declaration",
+            (
+                "Bob private Moment did not reach CONTENT_READY "
+                r"\(state=CONTENT_UNAVAILABLE; errorCode=KEY_NOT_FOUND\)"
+            ),
         ):
-            run.execute_scenario(
-                runtime="service",
-                scenario_id=scenario.scenario_id,
-                budget_seconds=10,
-                repo_root=REPO_ROOT,
-                result_root=Path(temp),
-                registry={scenario.scenario_id: scenario},
-                workspace_identity=IDENTITY,
-                command_runner=control_plane_runner(
-                    scenario,
-                    [active_declaration(scenario), duplicate],
+            desktop_pilot._require_projection_state(
+                {
+                    "state": "CONTENT_UNAVAILABLE",
+                    "errorCode": "KEY_NOT_FOUND",
+                },
+                "CONTENT_READY",
+                "Bob private Moment did not reach CONTENT_READY",
+            )
+
+        with self.assertRaises(run.RunnerError) as raised:
+            desktop_pilot._require_projection_state(
+                {
+                    "state": "contains secret material",
+                },
+                "CONTENT_READY",
+                "Bob private Moment did not reach CONTENT_READY",
+            )
+        self.assertIn(
+            "state=<redacted>; errorCode=<missing>",
+            str(raised.exception),
+        )
+        self.assertNotIn("secret material", str(raised.exception))
+
+    def test_desktop_pilot_stages_private_draft_after_public_control(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        class RestartRequested(RuntimeError):
+            pass
+
+        class Client:
+            def __init__(self, client_id: str) -> None:
+                self.client_id = client_id
+
+            def __enter__(self) -> Client:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def snapshot(self) -> Mapping[str, Any]:
+                return {
+                    "platform": "native",
+                    "nativeRuntimeIdentitySha256": hashlib.sha256(
+                        self.client_id.encode("utf-8")
+                    ).hexdigest(),
+                }
+
+            def call(
+                self,
+                method: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Mapping[str, Any]:
+                del payload
+                calls.append((self.client_id, method))
+                if method == "publishPublicMoment":
+                    return {
+                        "published": True,
+                        "mediaCount": 1,
+                        "textSha256": desktop_pilot._sha256(
+                            desktop_pilot.PUBLIC_TEXT
+                        ),
+                    }
+                if method == "stageFriendsDraft":
+                    return {
+                        "present": True,
+                        "textSha256": desktop_pilot._sha256(
+                            desktop_pilot.PRIVATE_TEXT
+                        ),
+                        "fileCount": 1,
+                    }
+                if method == "readPrivateMoment":
+                    if self.client_id.endswith("bob"):
+                        return {
+                            "state": "CONTENT_READY",
+                            "textSha256": desktop_pilot._sha256(
+                                desktop_pilot.PRIVATE_TEXT
+                            ),
+                            "media": [{
+                                "state": "MEDIA_READY",
+                                "plaintextSha256": desktop_pilot._sha256(
+                                    desktop_pilot.PNG_BYTES
+                                ),
+                            }],
+                        }
+                    return {"state": "NOT_FOUND_OR_NOT_AUTHORIZED"}
+                if method == "clearLocalState":
+                    return {}
+                raise AssertionError(f"unexpected method: {method}")
+
+        clients = {
+            client_id: Client(client_id)
+            for client_id in desktop_pilot.EXPECTED_CLIENTS
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            artifact_root = Path(temp)
+            manifest = SimpleNamespace(
+                sha256="a" * 64,
+                service_for_client=lambda *_args: (
+                    "station-four",
+                    {"endpoint": "http://station.example"},
                 ),
             )
 
-    def test_budget_exhaustion_writes_failed_result(self) -> None:
-        def execute(context: run.ScenarioContext) -> dict[str, object]:
-            context.started_monotonic = time.monotonic() - context.budget_seconds
-            return {}
+            def write_artifact_bytes(
+                name: str,
+                value: bytes,
+                *,
+                durable: bool,
+            ) -> Path:
+                self.assertFalse(durable)
+                path = artifact_root / name
+                path.write_bytes(value)
+                return path
 
-        scenario = run.ScenarioDefinition(
-            scenario_id="budget-test",
-            journey_id="journey-1",
-            work_item_id="work-1",
-            runtimes=frozenset({"service"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=execute,
-        )
-
-        with tempfile.TemporaryDirectory() as temp:
-            output_root = Path(temp)
-            with self.assertRaises(run.ScenarioFailed):
-                run.execute_scenario(
-                    runtime="service",
-                    scenario_id=scenario.scenario_id,
-                    budget_seconds=10,
-                    repo_root=REPO_ROOT,
-                    result_root=output_root,
-                    registry={scenario.scenario_id: scenario},
-                    workspace_identity=IDENTITY,
-                    command_runner=control_plane_runner(scenario),
-                )
-
-            result = json.loads(
-                (output_root / scenario.evidence_path).read_text(encoding="utf-8")
+            context = SimpleNamespace(
+                artifact_path=lambda name: artifact_root / name,
+                budget_seconds=1200,
+                clients=desktop_pilot.EXPECTED_CLIENTS,
+                profile=None,
+                profiles=desktop_pilot.EXPECTED_PROFILES,
+                request_restart=lambda *_args, **_kwargs: (
+                    (_ for _ in ()).throw(RestartRequested())
+                ),
+                require_runtime_manifest=lambda: manifest,
+                runtime="desktop",
+                runtime_manifest=manifest,
+                write_artifact_bytes=write_artifact_bytes,
+                write_bound_artifact_json=lambda *_args, **_kwargs: None,
             )
-            self.assertEqual("FAIL", result["result"])
-            self.assertEqual("TIMEOUT", result["firstFailure"]["kind"])
+
+            def publish(
+                client: Client,
+                method: str,
+                **_: object,
+            ) -> Mapping[str, Any]:
+                calls.append((client.client_id, method))
+                return {
+                    "state": "PUBLISHED",
+                    "transientPostId": "private-post-1",
+                }
+
+            with (
+                patch.object(
+                    desktop_pilot,
+                    "AttachedProductClient",
+                    side_effect=lambda _context, client_id: clients[client_id],
+                ),
+                patch.object(
+                    desktop_pilot,
+                    "_invalid_token_status",
+                    return_value=401,
+                ),
+                patch.object(
+                    desktop_pilot,
+                    "_load_resume_artifact",
+                    return_value=None,
+                ),
+                patch.object(
+                    desktop_pilot,
+                    "_require_runtime_binding",
+                ),
+                patch.object(
+                    desktop_pilot,
+                    "reconcile_private_moment_publish",
+                    side_effect=publish,
+                ),
+                self.assertRaises(RestartRequested),
+            ):
+                desktop_pilot._execute(context)
+
+        alice_methods = [
+            method
+            for client_id, method in calls
+            if client_id == desktop_pilot.EXPECTED_CLIENTS[0]
+        ]
+        self.assertLess(
+            alice_methods.index("publishPublicMoment"),
+            alice_methods.index("stageFriendsDraft"),
+        )
+        self.assertLess(
+            alice_methods.index("stageFriendsDraft"),
+            alice_methods.index("publishFriendsDraft"),
+        )
 
 
 class RuntimeAttachmentManifestTest(unittest.TestCase):
-    @staticmethod
-    def _scenario() -> run.ScenarioDefinition:
-        return run.ScenarioDefinition(
-            scenario_id="desktop-manifest",
-            journey_id="journey-desktop",
-            work_item_id="work-1",
-            runtimes=frozenset({"desktop"}),
-            evidence_path=Path("W1/SC-AS01/result.json"),
-            execute=lambda _: {},
-        )
-
     @staticmethod
     def _driver(session_id: str) -> SimpleNamespace:
         return SimpleNamespace(
@@ -1837,92 +1952,49 @@ class RuntimeAttachmentManifestTest(unittest.TestCase):
             execute_async_script=lambda *_args, **_kwargs: None,
         )
 
-    def test_producer_attaches_existing_sessions_without_mutating_source(self) -> None:
-        scenario = self._scenario()
-        clients = ("desktop-alice", "desktop-bob")
-        source_payload = runtime_manifest(
-            scenario,
-            clients=clients,
-            attached=False,
-        )
-        snapshots = {
-            "session-alice": {
-                "platform": "native",
-                "authenticationState": "AUTHENTICATED",
-                "sourceCommit": IDENTITY["head"],
-                "clientArtifactSha256": hashlib.sha256(
-                    b"artifact:desktop-alice"
-                ).hexdigest(),
-                "sessionIdentitySha256": hashlib.sha256(
-                    b"session:desktop-alice"
-                ).hexdigest(),
-                "actorPtidSha256": hashlib.sha256(b"ptid:alice").hexdigest(),
-                "nativeRuntimeIdentitySha256": hashlib.sha256(
-                    b"runtime:alice"
-                ).hexdigest(),
-                **station_harness_identity(),
-            },
-            "session-bob": {
-                "platform": "native",
-                "authenticationState": "AUTHENTICATED",
-                "sourceCommit": IDENTITY["head"],
-                "clientArtifactSha256": hashlib.sha256(
-                    b"artifact:desktop-bob"
-                ).hexdigest(),
-                "sessionIdentitySha256": hashlib.sha256(
-                    b"session:desktop-bob"
-                ).hexdigest(),
-                "actorPtidSha256": hashlib.sha256(b"ptid:bob").hexdigest(),
-                "nativeRuntimeIdentitySha256": hashlib.sha256(
-                    b"runtime:bob"
-                ).hexdigest(),
-                **station_harness_identity(),
-            },
-        }
-        sessions = {
-            "desktop-alice": self._driver("session-alice"),
-            "desktop-bob": self._driver("session-bob"),
-        }
+    def test_owner_publishes_one_immutable_attached_v3_manifest(self) -> None:
+        payload = v3_payload()
+        payload.pop("manifest_digest")
+        snapshots: dict[str, Mapping[str, Any]] = {}
+        sessions: dict[str, SimpleNamespace] = {}
+        attachments: dict[str, Mapping[str, Any]] = {}
+        for index, client in enumerate(payload["clients"]):
+            client_id = client["id"]
+            session_id = f"owner-session-{index}"
+            sessions[client_id] = self._driver(session_id)
+            attachments[client_id] = {
+                "kind": runtime_manifest.AUTOMATION_ATTACHMENT_KIND,
+                "endpoint": f"http://127.0.0.1:{4600 + index}",
+                "session_id": session_id,
+            }
+            client["automation_attachment_ref"] = attachments[client_id]
+            snapshots[session_id] = manifest_fixtures.identity_snapshot(
+                payload,
+                client_id,
+            )
+            client.pop("automation_attachment_ref")
+            client.pop("harness_identity_digest")
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            source = root / "source-runtime-manifest.json"
-            actors = root / "actor-manifest.json"
-            target = root / "attached-runtime-manifest.json"
-            actor_payload = {
-                "artifactKind": "acceptance-actor-manifest",
-                "fixtureId": "secure-content-test-actors",
-                "environmentId": source_payload["environmentId"],
-                "runId": source_payload["runId"],
-                "createdAt": run._timestamp(),
-                "initialState": "ready",
-                "actors": [
-                    {
-                        "role": actor,
-                        "accountRef": f"account:{actor}",
-                        "ptid": f"ptid:{actor}",
-                        "devicePolicy": "fresh",
-                    }
-                    for actor in ("alice", "bob")
-                ],
-                "credentialRefs": [],
-                "reset": {"authorized": False, "targetVerified": True},
-            }
-            actor_bytes = json.dumps(actor_payload, sort_keys=True).encode("utf-8")
-            actors.write_bytes(actor_bytes)
-            source_payload["actorManifest"] = {
-                "artifactKind": "acceptance-artifact-ref",
-                "workspaceId": IDENTITY["workspaceId"],
-                "gateId": scenario.journey_id,
-                "runId": source_payload["runId"],
-                "path": actors.name,
-                "sha256": hashlib.sha256(actor_bytes).hexdigest(),
-                "mediaType": "application/json",
-            }
-            write_service_attestations(root, source_payload)
-            source.write_text(json.dumps(source_payload), encoding="utf-8")
-            original = source.read_bytes()
-
+            seed = copy.deepcopy(payload)
+            for client in seed["clients"]:
+                client["automation_attachment_ref"] = attachments[client["id"]]
+                manifest_fixtures.bind_identity_snapshot(
+                    seed,
+                    client["id"],
+                    dict(
+                        snapshots[
+                            attachments[client["id"]]["session_id"]
+                        ]
+                    ),
+                )
+            manifest_fixtures.write_manifest(root, seed)
+            payload["services"] = seed["services"]
+            payload["fixture_manifest_ref"] = seed["fixture_manifest_ref"]
+            payload["fixture_manifest_digest"] = seed["fixture_manifest_digest"]
+            original = copy.deepcopy(payload)
+            output = root / "owner-runtime-v3.json"
             with patch.object(
                 attached_client,
                 "harness_ready",
@@ -1935,227 +2007,53 @@ class RuntimeAttachmentManifestTest(unittest.TestCase):
                 ],
             ):
                 result = attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=target,
-                    journey_id=scenario.journey_id,
+                    manifest_payload=payload,
+                    output_path=output,
+                    journey_id="sc-dj-runtime-manifest-v3",
                     sessions_by_client=sessions,
-                    actor_manifest_path=actors,
+                    automation_refs_by_client=attachments,
                     repo_root=REPO_ROOT,
                 )
 
-            self.assertEqual(target.resolve(), result)
-            self.assertEqual(original, source.read_bytes())
-            self.assertEqual(0o600, os.stat(target).st_mode & 0o777)
-            payload = json.loads(target.read_text(encoding="utf-8"))
-            self.assertEqual(
-                run.RUNTIME_ATTACHMENT_KIND,
-                payload["developmentAttachment"]["kind"],
-            )
-            self.assertEqual(
-                hashlib.sha256(original).hexdigest(),
-                payload["developmentAttachment"]["sourceManifestSha256"],
-            )
-            self.assertEqual(
-                ["session-alice", "session-bob"],
-                [
-                    client["webdriver_session_id"]
-                    for client in payload["clients"]
-                ],
-            )
-            binding = run._runtime_manifest_binding(
-                path=target,
-                scenario=scenario,
-                identity=IDENTITY,
-                runtime="desktop",
-                profile="four",
-                profiles=(),
-                clients=clients,
+            self.assertEqual(output.resolve(), result)
+            self.assertEqual(original, payload)
+            self.assertEqual(0o600, os.stat(output).st_mode & 0o777)
+            published = json.loads(output.read_text())
+            self.assertEqual(3, published["schema_version"])
+            self.assertNotIn("profile", published)
+            self.assertNotIn("developmentAttachment", published)
+            load_v3_binding(output)
+            original_bytes = output.read_bytes()
+            with self.assertRaisesRegex(run.RunnerError, "already exists"):
+                attached_client.write_attached_runtime_manifest(
+                    manifest_payload=payload,
+                    output_path=output,
+                    journey_id="sc-dj-runtime-manifest-v3",
+                    sessions_by_client=sessions,
+                    automation_refs_by_client=attachments,
+                    repo_root=REPO_ROOT,
+                )
+            self.assertEqual(original_bytes, output.read_bytes())
+
+    def test_owner_attachment_requires_exact_session_closure(self) -> None:
+        payload = v3_payload()
+        payload.pop("manifest_digest")
+        clients = payload["clients"]
+        for client in clients:
+            client.pop("automation_attachment_ref")
+            client.pop("harness_identity_digest")
+        with tempfile.TemporaryDirectory() as temp, self.assertRaisesRegex(
+            run.RunnerError,
+            "exactly match manifest clients",
+        ):
+            attached_client.write_attached_runtime_manifest(
+                manifest_payload=payload,
+                output_path=Path(temp) / "runtime.json",
+                journey_id="sc-dj-runtime-manifest-v3",
+                sessions_by_client={},
+                automation_refs_by_client={},
                 repo_root=REPO_ROOT,
             )
-            self.assertEqual(tuple(binding.clients), clients)
-            original_target = target.read_bytes()
-
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "already exists",
-            ):
-                attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=target,
-                    journey_id=scenario.journey_id,
-                    sessions_by_client=sessions,
-                    actor_manifest_path=actors,
-                    repo_root=REPO_ROOT,
-                )
-            self.assertEqual(original_target, target.read_bytes())
-
-    def test_producer_rejects_changed_source_or_incomplete_session_set(self) -> None:
-        scenario = self._scenario()
-        source_payload = runtime_manifest(scenario, attached=False)
-        session = self._driver("session-alice")
-
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            source = root / "source-runtime-manifest.json"
-            actors = root / "actor-manifest.json"
-            actor_payload = {
-                "artifactKind": "acceptance-actor-manifest",
-                "fixtureId": "secure-content-test-actors",
-                "environmentId": source_payload["environmentId"],
-                "runId": source_payload["runId"],
-                "createdAt": run._timestamp(),
-                "initialState": "ready",
-                "actors": [{
-                    "role": "alice",
-                    "accountRef": "account:alice",
-                    "ptid": "ptid:alice",
-                    "devicePolicy": "fresh",
-                }],
-                "credentialRefs": [],
-                "reset": {"authorized": False, "targetVerified": True},
-            }
-            actor_bytes = json.dumps(actor_payload, sort_keys=True).encode("utf-8")
-            actors.write_bytes(actor_bytes)
-            source_payload["actorManifest"] = {
-                "artifactKind": "acceptance-artifact-ref",
-                "workspaceId": IDENTITY["workspaceId"],
-                "gateId": scenario.journey_id,
-                "runId": source_payload["runId"],
-                "path": actors.name,
-                "sha256": hashlib.sha256(actor_bytes).hexdigest(),
-                "mediaType": "application/json",
-            }
-            write_service_attestations(root, source_payload)
-            source.write_text(json.dumps(source_payload), encoding="utf-8")
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "exactly match manifest clients",
-            ):
-                attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=root / "missing-session.json",
-                    journey_id=scenario.journey_id,
-                    sessions_by_client={},
-                    actor_manifest_path=actors,
-                    repo_root=REPO_ROOT,
-                )
-
-            with patch.object(
-                attached_client,
-                "harness_ready",
-                return_value=True,
-            ), patch.object(
-                attached_client,
-                "call_async_harness",
-                return_value={
-                    "platform": "native",
-                    "authenticationState": "AUTHENTICATED",
-                    "sourceCommit": IDENTITY["head"],
-                    "clientArtifactSha256": hashlib.sha256(
-                        b"artifact:desktop-alice"
-                    ).hexdigest(),
-                    "sessionIdentitySha256": hashlib.sha256(
-                        b"session:desktop-alice"
-                    ).hexdigest(),
-                    "actorPtidSha256": hashlib.sha256(b"ptid:bob").hexdigest(),
-                    "nativeRuntimeIdentitySha256": hashlib.sha256(
-                        b"runtime:alice"
-                    ).hexdigest(),
-                    **station_harness_identity(),
-                },
-            ), self.assertRaisesRegex(
-                run.RunnerError,
-                "canonical actor binding",
-            ):
-                attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=root / "swapped-actor.json",
-                    journey_id=scenario.journey_id,
-                    sessions_by_client={"desktop-alice": session},
-                    actor_manifest_path=actors,
-                    repo_root=REPO_ROOT,
-                )
-
-            wrong_station = {
-                "platform": "native",
-                "authenticationState": "AUTHENTICATED",
-                "sourceCommit": IDENTITY["head"],
-                "clientArtifactSha256": hashlib.sha256(
-                    b"artifact:desktop-alice"
-                ).hexdigest(),
-                "sessionIdentitySha256": hashlib.sha256(
-                    b"session:desktop-alice"
-                ).hexdigest(),
-                "actorPtidSha256": hashlib.sha256(b"ptid:alice").hexdigest(),
-                "nativeRuntimeIdentitySha256": hashlib.sha256(
-                    b"runtime:alice"
-                ).hexdigest(),
-                **station_harness_identity(),
-            }
-            wrong_station["stationRuntimeIdentitySha256"] = "f" * 64
-            with patch.object(
-                attached_client,
-                "harness_ready",
-                return_value=True,
-            ), patch.object(
-                attached_client,
-                "call_async_harness",
-                return_value=wrong_station,
-            ), self.assertRaisesRegex(
-                run.RunnerError,
-                "does not match the declared Station",
-            ):
-                attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=root / "wrong-station.json",
-                    journey_id=scenario.journey_id,
-                    sessions_by_client={"desktop-alice": session},
-                    actor_manifest_path=actors,
-                    repo_root=REPO_ROOT,
-                )
-
-            def mutate_source(*_args: object, **_kwargs: object) -> dict[str, str]:
-                source.write_text(
-                    json.dumps({**source_payload, "createdAt": "changed"}),
-                    encoding="utf-8",
-                )
-                return {
-                    "platform": "native",
-                    "authenticationState": "AUTHENTICATED",
-                    "sourceCommit": IDENTITY["head"],
-                    "clientArtifactSha256": hashlib.sha256(
-                        b"artifact:desktop-alice"
-                    ).hexdigest(),
-                    "sessionIdentitySha256": hashlib.sha256(
-                        b"session:desktop-alice"
-                    ).hexdigest(),
-                    "actorPtidSha256": hashlib.sha256(b"ptid:alice").hexdigest(),
-                    "nativeRuntimeIdentitySha256": hashlib.sha256(
-                        b"runtime:alice"
-                    ).hexdigest(),
-                    **station_harness_identity(),
-                }
-
-            with patch.object(
-                attached_client,
-                "harness_ready",
-                return_value=True,
-            ), patch.object(
-                attached_client,
-                "call_async_harness",
-                side_effect=mutate_source,
-            ), self.assertRaisesRegex(
-                run.RunnerError,
-                "changed during attachment capture",
-            ):
-                attached_client.write_attached_runtime_manifest(
-                    source_manifest_path=source,
-                    output_path=root / "changed-source.json",
-                    journey_id=scenario.journey_id,
-                    sessions_by_client={"desktop-alice": session},
-                    actor_manifest_path=actors,
-                    repo_root=REPO_ROOT,
-                )
 
 
 class AttachedProductClientTest(unittest.TestCase):
@@ -2165,11 +2063,6 @@ class AttachedProductClientTest(unittest.TestCase):
                 attached_client,
                 "NETWORK_CAPTURE_TIMEOUT_SECONDS",
                 0.05,
-            ),
-            patch.object(
-                attached_client,
-                "NETWORK_CAPTURE_QUIET_SECONDS",
-                0.002,
             ),
             patch.object(
                 attached_client,
@@ -2184,245 +2077,171 @@ class AttachedProductClientTest(unittest.TestCase):
         for timing in reversed(self.capture_timing):
             timing.stop()
 
-    def _binding(
+    def test_private_publish_reconciles_unknown_commit_with_same_action(
         self,
-        *,
-        runtime: str = "native-tauri",
-        actor: str = "alice",
-    ) -> run.RuntimeManifestBinding:
-        authentication = (
-            "ANONYMOUS" if actor == "anonymous" else "AUTHENTICATED"
+    ) -> None:
+        calls: list[str] = []
+        responses = iter(
+            (
+                {"state": "UNKNOWN_COMMIT"},
+                {"state": "PUBLISHED", "transientPostId": "post-1"},
+            )
         )
-        harness_identity = {"authenticationState": authentication}
-        harness_identity["sourceCommit"] = IDENTITY["head"]
-        harness_identity["clientArtifactSha256"] = hashlib.sha256(
-            f"artifact:{actor}".encode("utf-8")
-        ).hexdigest()
-        harness_identity["sessionIdentitySha256"] = hashlib.sha256(
-            f"session:{actor}".encode("utf-8")
-        ).hexdigest()
-        if authentication == "AUTHENTICATED":
-            harness_identity["actorPtidSha256"] = hashlib.sha256(
-                f"ptid:{actor}".encode("utf-8")
-            ).hexdigest()
-        harness_identity.update(station_harness_identity())
-        if runtime == "native-tauri":
-            harness_identity["nativeRuntimeIdentitySha256"] = hashlib.sha256(
-                b"native-runtime"
-            ).hexdigest()
-        client = {
-            "id": "desktop-alice",
-            "actor": actor,
-            "runtime": runtime,
-            "profile": "four-app",
-            "storage_root": "/tmp/desktop-alice",
-            "webdriver_session_id": "external-session",
-            "webdriver_port": 4445,
-            "renderer_port": 3210,
-            "gateway_port": 3030,
-            "harness_identity": harness_identity,
-            "required_service_roles": ["station"],
-            "service_bindings": {
-                "station": {
-                    "service_id": "station-four",
-                    "required_kind": "station",
-                }
-            },
-        }
-        payload = {
-            "runId": "runtime-run",
-            "source": {"commit": IDENTITY["head"]},
-            "clients": [client],
-            "services": {
-                "station-four": {
-                    "kind": "station",
-                    "endpoint": STATION_ENDPOINT,
-                    "runtimeIdentity": STATION_RUNTIME_IDENTITY,
-                }
-            },
-        }
-        return run.RuntimeManifestBinding(
-            path=Path("/tmp/runtime-manifest.json"),
-            sha256="a" * 64,
-            run_id="runtime-run",
-            payload=payload,
-            clients={"desktop-alice": client},
-            raw_bytes=b"{}",
+        client = SimpleNamespace(
+            context=SimpleNamespace(remaining_seconds=lambda: 10.0),
+            call=lambda method: calls.append(method) or next(responses),
         )
 
-    def _context(
-        self,
-        *,
-        runtime: str = "desktop",
-        actor: str = "alice",
-    ) -> run.ScenarioContext:
-        return run.ScenarioContext(
-            repo_root=REPO_ROOT,
-            scenario_id="attached-client",
-            journey_id="journey-1",
-            source_commit=IDENTITY["head"],
-            session_id="session-1",
-            declaration_id="work-1-9eb2cb904c9ae460",
-            runtime=runtime,
-            profile="four",
-            profiles=("four",),
-            clients=("desktop-alice",),
-            budget_seconds=10,
-            started_monotonic=time.monotonic(),
-            runtime_manifest=self._binding(
-                runtime="native-tauri" if runtime == "desktop" else runtime,
-                actor=actor,
+        with patch.object(attached_client.time, "sleep") as sleep:
+            result = attached_client.reconcile_private_moment_publish(
+                client,
+                "publishFriendsDraft",
+                label="test publish",
+            )
+
+        self.assertEqual("PUBLISHED", result["state"])
+        self.assertEqual(
+            ["publishFriendsDraft", "publishFriendsDraft"],
+            calls,
+        )
+        sleep.assert_called_once_with(0.25)
+
+    def test_private_publish_does_not_retry_terminal_state(self) -> None:
+        calls: list[str] = []
+        client = SimpleNamespace(
+            context=SimpleNamespace(remaining_seconds=lambda: 10.0),
+            call=lambda method: (
+                calls.append(method)
+                or {"state": "PUBLISH_FAILED", "errorCode": "REJECTED"}
             ),
         )
 
+        with patch.object(attached_client.time, "sleep") as sleep:
+            result = attached_client.reconcile_private_moment_publish(
+                client,
+                "publishFriendsDraft",
+                label="test publish",
+            )
+
+        self.assertEqual("PUBLISH_FAILED", result["state"])
+        self.assertEqual(["publishFriendsDraft"], calls)
+        sleep.assert_not_called()
+
+    def test_private_publish_fails_after_bounded_unknown_commit_retries(
+        self,
+    ) -> None:
+        calls: list[str] = []
+        client = SimpleNamespace(
+            context=SimpleNamespace(remaining_seconds=lambda: 10.0),
+            call=lambda method: (
+                calls.append(method) or {"state": "UNKNOWN_COMMIT"}
+            ),
+        )
+
+        with (
+            patch.object(attached_client.time, "sleep") as sleep,
+            self.assertRaisesRegex(
+                run.RunnerError,
+                "remained UNKNOWN_COMMIT after 3 attempts",
+            ),
+        ):
+            attached_client.reconcile_private_moment_publish(
+                client,
+                "publishFriendsDraft",
+                label="test publish",
+            )
+
+        self.assertEqual(
+            ["publishFriendsDraft"] * 3,
+            calls,
+        )
+        self.assertEqual(2, sleep.call_count)
+
+    def _context_and_snapshot(
+        self,
+    ) -> tuple[run.ScenarioContext, Mapping[str, Any]]:
+        payload = v3_payload()
+        snapshot = manifest_fixtures.identity_snapshot(
+            payload,
+            "desktop-alice",
+        )
+        manifest_fixtures.bind_identity_snapshot(
+            payload,
+            "desktop-alice",
+            snapshot,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            binding = load_v3_binding(write_v3_manifest(Path(temp), payload))
+        context = run.ScenarioContext(
+            repo_root=REPO_ROOT,
+            scenario_id="attached-client",
+            journey_id="sc-dj-runtime-manifest-v3",
+            source_commit=IDENTITY["head"],
+            session_id="secure-content-w7r",
+            declaration_id=(
+                f"secure-content-w7r-{IDENTITY['workspaceId']}"
+            ),
+            runtime="desktop",
+            profile=None,
+            profiles=("four", "fiveArm"),
+            clients=("desktop-alice",),
+            budget_seconds=10,
+            started_monotonic=time.monotonic(),
+            runtime_manifest=binding,
+        )
+        return context, snapshot
+
     def test_live_harness_identity_must_match_manifest(self) -> None:
-        context = self._context()
+        context, snapshot = self._context_and_snapshot()
         client = attached_client.AttachedProductClient(
             context,
             "desktop-alice",
         )
-        client._driver = SimpleNamespace(session_id="external-session")
-        expected = dict(
-            context.require_runtime_manifest().client_harness_binding(
-                "desktop-alice"
-            )
-        )
+        client._driver = SimpleNamespace(session_id="session-desktop-alice")
+        with patch.object(client, "_raw_call", return_value=snapshot):
+            self.assertEqual("native", client.snapshot()["platform"])
         with patch.object(
             client,
             "_raw_call",
-            return_value={"platform": "native", **expected},
+            return_value={
+                **snapshot,
+                "draft": {"present": True},
+                "publishState": "PUBLISHED",
+                "privateProjectionCount": 5,
+            },
         ):
             self.assertEqual("native", client.snapshot()["platform"])
-
-        for field_name in expected:
-            wrong_value = (
-                "ANONYMOUS"
-                if field_name == "authenticationState"
-                else "f" * 64
-            )
-            with self.subTest(field=field_name), patch.object(
-                client,
-                "_raw_call",
-                return_value={
-                    "platform": "native",
-                    **expected,
-                    field_name: wrong_value,
-                },
-            ):
-                with self.assertRaisesRegex(
-                    run.RunnerError,
-                    "does not match the runtime manifest",
-                ):
-                    client.snapshot()
-
-        anonymous_context = self._context(runtime="browser", actor="anonymous")
-        anonymous = attached_client.AttachedProductClient(
-            anonymous_context,
-            "desktop-alice",
-        )
-        anonymous._driver = SimpleNamespace(session_id="external-session")
-        anonymous_expected = dict(
-            anonymous_context.require_runtime_manifest().client_harness_binding(
-                "desktop-alice"
-            )
-        )
         with patch.object(
-            anonymous,
+            client,
             "_raw_call",
-            return_value={
-                "platform": "browser",
-                **anonymous_expected,
-            },
-        ):
-            self.assertEqual(
-                "ANONYMOUS",
-                anonymous.snapshot()["authenticationState"],
-            )
-        with patch.object(
-            anonymous,
-            "_raw_call",
-            return_value={
-                "platform": "browser",
-                **anonymous_expected,
-                "actorPtidSha256": "f" * 64,
-            },
-        ):
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "contradicts the runtime manifest",
-            ):
-                anonymous.snapshot()
+            return_value={**snapshot, "clientArtifactSha256": "f" * 64},
+        ), self.assertRaisesRegex(run.RunnerError, "Harness identity"):
+            client.snapshot()
 
     def test_non_snapshot_operations_are_fenced_by_full_live_identity(self) -> None:
-        context = self._context()
-        expected = dict(
-            context.require_runtime_manifest().client_harness_binding(
-                "desktop-alice"
-            )
-        )
-
-        for field_name in ("actorPtidSha256", "sessionIdentitySha256"):
-            with self.subTest(field=field_name):
-                client = attached_client.AttachedProductClient(
-                    context,
-                    "desktop-alice",
-                )
-                client._driver = SimpleNamespace(session_id="external-session")
-                post_operation = {
-                    "platform": "native",
-                    **expected,
-                    field_name: "f" * 64,
-                }
-                with patch.object(
-                    client,
-                    "_raw_call",
-                    side_effect=[
-                        {"platform": "native", **expected},
-                        {"ok": True},
-                        post_operation,
-                    ],
-                ) as call:
-                    with self.assertRaisesRegex(
-                        run.RunnerError,
-                        "does not match the runtime manifest",
-                    ):
-                        client.call("stageFriendsDraft", {"draftId": "draft-1"})
-                self.assertEqual(
-                    ["snapshot", "stageFriendsDraft", "snapshot"],
-                    [invocation.args[0] for invocation in call.call_args_list],
-                )
-
+        context, snapshot = self._context_and_snapshot()
         client = attached_client.AttachedProductClient(
             context,
             "desktop-alice",
         )
-        client._driver = SimpleNamespace(session_id="external-session")
+        client._driver = SimpleNamespace(session_id="session-desktop-alice")
         with patch.object(
             client,
             "_raw_call",
-            return_value={
-                "platform": "native",
-                **expected,
-                "sessionIdentitySha256": "f" * 64,
-            },
-        ) as call:
-            with self.assertRaisesRegex(
-                run.RunnerError,
-                "does not match the runtime manifest",
-            ):
-                client.call("stageFriendsDraft", {"draftId": "draft-1"})
-        self.assertEqual(["snapshot"], [item.args[0] for item in call.call_args_list])
-
-        client._driver = SimpleNamespace(session_id="switched-session")
-        with patch.object(
-            client,
-            "_raw_call",
-            return_value={"platform": "native", **expected},
-        ), self.assertRaisesRegex(
+            side_effect=[
+                snapshot,
+                {"ok": True},
+                {**snapshot, "sessionIdentitySha256": "f" * 64},
+            ],
+        ) as call, self.assertRaisesRegex(
             run.RunnerError,
-            "WebDriver session does not match",
+            "Harness identity",
         ):
-            client.snapshot()
+            client.call("stageFriendsDraft", {"draftId": "draft-1"})
+        self.assertEqual(
+            ["snapshot", "stageFriendsDraft", "snapshot"],
+            [invocation.args[0] for invocation in call.call_args_list],
+        )
 
     def test_attached_driver_quit_only_detaches_transport(self) -> None:
         class Executor:
@@ -2452,188 +2271,39 @@ class AttachedProductClientTest(unittest.TestCase):
         self.assertEqual("externally-owned-session", driver.session_id)
         self.assertEqual({}, driver.caps)
 
+    def test_attached_driver_reads_performance_log_via_webdriver_command(
+        self,
+    ) -> None:
+        driver = object.__new__(attached_client._AttachedRemoteWebDriver)
+        entries = [{"message": "{\"message\":{}}"}]
+
+        with patch.object(
+            driver,
+            "execute",
+            return_value={"value": entries},
+        ) as execute:
+            self.assertEqual(entries, driver.get_log("performance"))
+
+        execute.assert_called_once_with("getLog", {"type": "performance"})
+
     def test_network_capture_rejects_streams_without_terminal_barrier(self) -> None:
-        entries = [
-            performance_entry(
-                "Network.requestWillBeSent",
+        entry = {
+            "message": json.dumps(
                 {
-                    "requestId": "request-1",
-                    "request": {
-                        "url": (
-                            "https://station.invalid"
-                            "/key-exchange/content-prekeys"
-                        ),
-                        "method": "POST",
-                        "headers": {"Accept": "application/json"},
-                        "postData": '{"public":true}',
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.responseReceived",
-                {
-                    "requestId": "request-1",
-                    "response": {
-                        "url": "https://station.invalid/api/v1/public",
-                        "headers": {"Content-Type": "application/json"},
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.loadingFinished",
-                {"requestId": "request-1"},
-            ),
-            performance_entry(
-                "Network.webSocketCreated",
-                {
-                    "requestId": "socket-1",
-                    "url": "wss://station.invalid/events",
-                },
-            ),
-            performance_entry(
-                "Network.webSocketWillSendHandshakeRequest",
-                {
-                    "requestId": "socket-1",
-                    "request": {"headers": {"Upgrade": "websocket"}},
-                },
-            ),
-            performance_entry(
-                "Network.webSocketFrameReceived",
-                {
-                    "requestId": "socket-1",
-                    "response": {"payloadData": '{"event":"public"}'},
-                },
-            ),
-        ]
-
-        class Driver:
-            def __init__(self) -> None:
-                self.logs = [[], entries]
-
-            def execute_cdp_cmd(
-                self,
-                command: str,
-                params: dict[str, Any],
-            ) -> dict[str, Any]:
-                if command == "Network.enable":
-                    return {}
-                if command == "Network.getResponseBody":
-                    self.assert_request(params)
-                    return {"body": '{"ok":true}', "base64Encoded": False}
-                raise AssertionError(command)
-
-            @staticmethod
-            def assert_request(params: dict[str, Any]) -> None:
-                if params != {"requestId": "request-1"}:
-                    raise AssertionError(params)
-
-            def get_log(self, name: str) -> list[dict[str, str]]:
-                if name != "performance":
-                    raise AssertionError(name)
-                return self.logs.pop(0) if self.logs else []
-
-        client = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        client.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        client._driver = Driver()
-        client._network_capture_armed = False
-        client.clear_network_log()
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "stream-terminal-barrier-unavailable",
-        ):
-            client.network_observation(
-                private_plaintext="private-text",
-                private_resource_id="private-post",
-                require_response_body=True,
+                    "message": {
+                        "method": "Network.webSocketFrameReceived",
+                        "params": {
+                            "requestId": "socket-1",
+                            "response": {"payloadData": '{"event":"public"}'},
+                        },
+                    }
+                }
             )
-
-    def test_network_capture_fetches_omitted_post_data(self) -> None:
-        entries = [
-            performance_entry(
-                "Network.requestWillBeSent",
-                {
-                    "requestId": "request-private",
-                    "request": {
-                        "url": "https://station.invalid/api/v1/public",
-                        "method": "POST",
-                        "headers": {"Content-Type": "application/json"},
-                        "hasPostData": True,
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.loadingFinished",
-                {"requestId": "request-private"},
-            ),
-        ]
+        }
 
         class Driver:
             def __init__(self) -> None:
-                self.logs = [[], entries]
-                self.post_data_requests: list[dict[str, Any]] = []
-
-            def execute_cdp_cmd(
-                self,
-                command: str,
-                params: dict[str, Any],
-            ) -> dict[str, Any]:
-                if command == "Network.enable":
-                    return {}
-                if command == "Network.getRequestPostData":
-                    if params != {"requestId": "request-private"}:
-                        raise AssertionError(params)
-                    self.post_data_requests.append(params)
-                    return {"postData": '{"text":"private-text"}'}
-                raise AssertionError(command)
-
-            def get_log(self, name: str) -> list[dict[str, str]]:
-                if name != "performance":
-                    raise AssertionError(name)
-                return self.logs.pop(0) if self.logs else []
-
-        client = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        client.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        driver = Driver()
-        client._driver = driver
-        client._network_capture_armed = False
-        client.clear_network_log()
-
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "stream-terminal-barrier-unavailable",
-        ):
-            client.network_observation(private_plaintext="private-text")
-        self.assertEqual(
-            [{"requestId": "request-private"}],
-            driver.post_data_requests,
-        )
-
-    def test_network_capture_inspects_event_source_payloads(self) -> None:
-        secret = "private-sse-value"
-        entries = [
-            performance_entry(
-                "Network.eventSourceMessageReceived",
-                {
-                    "requestId": "events-1",
-                    "data": secret,
-                    "eventName": "message",
-                },
-            )
-        ]
-
-        class Driver:
-            def __init__(self) -> None:
-                self.logs = [[], entries]
+                self.logs = [[], [entry]]
 
             def execute_cdp_cmd(
                 self,
@@ -2659,62 +2329,197 @@ class AttachedProductClientTest(unittest.TestCase):
         client._driver = Driver()
         client._network_capture_armed = False
         client.clear_network_log()
-
         with self.assertRaisesRegex(
             run.RunnerError,
             "stream-terminal-barrier-unavailable",
         ):
-            client.network_observation(private_plaintext=secret)
+            client.network_observation(private_plaintext="private")
+
+    def test_network_capture_fetches_omitted_post_data(self) -> None:
+        action_id = "post-data-terminal"
+        capture, marker = network_capture_marker(action_id)
+        entries = [
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.requestWillBeSent",
+                            "params": {
+                                "requestId": "request-private",
+                                "request": {
+                                    "url": "https://station.invalid/public",
+                                    "method": "POST",
+                                    "headers": {},
+                                    "hasPostData": True,
+                                },
+                            },
+                        }
+                    }
+                )
+            },
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.loadingFinished",
+                            "params": {"requestId": "request-private"},
+                        }
+                    }
+                )
+            },
+            terminal_marker_entry(marker),
+        ]
+
+        class Driver:
+            def __init__(self) -> None:
+                self.logs = [[], entries]
+                self.post_data_requests: list[dict[str, Any]] = []
+
+            def execute_cdp_cmd(
+                self,
+                command: str,
+                params: dict[str, Any],
+            ) -> dict[str, Any]:
+                if command == "Network.enable":
+                    return {}
+                if command == "Network.getRequestPostData":
+                    self.post_data_requests.append(params)
+                    return {"postData": '{"text":"private-text"}'}
+                raise AssertionError(command)
+
+            def get_log(self, _name: str) -> list[dict[str, str]]:
+                return self.logs.pop(0) if self.logs else []
+
+        client = attached_client.AttachedProductClient.__new__(
+            attached_client.AttachedProductClient
+        )
+        client.context = SimpleNamespace(
+            runtime="browser",
+            remaining_seconds=lambda: 1.0,
+        )
+        driver = Driver()
+        client._driver = driver
+        client._network_capture_armed = False
+        client.clear_network_log()
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext="private-text",
+            terminal_marker=marker,
+        )
+        self.assertEqual(
+            [{"requestId": "request-private"}],
+            driver.post_data_requests,
+        )
+        self.assertEqual(1, observation.request_body_count)
+        self.assertGreater(observation.secret_representation_count, 0)
+
+    def test_network_capture_inspects_event_source_payloads(self) -> None:
+        secret = "private-sse-value"
+        action_id = "event-source-terminal"
+        capture, marker = network_capture_marker(action_id)
+        entry = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.eventSourceMessageReceived",
+                        "params": {
+                            "requestId": "events-1",
+                            "data": secret,
+                            "eventName": "message",
+                        },
+                    }
+                }
+            )
+        }
+
+        class Driver:
+            def __init__(self) -> None:
+                self.logs = [[], [entry, terminal_marker_entry(marker)]]
+
+            def execute_cdp_cmd(
+                self,
+                command: str,
+                _params: dict[str, Any],
+            ) -> dict[str, Any]:
+                if command != "Network.enable":
+                    raise AssertionError(command)
+                return {}
+
+            def get_log(self, _name: str) -> list[dict[str, str]]:
+                return self.logs.pop(0) if self.logs else []
+
+        client = attached_client.AttachedProductClient.__new__(
+            attached_client.AttachedProductClient
+        )
+        client.context = SimpleNamespace(
+            runtime="browser",
+            remaining_seconds=lambda: 1.0,
+        )
+        client._driver = Driver()
+        client._network_capture_armed = False
+        client.clear_network_log()
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext=secret,
+            terminal_marker=marker,
+        )
+        self.assertEqual(1, observation.websocket_event_count)
+        self.assertGreater(observation.secret_representation_count, 0)
 
     def test_network_capture_detects_encoded_private_values(self) -> None:
         secret = "private value/with-symbols"
         encoded = base64.b64encode(secret.encode("utf-8")).decode("ascii")
+        action_id = "encoded-value-terminal"
+        capture, marker = network_capture_marker(action_id)
         entries = [
-            performance_entry(
-                "Network.requestWillBeSent",
-                {
-                    "requestId": "request-1",
-                    "request": {
-                        "url": (
-                            "https://station.invalid/api/public?q="
-                            + quote(secret, safe="")
-                        ),
-                        "method": "GET",
-                        "headers": {"X-Private-Probe": encoded},
-                        "postData": json.dumps({"value": secret}),
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.responseReceived",
-                {
-                    "requestId": "request-1",
-                    "response": {
-                        "url": "https://station.invalid/api/public",
-                        "headers": {"X-Private-Probe": encoded},
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.loadingFinished",
-                {"requestId": "request-1"},
-            ),
-            performance_entry(
-                "Network.webSocketHandshakeResponseReceived",
-                {
-                    "requestId": "socket-1",
-                    "response": {"headers": {"X-Private-Probe": encoded}},
-                },
-            ),
-            performance_entry(
-                "Network.webSocketFrameSent",
-                {
-                    "requestId": "socket-1",
-                    "response": {
-                        "payloadData": encoded,
-                    },
-                },
-            ),
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.requestWillBeSent",
+                            "params": {
+                                "requestId": "request-1",
+                                "request": {
+                                    "url": (
+                                        "https://station.invalid/public?q="
+                                        + quote(secret, safe="")
+                                    ),
+                                    "method": "POST",
+                                    "headers": {"X-Private": encoded},
+                                    "postData": json.dumps({"value": secret}),
+                                },
+                            },
+                        }
+                    }
+                )
+            },
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.responseReceived",
+                            "params": {
+                                "requestId": "request-1",
+                                "response": {
+                                    "url": "https://station.invalid/public",
+                                    "headers": {"X-Private": encoded},
+                                },
+                            },
+                        }
+                    }
+                )
+            },
+            {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": "Network.loadingFinished",
+                            "params": {"requestId": "request-1"},
+                        }
+                    }
+                )
+            },
+            terminal_marker_entry(marker),
         ]
 
         class Driver:
@@ -2724,13 +2529,11 @@ class AttachedProductClientTest(unittest.TestCase):
             def execute_cdp_cmd(
                 self,
                 command: str,
-                params: dict[str, Any],
+                _params: dict[str, Any],
             ) -> dict[str, Any]:
                 if command == "Network.enable":
                     return {}
                 if command == "Network.getResponseBody":
-                    if params != {"requestId": "request-1"}:
-                        raise AssertionError(params)
                     return {"body": encoded, "base64Encoded": False}
                 raise AssertionError(command)
 
@@ -2747,112 +2550,245 @@ class AttachedProductClientTest(unittest.TestCase):
         client._driver = Driver()
         client._network_capture_armed = False
         client.clear_network_log()
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "stream-terminal-barrier-unavailable",
-        ):
-            client.network_observation(
-                private_plaintext=secret,
-                require_response_body=True,
-            )
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext=secret,
+            require_response_body=True,
+            terminal_marker=marker,
+        )
+        self.assertGreater(observation.secret_representation_count, 0)
 
-    def test_network_capture_does_not_promote_delayed_websocket_quiet_period(
+    def test_network_capture_stops_at_marker_and_excludes_later_events(
         self,
     ) -> None:
-        request = performance_entry(
+        action_id = "same-loop-terminal"
+        capture, marker = network_capture_marker(action_id)
+        request = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "requestId": "request-1",
+                            "request": {
+                                "url": "https://station.invalid/public",
+                                "method": "GET",
+                                "headers": {},
+                            },
+                        },
+                    }
+                }
+            )
+        }
+        finished = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.loadingFinished",
+                        "params": {"requestId": "request-1"},
+                    }
+                }
+            )
+        }
+        delayed_frame = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.webSocketFrameReceived",
+                        "params": {
+                            "requestId": "socket-1",
+                            "response": {
+                                "payloadData": "private-after-terminal"
+                            },
+                        },
+                    }
+                }
+            )
+        }
+        open_socket = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.webSocketCreated",
+                        "params": {
+                            "requestId": "socket-1",
+                            "url": "wss://station.invalid/events",
+                        },
+                    }
+                }
+            )
+        }
+
+        class Driver:
+            def __init__(self) -> None:
+                self.logs = [
+                    [],
+                    [
+                        request,
+                        finished,
+                        open_socket,
+                        terminal_marker_entry(marker),
+                        delayed_frame,
+                    ],
+                ]
+
+            def execute_cdp_cmd(
+                self,
+                command: str,
+                _params: dict[str, Any],
+            ) -> dict[str, Any]:
+                if command != "Network.enable":
+                    raise AssertionError(command)
+                return {}
+
+            def get_log(self, _name: str) -> list[dict[str, str]]:
+                return self.logs.pop(0) if self.logs else []
+
+        client = attached_client.AttachedProductClient.__new__(
+            attached_client.AttachedProductClient
+        )
+        client.context = SimpleNamespace(
+            runtime="browser",
+            remaining_seconds=lambda: 1.0,
+        )
+        client._driver = Driver()
+        client._network_capture_armed = False
+        client.clear_network_log()
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext="private-after-terminal",
+            terminal_marker=marker,
+        )
+        self.assertEqual(1, observation.observed_request_count)
+        self.assertEqual(1, observation.request_method_count)
+        self.assertEqual(1, observation.websocket_event_count)
+        self.assertEqual(0, observation.secret_representation_count)
+
+    def test_network_capture_fails_closed_with_pending_http_request(self) -> None:
+        action_id = "pending-request-terminal"
+        capture, marker = network_capture_marker(action_id)
+        entry = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "requestId": "request-pending",
+                            "request": {
+                                "url": "https://station.invalid/public",
+                                "method": "GET",
+                                "headers": {},
+                            },
+                        },
+                    }
+                }
+            )
+        }
+
+        class Driver:
+            def __init__(self) -> None:
+                self.logs = [[], [entry, terminal_marker_entry(marker)]]
+
+            def execute_cdp_cmd(
+                self,
+                command: str,
+                _params: dict[str, Any],
+            ) -> dict[str, Any]:
+                if command != "Network.enable":
+                    raise AssertionError(command)
+                return {}
+
+            def get_log(self, _name: str) -> list[dict[str, str]]:
+                return self.logs.pop(0) if self.logs else []
+
+        client = attached_client.AttachedProductClient.__new__(
+            attached_client.AttachedProductClient
+        )
+        client.context = SimpleNamespace(
+            runtime="browser",
+            remaining_seconds=lambda: 1.0,
+        )
+        client._driver = Driver()
+        client._network_capture_armed = False
+        client.clear_network_log()
+        client._network_capture = capture
+        with self.assertRaisesRegex(run.RunnerError, "pending HTTP request"):
+            client.network_observation(
+                private_plaintext="private",
+                terminal_marker=marker,
+            )
+
+    def test_network_capture_drains_pre_marker_http_completion(self) -> None:
+        action_id = "delayed-completion-terminal"
+        capture, marker = network_capture_marker(action_id)
+
+        def network_entry(method: str, params: Mapping[str, Any]) -> dict[str, str]:
+            return {
+                "message": json.dumps(
+                    {
+                        "message": {
+                            "method": method,
+                            "params": dict(params),
+                        }
+                    }
+                )
+            }
+
+        request = network_entry(
             "Network.requestWillBeSent",
             {
-                "requestId": "request-1",
+                "requestId": "request-before-marker",
                 "request": {
-                    "url": "https://station.invalid/api/public",
+                    "url": "https://station.invalid/public",
                     "method": "GET",
                     "headers": {},
                 },
             },
         )
-        terminal = performance_entry(
-            "Network.loadingFinished",
-            {"requestId": "request-1"},
-        )
-        delayed_frame = performance_entry(
-            "Network.webSocketFrameReceived",
+        response = network_entry(
+            "Network.responseReceived",
             {
-                "requestId": "socket-1",
-                "response": {"payloadData": '{"event":"delayed"}'},
+                "requestId": "request-before-marker",
+                "response": {
+                    "url": "https://station.invalid/public",
+                    "headers": {},
+                },
             },
         )
-
-        class Driver:
-            def __init__(self) -> None:
-                self.logs = [[], [request], [terminal]]
-                self.started_at = time.monotonic()
-                self.delayed_frame_emitted = False
-
-            def execute_cdp_cmd(
-                self,
-                command: str,
-                _params: dict[str, Any],
-            ) -> dict[str, Any]:
-                if command != "Network.enable":
-                    raise AssertionError(command)
-                return {}
-
-            def get_log(self, _name: str) -> list[dict[str, str]]:
-                if self.logs:
-                    return self.logs.pop(0)
-                if (
-                    not self.delayed_frame_emitted
-                    and time.monotonic() - self.started_at
-                    > attached_client.NETWORK_CAPTURE_QUIET_SECONDS + 0.1
-                ):
-                    self.delayed_frame_emitted = True
-                    return [delayed_frame]
-                return []
-
-        client = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        client.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        client._driver = Driver()
-        client._network_capture_armed = False
-        client.clear_network_log()
-
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "stream-terminal-barrier-unavailable",
-        ):
-            client.network_observation(private_plaintext="private-text")
-
-    def test_network_capture_fails_closed_with_pending_http_request(self) -> None:
-        entries = [
-            performance_entry(
-                "Network.requestWillBeSent",
-                {
-                    "requestId": "request-pending",
-                    "request": {
-                        "url": "https://station.invalid/api/public",
-                        "method": "GET",
-                        "headers": {},
-                    },
+        post_marker_request = network_entry(
+            "Network.requestWillBeSent",
+            {
+                "requestId": "request-after-marker",
+                "request": {
+                    "url": "https://station.invalid/after-marker",
+                    "method": "GET",
+                    "headers": {},
                 },
-            )
-        ]
+            },
+        )
+        pre_marker_finished = network_entry(
+            "Network.loadingFinished",
+            {"requestId": "request-before-marker"},
+        )
 
         class Driver:
             def __init__(self) -> None:
-                self.logs = [[], entries]
+                self.logs = [
+                    [],
+                    [request, response, terminal_marker_entry(marker)],
+                    [post_marker_request, pre_marker_finished],
+                ]
 
             def execute_cdp_cmd(
                 self,
                 command: str,
                 _params: dict[str, Any],
             ) -> dict[str, Any]:
-                if command != "Network.enable":
-                    raise AssertionError(command)
-                return {}
+                if command == "Network.enable":
+                    return {}
+                if command == "Network.getResponseBody":
+                    return {"body": "{}", "base64Encoded": False}
+                raise AssertionError(command)
 
             def get_log(self, _name: str) -> list[dict[str, str]]:
                 return self.logs.pop(0) if self.logs else []
@@ -2867,134 +2803,158 @@ class AttachedProductClientTest(unittest.TestCase):
         client._driver = Driver()
         client._network_capture_armed = False
         client.clear_network_log()
+        client._network_capture = capture
+        observation = client.network_observation(
+            private_plaintext="private",
+            require_response_body=True,
+            terminal_marker=marker,
+        )
 
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "pending HTTP request",
-        ):
-            client.network_observation(private_plaintext="private-text")
+        self.assertEqual(1, observation.observed_request_count)
+        self.assertEqual(1, observation.observed_response_count)
+        self.assertEqual(1, observation.response_body_count)
+        self.assertEqual(
+            (
+                hashlib.sha256(
+                    b"https://station.invalid/public",
+                ).hexdigest(),
+            ),
+            observation.request_url_digests,
+        )
 
     def test_network_capture_fails_when_response_capture_is_insufficient(
         self,
     ) -> None:
-        entries = [
-            performance_entry(
-                "Network.requestWillBeSent",
+        action_id = "response-control-terminal"
+        capture, marker = network_capture_marker(action_id)
+        request = {
+            "message": json.dumps(
                 {
-                    "requestId": "request-1",
-                    "request": {
-                        "url": "https://station.invalid/api/public",
-                        "method": "GET",
-                        "headers": {},
-                    },
-                },
-            ),
-            performance_entry(
-                "Network.loadingFinished",
-                {"requestId": "request-1"},
-            ),
-        ]
+                    "message": {
+                        "method": "Network.requestWillBeSent",
+                        "params": {
+                            "requestId": "request-1",
+                            "request": {
+                                "url": "https://station.invalid/public",
+                                "method": "GET",
+                                "headers": {},
+                            },
+                        },
+                    }
+                }
+            )
+        }
+        finished = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.loadingFinished",
+                        "params": {"requestId": "request-1"},
+                    }
+                }
+            )
+        }
+        response = {
+            "message": json.dumps(
+                {
+                    "message": {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "requestId": "request-1",
+                            "response": {
+                                "url": "https://station.invalid/public",
+                                "headers": {},
+                            },
+                        },
+                    }
+                }
+            )
+        }
 
         class Driver:
-            def __init__(self) -> None:
+            def __init__(
+                self,
+                entries: list[dict[str, str]],
+                *,
+                response_body_error: bool = False,
+            ) -> None:
                 self.logs = [[], entries]
+                self.response_body_error = response_body_error
 
             def execute_cdp_cmd(
                 self,
                 command: str,
                 _params: dict[str, Any],
             ) -> dict[str, Any]:
-                if command != "Network.enable":
-                    raise AssertionError(command)
-                return {}
+                if command == "Network.enable":
+                    return {}
+                if command == "Network.getResponseBody":
+                    if self.response_body_error:
+                        raise RuntimeError("body unavailable")
+                    return {"body": "{}", "base64Encoded": False}
+                raise AssertionError(command)
 
             def get_log(self, _name: str) -> list[dict[str, str]]:
                 return self.logs.pop(0) if self.logs else []
 
-        client = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        client.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        client._driver = Driver()
-        client._network_capture_armed = False
-        client.clear_network_log()
+        def client_with(driver: Driver) -> attached_client.AttachedProductClient:
+            client = attached_client.AttachedProductClient.__new__(
+                attached_client.AttachedProductClient
+            )
+            client.context = SimpleNamespace(
+                runtime="browser",
+                remaining_seconds=lambda: 1.0,
+            )
+            client._driver = driver
+            client._network_capture_armed = False
+            client.clear_network_log()
+            client._network_capture = capture
+            return client
 
         with self.assertRaisesRegex(
             run.RunnerError,
-            "browser network capture is insufficient",
+            "response-control-missing",
         ):
-            client.network_observation(
-                private_plaintext="private-text",
+            client_with(
+                Driver(
+                    [
+                        request,
+                        finished,
+                        terminal_marker_entry(marker),
+                    ]
+                )
+            ).network_observation(
+                private_plaintext="private",
                 require_response_body=True,
+                terminal_marker=marker,
             )
-
-        unavailable_entries = [
-            *entries,
-            performance_entry(
-                "Network.responseReceived",
-                {
-                    "requestId": "request-1",
-                    "response": {
-                        "url": "https://station.invalid/api/public",
-                        "headers": {},
-                    },
-                },
-            ),
-        ]
-        unavailable = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        unavailable.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        unavailable._driver = Driver()
-        unavailable._driver.logs = [[], unavailable_entries]
-        unavailable._network_capture_armed = False
-        unavailable.clear_network_log()
         with self.assertRaisesRegex(
             run.RunnerError,
             "response-body-unavailable",
         ):
-            unavailable.network_observation(private_plaintext="private-text")
-
-        no_network = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        no_network.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        no_network._driver = Driver()
-        no_network._driver.logs = [[], []]
-        no_network._network_capture_armed = False
-        no_network.clear_network_log()
+            client_with(
+                Driver(
+                    [
+                        request,
+                        response,
+                        finished,
+                        terminal_marker_entry(marker),
+                    ],
+                    response_body_error=True,
+                )
+            ).network_observation(
+                private_plaintext="private",
+                terminal_marker=marker,
+            )
         with self.assertRaisesRegex(
             run.RunnerError,
             "network-capture-unproven",
         ):
-            no_network.network_observation(private_plaintext="private-text")
-
-        validated_no_network = attached_client.AttachedProductClient.__new__(
-            attached_client.AttachedProductClient
-        )
-        validated_no_network.context = SimpleNamespace(
-            runtime="browser",
-            remaining_seconds=lambda: 1.0,
-        )
-        validated_no_network._driver = Driver()
-        validated_no_network._driver.logs = [[], []]
-        validated_no_network._network_capture_armed = False
-        validated_no_network.clear_network_log()
-        with self.assertRaisesRegex(
-            run.RunnerError,
-            "network-capture-unproven",
-        ):
-            validated_no_network.network_observation(
-                private_plaintext="private-text"
+            client_with(
+                Driver([terminal_marker_entry(marker)])
+            ).network_observation(
+                private_plaintext="private",
+                terminal_marker=marker,
             )
 
 

@@ -1,0 +1,64 @@
+{
+  "id": "chat-rich-media-recorded-voice",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/attachment.proto",
+    "packages/messaging-core/src/codec/private_content.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/components/chat/AttachmentItem.tsx",
+    "apps/desktop/src/components/chat/ChatComposer.tsx",
+    "apps/desktop/src/components/chat/composer/**",
+    "apps/desktop/src/services/im-service*.ts",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "packages/client-chat-core/src/index.ts",
+    "packages/prototypes/desktop/features/social-chat/**",
+    "tooling/acceptance/fixtures/chat_attachment_fault_proxy.py",
+    "tooling/acceptance/gates/chat/lifecycle_rich_voice*.py"
+  ],
+  "truth_sources": [
+    "AttachmentPlaintextMetadata inside encrypted message private content",
+    "Device Messaging Engine SQLCipher attachment draft and projection rows",
+    "verified Engine-owned attachment cache",
+    "Native Desktop Chat composer and voice playback surfaces"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "selector": "[data-chat-attachment-draft]"},
+    {"type": "native-desktop", "selector": "[data-chat-screenshot-capture]"},
+    {"type": "native-desktop", "selector": "[data-chat-voice-recording]"},
+    {"type": "native-desktop", "selector": "[data-chat-voice-draft=\"preview\"]"},
+    {"type": "native-desktop", "selector": "[data-chat-voice-note=\"true\"]"},
+    {"type": "native-desktop", "selector": "[data-chat-voice-seek]"},
+    {"type": "native-desktop", "selector": "[data-chat-voice-retry]"}
+  ],
+  "required_gates": [
+    "proto-build",
+    "messaging-platform-contract",
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-lifecycle-rich-voice-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "voice-note kind and duration remain inside encrypted attachment plaintext metadata",
+      "Desktop and Mobile persistence round-trip voice-note kind and duration without exposing them in the Station-visible encrypted object descriptor",
+      "only byte-verified Engine cache paths are returned for playback",
+      "attachment upload and download retry retain durable transfer identity"
+    ],
+    "visible": [
+      "screenshot cancellation and confirmation preserve native window and renderer geometry",
+      "recording exposes permission, duration, cancel, stop, preview, discard, and explicit send states",
+      "receiver playback exposes persisted duration, progress, seek, pause, terminal failure, and retry",
+      "attachment and voice bytes remain identical across sender, receiver, retry, and restart"
+    ]
+  },
+  "negative": [
+    "Station-visible encrypted object descriptors must not contain voice duration or content kind",
+    "stopping a recording must not send before local preview confirmation",
+    "a resumable attachment transfer must not be represented as live voice",
+    "unverified ciphertext or a missing cache file must not be exposed to the media element",
+    "compile, unit, API-only, or screenshot-only evidence cannot prove CHAT-J03"
+  ]
+}

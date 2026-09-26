@@ -1696,6 +1696,47 @@ pub struct SocialGetTimelineInput {
     pub sort: Option<String>,
 }
 
+impl SocialGetTimelineInput {
+    pub fn station_timeline_type(&self) -> Option<&'static str> {
+        match self.r#type.as_str() {
+            "PUBLIC" | "TIMELINE_PUBLIC" => Some("TIMELINE_PUBLIC"),
+            "HOME" | "TIMELINE_HOME" => Some("TIMELINE_HOME"),
+            "USER" | "TIMELINE_USER" => Some("TIMELINE_USER"),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod social_timeline_input_tests {
+    use super::SocialGetTimelineInput;
+
+    fn input(value: &str) -> SocialGetTimelineInput {
+        SocialGetTimelineInput {
+            r#type: value.to_string(),
+            cursor: None,
+            limit: None,
+            sort: None,
+        }
+    }
+
+    #[test]
+    fn maps_client_timeline_names_to_canonical_proto_names() {
+        assert_eq!(
+            input("PUBLIC").station_timeline_type(),
+            Some("TIMELINE_PUBLIC")
+        );
+        assert_eq!(input("HOME").station_timeline_type(), Some("TIMELINE_HOME"));
+        assert_eq!(input("USER").station_timeline_type(), Some("TIMELINE_USER"));
+    }
+
+    #[test]
+    fn rejects_unknown_timeline_names() {
+        assert_eq!(input("public").station_timeline_type(), None);
+        assert_eq!(input("").station_timeline_type(), None);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialSyncMomentsProjectionInput {
     #[serde(default)]
@@ -1810,6 +1851,13 @@ pub struct SocialGetFollowingInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetRelationshipInput {
     pub target_actor_ptid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialRelationshipMutationInput {
+    pub target_actor_ptid: String,
+    pub target_home_station_peer_id: String,
+    pub observed_revision: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

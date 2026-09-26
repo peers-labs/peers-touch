@@ -11,18 +11,13 @@ import (
 )
 
 // TimelineService composes the multi-source HOME timeline plus the
-// simpler USER and PUBLIC variants. The HOME merge interleaves five
+// simpler USER and PUBLIC variants. The HOME merge interleaves three
 // independent sources by `created_at DESC`:
 //
 //  1. self-public (the viewer's own public posts)
-//  2. self-private (the viewer's own private posts; SELF + FOLLOWERS
-//     + CIRCLE + GROUP + CUSTOM_*)
-//  3. followed-public (public posts authored by people the viewer
+//  2. followed-public (public posts authored by people the viewer
 //     follows)
-//  4. followed-followers-private (FOLLOWERS-audience posts authored
-//     by people the viewer follows)
-//  5. circle-private (CIRCLE posts targeting circles the viewer is in)
-//  6. group-private (GROUP posts targeting groups the viewer is in)
+//  3. secure-content deliveries already admitted for the viewer
 //
 // Each source uses its own cursor (encapsulated in
 // `domain.MultiSourceCursor`); a source whose page is exhausted is
@@ -351,11 +346,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 			return nil, fmt.Errorf("invalid cursor: %w", err)
 		}
 		mc.SetSource("self_public", &single)
-		mc.SetSource("self_private", &single)
 		mc.SetSource("followed_public", &single)
-		mc.SetSource("followed_followers", &single)
-		mc.SetSource("circles", &single)
-		mc.SetSource("groups", &single)
 	}
 
 	viewer, err := buildViewer(ctx, viewerPTID, s.repos, s.groups)
@@ -367,14 +358,6 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	for ptid := range viewer.Following {
 		followingPTIDs = append(followingPTIDs, ptid)
 	}
-	circleIDs := make([]uint64, 0, len(viewer.MemberOfCircles))
-	for id := range viewer.MemberOfCircles {
-		circleIDs = append(circleIDs, id)
-	}
-	groupIDs := make([]uint64, 0, len(viewer.MemberOfGroups))
-	for id := range viewer.MemberOfGroups {
-		groupIDs = append(groupIDs, id)
-	}
 
 	pageBudget := limit + 1
 
@@ -382,23 +365,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	if err != nil {
 		return nil, err
 	}
-	srcSelfPrivate, err := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, viewerPTID, viewerPTID, mc.Source("self_private"), pageBudget)
-	if err != nil {
-		return nil, err
-	}
 	srcFollowedPublic, err := s.repos.PublicPosts.ListPublicByAuthors(ctx, followingPTIDs, mc.Source("followed_public"), pageBudget)
-	if err != nil {
-		return nil, err
-	}
-	srcFollowedFollowers, err := s.repos.PrivatePosts.ListByFollowingForViewer(ctx, viewerPTID, followingPTIDs, mc.Source("followed_followers"), pageBudget)
-	if err != nil {
-		return nil, err
-	}
-	srcCircles, err := s.repos.PrivatePosts.ListByCirclesForViewer(ctx, viewerPTID, circleIDs, mc.Source("circles"), pageBudget)
-	if err != nil {
-		return nil, err
-	}
-	srcGroups, err := s.repos.PrivatePosts.ListByGroupsForViewer(ctx, viewerPTID, groupIDs, mc.Source("groups"), pageBudget)
 	if err != nil {
 		return nil, err
 	}
@@ -409,11 +376,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	}
 	sources := []src{
 		{"self_public", srcSelfPublic},
-		{"self_private", srcSelfPrivate},
 		{"followed_public", srcFollowedPublic},
-		{"followed_followers", srcFollowedFollowers},
-		{"circles", srcCircles},
-		{"groups", srcGroups},
 	}
 
 	merged := make([]*domain.Post, 0, pageBudget)
@@ -473,7 +436,7 @@ func (s *TimelineService) getLegacyHomeTimeline(ctx context.Context, cursor stri
 	}
 
 	nextMC := domain.MultiSourceCursor{}
-	for _, name := range []string{"self_public", "self_private", "followed_public", "followed_followers", "circles", "groups"} {
+	for _, name := range []string{"self_public", "followed_public"} {
 		if last, ok := srcLastScanned[name]; ok {
 			cur := domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}
 			nextMC.SetSource(name, &cur)

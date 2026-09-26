@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,30 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_main_rejects_before_loading_evidence_without_a_session(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["acceptance-gap-detect.py"],
+        ), patch.object(
+            MODULE,
+            "require_acceptance_admission",
+            side_effect=MODULE.AcceptanceAdmissionError(
+                "ACCEPTANCE_SESSION_REQUIRED"
+            ),
+        ) as admission, patch.object(
+            sys,
+            "stderr",
+        ):
+            exit_code = MODULE.main()
+
+        self.assertEqual(exit_code, 2)
+        admission.assert_called_once_with(
+            MODULE.REPO_ROOT,
+            None,
+            "gap",
+        )
+
     def test_explicit_changed_paths_define_exact_scope(self) -> None:
         with patch.object(
             MODULE,
@@ -348,6 +373,19 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         gap_types = {item["gapType"] for item in report["gaps"]}
         self.assertIn("RECEIVER_PROOF_GATE_NOT_SELECTED", gap_types)
         self.assertIn("REQUIRED_GATE_NOT_RUN", gap_types)
+
+    def test_rich_voice_gate_satisfies_receiver_proof_requirement(self) -> None:
+        gate_id = "chat-lifecycle-rich-voice-e2e"
+        report = MODULE.detect(
+            claim="Recorded voice receiver behavior is covered",
+            paths=["apps/desktop/src/store/socialProjection.ts"],
+            plan={"selected_gates": [gate_id]},
+            run={"results": [proven_result(gate_id)]},
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
 
     def test_provisioned_gate_requires_ready_manifest(self) -> None:
         gate_id = "chat-native-two-client-e2e"

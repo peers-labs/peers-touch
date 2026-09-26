@@ -115,6 +115,7 @@ class SourceSyncRequest:
         source_root: Path,
         environments_dir: Path,
         central_environment_path: Path,
+        environment_path: Path | None = None,
         branch: str = "",
         require_clean: bool = False,
         remote_platform: RemotePlatform = RemotePlatform.POSIX,
@@ -124,12 +125,25 @@ class SourceSyncRequest:
             raise ProvisioningError(
                 f"source-sync environment name is not canonical: {environment_name!r}"
             )
-        environment_path = environments_dir / f"{environment_name}.env"
-        values = load_env_file(environment_path)
+        selected_environment_path = (
+            environment_path
+            if environment_path is not None
+            else environments_dir / f"{environment_name}.env"
+        )
+        if selected_environment_path.name not in (
+            f"{environment_name}.env",
+            f"{environment_name}.env.example",
+        ):
+            raise ProvisioningError(
+                "source-sync environment file does not match environment "
+                f"{environment_name!r}: {selected_environment_path}"
+            )
+        values = load_env_file(selected_environment_path)
         source_mode = values.get("PT_DEPLOY_SOURCE", "central").strip()
         if source_mode not in ("direct", "central", "github", "local"):
             raise ProvisioningError(
-                f"unsupported PT_DEPLOY_SOURCE {source_mode!r} in {environment_path}"
+                "unsupported PT_DEPLOY_SOURCE "
+                f"{source_mode!r} in {selected_environment_path}"
             )
         selected_branch = (
             branch.strip()
@@ -161,10 +175,14 @@ class SourceSyncRequest:
             environment_name=environment_name,
             source_root=source_root.resolve(),
             branch=selected_branch,
-            host=_required(values, "PT_DEPLOY_HOST", environment_path),
-            user=_required(values, "PT_DEPLOY_USER", environment_path),
+            host=_required(values, "PT_DEPLOY_HOST", selected_environment_path),
+            user=_required(values, "PT_DEPLOY_USER", selected_environment_path),
             deploy_path=_validate_relative_path(
-                _required(values, "PT_DEPLOY_PATH", environment_path),
+                _required(
+                    values,
+                    "PT_DEPLOY_PATH",
+                    selected_environment_path,
+                ),
                 "PT_DEPLOY_PATH",
             ),
             source_mode=source_mode,

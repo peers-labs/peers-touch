@@ -295,6 +295,55 @@ func (AttachmentTransferErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{4}
 }
 
+type AttachmentContentKind int32
+
+const (
+	AttachmentContentKind_ATTACHMENT_CONTENT_KIND_UNSPECIFIED AttachmentContentKind = 0
+	AttachmentContentKind_ATTACHMENT_CONTENT_KIND_FILE        AttachmentContentKind = 1
+	AttachmentContentKind_ATTACHMENT_CONTENT_KIND_VOICE_NOTE  AttachmentContentKind = 2
+)
+
+// Enum value maps for AttachmentContentKind.
+var (
+	AttachmentContentKind_name = map[int32]string{
+		0: "ATTACHMENT_CONTENT_KIND_UNSPECIFIED",
+		1: "ATTACHMENT_CONTENT_KIND_FILE",
+		2: "ATTACHMENT_CONTENT_KIND_VOICE_NOTE",
+	}
+	AttachmentContentKind_value = map[string]int32{
+		"ATTACHMENT_CONTENT_KIND_UNSPECIFIED": 0,
+		"ATTACHMENT_CONTENT_KIND_FILE":        1,
+		"ATTACHMENT_CONTENT_KIND_VOICE_NOTE":  2,
+	}
+)
+
+func (x AttachmentContentKind) Enum() *AttachmentContentKind {
+	p := new(AttachmentContentKind)
+	*p = x
+	return p
+}
+
+func (x AttachmentContentKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AttachmentContentKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_chat_attachment_proto_enumTypes[5].Descriptor()
+}
+
+func (AttachmentContentKind) Type() protoreflect.EnumType {
+	return &file_domain_chat_attachment_proto_enumTypes[5]
+}
+
+func (x AttachmentContentKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AttachmentContentKind.Descriptor instead.
+func (AttachmentContentKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_chat_attachment_proto_rawDescGZIP(), []int{5}
+}
+
 type AttachmentTransferError struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	Code          AttachmentTransferErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=peers_touch.model.chat.v1.AttachmentTransferErrorCode" json:"code,omitempty"`
@@ -654,7 +703,9 @@ type AttachmentPlaintextMetadata struct {
 	ObjectKey       []byte                     `protobuf:"bytes,6,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
 	BaseNonce       []byte                     `protobuf:"bytes,7,opt,name=base_nonce,json=baseNonce,proto3" json:"base_nonce,omitempty"`
 	Object          *EncryptedObjectDescriptor `protobuf:"bytes,8,opt,name=object,proto3" json:"object,omitempty"`
-	VoiceNote       *VoiceNoteMetadata         `protobuf:"bytes,9,opt,name=voice_note,json=voiceNote,proto3" json:"voice_note,omitempty"`
+	ContentKind     AttachmentContentKind      `protobuf:"varint,9,opt,name=content_kind,json=contentKind,proto3,enum=peers_touch.model.chat.v1.AttachmentContentKind" json:"content_kind,omitempty"`
+	DurationMs      uint32                     `protobuf:"varint,10,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	VoiceNote       *VoiceNoteMetadata         `protobuf:"bytes,11,opt,name=voice_note,json=voiceNote,proto3" json:"voice_note,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -743,6 +794,20 @@ func (x *AttachmentPlaintextMetadata) GetObject() *EncryptedObjectDescriptor {
 		return x.Object
 	}
 	return nil
+}
+
+func (x *AttachmentPlaintextMetadata) GetContentKind() AttachmentContentKind {
+	if x != nil {
+		return x.ContentKind
+	}
+	return AttachmentContentKind_ATTACHMENT_CONTENT_KIND_UNSPECIFIED
+}
+
+func (x *AttachmentPlaintextMetadata) GetDurationMs() uint32 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
 }
 
 func (x *AttachmentPlaintextMetadata) GetVoiceNote() *VoiceNoteMetadata {
@@ -2431,7 +2496,7 @@ const file_domain_chat_attachment_proto_rawDesc = "" +
 	"\vduration_ms\x18\x01 \x01(\rR\n" +
 	"durationMs\x12\x14\n" +
 	"\x05codec\x18\x02 \x01(\tR\x05codec\x12\x1a\n" +
-	"\bwaveform\x18\x03 \x03(\rR\bwaveform\"\xa6\x03\n" +
+	"\bwaveform\x18\x03 \x03(\rR\bwaveform\"\x9c\x04\n" +
 	"\x1bAttachmentPlaintextMetadata\x12#\n" +
 	"\rattachment_id\x18\x01 \x01(\tR\fattachmentId\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
@@ -2442,9 +2507,13 @@ const file_domain_chat_attachment_proto_rawDesc = "" +
 	"object_key\x18\x06 \x01(\fR\tobjectKey\x12\x1d\n" +
 	"\n" +
 	"base_nonce\x18\a \x01(\fR\tbaseNonce\x12L\n" +
-	"\x06object\x18\b \x01(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\x06object\x12K\n" +
+	"\x06object\x18\b \x01(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\x06object\x12S\n" +
+	"\fcontent_kind\x18\t \x01(\x0e20.peers_touch.model.chat.v1.AttachmentContentKindR\vcontentKind\x12\x1f\n" +
+	"\vduration_ms\x18\n" +
+	" \x01(\rR\n" +
+	"durationMs\x12K\n" +
 	"\n" +
-	"voice_note\x18\t \x01(\v2,.peers_touch.model.chat.v1.VoiceNoteMetadataR\tvoiceNote\"\xac\x01\n" +
+	"voice_note\x18\v \x01(\v2,.peers_touch.model.chat.v1.VoiceNoteMetadataR\tvoiceNote\"\xac\x01\n" +
 	"\x15MessagePrivateContent\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12X\n" +
@@ -2608,7 +2677,11 @@ const file_domain_chat_attachment_proto_rawDesc = "" +
 	"/ATTACHMENT_TRANSFER_ERROR_CODE_INTEGRITY_FAILED\x10\x05\x12.\n" +
 	"*ATTACHMENT_TRANSFER_ERROR_CODE_NOT_GRANTED\x10\x06\x121\n" +
 	"-ATTACHMENT_TRANSFER_ERROR_CODE_QUOTA_EXCEEDED\x10\a\x12.\n" +
-	"*ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER\x10\bBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"*ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER\x10\b*\x8a\x01\n" +
+	"\x15AttachmentContentKind\x12'\n" +
+	"#ATTACHMENT_CONTENT_KIND_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cATTACHMENT_CONTENT_KIND_FILE\x10\x01\x12&\n" +
+	"\"ATTACHMENT_CONTENT_KIND_VOICE_NOTE\x10\x02BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_attachment_proto_rawDescOnce sync.Once
@@ -2622,7 +2695,7 @@ func file_domain_chat_attachment_proto_rawDescGZIP() []byte {
 	return file_domain_chat_attachment_proto_rawDescData
 }
 
-var file_domain_chat_attachment_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_domain_chat_attachment_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_domain_chat_attachment_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_domain_chat_attachment_proto_goTypes = []any{
 	(AttachmentEncryptionSuite)(0),                                // 0: peers_touch.model.chat.v1.AttachmentEncryptionSuite
@@ -2630,80 +2703,82 @@ var file_domain_chat_attachment_proto_goTypes = []any{
 	(AttachmentTransferDirection)(0),                              // 2: peers_touch.model.chat.v1.AttachmentTransferDirection
 	(AttachmentTransferState)(0),                                  // 3: peers_touch.model.chat.v1.AttachmentTransferState
 	(AttachmentTransferErrorCode)(0),                              // 4: peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	(*AttachmentTransferError)(nil),                               // 5: peers_touch.model.chat.v1.AttachmentTransferError
-	(*EncryptedObjectUploadSpec)(nil),                             // 6: peers_touch.model.chat.v1.EncryptedObjectUploadSpec
-	(*EncryptedObjectDescriptor)(nil),                             // 7: peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	(*VoiceNoteMetadata)(nil),                                     // 8: peers_touch.model.chat.v1.VoiceNoteMetadata
-	(*AttachmentPlaintextMetadata)(nil),                           // 9: peers_touch.model.chat.v1.AttachmentPlaintextMetadata
-	(*MessagePrivateContent)(nil),                                 // 10: peers_touch.model.chat.v1.MessagePrivateContent
-	(*BeginAttachmentUploadRequest)(nil),                          // 11: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
-	(*BeginAttachmentUploadResponse)(nil),                         // 12: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
-	(*GetAttachmentUploadRequest)(nil),                            // 13: peers_touch.model.chat.v1.GetAttachmentUploadRequest
-	(*GetAttachmentUploadResponse)(nil),                           // 14: peers_touch.model.chat.v1.GetAttachmentUploadResponse
-	(*PutAttachmentChunkRequest)(nil),                             // 15: peers_touch.model.chat.v1.PutAttachmentChunkRequest
-	(*PutAttachmentChunkResponse)(nil),                            // 16: peers_touch.model.chat.v1.PutAttachmentChunkResponse
-	(*CompleteAttachmentUploadRequest)(nil),                       // 17: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
-	(*CompleteAttachmentUploadResponse)(nil),                      // 18: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
-	(*CancelAttachmentUploadRequest)(nil),                         // 19: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
-	(*CancelAttachmentUploadResponse)(nil),                        // 20: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
-	(*GetAttachmentObjectRequest)(nil),                            // 21: peers_touch.model.chat.v1.GetAttachmentObjectRequest
-	(*GetAttachmentObjectResponse)(nil),                           // 22: peers_touch.model.chat.v1.GetAttachmentObjectResponse
-	(*GetFederatedConversationAttachmentObjectRequest)(nil),       // 23: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest
-	(*GetFederatedConversationAttachmentObjectResponse)(nil),      // 24: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse
-	(*GetFederatedConversationAttachmentUploadRequest)(nil),       // 25: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest
-	(*GetFederatedConversationAttachmentUploadResponse)(nil),      // 26: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse
-	(*BeginFederatedConversationAttachmentUploadRequest)(nil),     // 27: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest
-	(*BeginFederatedConversationAttachmentUploadResponse)(nil),    // 28: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse
-	(*PutFederatedConversationAttachmentChunkRequest)(nil),        // 29: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest
-	(*PutFederatedConversationAttachmentChunkResponse)(nil),       // 30: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse
-	(*CompleteFederatedConversationAttachmentUploadRequest)(nil),  // 31: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest
-	(*CompleteFederatedConversationAttachmentUploadResponse)(nil), // 32: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse
-	(*CancelFederatedConversationAttachmentUploadRequest)(nil),    // 33: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest
-	(*CancelFederatedConversationAttachmentUploadResponse)(nil),   // 34: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse
-	(*AttachmentTransferCheckpoint)(nil),                          // 35: peers_touch.model.chat.v1.AttachmentTransferCheckpoint
-	(*durationpb.Duration)(nil),                                   // 36: google.protobuf.Duration
-	(*CryptoEndpoint)(nil),                                        // 37: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),                                 // 38: google.protobuf.Timestamp
+	(AttachmentContentKind)(0),                                    // 5: peers_touch.model.chat.v1.AttachmentContentKind
+	(*AttachmentTransferError)(nil),                               // 6: peers_touch.model.chat.v1.AttachmentTransferError
+	(*EncryptedObjectUploadSpec)(nil),                             // 7: peers_touch.model.chat.v1.EncryptedObjectUploadSpec
+	(*EncryptedObjectDescriptor)(nil),                             // 8: peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	(*VoiceNoteMetadata)(nil),                                     // 9: peers_touch.model.chat.v1.VoiceNoteMetadata
+	(*AttachmentPlaintextMetadata)(nil),                           // 10: peers_touch.model.chat.v1.AttachmentPlaintextMetadata
+	(*MessagePrivateContent)(nil),                                 // 11: peers_touch.model.chat.v1.MessagePrivateContent
+	(*BeginAttachmentUploadRequest)(nil),                          // 12: peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+	(*BeginAttachmentUploadResponse)(nil),                         // 13: peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+	(*GetAttachmentUploadRequest)(nil),                            // 14: peers_touch.model.chat.v1.GetAttachmentUploadRequest
+	(*GetAttachmentUploadResponse)(nil),                           // 15: peers_touch.model.chat.v1.GetAttachmentUploadResponse
+	(*PutAttachmentChunkRequest)(nil),                             // 16: peers_touch.model.chat.v1.PutAttachmentChunkRequest
+	(*PutAttachmentChunkResponse)(nil),                            // 17: peers_touch.model.chat.v1.PutAttachmentChunkResponse
+	(*CompleteAttachmentUploadRequest)(nil),                       // 18: peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+	(*CompleteAttachmentUploadResponse)(nil),                      // 19: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+	(*CancelAttachmentUploadRequest)(nil),                         // 20: peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+	(*CancelAttachmentUploadResponse)(nil),                        // 21: peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+	(*GetAttachmentObjectRequest)(nil),                            // 22: peers_touch.model.chat.v1.GetAttachmentObjectRequest
+	(*GetAttachmentObjectResponse)(nil),                           // 23: peers_touch.model.chat.v1.GetAttachmentObjectResponse
+	(*GetFederatedConversationAttachmentObjectRequest)(nil),       // 24: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest
+	(*GetFederatedConversationAttachmentObjectResponse)(nil),      // 25: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse
+	(*GetFederatedConversationAttachmentUploadRequest)(nil),       // 26: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest
+	(*GetFederatedConversationAttachmentUploadResponse)(nil),      // 27: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse
+	(*BeginFederatedConversationAttachmentUploadRequest)(nil),     // 28: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest
+	(*BeginFederatedConversationAttachmentUploadResponse)(nil),    // 29: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse
+	(*PutFederatedConversationAttachmentChunkRequest)(nil),        // 30: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest
+	(*PutFederatedConversationAttachmentChunkResponse)(nil),       // 31: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse
+	(*CompleteFederatedConversationAttachmentUploadRequest)(nil),  // 32: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest
+	(*CompleteFederatedConversationAttachmentUploadResponse)(nil), // 33: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse
+	(*CancelFederatedConversationAttachmentUploadRequest)(nil),    // 34: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest
+	(*CancelFederatedConversationAttachmentUploadResponse)(nil),   // 35: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse
+	(*AttachmentTransferCheckpoint)(nil),                          // 36: peers_touch.model.chat.v1.AttachmentTransferCheckpoint
+	(*durationpb.Duration)(nil),                                   // 37: google.protobuf.Duration
+	(*CryptoEndpoint)(nil),                                        // 38: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                                 // 39: google.protobuf.Timestamp
 }
 var file_domain_chat_attachment_proto_depIdxs = []int32{
 	4,  // 0: peers_touch.model.chat.v1.AttachmentTransferError.code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	36, // 1: peers_touch.model.chat.v1.AttachmentTransferError.retry_after:type_name -> google.protobuf.Duration
+	37, // 1: peers_touch.model.chat.v1.AttachmentTransferError.retry_after:type_name -> google.protobuf.Duration
 	0,  // 2: peers_touch.model.chat.v1.EncryptedObjectUploadSpec.encryption_suite:type_name -> peers_touch.model.chat.v1.AttachmentEncryptionSuite
 	1,  // 3: peers_touch.model.chat.v1.EncryptedObjectUploadSpec.nonce_strategy:type_name -> peers_touch.model.chat.v1.AttachmentNonceStrategy
 	0,  // 4: peers_touch.model.chat.v1.EncryptedObjectDescriptor.encryption_suite:type_name -> peers_touch.model.chat.v1.AttachmentEncryptionSuite
 	1,  // 5: peers_touch.model.chat.v1.EncryptedObjectDescriptor.nonce_strategy:type_name -> peers_touch.model.chat.v1.AttachmentNonceStrategy
-	7,  // 6: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	8,  // 7: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.voice_note:type_name -> peers_touch.model.chat.v1.VoiceNoteMetadata
-	9,  // 8: peers_touch.model.chat.v1.MessagePrivateContent.attachments:type_name -> peers_touch.model.chat.v1.AttachmentPlaintextMetadata
-	37, // 9: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.uploader:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	6,  // 10: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectUploadSpec
-	38, // 11: peers_touch.model.chat.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	3,  // 12: peers_touch.model.chat.v1.GetAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
-	38, // 13: peers_touch.model.chat.v1.GetAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
-	7,  // 14: peers_touch.model.chat.v1.GetAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	7,  // 15: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	3,  // 16: peers_touch.model.chat.v1.CancelAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
-	7,  // 17: peers_touch.model.chat.v1.GetAttachmentObjectResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	21, // 18: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectRequest
-	22, // 19: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectResponse
-	13, // 20: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadRequest
-	14, // 21: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadResponse
-	11, // 22: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadRequest
-	12, // 23: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadResponse
-	15, // 24: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest.request:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkRequest
-	16, // 25: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse.response:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkResponse
-	17, // 26: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
-	18, // 27: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
-	19, // 28: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadRequest
-	20, // 29: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadResponse
-	2,  // 30: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.direction:type_name -> peers_touch.model.chat.v1.AttachmentTransferDirection
-	3,  // 31: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
-	4,  // 32: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.last_error_code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	8,  // 6: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	5,  // 7: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.content_kind:type_name -> peers_touch.model.chat.v1.AttachmentContentKind
+	9,  // 8: peers_touch.model.chat.v1.AttachmentPlaintextMetadata.voice_note:type_name -> peers_touch.model.chat.v1.VoiceNoteMetadata
+	10, // 9: peers_touch.model.chat.v1.MessagePrivateContent.attachments:type_name -> peers_touch.model.chat.v1.AttachmentPlaintextMetadata
+	38, // 10: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.uploader:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	7,  // 11: peers_touch.model.chat.v1.BeginAttachmentUploadRequest.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectUploadSpec
+	39, // 12: peers_touch.model.chat.v1.BeginAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 13: peers_touch.model.chat.v1.GetAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
+	39, // 14: peers_touch.model.chat.v1.GetAttachmentUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	8,  // 15: peers_touch.model.chat.v1.GetAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	8,  // 16: peers_touch.model.chat.v1.CompleteAttachmentUploadResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	3,  // 17: peers_touch.model.chat.v1.CancelAttachmentUploadResponse.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
+	8,  // 18: peers_touch.model.chat.v1.GetAttachmentObjectResponse.object:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	22, // 19: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectRequest
+	23, // 20: peers_touch.model.chat.v1.GetFederatedConversationAttachmentObjectResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentObjectResponse
+	14, // 21: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadRequest
+	15, // 22: peers_touch.model.chat.v1.GetFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.GetAttachmentUploadResponse
+	12, // 23: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadRequest
+	13, // 24: peers_touch.model.chat.v1.BeginFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.BeginAttachmentUploadResponse
+	16, // 25: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkRequest.request:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkRequest
+	17, // 26: peers_touch.model.chat.v1.PutFederatedConversationAttachmentChunkResponse.response:type_name -> peers_touch.model.chat.v1.PutAttachmentChunkResponse
+	18, // 27: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadRequest
+	19, // 28: peers_touch.model.chat.v1.CompleteFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CompleteAttachmentUploadResponse
+	20, // 29: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadRequest.request:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadRequest
+	21, // 30: peers_touch.model.chat.v1.CancelFederatedConversationAttachmentUploadResponse.response:type_name -> peers_touch.model.chat.v1.CancelAttachmentUploadResponse
+	2,  // 31: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.direction:type_name -> peers_touch.model.chat.v1.AttachmentTransferDirection
+	3,  // 32: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.state:type_name -> peers_touch.model.chat.v1.AttachmentTransferState
+	4,  // 33: peers_touch.model.chat.v1.AttachmentTransferCheckpoint.last_error_code:type_name -> peers_touch.model.chat.v1.AttachmentTransferErrorCode
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_attachment_proto_init() }
@@ -2717,7 +2792,7 @@ func file_domain_chat_attachment_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_attachment_proto_rawDesc), len(file_domain_chat_attachment_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,

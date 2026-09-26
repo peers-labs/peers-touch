@@ -3188,6 +3188,706 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         return payload
 
 
+class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
+    """Provision an explicit isolated client set outside catalog Gate runs."""
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        clients: Sequence[SimulatorClientSpec],
+        executor: CommandExecutor | None = None,
+        repo_root: Path = REPO_ROOT,
+        runtime_base: Path | None = None,
+        runtime_cache_base: Path | None = None,
+        contract_path: Path | None = None,
+        artifact_fetcher: Any | None = None,
+        status_reader: Any | None = None,
+        sleep: Any = time.sleep,
+        monotonic: Any = time.monotonic,
+    ) -> None:
+        super().__init__(
+            contract,
+            executor=executor,
+            repo_root=repo_root,
+            runtime_base=runtime_base,
+            runtime_cache_base=runtime_cache_base,
+            contract_path=contract_path,
+            artifact_fetcher=artifact_fetcher,
+            status_reader=status_reader,
+            sleep=sleep,
+            monotonic=monotonic,
+        )
+        selected = tuple(clients)
+        if not selected:
+            raise ProvisioningError(
+                "Selected Mobile simulator runtime requires clients"
+            )
+        client_ids = {client.id for client in selected}
+        storage_roots = {client.storage_root for client in selected}
+        if (
+            len(client_ids) != len(selected)
+            or len(storage_roots) != len(selected)
+            or any(
+                client.platform not in EXPECTED_DRIVERS
+                or client.runtime
+                != (
+                    "tauri-ios-simulator"
+                    if client.platform == "ios"
+                    else "tauri-android-emulator"
+                )
+                or len(client.port_roles) != 3
+                for client in selected
+            )
+        ):
+            raise ProvisioningError(
+                "Selected Mobile simulator runtime clients are invalid"
+            )
+        self.selected_clients = selected
+
+    def provision(self, gate_id: str) -> RuntimeManifest:
+        self._manifest = self._new_base_manifest(gate_id)
+        try:
+            if (
+                self._manifest.source_commit == "unknown"
+                or self._manifest.workspace_digest == "unknown"
+            ):
+                raise BlockedError(
+                    reason="Mobile simulator source identity is unavailable",
+                    resource="mobile-simulator:source-identity",
+                )
+            spec = load_mobile_simulator_spec(self.contract_path)
+            command_env = {**os.environ, **spec.build_environment}
+            platforms = tuple(
+                sorted({client.platform for client in self.selected_clients})
+            )
+            if "android" in platforms:
+                command_env["NDK_HOME"] = _resolve_android_ndk_home(
+                    command_env
+                )
+                command_env["TARGET_RANLIB"] = _resolve_android_ndk_tool(
+                    command_env["NDK_HOME"],
+                    "llvm-ranlib",
+                )
+
+            manifest = self._preflighted(
+                self._manifest,
+                profile_name="mobile-simulator",
+                slot=0,
+            )
+            owner = f"development:{gate_id}:{manifest.run_id}"
+            self.acquire_profile_lease("mobile-simulator", owner)
+
+            runtime_root = self.runtime_base / manifest.run_id
+            runtime_root.mkdir(parents=True, exist_ok=False)
+            self.register_cleanup(
+                "storage:mobile-simulator",
+                lambda: shutil.rmtree(runtime_root),
+            )
+            apple_assets_guard = _GeneratedAppleAssetsGuard(
+                self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH,
+                runtime_root / "source-backup" / "apple-assets",
+            )
+            self.register_cleanup(
+                "source:ios-web-assets",
+                apple_assets_guard.restore,
+            )
+            android_manifest_guard = (
+                _GeneratedAndroidManifestGuard(
+                    self.repo_root / ANDROID_MANIFEST_RELATIVE_PATH
+                )
+                if "android" in platforms
+                else None
+            )
+            if android_manifest_guard is not None:
+                self.register_cleanup(
+                    "source:android-manifest",
+                    android_manifest_guard.restore,
+                )
+
+            device_resources = self._provision_selected_devices(
+                spec,
+                command_env,
+                runtime_root,
+            )
+            first_ios = next(
+                (
+                    resource["device"]
+                    for resource in device_resources.values()
+                    if resource["platform"] == "ios"
+                ),
+                "",
+            )
+            substitutions = {
+                "ios_udid": str(first_ios),
+                "runtime_root": str(runtime_root),
+            }
+            for name in ("web", *platforms):
+                if name in spec.artifact_patterns:
+                    self._remove_artifact_matches(
+                        spec,
+                        name,
+                        runtime_root,
+                    )
+                    self.register_cleanup(
+                        f"build-artifact:{name}",
+                        lambda platform=name: self._remove_artifact_matches(
+                            spec,
+                            platform,
+                            runtime_root,
+                        ),
+                    )
+                command = tuple(
+                    item.replace(
+                        "{ios_udid}",
+                        substitutions["ios_udid"],
+                    ).replace(
+                        "{runtime_root}",
+                        substitutions["runtime_root"],
+                    )
+                    for item in spec.build_commands[name]
+                )
+                try:
+                    self._run_checked(
+                        command,
+                        env=command_env,
+                        timeout=1800,
+                        resource=f"mobile-simulator:build:{name}",
+                    )
+                    if name == "web":
+                        apple_assets_guard.stage(
+                            self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                        )
+                finally:
+                    if (
+                        name == "android"
+                        and android_manifest_guard is not None
+                    ):
+                        android_manifest_guard.restore()
+
+            applications = {
+                platform: self._stage_application(
+                    spec,
+                    platform,
+                    runtime_root,
+                )
+                for platform in platforms
+            }
+            for client in self.selected_clients:
+                resource = device_resources[client.id]
+                if client.platform == "ios":
+                    self._deploy_ios(
+                        str(resource["device"]),
+                        applications["ios"]["artifact"],
+                        spec.application_ids["ios"],
+                        command_env,
+                    )
+                else:
+                    self._deploy_android(
+                        str(resource["device"]),
+                        applications["android"]["artifact"],
+                        spec.application_ids["android"],
+                        command_env,
+                    )
+
+            chromedriver = None
+            if "android" in platforms:
+                first_android = next(
+                    resource
+                    for resource in device_resources.values()
+                    if resource["platform"] == "android"
+                )
+                chromedriver = self._prepare_chromedriver(
+                    spec.chromedriver,
+                    {
+                        "serial": str(first_android["device"]),
+                        "abi": str(first_android["abi"]),
+                    },
+                    command_env,
+                )
+
+            clients: list[ClientRuntime] = []
+            for client in self.selected_clients:
+                reservations = [
+                    _PortReservation() for _ in client.port_roles
+                ]
+                for role, reservation in zip(
+                    client.port_roles,
+                    reservations,
+                ):
+                    self.register_cleanup(
+                        f"port:{client.id}:{role}",
+                        reservation.release,
+                    )
+                storage_root = runtime_root / "clients" / client.id
+                storage_root.mkdir(parents=True, exist_ok=False)
+                ports = {
+                    role: reservation.port
+                    for role, reservation in zip(
+                        client.port_roles,
+                        reservations,
+                    )
+                }
+                for reservation in reservations:
+                    reservation.release()
+                clients.append(
+                    ClientRuntime(
+                        actor=client.role,
+                        runtime=client.runtime,
+                        worktree=str(self.repo_root),
+                        gateway_port=ports[client.port_roles[0]],
+                        renderer_port=ports[client.port_roles[1]],
+                        webdriver_port=ports[client.port_roles[2]],
+                        profile=client.id,
+                        storage_root=str(storage_root),
+                    )
+                )
+                device_resources[client.id].update(
+                    {
+                        "role": client.role,
+                        "runtime": client.runtime,
+                        "deviceRole": (
+                            "isolated-simulator"
+                            if client.platform == "ios"
+                            else "isolated-emulator"
+                        ),
+                        "profile": client.id,
+                        "storageRoot": str(storage_root),
+                        "ports": ports,
+                    }
+                )
+                if client.platform == "android":
+                    device_resources[client.id]["appiumCapabilities"] = {
+                        "appium:chromedriverExecutable": (
+                            chromedriver["executable"]
+                        ),
+                        "chromedriverExecutableReference": (
+                            chromedriver["executableReference"]
+                        ),
+                    }
+
+            driver_versions = self._discover_appium_drivers(
+                spec,
+                command_env,
+                platforms=platforms,
+            )
+            appium_url, appium_owned, appium_version = self._ready_appium(
+                spec,
+                command_env,
+                runtime_root,
+            )
+            manifest = dataclasses.replace(
+                manifest,
+                state=ProvisioningState.PROVISIONED,
+                clients=tuple(clients),
+                cleanup_resources=self.contract.cleanup.resources,
+            )
+            manifest = _with_simulator_resources(
+                manifest,
+                {
+                    "appium": {
+                        "serverUrl": appium_url,
+                        "owned": appium_owned,
+                        "serverVersion": appium_version,
+                        "expectedServerVersion": spec.appium_expected_version,
+                        "drivers": {
+                            platform: {
+                                "identity": spec.drivers[platform].identity,
+                                "automationName": (
+                                    spec.drivers[platform].automation_name
+                                ),
+                                "version": driver_versions[platform],
+                                "expectedVersion": (
+                                    spec.drivers[platform].expected_version
+                                ),
+                            }
+                            for platform in platforms
+                        },
+                    },
+                    **(
+                        {"chromedriver": dict(chromedriver)}
+                        if chromedriver is not None
+                        else {}
+                    ),
+                    "applications": applications,
+                    "clients": device_resources,
+                    "harness": {
+                        "namespace": spec.harness_namespace,
+                        "requiredActions": list(spec.harness_actions),
+                    },
+                    "proofScope": {
+                        "proves": [
+                            "selected isolated iOS Simulator and Android "
+                            "Emulator runtime clients",
+                            "owner-held Appium sessions and production actions",
+                        ],
+                        "doesNotProve": [
+                            "physical-device behavior",
+                            "formal Acceptance",
+                        ],
+                    },
+                },
+            )
+            self._manifest = manifest
+            return self._ready(manifest)
+        except (BlockedError, ProvisioningError, ValueError, OSError) as error:
+            blocked = (
+                error
+                if isinstance(error, BlockedError)
+                else BlockedError(
+                    reason=(
+                        "Selected Mobile simulator provisioning failed: "
+                        f"{error}"
+                    ),
+                    resource="mobile-simulator:provisioning",
+                )
+            )
+            return self._blocked(
+                self._manifest,
+                reason=blocked.reason,
+                resource=blocked.resource,
+            )
+
+    def create_appium_session(
+        self,
+        manifest: MobileSimulatorRuntimeManifest,
+        client_id: str,
+    ) -> Any:
+        from tooling.acceptance.gates.mobile.simulator_e2e import (
+            SimulatorAppiumSession,
+            SimulatorBuildTarget,
+            SimulatorDeviceTarget,
+            UrllibAppiumTransport,
+        )
+
+        resources = manifest.simulator_resources
+        appium = _required_object(
+            resources,
+            "appium",
+            f"mobile-simulator:{client_id}:appium",
+        )
+        clients = _required_object(
+            resources,
+            "clients",
+            f"mobile-simulator:{client_id}:clients",
+        )
+        client = _required_object(
+            clients,
+            client_id,
+            f"mobile-simulator:{client_id}",
+        )
+        platform = _required_text(
+            client,
+            "platform",
+            f"mobile-simulator:{client_id}",
+        )
+        driver = _required_object(
+            _required_object(
+                appium,
+                "drivers",
+                f"mobile-simulator:{client_id}:drivers",
+            ),
+            platform,
+            f"mobile-simulator:{client_id}:driver",
+        )
+        application = _required_object(
+            _required_object(
+                resources,
+                "applications",
+                f"mobile-simulator:{client_id}:applications",
+            ),
+            platform,
+            f"mobile-simulator:{client_id}:application",
+        )
+        capabilities = client.get("appiumCapabilities")
+        chromedriver = ""
+        if isinstance(capabilities, Mapping):
+            value = capabilities.get("appium:chromedriverExecutable")
+            if isinstance(value, str):
+                chromedriver = value
+        return SimulatorAppiumSession(
+            UrllibAppiumTransport(
+                _required_text(
+                    appium,
+                    "serverUrl",
+                    f"mobile-simulator:{client_id}:appium",
+                )
+            ),
+            client_id=client_id,
+            platform=platform,
+            automation_name=_required_text(
+                driver,
+                "automationName",
+                f"mobile-simulator:{client_id}:driver",
+            ),
+            device=SimulatorDeviceTarget(
+                platform=platform,
+                identifier=_required_text(
+                    client,
+                    "device",
+                    f"mobile-simulator:{client_id}:device",
+                ),
+                role=_required_text(
+                    client,
+                    "deviceRole",
+                    f"mobile-simulator:{client_id}:device-role",
+                ),
+            ),
+            build=SimulatorBuildTarget(
+                platform=platform,
+                artifact=Path(
+                    _required_text(
+                        application,
+                        "artifact",
+                        f"mobile-simulator:{client_id}:artifact",
+                    )
+                ),
+                application_id=_required_text(
+                    application,
+                    "id",
+                    f"mobile-simulator:{client_id}:application-id",
+                ),
+            ),
+            callback_scheme=_required_text(
+                application,
+                "callbackScheme",
+                f"mobile-simulator:{client_id}:callback",
+            ),
+            ports={
+                str(role): int(port)
+                for role, port in _required_object(
+                    client,
+                    "ports",
+                    f"mobile-simulator:{client_id}:ports",
+                ).items()
+            },
+            chromedriver_executable=chromedriver,
+        )
+
+    def _provision_selected_devices(
+        self,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        runtime_root: Path,
+    ) -> dict[str, dict[str, Any]]:
+        resources: dict[str, dict[str, Any]] = {}
+        for client in self.selected_clients:
+            if client.platform == "ios":
+                device = self._create_isolated_ios_simulator(
+                    spec,
+                    env,
+                    client_id=client.id,
+                )
+                resources[client.id] = {
+                    "platform": "ios",
+                    "device": device["udid"],
+                    "deviceName": device["name"],
+                    "runtimeName": device["runtime"],
+                    "destination": (
+                        f"platform=iOS Simulator,id={device['udid']}"
+                    ),
+                    "ownedBoot": True,
+                }
+            else:
+                device = self._start_isolated_android_emulator(
+                    spec,
+                    env,
+                    runtime_root,
+                    client_id=client.id,
+                )
+                resources[client.id] = {
+                    "platform": "android",
+                    "device": device["serial"],
+                    "deviceName": device["avd"],
+                    "runtimeName": "Android Emulator",
+                    "destination": device["avd"],
+                    "ownedBoot": True,
+                    "abi": device["abi"],
+                }
+        identities = {
+            str(resource["device"]) for resource in resources.values()
+        }
+        if len(identities) != len(resources):
+            raise BlockedError(
+                reason="Mobile runtime clients share a boot identity",
+                resource="mobile-simulator:device-isolation",
+            )
+        return resources
+
+    def _create_isolated_ios_simulator(
+        self,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        *,
+        client_id: str,
+    ) -> dict[str, str]:
+        name = f"Peers Touch {client_id} {os.getpid()}"
+        result = self._run_checked(
+            (
+                "xcrun",
+                "simctl",
+                "create",
+                name,
+                spec.ios_device_name,
+                spec.ios_runtime,
+            ),
+            env=env,
+            timeout=60,
+            resource=f"mobile-simulator:ios-create:{client_id}",
+        )
+        udid = result.stdout.strip()
+        if not udid or "\n" in udid:
+            raise BlockedError(
+                reason="simctl create returned an invalid device identity",
+                resource=f"mobile-simulator:ios-create:{client_id}",
+            )
+        self.register_cleanup(
+            f"simulator-delete:{client_id}:{udid}",
+            lambda: self._run_cleanup(
+                ("xcrun", "simctl", "delete", udid),
+                env=env,
+                resource=f"mobile-simulator:ios-delete:{client_id}",
+            ),
+        )
+        self._run_checked(
+            ("xcrun", "simctl", "boot", udid),
+            env=env,
+            timeout=60,
+            resource=f"mobile-simulator:ios-boot:{client_id}",
+        )
+        self.register_cleanup(
+            f"simulator-shutdown:{client_id}:{udid}",
+            lambda: self._run_cleanup(
+                ("xcrun", "simctl", "shutdown", udid),
+                env=env,
+                resource=f"mobile-simulator:ios-shutdown:{client_id}",
+            ),
+        )
+        self._run_checked(
+            ("xcrun", "simctl", "bootstatus", udid, "-b"),
+            env=env,
+            timeout=180,
+            resource=f"mobile-simulator:ios-ready:{client_id}",
+        )
+        return {
+            "udid": udid,
+            "name": name,
+            "runtime": spec.ios_runtime,
+        }
+
+    def _start_isolated_android_emulator(
+        self,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        runtime_root: Path,
+        *,
+        client_id: str,
+    ) -> dict[str, str]:
+        avds = self._run_checked(
+            ("emulator", "-list-avds"),
+            env=env,
+            timeout=30,
+            resource="mobile-simulator:android-avd-discovery",
+        ).stdout.splitlines()
+        if [item.strip() for item in avds].count(spec.android_avd_name) != 1:
+            raise BlockedError(
+                reason=(
+                    f"Required Android AVD {spec.android_avd_name!r} "
+                    "is unavailable or ambiguous"
+                ),
+                resource="mobile-simulator:android-avd",
+            )
+        reservations = self._reserve_emulator_port_pair()
+        console_port = reservations[0].port
+        for reservation in reservations:
+            reservation.release()
+        serial = f"emulator-{console_port}"
+        process = self.executor.start(
+            (
+                "emulator",
+                "-avd",
+                spec.android_avd_name,
+                "-port",
+                str(console_port),
+                "-read-only",
+                "-no-window",
+                "-no-audio",
+                "-no-boot-anim",
+                "-no-snapshot-load",
+                "-no-snapshot-save",
+            ),
+            cwd=self.repo_root,
+            env=dict(env),
+            log_path=(
+                runtime_root / "logs" / f"android-{client_id}.log"
+            ),
+        )
+        self.register_cleanup(
+            f"emulator-process:{client_id}:{serial}",
+            process.stop,
+        )
+        self._run_checked(
+            ("adb", "-s", serial, "wait-for-device"),
+            env=env,
+            timeout=180,
+            resource=f"mobile-simulator:android-ready:{client_id}",
+        )
+        deadline = self.monotonic() + 180
+        while self.monotonic() < deadline:
+            if process.poll() is not None:
+                raise BlockedError(
+                    reason="Android emulator exited before boot completed",
+                    resource=f"mobile-simulator:android-emulator:{client_id}",
+                )
+            completed = self.executor.run(
+                (
+                    "adb",
+                    "-s",
+                    serial,
+                    "shell",
+                    "getprop",
+                    "sys.boot_completed",
+                ),
+                cwd=self.repo_root,
+                env=dict(env),
+                timeout=10,
+            )
+            if completed.returncode == 0 and completed.stdout.strip() == "1":
+                abi = self._run_checked(
+                    (
+                        "adb",
+                        "-s",
+                        serial,
+                        "shell",
+                        "getprop",
+                        "ro.product.cpu.abi",
+                    ),
+                    env=env,
+                    timeout=10,
+                    resource=f"mobile-simulator:android-abi:{client_id}",
+                ).stdout.strip()
+                if abi != spec.android_abi:
+                    raise BlockedError(
+                        reason=(
+                            f"Android AVD {spec.android_avd_name!r} ABI "
+                            f"{abi!r} does not match {spec.android_abi!r}"
+                        ),
+                        resource=f"mobile-simulator:android-abi:{client_id}",
+                    )
+                return {
+                    "serial": serial,
+                    "avd": spec.android_avd_name,
+                    "abi": abi,
+                }
+            self.sleep(0.5)
+        raise BlockedError(
+            reason=(
+                f"Android AVD {spec.android_avd_name!r} did not become ready"
+            ),
+            resource=f"mobile-simulator:android-ready:{client_id}",
+        )
+
+
 class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
     environment_id = IOS_LAYOUT_ENVIRONMENT_ID
 

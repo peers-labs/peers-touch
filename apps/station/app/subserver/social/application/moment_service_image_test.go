@@ -300,7 +300,11 @@ func TestImagePost_RejectsMixedLegacyAndTypedImages(t *testing.T) {
 	}
 }
 
-func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
+// TestImagePost_W11HardCutRejectsLegacyPrivateCreatePath verifies that
+// after the W11 hard-cut, creating a private IMAGE post through
+// CreateMoment (the legacy path) returns an error. New private content
+// must use the prepare-private/submit-private Secure Content pipeline.
+func TestImagePost_W11HardCutRejectsLegacyPrivateCreatePath(t *testing.T) {
 	f := newImageFixture(t)
 	ctx := context.Background()
 
@@ -308,17 +312,10 @@ func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
 	seedOssKey(t, f, key)
 	cid := "oss://station.local/" + key
 
-	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 		Type: model.PostType_IMAGE,
 		Audience: &model.Audience{
 			Kind: model.Audience_SELF,
-			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
-				RecipientPtid: fixturePTID(101),
-				DeviceId:      "device-a",
-				KeyId:         cid,
-				EncryptedKey:  []byte("sealed-key"),
-				Suite:         "signaling-envelope-x3dh-aes256gcm/media-key-v1",
-			}},
 		},
 		Content: &model.CreatePostRequest_Image{
 			Image: &model.CreateImagePostRequest{
@@ -336,47 +333,10 @@ func TestImagePost_PrivatePersistsAudienceKeyEnvelopes(t *testing.T) {
 			},
 		},
 	}, fixturePTID(101))
-	if err != nil {
-		t.Fatalf("create private IMAGE: %v", err)
-	}
-	if got := post.GetAudience().GetKeyEnvelopes(); len(got) != 1 || got[0].GetKeyId() != cid {
-		t.Fatalf("expected audience key envelope to round-trip, got %+v", got)
-	}
-}
-
-func TestImagePost_PrivateRejectsInlineMediaKeyMaterial(t *testing.T) {
-	f := newImageFixture(t)
-	ctx := context.Background()
-
-	key := "private/inline.png"
-	seedOssKey(t, f, key)
-	cid := "oss://station.local/" + key
-
-	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type: model.PostType_IMAGE,
-		Audience: &model.Audience{
-			Kind: model.Audience_SELF,
-			KeyEnvelopes: []*model.AudienceKeyEnvelope{{
-				RecipientPtid: fixturePTID(101), DeviceId: "device-a", KeyId: cid, EncryptedKey: []byte("sealed-key"), Suite: "suite",
-			}},
-		},
-		Content: &model.CreatePostRequest_Image{
-			Image: &model.CreateImagePostRequest{
-				Text: "bad private photo",
-				Images: []*model.ImageAttachment{{
-					Id: cid,
-					MediaEncryption: &common.EncryptedMediaDescriptor{
-						Encrypted: true,
-						KeyB64:    "plaintext-key",
-					},
-				}},
-			},
-		},
-	}, fixturePTID(101))
 	if err == nil {
-		t.Fatal("expected inline key material rejection, got nil")
+		t.Fatal("expected legacy private create to be rejected after W11 hard-cut")
 	}
-	if !strings.Contains(err.Error(), "rejects inline media key material") {
-		t.Fatalf("expected inline key rejection, got %v", err)
+	if !strings.Contains(err.Error(), "legacy private post creation removed") {
+		t.Fatalf("expected W11 hard-cut rejection error, got: %v", err)
 	}
 }

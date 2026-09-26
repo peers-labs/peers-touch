@@ -8,7 +8,8 @@ use crate::model::agent::{
     ClientCapabilityCommandProof, ClientCapabilityCommandSigningPayload, ClientCapabilityLease,
     ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt, PullCapabilityOperationsRequest,
     PullCapabilityOperationsResponse, PullClientCapabilityRequestsRequest,
-    PullClientCapabilityRequestsResponse, ReconcileCapabilityOperationRequest,
+    PullClientCapabilityRequestsResponse, ReachCapabilityAcceptanceExecutorBarrierRequest,
+    ReachCapabilityAcceptanceExecutorBarrierResponse, ReconcileCapabilityOperationRequest,
     ReconcileCapabilityOperationResponse, RegisterClientCapabilityLeaseRequest,
     RegisterClientCapabilityLeaseResponse, RenewClientCapabilityLeaseRequest,
     RenewClientCapabilityLeaseResponse, ReportCapabilityOperationEventRequest,
@@ -37,6 +38,8 @@ const OPERATION_RECONCILE_PATH: &str = "/sub-agent/agent/capability/operation/re
 const OPERATION_TAKEOVER_PATH: &str = "/sub-agent/agent/capability/operation/takeover";
 const OPERATION_CLEANUP_TAKEOVER_PATH: &str =
     "/sub-agent/agent/capability/operation/cleanup/takeover";
+const ACCEPTANCE_SCENARIO_REACH_PATH: &str =
+    "/sub-agent/agent/capability/acceptance/scenario/reach";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapabilityNegativeControl {
@@ -474,6 +477,26 @@ impl<'a> CapabilityStationTransport<'a> {
         )
         .map_err(|error| format!("submit active client capability receipt: {error}"))?;
         validate_receipt_response(response)
+    }
+
+    pub fn reach_acceptance_scenario_barrier(
+        &self,
+        scenario_handle: &str,
+        barrier: &str,
+    ) -> Result<ReachCapabilityAcceptanceExecutorBarrierResponse, String> {
+        station_client::request_proto_for_device_at(
+            self.station_url,
+            Method::POST,
+            ACCEPTANCE_SCENARIO_REACH_PATH,
+            self.token,
+            None,
+            Some(&ReachCapabilityAcceptanceExecutorBarrierRequest {
+                scenario_handle: scenario_handle.to_string(),
+                barrier: barrier.to_string(),
+            }),
+            self.device_id,
+        )
+        .map_err(|error| format!("reach Station capability acceptance barrier: {error}"))
     }
 
     fn submit_recovery(

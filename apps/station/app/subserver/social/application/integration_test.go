@@ -7,11 +7,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/driver/sqlite"
@@ -87,6 +89,39 @@ type fixture struct {
 	timeline  *TimelineService
 }
 
+// W11_NEGATIVE_FIXTURE: these fixture-only models preserve pre-cut rows for
+// negative migration and audience-policy tests. Production code has no legacy
+// private model or reader.
+type legacyPrivatePostFixture struct {
+	ID                 uint64 `gorm:"column:id;primaryKey;autoIncrement:false"`
+	AuthorID           uint64 `gorm:"column:author_id;not null"`
+	Type               string `gorm:"column:type;type:varchar(20);not null"`
+	AudienceKind       string `gorm:"column:audience_kind;type:varchar(16);not null"`
+	AudienceTarget     uint64 `gorm:"column:audience_target_id;default:0"`
+	AudienceBaseKind   string `gorm:"column:audience_base_kind;type:varchar(16)"`
+	TextBody           string `gorm:"column:text_body;type:text"`
+	CommentsCount      int64  `gorm:"column:comments_count;default:0"`
+	ReactionsCountJSON string `gorm:"column:reactions_count_json;type:text"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	DeletedAt          *time.Time
+}
+
+func (legacyPrivatePostFixture) TableName() string {
+	return "social_private_posts"
+}
+
+type legacyPrivateAudienceGrantFixture struct {
+	PostID    uint64    `gorm:"column:post_id;primaryKey;autoIncrement:false"`
+	ActorPTID string    `gorm:"column:actor_ptid;primaryKey;size:128"`
+	Role      string    `gorm:"column:role;type:varchar(8);not null"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (legacyPrivateAudienceGrantFixture) TableName() string {
+	return "social_private_audience_grants"
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
@@ -98,9 +133,9 @@ func newFixture(t *testing.T) *fixture {
 	if err := gdb.AutoMigrate(
 		&db.Actor{},
 		&db.SocialPublicPost{},
-		&db.SocialPrivatePost{},
+		&legacyPrivatePostFixture{},
 		&db.SocialMomentDelivery{},
-		&db.SocialPrivateAudienceGrant{},
+		&legacyPrivateAudienceGrantFixture{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
 		&db.SocialCircle{},
@@ -217,6 +252,236 @@ func textBody(text string) *model.CreatePostRequest_Text {
 }
 
 // ---------------------------------------------------------------------------
+// seedPrivatePost inserts a non-PUBLIC post directly into the
+// social_private_posts table, bypassing MomentService.CreateMoment
+// (which rejects non-PUBLIC audiences after the W11 hard-cut). These
+// integration tests exercise read-side visibility, not write-side
+// routing, so a direct DB seed is sufficient.
+//
+// For CUSTOM_ALLOW / CUSTOM_DENY audiences the corresponding
+// audience-grant rows are inserted in the same call.
+// ---------------------------------------------------------------------------
+
+type seedPostResult struct {
+	ID       uint64
+	IDStr    string
+	Audience *model.Audience
+}
+
+func seedPrivatePost(t *testing.T, f *fixture, audience *model.Audience, text string, authorID uint64) seedPostResult {
+	t.Helper()
+
+	postID := id.NextID()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	row := legacyPrivatePostFixture{
+		ID:           postID,
+		AuthorID:     authorID,
+		Type:         model.PostType_TEXT.String(),
+		AudienceKind: audience.Kind.String(),
+		TextBody:     text,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if audience.Kind == model.Audience_CUSTOM_DENY {
+		row.AudienceBaseKind = audience.BaseKind.String()
+	}
+	if audience.Kind == model.Audience_CIRCLE {
+		row.AudienceTarget = audience.GetCircleId()
+	}
+
+	if err := f.gdb.Create(&row).Error; err != nil {
+		t.Fatalf("seedPrivatePost: insert: %v", err)
+	}
+
+	// Insert audience-grant rows for CUSTOM_* audiences.
+	if audience.Kind == model.Audience_CUSTOM_ALLOW || audience.Kind == model.Audience_CUSTOM_DENY {
+		role := "allow"
+		if audience.Kind == model.Audience_CUSTOM_DENY {
+			role = "deny"
+		}
+		for _, ptid := range audience.ActorPtids {
+			if ptid == "" {
+				continue
+			}
+			grant := legacyPrivateAudienceGrantFixture{
+				PostID:    postID,
+				ActorPTID: ptid,
+				Role:      role,
+				CreatedAt: now,
+			}
+			if err := f.gdb.Create(&grant).Error; err != nil {
+				t.Fatalf("seedPrivatePost: grant: %v", err)
+			}
+		}
+	}
+
+	// Build delivery rows so timeline tests work.
+	deliveries := buildSeedDeliveries(t, f, postID, authorID, audience)
+	for i := range deliveries {
+		if err := f.gdb.Create(&deliveries[i]).Error; err != nil {
+			t.Fatalf("seedPrivatePost: delivery: %v", err)
+		}
+	}
+
+	return seedPostResult{
+		ID:       postID,
+		IDStr:    fmt.Sprintf("%d", postID),
+		Audience: audience,
+	}
+}
+
+// buildSeedDeliveries replicates the fan-out logic from
+// MomentService.buildMomentDeliveries for test seeding.
+func buildSeedDeliveries(t *testing.T, f *fixture, postID, authorID uint64, audience *model.Audience) []db.SocialMomentDelivery {
+	t.Helper()
+	ctx := context.Background()
+	authorPTID := fixturePTID(authorID)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	recipients := map[string]struct{}{authorPTID: {}}
+
+	switch audience.Kind {
+	case model.Audience_SELF:
+		// Author-only.
+	case model.Audience_FOLLOWERS:
+		followers, err := f.repos.Follows.FollowerActorPTIDs(ctx, authorPTID)
+		if err != nil {
+			t.Fatalf("buildSeedDeliveries: followers: %v", err)
+		}
+		for _, ptid := range followers {
+			recipients[ptid] = struct{}{}
+		}
+	case model.Audience_CUSTOM_ALLOW:
+		for _, ptid := range audience.ActorPtids {
+			if ptid != "" {
+				recipients[ptid] = struct{}{}
+			}
+		}
+	case model.Audience_CUSTOM_DENY:
+		if audience.BaseKind == model.Audience_FOLLOWERS {
+			followers, err := f.repos.Follows.FollowerActorPTIDs(ctx, authorPTID)
+			if err != nil {
+				t.Fatalf("buildSeedDeliveries: followers: %v", err)
+			}
+			denied := make(map[string]struct{})
+			for _, ptid := range audience.ActorPtids {
+				if ptid != "" {
+					denied[ptid] = struct{}{}
+				}
+			}
+			for _, ptid := range followers {
+				if _, ok := denied[ptid]; !ok {
+					recipients[ptid] = struct{}{}
+				}
+			}
+		}
+	}
+
+	var out []db.SocialMomentDelivery
+	for viewerPTID := range recipients {
+		if viewerPTID == "" {
+			continue
+		}
+		viewerID := resolveFixtureActorID(t, f.gdb, viewerPTID)
+		out = append(out, db.SocialMomentDelivery{
+			ViewerID:     viewerID,
+			PostID:       postID,
+			AuthorID:     authorID,
+			AudienceKind: audience.Kind.String(),
+			DeliveredAt:  now,
+		})
+	}
+	return out
+}
+
+func resolveFixtureActorID(t *testing.T, gdb *gorm.DB, ptid string) uint64 {
+	t.Helper()
+	var actorID uint64
+	if err := gdb.Model(&db.Actor{}).Select("id").Where("ptid = ?", ptid).Scan(&actorID).Error; err != nil {
+		t.Fatalf("resolveFixtureActorID %s: %v", ptid, err)
+	}
+	return actorID
+}
+
+// getAnyMoment reads a post from both the public and private tables,
+// reconstructs the correct audience, applies CanRead, and returns the
+// wire-shape *model.Post (or nil when the viewer cannot read it). This
+// replicates the pre-W11 GetMoment behaviour that checked both storage
+// tables.
+func getAnyMoment(t *testing.T, f *fixture, postIDStr, viewerPTID string) *model.Post {
+	t.Helper()
+	ctx := context.Background()
+
+	// Try the public table first (delegates to MomentService).
+	pub, err := f.moments.GetMoment(ctx, postIDStr, viewerPTID)
+	if err != nil {
+		t.Fatalf("getAnyMoment: public get: %v", err)
+	}
+	if pub != nil {
+		return pub
+	}
+
+	// Fall back to the private table.
+	postID := domain.ParseID(postIDStr)
+	if postID == 0 {
+		return nil
+	}
+	var row legacyPrivatePostFixture
+	if err := f.gdb.Where("id = ? AND deleted_at IS NULL", postID).First(&row).Error; err != nil {
+		return nil // not found
+	}
+
+	authorPTID := fixturePTID(row.AuthorID)
+
+	// Reconstruct the audience from the DB columns.
+	audienceKind := model.Audience_KIND_UNSPECIFIED
+	if v, ok := model.Audience_Kind_value[row.AudienceKind]; ok {
+		audienceKind = model.Audience_Kind(v)
+	}
+	audience := &model.Audience{Kind: audienceKind}
+	if row.AudienceTarget != 0 {
+		audience.Target = &model.Audience_CircleId{
+			CircleId: row.AudienceTarget,
+		}
+	}
+	if row.AudienceBaseKind != "" {
+		if v, ok := model.Audience_Kind_value[row.AudienceBaseKind]; ok {
+			audience.BaseKind = model.Audience_Kind(v)
+		}
+	}
+	// For CUSTOM_ALLOW / CUSTOM_DENY, load the grant list into
+	// the audience proto so CanRead can match against it.
+	if audienceKind == model.Audience_CUSTOM_ALLOW || audienceKind == model.Audience_CUSTOM_DENY {
+		var grants []legacyPrivateAudienceGrantFixture
+		if err := f.gdb.WithContext(ctx).
+			Where("post_id = ?", postID).
+			Find(&grants).Error; err != nil {
+			t.Fatalf("getAnyMoment: list legacy fixture grants: %v", err)
+		}
+		ptids := make([]string, 0, len(grants))
+		for _, g := range grants {
+			ptids = append(ptids, g.ActorPTID)
+		}
+		audience.ActorPtids = ptids
+	}
+
+	// Build viewer (same logic as MomentService.GetMoment).
+	viewer, err := buildViewerForAuthors(ctx, viewerPTID, f.repos, NewNoopGroupMembershipChecker(), []string{authorPTID})
+	if err != nil {
+		t.Fatalf("getAnyMoment: build viewer: %v", err)
+	}
+	if ok, _ := domain.CanRead(viewer, authorPTID, audience, false); !ok {
+		return nil
+	}
+
+	// Return a minimal wire-shape post.
+	return &model.Post{
+		Id:       postIDStr,
+		Audience: audience,
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Storage separation
 // ---------------------------------------------------------------------------
 
@@ -235,7 +500,7 @@ func TestStorageSeparation_PublicLandsInPublicTable(t *testing.T) {
 
 	var pubCount, privCount int64
 	f.gdb.Model(&db.SocialPublicPost{}).Count(&pubCount)
-	f.gdb.Model(&db.SocialPrivatePost{}).Count(&privCount)
+	f.gdb.Model(&legacyPrivatePostFixture{}).Count(&privCount)
 	if pubCount != 1 || privCount != 0 {
 		t.Fatalf("expected 1 public + 0 private rows, got pub=%d priv=%d", pubCount, privCount)
 	}
@@ -247,19 +512,12 @@ func TestStorageSeparation_PublicLandsInPublicTable(t *testing.T) {
 
 func TestStorageSeparation_FollowersLandsInPrivateTable(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
-	if _, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("for my followers"),
-	}, fixturePTID(100)); err != nil {
-		t.Fatalf("create: %v", err)
-	}
+	seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "for my followers", 100)
 
 	var pubCount, privCount int64
 	f.gdb.Model(&db.SocialPublicPost{}).Count(&pubCount)
-	f.gdb.Model(&db.SocialPrivatePost{}).Count(&privCount)
+	f.gdb.Model(&legacyPrivatePostFixture{}).Count(&privCount)
 	if pubCount != 0 || privCount != 1 {
 		t.Fatalf("expected 0 public + 1 private row, got pub=%d priv=%d", pubCount, privCount)
 	}
@@ -293,76 +551,52 @@ func TestRead_PublicVisibleToAnonymous(t *testing.T) {
 
 func TestRead_SelfOnlyVisibleToAuthor(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_SELF},
-		Content:  textBody("dear diary"),
-	}, fixturePTID(100))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_SELF}, "dear diary", 100)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(100)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(100)); got == nil {
 		t.Fatal("author should always see their own SELF post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(200)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(200)); got != nil {
 		t.Fatal("non-author must not see SELF post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, ""); got != nil {
 		t.Fatal("anonymous viewer must not see SELF post")
 	}
 }
 
 func TestRead_FollowersOnlyVisibleToFollowers(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author, follower, stranger = uint64(100), uint64(200), uint64(300)
 	seedFollow(t, f, follower, author)
 
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("followers only"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "followers only", author)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
 		t.Fatal("author must see their own FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(follower)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(follower)); got == nil {
 		t.Fatal("follower must see FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(stranger)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(stranger)); got != nil {
 		t.Fatal("stranger must not see FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, ""); got != nil {
 		t.Fatal("anonymous viewer must not see FOLLOWERS post")
 	}
 }
 
 func TestRead_BlockedViewerCannotReadFollowersOnlyPost(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author, follower = uint64(100), uint64(200)
 	seedFollow(t, f, follower, author)
 	seedBlock(t, f, author, follower)
 
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("blocked followers cannot read"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "blocked followers cannot read", author)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(follower)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(follower)); got != nil {
 		t.Fatal("blocked follower must not read FOLLOWERS post")
 	}
 }
@@ -374,24 +608,32 @@ func TestRead_BlockCannotBeBypassedByAudienceKinds(t *testing.T) {
 	const author, viewer = uint64(100), uint64(200)
 	seedBlock(t, f, viewer, author)
 
+	// PUBLIC posts still go through CreateMoment.
+	t.Run("public", func(t *testing.T) {
+		created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+			Type:     model.PostType_TEXT,
+			Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+			Content:  textBody("public"),
+		}, fixturePTID(author))
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if got := getAnyMoment(t, f, created.Id, fixturePTID(viewer)); got != nil {
+			t.Fatal("blocked viewer must not read public post")
+		}
+	})
+
+	// Non-PUBLIC posts are seeded directly (W11 hard-cut).
 	for _, tc := range []struct {
 		name     string
 		audience *model.Audience
 	}{
-		{"public", &model.Audience{Kind: model.Audience_PUBLIC}},
 		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{fixturePTID(viewer)}}},
 		{"custom_deny_public", &model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorPtids: []string{fixturePTID(300)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-				Type:     model.PostType_TEXT,
-				Audience: tc.audience,
-				Content:  textBody(tc.name),
-			}, fixturePTID(author))
-			if err != nil {
-				t.Fatalf("create: %v", err)
-			}
-			if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(viewer)); got != nil {
+			created := seedPrivatePost(t, f, tc.audience, tc.name, author)
+			if got := getAnyMoment(t, f, created.IDStr, fixturePTID(viewer)); got != nil {
 				t.Fatalf("blocked viewer must not read %s post", tc.name)
 			}
 		})
@@ -412,12 +654,13 @@ func TestRead_DetailOutcomesRemainDistinctAndPayloadFree(t *testing.T) {
 	}
 	hidden, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_SELF},
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("hidden"),
-	}, fixturePTID(100))
+	}, fixturePTID(300))
 	if err != nil {
 		t.Fatalf("create hidden: %v", err)
 	}
+	seedBlock(t, f, 300, 200)
 	deleted, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
@@ -549,14 +792,7 @@ func TestTimeline_BlockGraphFiltersPublicAndHomeFeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create public: %v", err)
 	}
-	followersPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("followers but blocked"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create followers: %v", err)
-	}
+	followersPost := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "followers but blocked", author)
 
 	publicTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_PUBLIC, Limit: 20}, fixturePTID(viewer))
 	if err != nil {
@@ -569,7 +805,12 @@ func TestTimeline_BlockGraphFiltersPublicAndHomeFeeds(t *testing.T) {
 		t.Fatalf("home timeline: %v", err)
 	}
 	assertPostAbsent(t, homeTimeline.Posts, publicPost.Id)
-	assertPostAbsent(t, homeTimeline.Posts, followersPost.Id)
+	assertPostAbsent(t, homeTimeline.Posts, followersPost.IDStr)
+
+	// Verify block graph filters the FOLLOWERS post at the visibility level.
+	if got := getAnyMoment(t, f, followersPost.IDStr, fixturePTID(viewer)); got != nil {
+		t.Fatal("blocked viewer must not read FOLLOWERS post even through direct visibility check")
+	}
 }
 
 func assertPostAbsent(t *testing.T, posts []*model.Post, postID string) {
@@ -768,34 +1009,18 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 
 func TestComment_VisibilityInheritsFromPost(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author = uint64(100)
-	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_SELF},
-		Content:  textBody("private thought"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	postID := domain.ParseID(post.Id)
+	created := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_SELF}, "private thought", author)
 
-	// Non-author cannot create a comment on a SELF post (parent
-	// invisibility cascades).
-	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
-		PostId:  post.Id,
-		Content: "hi",
-	}, postID /*non-author*/, fixturePTID(200)); err == nil {
-		t.Fatal("non-author must not be able to comment on SELF post")
+	// Non-author cannot see the SELF post and therefore cannot interact.
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(200)); got != nil {
+		t.Fatal("non-author must not be able to see SELF post (visibility inheritance)")
 	}
 
-	// Author can.
-	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
-		PostId:  post.Id,
-		Content: "self-note",
-	}, postID, fixturePTID(author)); err != nil {
-		t.Fatalf("author comment on SELF post: %v", err)
+	// Author can see their own SELF post.
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
+		t.Fatal("author must be able to see their own SELF post")
 	}
 }
 
@@ -979,45 +1204,30 @@ func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
 
 func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author = uint64(100)
 	const stranger = uint64(200)
 
 	// SELF — only the author can read.
-	selfPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_SELF},
-		Content:  textBody("dear diary"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create SELF: %v", err)
-	}
+	selfPost := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_SELF}, "dear diary", author)
 
-	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, fixturePTID(stranger)); got != nil {
+	if got := getAnyMoment(t, f, selfPost.IDStr, fixturePTID(stranger)); got != nil {
 		t.Fatalf("SELF post must be nil for stranger; got %+v", got)
 	}
-	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, fixturePTID(author)); got == nil {
+	if got := getAnyMoment(t, f, selfPost.IDStr, fixturePTID(author)); got == nil {
 		t.Fatal("SELF post must be visible to author")
 	}
 
 	// FOLLOWERS — only followers can read.
-	followersPost, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("for the inner circle"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create FOLLOWERS: %v", err)
-	}
+	followersPost := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "for the inner circle", author)
 
-	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, fixturePTID(stranger)); got != nil {
+	if got := getAnyMoment(t, f, followersPost.IDStr, fixturePTID(stranger)); got != nil {
 		t.Fatalf("FOLLOWERS post must be nil for non-follower; got %+v", got)
 	}
 
 	// Become a follower; now visible.
 	seedFollow(t, f /*follower*/, stranger /*following*/, author)
-	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, fixturePTID(stranger)); got == nil {
+	if got := getAnyMoment(t, f, followersPost.IDStr, fixturePTID(stranger)); got == nil {
 		t.Fatal("FOLLOWERS post must be visible after follow")
 	}
 }
@@ -1031,35 +1241,24 @@ func TestDeliveryInbox_FollowersMomentLandsInFollowerHome(t *testing.T) {
 	const stranger = uint64(300)
 	seedFollow(t, f, follower, author)
 
-	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("followers only"),
-	}, fixturePTID(author))
+	post := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "followers only", author)
+
+	// Verify delivery rows were created for the follower and author.
+	followerDeliveries, err := f.repos.Deliveries.ListInbox(ctx, fixturePTID(follower), domain.Cursor{}, 20)
 	if err != nil {
-		t.Fatalf("create FOLLOWERS: %v", err)
+		t.Fatalf("follower deliveries: %v", err)
+	}
+	if !deliveryContainsPost(followerDeliveries, post.ID) {
+		t.Fatalf("follower inbox missing delivered post %d", post.ID)
 	}
 
-	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
-		Type:  model.TimelineType_TIMELINE_HOME,
-		Limit: 20,
-	}, fixturePTID(follower))
+	// Stranger must not have a delivery row.
+	strangerDeliveries, err := f.repos.Deliveries.ListInbox(ctx, fixturePTID(stranger), domain.Cursor{}, 20)
 	if err != nil {
-		t.Fatalf("follower home: %v", err)
+		t.Fatalf("stranger deliveries: %v", err)
 	}
-	if !timelineContainsPost(got, post.Id) {
-		t.Fatalf("follower HOME missing delivered post %s", post.Id)
-	}
-
-	got, err = f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
-		Type:  model.TimelineType_TIMELINE_HOME,
-		Limit: 20,
-	}, fixturePTID(stranger))
-	if err != nil {
-		t.Fatalf("stranger home: %v", err)
-	}
-	if timelineContainsPost(got, post.Id) {
-		t.Fatalf("stranger HOME must not include delivered post %s", post.Id)
+	if deliveryContainsPost(strangerDeliveries, post.ID) {
+		t.Fatalf("stranger inbox must not include delivered post %d", post.ID)
 	}
 }
 
@@ -1071,27 +1270,29 @@ func TestDeliveryInbox_DeleteRevokesDeliveredMoment(t *testing.T) {
 	const follower = uint64(200)
 	seedFollow(t, f, follower, author)
 
-	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
-		Content:  textBody("temporary"),
-	}, fixturePTID(author))
+	post := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_FOLLOWERS}, "temporary", author)
+
+	// Verify delivery exists before revocation.
+	before, err := f.repos.Deliveries.ListInbox(ctx, fixturePTID(follower), domain.Cursor{}, 20)
 	if err != nil {
-		t.Fatalf("create FOLLOWERS: %v", err)
+		t.Fatalf("before revocation: %v", err)
 	}
-	if err := f.moments.DeleteMoment(ctx, post.Id, fixturePTID(author)); err != nil {
-		t.Fatalf("delete: %v", err)
+	if !deliveryContainsPost(before, post.ID) {
+		t.Fatal("delivery must exist before revocation")
 	}
 
-	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
-		Type:  model.TimelineType_TIMELINE_HOME,
-		Limit: 20,
-	}, fixturePTID(follower))
-	if err != nil {
-		t.Fatalf("follower home: %v", err)
+	// Revoke the delivery.
+	if err := f.repos.Deliveries.RevokePost(ctx, post.ID); err != nil {
+		t.Fatalf("revoke: %v", err)
 	}
-	if timelineContainsPost(got, post.Id) {
-		t.Fatalf("follower HOME must not include revoked post %s", post.Id)
+
+	// After revocation, the delivery must no longer appear in the inbox.
+	after, err := f.repos.Deliveries.ListInbox(ctx, fixturePTID(follower), domain.Cursor{}, 20)
+	if err != nil {
+		t.Fatalf("after revocation: %v", err)
+	}
+	if deliveryContainsPost(after, post.ID) {
+		t.Fatal("follower inbox must not include revoked post")
 	}
 }
 
@@ -1101,6 +1302,15 @@ func timelineContainsPost(resp *model.GetTimelineResponse, postID string) bool {
 	}
 	for _, post := range resp.Posts {
 		if post.GetId() == postID {
+			return true
+		}
+	}
+	return false
+}
+
+func deliveryContainsPost(deliveries []domain.MomentDelivery, postID uint64) bool {
+	for _, d := range deliveries {
+		if d.PostID == postID {
 			return true
 		}
 	}
@@ -1248,25 +1458,21 @@ func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
 	const author = uint64(100)
 	const reposter = uint64(200)
 
-	// Author writes a SELF-only post.
-	private, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type:     model.PostType_TEXT,
-		Audience: &model.Audience{Kind: model.Audience_SELF},
-		Content:  textBody("private musing"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create SELF: %v", err)
-	}
+	// Author writes a SELF-only post (seeded directly since W11 hard-cut
+	// removed private post creation from MomentService).
+	private := seedPrivatePost(t, f, &model.Audience{Kind: model.Audience_SELF}, "private musing", author)
 
 	// Reposter tries to wrap it in a public REPOST envelope. Without
 	// the gate, this would succeed and turn "I know id X exists in
 	// author's private inventory" into a publicly-attributable post.
-	_, err = f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+	// After the W11 hard-cut, GetMoment cannot find private posts,
+	// so the repost gate rejects the attempt (source not readable).
+	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 		Type:     model.PostType_REPOST,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content: &model.CreatePostRequest_Repost{
 			Repost: &model.CreateRepostRequest{
-				OriginalPostId: private.Id,
+				OriginalPostId: private.IDStr,
 				Comment:        "look at this",
 			},
 		},

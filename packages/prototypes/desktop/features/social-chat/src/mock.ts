@@ -21,11 +21,13 @@ export interface MockMessage {
   senderId: string;
   content: string;
   timestamp: number;
-  type: 'text' | 'image' | 'file' | 'system';
+  type: 'text' | 'image' | 'file' | 'voice' | 'system';
   replyTo?: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   attachmentName?: string;
   attachmentMeta?: string;
+  durationSeconds?: number;
+  transferState?: 'ready' | 'failed';
 }
 
 export interface MockConversation {
@@ -238,6 +240,7 @@ export const MESSAGES: Record<string, MockMessage[]> = {
     { id: 'f1', senderId: 'user-1', content: 'Hey, are you free for coffee tomorrow?', timestamp: Date.now() - 600_000, type: 'text' },
     { id: 'f2', senderId: 'user-self', content: 'Sure! How about 3pm at the usual place?', timestamp: Date.now() - 540_000, type: 'text', status: 'read' },
     { id: 'f2a', senderId: 'user-1', content: 'I also marked the address on the map.', timestamp: Date.now() - 420_000, type: 'image', attachmentName: 'coffee-location.png', attachmentMeta: 'Map screenshot' },
+    { id: 'f2b', senderId: 'user-1', content: '', timestamp: Date.now() - 360_000, type: 'voice', durationSeconds: 14, transferState: 'ready' },
     { id: 'f3', senderId: 'user-1', content: 'Sounds good, see you tomorrow!', timestamp: Date.now() - 300_000, type: 'text' },
   ],
   'conv-3': [
@@ -248,6 +251,7 @@ export const MESSAGES: Record<string, MockMessage[]> = {
   ],
   'conv-4': [
     { id: 'p1', senderId: 'user-2', content: 'Can you review my PR?', timestamp: Date.now() - 3_900_000, type: 'text' },
+    { id: 'p1v', senderId: 'user-2', content: '', timestamp: Date.now() - 3_750_000, type: 'voice', durationSeconds: 9, transferState: 'failed' },
     { id: 'p2', senderId: 'user-self', content: 'I will check after the chat prototype pass.', timestamp: Date.now() - 3_600_000, type: 'text', status: 'failed' },
   ],
   'conv-5': [

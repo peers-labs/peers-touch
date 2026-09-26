@@ -6,6 +6,7 @@ import {
   type PrivateMediaState,
   type PrivateMomentProjection,
   type PrivateMomentPublishIntent,
+  type PrivateMomentPublishRejectionEvidence,
   type PrivateMomentPublishResult,
   type PrivateMomentsNativeSnapshot,
   type PrivateMomentsPlatform,
@@ -22,6 +23,7 @@ export interface PrivatePublishProjection {
   postId?: string;
   errorCode?: string;
   retryAfterSeconds?: number;
+  rejectionEvidence?: PrivateMomentPublishRejectionEvidence;
 }
 
 interface PrivateMomentScope {
@@ -134,6 +136,7 @@ function unsupportedProjection(
     authorPtid: actorPtid,
     audienceKind: 'FRIENDS',
     state: 'PRIVATE_UNSUPPORTED_ON_DEVICE',
+    mentions: [],
     errorCode: 'PRIVATE_UNSUPPORTED_ON_DEVICE',
   };
 }
@@ -211,7 +214,12 @@ function patchMedia(
   state: PrivateMediaState,
   errorCode?: string,
 ): PrivateMomentProjection {
-  if (projection.content?.kind !== 'IMAGE') return projection;
+  if (
+    projection.content?.kind !== 'IMAGE'
+    && projection.content?.kind !== 'VIDEO'
+  ) {
+    return projection;
+  }
   return {
     ...projection,
     content: {
@@ -427,6 +435,17 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           if (result.projection) {
             applyProjection(result.projection, actorPtid, rendererGeneration);
           }
+          if (result.state === 'PRIVATE_UNSUPPORTED') {
+            set({
+              publish: {
+                state: result.state,
+                draftId: result.draftId,
+                errorCode: result.errorCode,
+                rejectionEvidence: result.evidence,
+              },
+            });
+            return result;
+          }
           set({
             publish: {
               state: result.state,
@@ -474,6 +493,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
                   authorPtid: actorPtid,
                   audienceKind: 'FRIENDS',
                   state: 'LOADING_AUTHORIZED_RESOURCE',
+                  mentions: [],
                 },
           },
         }));

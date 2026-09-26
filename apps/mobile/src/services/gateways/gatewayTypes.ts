@@ -448,6 +448,7 @@ function requiredRevisionString(value: unknown, field: string): string {
   return encoded;
 }
 
+
 function requireConversationMemberSettings(
   body: Readonly<Record<string, unknown>>,
 ) {

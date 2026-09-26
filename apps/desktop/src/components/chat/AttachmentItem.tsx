@@ -30,12 +30,15 @@ import {
   Paperclip,
   Pause,
   Play,
+  RotateCcw,
   Volume2,
 } from 'lucide-react';
 import {
   type ChatAttachmentLike,
+  chatAttachmentDurationMs,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
+  isChatVoiceNoteAttachment,
 } from '@peers-touch/client-chat-core';
 import { messagingCommands } from '../../messaging/runtime';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
@@ -75,6 +78,7 @@ export function useMessagingAttachmentUrl(
   const resolve = useCallback(async () => {
     if (!attachmentId) return null;
     setOpenState('pending');
+    setSrc(null);
     try {
       const localPath = await messagingCommands.openAttachment(attachmentId);
       const next = convertFileSrc(localPath);
@@ -323,13 +327,17 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const [hovered, setHovered] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
-  const [audioDuration, setAudioDuration] = useState('');
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [audioPositionSeconds, setAudioPositionSeconds] = useState(0);
+  const [audioEnded, setAudioEnded] = useState(false);
+  const [audioTerminal, setAudioTerminal] = useState(false);
   const attachmentKind = chatMediaKindForAttachment(attachment);
   const attachmentId = messagingAttachmentId(attachment);
   const availabilityState = messagingAttachmentState(attachment);
   const isImage = attachmentKind === 'image';
   const isVideo = attachmentKind === 'video';
   const isAudio = attachmentKind === 'audio';
+  const isVoiceNote = isChatVoiceNoteAttachment(attachment);
   const { src, openState, resolve } = useMessagingAttachmentUrl(
     attachment,
     isImage || isVideo || isAudio,
@@ -340,14 +348,12 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
   const typeLabel = attachmentTypeLabel(attachmentKind, attachment, t);
   const sizeLabel = formatChatAttachmentSize(attachment.size);
-  const audioDurationLabel = audioDuration || formatMediaDurationSeconds(Number(
-    (attachment as Attachment & {
-      durationSeconds?: number;
-      voiceNote?: { durationMs?: number };
-    }).voiceNote?.durationMs
-      ? (attachment as Attachment & { voiceNote: { durationMs: number } }).voiceNote.durationMs / 1000
-      : (attachment as Attachment & { durationSeconds?: number }).durationSeconds ?? 0,
-  ));
+  const persistedAudioDurationSeconds = (
+    chatAttachmentDurationMs(attachment)
+    || Number((attachment as Attachment & { voiceNote?: { durationMs?: number } }).voiceNote?.durationMs)
+  ) / 1000;
+  const audioDuration = audioDurationSeconds || persistedAudioDurationSeconds;
+  const audioDurationLabel = formatMediaDurationSeconds(audioDuration);
   const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
   const transferStateLabel = openState === 'pending'
@@ -374,8 +380,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   }, [attachment.cid, src]);
 
   useEffect(() => {
-    setAudioDuration('');
+    setAudioDurationSeconds(0);
+    setAudioPositionSeconds(0);
     setAudioPlaying(false);
+    setAudioEnded(false);
+    setAudioTerminal(false);
   }, [attachment.cid, src]);
 
   const openAttachment = async () => {
@@ -523,15 +532,47 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   if (isAudio) {
     const toggleAudioPlayback = () => {
       const audio = audioRef.current;
-      if (!audio || !src) return;
+      if (!audio || !src || audioTerminal) return;
       if (audio.paused) {
+        if (audioEnded) {
+          audio.currentTime = 0;
+          setAudioPositionSeconds(0);
+          setAudioEnded(false);
+        }
         audio.play().catch(() => {
           setAudioPlaying(false);
+          setAudioTerminal(true);
         });
       } else {
         audio.pause();
       }
     };
+    const seekAudio = (nextPosition: number) => {
+      const audio = audioRef.current;
+      if (!audio || !Number.isFinite(nextPosition)) return;
+      audio.currentTime = Math.min(Math.max(nextPosition, 0), audioDuration || 0);
+      setAudioPositionSeconds(audio.currentTime);
+      setAudioEnded(false);
+      setAudioTerminal(false);
+    };
+    const retryAudio = () => {
+      setAudioTerminal(false);
+      setAudioEnded(false);
+      setAudioPositionSeconds(0);
+      void resolve();
+    };
+    const audioFailed = audioTerminal || openState === 'error' || availabilityState === 'failed';
+    const audioPlaybackState = audioFailed
+      ? 'failed'
+      : openState === 'pending' || !src
+        ? 'loading'
+        : audioPlaying
+          ? 'playing'
+          : audioEnded
+            ? 'ended'
+            : audioPositionSeconds > 0
+              ? 'paused'
+              : 'ready';
     const voiceBubbleBackground = isOwn
       ? hovered
         ? '#8DEA90'
@@ -549,6 +590,11 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         data-messaging-attachment-kind={attachmentKind}
         data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
+        data-chat-voice-note={isVoiceNote ? 'true' : undefined}
+        data-chat-voice-duration-ms={chatAttachmentDurationMs(attachment) || undefined}
+        data-chat-voice-position-ms={Math.round(audioPositionSeconds * 1000)}
+        data-chat-voice-playback-state={audioPlaybackState}
+        data-chat-voice-terminal={audioFailed ? 'true' : 'false'}
         style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
       >
         {src && (
@@ -557,30 +603,45 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             src={src}
             preload="metadata"
             onLoadedMetadata={(event) => {
-              setAudioDuration(formatMediaDurationSeconds(event.currentTarget.duration));
+              const duration = event.currentTarget.duration;
+              if (Number.isFinite(duration) && duration > 0) {
+                setAudioDurationSeconds(duration);
+              }
+              setAudioEnded(false);
             }}
-            onPlay={() => setAudioPlaying(true)}
+            onPlay={() => {
+              setAudioPlaying(true);
+              setAudioEnded(false);
+            }}
             onPause={() => setAudioPlaying(false)}
-            onEnded={() => setAudioPlaying(false)}
+            onTimeUpdate={(event) => {
+              setAudioPositionSeconds(event.currentTarget.currentTime);
+              if (
+                !event.currentTarget.ended
+                && event.currentTarget.currentTime < event.currentTarget.duration
+              ) {
+                setAudioEnded(false);
+              }
+            }}
+            onEnded={(event) => {
+              setAudioPlaying(false);
+              setAudioPositionSeconds(event.currentTarget.duration || audioDuration);
+              setAudioEnded(true);
+            }}
+            onError={() => {
+              setAudioPlaying(false);
+              setAudioEnded(false);
+              setAudioTerminal(true);
+            }}
           />
         )}
-        <button
-          type="button"
-          disabled={!src}
-          aria-label={audioPlaying
-            ? t('chat.social.messageArea.voicePause')
-            : t('chat.social.messageArea.voicePlay')}
-          onClick={toggleAudioPlayback}
+        <Flexbox
+          gap={8}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
-            appearance: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            minWidth: 128,
-            width: 'min(210px, 100%)',
+            minWidth: 180,
+            width: 'min(260px, 100%)',
             maxWidth: '100%',
             padding: '10px 14px',
             border: 0,
@@ -588,19 +649,82 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             background: voiceBubbleBackground,
             boxShadow: hovered ? token.boxShadowTertiary : 'none',
             color: voiceTextColor,
-            cursor: src ? 'pointer' : 'default',
-            opacity: src ? 1 : 0.72,
+            opacity: src && !audioFailed ? 1 : 0.72,
             transition: 'background 120ms ease, box-shadow 120ms ease',
           }}
         >
-          <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0 }}>
-            {audioPlaying ? <Pause size={18} /> : <Play size={18} />}
-            <Text style={{ color: voiceTextColor, fontSize: 18, fontWeight: 700, lineHeight: 1 }}>
+          <Flexbox horizontal align="center" gap={8}>
+            <Tooltip title={audioPlaying
+              ? t('chat.social.messageArea.voicePause')
+              : t('chat.social.messageArea.voicePlay')}>
+              <button
+                type="button"
+                disabled={!src || audioFailed}
+                aria-label={audioPlaying
+                  ? t('chat.social.messageArea.voicePause')
+                  : t('chat.social.messageArea.voicePlay')}
+                data-chat-voice-toggle
+                data-chat-voice-playing={audioPlaying ? 'true' : 'false'}
+                onClick={toggleAudioPlayback}
+                style={{
+                  width: 28,
+                  height: 28,
+                  border: 0,
+                  borderRadius: '50%',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isOwn ? 'rgba(255,255,255,0.5)' : token.colorFillSecondary,
+                  color: voiceTextColor,
+                  cursor: src && !audioFailed ? 'pointer' : 'default',
+                }}
+              >
+                {audioPlaying ? <Pause size={16} /> : <Play size={16} />}
+              </button>
+            </Tooltip>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(audioDuration, 1)}
+              step={0.1}
+              value={Math.min(audioPositionSeconds, Math.max(audioDuration, 1))}
+              disabled={!src || audioFailed}
+              aria-label={t('chat.social.messageArea.voiceSeek')}
+              data-chat-voice-seek
+              onChange={(event) => seekAudio(Number(event.currentTarget.value))}
+              style={{ flex: 1, minWidth: 72, accentColor: voiceTextColor }}
+            />
+            <Text style={{ color: voiceSecondaryColor, fontSize: 11, whiteSpace: 'nowrap' }}>
+              {formatMediaDurationSeconds(audioPositionSeconds) || '0:00'}
+              {' / '}
               {audioDurationLabel || t('chat.social.messageArea.voiceDurationUnknown')}
             </Text>
+            <Volume2 size={18} color={voiceSecondaryColor} />
           </Flexbox>
-          <Volume2 size={22} color={voiceSecondaryColor} />
-        </button>
+          {audioFailed && (
+            <button
+              type="button"
+              aria-label={t('chat.social.messageArea.voiceRetry')}
+              data-chat-voice-retry
+              onClick={retryAudio}
+              style={{
+                alignSelf: 'flex-start',
+                border: 0,
+                background: 'transparent',
+                color: voiceTextColor,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: 0,
+                fontSize: 11,
+              }}
+            >
+              <RotateCcw size={12} />
+              {t('chat.social.messageArea.voiceRetry')}
+            </button>
+          )}
+        </Flexbox>
         {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
         {showHint && chip && <VisibilityBadge chip={chip} />}
       </Flexbox>

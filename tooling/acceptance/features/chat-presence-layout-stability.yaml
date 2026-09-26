@@ -1,0 +1,58 @@
+{
+  "id": "chat-presence-layout-stability",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/presence/**",
+    "apps/station/frame/core/federation/presence.go",
+    "apps/station/frame/core/federation/routes.go",
+    "apps/station/frame/core/federation/scope.go",
+    "apps/desktop/src/hooks/usePresence.ts",
+    "apps/desktop/src/services/chatPresence.ts",
+    "apps/desktop/src/services/socialRealtime.ts",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/desktop/src/components/chat/ChatSessionList.tsx",
+    "apps/desktop/src/components/chat/chatGeometry.ts",
+    "apps/desktop/src/components/chat/message/ChatMessageRow.tsx",
+    "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx",
+    "apps/desktop/src/components/chat/message/chatMessageTimelinePolicy.ts",
+    "apps/desktop/src/acceptance/chat/**"
+  ],
+  "truth_sources": [
+    "authenticated Actor Home Station presence lease",
+    "authenticated Federation presence query",
+    "Desktop PTID-keyed snapshot and realtime presence projection",
+    "Desktop conversation unread projection",
+    "Desktop message interaction projection"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "selector": "[data-chat-presence-tag]"},
+    {"type": "desktop-native", "selector": "[data-chat-session-unread-lane]"},
+    {"type": "desktop-native", "selector": "[data-chat-message-timeline]"},
+    {"type": "desktop-native", "selector": "[data-message-metadata-rail]"}
+  ],
+  "required_gates": [
+    "chat-native-visible-static",
+    "chat-presence-layout-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "the local Station resolves each Actor Home Station and performs authenticated bounded Federation queries for remote presence",
+      "failed or omitted remote authority results remain unknown instead of becoming false offline",
+      "presence snapshots and realtime flips converge through one revision-fenced PTID projection"
+    ],
+    "visible": [
+      "both authenticated native peers remain online across focus changes and beyond one Station lease interval",
+      "unavailable presence authority renders unknown",
+      "zero, single-digit, and capped multi-digit unread states preserve conversation-row and text-column geometry",
+      "reaction, thread, pending-interaction, and emoji-only states preserve neighboring message geometry and the visible scroll anchor"
+    ]
+  },
+  "negative": [
+    "window blur, minimization, or a hidden Chat page must not mark a reachable actor offline",
+    "missing or failed remote presence authority must not render offline",
+    "unread count width must not resize a conversation row or its text column",
+    "message metadata must not resize neighboring rows or move the visible scroll anchor",
+    "fixed sleeps must not replace bounded observed presence, projection, or geometry transitions"
+  ]
+}

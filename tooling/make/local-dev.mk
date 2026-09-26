@@ -4,9 +4,11 @@
 .PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
-        dev-session-start dev-session-status dev-transition dev-functional-result \
-        active-work-sync active-work-status active-work-status-all active-work-close \
-        plan-bind plan-binding plan-validate plan-status plan-current plan-next \
+        dev-session-start dev-session-status dev-session-archive dev-transition dev-functional-result \
+        active-work-sync active-work-repair active-work-status active-work-status-all active-work-close \
+        workflow-snapshot \
+        plan-bind plan-binding plan-activate plan-advance \
+        plan-validate plan-status plan-current plan-next \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -42,6 +44,7 @@ DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
 DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
 ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
+WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
 
 env-register:
 	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
@@ -89,6 +92,29 @@ plan-bind:
 
 plan-binding:
 	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
+
+plan-activate:
+	@if [ -z "$(PLAN)" ] || [ -z "$(TASK)" ]; then echo "Usage: make plan-activate PLAN=<package-plan.md> TASK=<ready-id>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) activate \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--task "$(TASK)"
+
+plan-advance:
+	@if [ -z "$(PLAN)" ] || [ -z "$(TO)" ]; then echo "Usage: make plan-advance PLAN=<package-plan.md> TO=<done|blocked|reactivate> [TASK=<current-id>] [SESSION=<session.json>] [NEXT=<ready-id>]"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) advance \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--to "$(TO)" \
+		$(if $(TASK),--task "$(TASK)",) \
+		$(if $(SESSION),--session "$(SESSION)",) \
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(BLOCKER_CODE),--blocker-code "$(BLOCKER_CODE)",) \
+		$(if $(BLOCKER_OWNER),--blocker-owner "$(BLOCKER_OWNER)",) \
+		$(if $(BLOCKER_EVIDENCE_REF),--blocker-evidence-ref "$(BLOCKER_EVIDENCE_REF)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 plan-validate:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi
@@ -195,6 +221,12 @@ dev-session-status:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-session-status WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_SESSION_SCRIPT) status --work-item "$(DEV_WORK_ITEM_ARG)"
 
+dev-session-archive:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_SESSION_ARG)" ]; then echo "Usage: make dev-session-archive WORK_ITEM=<id> SESSION=<id>"; exit 1; fi
+	@node $(DEV_SESSION_SCRIPT) archive \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--session "$(DEV_SESSION_ARG)"
+
 dev-transition:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(TO)" ] || [ -z "$(REASON)" ]; then \
 		echo "Usage: make dev-transition WORK_ITEM=<id> TO=<state> REASON='<text>' [SOURCE='<json>'] [VERIFICATION='<json>'] [FAILURE='<json>'] [RUNTIME_BINDING_REF=<ref>]"; \
@@ -211,19 +243,31 @@ dev-transition:
 
 dev-functional-result:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(REASON)" ]; then \
-		echo "Usage: make dev-functional-result WORK_ITEM=<id> REASON='<text>' [RUNTIME_CELL=<cell>]"; \
+		echo "Usage: make dev-functional-result WORK_ITEM=<id> REASON='<text>' [RUNTIME_CELL=<cell>] [RESULT_REF=<workspace-development-relative-path>] [STATION_PROFILES='SERVICE_ID=PROFILE ...']"; \
 		exit 1; \
 	fi
 	@node $(DEV_SESSION_SCRIPT) functional-result \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		--reason "$(REASON)" \
-		$(if $(RUNTIME_CELL),--runtime-cell "$(RUNTIME_CELL)",)
+		$(if $(RESULT_REF),--result-ref "$(RESULT_REF)",) \
+		$(if $(RUNTIME_CELL),--runtime-cell "$(RUNTIME_CELL)",) \
+		$(foreach binding,$(STATION_PROFILES),--station-profile "$(binding)")
 
 active-work-sync:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]"; exit 1; fi
 	@node $(ACTIVE_WORK_SCRIPT) sync \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(EXPECTED_REVISION),--expected-revision "$(EXPECTED_REVISION)",)
+
+active-work-repair:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(EXPECTED_REVISION)" ] || [ -z "$(EXPECTED_RECORD_SHA256)" ]; then \
+		echo "Usage: make active-work-repair WORK_ITEM=<id> EXPECTED_REVISION=<n> EXPECTED_RECORD_SHA256=<sha256>"; \
+		exit 1; \
+	fi
+	@node $(ACTIVE_WORK_SCRIPT) repair \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--expected-revision "$(EXPECTED_REVISION)" \
+		--expected-record-sha256 "$(EXPECTED_RECORD_SHA256)"
 
 active-work-status:
 	@node $(ACTIVE_WORK_SCRIPT) status
@@ -239,6 +283,12 @@ active-work-close:
 	@node $(ACTIVE_WORK_SCRIPT) close \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		--expected-revision "$(EXPECTED_REVISION)"
+
+workflow-snapshot:
+	@node $(WORKFLOW_SNAPSHOT_SCRIPT) \
+		--workspace-root "$(CURDIR)" \
+		--env-repo "$(ENV_REPO_ARG)" \
+		$(if $(WORKFLOW_SNAPSHOT_PROJECTION),--projection "$(WORKFLOW_SNAPSHOT_PROJECTION)",)
 
 station:
 	@$(DEVCTL) station start

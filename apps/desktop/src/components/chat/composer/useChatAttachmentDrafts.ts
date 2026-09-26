@@ -18,6 +18,7 @@ export interface ChatDraftAttachment {
   filePath?: string;
   name: string;
   mimeType: string;
+  contentKind: 'file' | 'voice_note';
   size: number;
   durationSeconds?: number;
   previewUrl: string | null;
@@ -81,6 +82,7 @@ function createDraftAttachment(
     file,
     name: file.name || fallbackName,
     mimeType,
+    contentKind: 'file',
     size: file.size,
     durationSeconds: options?.durationSeconds,
     ...createChatAttachmentPreview(mimeType, file.name, file),
@@ -102,6 +104,7 @@ export function createPickedDraftAttachment(
     filePath: attachment.filePath,
     name,
     mimeType,
+    contentKind: attachment.contentKind,
     size: attachment.size ?? 0,
     ...createChatAttachmentPreview(mimeType, name, attachment.filePath),
     status: valid ? 'ready' : 'failed',
@@ -109,7 +112,9 @@ export function createPickedDraftAttachment(
     attachment: valid ? attachment : undefined,
     durationSeconds: attachment.voiceNote?.durationMs
       ? attachment.voiceNote.durationMs / 1000
-      : undefined,
+      : attachment.durationMs > 0
+        ? attachment.durationMs / 1000
+        : undefined,
   };
 }
 
@@ -173,6 +178,8 @@ export function useChatAttachmentDrafts({
               waveform: [],
             }
             : undefined,
+          contentKind: item.contentKind,
+          durationMs: Math.max(0, Math.round((item.durationSeconds ?? 0) * 1000)),
         },
         managedSource: !item.filePath,
       });
@@ -202,7 +209,9 @@ export function useChatAttachmentDrafts({
         attempt: 0,
         name: attachment.filename || fallbackName,
         mimeType: attachment.mimeType || 'application/octet-stream',
+        contentKind: attachment.contentKind,
         size: attachment.size ?? 0,
+        durationSeconds: attachment.durationMs > 0 ? attachment.durationMs / 1000 : undefined,
         ...createChatAttachmentPreview(
           attachment.mimeType,
           attachment.filename,

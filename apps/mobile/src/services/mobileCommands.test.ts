@@ -32,6 +32,11 @@ import {
   messagingSendMessage,
   messagingTransferOwnership,
   messagingUpdateMemberAuthority,
+  privateSocialCommentSubmit,
+  privateSocialComments,
+  privateSocialOpenMedia,
+  privateSocialPublish,
+  privateSocialRead,
   uploadNativeMomentMedia,
 } from './mobileCommands';
 
@@ -183,6 +188,52 @@ describe('Mobile command mutation admission', () => {
     ]);
     expect(JSON.stringify(invokeMock.mock.calls)).not.toMatch(
       /body_bytes|local_path|access_token|ciphertext|plaintext/i,
+    );
+  });
+
+  it('routes generic private Social operations only through native commands', async () => {
+    const scope = { ...account, activationGeneration: 7 };
+    await privateSocialPublish({
+      ...scope,
+      draftId: 'draft-1',
+      draftRevision: 1,
+      text: 'private',
+      audience: { kind: 'FRIENDS' },
+      momentKind: 'POLL',
+      poll: {
+        question: 'Choose',
+        options: ['A', 'B'],
+        minChoices: 1,
+        maxChoices: 1,
+        expiresAtSeconds: 2_000_000_000,
+      },
+    });
+    await privateSocialRead({ ...scope, postId: 'post-1' });
+    await privateSocialOpenMedia({ ...scope, postId: 'post-1', objectId: 'object-1' });
+    await privateSocialCommentSubmit({
+      ...scope,
+      draftId: 'comment-draft-1',
+      draftRevision: 1,
+      postId: 'post-1',
+      text: 'reply',
+    });
+    await privateSocialComments({ ...scope, postId: 'post-1', limit: 20 });
+
+    expect(invokeMock.mock.calls).toEqual([
+      ['social_private_publish', { input: expect.objectContaining({ momentKind: 'POLL' }) }],
+      ['social_private_read', { input: { ...scope, postId: 'post-1' } }],
+      ['social_private_open_media', {
+        input: { ...scope, postId: 'post-1', objectId: 'object-1' },
+      }],
+      ['social_private_comment_submit', {
+        input: expect.objectContaining({ ...scope, postId: 'post-1', text: 'reply' }),
+      }],
+      ['social_private_comments', {
+        input: { ...scope, postId: 'post-1', limit: 20 },
+      }],
+    ]);
+    expect(JSON.stringify(invokeMock.mock.calls)).not.toMatch(
+      /access_token|object_key|root_key|plaintext_sha256/i,
     );
   });
 });

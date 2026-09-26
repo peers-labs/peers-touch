@@ -16,6 +16,7 @@
 # Profiles:
 #   station — station service + (must include `infra`)
 #   relay   — relay  service + (must include `infra`)
+#   livekit — LiveKit SFU (shared; deploy on one host, all stations point at it)
 #   infra   — postgres only
 
 services:
@@ -112,6 +113,12 @@ services:
       # them into the image. The host auth/config dir is bind-mounted below.
       PEERS_HOST_CLI_BIN: ${PEERS_HOST_CLI_BIN:-}
       PEERS_HOST_CLI_HOME: ${PEERS_HOST_CLI_HOME:-}
+      # LiveKit SFU — group call infrastructure. Station uses these
+      # to create rooms and generate participant tokens.
+      LIVEKIT_API_URL: ${LIVEKIT_API_URL:-}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
     ports:
       - "${STATION_PORT:-18080}:18080"
       # libp2p port for the bootstrap subserver. Same-host coexistence
@@ -195,6 +202,55 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
+    restart: unless-stopped
+
+  # ── LiveKit SFU (group voice/video calls) ──────────────────────
+  # Single-node LiveKit Server. No Redis needed. Station connects
+  # via server-sdk-go; Desktop connects via @livekit/livekit-client.
+  # Built-in TURN is disabled — Station's Pion TURN on :3478 is reused.
+  #
+  # LiveKit is shared infrastructure — one instance can serve multiple
+  # Stations. It does NOT need to be co-located with every Station.
+  # Deploy it on one host and point all Stations at it via
+  # LIVEKIT_API_URL and LIVEKIT_PUBLIC_URL.
+  #
+  # LIVEKIT_API_KEY / LIVEKIT_API_SECRET are injected from the per-env
+  # file. If missing, the container starts but rejects all requests —
+  # group calls are unavailable while 1v1 and chat remain functional.
+  livekit:
+    image: livekit/livekit-server:v1.13
+    profiles: [livekit]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
+      NODE_IP: "${LIVEKIT_NODE_IP:-}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          udp_port: 7881
+          use_external_ip: false
+        turn:
+          enabled: false
+        webhook:
+          api_key: "${LIVEKIT_API_KEY:-}"
+          urls:
+            - "${LIVEKIT_WEBHOOK_URL:-http://station:18080/hooks/livekit}"
+        room:
+          empty_timeout: 300
+          max_participants: 50
+        logging:
+          level: info
+    command:
+      - --bind=0.0.0.0
+    ports:
+      - "${LIVEKIT_PORT:-7880}:7880"
+      - "${LIVEKIT_RTC_PORT:-7881}:7881/tcp"
+      - "${LIVEKIT_RTC_PORT:-7881}:7881/udp"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=2", "http://127.0.0.1:7880"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   # ── Webhook Receiver (auto-deploy on git push) ─────────────────

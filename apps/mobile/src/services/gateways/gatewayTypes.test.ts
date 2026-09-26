@@ -108,7 +108,7 @@ describe('gateway mutation admission', () => {
 
     await expect(moments.command({
       method: 'POST',
-      path: '/api/v1/social/posts',
+      path: '/api/v1/social/moments',
       body: {},
     })).resolves.toMatchObject({
       ok: false,

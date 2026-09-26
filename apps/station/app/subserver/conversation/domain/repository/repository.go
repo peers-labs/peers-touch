@@ -208,7 +208,7 @@ type LeaveIntentRepository interface {
 	ListPending(
 		ctx context.Context,
 		conversationID valueobject.ConversationID,
-		actor valueobject.PTID,
+		excludedActor valueobject.PTID,
 		limit int,
 	) ([]LeaveIntent, error)
 }

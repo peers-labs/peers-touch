@@ -35,6 +35,7 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 		ActorID           uint64    `json:"id"`
 		ActorPTID         string    `json:"ptid"`
 		ActorKind         string    `json:"kind"`
+		FederatedHandle   string    `json:"federated_handle"`
 		Name              string    `json:"name"`
 		PreferredUsername string    `json:"preferred_username"`
 		AvatarUrl         string    `json:"avatar_url"`
@@ -46,7 +47,7 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 
 	err = rds.WithContext(ctx).
 		Table("touch_actor_status").
-		Select("touch_actor_status.actor_id, touch_actor.ptid, touch_actor.kind, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat").
+		Select("touch_actor_status.actor_id, touch_actor.ptid, touch_actor.kind, touch_actor.federated_handle, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat").
 		Joins("JOIN touch_actor ON touch_actor.id = touch_actor_status.actor_id").
 		Where("touch_actor_status.actor_id != ?", currentActorID).
 		Where("touch_actor_status.status = ?", db.ActorStatusOnline).
@@ -70,8 +71,9 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 				ID:                r.ActorID,
 				PTID:              r.ActorPTID,
 				Kind:              r.ActorKind,
+				FederatedHandle:   r.FederatedHandle,
 				PreferredUsername: r.PreferredUsername,
-			}, ""),
+			}),
 		})
 	}
 

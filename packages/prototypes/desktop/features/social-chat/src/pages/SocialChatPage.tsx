@@ -134,6 +134,7 @@ export function SocialChatPage() {
     restoreConversationHistory,
     setConversationBackgroundImage,
     sendMessage,
+    sendVoiceMessage,
     renameGroup,
     removeGroupMember,
     toggleMemberMute,
@@ -158,7 +159,11 @@ export function SocialChatPage() {
   const conversationOnly = rootWidth > 0 && rootWidth < 400;
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden', background: T.bg }}>
+    <div
+      ref={rootRef}
+      data-social-chat-root
+      style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden', background: T.bg }}
+    >
       <ChatRail activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'contacts' ? (
         <ContactsPane />
@@ -186,9 +191,11 @@ export function SocialChatPage() {
           messages={messages}
           onToggleDetail={toggleDetail}
           onSendMessage={sendMessage}
+          onSendVoice={sendVoiceMessage}
           onRestoreHistory={restoreConversationHistory}
           backgroundImageUrl={activeConversation?.backgroundImage}
           compact={compact}
+          callOverlayHost={rootRef.current}
         />
       {showDetail && activeConversation && (
         compact ? (

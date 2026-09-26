@@ -172,6 +172,8 @@ function conversationFromProjection(
       ? 'CONVERSATION_STATUS_ACTIVE'
       : 'CONVERSATION_STATUS_DISSOLVED',
     name: projection.name,
+    description: projection.description,
+    avatarCid: projection.avatarObjectId,
     ownerPtid: projection.ownerPtid,
   })
 }
@@ -270,10 +272,14 @@ const deviceService: DeviceServiceContract = {
   },
 
   async revoke(deviceId, observedProfileVersion) {
-    await cmd('device_revoke', {
+    const resp = await cmd<
+      { device_id: string; observed_profile_version: number },
+      { device: JsonValue }
+    >('device_revoke', {
       device_id: deviceId,
       observed_profile_version: Number(observedProfileVersion),
     })
+    return fromJson(ActorDeviceSchema, resp.device)
   },
 }
 
@@ -288,6 +294,8 @@ interface MessagingMessageWire {
     attachment_id: string
     filename: string
     mime_type: string
+    content_kind: number
+    duration_ms: number
     plaintext_size: number
     object_id: string
     storage_ref: string
@@ -328,6 +336,8 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
       attachmentId: attachment.attachment_id,
       filename: attachment.filename,
       mimeType: attachment.mime_type,
+      contentKind: attachment.content_kind === 2 ? 'voice_note' : 'file',
+      durationMs: attachment.duration_ms,
       plaintextSize: attachment.plaintext_size,
       objectId: attachment.object_id,
       storageRef: attachment.storage_ref,
@@ -423,6 +433,79 @@ const messagingService: MessagingServiceContract = {
       commandId: response.command_id,
       state: response.state,
     }
+  },
+
+  async updateConversation(conversationId, update) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        name?: string
+        description?: string
+        avatar_object_id?: string
+      },
+      { command_id: string; state: string }
+    >('messaging_update_conversation', {
+      conversation_id: conversationId,
+      ...(update.name !== undefined ? { name: update.name } : {}),
+      ...(update.description !== undefined ? { description: update.description } : {}),
+      ...(update.avatarObjectId !== undefined
+        ? { avatar_object_id: update.avatarObjectId }
+        : {}),
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async updateMemberAuthority(conversationId, targetPtid, update) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        target_ptid: string
+        role?: number
+        muted?: boolean
+        muted_until_unix_ms?: number
+      },
+      { command_id: string; state: string }
+    >('messaging_update_member_authority', {
+      conversation_id: conversationId,
+      target_ptid: targetPtid,
+      ...(update.role !== undefined ? { role: update.role } : {}),
+      ...(update.muted !== undefined ? { muted: update.muted } : {}),
+      ...(update.mutedUntilUnixMs !== undefined
+        ? { muted_until_unix_ms: update.mutedUntilUnixMs }
+        : {}),
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async transferOwnership(conversationId, targetPtid) {
+    const response = await cmd<
+      { conversation_id: string; target_ptid: string },
+      { command_id: string; state: string }
+    >('messaging_transfer_ownership', {
+      conversation_id: conversationId,
+      target_ptid: targetPtid,
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async dissolveConversation(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      { command_id: string; state: string }
+    >('messaging_dissolve_conversation', {
+      conversation_id: conversationId,
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async leaveConversation(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      { intent_id: string; state: 'pending' }
+    >('messaging_leave_conversation', {
+      conversation_id: conversationId,
+    })
+    return { intentId: response.intent_id, state: response.state }
   },
 
   async requestLeaveIntent(input) {
@@ -534,6 +617,8 @@ const messagingService: MessagingServiceContract = {
           federation_id: string
           kind: number
           name: string
+          description: string
+          avatar_object_id: string
           owner_ptid: string
           members: JsonValue[]
           membership_epoch: number
@@ -554,6 +639,8 @@ const messagingService: MessagingServiceContract = {
       federationId: conversation.federation_id,
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
+      description: conversation.description,
+      avatarObjectId: conversation.avatar_object_id,
       ownerPtid: conversation.owner_ptid,
       members: conversation.members.map(member =>
         fromJson(ConversationMemberSchema, member)
@@ -582,6 +669,8 @@ const messagingService: MessagingServiceContract = {
       filePath: response.file_path,
       filename: response.filename,
       mimeType: response.mime_type,
+      contentKind: 'file',
+      durationMs: 0,
       size: response.size,
     }
   },
@@ -613,6 +702,8 @@ const messagingService: MessagingServiceContract = {
       filePath: response.file_path,
       filename: response.filename,
       mimeType: response.mime_type,
+      contentKind: 'file',
+      durationMs: 0,
     }
   },
 
@@ -628,6 +719,8 @@ const messagingService: MessagingServiceContract = {
           file_path: string
           filename: string
           mime_type: string
+          content_kind: 'file' | 'voice_note'
+          duration_ms: number
           voice_note?: {
             duration_ms: number
             codec: string
@@ -651,6 +744,8 @@ const messagingService: MessagingServiceContract = {
         file_path: attachment.filePath,
         filename: attachment.filename,
         mime_type: attachment.mimeType,
+        content_kind: attachment.contentKind,
+        duration_ms: attachment.durationMs,
         voice_note: attachment.voiceNote
           ? {
             duration_ms: attachment.voiceNote.durationMs,

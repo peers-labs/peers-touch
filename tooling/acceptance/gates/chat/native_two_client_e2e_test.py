@@ -173,6 +173,66 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn('SELECTORS["create_group_submit"]', group_source)
         self.assertNotIn('"createGroup"', group_source)
 
+    def test_two_client_runner_has_one_direct_authority_creator(self) -> None:
+        source = (
+            Path(__file__).with_name("native_two_client_runner.py")
+            .read_text(encoding="utf-8")
+        )
+        tree = ast.parse(source)
+        gate_class = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "NativeTwoClientGate"
+        )
+        open_conversation = next(
+            node
+            for node in gate_class.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "open_conversation"
+        )
+        harness_calls = [
+            node
+            for node in ast.walk(open_conversation)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "async_harness"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+        ]
+        create_calls = [
+            call
+            for call in harness_calls
+            if call.args[1].value == "createDirectConversation"
+        ]
+        self.assertEqual(len(create_calls), 1)
+        self.assertIsInstance(create_calls[0].args[0], ast.Name)
+        self.assertEqual(create_calls[0].args[0].id, "initiator")
+
+        sync_calls = [
+            call
+            for call in harness_calls
+            if call.args[1].value == "syncFriendSession"
+        ]
+        self.assertEqual(len(sync_calls), 1)
+        self.assertIsInstance(sync_calls[0].args[0], ast.Name)
+        self.assertEqual(sync_calls[0].args[0].id, "client")
+        self.assertTrue(
+            any(
+                isinstance(node, ast.For)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == "client"
+                and isinstance(node.iter, ast.Tuple)
+                and [
+                    item.id
+                    for item in node.iter.elts
+                    if isinstance(item, ast.Name)
+                ]
+                == ["initiator", "receiver"]
+                for node in ast.walk(open_conversation)
+            )
+        )
+
     def setUp(self) -> None:
         self.module = load_module()
         self.temp = tempfile.TemporaryDirectory()
@@ -258,6 +318,76 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 evidence,
                 {"http://other-station.example"},
             )
+        )
+
+    def test_demo_avatar_proof_waits_for_eventual_remote_projection(self) -> None:
+        alice = "data:image/svg+xml;base64,alice"
+        bob = "data:image/svg+xml;base64,bob"
+        bob_snapshot = {
+            "declared": bob,
+            "rendered": bob,
+            "complete": True,
+            "naturalWidth": 36,
+        }
+        initial = {
+            "alice": {"alice": None, "bob": None},
+            "bob": {"alice": bob_snapshot, "bob": None},
+        }
+        hydrated = {
+            "alice": {
+                "alice": None,
+                "bob": {
+                    "declared": alice,
+                    "rendered": alice,
+                    "complete": True,
+                    "naturalWidth": 36,
+                },
+            },
+            "bob": {"alice": bob_snapshot, "bob": None},
+        }
+        gate = object.__new__(NativeTwoClientGate)
+        gate.station_url = "http://station.example"
+
+        def wait_for_valid(
+            predicate: Any,
+            description: str,
+            timeout: float,
+            interval: float = 0.25,
+        ) -> dict[str, Any]:
+            del interval
+            self.assertEqual(description, "valid remote demo avatar sources")
+            self.assertEqual(timeout, 30.0)
+            self.assertIsNone(predicate())
+            value = predicate()
+            self.assertIsNotNone(value)
+            return value
+
+        with (
+            patch.object(
+                gate,
+                "sample_demo_avatar_sources",
+                side_effect=[initial, hydrated],
+            ) as sample,
+            patch(
+                "tooling.acceptance.gates.chat.native_two_client_runner."
+                "wait_until",
+                side_effect=wait_for_valid,
+            ),
+            patch(
+                "tooling.acceptance.gates.chat.native_two_client_runner."
+                "is_bundled_square_avatar",
+                return_value=True,
+            ),
+            patch.object(gate, "assert_condition") as assertion,
+        ):
+            evidence = gate.prove_demo_avatar_sources()
+
+        self.assertEqual(evidence, hydrated)
+        self.assertEqual(sample.call_count, 2)
+        assertion.assert_called_once_with(
+            "demo_avatar_bundled",
+            True,
+            json.dumps(hydrated, sort_keys=True),
         )
 
     def test_reconciled_command_snapshot_distinguishes_architecture_outcomes(
@@ -1442,10 +1572,17 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertIn("def message_composer_geometry(", runner)
         self.assertIn("timelineFlexShrink", runner)
+        self.assertIn("renderedMessageIds", runner)
+        self.assertIn("scrollHeight", runner)
         self.assertIn("row[\"bottom\"] <= composer[\"top\"] - 8", runner)
         self.assertIn("def prove_demo_avatar_sources(", runner)
         self.assertIn('"avatar.bundled"', runner)
         self.assertIn('"message.layout"', runner)
+        self.assertIn(
+            'f"{sender_name} submitted message layout"',
+            runner,
+        )
+        self.assertIn('f"current={json.dumps(current, sort_keys=True)}', runner)
         direction = runner.split(
             "    def prove_direction(",
             maxsplit=1,
@@ -1461,6 +1598,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn("chatMessageTimelineContainerStyle", timeline)
         self.assertIn("behavior: 'auto'", timeline_policy)
         self.assertIn("useLayoutEffect", message_area)
+        self.assertIn("new ResizeObserver", message_area)
+        self.assertIn("isChatMessageTailPinned(container)", message_area)
+        self.assertIn("chatMessageTailScrollTop(container)", message_area)
+        self.assertIn("onTimelineMeasured={handleTimelineMeasured}", message_area)
+        self.assertIn("onTimelineMeasured();", timeline)
         self.assertIn(
             "scrollIntoView(chatMessageTailScrollOptions())",
             message_area,
@@ -1498,6 +1640,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn(
             "await social.loadMessages(sessionUlid, 'friend')",
             friend_sync,
+        )
+        self.assertIn("loadOlderMessages(", friend_sync)
+        self.assertLess(
+            friend_sync.index("await social.loadMessages("),
+            friend_sync.index("selectConversation('friend', sessionUlid)"),
         )
         self.assertNotIn("conversation.syncFromStation", friend_sync)
         self.assertIn("resolve_native_desktop_runtime", entry)

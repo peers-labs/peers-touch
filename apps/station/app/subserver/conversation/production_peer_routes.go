@@ -16,6 +16,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -81,13 +82,81 @@ func (s *subServer) handleFederatedCommandPrepare(
 		return err
 	}
 	claims := httpadapter.GetVerifiedClaims(ctx)
-	nested := input.GetRequest()
+	if nested := input.GetRequest(); nested != nil {
+		if claims == nil ||
+			nested.GetSender() == nil ||
+			nested.GetSender().GetActor() == nil ||
+			input.GetSourceHomeStationPeerId() != claims.Issuer ||
+			nested.GetAuthorityStationPeerId() != string(s.localStation) ||
+			claims.Custom[federationruntime.ClaimConversationID] !=
+				nested.GetConversationId() ||
+			claims.Custom[federationruntime.ClaimActorPTID] !=
+				nested.GetSender().GetActor().GetPtid() ||
+			claims.Custom[federationruntime.ClaimDeviceID] !=
+				nested.GetSender().GetDeviceId() ||
+			claims.Custom[federationruntime.ClaimSourceStationPeerID] !=
+				claims.Issuer ||
+			claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
+				claims.Audience {
+			return server.Forbidden(
+				"Federation claims do not match the Conversation preparation request",
+			)
+		}
+		conversationID, err := valueobject.NewConversationID(
+			nested.GetConversationId(),
+		)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		sender, err := valueobject.NewEndpoint(
+			nested.GetSender().GetActor().GetPtid(),
+			nested.GetSender().GetDeviceId(),
+		)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		sourceHomeStation, err := valueobject.NewStationID(claims.Issuer)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		verifiedRoutes, err := s.composition.productionCommandRoutes(
+			ctx,
+			s.composition.CommandService,
+			conversationID,
+			sender.Actor,
+		)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		preparation, err := s.composition.CommandService.PrepareCommand(
+			ctx,
+			command.PrepareCommandRequest{
+				ConversationID:    conversationID,
+				Sender:            sender,
+				SenderHomeStation: sourceHomeStation,
+				VerifiedRoutes:    verifiedRoutes,
+			},
+		)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+
+		return productionWritePeerResponse(
+			response,
+			&chatmodel.PrepareFederatedConversationCommandResponse{
+				Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_Plan{
+					Plan: productionCommandPreparation(conversationID, preparation),
+				},
+			},
+		)
+	}
+
+	nested := input.GetMembershipRequest()
 	if claims == nil ||
 		nested == nil ||
 		nested.GetSender() == nil ||
 		nested.GetSender().GetActor() == nil ||
 		input.GetSourceHomeStationPeerId() != claims.Issuer ||
-		nested.GetAuthorityStationPeerId() != string(s.localStation) ||
 		claims.Custom[federationruntime.ClaimConversationID] !=
 			nested.GetConversationId() ||
 		claims.Custom[federationruntime.ClaimActorPTID] !=
@@ -99,7 +168,7 @@ func (s *subServer) handleFederatedCommandPrepare(
 		claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
 			claims.Audience {
 		return server.Forbidden(
-			"Federation claims do not match the Conversation preparation request",
+			"Federation claims do not match the Conversation membership preparation request",
 		)
 	}
 	conversationID, err := valueobject.NewConversationID(
@@ -108,35 +177,32 @@ func (s *subServer) handleFederatedCommandPrepare(
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	sender, err := valueobject.NewEndpoint(
+	requester, err := valueobject.NewEndpoint(
 		nested.GetSender().GetActor().GetPtid(),
 		nested.GetSender().GetDeviceId(),
 	)
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	sourceHomeStation, err := valueobject.NewStationID(claims.Issuer)
-	if err != nil {
-		return mapProductionConversationError(ctx, err)
-	}
-	verifiedRoutes, err := s.composition.productionCommandRoutes(
+	view, err := s.composition.QueryService.Get(
 		ctx,
-		s.composition.CommandService,
 		conversationID,
-		sender.Actor,
+		requester.Actor,
 	)
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	preparation, err := s.composition.CommandService.PrepareCommand(
-		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: sourceHomeStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
-	)
+	if view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != s.localStation ||
+		claims.Custom[federationruntime.ClaimFederationID] !=
+			string(view.Conversation.FederationID) ||
+		claims.Custom[federationruntime.ClaimAuthorityEpoch] !=
+			strconv.FormatInt(int64(view.Conversation.AuthorityEpoch), 10) {
+		return server.Forbidden(
+			"Federation claims do not match the Conversation membership authority",
+		)
+	}
+	plan, err := s.prepareMembershipPlan(ctx, nested, requester)
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
@@ -144,7 +210,9 @@ func (s *subServer) handleFederatedCommandPrepare(
 	return productionWritePeerResponse(
 		response,
 		&chatmodel.PrepareFederatedConversationCommandResponse{
-			Plan: productionCommandPreparation(conversationID, preparation),
+			Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_MembershipPlan{
+				MembershipPlan: plan,
+			},
 		},
 	)
 }

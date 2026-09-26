@@ -7,6 +7,8 @@ import (
 	"time"
 
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
+	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -45,7 +47,10 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 		DeviceId: "alice-device",
 	}
 
-	err = (privateContentAuthorSignatureVerifier{actors: actors}).Verify(
+	err = (privateContentAuthorSignatureVerifier{
+		actors:             actors,
+		localStationPeerID: actors.homeStationPeerID,
+	}).Verify(
 		context.Background(),
 		testFederationTransaction{},
 		sender,
@@ -74,6 +79,7 @@ type recordingPrivateContentActorCapabilities struct {
 	privateContentActorCapabilities
 
 	homeStationPeerID         string
+	homeStationError          error
 	key                       *actormodel.VerifiedActorDeviceSigningKey
 	resolvedActorPTID         string
 	resolvedHomeStationPeerID string
@@ -87,7 +93,7 @@ func (a *recordingPrivateContentActorCapabilities) ResolveActorHomeStationPeerID
 ) (string, error) {
 	a.resolvedActorPTID = actorPTID
 
-	return a.homeStationPeerID, nil
+	return a.homeStationPeerID, a.homeStationError
 }
 
 func (a *recordingPrivateContentActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
@@ -104,6 +110,74 @@ func (a *recordingPrivateContentActorCapabilities) ResolveVerifiedActorDeviceSig
 	a.resolvedSigningKeyID = signingKeyID
 
 	return a.key, nil
+}
+
+func TestPrivateContentRecipientDirectoryRejectsUnresolvedHomeStationAsUnsupported(
+	t *testing.T,
+) {
+	identityUnavailable := actoridentitydomain.NewError(
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+		"actor_identity.resolve_actor_home_station",
+		"home_station_peer_id",
+		"is not available from Actor Identity",
+	)
+	directory := &privateContentRecipientDirectory{
+		actors: &recordingPrivateContentActorCapabilities{
+			homeStationError: identityUnavailable,
+		},
+	}
+
+	localities, err := directory.ResolveRecipientLocalities(
+		context.Background(),
+		"station-local",
+		[]string{"ptid:remote"},
+	)
+	if localities != nil {
+		t.Fatalf("localities = %+v, want nil", localities)
+	}
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentUnsupported,
+	) {
+		t.Fatalf("unresolved Home Station error = %v, want unsupported", err)
+	}
+	if !actoridentitydomain.IsCode(
+		err,
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+	) {
+		t.Fatalf("unresolved Home Station cause was not preserved: %v", err)
+	}
+}
+
+func TestPrivateContentRecipientDirectoryPreservesActorIdentityFailures(
+	t *testing.T,
+) {
+	persistenceFailure := actoridentitydomain.NewError(
+		actoridentitydomain.ErrorCodePersistence,
+		"actor_identity.resolve_actor_home_station",
+		"repository",
+		"is unavailable",
+	)
+	directory := &privateContentRecipientDirectory{
+		actors: &recordingPrivateContentActorCapabilities{
+			homeStationError: persistenceFailure,
+		},
+	}
+
+	_, err := directory.ResolveRecipientLocalities(
+		context.Background(),
+		"station-local",
+		[]string{"ptid:recipient"},
+	)
+	if !actoridentitydomain.IsCode(
+		err,
+		actoridentitydomain.ErrorCodePersistence,
+	) {
+		t.Fatalf("Actor Identity persistence error = %v", err)
+	}
+	if code := socialdomain.PrivateContentCodeOf(err); code != "" {
+		t.Fatalf("persistence error was remapped to %q", code)
+	}
 }
 
 func TestPrivateContentStationSignerVerifiesRetainedProofKeyAfterRotation(
@@ -277,6 +351,68 @@ func TestPrivateContentStationSignerUsesCallerTransactionOnSingleConnectionSQLit
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("transactional proof-key access deadlocked")
+	}
+}
+
+type recordingPrivateContentAuthorKeyResolver struct {
+	privateContentActorCapabilities
+	expectedHomeStationPeerID string
+	publicKey                 ed25519.PublicKey
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveVerifiedActorDeviceSigningKey(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	_ string,
+	expectedHomeStationPeerID string,
+	_ string,
+	_ string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	r.expectedHomeStationPeerID = expectedHomeStationPeerID
+	return &actormodel.VerifiedActorDeviceSigningKey{
+		Ed25519PublicKey: append([]byte(nil), r.publicKey...),
+	}, nil
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveActorHomeStationPeerID(
+	_ context.Context,
+	_ string,
+) (string, error) {
+	return "station-local", nil
+}
+
+func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
+	t *testing.T,
+) {
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	canonical := []byte("private-content-author-signature")
+	resolver := &recordingPrivateContentAuthorKeyResolver{
+		publicKey: privateKey.Public().(ed25519.PublicKey),
+	}
+	verifier := privateContentAuthorSignatureVerifier{
+		actors:             resolver,
+		localStationPeerID: "station-local",
+	}
+
+	err := verifier.Verify(
+		context.Background(),
+		nil,
+		&actormodel.ActorDeviceRef{
+			Actor:    &actormodel.ActorRef{Ptid: "actor-alice"},
+			DeviceId: "device-one",
+		},
+		"signing-key-one",
+		canonical,
+		ed25519.Sign(privateKey, canonical),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.expectedHomeStationPeerID != "station-local" {
+		t.Fatalf(
+			"expected Home Station = %q, want station-local",
+			resolver.expectedHomeStationPeerID,
+		)
 	}
 }
 

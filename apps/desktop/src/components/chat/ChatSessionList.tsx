@@ -39,6 +39,10 @@ import {
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
+import {
+  CHAT_SESSION_ROW_HEIGHT,
+  CHAT_SESSION_UNREAD_LANE_WIDTH,
+} from './chatGeometry';
 import type { FriendContactSelection } from './contactSelection';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
@@ -636,6 +640,10 @@ export function ChatSessionList({
                     onClick={() => handleSelect(c)}
                     style={{
                       padding: '10px 12px',
+                      boxSizing: 'border-box',
+                      height: CHAT_SESSION_ROW_HEIGHT,
+                      minHeight: CHAT_SESSION_ROW_HEIGHT,
+                      overflow: 'hidden',
                       borderRadius: 8,
                       cursor: 'pointer',
                       background: isActive ? token.colorPrimaryBg : 'transparent',
@@ -675,8 +683,8 @@ export function ChatSessionList({
                             </span>
                           )}
 
-                          <Flexbox flex={1} style={{ minWidth: 0 }}>
-                            <Flexbox horizontal align="center" justify="space-between" gap={6}>
+                          <Flexbox flex={1} justify="center" style={{ minWidth: 0, height: '100%' }}>
+                            <Flexbox horizontal align="center" justify="space-between" gap={6} style={{ height: 20 }}>
                               <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
                                 {c.kind === 'group' && (
                                   <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
@@ -695,15 +703,28 @@ export function ChatSessionList({
                                 {timeStr}
                               </Text>
                           </Flexbox>
-                            <Flexbox horizontal align="center" justify="space-between">
-                              <Text type="secondary" ellipsis style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
+                            <Flexbox horizontal align="center" style={{ height: 20, minWidth: 0 }}>
+                              <Text type="secondary" ellipsis style={{ fontSize: 12, lineHeight: '20px', flex: 1, minWidth: 0 }}>
                                 {subtitle}
                               </Text>
-                              {unread > 0 && (
-                                <span data-chat-session-unread={unread}>
-                                  <Badge count={unread} size="small" style={{ marginLeft: 8 }} />
-                                </span>
-                              )}
+                              <span
+                                data-chat-session-unread={unread}
+                                data-chat-session-unread-lane
+                                aria-hidden={unread <= 0}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'flex-end',
+                                  width: CHAT_SESSION_UNREAD_LANE_WIDTH,
+                                  minWidth: CHAT_SESSION_UNREAD_LANE_WIDTH,
+                                  height: 20,
+                                  marginLeft: 8,
+                                  overflow: 'hidden',
+                                  visibility: unread > 0 ? 'visible' : 'hidden',
+                                }}
+                              >
+                                <Badge count={unread} overflowCount={99} size="small" />
+                              </span>
                           </Flexbox>
                           </Flexbox>
                       </>

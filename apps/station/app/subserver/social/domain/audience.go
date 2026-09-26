@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
@@ -31,7 +32,7 @@ type Viewer struct {
 	// here we enumerate from the viewer's side).
 	MemberOfCircles map[uint64]struct{}
 	// Set of chat.Group IDs the viewer belongs to.
-	MemberOfGroups map[uint64]struct{}
+	MemberOfGroups map[string]struct{}
 }
 
 // CanRead is the SOLE access decision function for Moments / Posts.
@@ -44,9 +45,8 @@ type Viewer struct {
 // Rules (in evaluation order):
 //  1. Deleted posts are invisible to everyone, including the author.
 //  2. Author can always read their own (non-deleted) post.
-//  3. nil audience → treated as PUBLIC (legacy compatibility for posts
-//     created before the Moments P0 schema; safe default since legacy
-//     `PostVisibility` already filtered private content at DB layer).
+//  3. nil audience → treated as PUBLIC. Only public Post rows reach this
+//     evaluator; private resources use the Secure Content authority.
 //  4. Otherwise, dispatch on `audience.Kind` (see `Audience` proto doc).
 //
 // The returned `reason` is human-readable and intended for log lines /
@@ -91,19 +91,19 @@ func canReadKind(viewer Viewer, authorPTID string, audience *model.Audience, kin
 		return false, "not an accepted friend"
 
 	case model.Audience_CIRCLE:
-		if audience.TargetId == 0 {
-			return false, "CIRCLE audience missing target_id"
+		if audience.GetCircleId() == 0 {
+			return false, "CIRCLE audience missing circle_id"
 		}
-		if _, ok := viewer.MemberOfCircles[audience.TargetId]; ok {
+		if _, ok := viewer.MemberOfCircles[audience.GetCircleId()]; ok {
 			return true, "circle member"
 		}
 		return false, "not in target circle"
 
 	case model.Audience_GROUP:
-		if audience.TargetId == 0 {
-			return false, "GROUP audience missing target_id"
+		if audience.GetGroupConversationId() == "" {
+			return false, "GROUP audience missing group_conversation_id"
 		}
-		if _, ok := viewer.MemberOfGroups[audience.TargetId]; ok {
+		if _, ok := viewer.MemberOfGroups[audience.GetGroupConversationId()]; ok {
 			return true, "group member"
 		}
 		return false, "not in target group"
@@ -135,8 +135,8 @@ func canReadKind(viewer Viewer, authorPTID string, audience *model.Audience, kin
 		}
 		// Then defer to base.
 		base := audience.BaseKind
-		if base != model.Audience_PUBLIC && base != model.Audience_FOLLOWERS {
-			return false, "CUSTOM_DENY base_kind must be PUBLIC or FOLLOWERS"
+		if base != model.Audience_FOLLOWERS {
+			return false, "CUSTOM_DENY base_kind must be FOLLOWERS"
 		}
 		return canReadKind(viewer, authorPTID, audience, base)
 
@@ -172,8 +172,8 @@ func ValidateAudience(a *model.Audience) error {
 		return fmt.Errorf("audience kind unspecified")
 
 	case model.Audience_PUBLIC, model.Audience_FOLLOWERS, model.Audience_FRIENDS, model.Audience_SELF:
-		if a.TargetId != 0 {
-			return fmt.Errorf("%s audience must not set target_id", a.Kind)
+		if a.GetTarget() != nil {
+			return fmt.Errorf("%s audience must not set target", a.Kind)
 		}
 		if len(a.ActorPtids) > 0 {
 			return fmt.Errorf("%s audience must not set actor_ptids", a.Kind)
@@ -182,23 +182,40 @@ func ValidateAudience(a *model.Audience) error {
 			return fmt.Errorf("%s audience must not set base_kind", a.Kind)
 		}
 
-	case model.Audience_CIRCLE, model.Audience_GROUP:
-		if a.TargetId == 0 {
-			return fmt.Errorf("%s audience requires target_id", a.Kind)
+	case model.Audience_CIRCLE:
+		target, ok := a.GetTarget().(*model.Audience_CircleId)
+		if !ok || target.CircleId == 0 {
+			return fmt.Errorf("CIRCLE audience requires circle_id")
 		}
 		if len(a.ActorPtids) > 0 {
-			return fmt.Errorf("%s audience must not set actor_ptids", a.Kind)
+			return fmt.Errorf("CIRCLE audience must not set actor_ptids")
 		}
 		if a.BaseKind != model.Audience_KIND_UNSPECIFIED {
-			return fmt.Errorf("%s audience must not set base_kind", a.Kind)
+			return fmt.Errorf("CIRCLE audience must not set base_kind")
+		}
+
+	case model.Audience_GROUP:
+		target, ok := a.GetTarget().(*model.Audience_GroupConversationId)
+		if !ok ||
+			strings.TrimSpace(target.GroupConversationId) == "" ||
+			target.GroupConversationId != strings.TrimSpace(target.GroupConversationId) {
+			return fmt.Errorf(
+				"GROUP audience requires canonical group_conversation_id",
+			)
+		}
+		if len(a.ActorPtids) > 0 {
+			return fmt.Errorf("GROUP audience must not set actor_ptids")
+		}
+		if a.BaseKind != model.Audience_KIND_UNSPECIFIED {
+			return fmt.Errorf("GROUP audience must not set base_kind")
 		}
 
 	case model.Audience_CUSTOM_ALLOW:
 		if len(a.ActorPtids) == 0 {
 			return fmt.Errorf("CUSTOM_ALLOW audience requires non-empty actor_ptids")
 		}
-		if a.TargetId != 0 {
-			return fmt.Errorf("CUSTOM_ALLOW audience must not set target_id")
+		if a.GetTarget() != nil {
+			return fmt.Errorf("CUSTOM_ALLOW audience must not set target")
 		}
 		if a.BaseKind != model.Audience_KIND_UNSPECIFIED {
 			return fmt.Errorf("CUSTOM_ALLOW audience must not set base_kind")
@@ -208,11 +225,14 @@ func ValidateAudience(a *model.Audience) error {
 		if len(a.ActorPtids) == 0 {
 			return fmt.Errorf("CUSTOM_DENY audience requires non-empty actor_ptids")
 		}
-		if a.TargetId != 0 {
-			return fmt.Errorf("CUSTOM_DENY audience must not set target_id")
+		if a.GetTarget() != nil {
+			return fmt.Errorf("CUSTOM_DENY audience must not set target")
 		}
-		if a.BaseKind != model.Audience_PUBLIC && a.BaseKind != model.Audience_FOLLOWERS {
-			return fmt.Errorf("CUSTOM_DENY base_kind must be PUBLIC or FOLLOWERS, got %s", a.BaseKind)
+		if a.BaseKind != model.Audience_FOLLOWERS {
+			return fmt.Errorf(
+				"CUSTOM_DENY base_kind must be FOLLOWERS, got %s",
+				a.BaseKind,
+			)
 		}
 
 	default:
@@ -228,7 +248,7 @@ func ValidateAudience(a *model.Audience) error {
 //
 // Checks (after `ValidateAudience` has passed):
 //
-//   - CIRCLE/GROUP target_id is non-zero (already enforced by
+//   - CIRCLE/GROUP typed target is present (already enforced by
 //     ValidateAudience but re-asserted here for defensive depth).
 //   - For CUSTOM_ALLOW / CUSTOM_DENY, the author's own PTID must NOT
 //     appear in the actor list. Including yourself in your own allow
@@ -257,11 +277,15 @@ func ValidateForAuthor(authorPTID string, a *model.Audience) error {
 		return err
 	}
 	switch a.Kind {
-	case model.Audience_CIRCLE, model.Audience_GROUP:
-		// ValidateAudience already enforced TargetId != 0; keep the
-		// re-check so future readers see the invariant explicitly.
-		if a.TargetId == 0 {
-			return fmt.Errorf("%s audience requires target_id (re-check)", a.Kind)
+	case model.Audience_CIRCLE:
+		if a.GetCircleId() == 0 {
+			return fmt.Errorf("CIRCLE audience requires circle_id (re-check)")
+		}
+	case model.Audience_GROUP:
+		if a.GetGroupConversationId() == "" {
+			return fmt.Errorf(
+				"GROUP audience requires group_conversation_id (re-check)",
+			)
 		}
 
 	case model.Audience_CUSTOM_ALLOW, model.Audience_CUSTOM_DENY:

@@ -33,17 +33,36 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 	if err != nil {
 		logger.Warn(ctx, "stats: count public posts failed", "error", err, "author_ptid", actorPTID)
 	}
-	privatePosts, err := r.countAuthorPosts(ctx, authorID, &db.SocialPrivatePost{})
+	privatePosts, err := r.countByColumn(
+		ctx,
+		&db.SocialPrivateContentPost{},
+		"author_ptid = ? AND deleted_at IS NULL",
+		actorPTID,
+	)
 	if err != nil {
 		logger.Warn(ctx, "stats: count private posts failed", "error", err, "author_ptid", actorPTID)
 	}
 	stats.PostsCount = publicPosts + privatePosts
 
-	if count, err := r.countByColumn(ctx, &db.SocialComment{}, "author_id = ? AND deleted_at IS NULL", authorID); err == nil {
-		stats.CommentsCount = count
-	} else {
-		logger.Warn(ctx, "stats: count my comments failed", "error", err, "author_ptid", actorPTID)
+	publicCommentsByActor, err := r.countByColumn(
+		ctx,
+		&db.SocialComment{},
+		"author_id = ? AND deleted_at IS NULL",
+		authorID,
+	)
+	if err != nil {
+		logger.Warn(ctx, "stats: count my public comments failed", "error", err, "author_ptid", actorPTID)
 	}
+	privateCommentsByActor, err := r.countByColumn(
+		ctx,
+		&db.SocialPrivateContentComment{},
+		"author_ptid = ? AND deleted_at IS NULL",
+		actorPTID,
+	)
+	if err != nil {
+		logger.Warn(ctx, "stats: count my private comments failed", "error", err, "author_ptid", actorPTID)
+	}
+	stats.CommentsCount = publicCommentsByActor + privateCommentsByActor
 
 	if count, err := r.countByColumn(ctx, &db.SocialReaction{}, "actor_id = ?", authorID); err == nil {
 		stats.ReactionsGivenCount = count
@@ -55,7 +74,13 @@ func (r *momentsStatsRepo) GetByActorPTID(ctx context.Context, actorPTID string)
 	if err != nil {
 		logger.Warn(ctx, "stats: sum public comments-received failed", "error", err, "author_ptid", actorPTID)
 	}
-	privateComments, err := r.sumAuthorComments(ctx, authorID, &db.SocialPrivatePost{})
+	privateComments, err := r.sumByColumn(
+		ctx,
+		&db.SocialPrivateContentPost{},
+		"comments_count",
+		"author_ptid = ? AND deleted_at IS NULL",
+		actorPTID,
+	)
 	if err != nil {
 		logger.Warn(ctx, "stats: sum private comments-received failed", "error", err, "author_ptid", actorPTID)
 	}
@@ -82,34 +107,64 @@ func (r *momentsStatsRepo) countByColumn(ctx context.Context, table any, where s
 }
 
 func (r *momentsStatsRepo) sumAuthorComments(ctx context.Context, authorID uint64, table any) (int64, error) {
+	return r.sumByColumn(
+		ctx,
+		table,
+		"comments_count",
+		"author_id = ? AND deleted_at IS NULL",
+		authorID,
+	)
+}
+
+func (r *momentsStatsRepo) sumByColumn(
+	ctx context.Context,
+	table any,
+	column string,
+	where string,
+	args ...any,
+) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(table).
-		Where("author_id = ? AND deleted_at IS NULL", authorID).
-		Select("COALESCE(SUM(comments_count), 0)").
+		Where(where, args...).
+		Select("COALESCE(SUM(" + column + "), 0)").
 		Scan(&count).Error
 	return count, err
 }
 
 func (r *momentsStatsRepo) countReactionsReceived(ctx context.Context, authorID uint64, actorPTID string) int64 {
 	var publicCount int64
+	publicPostIDExpression := "CAST(p.id AS TEXT)"
+	if r.db.Dialector.Name() == "mysql" {
+		publicPostIDExpression = "CAST(p.id AS CHAR)"
+	}
 	if err := r.db.WithContext(ctx).
 		Table("social_reactions AS r").
-		Joins("JOIN social_public_posts AS p ON p.id = r.post_id AND p.author_id = ? AND p.deleted_at IS NULL", authorID).
-		Where("r.actor_id <> ?", authorID).
+		Joins(
+			"JOIN social_public_posts AS p ON "+
+				publicPostIDExpression+
+				" = r.post_id AND p.author_id = ? AND p.deleted_at IS NULL",
+			authorID,
+		).
+		Where(
+			"r.actor_id <> ? AND r.post_class = ?",
+			authorID,
+			string(domain.PostClassPublic),
+		).
 		Count(&publicCount).Error; err != nil {
 		logger.Warn(ctx, "stats: count public reactions-received failed", "error", err, "author_ptid", actorPTID)
 		publicCount = 0
 	}
 
-	var privateCount int64
-	if err := r.db.WithContext(ctx).
-		Table("social_reactions AS r").
-		Joins("JOIN social_private_posts AS p ON p.id = r.post_id AND p.author_id = ? AND p.deleted_at IS NULL", authorID).
-		Where("r.actor_id <> ?", authorID).
-		Count(&privateCount).Error; err != nil {
+	privateCount, err := r.sumByColumn(
+		ctx,
+		&db.SocialPrivateContentPost{},
+		"reactions_count",
+		"author_ptid = ? AND deleted_at IS NULL",
+		actorPTID,
+	)
+	if err != nil {
 		logger.Warn(ctx, "stats: count private reactions-received failed", "error", err, "author_ptid", actorPTID)
-		privateCount = 0
 	}
 
 	return publicCount + privateCount

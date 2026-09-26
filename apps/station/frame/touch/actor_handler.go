@@ -420,7 +420,7 @@ func ActorLogin(c context.Context, ctx *app.RequestContext) {
 	// Set session cookie
 	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
 
-	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	actorRef := actor.ProtoActorRef(result.Actor)
 	if allowed, reason := gate.CheckActorAllowed(
 		c,
 		actorRef,
@@ -458,7 +458,7 @@ func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
 		req.DeviceType = "desktop"
 	}
 
-	actorRef := actor.ProtoActorRef(user, baseURLFrom(ctx))
+	actorRef := actor.ProtoActorRef(user)
 	if allowed, reason := gate.CheckActorAllowed(c, actorRef, user.PreferredUsername, user.Email); !allowed {
 		log.Warnf(c, "Session takeover blocked by access gate policy: ptid=%s reason=%s", actorRef.GetPtid(), reason)
 		FailedResponse(c, ctx, errors.New(reason))
@@ -529,7 +529,7 @@ func submitLegacyAccessLogin(c context.Context, ctx *app.RequestContext, req *ga
 		return
 	}
 
-	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	actorRef := actor.ProtoActorRef(result.Actor)
 	decision, err := gate.CompleteLegacyLogin(
 		c,
 		req.GetAttemptId(),
@@ -678,7 +678,7 @@ func submitAccessLoginCandidate(
 	return gate.CompleteLoginCandidate(
 		c,
 		req.GetAttemptId(),
-		actor.ProtoActorRef(actorRecord, baseURLFrom(ctx)),
+		actor.ProtoActorRef(actorRecord),
 		actorRecord.PreferredUsername,
 		actorRecord.Email,
 	)
@@ -903,7 +903,7 @@ func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
 
 	// Return only non-sensitive public info
 	basicInfo := ActorBasicInfoResponse{
-		Actor:       actor.ProtoActorRef(record, baseURL),
+		Actor:       actor.ProtoActorRef(record),
 		DisplayName: resp.DisplayName,
 		Username:    resp.Username,
 		AvatarURL:   resp.Avatar,
@@ -977,7 +977,7 @@ func ListActors(c context.Context, ctx *app.RequestContext) {
 			Inbox:       a.Inbox,
 			Outbox:      a.Outbox,
 			Endpoints:   nil,
-			Ref:         actor.ProtoActorRef(a, baseURLFrom(ctx)),
+			Ref:         actor.ProtoActorRef(a),
 			IsFollowing: isFollowing,
 		})
 	}

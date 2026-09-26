@@ -1306,7 +1306,7 @@ func (r *leaveIntentRepository) Save(
 func (r *leaveIntentRepository) ListPending(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	actor valueobject.PTID,
+	excludedActor valueobject.PTID,
 	limit int,
 ) ([]repository.LeaveIntent, error) {
 	var models []ConversationLeaveIntentModel
@@ -1317,8 +1317,8 @@ func (r *leaveIntentRepository) ListPending(
 			string(repository.LeaveIntentStatePending),
 			time.Now().UTC(),
 		)
-	if actor != "" {
-		query = query.Where("actor_ptid = ?", string(actor))
+	if excludedActor != "" {
+		query = query.Where("actor_ptid <> ?", string(excludedActor))
 	}
 	if limit > 0 {
 		query = query.Limit(limit)

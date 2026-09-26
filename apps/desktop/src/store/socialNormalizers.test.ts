@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   friendRequestProfileDids,
+  normalizeConversation,
   normalizeFriendRequestData,
   type FriendRequestData,
 } from './socialNormalizers';
@@ -79,6 +80,25 @@ describe('normalizeFriendRequestData', () => {
     })).toMatchObject({
       createdAt: '2026-09-17T05:52:45.123Z',
       respondedAt: '2026-09-17T05:53:13.392Z',
+    });
+  });
+});
+
+describe('normalizeConversation', () => {
+  it('preserves authoritative group metadata from snake_case projections', () => {
+    expect(normalizeConversation({
+      conversation_id: 'group-1',
+      kind: 2,
+      name: 'Group',
+      description: 'Group description',
+      avatar_cid: 'oss://chat/group-avatar',
+      owner_ptid: 'ptid:alice',
+    })).toMatchObject({
+      conversationId: 'group-1',
+      name: 'Group',
+      description: 'Group description',
+      avatarCid: 'oss://chat/group-avatar',
+      ownerPtid: 'ptid:alice',
     });
   });
 });

@@ -89,6 +89,52 @@
       ]
     },
     {
+      "id": "chat-rich-media-recorded-voice",
+      "features": [
+        "chat-rich-media-recorded-voice"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/chat/attachment.proto",
+          "apps/station/frame/touch/model/chat/attachment.pb.go",
+          "packages/messaging-core/src/codec/private_content.rs",
+          "packages/messaging-core/src/store/schema.rs",
+          "packages/client-chat-core/src/index.ts",
+          "apps/desktop/src/gen/proto/domain/chat/attachment_pb.ts",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/oss.rs",
+          "apps/desktop/src-tauri/src/messaging/attachment_transfer.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/private_content.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src/components/chat/AttachmentItem.tsx",
+          "apps/desktop/src/components/chat/ChatComposer.tsx",
+          "apps/desktop/src/components/chat/composer/useChatAttachmentDrafts.ts",
+          "apps/desktop/src/components/chat/composer/useChatVoiceRecorder.ts",
+          "apps/desktop/src/services/im-service-contract.ts",
+          "apps/desktop/src/services/im-service.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/mobile/src/gen/proto/domain/chat/attachment_pb.ts",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs",
+          "apps/mobile/src-tauri/src/messaging/engine.rs",
+          "packages/locales/en/chat.json",
+          "packages/locales/zh-CN/chat.json",
+          "packages/prototypes/desktop/features/social-chat/**",
+          "tooling/acceptance/features/chat-rich-media-recorded-voice.yaml",
+          "tooling/acceptance/fixtures/chat_attachment_fault_proxy.py",
+          "tooling/acceptance/gates/chat/lifecycle_rich_voice.py",
+          "tooling/acceptance/gates/chat/lifecycle_rich_voice_contract_test.py"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-rich-voice-e2e"
+      ]
+    },
+    {
       "id": "chat-direct-delivered-receipt",
       "features": [
         "chat-direct-delivered-receipt"
@@ -256,6 +302,7 @@
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
           "tooling/acceptance/gates/chat/native_interactions_runner.py",
+          "tooling/acceptance/gates/chat/lifecycle_interactions_group.py",
           "tooling/acceptance/gates/chat/native_interactions_static_test.py",
           "tooling/acceptance/gates/chat/native_support.py"
         ]
@@ -265,7 +312,90 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
-        "chat-native-interactions-e2e"
+        "chat-native-interactions-e2e",
+        "chat-lifecycle-interactions-group-e2e"
+      ]
+    },
+    {
+      "id": "chat-live-voice-video",
+      "features": [
+        "chat-live-voice-video"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/modules/p2p/callP2p.ts",
+          "apps/desktop/src/components/chat/CallSurface.tsx",
+          "apps/desktop/src/acceptance/chat/harness.ts",
+          "tooling/acceptance/features/chat-live-voice-video.yaml",
+          "tooling/acceptance/gates/chat/lifecycle_live_voice.py",
+          "tooling/acceptance/gates/chat/lifecycle_live_voice_e2e.py",
+          "tooling/acceptance/gates/chat/lifecycle_live_voice_contract_test.py"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-live-voice-e2e"
+      ]
+    },
+    {
+      "id": "chat-group-live",
+      "features": [
+        "chat-group-live"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/groupcall/**",
+          "apps/desktop/src/modules/groupCall/**",
+          "apps/desktop/src/components/chat/GroupCallSurface.tsx",
+          "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+          "apps/desktop/src/pages/SocialChatPage.tsx",
+          "apps/desktop/src/acceptance/chat/harness.ts",
+          "tooling/docker/compose.yml",
+          "tooling/acceptance/features/chat-group-live.yaml",
+          "tooling/acceptance/gates/chat/lifecycle_group_live.py",
+          "tooling/acceptance/gates/chat/lifecycle_group_live_e2e.py",
+          "tooling/acceptance/gates/chat/lifecycle_group_live_test.py"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-lifecycle-group-live-e2e"
+      ]
+    },
+    {
+      "id": "chat-presence-layout-stability",
+      "features": [
+        "chat-presence-layout-stability"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/presence/**",
+          "apps/station/frame/core/federation/presence.go",
+          "apps/station/frame/core/federation/routes.go",
+          "apps/station/frame/core/federation/scope.go",
+          "apps/desktop/src/hooks/usePresence.ts",
+          "apps/desktop/src/services/chatPresence.ts",
+          "apps/desktop/src/services/socialRealtime.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "apps/desktop/src/components/chat/chatGeometry.ts",
+          "apps/desktop/src/components/chat/message/ChatMessageRow.tsx",
+          "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx",
+          "apps/desktop/src/components/chat/message/chatMessageTimelinePolicy.ts",
+          "apps/desktop/src/acceptance/chat/**",
+          "tooling/acceptance/features/chat-presence-layout-stability.yaml",
+          "tooling/acceptance/fixtures/chat_presence_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_presence_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/lifecycle_presence_layout.py",
+          "tooling/acceptance/gates/chat/lifecycle_presence_layout_e2e.py",
+          "tooling/acceptance/gates/chat/lifecycle_presence_layout_contract_test.py"
+        ]
+      },
+      "require": [
+        "chat-native-visible-static",
+        "chat-presence-layout-e2e"
       ]
     },
     {

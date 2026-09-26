@@ -35,7 +35,8 @@ const PLAN_STATUSES = new Set([
   'completed',
   'superseded',
 ]);
-const TASK_STATUSES = new Set(['pending', 'in_progress', 'blocked', 'done']);
+const TASK_STATUSES = new Set(['pending', 'in_progress', 'blocked', 'done', 'descoped']);
+const TERMINAL_TASK_STATUSES = new Set(['done', 'descoped']);
 const RUNTIME_CLASSES = new Set([
   'source-only',
   'service',
@@ -506,11 +507,16 @@ function validateAuthorization(value, context) {
   assertEnum(value.history.rewrite, new Set(['allowed', 'denied']), `${context}.history.rewrite`);
 }
 
-function validateBlocker(value, context) {
-  assertClosedObject(value, ['code', 'owner', 'evidenceRef'], context);
+function validateBlocker(value, context, { evidenceRequired = true } = {}) {
+  const fields = evidenceRequired
+    ? ['code', 'owner', 'evidenceRef']
+    : ['code', 'owner', ...(value && 'evidenceRef' in value ? ['evidenceRef'] : [])];
+  assertClosedObject(value, fields, context);
   assertString(value.code, `${context}.code`);
   assertString(value.owner, `${context}.owner`);
-  assertString(value.evidenceRef, `${context}.evidenceRef`);
+  if (evidenceRequired || 'evidenceRef' in value) {
+    assertString(value.evidenceRef, `${context}.evidenceRef`);
+  }
 }
 
 function validateExhaustion(value, context) {
@@ -609,8 +615,12 @@ function validateManifestSchema(manifest) {
     }
     assertUniqueStrings(task.dependsOn, `${context}.dependsOn`, { pattern: ID_PATTERN });
     assertEnum(task.status, TASK_STATUSES, `${context}.status`);
-    if (task.status === 'blocked') {
-      validateBlocker(task.blocker, `${context}.blocker`);
+    if (task.status === 'blocked' || task.status === 'descoped') {
+      if (task.blocker !== null) {
+        validateBlocker(task.blocker, `${context}.blocker`, {
+          evidenceRequired: task.status === 'blocked',
+        });
+      }
     } else if (task.blocker !== null) {
       fail('PLAN_STATE_INVALID', 'Only a blocked Task may have blocker metadata', {
         taskId: task.id,
@@ -725,9 +735,12 @@ function validateDagAndLifecycle(manifest) {
     if (
       current.length !== 0 ||
       manifest.exhaustion !== null ||
-      manifest.tasks.some((task) => task.status !== 'done')
+      manifest.tasks.some((task) => !TERMINAL_TASK_STATUSES.has(task.status))
     ) {
-      fail('PLAN_STATE_INVALID', 'Completed package requires every Task to be done');
+      fail(
+        'PLAN_STATE_INVALID',
+        'Completed package requires every Task to be done or descoped',
+      );
     }
   } else if (
     ['draft', 'prepared', 'superseded'].includes(manifest.status) &&
@@ -743,9 +756,12 @@ function validateDagAndLifecycle(manifest) {
 }
 
 function validateTaskSliceSchema(task) {
+  const optionalFields = [];
+  if ('status' in task) optionalFields.push('status');
   assertClosedObject(
     task,
     [
+      ...optionalFields,
       'kind',
       'planId',
       'taskId',
@@ -956,6 +972,9 @@ function validateAcceptanceSchema(acceptance) {
 }
 
 function assertAcceptanceCrosswalk(manifest, taskSlices, acceptance) {
+  const manifestById = new Map(
+    manifest.tasks.map((task) => [task.id, task]),
+  );
   const taskClosures = new Map();
   for (const task of taskSlices.values()) {
     if (taskClosures.has(task.closureId)) {
@@ -1032,6 +1051,28 @@ function assertAcceptanceCrosswalk(manifest, taskSlices, acceptance) {
         'Acceptance aggregate must own a non-empty Gate closure',
         { taskId: task.taskId },
       );
+    }
+    if (task.completionClass === 'acceptance-aggregate') {
+      const ancestors = new Set();
+      const visit = (taskId) => {
+        for (const dependency of manifestById.get(taskId).dependsOn) {
+          if (ancestors.has(dependency)) continue;
+          ancestors.add(dependency);
+          visit(dependency);
+        }
+      };
+      visit(task.taskId);
+      const functionalPredecessors = [...ancestors].filter(
+        (taskId) =>
+          taskSlices.get(taskId).completionClass === 'functional',
+      );
+      if (functionalPredecessors.length === 0) {
+        fail(
+          'PLAN_ACCEPTANCE_DEPENDENCY_INVALID',
+          'Acceptance aggregate requires a functional predecessor',
+          { taskId: task.taskId },
+        );
+      }
     }
   }
 
@@ -1487,13 +1528,16 @@ export async function loadPlanPackage(planPath, options = {}) {
         `Task ${task.taskId}.readSet[${index}]`,
       );
     }
-    validateTaskScope(task, manifest, declarationClaims);
+    validateTaskScope(task, manifest, null);
     taskSlices.set(task.taskId, task);
   }
   assertAcceptanceCrosswalk(manifest, taskSlices, acceptance);
 
   const currentTask =
     lifecycle.current.length === 1 ? taskSlices.get(lifecycle.current[0].id) : null;
+  if (currentTask && declarationClaims) {
+    validateTaskScope(currentTask, manifest, declarationClaims);
+  }
   const readyTasks = lifecycle.ready.map((task) => taskSlices.get(task.id));
   await assertPlanDiscoveryFenceUnchanged(
     migrationFence,
