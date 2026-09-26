@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-26
-covered_docs_hash: c8d4209a9f9d4564e11c31743cadc32f12ae6e052a214832d3498cc98a093f92
+covered_docs_hash: acbfa8cc304e1afddb77bc5840e7c87ad05f8b129b55f4e9750746224d7ae96f
 
 covered_docs:
   - AGENTS.md
@@ -36,7 +36,8 @@ Updating this file is a review act, not bookkeeping. The PR must explain whether
 The current upstream source set retains the existing review behavior for
 runtime identity, profile authorization, Development Session evidence, and
 continuous Plan execution. No `SKILL.md`, fixture, or knowledge change is
-required; this refresh records the post-history-migration source bytes.
+required; this refresh records the post-history-migration source bytes and the
+Station Access coverage projection after its completion proof.
 
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`
