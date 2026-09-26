@@ -142,6 +142,13 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             },
         )
         self.assertEqual(
+            ChatMixedNativeProvisioner._project_chat_harness_result(
+                "lifecycle.scope.read",
+                {"activeActorPtid": None, "deviceId": ""},
+            ),
+            {"activeActorPtid": None, "deviceIdentityDigest": None},
+        )
+        self.assertEqual(
             MixedNativeRuntime._project_client_result(
                 {"winningDeviceId": "device-b"}
             ),
