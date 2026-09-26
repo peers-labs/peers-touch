@@ -108,7 +108,6 @@ describe('social chat profile hydration', () => {
     const persistedState = {
       'group:group-2': {
         hidden: true,
-        deletedMessageUlids: { 'message-1': true as const },
       },
     };
 

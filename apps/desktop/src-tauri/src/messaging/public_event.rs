@@ -5,8 +5,9 @@ use super::{
 };
 use crate::model::chat::{
     conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
-    DurableDeviceInboxItem, MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact,
-    MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
+    DurableDeviceInboxItem, MessageEditedFact, MessageHiddenForActorFact, MessagePinCommittedFact,
+    MessageRetractedFact, MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker,
+    ReactionCommittedFact,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -110,6 +111,9 @@ impl PublicEventProcessor {
                     now,
                     committed_at_unix_ms,
                 ),
+            Some(conversation_event::Payload::MessageHiddenForActor(fact)) => {
+                self.process_message_hidden_for_actor(item, event, fact, consumer_epoch, now)
+            }
             Some(conversation_event::Payload::ReactionCommitted(fact)) => {
                 self.process_reaction(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }
@@ -213,6 +217,28 @@ impl PublicEventProcessor {
             consumer_epoch,
             &fact.message_id,
             InteractionMutation::Retract,
+            now,
+        )?;
+        Ok(())
+    }
+
+    fn process_message_hidden_for_actor(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &crate::model::chat::ConversationEvent,
+        fact: &MessageHiddenForActorFact,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        if fact.message_id.trim().is_empty() || fact.actor_ptid != self.endpoint.ptid {
+            return Err("messaging actor-hide event is not bound to this actor".to_string());
+        }
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
+            &fact.message_id,
+            InteractionMutation::HideForActor,
             now,
         )?;
         Ok(())
@@ -500,6 +526,46 @@ mod tests {
         queue_item_with_attachments(Vec::new())
     }
 
+    fn actor_hide_queue_item(
+        previous_event_hash: Vec<u8>,
+        actor_ptid: &str,
+    ) -> DurableDeviceInboxItem {
+        let mut item = queue_item();
+        item.item_id = "item-hide".to_string();
+        item.event_id = "event-hide".to_string();
+        item.idempotency_key = "event:event-hide".to_string();
+        item.lane_sequence = 2;
+        let mut delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice()).unwrap();
+        let event = delivery.event.as_mut().unwrap();
+        event.event_id = "event-hide".to_string();
+        event.command_id = "command-hide".to_string();
+        event.sequence = 2;
+        event.previous_hash = previous_event_hash;
+        event.payload = Some(conversation_event::Payload::MessageHiddenForActor(
+            MessageHiddenForActorFact {
+                message_id: "message-1".to_string(),
+                actor_ptid: actor_ptid.to_string(),
+                ..Default::default()
+            },
+        ));
+        let recipient = delivery.recipient.as_ref().unwrap();
+        let commitment = delivery_commitment(
+            &event.conversation_id,
+            &event.event_id,
+            &recipient.ptid,
+            &recipient.device_id,
+            PreparedEndpointPayloadKind::PublicEvent,
+            &delivery.endpoint_payload_sha256,
+        );
+        event.delivery_commitments = vec![commitment.to_vec()];
+        event.event_hash.clear();
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        delivery.delivery_commitment = commitment.to_vec();
+        item.opaque_payload = delivery.encode_to_vec();
+        item.payload_sha256 = Sha256::digest(&item.opaque_payload).to_vec();
+        item
+    }
+
     fn prepare_send_with_attachments(
         store: &MessagingStore,
         attachments: &[AttachmentPlaintextMetadata],
@@ -543,6 +609,10 @@ mod tests {
         let attachment = test_attachment_metadata("attachment-1");
         prepare_send_with_attachments(&store, std::slice::from_ref(&attachment));
         let descriptor = attachment.object.as_ref().unwrap();
+        let mut completed_chunk_bitmap = vec![0_u8; descriptor.chunk_count.div_ceil(8) as usize];
+        for chunk_index in 0..descriptor.chunk_count {
+            completed_chunk_bitmap[chunk_index as usize / 8] |= 1 << (chunk_index % 8);
+        }
         let upload = AttachmentTransferRecord {
             attachment_id: attachment.attachment_id.clone(),
             conversation_id: "conversation-1".to_string(),
@@ -553,7 +623,7 @@ mod tests {
             upload_id: "upload-1".to_string(),
             generation: 1,
             descriptor_sha256: Sha256::digest(descriptor.encode_to_vec()).to_vec(),
-            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            completed_chunk_bitmap,
             source_local_ref: "/tmp/sender-source".to_string(),
             partial_local_ref: String::new(),
             object_key: attachment.object_key.clone(),
@@ -623,6 +693,80 @@ mod tests {
                 .0,
             projection
         );
+    }
+
+    #[test]
+    fn actor_hide_event_redacts_projection_and_advances_the_ack_cursor() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        prepare_send(&store);
+        let processor = PublicEventProcessor::new(
+            store.clone(),
+            EngineEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            now,
+        )
+        .unwrap();
+        let committed = queue_item();
+        let committed_delivery =
+            DeviceEventDelivery::decode(committed.opaque_payload.as_slice()).unwrap();
+        let committed_hash = committed_delivery.event.unwrap().event_hash;
+        processor.consume(&committed, 3).unwrap();
+
+        let hidden = actor_hide_queue_item(committed_hash, "ptid:alice");
+        processor.consume(&hidden, 3).unwrap();
+
+        assert!(store
+            .conversation_message_projections("conversation-1")
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .search_message_projections("conversation-1", "exact sender plaintext", None, 10)
+            .unwrap()
+            .is_empty());
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 3));
+        assert!(store
+            .consumption_marker_matches("item-hide", &hidden.payload_sha256)
+            .unwrap());
+    }
+
+    #[test]
+    fn actor_hide_event_for_another_actor_is_not_acknowledged() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        prepare_send(&store);
+        let processor = PublicEventProcessor::new(
+            store.clone(),
+            EngineEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            now,
+        )
+        .unwrap();
+        let committed = queue_item();
+        let committed_delivery =
+            DeviceEventDelivery::decode(committed.opaque_payload.as_slice()).unwrap();
+        let committed_hash = committed_delivery.event.unwrap().event_hash;
+        processor.consume(&committed, 3).unwrap();
+
+        let hidden = actor_hide_queue_item(committed_hash, "ptid:bob");
+        assert_eq!(
+            processor.consume(&hidden, 3).unwrap_err(),
+            "messaging actor-hide event is not bound to this actor"
+        );
+
+        assert_eq!(
+            store
+                .conversation_message_projections("conversation-1")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
+        assert!(!store
+            .consumption_marker_matches("item-hide", &hidden.payload_sha256)
+            .unwrap());
     }
 
     #[test]
