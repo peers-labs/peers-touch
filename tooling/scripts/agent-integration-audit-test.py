@@ -1357,6 +1357,82 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertEqual(audit.returncode, 2)
         self.assertIn("binding-canonical-invalid", audit.stdout)
 
+    def test_audit_accepts_canonical_normalization_of_legacy_binding(self) -> None:
+        module = load_integration_audit()
+        workspace_id = hashlib.sha256(
+            str(self.root.resolve()).encode()
+        ).hexdigest()[:16]
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=self.root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        legacy = {
+            "schemaVersion": 1,
+            "kind": "peers-touch-workspace-plan-binding",
+            "workspaceId": workspace_id,
+            "canonicalRoot": str(self.root.resolve()),
+            "planId": "PLAN-01",
+            "planPath": "plan.md",
+            "boundAt": "2026-09-19T00:00:00.000Z",
+            "boundBy": "test",
+        }
+        normalized = {
+            **legacy,
+            "schemaVersion": 2,
+            "generation": 1,
+            "recordDigest": "a" * 64,
+        }
+        binding_path = (
+            self.machine
+            / "workspaces"
+            / workspace_id
+            / "workflow"
+            / "plan-binding.json"
+        )
+        binding_path.parent.mkdir(parents=True)
+        binding_path.write_text(json.dumps(legacy), encoding="utf-8")
+        manifest = {
+            "planId": "PLAN-01",
+            "status": "completed",
+            "binding": {
+                "workspaceId": workspace_id,
+                "branch": branch,
+            },
+            "scope": {
+                "sourceClaims": [
+                    {
+                        "mode": "exclusive-write",
+                        "pathPrefix": "tooling/scripts",
+                    }
+                ]
+            },
+        }
+
+        with mock.patch.object(
+            module,
+            "machine_dev_root",
+            return_value=self.machine,
+        ), mock.patch.object(
+            module,
+            "resolved_plan_binding",
+            return_value=normalized,
+        ), mock.patch.object(
+            module,
+            "validated_plan_status",
+            return_value={"currentTaskId": None},
+        ), mock.patch.object(
+            module,
+            "structured_plan",
+            return_value=manifest,
+        ):
+            identity = module.workflow_identity(self.root)
+
+        self.assertEqual(identity["identityFindings"], [])
+        self.assertEqual(identity["planBinding"], normalized)
+
     def test_legacy_scan_ignores_foreign_plans_but_checks_bound_plan(self) -> None:
         module = load_integration_audit()
         foreign = (
