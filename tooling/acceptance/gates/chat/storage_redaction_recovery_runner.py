@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.request
 from typing import Any
 
 from selenium.webdriver.common.by import By
@@ -57,6 +58,32 @@ SELECTORS = {
     "recovery_restore_input": "[data-recovery-restore-input]",
     "recovery_restore_submit": "[data-recovery-restore-submit]",
 }
+
+
+# #region debug-point A-D:retract-delivery-stall
+def debug_event(hypothesis_id: str, location: str, msg: str, data: dict[str, Any]) -> None:
+    try:
+        url = os.environ.get("DEBUG_SERVER_URL", "http://127.0.0.1:7783/event")
+        session_id = os.environ.get("DEBUG_SESSION_ID", "retract-delivery-stall")
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(
+                {
+                    "sessionId": session_id,
+                    "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+                    "hypothesisId": hypothesis_id,
+                    "location": location,
+                    "msg": f"[DEBUG] {msg}",
+                    "data": data,
+                    "ts": int(time.time() * 1000),
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=0.5).read()
+    except Exception:
+        pass
+# #endregion
 
 
 def message_dom_snapshot(
@@ -463,6 +490,14 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
                 timeout=120,
             )
         except GateError as error:
+            # #region debug-point B-C:redaction-timeout
+            debug_event(
+                "B-C",
+                "storage_redaction_recovery_runner.py:wait_for_redaction",
+                "durable redaction timed out",
+                {"actor": actor, "kind": kind, "snapshot": latest},
+            )
+            # #endregion
             raise GateError(
                 f"{error}; lastSnapshot={json.dumps(latest, sort_keys=True)}"
             ) from error
@@ -707,12 +742,42 @@ class ChatStorageRedactionRecoveryGate(NativeTwoClientGate):
                 interaction="hideForActor",
                 kind="hidden_for_actor",
             )
+            # #region debug-point A-D:post-hide
+            debug_event(
+                "A-D",
+                "storage_redaction_recovery_runner.py:apply_redactions:post-hide",
+                "captured client heads after actor-hide",
+                {
+                    actor: self.engine_snapshot(
+                        actor,
+                        hide_message_id,
+                        hide_command_id if actor == "alice" else "",
+                    )
+                    for actor in ("alice", "bob")
+                },
+            )
+            # #endregion
             retract_command_id = self.submit_redaction(
                 actor="alice",
                 message_id=retract_message_id,
                 interaction="retract",
                 kind="retracted",
             )
+            # #region debug-point A-D:post-retract
+            debug_event(
+                "A-D",
+                "storage_redaction_recovery_runner.py:apply_redactions:post-retract",
+                "captured client heads after retract commit",
+                {
+                    actor: self.engine_snapshot(
+                        actor,
+                        retract_message_id,
+                        retract_command_id,
+                    )
+                    for actor in ("alice", "bob")
+                },
+            )
+            # #endregion
             return {
                 "hide": hide_command_id,
                 "retract": retract_command_id,
