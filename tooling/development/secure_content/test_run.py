@@ -2260,16 +2260,36 @@ class AttachedProductClientTest(unittest.TestCase):
         self.assertTrue(executor.closed)
         self.assertIsNone(driver.session_id)
 
-    def test_attached_driver_start_uses_only_declared_session_id(self) -> None:
+    def test_attached_driver_start_retains_only_required_cdp_capability(
+        self,
+    ) -> None:
         driver = object.__new__(attached_client._AttachedRemoteWebDriver)
         driver._attached_session_id = "externally-owned-session"
         driver.session_id = None
         driver.caps = {"unexpected": True}
 
-        driver.start_session({"browserName": "chrome"})
+        driver.start_session(
+            {
+                "browserName": "chrome",
+                "acceptInsecureCerts": True,
+            }
+        )
 
         self.assertEqual("externally-owned-session", driver.session_id)
-        self.assertEqual({}, driver.caps)
+        self.assertEqual({"browserName": "chrome"}, driver.caps)
+        with patch.object(
+            driver,
+            "execute",
+            return_value={"value": {"enabled": True}},
+        ) as execute:
+            self.assertEqual(
+                {"enabled": True},
+                driver.execute_cdp_cmd("Network.enable", {}),
+            )
+        execute.assert_called_once_with(
+            "executeCdpCommand",
+            {"cmd": "Network.enable", "params": {}},
+        )
 
     def test_attached_driver_reads_performance_log_via_webdriver_command(
         self,

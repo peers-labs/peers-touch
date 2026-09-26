@@ -122,7 +122,7 @@ class _AttachedRemoteWebDriver(webdriver.Remote):
     def start_session(self, capabilities: Mapping[str, Any]) -> None:
         del capabilities
         self.session_id = self._attached_session_id
-        self.caps = {}
+        self.caps = {"browserName": "chrome"}
 
     def get_log(self, log_type: str) -> list[dict[str, Any]]:
         entries = self.execute(Command.GET_LOG, {"type": log_type}).get("value")
