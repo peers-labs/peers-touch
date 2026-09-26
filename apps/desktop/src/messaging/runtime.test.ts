@@ -104,6 +104,8 @@ describe('DesktopMessagingDomainRuntime', () => {
       eventId: 'event-1',
       laneSequence: 1n,
       kind: MessagingProjectionKind.CONVERSATION,
+      messageId: '',
+      messageRemovedFromProjection: false,
     })).toBe(true);
   });
 
