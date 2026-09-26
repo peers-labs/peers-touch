@@ -31,7 +31,10 @@ import {
   type NotificationPreferenceProjectionController,
   type ProfileProjectionController,
 } from './profileProjectionDescriptor';
-import { bindMobileMutationAdmission } from './mutationAdmission';
+import {
+  bindMobileMutationAdmission,
+  mobileMutationScopeKey,
+} from './mutationAdmission';
 import { getRecoveryProjection } from './recoveryProjection';
 import {
   createSocialEventIngress,
@@ -152,6 +155,10 @@ export function createSocialProjectionRuntime(
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
+  const mutationScopeKey = mobileMutationScopeKey(
+    session.stationPeerId,
+    session.actorRef.ptid,
+  );
   const momentsGateway = createMomentsGateway(session);
   const momentsProjection = createMomentsProjection();
   const momentsFeed = createMomentsFeedStore(momentsGateway);
@@ -488,7 +495,7 @@ export function createSocialProjectionRuntime(
         throw new Error('mobile.social.projectionRuntimeAlreadyActive');
       }
       releaseMutationAdmission ??= bindMobileMutationAdmission(
-        sessionKey,
+        mutationScopeKey,
         () => ingress.state(),
       );
       activeRuntime = publicRuntime;

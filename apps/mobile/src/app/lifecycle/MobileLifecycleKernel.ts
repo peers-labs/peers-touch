@@ -88,6 +88,17 @@ export class MobileLifecycleKernel {
     });
   }
 
+  getDiagnosticRuntimeErrors(): readonly Readonly<{
+    runtimeId: string;
+    error: string;
+  }>[] {
+    return Object.freeze(this.state.bootOrder.flatMap((runtimeId) => {
+      const entry = this.state.runtimes.get(runtimeId);
+      const error = entry?.lastError ?? entry?.readiness?.diagnosticError;
+      return error ? [Object.freeze({ runtimeId, error })] : [];
+    }));
+  }
+
   subscribe(listener: () => void): () => void {
     this.stateListeners.add(listener);
     return () => this.stateListeners.delete(listener);
@@ -324,7 +335,11 @@ export class MobileLifecycleKernel {
           this.dispatch({
             type: 'RUNTIME_READINESS',
             runtimeId: descriptor.id,
-            readiness: { status: 'pending', errorKey: null },
+            readiness: {
+              status: 'pending',
+              errorKey: null,
+              diagnosticError: null,
+            },
           });
         }
         const isCurrent = () => !settled
@@ -335,14 +350,18 @@ export class MobileLifecycleKernel {
           settled = true;
           clearTimeout(this.readinessTimeouts.get(descriptor.id));
           this.readinessTimeouts.delete(descriptor.id);
+          const diagnosticError = failed
+            ? error instanceof Error ? error.message : String(error)
+            : null;
           this.dispatch({
             type: 'RUNTIME_READINESS',
             runtimeId: descriptor.id,
             readiness: {
               status: failed ? 'failed' : 'ready',
               errorKey: failed
-                ? publicRuntimeErrorKey(error instanceof Error ? error.message : String(error))
+                ? publicRuntimeErrorKey(diagnosticError!)
                 : null,
+              diagnosticError,
             },
           });
         };

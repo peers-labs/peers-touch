@@ -5459,6 +5459,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
     requires_actor_reset = True
+    derives_fixture_federation_id = True
     actor_manifest_kind = ""
     actor_manifest_path = ""
 
@@ -6072,12 +6073,13 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             )
             for client in self.contract.clients
         )
-        federation_id = fixture_federation_id_from_station_ids(
-            actor["homeStationPeerId"] for actor in selected_actor_routes
-        )
-        for station in stations.values():
-            for actor in station["actors"]:
-                actor["federationId"] = federation_id
+        if self.derives_fixture_federation_id:
+            federation_id = fixture_federation_id_from_station_ids(
+                actor["homeStationPeerId"] for actor in selected_actor_routes
+            )
+            for station in stations.values():
+                for actor in station["actors"]:
+                    actor["federationId"] = federation_id
         payload = {
             "artifactKind": self.actor_manifest_kind,
             "environmentId": self.environment_id,
@@ -6395,7 +6397,13 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         action: str,
         value: object,
     ) -> object:
-        del action
+        if action == "social.people.search" and isinstance(value, (list, tuple)):
+            return {
+                "entries": [
+                    cls._project_chat_harness_result("", item)
+                    for item in value
+                ],
+            }
         if isinstance(value, Mapping):
             projected: dict[str, object] = {}
             for key, item in value.items():
@@ -6449,12 +6457,14 @@ class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
     require_distinct_station_profiles = False
     prepare_cross_station_friendships = False
     requires_actor_reset = False
+    derives_fixture_federation_id = False
     actor_manifest_kind = "station-access-native-actor-manifest"
     actor_manifest_path = "runtime/station-access-native-actors.json"
     gate_ids = frozenset(
         {
             "station-access-auth-e2e",
             "station-access-scope-isolation-e2e",
+            "station-access-federation-boundary-e2e",
         }
     )
     child_harness_actions = frozenset(
@@ -6462,8 +6472,16 @@ class StationAccessNativeProvisioner(ChatMixedNativeProvisioner):
             "cleanup",
             "getRealtimeDevice",
             "lifecycle.restart",
+            "lifecycle.waitReady",
             "lifecycle.scope.read",
             "messaging.reconcile",
+            "federation.context.read",
+            "social.people.search",
+            "messaging.createDirect",
+            "messaging.createGroup",
+            "messaging.projection.read",
+            "recovery.snapshot",
+            "social.reconcile",
             "session.logout",
         }
     )

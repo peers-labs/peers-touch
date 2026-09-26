@@ -11,7 +11,7 @@
   "title": "证明 Station 接入生命周期与九维遗产归零",
   "workClass": "product-behavior",
   "completionClass": "acceptance-aggregate",
-  "executionMode": "fix",
+  "executionMode": "build",
   "closureId": "sal-zero-legacy-aggregate",
   "journeyId": "SAL-J01-J05-release",
   "runtimeClass": "source-only",
@@ -67,10 +67,15 @@
       "id": "station-access-lifecycle-aggregate-e2e",
       "command": "python3 tooling/scripts/acceptance-run.py --gate station-access-lifecycle-aggregate-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
+      "id": "station-access-domain-validation",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate station-access-domain-validation",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
-    "All completion and full Gates pass against one exact source",
+    "All plan-completion Gates pass against one exact source",
     "Desktop release build and Mobile native build pass",
     "First access, restart, switch, same-Station and cross-Station journeys pass",
     "Nine-dimensional legacy scan reports zero without allowlist suppression",

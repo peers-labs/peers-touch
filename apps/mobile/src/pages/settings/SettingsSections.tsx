@@ -277,6 +277,12 @@ const VISIBILITY_OPTIONS = [
   { value: 'private', labelKey: 'mobile.settings.privacy.visibility.private' },
 ] as const;
 
+const DISCOVERABILITY_OPTIONS = [
+  { value: 'hidden', labelKey: 'mobile.settings.privacy.discoverability.hidden' },
+  { value: 'by_handle', labelKey: 'mobile.settings.privacy.discoverability.byHandle' },
+  { value: 'indexed', labelKey: 'mobile.settings.privacy.discoverability.indexed' },
+] as const;
+
 const MESSAGE_PERMISSION_OPTIONS = [
   { value: 'everyone', labelKey: 'mobile.settings.privacy.message.everyone' },
   { value: 'friends', labelKey: 'mobile.settings.privacy.message.friends' },
@@ -299,6 +305,21 @@ export function PrivacySection({
       <div className="settings-section-header">
         <Lock size={16} />
         <Text strong>{t('mobile.settings.section.privacy')}</Text>
+      </div>
+      <div className="settings-row">
+        <Text>{t('mobile.settings.privacy.discoverability')}</Text>
+        <Select
+          aria-label={t('mobile.settings.privacy.discoverability')}
+          value={profile?.discoverability || undefined}
+          disabled={controlsDisabled}
+          data-privacy-setting="discoverability"
+          onChange={(value) => onPatch({ discoverability: value })}
+          options={DISCOVERABILITY_OPTIONS.map(({ value, labelKey }) => ({
+            value,
+            label: t(labelKey),
+          }))}
+          style={{ minWidth: 144 }}
+        />
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.privacy.defaultVisibility')}</Text>

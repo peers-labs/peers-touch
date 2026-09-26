@@ -17,7 +17,7 @@ import {
   type AccessDecision,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
-import { StationNetworkIntro } from '../../components/common/StationNetworkIntro';
+import { StationTrustIntro } from '../../components/common/StationTrustIntro';
 import { AccountPickerView } from './views/AccountPickerView';
 import { PinEntryView } from './views/PinEntryView';
 import { SetPinView } from './views/SetPinView';
@@ -635,12 +635,6 @@ export function LoginPage({
       dana: { name: t('auth.network.dana'), handle: t('auth.network.dana.handle'), station: t('auth.network.dana.station') },
       evan: { name: t('auth.network.evan'), handle: t('auth.network.evan.handle'), station: t('auth.network.evan.station') },
     },
-    relays: {
-      fern: t('auth.network.relay.fern'),
-      tide: t('auth.network.relay.tide'),
-      ridge: t('auth.network.relay.ridge'),
-      loom: t('auth.network.relay.loom'),
-    },
     kinds: {
       msg: t('auth.network.kind.msg'),
       img: t('auth.network.kind.img'),
@@ -648,9 +642,6 @@ export function LoginPage({
       file: t('auth.network.kind.file'),
     },
     card: {
-      station: t('auth.network.card.station'),
-      via: t('auth.network.card.via'),
-      relay: t('auth.network.card.relay'),
       peer: t('auth.network.card.peer'),
     },
   }), [t]);
@@ -915,7 +906,7 @@ export function LoginPage({
         className="login-network-backdrop"
         aria-hidden="true"
       >
-        <StationNetworkIntro labels={networkIntroLabels} />
+        <StationTrustIntro labels={networkIntroLabels} />
       </div>
       <div className="login-card-region">
         {cardContent}

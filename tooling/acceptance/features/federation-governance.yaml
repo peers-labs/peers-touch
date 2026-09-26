@@ -3,8 +3,7 @@
   "status": "active",
   "product_area": "federation",
   "owners": [
-    "apps/station/app/subserver/federation/**",
-    "apps/desktop/src/pages/FederationGovernancePage.tsx"
+    "apps/station/app/subserver/federation/**"
   ],
   "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
   "required_gates": ["station-federation-unit", "federation-three-node-e2e"],

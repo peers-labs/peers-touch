@@ -24,8 +24,10 @@
     "apps/mobile",
     "docs/architecture/federation",
     "docs/architecture/api-ownership",
+    "docs/knowledge/invariants/locator-publisher-symmetry.md",
     "packages/locales",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/skills/pt-github-review/FRESHNESS.md"
   ],
   "readSet": [
     "docs/architecture/station-access-lifecycle",

@@ -93,6 +93,54 @@ func TestProfileUpdateUsesDedicatedCASRevision(t *testing.T) {
 	}
 }
 
+func TestProfileUpdateOwnsDiscoverability(t *testing.T) {
+	rds, err := gorm.Open(sqlite.Open("file:profile-discoverability?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := rds.AutoMigrate(&db.Actor{}, &db.ActorTouchMeta{}); err != nil {
+		t.Fatalf("migrate profile schema: %v", err)
+	}
+	record := db.Actor{
+		PTID:              "ptid:alice",
+		Namespace:         "peers",
+		PreferredUsername: "alice",
+		Name:              "Alice",
+		Origin:            OriginLocal,
+		FederatedHandle:   "alice@station.test",
+		HomeStationPeerID: "station-peer",
+		HomeStationDomain: "station.test",
+		Visibility:        VisibilityByHandle,
+	}
+	if err := rds.Create(&record).Error; err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	if err := rds.Create(&db.ActorTouchMeta{ActorID: record.ID, ProfileRevision: 1}).Error; err != nil {
+		t.Fatalf("create actor metadata: %v", err)
+	}
+
+	discoverability := int16(VisibilityIndexed)
+	result, err := updateProfileInternal(context.Background(), rds, record.ID, "https://station.test", UpdateProfileRequest{
+		Discoverability:  &discoverability,
+		ObservedRevision: 1,
+	})
+	if err != nil {
+		t.Fatalf("update discoverability: %v", err)
+	}
+	if result.Outcome != modelpb.ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_APPLIED ||
+		result.Profile.Discoverability != VisibilityIndexed ||
+		result.Profile.HomeStationPeerID != "station-peer" {
+		t.Fatalf("discoverability result = %#v", result)
+	}
+	var updated db.Actor
+	if err := rds.First(&updated, record.ID).Error; err != nil {
+		t.Fatalf("read updated actor: %v", err)
+	}
+	if updated.Visibility != VisibilityIndexed {
+		t.Fatalf("persisted visibility = %d", updated.Visibility)
+	}
+}
+
 func TestValidateProfileUpdateRequest(t *testing.T) {
 	if err := ValidateProfileUpdateRequest(UpdateProfileRequest{}); err != ErrProfileRevisionRequired {
 		t.Fatalf("missing revision error = %v", err)

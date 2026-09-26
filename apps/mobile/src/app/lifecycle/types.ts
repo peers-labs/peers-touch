@@ -99,6 +99,7 @@ export interface AggregateTeardownResult {
 export interface RuntimeReadiness {
   readonly status: 'pending' | 'ready' | 'failed';
   readonly errorKey: string | null;
+  readonly diagnosticError?: string | null;
 }
 
 export interface RuntimeReadinessUpdate {
