@@ -42,6 +42,7 @@ use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
 use messaging_core::identity::enrollment::load_or_create_device_identity_for_device;
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -2960,7 +2961,7 @@ impl EngineRegistry {
         archive: &MessagingRecoveryArchive,
         reconciliation: &RecoveryReconciliation,
     ) -> Result<FreshDeviceEnrollment, String> {
-        let (previous_ptid, previous_seed, previous_profile_version) = {
+        let (previous_ptid, previous_seed, previous_profile_version, device_identity) = {
             let engines = self
                 .engines
                 .lock()
@@ -2982,16 +2983,28 @@ impl EngineRegistry {
                     .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
                     .seed_bytes(),
             );
-            let previous_profile_version = engine
+            let enrollment = engine
                 .store
                 .device_enrollment()?
-                .ok_or_else(|| "messaging profile device enrollment is unavailable".to_string())?
-                .certificate
-                .observed_profile_version;
+                .ok_or_else(|| "messaging profile device enrollment is unavailable".to_string())?;
+            let previous_profile_version = enrollment.certificate.observed_profile_version;
+            let (device_signing_seed, signing_key_id) = engine
+                .store
+                .device_signing_seed()?
+                .ok_or_else(|| "messaging profile device signing key is unavailable".to_string())?;
+            if enrollment.certificate.signing_key_id != signing_key_id {
+                return Err(
+                    "messaging profile device signing key identity is inconsistent".to_string(),
+                );
+            }
             (
                 engine.endpoint.ptid.clone(),
                 previous_seed,
                 previous_profile_version,
+                FreshDeviceIdentityState {
+                    enrollment,
+                    device_signing_seed,
+                },
             )
         };
         let (worker, worker_token) = {
@@ -3041,7 +3054,12 @@ impl EngineRegistry {
         drop(engine);
         drop(engines);
 
-        match restore_profile_database_atomically(profile_id, archive, reconciliation) {
+        match restore_profile_database_atomically(
+            profile_id,
+            archive,
+            reconciliation,
+            &device_identity,
+        ) {
             Ok(enrollment) => {
                 let engine = Arc::new(MessagingEngine::open_profile(
                     profile_id.to_string(),
