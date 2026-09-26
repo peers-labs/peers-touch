@@ -153,6 +153,22 @@ def gate_entries(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return entries
 
 
+def gate_deferred_by_formal_plan(
+    plan: dict[str, Any],
+    gate_id: str,
+) -> bool:
+    execution = plan.get("execution")
+    candidate_gates = plan.get("candidate_gates")
+    return (
+        isinstance(execution, dict)
+        and bool(str(execution.get("formalPlan") or "").strip())
+        and execution.get("mode") in {"closure", "completion", "full"}
+        and isinstance(candidate_gates, list)
+        and gate_id in candidate_gates
+        and gate_id not in gate_entries(plan)
+    )
+
+
 def canonical_plan_for_paths(paths: list[str]) -> dict[str, Any]:
     planner_path = Path(__file__).with_name("acceptance-plan.py")
     spec = importlib.util.spec_from_file_location(
@@ -426,7 +442,10 @@ def detect(
             )
 
     receipt_paths = sorted(RECEIVER_VISIBLE_PATHS.intersection(paths))
-    if receipt_paths:
+    if receipt_paths and not gate_deferred_by_formal_plan(
+        plan,
+        RECEIVER_PROOF_GATE,
+    ):
         obligations.add(RECEIVER_PROOF_GATE)
         if RECEIVER_PROOF_GATE not in selected:
             gaps.append(
