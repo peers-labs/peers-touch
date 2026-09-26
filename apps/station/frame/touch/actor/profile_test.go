@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -119,7 +120,7 @@ func TestProfileUpdateOwnsDiscoverability(t *testing.T) {
 		t.Fatalf("create actor metadata: %v", err)
 	}
 
-	discoverability := int16(VisibilityIndexed)
+	discoverability := modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED
 	result, err := updateProfileInternal(context.Background(), rds, record.ID, "https://station.test", UpdateProfileRequest{
 		Discoverability:  &discoverability,
 		ObservedRevision: 1,
@@ -147,5 +148,13 @@ func TestValidateProfileUpdateRequest(t *testing.T) {
 	}
 	if err := ValidateProfileUpdateRequest(UpdateProfileRequest{ObservedRevision: 1}); err != ErrEmptyProfileMutation {
 		t.Fatalf("empty mutation error = %v", err)
+	}
+	invalidDiscoverability := modelpb.ActorVisibility(65538)
+	request := UpdateProfileRequestFromProto(&modelpb.UpdateProfileRequest{
+		Discoverability:  &invalidDiscoverability,
+		ObservedRevision: 1,
+	})
+	if err := ValidateProfileUpdateRequest(request); !errors.Is(err, ErrInvalidDiscoverability) {
+		t.Fatalf("wrapped discoverability error = %v", err)
 	}
 }

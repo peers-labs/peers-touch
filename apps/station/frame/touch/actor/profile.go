@@ -65,20 +65,20 @@ type ProfileResponse struct {
 }
 
 type UpdateProfileRequest struct {
-	DisplayName               *string     `json:"display_name"`
-	Note                      *string     `json:"note"`
-	Avatar                    *string     `json:"avatar"`
-	Header                    *string     `json:"header"`
-	Region                    *string     `json:"region"`
-	Timezone                  *string     `json:"timezone"`
-	Tags                      *[]string   `json:"tags"`
-	Links                     *[]UserLink `json:"links"`
-	DefaultVisibility         *string     `json:"default_visibility"`
-	ManuallyApprovesFollowers *bool       `json:"manually_approves_followers"`
-	MessagePermission         *string     `json:"message_permission"`
-	AutoExpireDays            *int        `json:"auto_expire_days"`
-	Discoverability           *int16      `json:"discoverability"`
-	ObservedRevision          uint64      `json:"observed_revision"`
+	DisplayName               *string                  `json:"display_name"`
+	Note                      *string                  `json:"note"`
+	Avatar                    *string                  `json:"avatar"`
+	Header                    *string                  `json:"header"`
+	Region                    *string                  `json:"region"`
+	Timezone                  *string                  `json:"timezone"`
+	Tags                      *[]string                `json:"tags"`
+	Links                     *[]UserLink              `json:"links"`
+	DefaultVisibility         *string                  `json:"default_visibility"`
+	ManuallyApprovesFollowers *bool                    `json:"manually_approves_followers"`
+	MessagePermission         *string                  `json:"message_permission"`
+	AutoExpireDays            *int                     `json:"auto_expire_days"`
+	Discoverability           *modelpb.ActorVisibility `json:"discoverability"`
+	ObservedRevision          uint64                   `json:"observed_revision"`
 }
 
 type ProfileUpdateResult struct {
@@ -252,9 +252,9 @@ func ValidateProfileUpdateRequest(req UpdateProfileRequest) error {
 		return ErrEmptyProfileMutation
 	}
 	if req.Discoverability != nil &&
-		*req.Discoverability != VisibilityHidden &&
-		*req.Discoverability != VisibilityByHandle &&
-		*req.Discoverability != VisibilityIndexed {
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN &&
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE &&
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED {
 		return fmt.Errorf("%w: %d", ErrInvalidDiscoverability, *req.Discoverability)
 	}
 	return nil
@@ -338,8 +338,8 @@ func updateProfileInternal(
 		if req.Header != nil && *req.Header != actor.Image {
 			actorUpdates["image"] = *req.Header
 		}
-		if req.Discoverability != nil && *req.Discoverability != actor.Visibility {
-			actorUpdates["visibility"] = *req.Discoverability
+		if req.Discoverability != nil && int16(*req.Discoverability) != actor.Visibility {
+			actorUpdates["visibility"] = int16(*req.Discoverability)
 		}
 
 		metaUpdates := map[string]interface{}{}
@@ -541,7 +541,7 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 		out.AutoExpireDays = &n
 	}
 	if req.Discoverability != nil {
-		value := int16(*req.Discoverability)
+		value := *req.Discoverability
 		out.Discoverability = &value
 	}
 	out.ObservedRevision = req.ObservedRevision
