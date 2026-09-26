@@ -138,7 +138,9 @@ authority head、lane cursor、consumption marker 与 receipt，不修改消息 
 
 新 Recovery archive 包含 floor 与 redaction tombstone，不包含已清理或 redacted 的
 明文和 attachment metadata。restore staging 后先 reconcile 更新的 authority
-redaction，再开放 projection。
+redaction，再开放 projection。in-place restore 保留当前已认证 device identity，
+仅清除 Direct ratchet、MLS state 和其他不可恢复的 live messaging state，避免
+产生无法与现有 Station session 绑定的第二个 device identity。
 
 ## 10. 硬切
 

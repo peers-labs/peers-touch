@@ -64,7 +64,9 @@ Actor-wide DKX was rejected because an SPK/OPK belongs to one device.
 **Status**: accepted
 
 Backup restores actor identity, encrypted history, attachment keys, and trust
-metadata. A restored or new device enrolls with fresh device keys and sessions.
+metadata. A new installation keeps the fresh device identity established for
+its authenticated session. An in-place restore preserves the currently
+authenticated device identity. Both paths establish fresh messaging sessions.
 
 Transferring ratchet or MLS live state was rejected because it breaks
 device isolation and complicates compromise recovery.

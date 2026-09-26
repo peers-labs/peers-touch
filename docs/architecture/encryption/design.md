@@ -157,12 +157,13 @@ On reinstall or new device:
 
 1. authenticate to Station;
 2. restore actor identity and history backup;
-3. enroll a new device identity;
+3. retain the fresh device identity already bound to the authenticated session;
 4. publish a fresh bundle;
 5. establish fresh direct sessions and MLS device leaves;
 6. resume device-targeted new traffic.
 
-No old device ratchet is reused on a new device.
+An in-place restore retains the currently authenticated device identity so the
+Station session remains valid. No old device ratchet or MLS session is restored.
 
 ## 8. Group Encryption
 
