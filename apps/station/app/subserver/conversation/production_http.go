@@ -42,9 +42,7 @@ const (
 	maximumConversationQueryLimit     = 500
 )
 
-func productionCommandActorScoped(
-	kind chatmodel.ConversationCommandKind,
-) (bool, error) {
+func validateProductionCommandKind(kind chatmodel.ConversationCommandKind) error {
 	switch kind {
 	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED,
 		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE,
@@ -57,12 +55,11 @@ func productionCommandActorScoped(
 		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION,
 		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
 		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE,
-		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE:
-		return false, nil
-	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
-		return true, nil
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
+		return nil
 	default:
-		return false, server.BadRequest(
+		return server.BadRequest(
 			"Conversation command preparation kind is unsupported",
 		)
 	}
@@ -75,8 +72,7 @@ func productionPrepareCommandRequest(
 	verifiedRoutes []ports.EndpointRoute,
 	kind chatmodel.ConversationCommandKind,
 ) (command.PrepareCommandRequest, error) {
-	actorScoped, err := productionCommandActorScoped(kind)
-	if err != nil {
+	if err := validateProductionCommandKind(kind); err != nil {
 		return command.PrepareCommandRequest{}, err
 	}
 	return command.PrepareCommandRequest{
@@ -84,7 +80,6 @@ func productionPrepareCommandRequest(
 		Sender:            sender,
 		SenderHomeStation: senderHomeStation,
 		VerifiedRoutes:    verifiedRoutes,
-		ActorScoped:       actorScoped,
 	}, nil
 }
 
