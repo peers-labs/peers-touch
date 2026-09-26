@@ -74,9 +74,6 @@ class DesktopMessagingDomainRuntime {
 
   async bootstrap(actorPtid: string | null): Promise<void> {
     const generation = ++this.activationGeneration;
-    // #region debug-point A:bootstrap-entry
-    void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A', location: 'apps/desktop/src/messaging/runtime.ts:bootstrap-entry', msg: '[DEBUG] Messaging bootstrap entered', data: { generation, actorPresent: Boolean(actorPtid), currentActorMatches: currentAuthenticatedActorPtid() === actorPtid, hadActiveScope: this.activeScope !== null }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     this.stopReconcile();
     this.activeScope = null;
     this.requireLifecycle().resetProjection();
@@ -85,30 +82,19 @@ class DesktopMessagingDomainRuntime {
     }
 
     const accountRequest = api.accountGetActive();
-    const stationRequest = api.federationGetSelf();
+    const stationRequest = api.profileGet();
     const endpointRequest = api.accountGetDeviceId();
-    // #region debug-point B-C:scope-request-settlement
-    void accountRequest.then(() => fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/messaging/runtime.ts:account-read', msg: '[DEBUG] Messaging account scope resolved', data: { generation }, ts: Date.now() }) })).catch(() => {});
-    void stationRequest.then(() => fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/messaging/runtime.ts:station-read', msg: '[DEBUG] Messaging Station scope resolved', data: { generation }, ts: Date.now() }) })).catch(() => {});
-    void endpointRequest.then(() => fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/messaging/runtime.ts:endpoint-read', msg: '[DEBUG] Messaging endpoint scope resolved', data: { generation }, ts: Date.now() }) })).catch(() => {});
-    // #endregion
     const [account, station, endpoint] = await Promise.all([
       accountRequest,
       stationRequest,
       endpointRequest,
     ]);
     const profileId = account?.id?.trim() ?? '';
-    const stationPeerId = station.homeStationPeerId.trim();
+    const stationPeerId = station.home_station_peer_id.trim();
     const endpointId = endpoint.device_id.trim();
-    // #region debug-point B-C:scope-readback
-    void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'B,C', location: 'apps/desktop/src/messaging/runtime.ts:scope-readback', msg: '[DEBUG] Messaging scope readback completed', data: { generation, activationGeneration: this.activationGeneration, actorMatches: currentAuthenticatedActorPtid() === actorPtid, profileIdPresent: Boolean(profileId), stationPeerIdPresent: Boolean(stationPeerId), endpointIdPresent: Boolean(endpointId) }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     if (!profileId || !stationPeerId || !endpointId) {
       throw new Error('messaging_runtime_scope_incomplete');
     }
-    // #region debug-point A:scope-fence
-    void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A', location: 'apps/desktop/src/messaging/runtime.ts:scope-fence', msg: '[DEBUG] Messaging scope fence evaluated', data: { generation, activationGeneration: this.activationGeneration, actorMatches: currentAuthenticatedActorPtid() === actorPtid }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     if (currentAuthenticatedActorPtid() !== actorPtid) {
       throw new MessagingRuntimeScopeChangedError();
     }
@@ -123,13 +109,7 @@ class DesktopMessagingDomainRuntime {
       activationGeneration: generation,
     };
     this.activeScope = scope;
-    // #region debug-point D:reconcile-window
-    void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'D', location: 'apps/desktop/src/messaging/runtime.ts:reconcile-start', msg: '[DEBUG] Messaging reconciliation started', data: { generation, activationGeneration: this.activationGeneration }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     await this.requireLifecycle().reconcile('runtime:bootstrap', scope);
-    // #region debug-point D:reconcile-window
-    void fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'D', location: 'apps/desktop/src/messaging/runtime.ts:reconcile-end', msg: '[DEBUG] Messaging reconciliation completed', data: { generation, activationGeneration: this.activationGeneration, scopeCurrent: this.isCurrent(scope) }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     this.assertCurrent(scope);
     this.startReconcile();
   }

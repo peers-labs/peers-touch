@@ -19,11 +19,13 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 CALLABLE_HARNESS_ACTIONS = frozenset(
     {
         "cleanup",
+        "federation.context.read",
         "lifecycle.restart",
         "lifecycle.resume",
         "lifecycle.scope.read",
         "lifecycle.snapshot",
         "lifecycle.suspend",
+        "lifecycle.waitReady",
         "messaging.attachment.open",
         "messaging.attachment.stage",
         "messaging.command.read",
@@ -38,6 +40,7 @@ CALLABLE_HARNESS_ACTIONS = frozenset(
         "messaging.typing",
         "recovery.snapshot",
         "social.projection.read",
+        "social.people.search",
         "social.reconcile",
         "session.logout",
         "settings.device.read",

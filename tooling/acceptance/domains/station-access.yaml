@@ -6,7 +6,9 @@
     "acceptance-framework-self-consistency",
     "station-access-wire-contract",
     "station-access-authentication",
-    "station-access-scope-isolation"
+    "station-access-scope-isolation",
+    "station-access-federation-context-boundary",
+    "station-access-zero-legacy-integrity"
   ],
   "validation_gate_id": "station-access-domain-validation"
 }

@@ -85,7 +85,15 @@
         "federation_join",
         "federation_leave",
         "federation_delete",
-        "federation_list_member_stations"
+        "federation_list_member_stations",
+        "federationCreate",
+        "federationJoin",
+        "federationLeave",
+        "federationDelete",
+        "federationListMemberStations",
+        "federationListFederations",
+        "federationJoining",
+        "joinFederation"
       ],
       "routes": [],
       "seedPaths": [
@@ -98,7 +106,14 @@
     {
       "id": "SAL-L04",
       "concern": "duplicate actor federation profile surface",
-      "symbols": ["FederationSelfView", "FederationVisibilityRequest"],
+      "symbols": [
+        "FederationSelfView",
+        "FederationVisibilityRequest",
+        "federationGetSelf",
+        "federationUpdateVisibility",
+        "memberStationsByFederation",
+        "federationHealth"
+      ],
       "routes": ["/actor/federation/me", "/actor/federation/visibility"],
       "seedPaths": [
         "model/domain/federation/federation_self.proto",
@@ -109,7 +124,14 @@
     {
       "id": "SAL-L05",
       "concern": "relay topology in ordinary onboarding",
-      "symbols": ["StationNetworkIntro", "RelayReveal"],
+      "symbols": [
+        "StationNetworkIntro",
+        "RelayReveal",
+        "relayToken",
+        "relayInvite",
+        "relayMount",
+        "forwardEndpoint"
+      ],
       "routes": [],
       "seedPaths": [
         "apps/desktop/src/components/common/StationNetworkIntro.tsx",

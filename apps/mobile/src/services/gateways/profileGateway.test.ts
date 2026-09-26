@@ -30,10 +30,14 @@ vi.mock('../stationTransport', () => ({
           return ['/actor/profile', 'POST', JSON.stringify(operation.input)];
         case 'actor_search':
           return [`/api/v1/social/users/search?q=${encodeURIComponent(String(operation.query))}`, 'GET', undefined];
-        case 'federation_list':
-          return ['/sub-federation/federations', 'GET', undefined];
+        case 'federation_contexts_list':
+          return ['/sub-federation/contexts', 'GET', undefined];
         case 'federation_resolve':
-          return [`/actor/federation/resolve?handle=${encodeURIComponent(String(operation.handle))}`, 'GET', undefined];
+          return [
+            `/actor/federation/resolve?federation_id=${encodeURIComponent(String(operation.federation_id))}&handle=${encodeURIComponent(String(operation.handle))}`,
+            'GET',
+            undefined,
+          ];
         case 'notification_preferences_get':
           return ['/notification/preferences', 'GET', undefined];
         case 'notification_preferences_update':
@@ -261,22 +265,22 @@ describe('profileGateway current profile', () => {
 
   it('reads active Federation identities from the Station projection, not actor handles', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      federations: [
+      contexts: [
         { federation_id: 'fed-active', name: 'Development', status: 'active' },
         { federationId: 'fed-archived', name: 'Archived', status: 'archived' },
       ],
     }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await createProfileGateway(session).listFederations();
+    const result = await createProfileGateway(session).listFederationContexts();
     expect(result.ok && result.data.map((federation) => federation.federationId)).toEqual(['fed-active']);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://station.example/sub-federation/federations');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://station.example/sub-federation/contexts');
   });
 
   it('preserves an empty Federation membership without inventing a scope', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      federations: [],
+      contexts: [],
     }), { status: 200 })));
-    await expect(createProfileGateway(session).listFederations()).resolves.toEqual({
+    await expect(createProfileGateway(session).listFederationContexts()).resolves.toEqual({
       ok: true,
       data: [],
     });
@@ -284,9 +288,9 @@ describe('profileGateway current profile', () => {
 
   it('fails closed on a Federation without an identity', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      federations: [{ status: 'active' }],
+      contexts: [{ status: 'active' }],
     }), { status: 200 })));
-    await expect(createProfileGateway(session).listFederations()).resolves.toMatchObject({
+    await expect(createProfileGateway(session).listFederationContexts()).resolves.toMatchObject({
       ok: false,
       error: { code: 'INVALID_FEDERATION_RESPONSE' },
     });
@@ -299,7 +303,10 @@ describe('profileGateway current profile', () => {
       profile: { username: 'bob', display_name: 'Bob', ref: { ptid: 'ptid:bob' } },
       locator_seq: '7',
     })));
-    const result = await createProfileGateway(session).resolveFederationHandle('@bob@station.example');
+    const result = await createProfileGateway(session).resolveFederationHandle(
+      'fed-active',
+      '@bob@station.example',
+    );
     expect(result).toMatchObject({
       ok: true,
       data: { asSearchResult: { ptid: 'ptid:bob', homeStationPeerId: 'station-b' } },
@@ -310,7 +317,10 @@ describe('profileGateway current profile', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
       profile: { id: '123', username: 'bob' },
     })));
-    await expect(createProfileGateway(session).resolveFederationHandle('@bob@station.example')).resolves.toMatchObject({
+    await expect(createProfileGateway(session).resolveFederationHandle(
+      'fed-active',
+      '@bob@station.example',
+    )).resolves.toMatchObject({
       ok: false,
       error: { code: 'INVALID_ACTOR_SEARCH_RESPONSE' },
     });

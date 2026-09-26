@@ -120,6 +120,93 @@
           "Cross-Station Federation context is proven by the SAL-02 boundary Gate"
         ]
       }
+    },
+    {
+      "id": "station-access-federation-context-boundary",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-federation-boundary"],
+      "required_gates": [
+        "station-federation-unit",
+        "station-api-ownership",
+        "station-access-federation-boundary-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/actor/actor.proto",
+        "apps/station/frame/touch/actor/profile.go",
+        "apps/station/app/subserver/federation/handler.go",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/mobile/src/pages/ContactsPage.tsx",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Federation projection",
+          "canonical Actor Profile discoverability",
+          "Station-scoped Federation catalog and resolver"
+        ],
+        "surfaces": [
+          "native macOS Desktop Federation context and people search",
+          "native iOS Simulator Federation context and people search"
+        ],
+        "proven_by": [
+          "station-federation-unit",
+          "station-api-ownership",
+          "station-access-federation-boundary-e2e"
+        ],
+        "proven_scope": [
+          "Desktop and Mobile consume one explicit Station-provided federation_id",
+          "scoped search, resolve, Direct creation, and Group creation use that explicit context",
+          "ordinary clients expose no Federation governance or Relay topology controls",
+          "Actor discoverability has one canonical profile owner"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, Android, and physical-device runtime cells"
+        ]
+      }
+    },
+    {
+      "id": "station-access-zero-legacy-integrity",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-zero-legacy"],
+      "required_gates": [
+        "station-access-zero-legacy-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "station-access-lifecycle-aggregate-e2e"
+      ],
+      "synthetic_paths": [
+        "docs/architecture/station-access-lifecycle/legacy-inventory.json",
+        "tooling/acceptance/gates/station_access/zero_legacy.py",
+        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Access legacy inventory",
+          "current-source Station Access Gate manifests",
+          "Desktop and Mobile native build commands"
+        ],
+        "surfaces": [
+          "Desktop release artifact",
+          "Mobile iOS Simulator native artifact"
+        ],
+        "proven_by": [
+          "station-access-zero-legacy-e2e",
+          "desktop-release-build",
+          "mobile-native-build",
+          "station-access-lifecycle-aggregate-e2e"
+        ],
+        "proven_scope": [
+          "all nine Station Access legacy dimensions contain zero forbidden references",
+          "Desktop release and Mobile native builds complete from one clean source",
+          "all Station Access capability Gates have current-source proof"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, Android, and physical-device release artifacts"
+        ]
+      }
     }
   ]
 }

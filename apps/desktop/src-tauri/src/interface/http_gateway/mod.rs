@@ -2719,13 +2719,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            match app_federation::list_federations(&token) {
+            match app_federation::list_contexts(&token) {
                 Ok(view) => to_json(to_stub(
                     "acceptance_federation_context",
                     json!({
                         "active_station_peer_id": active_station_peer_id,
                         "federations": view
-                            .federations
+                            .contexts
                             .iter()
                             .map(|federation| json!({
                                 "federation_id": federation.federation_id,
@@ -4815,34 +4815,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Federation
         // =================================================================
-        "federation_health" => match app_federation::health() {
-            Ok(view) => to_json(AppResult::success(app_federation::encode_health(&view))),
-            Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_health failed")),
-        },
-        "federation_get_self" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match app_federation::get_self(&token) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
-                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_get_self failed")),
-            }
-        }
-        "federation_update_visibility" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let input = match parse_args::<FederationVisibilityInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            match app_federation::set_visibility(&token, &input.visibility) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_self(&view))),
-                Err(e) => to_json(e.into_app_result_proto("federation_update_visibility failed")),
-            }
-        }
         "federation_resolve" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -4852,7 +4824,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            match app_federation::resolve(&token, &input.handle) {
+            match app_federation::resolve(&token, &input.federation_id, &input.handle) {
                 Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
                 Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
             }
@@ -4879,18 +4851,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(e.into_app_result_proto("federation_catalog_search failed")),
             }
         }
-        "federation_list_federations" => {
+        "federation_list_contexts" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            match app_federation::list_federations(&token) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_list_federations(
+            match app_federation::list_contexts(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_list_contexts(
                     &view,
                 ))),
-                Err(e) => {
-                    to_json(e.into_app_result::<Vec<u8>>("federation_list_federations failed"))
-                }
+                Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_list_contexts failed")),
             }
         }
 

@@ -1825,9 +1825,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       let profile = await api.peerProfileGet(did);
       const federatedHandle = remoteProfileHandle(profile);
-      if (federatedHandle) {
+      const federationId = state.getIMConversations()
+        .find((conversation) => conversation.peerPtid === did)
+        ?.federationId
+        || state.friendRequests.find((request) => (
+          request.senderPtid === did || request.receiverPtid === did
+        ))?.federationId
+        || '';
+      if (federatedHandle && federationId) {
         try {
-          const resolved = await api.federationResolve(federatedHandle);
+          const resolved = await api.federationResolve(federationId, federatedHandle);
           const authoritative = accountProfileFromFederationResolve(
             resolved,
             did,
@@ -2155,13 +2162,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const [conversation, federationSelf] = await Promise.all([
         messagingConversations.getConversation(groupUlid),
-        api.federationGetSelf(),
+        api.profileGet(),
       ]);
       await messagingCommands.requestLeaveIntent({
         federationId: conversation.federationId,
         authorityStationPeerId: conversation.authorityStationPeerId,
         authorityEpoch: Number(conversation.authorityEpoch),
-        homeStationPeerId: federationSelf.homeStationPeerId,
+        homeStationPeerId: federationSelf.home_station_peer_id,
         conversationId: groupUlid,
         observedMembershipEpoch: Number(conversation.membershipEpoch),
         observedMlsEpoch: Number(conversation.mlsEpoch),

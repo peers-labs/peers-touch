@@ -68,12 +68,12 @@ model/domain/federation/federation_discovery.proto
 
 ### 2.2 Client Projection
 
-Desktop 通过 Settings 和 Dashboard 消费 Federation projection，不是 Federation 真源：
+普通客户端与 operator surface 都消费 Federation projection，但职责不同：
 
-- Desktop 可以缓存 Federation view model、分页 cursor、UI 过滤条件。
-- Desktop 不保存 ledger head、membership、policy 的最终事实。
-- Desktop 治理按钮只根据 Station 返回的 capability projection 展示；最终权限裁决始终在 Station。
-- Mobile 后续可以复用同一 Station API，但不改变 Station 作为共享业务真源的边界。
+- Desktop/Mobile 只缓存 Federation context、scoped Catalog/Resolver 结果与连接状态。
+- 普通客户端不保存 ledger head、membership、policy，也不暴露治理命令。
+- Dashboard/CLI 可以消费治理 projection 并提交 operator intent；最终权限裁决始终在 Station。
+- Desktop/Mobile 使用同一显式 `federation_id` 语义，不改变 Station 作为共享业务真源的边界。
 
 Station Plaza projection 至少包含：
 

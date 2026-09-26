@@ -34,7 +34,9 @@
       "id": "desktop-alice",
       "actor": "alice",
       "runtime": "native-tauri",
-      "required_service_roles": ["station"],
+      "required_service_roles": [
+        "station"
+      ],
       "service_bindings": {
         "station": {
           "service_id": "station",
@@ -46,7 +48,9 @@
       "id": "desktop-bob",
       "actor": "bob",
       "runtime": "native-tauri",
-      "required_service_roles": ["station"],
+      "required_service_roles": [
+        "station"
+      ],
       "service_bindings": {
         "station": {
           "service_id": "station",
@@ -58,7 +62,9 @@
       "id": "sim-ios",
       "actor": "bob",
       "runtime": "tauri-ios-simulator",
-      "required_service_roles": ["station"],
+      "required_service_roles": [
+        "station"
+      ],
       "service_bindings": {
         "station": {
           "service_id": "station",
@@ -70,7 +76,9 @@
       "id": "sim-ios-peer",
       "actor": "alice",
       "runtime": "tauri-ios-simulator",
-      "required_service_roles": ["station"],
+      "required_service_roles": [
+        "station"
+      ],
       "service_bindings": {
         "station": {
           "service_id": "station",
@@ -84,6 +92,7 @@
     "required_actions": [
       "lifecycle.resume",
       "lifecycle.restart",
+      "lifecycle.waitReady",
       "lifecycle.scope.read",
       "lifecycle.suspend",
       "messaging.reconcile",
@@ -91,7 +100,13 @@
       "social.reconcile",
       "session.logout",
       "getRealtimeDevice",
-      "cleanup"
+      "cleanup",
+      "federation.context.read",
+      "social.people.search",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.projection.read",
+      "recovery.snapshot"
     ],
     "policy": "Station Access production actions only; service endpoints and Appium authority remain parent-owned"
   },
@@ -99,7 +114,8 @@
     "proves": [
       "native macOS Desktop and iOS Simulator bind one signed Station identity before authentication",
       "same-actor Desktop and Mobile sessions retain distinct device identities",
-      "native restart and logout preserve Station, Actor, Device, and lifecycle scope isolation"
+      "native restart and logout preserve Station, Actor, Device, and lifecycle scope isolation",
+      "native Desktop and Mobile use one explicit Federation context for scoped discovery and Chat creation"
     ],
     "does_not_prove": [
       "Linux or Windows Desktop behavior",

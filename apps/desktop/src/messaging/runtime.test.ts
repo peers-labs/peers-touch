@@ -4,7 +4,7 @@ import { MessagingProjectionKind } from '../gen/proto/domain/chat/event_pb';
 const mocks = vi.hoisted(() => ({
   actorPtid: 'ptid:actor:alice',
   accountGetActive: vi.fn(),
-  federationGetSelf: vi.fn(),
+  profileGet: vi.fn(),
   accountGetDeviceId: vi.fn(),
   getConversation: vi.fn(),
   listConversations: vi.fn(),
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/desktop_api', () => ({
   api: {
     accountGetActive: mocks.accountGetActive,
-    federationGetSelf: mocks.federationGetSelf,
+    profileGet: mocks.profileGet,
     accountGetDeviceId: mocks.accountGetDeviceId,
     messagingTypingSend: vi.fn(),
     messagingReadCursor: vi.fn(),
@@ -61,8 +61,8 @@ describe('DesktopMessagingDomainRuntime', () => {
     vi.clearAllMocks();
     mocks.actorPtid = 'ptid:actor:alice';
     mocks.accountGetActive.mockResolvedValue({ id: 'profile-alice' });
-    const homeIdentity = { homeStationPeerId: 'station-a' };
-    mocks.federationGetSelf.mockResolvedValue(homeIdentity);
+    const homeIdentity = { home_station_peer_id: 'station-a' };
+    mocks.profileGet.mockResolvedValue(homeIdentity);
     mocks.accountGetDeviceId.mockResolvedValue({ device_id: 'device-desktop' });
     lifecycle.reconcile.mockResolvedValue(undefined);
     messagingDomainRuntime.configure(lifecycle);

@@ -45,6 +45,8 @@ const session = {
   stationPeerId: 'station-primary',
   stationUrl: 'https://station.example',
   sessionId: 'session-1',
+  deviceId: 'device-alice',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 };
@@ -451,7 +453,10 @@ describe('social projection runtime', () => {
       expect(runtime.moments.projection.state().availability).toEqual({ available: true });
       expect(repairCursor).not.toHaveBeenCalled();
       expect(reopenAdmission).not.toHaveBeenCalled();
-      expect(() => requireMobileMutationAdmission('station-primary|ptid:alice', 'moments'))
+      expect(() => requireMobileMutationAdmission(
+        'station-primary|ptid:alice',
+        'moments',
+      ))
         .not.toThrow();
 
       runtime.ingress.markStale('moments', 'lost-event', 'cursor-1', false);

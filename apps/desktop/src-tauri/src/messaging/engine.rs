@@ -446,9 +446,8 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let device_id =
-            crate::application::key_exchange::device_install::get_or_create_device_id()
-                .map_err(|error| format!("load canonical installation device identity: {error}"))?;
+        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
         let enrollment = load_or_create_device_identity_for_device(
             store.as_ref(),
             &ptid,

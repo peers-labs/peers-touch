@@ -11,7 +11,8 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
 use crate::infrastructure::{avatar_cache, profile_store, station_client};
 use crate::model::actor::{
-    ActorProfile, ProfileUpdateOutcome, UpdateProfileRequest, UpdateProfileResponse, UserLink,
+    ActorProfile, ActorVisibility, ProfileUpdateOutcome, UpdateProfileRequest,
+    UpdateProfileResponse, UserLink,
 };
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -177,6 +178,7 @@ fn upload_and_set_profile_image(
         timezone: None,
         tags: None,
         links: None,
+        discoverability: None,
         observed_revision: current_profile.profile_revision,
     };
     match field {
@@ -321,6 +323,10 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "message_permission": p.message_permission,
         "auto_expire_days": p.auto_expire_days,
         "profile_revision": p.profile_revision,
+        "federated_handle": p.federated_handle,
+        "home_station_peer_id": p.home_station_peer_id,
+        "home_station_domain": p.home_station_domain,
+        "discoverability": discoverability_label(p.discoverability),
     });
     resolve_profile_urls(&mut data);
     data
@@ -372,6 +378,9 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
                 url: l.url.clone(),
             })
             .collect();
+    }
+    if let Some(value) = input.discoverability.as_deref() {
+        r.discoverability = Some(discoverability_value(value));
     }
     r.observed_revision = input.observed_revision;
     r
@@ -490,6 +499,28 @@ fn profile_matches_input(profile: &ActorProfile, input: &ProfileUpdateInput) -> 
                     .zip(&profile.links)
                     .all(|(left, right)| left.label == right.label && left.url == right.url)
         })
+        && input
+            .discoverability
+            .as_deref()
+            .is_none_or(|value| discoverability_value(value) == profile.discoverability)
+}
+
+fn discoverability_value(value: &str) -> i32 {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "hidden" => ActorVisibility::Hidden as i32,
+        "by_handle" => ActorVisibility::ByHandle as i32,
+        "indexed" => ActorVisibility::Indexed as i32,
+        _ => ActorVisibility::Unspecified as i32,
+    }
+}
+
+fn discoverability_label(value: i32) -> &'static str {
+    match ActorVisibility::try_from(value).unwrap_or(ActorVisibility::Unspecified) {
+        ActorVisibility::Hidden => "hidden",
+        ActorVisibility::ByHandle => "by_handle",
+        ActorVisibility::Indexed => "indexed",
+        ActorVisibility::Unspecified => "hidden",
+    }
 }
 
 fn profile_update_success(

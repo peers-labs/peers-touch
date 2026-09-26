@@ -981,6 +981,41 @@ function runtimeIdentityMatchesDeclaration(
   });
 }
 
+function runtimeIdentityIsLocalClientOnly(runtime) {
+  if (
+    !Array.isArray(runtime?.clientRuntimes) ||
+    runtime.clientRuntimes.length === 0
+  ) {
+    return false;
+  }
+  return (
+    !isObject(runtime?.services) ||
+    Object.keys(runtime.services).length === 0
+  );
+}
+
+export function runtimeIdentitiesMatchDeclaration(
+  runtimes,
+  deployProfiles,
+  runtimeClaims,
+) {
+  let declaredRuntimeFound = false;
+  for (const runtime of runtimes) {
+    if (
+      runtimeIdentityMatchesDeclaration(
+        runtime,
+        deployProfiles,
+        runtimeClaims,
+      )
+    ) {
+      declaredRuntimeFound = true;
+      continue;
+    }
+    if (!runtimeIdentityIsLocalClientOnly(runtime)) return false;
+  }
+  return declaredRuntimeFound;
+}
+
 function runtimeServiceCommitsMatchSource(runtime, sourceCommit) {
   if (!isObject(runtime?.services)) return true;
   return Object.values(runtime.services).every(
@@ -1226,13 +1261,10 @@ function functionalResultUpdates(
     (
       runtimeIdentities.length === 0 ||
       !Array.isArray(deployProfiles) ||
-      runtimeIdentities.some(
-        (runtime) =>
-          !runtimeIdentityMatchesDeclaration(
-            runtime,
-            deployProfiles,
-            runtimeClaims,
-          ),
+      !runtimeIdentitiesMatchDeclaration(
+        runtimeIdentities,
+        deployProfiles,
+        runtimeClaims,
       )
     )
   ) {

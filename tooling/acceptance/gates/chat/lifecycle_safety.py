@@ -132,22 +132,22 @@ def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
         )
         return findings
 
-    if "input?.federationId" in block or "input.federationId" in block:
+    if "const contextId = requireString(" not in block:
         findings.append(
             SafetyFinding(
                 path=str(SEARCH_ACTION_PATH),
                 line=start_line,
-                code="request-echoed-as-evidence",
-                message="social.people.search reads Federation identity from request input",
+                code="explicit-federation-context-missing",
+                message="social.people.search must validate an explicit Federation context",
             )
         )
-    if "federationId: result.federationId" not in block:
+    if "federationId: contextId" not in block:
         findings.append(
             SafetyFinding(
                 path=str(SEARCH_ACTION_PATH),
                 line=start_line,
-                code="observed-identity-missing",
-                message="social.people.search must project the observed result Federation identity",
+                code="scoped-federation-projection-missing",
+                message="social.people.search must project the validated Federation context",
             )
         )
 
@@ -167,13 +167,13 @@ def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
                     message="SocialPeopleSearchActionInput contract is unavailable",
                 )
             )
-        elif re.search(r"\bfederationId\s*:", contract_match.group("body")):
+        elif not re.search(r"\bfederationId\s*:", contract_match.group("body")):
             findings.append(
                 SafetyFinding(
                     path=str(SEARCH_CONTRACT_PATH),
                     line=_line_number(contract_source, contract_match.start()),
-                    code="request-identity-contract",
-                    message="search input must not accept Federation identity as evidence",
+                    code="federation-context-contract-missing",
+                    message="search input must require an explicit Federation context",
                 )
             )
     return findings
@@ -197,7 +197,7 @@ def _scan_desktop_identity_evidence(root: Path) -> list[SafetyFinding]:
         ]
     block = source[start:end]
     findings: list[SafetyFinding] = []
-    if "api.federationListFederations()" not in block:
+    if "api.federationListContexts()" not in block:
         findings.append(
             SafetyFinding(
                 path=str(DESKTOP_HARNESS_PATH),

@@ -205,7 +205,7 @@ describe('Messaging projection hydration', () => {
       'private worker failure',
     );
     expect(ports.readinessFail).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ message: 'mobile.lifecycle.runtimeFailed' }),
+      expect.objectContaining({ message: 'private worker failure' }),
     );
     expect(ports.readinessReady).not.toHaveBeenCalled();
 

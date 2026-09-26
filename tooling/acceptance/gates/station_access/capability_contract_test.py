@@ -30,7 +30,7 @@ class StationAccessCapabilityContractTest(unittest.TestCase):
                 }
             )
 
-    def test_api_ownership_requires_direct_login_deny(self) -> None:
+    def test_api_ownership_does_not_require_retired_route_metadata(self) -> None:
         capabilities = []
         for capability_id, (
             method,
@@ -81,13 +81,12 @@ class StationAccessCapabilityContractTest(unittest.TestCase):
                 }
             )
 
-        with self.assertRaisesRegex(GateError, "direct login route"):
-            _validate_api_ownership(
-                {
-                    "capabilities": capabilities,
-                    "target_absent_routes": [],
-                }
-            )
+        _validate_api_ownership(
+            {
+                "capabilities": capabilities,
+                "target_absent_routes": [],
+            }
+        )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
+import { mobileAuthScopeKey } from '../../features/auth/mobileAuthIdentity';
 import {
   bindMobileMutationAdmission,
   bindMobileSessionMutationAdmission,
@@ -33,6 +34,8 @@ const session = {
   stationPeerId: 'station-a',
   stationUrl: 'https://station.example',
   sessionId: 'session-a',
+  deviceId: 'device-a',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 } satisfies MobileAuthSession;
@@ -44,12 +47,12 @@ let releaseSession: (() => void) | null = null;
 beforeEach(() => {
   admission = activeAdmission();
   releaseSession = bindMobileSessionMutationAdmission(() => ({
-    scopeKey: 'station-a|ptid:alice',
+    scopeKey: mobileAuthScopeKey(session),
     open: true,
     reason: 'session_active',
   }));
   release = bindMobileMutationAdmission(
-    'station-a|ptid:alice',
+    mobileAuthScopeKey(session),
     () => admission,
   );
   executeStationOperation.mockResolvedValue({
@@ -93,6 +96,35 @@ describe('gateway mutation admission', () => {
     expect(executeStationOperation).toHaveBeenCalledExactlyOnceWith(
       session,
       { operationId: 'actor_profile_get' },
+    );
+  });
+
+  it('uses explicit read admission for read-only POST operations', async () => {
+    admission.writeAdmission = {
+      open: false,
+      reason: 'control_event_lost',
+      closedAt: 10,
+    };
+    const transport = createGatewayTransport(session, 'profile');
+
+    await expect(transport.request({
+      method: 'POST',
+      path: '/sub-federation/catalog/search',
+      admission: 'read',
+      body: {
+        federation_id: 'fed-1',
+        prefix: 'bob',
+        page_size: 20,
+      },
+    })).resolves.toEqual({ value: 'ok' });
+    expect(executeStationOperation).toHaveBeenCalledExactlyOnceWith(
+      session,
+      {
+        operationId: 'federation_catalog_search',
+        federation_id: 'fed-1',
+        prefix: 'bob',
+        page_size: 20,
+      },
     );
   });
 

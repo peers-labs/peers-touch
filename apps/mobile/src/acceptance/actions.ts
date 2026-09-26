@@ -70,6 +70,7 @@ import {
   acceptSocialFriendRequest,
   applySocialFriendRequestProjectionCheckpoints,
   readSocialRuntimeProjection,
+  readFederationContexts,
   readCurrentSocialProfile,
   reconcileSocialRuntime,
   searchSocialPeople,
@@ -151,6 +152,7 @@ import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
 import type {
   LifecycleWaitReadyInput,
+  LifecycleWaitReadyOutput,
   MobileAcceptanceNamespace,
   PublicRecoveryState,
   PublicReliabilityDraft,
@@ -756,21 +758,24 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return sanitizeMessagingProjection({ runtime, conversations, messages });
   },
 
-  'social.people.search': async ({ query }) => {
+  'federation.context.read': async () => ({
+    federations: await readFederationContexts(),
+  }),
+
+  'social.people.search': async ({ query, federationId }) => {
+    const contextId = requireString(
+      federationId,
+      'social.people.search.federationId',
+    );
     const results = await searchSocialPeople(
       requireString(query, 'social.people.search.query'),
+      contextId,
     );
-    return results.map((searchResult) => {
-      const result = {
-        ...searchResult,
-        federationId: searchResult.federation?.handle ?? '',
-      };
-      return {
-        ptid: result.ptid,
-        federationId: result.federationId,
-        homeStationPeerId: result.homeStationPeerId,
-      };
-    });
+    return results.map((result) => ({
+      ptid: result.ptid,
+      federationId: contextId,
+      homeStationPeerId: result.homeStationPeerId,
+    }));
   },
 
   'reliability.fixture.configure': async (input) => (
@@ -1756,7 +1761,7 @@ function mobileErrorCode(error: unknown): string | null {
 async function waitForLifecycleReady(
   input: LifecycleWaitReadyInput | undefined,
   timeoutMs = 10_000,
-) {
+): Promise<LifecycleWaitReadyOutput> {
   const kernel = getMobileLifecycleKernel();
   const minimumGeneration = input?.minimumGeneration ?? 0;
   if (!Number.isSafeInteger(minimumGeneration) || minimumGeneration < 0) {
@@ -1772,21 +1777,30 @@ async function waitForLifecycleReady(
       ? snapshot
       : null;
   };
+  const project = (
+    snapshot: ReturnType<typeof kernel.getSnapshot>,
+  ): LifecycleWaitReadyOutput => {
+    if (!input?.includeDiagnostics) return snapshot;
+    return {
+      ...snapshot,
+      runtimeErrors: kernel.getDiagnosticRuntimeErrors(),
+    };
+  };
   const current = settled();
-  if (current) return Promise.resolve(current);
+  if (current) return Promise.resolve(project(current));
 
-  return new Promise<ReturnType<typeof kernel.getSnapshot>>((resolve) => {
+  return new Promise<LifecycleWaitReadyOutput>((resolve) => {
     let unsubscribe: () => void = () => undefined;
     const timer = setTimeout(() => {
       unsubscribe();
-      resolve(kernel.getSnapshot());
+      resolve(project(kernel.getSnapshot()));
     }, timeoutMs);
     const check = () => {
       const snapshot = settled();
       if (!snapshot) return;
       clearTimeout(timer);
       unsubscribe();
-      resolve(snapshot);
+      resolve(project(snapshot));
     };
     unsubscribe = kernel.subscribe(check);
     check();

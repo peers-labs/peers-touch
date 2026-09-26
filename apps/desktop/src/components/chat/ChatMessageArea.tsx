@@ -161,13 +161,9 @@ export function ChatMessageArea({
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
   }));
-  const {
-    actorStationEntries,
-    memberStationsByFederation,
-  } = useActiveChatFederationSlice((state) => ({
-    actorStationEntries: state.actorStationEntries,
-    memberStationsByFederation: state.memberStationsByFederation,
-  }));
+  const actorStationEntries = useActiveChatFederationSlice(
+    (state) => state.actorStationEntries,
+  );
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -218,10 +214,8 @@ export function ChatMessageArea({
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
-    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
-    memberStationsByFederation,
   });
 
   const subtitle = (() => {
@@ -233,24 +227,6 @@ export function ChatMessageArea({
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
   const activePeerDid = activeTab === 'friend' ? activeConversation?.peerPtid || null : null;
-
-  useEffect(() => {
-    // #region debug-point A:conversation-header-projection
-    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'ChatMessageArea.tsx:conversation-header-projection', msg: '[DEBUG] Conversation header projection', data: { activeTab, activeUlid, currentUserPtid, currentName, federationId: activeConversation?.federationId || '', authorityStationId, authorityStationName, activePeerDid, actorStationEntryCount: Object.keys(actorStationEntries).length, memberStationCount: Object.values(memberStationsByFederation).flat().length, presenceKnown: Boolean(activePeerDid && activePeerDid in peerOnline), presenceOnline: activePeerDid ? peerOnline[activePeerDid] ?? null : null }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
-  }, [
-    activeConversation?.federationId,
-    activePeerDid,
-    activeTab,
-    activeUlid,
-    actorStationEntries,
-    authorityStationId,
-    authorityStationName,
-    currentName,
-    currentUserPtid,
-    memberStationsByFederation,
-    peerOnline,
-  ]);
 
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.

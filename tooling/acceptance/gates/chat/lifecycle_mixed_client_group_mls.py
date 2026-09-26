@@ -89,6 +89,7 @@ class MixedClientGroupMlsGate(AcceptanceGate):
             group_id = self.runtime.create_group(
                 owner_id,
                 (bob_id, charlie_id),
+                federation_id=owner.federation_id,
                 name="CCU Mixed MLS",
                 timeout_seconds=STEP_TIMEOUT,
             )

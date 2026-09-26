@@ -149,6 +149,23 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             {"activeActorPtid": None, "deviceIdentityDigest": None},
         )
         self.assertEqual(
+            ChatMixedNativeProvisioner._project_chat_harness_result(
+                "social.people.search",
+                [{
+                    "ptid": "ptid:bob",
+                    "federationId": "fed-1",
+                    "homeStationPeerId": "station-b",
+                }],
+            ),
+            {
+                "entries": [{
+                    "ptid": "ptid:bob",
+                    "federationId": "fed-1",
+                    "homeStationPeerId": "station-b",
+                }],
+            },
+        )
+        self.assertEqual(
             MixedNativeRuntime._project_client_result(
                 {"winningDeviceId": "device-b"}
             ),
@@ -438,6 +455,10 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                     "activeActorPtid": "ptid:bob",
                     "activeStationPeerId": "station-peer",
                 },
+                {
+                    "phase": "ACTIVE",
+                    "runtimes": [],
+                },
             ]
         )
         expected_identity = object()
@@ -465,7 +486,58 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             [
                 call("sim-ios", "lifecycle.restart", {}),
                 call("sim-ios", "lifecycle.scope.read", {}),
+                call(
+                    "sim-ios",
+                    "lifecycle.waitReady",
+                    {"includeDiagnostics": True},
+                    timeout=60.0,
+                ),
             ],
+        )
+
+    def test_federation_boundary_uses_authenticated_mobile_runtime_without_restart(
+        self,
+    ) -> None:
+        runtime = object.__new__(MixedNativeRuntime)
+        runtime.gate_id = "station-access-federation-boundary-e2e"
+        runtime.mobile_binding = MagicMock()
+        runtime.mobile_binding.create_bound_session.return_value.scope = {
+            "activeStationPeerId": "station-peer"
+        }
+        runtime.mobile_binding.create_bound_session.return_value.binding_proofs = {}
+        runtime.mobile_binding.authenticate_fixture_actor.return_value = {
+            "login": {"session": {"actorPtid": "ptid:bob"}}
+        }
+        runtime.mobile_clients = []
+        runtime.access_evidence = {}
+        runtime.call_action = MagicMock(
+            side_effect=[
+                {
+                    "phase": "ACTIVE",
+                    "activeActorPtid": "ptid:bob",
+                    "activeStationPeerId": "station-peer",
+                },
+                {
+                    "phase": "ACTIVE",
+                    "runtimes": [],
+                },
+            ]
+        )
+        expected_identity = object()
+        runtime._identity_with_device = MagicMock(return_value=expected_identity)
+
+        result = runtime._start_mobile(
+            "sim-ios",
+            {
+                "ptid": "ptid:bob",
+                "homeStationPeerId": "station-peer",
+            },
+        )
+
+        self.assertIs(result, expected_identity)
+        self.assertNotIn(
+            call("sim-ios", "lifecycle.restart", {}),
+            runtime.call_action.call_args_list,
         )
 
     def test_station_access_mobile_scope_preserves_logout_projections(
@@ -864,6 +936,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         conversation_id = runtime.create_direct(
             "desktop-alice",
             "sim-ios",
+            federation_id="fed-1",
             timeout_seconds=12.0,
         )
 

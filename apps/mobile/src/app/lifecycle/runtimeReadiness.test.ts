@@ -68,7 +68,23 @@ describe('generation-bound runtime readiness', () => {
     expect(status('group')).toBe('failed');
     expect(status('settings')).toBe('ready');
     expect(kernel.getState().runtimes.get('messaging')?.status).toBe('ready');
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([{
+      runtimeId: 'messaging',
+      error: 'sensitive transport detail',
+    }]);
     expect(JSON.stringify(kernel.getSnapshot())).not.toContain('sensitive');
+  });
+
+  it('clears private readiness diagnostics after owner recovery', async () => {
+    const { kernel, begin } = fixture();
+    await kernel.startRuntimeGraph();
+    begin('messaging').fail(new Error('private worker failure'));
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([{
+      runtimeId: 'messaging',
+      error: 'private worker failure',
+    }]);
+    begin('messaging').ready();
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([]);
   });
 
   it('does not let dependency recovery overwrite another runtime failure', async () => {

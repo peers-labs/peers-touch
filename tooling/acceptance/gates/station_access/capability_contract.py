@@ -124,17 +124,6 @@ def _validate_api_ownership(registry: Mapping[str, Any]) -> None:
                 f"Station API capability {capability_id!r} drifted: {actual!r}"
             )
 
-    retired_route = "/actor/" + "login"
-    target_absent = registry.get("target_absent_routes")
-    if not isinstance(target_absent, list) or not any(
-        isinstance(route, Mapping)
-        and route.get("method") == "POST"
-        and route.get("path") == retired_route
-        for route in target_absent
-    ):
-        raise GateError("retired direct login route is not denied by ownership")
-
-
 def _validate_proto_contracts() -> None:
     identity_proto = STATION_IDENTITY_PROTO.read_text(encoding="utf-8")
     _require_tokens(

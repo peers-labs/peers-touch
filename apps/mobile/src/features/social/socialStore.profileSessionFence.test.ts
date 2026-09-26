@@ -366,6 +366,10 @@ function profile(id: string, displayName: string): PeerProfile {
     messagePermission: '',
     autoExpireDays: 0,
     networkId: '',
+    federatedHandle: '',
+    homeStationPeerId: '',
+    homeStationDomain: '',
+    discoverability: 'by_handle',
   };
 }
 

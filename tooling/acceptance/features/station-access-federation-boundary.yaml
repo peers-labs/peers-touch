@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "station-access-federation-boundary",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "model/domain/actor/**",
+    "model/domain/federation/**",
+    "apps/station/frame/touch/actor/**",
+    "apps/station/app/subserver/federation/handler.go",
+    "apps/desktop/src/components/settings/FederationTab.tsx",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+    "apps/desktop/src/store/federation.ts",
+    "apps/desktop/src/runtimes/federationRuntime.ts",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src-tauri/src/application/federation/**",
+    "apps/mobile/src/features/social/**",
+    "apps/mobile/src/pages/ContactsPage.tsx",
+    "apps/mobile/src/pages/settings/**",
+    "apps/mobile/src/services/gateways/profileGateway.ts",
+    "apps/mobile/src-tauri/src/runtime/station_transport/**",
+    "tooling/acceptance/gates/station_access/federation_boundary_e2e.py"
+  ],
+  "truth_sources": [
+    "Station Federation projection",
+    "canonical Actor Profile discoverability",
+    "Station-scoped Federation catalog and resolver"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "settings/federation and find-people"},
+    {"type": "native-mobile", "route": "settings/privacy and contacts"}
+  ],
+  "required_gates": [
+    "station-federation-unit",
+    "station-api-ownership",
+    "station-access-federation-boundary-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Desktop and Mobile read the Station-provided Federation context",
+      "scoped search, resolve, Direct creation, and Group creation carry the same explicit federation_id",
+      "Actor discoverability is read and mutated only through the canonical Actor Profile owner"
+    ],
+    "surface": [
+      "ordinary clients show Federation context and connection status",
+      "ordinary clients do not expose Federation governance or Relay topology controls"
+    ]
+  },
+  "negative": [
+    "a missing Federation context must block scoped actions instead of selecting a default",
+    "ordinary clients must not create, join, leave, delete, or manage Federation membership",
+    "ordinary clients must not expose Relay token, invite, mount, seed, or forwarding endpoint",
+    "operator Federation and Relay APIs must not be removed"
+  ]
+}

@@ -12,14 +12,19 @@ import { create, fromJson, toJson, type JsonValue } from '@bufbuild/protobuf';
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import {
   ActorListSchema,
+  ActorVisibility,
   ProfileUpdateOutcome,
   UpdateProfileRequestSchema,
   UpdateProfileResponseSchema,
 } from '../../gen/proto/domain/actor/actor_pb';
 import { FederationResolveViewSchema } from '../../gen/proto/domain/federation/federation_resolve_pb';
 import {
-  ListFederationsResponseSchema,
-  type FederationSummary,
+  FederationCatalogSearchResponseSchema,
+  type FederationCatalogEntry,
+} from '../../gen/proto/domain/federation/federation_discovery_pb';
+import {
+  ListFederationContextsResponseSchema,
+  type FederationContext,
 } from '../../gen/proto/domain/federation/federation_projection_service_pb';
 import {
   GetNotificationPreferencesResponseSchema,
@@ -71,6 +76,7 @@ export interface EditableProfileInput {
   readonly manuallyApprovesFollowers?: boolean;
   readonly messagePermission?: string;
   readonly autoExpireDays?: number;
+  readonly discoverability?: 'hidden' | 'by_handle' | 'indexed';
 }
 
 export interface ProfileUpdateResult {
@@ -95,8 +101,9 @@ export interface ProfileGateway {
   ) => Promise<CommandOutcome<ProfileUpdateResult>>;
   getPeerProfile: (ptid: string) => Promise<CommandOutcome<PeerProfile>>;
   searchActors: (query: string) => Promise<CommandOutcome<ActorSearchResultList>>;
-  listFederations: () => Promise<CommandOutcome<FederationSummary[]>>;
-  resolveFederationHandle: (handle: string) => Promise<CommandOutcome<FederationResolveResult>>;
+  listFederationContexts: () => Promise<CommandOutcome<FederationContext[]>>;
+  searchFederationActors: (federationId: string, prefix: string) => Promise<CommandOutcome<FederationCatalogEntry[]>>;
+  resolveFederationHandle: (federationId: string, handle: string) => Promise<CommandOutcome<FederationResolveResult>>;
 }
 
 export interface NotificationPreferenceGateway {
@@ -136,6 +143,9 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
       }
       const request = create(UpdateProfileRequestSchema, {
         ...input,
+        discoverability: input.discoverability === undefined
+          ? undefined
+          : actorDiscoverability(input.discoverability),
         observedRevision,
       });
       const body = toJson(UpdateProfileRequestSchema, request, {
@@ -224,20 +234,20 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
       }
     },
 
-    listFederations: async () => {
+    listFederationContexts: async () => {
       const result = await command<JsonValue>({
         method: 'GET',
-        path: '/sub-federation/federations',
+        path: '/sub-federation/contexts',
       });
       if (!result.ok) return result;
       try {
-        const { federations } = fromJson(ListFederationsResponseSchema, result.data);
-        if (federations.some((federation) => !federation.federationId.trim())) {
+        const { contexts } = fromJson(ListFederationContextsResponseSchema, result.data);
+        if (contexts.some((context) => !context.federationId.trim())) {
           throw new Error('invalid Federation identity');
         }
         return {
           ok: true,
-          data: federations.filter((federation) => federation.status === 'active'),
+          data: contexts.filter((context) => context.status === 'active'),
         };
       } catch {
         return {
@@ -246,17 +256,41 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
             code: 'INVALID_FEDERATION_RESPONSE',
             message: 'mobile.contacts.federationsFailed',
             method: 'GET',
-            path: '/sub-federation/federations',
+            path: '/sub-federation/contexts',
           },
         };
       }
     },
 
-    resolveFederationHandle: async (handle) => {
+    searchFederationActors: async (federationId, prefix) => {
+      const result = await command<JsonValue>({
+        method: 'POST',
+        path: '/sub-federation/catalog/search',
+        admission: 'read',
+        body: { federation_id: federationId, prefix, page_size: 20 },
+      });
+      if (!result.ok) return result;
+      try {
+        const response = fromJson(FederationCatalogSearchResponseSchema, result.data);
+        return { ok: true, data: response.entries };
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_FEDERATION_SEARCH_RESPONSE',
+            message: 'mobile.contacts.searchFailed',
+            method: 'POST',
+            path: '/sub-federation/catalog/search',
+          },
+        };
+      }
+    },
+
+    resolveFederationHandle: async (federationId, handle) => {
       const result = await command<JsonValue>({
         method: 'GET',
         path: '/actor/federation/resolve',
-        query: { handle },
+        query: { federation_id: federationId, handle },
       });
       if (!result.ok) return result;
       try {
@@ -519,7 +553,24 @@ function profileMatchesInput(
     && (
       input.autoExpireDays === undefined
       || input.autoExpireDays === profile.autoExpireDays
+    )
+    && (
+      input.discoverability === undefined
+      || input.discoverability === profile.discoverability
     );
+}
+
+function actorDiscoverability(
+  value: NonNullable<EditableProfileInput['discoverability']>,
+): ActorVisibility {
+  switch (value) {
+    case 'hidden':
+      return ActorVisibility.HIDDEN;
+    case 'indexed':
+      return ActorVisibility.INDEXED;
+    default:
+      return ActorVisibility.BY_HANDLE;
+  }
 }
 
 function notificationSnapshotMatchesUpdates(

@@ -277,7 +277,7 @@ export function ContactsPage({
   const runPeopleSearch = async (value: string) => {
     const query = value.trim();
     setSubmittedPeopleQuery(query);
-    await searchPeople(query);
+    await searchPeople(query, requestFederationId);
   };
 
   const sendRequestToResult = async (result: ActorSearchResult) => {
@@ -296,7 +296,7 @@ export function ContactsPage({
         setLocalActionError(t('mobile.contacts.requestUnconfirmed'));
         return;
       }
-      await searchPeople(peopleQuery);
+      await searchPeople(peopleQuery, requestFederationId);
     } catch (err) {
       setLocalActionError(t(err instanceof Error && err.message === 'mobile.contacts.requestUnconfirmed'
         ? err.message : 'mobile.contacts.requestFailed'));
@@ -613,9 +613,9 @@ export function ContactsPage({
             enterButton={t('mobile.contacts.search')}
             loading={peopleSearching}
             allowClear
+            disabled={!requestFederationId}
           />
-          {peopleResults.length > 0 && !peopleSearching ? (
-            peopleFederationsError ? (
+          {peopleFederationsError ? (
               <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
             ) : peopleFederations.length === 0 ? (
               <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
@@ -624,7 +624,10 @@ export function ContactsPage({
                 <legend>{t('mobile.contacts.federation')}</legend>
                 <Radio.Group
                   value={requestFederationId}
-                  onChange={(event) => setSelectedFederationId(String(event.target.value))}
+                  onChange={(event) => {
+                    setSelectedFederationId(String(event.target.value));
+                    clearPeopleSearch();
+                  }}
                 >
                   {peopleFederations.map((federation) => (
                     <Radio key={federation.federationId} value={federation.federationId}>
@@ -633,8 +636,7 @@ export function ContactsPage({
                   ))}
                 </Radio.Group>
               </fieldset>
-            )
-          ) : null}
+            )}
           {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
           <Spin spinning={peopleSearching && peopleResults.length === 0}>
             <div className="people-result-list">

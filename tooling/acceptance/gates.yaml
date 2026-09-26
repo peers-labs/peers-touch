@@ -30,11 +30,11 @@
       "description": "Validate immutable workspace Plan resolution across Plan, declaration, Session and Peers Dev consumers, current-closure scheduling, blocked handoff, diff drift rejection, explicit completion/full selection, runner projection refresh, host-neutral Skill rollout, and Skill governance."
     },
     "development-workflow-control-plane": {
-      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh && node tmp/development-workflow-task-slices/simulate-migration.mjs \"$PWD\"",
+      "command": "node --test tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/dev-work.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && python3 -m unittest tooling.acceptance.tests.test_execution_plan && bash tooling/scripts/review/skill-check.sh",
       "timeout_seconds": 300,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Plan Package bounds and lifecycle, Development resource declarations, replayable Session transitions, package-aware Acceptance discovery, workflow Skill contracts, and the exact Mobile pilot cutover/handoff target without claiming product behavior."
+      "description": "Validate Plan Package bounds and lifecycle, Development resource declarations, replayable Session transitions, package-aware Acceptance discovery, and workflow Skill contracts without claiming product behavior."
     },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
@@ -200,11 +200,11 @@
       "description": "Generate protobuf-derived code from model/domain sources."
     },
     "station-federation-unit": {
-      "command": "cd apps/station && go test ./app/subserver/federation/...",
+      "command": "cd apps/station && go test ./app/subserver/federation/... ./frame/touch/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Run Station Federation package tests."
+      "description": "Run Station Federation owner and Touch integration tests."
     },
     "station-dashboard-unit": {
       "command": "cd apps/station && go test ./app/subserver/dashboard/...",
@@ -264,12 +264,55 @@
       "tier": "env-evidence",
       "description": "Prove native macOS Desktop and iOS Simulator restart, logout, actor/device separation, lifecycle fencing, and old-scope absence on one source-attested Station."
     },
+    "station-access-federation-boundary-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.federation_boundary_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 2400,
+      "environment": "station-access-native",
+      "provisioner": "station-access-native",
+      "tier": "env-evidence",
+      "description": "Prove native macOS Desktop and iOS Simulator clients consume one explicit Federation context for scoped search, resolve, Direct creation, and Group creation while ordinary clients expose no Federation governance or Relay topology controls."
+    },
     "station-access-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain station-access --require-proven",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Station Access managed domain against ownership, native authentication, scope isolation, and explicit unproven-scope contracts."
+    },
+    "station-access-zero-legacy-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.zero_legacy",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Scan every Station Access legacy matcher across all nine declared dimensions and fail on any current tracked or untracked reference."
+    },
+    "desktop-release-build": {
+      "command": "pnpm --dir apps/desktop exec tauri build --ci --no-bundle",
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
+    },
+    "mobile-native-build": {
+      "command": "pnpm --dir apps/mobile exec tauri ios build --ci --target aarch64-sim",
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Build the Mobile Tauri application in release mode for the native iOS Simulator target."
+    },
+    "station-access-lifecycle-aggregate-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require current-source DONE and PROVEN evidence for every Station Access capability and release gate."
     },
     "station-messaging-unit": {
       "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/app/subserver/key_exchange/... ./apps/station/frame/core/federation/...",

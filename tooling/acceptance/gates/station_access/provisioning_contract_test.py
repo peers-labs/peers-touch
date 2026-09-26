@@ -26,14 +26,36 @@ class StationAccessProvisioningContractTest(unittest.TestCase):
         )
         self.assertIsInstance(provisioner, StationAccessNativeProvisioner)
         self.assertFalse(provisioner.requires_actor_reset)
+        self.assertFalse(provisioner.derives_fixture_federation_id)
         self.assertEqual(
             provisioner.gate_ids,
             {
                 "station-access-auth-e2e",
+                "station-access-federation-boundary-e2e",
                 "station-access-scope-isolation-e2e",
             },
         )
         self.assertIn("session.logout", provisioner.child_harness_actions)
+        self.assertIn(
+            "federation.context.read",
+            provisioner.child_harness_actions,
+        )
+        self.assertIn(
+            "social.people.search",
+            provisioner.child_harness_actions,
+        )
+        self.assertIn(
+            "lifecycle.waitReady",
+            provisioner.child_harness_actions,
+        )
+        self.assertIn(
+            "recovery.snapshot",
+            provisioner.child_harness_actions,
+        )
+        self.assertIn(
+            "social.reconcile",
+            provisioner.child_harness_actions,
+        )
 
     def test_uses_the_active_reviewed_profile_without_local_cache(self) -> None:
         contract = EnvironmentContract.from_yaml(

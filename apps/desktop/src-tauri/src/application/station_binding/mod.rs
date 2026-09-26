@@ -16,8 +16,7 @@ const STATION_IDENTITY_CHALLENGE_SIZE: usize = 32;
 const STATION_IDENTITY_MAX_LIFETIME_MS: i64 = 60_000;
 const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 30_000;
 const STATION_IDENTITY_DOMAIN: &[u8] = b"peers-touch/station-identity/v1\0";
-const REQUIRED_STATION_CAPABILITIES: [&str; 3] =
-    ["access-gate", "actor-ptid", "station-identity"];
+const REQUIRED_STATION_CAPABILITIES: [&str; 3] = ["access-gate", "actor-ptid", "station-identity"];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -305,9 +304,10 @@ impl StationBindingService {
             .into_iter()
             .find(|entry| entry.url == target_url)
             .and_then(|entry| entry.peer_id);
-        if pinned_peer_id.as_deref().is_some_and(|pinned| {
-            handshake.peer_id.as_deref() != Some(pinned)
-        }) {
+        if pinned_peer_id
+            .as_deref()
+            .is_some_and(|pinned| handshake.peer_id.as_deref() != Some(pinned))
+        {
             let error = StationBindingError::new(
                 "station_identity_mismatch",
                 "The Station identity changed and must be replaced explicitly",

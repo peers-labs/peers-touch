@@ -100,11 +100,44 @@
       ]
     },
     {
+      "id": "station-access-federation-boundary",
+      "features": [
+        "station-access-federation-boundary"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/actor/actor.proto",
+          "model/domain/federation/**",
+          "apps/station/frame/touch/actor/**",
+          "apps/station/frame/touch/federation_api_handler.go",
+          "apps/desktop/src/components/settings/FederationTab.tsx",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/desktop/src/store/federation.ts",
+          "apps/desktop/src/runtimes/federationRuntime.ts",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src-tauri/src/application/federation/**",
+          "apps/mobile/src/features/social/**",
+          "apps/mobile/src/pages/ContactsPage.tsx",
+          "apps/mobile/src/pages/settings/**",
+          "apps/mobile/src/services/gateways/profileGateway.ts",
+          "apps/mobile/src-tauri/src/runtime/station_transport/**"
+        ]
+      },
+      "require": [
+        "station-federation-unit",
+        "federation-three-node-e2e",
+        "station-api-ownership",
+        "station-access-federation-boundary-e2e"
+      ]
+    },
+    {
       "id": "station-access-acceptance",
       "features": [
         "station-access-wire-contract",
         "station-access-authentication",
-        "station-access-scope-isolation"
+        "station-access-scope-isolation",
+        "station-access-federation-boundary",
+        "station-access-zero-legacy"
       ],
       "when": {
         "paths": [
@@ -121,7 +154,13 @@
         "station-api-ownership",
         "station-access-capability-contract",
         "station-access-auth-e2e",
-        "station-access-scope-isolation-e2e"
+        "station-access-scope-isolation-e2e",
+        "station-access-federation-boundary-e2e",
+        "station-access-zero-legacy-e2e",
+        "desktop-release-build",
+        "mobile-native-build",
+        "station-access-lifecycle-aggregate-e2e",
+        "station-access-domain-validation"
       ]
     },
     {
@@ -596,8 +635,8 @@
       ],
       "when": {
         "paths": [
-          "apps/desktop/src/pages/FederationGovernancePage.tsx",
           "apps/desktop/src/components/common/StationPicker.tsx",
+          "apps/desktop/src/components/settings/FederationTab.tsx",
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/stationRegistry.ts",
           "apps/desktop/src/runtimes/stationRuntime.ts",

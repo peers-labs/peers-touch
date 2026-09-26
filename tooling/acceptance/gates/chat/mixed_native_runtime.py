@@ -5,7 +5,6 @@ import json
 import os
 import secrets
 import time
-import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +46,7 @@ STATION_ACCESS_GATE_IDS = frozenset(
     {
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
+        "station-access-federation-boundary-e2e",
     }
 )
 DESKTOP_RUNTIME = "native-tauri"
@@ -62,43 +62,6 @@ MOBILE_WRITE_ACTIONS = frozenset({
     "messaging.read",
     "messaging.typing",
 })
-
-
-# #region debug-point A-D:mobile-admission-state
-def _report_mobile_admission_debug(
-    hypothesis_id: str,
-    location: str,
-    data: Mapping[str, Any],
-) -> None:
-    env_path = REPO_ROOT / ".dbg" / "mobile-admission-stuck.env"
-    if not env_path.exists():
-        return
-    config = dict(
-        line.split("=", 1)
-        for line in env_path.read_text(encoding="utf-8").splitlines()
-        if "=" in line
-    )
-    payload = json.dumps({
-        "sessionId": config.get("DEBUG_SESSION_ID", "mobile-admission-stuck"),
-        "runId": config.get("DEBUG_RUN_ID", "pre-fix"),
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": "[DEBUG] Mobile lifecycle admission state",
-        "data": data,
-        "ts": int(time.time() * 1000),
-    }).encode()
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request(
-                config.get("DEBUG_SERVER_URL", "http://127.0.0.1:7777/event"),
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=2,
-        ).read()
-    except Exception:
-        pass
-# #endregion
 
 
 @dataclass(frozen=True)
@@ -332,50 +295,14 @@ class MixedNativeRuntime:
             ),
             f"{client_id} recovery snapshot",
         )
-        # #region debug-point B-D:admission-wait-entry
-        if (
-            (REPO_ROOT / ".dbg" / "mobile-admission-stuck.env").exists()
-            and type(self.mobile_binding).__module__ != "unittest.mock"
-        ):
-            _report_mobile_admission_debug(
-                "B,C,D",
-                "mixed_native_runtime.py:_wait_for_mobile_write_admission:entry",
-                {
-                    "clientId": client_id,
-                    "recovery": initial,
-                },
-            )
-        # #endregion
         if self._mobile_write_admission_open(initial) and not force_reconcile:
             return initial
 
-        reconcile_result = self.mobile_binding.call_action(
+        self.mobile_binding.call_action(
             client_id,
             "social.reconcile",
             {},
         )
-        # #region debug-point B-D:forced-reconcile
-        if (
-            (REPO_ROOT / ".dbg" / "mobile-admission-stuck.env").exists()
-            and type(self.mobile_binding).__module__ != "unittest.mock"
-        ):
-            try:
-                _report_mobile_admission_debug(
-                    "B,C,D",
-                    "mixed_native_runtime.py:_wait_for_mobile_write_admission:reconciled",
-                    {
-                        "clientId": client_id,
-                        "social": reconcile_result,
-                        "recovery": self.call_action(client_id, "recovery.snapshot", {}),
-                    },
-                )
-            except Exception as error:
-                _report_mobile_admission_debug(
-                    "B,C,D",
-                    "mixed_native_runtime.py:_wait_for_mobile_write_admission:reconcile-error",
-                    {"clientId": client_id, "instrumentationError": str(error)},
-                )
-        # #endregion
 
         stable_since: float | None = None
 
@@ -446,6 +373,9 @@ class MixedNativeRuntime:
             profile=str(spec.get("profile") or client_id),
             storage_root=str(spec.get("storage_root") or ""),
         )
+
+    def actor_fixture(self, client_id: str) -> dict[str, Any]:
+        return self._actor_for_client(client_id)
 
     def desktop_session(self, client_id: str) -> TauriSession | None:
         return self.desktop_sessions.get(client_id)
@@ -739,12 +669,14 @@ class MixedNativeRuntime:
         sender_id: str,
         receiver_id: str,
         *,
+        federation_id: str,
         timeout_seconds: float,
     ) -> str:
-        sender = self.identities[sender_id]
         receiver = self.identities[receiver_id]
-        if sender.federation_id != receiver.federation_id:
-            raise GateError("Mixed clients do not share one Federation")
+        context_id = self._required_text(
+            federation_id,
+            "Direct Federation context",
+        )
         if self._is_desktop(sender_id):
             wait_for_peer_key_bundle(
                 self.desktop_sessions[sender_id],
@@ -757,7 +689,7 @@ class MixedNativeRuntime:
                 "createDirectConversation",
                 {
                     "peerPtid": receiver.ptid,
-                    "federationId": sender.federation_id,
+                    "federationId": context_id,
                 },
             )
         else:
@@ -766,7 +698,7 @@ class MixedNativeRuntime:
                 "messaging.createDirect",
                 {
                     "peerPtid": receiver.ptid,
-                    "federationId": sender.federation_id,
+                    "federationId": context_id,
                 },
             )
         conversation_id = self._required_text(
@@ -786,25 +718,25 @@ class MixedNativeRuntime:
         owner_id: str,
         member_ids: tuple[str, ...],
         *,
+        federation_id: str,
         name: str,
         timeout_seconds: float,
     ) -> str:
         owner = self.identities[owner_id]
+        context_id = self._required_text(
+            federation_id,
+            "Group Federation context",
+        )
         member_ptids = [
             self.identities[client_id].ptid for client_id in member_ids
         ]
-        if any(
-            self.identities[client_id].federation_id != owner.federation_id
-            for client_id in member_ids
-        ):
-            raise GateError("Mixed Group clients do not share one Federation")
         if self._is_desktop(owner_id):
             created = self.call_action(
                 owner_id,
                 "createGroup",
                 {
                     "name": name,
-                    "federationId": owner.federation_id,
+                    "federationId": context_id,
                     "memberPtids": member_ptids,
                 },
             )
@@ -821,7 +753,7 @@ class MixedNativeRuntime:
                     "conversationId": requested_id,
                     "name": name,
                     "memberPtids": [owner.ptid, *member_ptids],
-                    "federationId": owner.federation_id,
+                    "federationId": context_id,
                 },
             )
             group_id = self._required_text(
@@ -1260,38 +1192,7 @@ class MixedNativeRuntime:
         if self._is_desktop(client_id):
             raise GateError("Desktop suspension uses a different lifecycle")
         action = "lifecycle.suspend" if suspended else "lifecycle.resume"
-        transition = self.call_action(client_id, action, {})
-        # #region debug-point A-D:lifecycle-transition
-        if (
-            (REPO_ROOT / ".dbg" / "mobile-admission-stuck.env").exists()
-            and type(self.mobile_binding).__module__ != "unittest.mock"
-        ):
-            _report_mobile_admission_debug(
-                "A,C",
-                "mixed_native_runtime.py:set_mobile_suspended:transition",
-                {
-                    "clientId": client_id,
-                    "requestedSuspended": suspended,
-                    "transition": transition,
-                },
-            )
-            try:
-                _report_mobile_admission_debug(
-                    "B,D",
-                    "mixed_native_runtime.py:set_mobile_suspended:recovery",
-                    {
-                        "clientId": client_id,
-                        "requestedSuspended": suspended,
-                        "recovery": self.call_action(client_id, "recovery.snapshot", {}),
-                    },
-                )
-            except Exception as error:
-                _report_mobile_admission_debug(
-                    "B,D",
-                    "mixed_native_runtime.py:set_mobile_suspended:recovery-error",
-                    {"clientId": client_id, "instrumentationError": str(error)},
-                )
-        # #endregion
+        self.call_action(client_id, action, {})
 
     def remove_group_member(
         self,
@@ -1604,11 +1505,16 @@ class MixedNativeRuntime:
                 f"{client_id} Mobile binding selected the wrong Station"
             )
         self.mobile_clients.append(client_id)
-        restart = self.call_action(client_id, "lifecycle.restart", {})
-        if restart != {"requested": True, "scope": "webview"}:
-            raise GateError(
-                f"{client_id} post-login restart was not acknowledged"
+        if self.gate_id != "station-access-federation-boundary-e2e":
+            restart = self.call_action(
+                client_id,
+                "lifecycle.restart",
+                {},
             )
+            if restart != {"requested": True, "scope": "webview"}:
+                raise GateError(
+                    f"{client_id} post-login restart was not acknowledged"
+                )
         self.wait_until(
             lambda: (
                 scope
@@ -1633,6 +1539,34 @@ class MixedNativeRuntime:
         )
 
         if self.gate_id in STATION_ACCESS_GATE_IDS:
+            ready = self._mapping(
+                self.call_action(
+                    client_id,
+                    "lifecycle.waitReady",
+                    {"includeDiagnostics": True},
+                    timeout=60.0,
+                ),
+                f"{client_id} ready runtime graph",
+            )
+            if ready.get("phase") != "ACTIVE":
+                raise GateError(
+                    f"{client_id} runtime graph did not become active"
+                )
+            failed_runtimes = [
+                runtime
+                for runtime in ready.get("runtimes", [])
+                if (
+                    isinstance(runtime, Mapping)
+                    and runtime.get("status") == "failed"
+                )
+            ]
+            if failed_runtimes:
+                raise GateError(
+                    f"{client_id} runtime graph contains failed runtimes: "
+                    f"{compact_json(failed_runtimes)}; "
+                    "diagnostics="
+                    f"{compact_json(ready.get('runtimeErrors', []))}"
+                )
             return self._identity_with_device(
                 client_id,
                 expected,

@@ -50,7 +50,7 @@ interface MessagingRuntimeErrorEventDetail {
 }
 
 interface MessagingRuntimeReadinessPort {
-  fail(operation: string): void;
+  fail(operation: string, error?: string): void;
   recover(operation: string): void;
   recoverAll(): void;
   observeReady(): void;
@@ -82,7 +82,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   const readinessFailures = new Set<string>();
 
   const readinessPort: MessagingRuntimeReadinessPort = {
-    fail(operation): void {
+    fail(operation, error): void {
       if (!runtimeContext || readinessFailures.has(operation)) return;
       if (readinessFailures.size > 0) {
         readinessFailures.add(operation);
@@ -91,7 +91,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
       const update = runtimeContext.beginReadinessUpdate();
       if (!update.isCurrent()) return;
       readinessFailures.add(operation);
-      update.fail(new Error('mobile.lifecycle.runtimeFailed'));
+      update.fail(new Error(error ?? 'mobile.lifecycle.runtimeFailed'));
     },
     recover(operation): void {
       if (!runtimeContext || !readinessFailures.has(operation)) return;
@@ -123,7 +123,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
     ) {
       return;
     }
-    readinessPort.fail(detail.operation);
+    readinessPort.fail(detail.operation, detail.message);
   };
 
   return {

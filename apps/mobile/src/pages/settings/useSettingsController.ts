@@ -863,6 +863,7 @@ export function profileDraftFromReadback(
     region: profile.region,
     timezone: profile.timezone,
     defaultVisibility: profile.defaultVisibility,
+    discoverability: profile.discoverability,
     manuallyApprovesFollowers: profile.manuallyApprovesFollowers,
     messagePermission: profile.messagePermission,
     autoExpireDays: profile.autoExpireDays,
