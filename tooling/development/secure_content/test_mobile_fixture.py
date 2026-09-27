@@ -102,6 +102,37 @@ class _Session:
         raise AssertionError(action)
 
 
+class _UnknownOutcomeSession(_Session):
+    def call_action(
+        self,
+        action: str,
+        payload: dict[str, Any] | None = None,
+    ) -> Any:
+        body = dict(payload or {})
+        if action == "moments.private.publishText":
+            self.calls.append((action, body))
+            return {
+                "draftId": body["draftId"],
+                "draftRevision": body["draftRevision"],
+                "state": "UNKNOWN_OUTCOME",
+                "errorCode": 20005,
+            }
+        if action == "moments.private.reconcile":
+            self.calls.append((action, body))
+            return {
+                "active": True,
+                "publish": [
+                    {
+                        "draftId": "mobile-ios-publish",
+                        "draftRevision": 1,
+                        "state": "PUBLISHED",
+                        "postId": "post-1",
+                    }
+                ],
+            }
+        return super().call_action(action, body)
+
+
 class MobileProductionFixtureTest(unittest.TestCase):
     def setUp(self) -> None:
         self.sessions = {
@@ -144,6 +175,41 @@ class MobileProductionFixtureTest(unittest.TestCase):
         self.assertIn(
             "moments.private.publishText",
             [action for action, _ in self.sessions["ios_alice"].calls],
+        )
+
+    def test_publish_reconciles_unknown_outcome_before_requiring_post_id(
+        self,
+    ) -> None:
+        self.sessions["ios_alice"] = _UnknownOutcomeSession()
+        self.fixture = MobileProductionFixture(
+            sessions=self.sessions,
+            actor_ptids={
+                "ios_alice": "ptid:alice",
+                "ios_bob": "ptid:bob",
+            },
+            federation_id="federation-1",
+        )
+
+        result = self.invoke(
+            "publish-states",
+            {
+                "variant": "ios",
+                "clients": ["ios_alice", "ios_bob"],
+            },
+        )
+
+        self.assertTrue(result["completed"])
+        self.assertEqual(self.fixture._posts["ios"], "post-1")
+        self.assertEqual(
+            [
+                action
+                for action, _ in self.sessions["ios_alice"].calls
+                if action.startswith("moments.private.")
+            ][:2],
+            [
+                "moments.private.publishText",
+                "moments.private.reconcile",
+            ],
         )
 
     def test_chat_corpus_is_staged_and_sent_through_mobile_actions(
