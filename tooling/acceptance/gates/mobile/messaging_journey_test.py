@@ -114,8 +114,10 @@ class FakeMessagingSession:
                 "state": "projected",
             }
         if action == "social.people.search":
-            if set(body) != {"query"}:
-                raise AssertionError("search must not accept asserted identity evidence")
+            if set(body) != {"query", "federationId"}:
+                raise AssertionError("search requires one explicit Federation context")
+            if body["federationId"] != self.actor.federation_id:
+                raise AssertionError("search Federation context mismatch")
             query = str(body["query"])
             return [
                 {
@@ -124,7 +126,10 @@ class FakeMessagingSession:
                     "homeStationPeerId": actor.station_peer_id,
                 }
                 for actor in self.network.actors.values()
-                if actor.federated_handle == query
+                if (
+                    actor.federated_handle == query
+                    and actor.federation_id == body["federationId"]
+                )
             ]
         if action == "social.request.send":
             if not self.social_runtime_active:
