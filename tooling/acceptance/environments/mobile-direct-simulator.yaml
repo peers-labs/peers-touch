@@ -100,6 +100,7 @@
       "moments.comments.read",
       "storage.cache.seed",
       "storage.conversation-clear.seed",
+      "storage.batch.scenario",
       "storage.retention.seed",
       "getRealtimeDevice",
       "cleanup"

@@ -23,6 +23,7 @@ import {
 } from '../services/mobileCommands';
 import {
   currentMessagingProjectionScope,
+  invalidateMessagingProjectionScopeForAcceptance,
   subscribeMessagingProjectionScope,
   type MessagingProjectionScope,
 } from './messagingRuntime';
@@ -61,6 +62,12 @@ export interface MobileChatStorageProjection {
   readonly error: string | null;
   readonly cleanup: MobileChatStorageCleanupProjection;
   readonly retention: MobileChatStorageRetentionProjection;
+}
+
+export interface MobileChatStorageBatchAcceptanceScenario {
+  readonly delayMs?: number;
+  readonly failureConversationId?: string;
+  readonly scopeChangeConversationId?: string;
 }
 
 const idleCleanup: MobileChatStorageCleanupProjection = Object.freeze({
@@ -102,6 +109,7 @@ class MobileChatStorageRuntime {
     conversationId: string;
     promise: Promise<ChatStorageResult | null>;
   } | null = null;
+  private batchAcceptanceScenario: MobileChatStorageBatchAcceptanceScenario | null = null;
   private unsubscribeScope: (() => void) | null = null;
   private lastRetentionSweepAtUnixMs = 0;
 
@@ -128,6 +136,7 @@ class MobileChatStorageRuntime {
     this.cleanupInFlight = null;
     this.retentionInFlight = null;
     this.conversationClearInFlight = null;
+    this.batchAcceptanceScenario = null;
     this.lastRetentionSweepAtUnixMs = 0;
     this.publish(idleProjection);
   }
@@ -404,6 +413,19 @@ class MobileChatStorageRuntime {
         if (!scope || !sameScope(scope, currentMessagingProjectionScope())) {
           return { state: 'scope_changed' };
         }
+        const scenario = this.batchAcceptanceScenario;
+        if (scenario?.delayMs) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, scenario.delayMs));
+        }
+        if (scenario?.failureConversationId === conversationId) {
+          this.batchAcceptanceScenario = null;
+          return { state: 'failed' };
+        }
+        if (scenario?.scopeChangeConversationId === conversationId) {
+          this.batchAcceptanceScenario = null;
+          await invalidateMessagingProjectionScopeForAcceptance();
+          return { state: 'scope_changed' };
+        }
         const result = await this.clearConversation(conversationId);
         if (!sameScope(scope, currentMessagingProjectionScope())) {
           return { state: 'scope_changed' };
@@ -421,6 +443,29 @@ class MobileChatStorageRuntime {
         };
       },
     });
+  }
+
+  configureAcceptanceBatchScenario(
+    scenario: MobileChatStorageBatchAcceptanceScenario | null,
+  ): void {
+    if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') {
+      throw new Error('mobile.chatStorage.acceptanceScenarioUnavailable');
+    }
+    if (scenario === null) {
+      this.batchAcceptanceScenario = null;
+      return;
+    }
+    const delayMs = Math.max(0, Math.min(2_000, scenario.delayMs ?? 0));
+    const failureConversationId = scenario.failureConversationId?.trim() || undefined;
+    const scopeChangeConversationId = scenario.scopeChangeConversationId?.trim() || undefined;
+    if (failureConversationId && scopeChangeConversationId) {
+      throw new Error('mobile.chatStorage.acceptanceScenarioAmbiguous');
+    }
+    this.batchAcceptanceScenario = {
+      delayMs,
+      failureConversationId,
+      scopeChangeConversationId,
+    };
   }
 
   getSnapshot = (): MobileChatStorageProjection => this.projection;

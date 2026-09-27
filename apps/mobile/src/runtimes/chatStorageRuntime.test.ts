@@ -8,6 +8,7 @@ import {
   ChatStorageSnapshotSchema,
 } from '../gen/proto/domain/chat/storage_pb';
 import {
+  mobileChatStorageProjectionRuntime,
   chatStorageReleasedBytes,
   chatStorageScopeRevision,
   isChatStorageResultForScope,
@@ -23,6 +24,12 @@ const scope = {
 };
 
 describe('mobile chat storage runtime scope fencing', () => {
+  it('rejects acceptance fault controls outside an Acceptance build', () => {
+    expect(() => mobileChatStorageProjectionRuntime.configureAcceptanceBatchScenario({
+      failureConversationId: 'conversation-1',
+    })).toThrow('mobile.chatStorage.acceptanceScenarioUnavailable');
+  });
+
   it('rejects old device and activation results', () => {
     const snapshot = create(ChatStorageSnapshotSchema, {
       scope: {

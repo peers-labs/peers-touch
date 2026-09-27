@@ -481,18 +481,24 @@ class SimulatorSocialGateTests(unittest.TestCase):
     ) -> None:
         fixtures = [
             {
-                "conversationId": "conversation-clear-a",
-                "messageId": "message-clear-a",
-            },
-            {
-                "conversationId": "conversation-clear-b",
-                "messageId": "message-clear-b",
-            },
+                "conversationId": f"conversation-clear-{suffix}",
+                "messageId": f"message-clear-{suffix}",
+            }
+            for suffix in ("a", "b", "c", "d", "e", "f")
         ]
 
         class Session:
             def __init__(self) -> None:
                 self.seed_index = 0
+                self.selection_round = 0
+                self.success_result_index = 0
+                self.progress_index = 0
+                self.selection_sets = [
+                    ["conversation-clear-a", "conversation-clear-b"],
+                    ["conversation-clear-c", "conversation-clear-d"],
+                    ["conversation-clear-e", "conversation-clear-f"],
+                    ["conversation-clear-f"],
+                ]
                 self.snapshots = [
                     {
                         "physicalTotalBytes": 8_000_000,
@@ -504,6 +510,38 @@ class SimulatorSocialGateTests(unittest.TestCase):
                         "conversationReclaimableBytes": {
                             "conversation-clear-a": 2_100_000,
                             "conversation-clear-b": 2_100_000,
+                        },
+                    },
+                    {
+                        "physicalTotalBytes": 6_000_000,
+                        "messageBytes": 4_200_000,
+                        "conversationIds": [
+                            "conversation-clear-c",
+                            "conversation-clear-d",
+                        ],
+                        "conversationReclaimableBytes": {
+                            "conversation-clear-c": 2_100_000,
+                            "conversation-clear-d": 2_100_000,
+                        },
+                    },
+                    {
+                        "physicalTotalBytes": 6_000_000,
+                        "messageBytes": 4_200_000,
+                        "conversationIds": [
+                            "conversation-clear-e",
+                            "conversation-clear-f",
+                        ],
+                        "conversationReclaimableBytes": {
+                            "conversation-clear-e": 2_100_000,
+                            "conversation-clear-f": 2_100_000,
+                        },
+                    },
+                    {
+                        "physicalTotalBytes": 4_000_000,
+                        "messageBytes": 2_100_000,
+                        "conversationIds": ["conversation-clear-f"],
+                        "conversationReclaimableBytes": {
+                            "conversation-clear-f": 2_100_000,
                         },
                     },
                     {
@@ -529,6 +567,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     "messaging.reconcile",
                 }:
                     return {}
+                if action == "storage.batch.scenario":
+                    return {"configured": True}
                 if action == "messaging.projection.read":
                     conversation_id = payload["conversationId"]
                     return {"messages": {conversation_id: []}}
@@ -538,22 +578,58 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     return {"requested": True, "scope": "webview"}
                 raise AssertionError((action, payload))
 
-            def execute_script(self, script: str, *_args: object) -> object:
+            def execute_script(self, script: str, *args: object) -> object:
+                if "actions: Boolean" in script:
+                    return {
+                        "actions": False,
+                        "result": False,
+                        "summary": False,
+                    }
                 if "data-chat-storage-summary" in script:
                     return self.snapshots.pop(0)
-                if "data-chat-storage-selected" in script:
-                    return [
-                        "conversation-clear-a",
-                        "conversation-clear-b",
-                    ]
-                if "data-chat-storage-batch-confirm" in script:
-                    return 4_200_000
                 if "data-chat-storage-batch-result" in script:
+                    status = args[0]
+                    if status == "partial_failure":
+                        return {
+                            "succeeded": 1,
+                            "failed": 1,
+                            "releasedBytes": 2_100_000,
+                            "retryVisible": True,
+                            "selected": ["conversation-clear-d"],
+                        }
+                    succeeded = (2, 1, 1)[self.success_result_index]
+                    self.success_result_index += 1
                     return {
-                        "succeeded": 2,
+                        "succeeded": succeeded,
                         "failed": 0,
                         "releasedBytes": 6_000_000,
+                        "retryVisible": False,
+                        "selected": [],
                     }
+                if "return window.__PT_CHAT_STORAGE_BATCH_PROGRESS__" in script:
+                    values = (
+                        [{"completed": 0, "total": 2, "text": "0 / 2"}],
+                        [{"completed": 1, "total": 2, "text": "1 / 2"}],
+                        [{"completed": 1, "total": 2, "text": "1 / 2"}],
+                    )[self.progress_index]
+                    self.progress_index += 1
+                    return values
+                if "data-chat-storage-batch-confirm" in script:
+                    selected_count = len(
+                        self.selection_sets[max(0, self.selection_round - 1)]
+                    )
+                    return {
+                        "estimatedBytes": 4_200_000,
+                        "selectedCount": selected_count,
+                        "scope": "current-device",
+                        "text": f"Clear {selected_count} on this device",
+                    }
+                if "data-chat-storage-selected" in script:
+                    if args:
+                        return True
+                    return self.selection_sets[self.selection_round - 1]
+                if "data-chat-storage-batch-manage" in script:
+                    self.selection_round += 1
                 return True
 
         session = Session()
@@ -567,14 +643,14 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 journey_id="run",
             )
 
-        self.assertEqual(result["conversationIds"], [
-            "conversation-clear-a",
-            "conversation-clear-b",
-        ])
+        self.assertEqual(len(result["conversationIds"]), 6)
         self.assertEqual(result["succeeded"], 2)
         self.assertEqual(result["failed"], 0)
         self.assertEqual(result["releasedBytes"], 6_000_000)
         self.assertEqual(result["estimatedReclaimableBytes"], 4_200_000)
+        self.assertEqual(result["partialFailure"]["failed"], 1)
+        self.assertEqual(result["partialRetry"]["succeeded"], 1)
+        self.assertEqual(result["scopeChange"]["completed"], 1)
         self.assertTrue(result["restartStable"])
         self.assertTrue(result["messagingIdentityPreserved"])
 

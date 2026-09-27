@@ -115,6 +115,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('lifecycle.nativeBridgeDiagnostic');
     expect(actionNames).toContain('lifecycle.secureStorageDeleteFailure');
     expect(actionNames).toContain('lifecycle.scope.read');
+    expect(actionNames).toContain('storage.batch.scenario');
     expect(actionNames).toContain('navigation.snapshot');
     expect(actionNames).toContain('navigation.apply');
     expect(actionNames).toContain('platform.permission.check');
