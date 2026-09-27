@@ -1474,13 +1474,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "active": False,
                 "stationPeerId": None,
                 "actorPtid": None,
-                "errorMessage": None,
+                "errorPresent": False,
             },
             {
                 "active": True,
                 "stationPeerId": "station-peer",
                 "actorPtid": "ptid:alice",
-                "errorMessage": None,
+                "errorPresent": False,
             },
         )
         now = [0.0]
@@ -1511,7 +1511,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             session.call_action.call_args_list,
         )
 
-    def test_mobile_private_runtime_fails_immediately_on_explicit_error(
+    def test_mobile_private_runtime_fails_immediately_on_sanitized_error(
         self,
     ) -> None:
         session = MagicMock()
@@ -1519,7 +1519,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             "active": False,
             "stationPeerId": None,
             "actorPtid": None,
-            "errorMessage": "private Social activation failed",
+            "errorPresent": True,
         }
         sleep = MagicMock()
 
@@ -1535,7 +1535,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             )
 
         self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
-        self.assertIn("private Social activation failed", str(raised.exception))
+        self.assertIn("reported an activation failure", str(raised.exception))
         session.call_action.assert_called_once_with(
             "moments.private.snapshot",
             {},
@@ -1548,7 +1548,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             "active": True,
             "stationPeerId": "stale-station-peer",
             "actorPtid": "ptid:alice",
-            "errorMessage": None,
+            "errorPresent": False,
         }
         sleep = MagicMock()
 
@@ -1571,7 +1571,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             "active": False,
             "stationPeerId": None,
             "actorPtid": None,
-            "errorMessage": None,
+            "errorPresent": False,
         }
         now = [0.0]
         sleeps: list[float] = []
@@ -1635,9 +1635,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "active": False,
                     "stationPeerId": None,
                     "actorPtid": None,
-                    "errorMessage": (
-                        "private Social first-use trust requires HTTPS"
-                    ),
+                    "errorPresent": True,
                 }
             raise AssertionError(f"unexpected action {action}")
 
@@ -1667,10 +1665,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             "CLIENT_RUNTIME_UNAVAILABLE",
             raised.exception.code,
         )
-        self.assertIn(
-            "private Social first-use trust requires HTTPS",
-            str(raised.exception),
-        )
+        self.assertIn("reported an activation failure", str(raised.exception))
         self.assertNotIn("build.identity", calls)
 
     def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
