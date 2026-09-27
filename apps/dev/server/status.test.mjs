@@ -31,7 +31,6 @@ function addProfile(
   envRepo,
   name,
   {
-    agentControlMode,
     stationUrl,
     deployEnvironment,
     relayUrl = '',
@@ -46,7 +45,6 @@ function addProfile(
     [
       `PT_DEV_PROFILE=${name}`,
       'PT_DEV_SLOT=2',
-      `PT_AGENT_CONTROL_MODE=${agentControlMode}`,
       'PT_STATION_MODE=remote',
       `PT_STATION_NAME=${name}`,
       `PT_STATION_URL=${stationUrl}`,
@@ -140,7 +138,6 @@ test('collectProfiles exposes only selected public fields', () => {
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
       stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
       relayUrl:
@@ -148,31 +145,36 @@ test('collectProfiles exposes only selected public fields', () => {
       relayDeployEnvironment: 'relay-one',
     });
     addProfile(scope.root, 'untracked-disposable', {
-      agentControlMode: 'disposable',
       stationUrl: 'http://192.0.2.2:18132',
       deployEnvironment: 'station-disposable',
       tracked: false,
+    });
+    addProfile(scope.root, 'bad profile', {
+      stationUrl: 'http://192.0.2.3:18132',
+      deployEnvironment: 'station-bad',
     });
 
     const profiles = collectProfiles(scope.root);
     assert.deepEqual(
       profiles.map((profile) => [
         profile.name,
-        profile.agentControlMode,
+        profile.resetPolicy,
         profile.sourceState,
         profile.status,
       ]),
       [
-        ['managed-one', 'managed', 'tracked-clean', 'available'],
+        ['bad profile', null, 'tracked-clean', 'blocked'],
+        ['managed-one', 'agent-resettable', 'tracked-clean', 'available'],
         [
           'untracked-disposable',
-          'disposable',
+          'agent-resettable',
           'untracked',
           'blocked',
         ],
       ],
     );
-    assert.equal(profiles[0].relayUrl, 'http://192.0.2.1:18081/path');
+    assert.equal(profiles[0].error.code, 'PROFILE_IDENTITY_INVALID');
+    assert.equal(profiles[1].relayUrl, 'http://192.0.2.1:18081/path');
     assert.equal(JSON.stringify(profiles).includes('must-not-leak'), false);
   } finally {
     scope.close();
@@ -349,7 +351,6 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
       stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
       relayUrl: 'http://192.0.2.1:18081',
@@ -383,7 +384,7 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'active',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'available',
             profileError: null,
             canonicalRoot: '/private/path/must-not-leak',
@@ -510,7 +511,7 @@ test('buildDevSnapshot aggregates workspace-owned active work without cross-work
             purpose: 'active-work aggregation test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'active',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'available',
             profileError: null,
           },
@@ -591,7 +592,6 @@ test('work progress remains in progress while environment health is blocked and 
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
       stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
     });
@@ -632,7 +632,7 @@ test('work progress remains in progress while environment health is blocked and 
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'stale',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'blocked',
             profileError: {
               code: 'PROFILE_SOURCE_UNREVIEWED',
@@ -821,7 +821,7 @@ test('Git discovery owns current source identity and freshness keeps separate cl
             owner: 'test@example.invalid',
             updatedAt: '2026-09-23T00:58:00.000Z',
             activity: 'stale',
-            agentControlMode: null,
+            resetPolicy: null,
             profileState: 'available',
             profileError: null,
           },

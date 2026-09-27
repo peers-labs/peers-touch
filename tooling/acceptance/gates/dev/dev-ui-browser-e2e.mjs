@@ -73,7 +73,7 @@ function workflowSnapshot(port) {
     profiles: [
       {
         name: 'dev-one',
-        agentControlMode: 'managed',
+        resetPolicy: 'agent-resettable',
         stationUrl: 'http://127.0.0.1:18080',
         relayUrl: 'http://127.0.0.1:18081',
         sourceState: 'tracked-clean',
@@ -154,7 +154,7 @@ function workflowSnapshot(port) {
         environment: {
           profile: 'dev-one',
           slot: 1,
-          agentControlMode: 'managed',
+          resetPolicy: 'agent-resettable',
           sourceState: 'tracked-clean',
         },
         resources: {
@@ -178,7 +178,7 @@ function workflowSnapshot(port) {
       {
         profile: 'dev-one',
         station: 'http://127.0.0.1:18080',
-        agentControlMode: 'managed',
+        resetPolicy: 'agent-resettable',
         workspaceIds: [fixtureWorkspaceId],
         slots: [1],
         workItemIds: ['DWF-DEV-PRODUCT-PD04'],

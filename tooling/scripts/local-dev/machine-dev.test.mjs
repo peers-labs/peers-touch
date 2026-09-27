@@ -61,7 +61,6 @@ function initializeGitRepository(directory, branch = 'feat/test') {
 
 function profileText({
   name,
-  agentControlMode = 'disposable',
   mode = 'remote',
   stationUrl = 'http://192.0.2.4:18080',
   deployEnvironment = 'station-four',
@@ -69,7 +68,6 @@ function profileText({
   return [
     `PT_DEV_PROFILE=${name}`,
     'PT_DEV_SLOT=1',
-    `PT_AGENT_CONTROL_MODE=${agentControlMode}`,
     `PT_STATION_MODE=${mode}`,
     `PT_STATION_NAME=${name}`,
     `PT_STATION_URL=${stationUrl}`,
@@ -89,7 +87,6 @@ function addProfile(
   scope,
   {
     name,
-    agentControlMode,
     mode,
     stationUrl,
     deployEnvironment,
@@ -104,7 +101,6 @@ function addProfile(
     path.join(profileDirectory, 'profile.env.example'),
     profileText({
       name,
-      agentControlMode,
       mode,
       stationUrl,
       deployEnvironment,
@@ -156,7 +152,6 @@ function fixture() {
   });
   addProfile(scope, {
     name: 'fiveArm',
-    agentControlMode: 'managed',
     stationUrl: 'http://192.0.2.5:18080',
     deployEnvironment: 'station-five',
     deployHost: '192.0.2.5',
@@ -222,7 +217,7 @@ function leaseArguments(scope, resourceKind, resourceId, budgetSeconds, command)
     String(budgetSeconds),
   ];
   if (resourceKind === 'station.reset') {
-    args.push('--reset-authorized-scope', resourceId);
+    args.push('--reset-scope', resourceId);
   }
   return [...args, '--', ...command];
 }
@@ -322,7 +317,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(checked.ports.desktopAppGateway, 3530);
     assert.equal(checked.ports.mobileWeb, 5673);
     assert.equal(checked.profile.stationDeployEnvironment, 'station-four');
-    assert.equal(checked.profile.agentControlMode, 'disposable');
+    assert.equal(checked.profile.resetPolicy, 'agent-resettable');
 
     const updated = updateWorkspace(
       registrationOptions(scope, {
@@ -342,7 +337,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.authority, 'machine-control-plane');
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
-    assert.equal(status.registrations[0].agentControlMode, 'managed');
+    assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
   } finally {
     scope.close();
   }
@@ -445,54 +440,58 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
   }
 });
 
-test('profile Agent control mode is explicit and bounds autonomous reset', () => {
-  const invalidScope = fixture();
+test('profile reset policy is derived from the canonical identifier', () => {
+  const stableScope = fixture();
   try {
-    addProfile(invalidScope, {
-      name: 'invalid-agent-policy',
-      agentControlMode: '',
-      stationUrl: 'http://192.0.2.6:18080',
-      deployEnvironment: 'station-invalid-agent-policy',
-      deployHost: '192.0.2.6',
-    });
-    expectCode('PROFILE_AGENT_CONTROL_INVALID', () =>
-      registerWorkspace(
-        registrationOptions(invalidScope, {
-          profile: 'invalid-agent-policy',
-          capabilities: 'station.connect',
-        }),
-      ),
-    );
-  } finally {
-    invalidScope.close();
-  }
-
-  const managedScope = fixture();
-  try {
-    addProfile(managedScope, {
-      name: 'managed-profile',
-      agentControlMode: 'managed',
+    addProfile(stableScope, {
+      name: 'dailyStable',
       stationUrl: 'http://192.0.2.7:18080',
-      deployEnvironment: 'station-managed',
+      deployEnvironment: 'station-stable',
       deployHost: '192.0.2.7',
     });
-    expectCode('PROFILE_AGENT_CONTROL_DENIED', () =>
+    expectCode('PROFILE_RESET_PROTECTED', () =>
       registerWorkspace(
-        registrationOptions(managedScope, {
-          profile: 'managed-profile',
+        registrationOptions(stableScope, {
+          profile: 'dailyStable',
           capabilities: 'station.connect,station.deploy,station.reset',
         }),
       ),
     );
     const registered = registerWorkspace(
-      registrationOptions(managedScope, {
-        profile: 'managed-profile',
+      registrationOptions(stableScope, {
+        profile: 'dailyStable',
         capabilities: 'station.connect,station.deploy',
       }),
     );
-    assert.equal(registered.profile, 'managed-profile');
+    assert.equal(registered.profile, 'dailyStable');
+    const checked = checkWorkspace({
+      home: stableScope.home,
+      workspaceRoot: stableScope.workspaceA,
+      envRepo: stableScope.envRepo,
+    });
+    assert.equal(checked.profile.resetPolicy, 'stable-protected');
   } finally {
-    managedScope.close();
+    stableScope.close();
+  }
+});
+
+test('agent-resettable profiles still require exact reset scope identity', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope));
+    declareLeaseIntent(scope);
+    expectCode('RESET_SCOPE_MISMATCH', () =>
+      buildLeaseCommand({
+        ...registrationOptions(scope),
+        resourceKind: 'station.reset',
+        resourceId: 'station-four-fixture',
+        resetScope: 'station-other-fixture',
+        budgetSeconds: 5,
+        command: [process.execPath, '-e', 'process.exit(0)'],
+      }),
+    );
+  } finally {
+    scope.close();
   }
 });
 

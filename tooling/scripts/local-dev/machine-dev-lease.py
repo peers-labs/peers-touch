@@ -210,9 +210,9 @@ def run_with_lease(args):
                     "PT_MACHINE_LEASE_WORKSPACE_ID": args.workspace_id,
                 }
             )
-            if args.reset_authorized_scope:
+            if args.reset_scope:
                 child_environment["PT_MACHINE_LEASE_RESET_SCOPE"] = (
-                    args.reset_authorized_scope
+                    args.reset_scope
                 )
             child = subprocess.Popen(
                 args.command,
@@ -389,7 +389,7 @@ def parser():
     run.add_argument("--workspace-id", required=True)
     run.add_argument("--budget-seconds", required=True, type=int)
     run.add_argument("--validation-command-json", required=True)
-    run.add_argument("--reset-authorized-scope")
+    run.add_argument("--reset-scope")
     run.add_argument("command", nargs=argparse.REMAINDER)
 
     status = commands.add_parser("status")

@@ -16,6 +16,7 @@
   "journeyId": "CSG-J07",
   "runtimeClass": "native-desktop",
   "writeSet": [
+    "apps/dev",
     "docs/architecture/chat-storage-governance",
     "apps/desktop/src/acceptance/chat",
     "apps/desktop/src/components/settings",
@@ -24,7 +25,10 @@
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/desktop/src-tauri/src/messaging",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/local-dev",
+    "tooling/skills/pt-github-review/FRESHNESS.md",
+    "tooling/skills/pt-local-dev-env"
   ],
   "readSet": [
     "packages/client-chat-core",
@@ -40,6 +44,11 @@
     {
       "id": "desktop-batch-source",
       "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/nativeBridge.test.ts src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features acceptance-webdriver conversation_clear_ --offline -- --test-threads=1",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "local-dev-profile-policy",
+      "command": "node --test tooling/scripts/local-dev/machine-dev.test.mjs apps/dev/server/status.test.mjs",
       "verificationClass": "SOURCE_CHECK"
     },
     {
