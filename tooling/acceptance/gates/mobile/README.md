@@ -251,6 +251,7 @@ authority and the fallback for platform-specific coverage.
 | `appium.py` | W3C transport, session capabilities, context switching |
 | `simulator_e2e.py` | Simulator callback/restart/fail-closed assertions |
 | `simulator_layout_accessibility_e2e.py` | W9-B compact/large iOS launch-surface layout, locale, keyboard, AX, DOM, and cleanup assertions |
+| `native_build.py` | Shared source-bound iOS Simulator build validation for cross-plan release Gates |
 | `native_e2e.py` | Physical-device provider and product journeys |
 | `mobile_simulator.py` | Dual-iOS simulator/build/Appium resource lifecycle |
 | `mobile_native.py` | Physical devices, services, credentials, and fixture inputs |
