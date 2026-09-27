@@ -651,6 +651,19 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
             for item in scope_snapshot.get("conversations", [])
             if isinstance(item, dict)
         }
+        scope_completed = max(
+            (
+                int(item.get("completed") or 0)
+                for item in scope_progress
+                if isinstance(item, dict) and item.get("total") == 2
+            ),
+            default=0,
+        )
+        remaining_scope_ids = tuple(
+            conversation_id
+            for conversation_id in scope_ids
+            if conversation_id in scope_conversation_ids
+        )
         self.assert_condition(
             "storage_batch_scope_change_isolated",
             scope_ui == {
@@ -658,28 +671,24 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
                 "result": False,
                 "summary": False,
             }
-            and any(
-                item.get("completed") == 1
-                and item.get("total") == 2
-                for item in scope_progress
-                if isinstance(item, dict)
-            )
+            and scope_completed in {0, 1}
             and restored == {
                 "restored": True,
                 "actorPtid": self.ptids[actor],
             }
-            and scope_ids[0] not in scope_conversation_ids
-            and scope_ids[1] in scope_conversation_ids,
+            and len(remaining_scope_ids) == 2 - scope_completed,
             json.dumps(
                 {
+                    "completed": scope_completed,
                     "progress": scope_progress,
+                    "remainingConversationIds": remaining_scope_ids,
                     "restored": restored,
                     "ui": scope_ui,
                 },
                 sort_keys=True,
             ),
         )
-        self._select_conversations(client, (scope_ids[1],))
+        self._select_conversations(client, remaining_scope_ids)
         self._confirmation(client)
         client.find_element(
             "[data-chat-storage-batch-confirm-apply]",
