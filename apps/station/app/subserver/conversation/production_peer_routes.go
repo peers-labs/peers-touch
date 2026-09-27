@@ -148,7 +148,9 @@ func (s *subServer) handleFederatedCommandPrepare(
 	return productionWritePeerResponse(
 		response,
 		&chatmodel.PrepareFederatedConversationCommandResponse{
-			Plan: productionCommandPreparation(conversationID, preparation),
+			Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_Plan{
+				Plan: productionCommandPreparation(conversationID, preparation),
+			},
 		},
 	)
 }
