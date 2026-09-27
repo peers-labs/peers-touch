@@ -86,6 +86,17 @@ class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
 
 
+FOUNDATION_PROFILE_ENV_OVERRIDES = (
+    "PT_AGENT_PROVIDER_ID",
+    *PROFILE_SECRET_ENV_OVERRIDES,
+    "PT_AGENT_DEFAULT_MODEL_ID",
+    "PT_AGENT_DEFAULT_MODEL_NAME",
+    "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW",
+    "PT_AGENT_DEFAULT_MODEL_CAPABILITIES",
+    "PT_AGENT_PROVIDER_BASE_URL",
+)
+
+
 # #region debug-point A-D:capability-session-enrollment
 def _report_capability_session_enrollment_debug(
     hypothesis_id: str,
@@ -217,8 +228,8 @@ RESTORE_ERROR_REASONS = (
 )
 
 
-def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
-    config = {
+def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, Any]:
+    config: dict[str, Any] = {
         "providerId": profile_env.get("PT_AGENT_PROVIDER_ID", "").strip(),
         "apiKey": profile_env.get("PT_AGENT_PROVIDER_API_KEY", ""),
         "modelId": profile_env.get("PT_AGENT_DEFAULT_MODEL_ID", "").strip(),
@@ -239,6 +250,63 @@ def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
             "active profile is missing required Agent provider fields: "
             + ", ".join(missing_fields)
         )
+    context_window_raw = profile_env.get(
+        "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW",
+        "",
+    ).strip()
+    capabilities_raw = profile_env.get(
+        "PT_AGENT_DEFAULT_MODEL_CAPABILITIES",
+        "",
+    ).strip()
+    if context_window_raw or capabilities_raw:
+        if not context_window_raw or not capabilities_raw:
+            raise ScenarioRunnerError(
+                "external Agent model registration requires both "
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW and "
+                "PT_AGENT_DEFAULT_MODEL_CAPABILITIES"
+            )
+        try:
+            context_window = int(context_window_raw)
+        except ValueError as error:
+            raise ScenarioRunnerError(
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW must be an integer"
+            ) from error
+        if context_window <= 1:
+            raise ScenarioRunnerError(
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW must be greater than 1"
+            )
+        capabilities = {
+            capability.strip()
+            for capability in capabilities_raw.split(",")
+            if capability.strip()
+        }
+        supported_capabilities = {
+            "image-input",
+            "image-output",
+            "native-tools",
+            "reasoning",
+            "streaming",
+        }
+        unsupported = sorted(capabilities - supported_capabilities)
+        required = {"native-tools", "streaming"}
+        missing = sorted(required - capabilities)
+        if unsupported or missing:
+            raise ScenarioRunnerError(
+                "PT_AGENT_DEFAULT_MODEL_CAPABILITIES is invalid for the "
+                f"Foundation runtime: missing={missing}, unsupported={unsupported}"
+            )
+        config["modelConfig"] = {
+            "displayName": profile_env.get(
+                "PT_AGENT_DEFAULT_MODEL_NAME",
+                "",
+            ).strip() or config["modelId"],
+            "contextWindow": context_window,
+            "streaming": "streaming" in capabilities,
+            "functionCall": "native-tools" in capabilities,
+            "vision": "image-input" in capabilities,
+            "reasoning": "reasoning" in capabilities,
+            "imageOutput": "image-output" in capabilities,
+        }
     return config
 
 
