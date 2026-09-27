@@ -19,7 +19,7 @@ import { statusCompletionReviews } from '../../../tooling/scripts/local-dev/comp
 import { loadSessionStore } from '../../../tooling/scripts/local-dev/dev-session-store.mjs';
 import { readLedger } from '../../../tooling/scripts/local-dev/dev-work-ledger.mjs';
 import {
-  AGENT_CONTROL_MODES,
+  resetPolicyForProfile,
   statusAll as machineStatusAll,
 } from '../../../tooling/scripts/local-dev/machine-dev-registry.mjs';
 import {
@@ -38,7 +38,6 @@ import { discoverGitWorktrees } from './worktree-discovery.mjs';
 const PROFILE_FIELDS = new Set([
   'PT_DEV_PROFILE',
   'PT_DEV_SLOT',
-  'PT_AGENT_CONTROL_MODE',
   'PT_STATION_MODE',
   'PT_STATION_NAME',
   'PT_STATION_URL',
@@ -534,19 +533,24 @@ export function collectProfiles(envRepo) {
           : 'tracked-clean'
         : 'untracked';
       const declaredName = values.PT_DEV_PROFILE ?? null;
-      const agentControlMode = values.PT_AGENT_CONTROL_MODE ?? null;
+      let resetPolicy = null;
       let error = null;
       if (declaredName !== entry.name) {
         error = {
           code: 'PROFILE_IDENTITY_MISMATCH',
           message: 'Profile directory and declared name differ',
         };
-      } else if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
-        error = {
-          code: 'PROFILE_AGENT_CONTROL_INVALID',
-          message: 'Agent control mode is missing or unsupported',
-        };
-      } else if (sourceState !== 'tracked-clean') {
+      } else {
+        try {
+          resetPolicy = resetPolicyForProfile(entry.name);
+        } catch {
+          error = {
+            code: 'PROFILE_IDENTITY_INVALID',
+            message: 'Profile name is not a canonical identifier',
+          };
+        }
+      }
+      if (!error && sourceState !== 'tracked-clean') {
         error = {
           code: 'PROFILE_SOURCE_UNREVIEWED',
           message: 'Profile source is not Git-tracked and clean',
@@ -558,7 +562,7 @@ export function collectProfiles(envRepo) {
         slot: Number.isInteger(Number(values.PT_DEV_SLOT))
           ? Number(values.PT_DEV_SLOT)
           : null,
-        agentControlMode: agentControlMode ?? 'invalid',
+        resetPolicy,
         stationMode: values.PT_STATION_MODE ?? null,
         stationName: values.PT_STATION_NAME ?? null,
         stationUrl: publicEndpoint(values.PT_STATION_URL),
@@ -586,7 +590,7 @@ function safeRegistration(registration) {
     owner: registration.owner ?? null,
     updatedAt: registration.updatedAt ?? null,
     activity: registration.activity ?? 'stale',
-    agentControlMode: registration.agentControlMode ?? null,
+    resetPolicy: registration.resetPolicy ?? null,
     profileState: registration.profileState ?? 'blocked',
     profileError: registration.profileError ?? null,
   };
@@ -699,7 +703,7 @@ export function deriveOccupancy(
     return {
       profile: profile.name,
       station: profile.stationUrl,
-      agentControlMode: profile.agentControlMode,
+      resetPolicy: profile.resetPolicy,
       workspaceIds,
       slots,
       workItemIds: [
@@ -1192,9 +1196,9 @@ export function deriveWorktrees(
         environment: {
           profile: profileName,
           slot,
-          agentControlMode:
-            registration?.agentControlMode ??
-            profile?.agentControlMode ??
+          resetPolicy:
+            registration?.resetPolicy ??
+            profile?.resetPolicy ??
             null,
           sourceState: profile?.sourceState ?? null,
         },

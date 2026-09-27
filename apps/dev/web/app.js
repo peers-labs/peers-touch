@@ -337,7 +337,7 @@ function renderOccupancy(snapshot) {
     row.append(
       profileCell,
       stateCell,
-      makeCell(item.agentControlMode, 'Control'),
+      makeCell(item.resetPolicy, 'Reset'),
       makeCell(profile?.stationUrl, 'Station'),
       makeCell(profile?.relayUrl, 'Relay'),
       makeCell(profile?.sourceState, 'Source'),

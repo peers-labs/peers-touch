@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-26
-covered_docs_hash: ff0cba3b9d429e92881d65c9b9bdf2debafda90cee61dcd8a27e74ed4315b97d
+last_verified_at: 2026-09-27
+covered_docs_hash: 1d378c6d76eae4bae2f88e92ddc68a3b373485698d6eb3ed2543f45b882a92ef
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,14 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-27 Review
+
+LDCP-D15 remains the governing profile reset-policy contract. The control
+plane, Peers Dev projection, local environment skill, and fixtures now derive
+reset protection from the canonical Profile ID and no longer read the
+superseded control-mode field. The existing review rule already enforces this
+contract, so no GitHub Review `SKILL.md` or fixture change is required.
 
 ## 2026-09-26 Review
 
