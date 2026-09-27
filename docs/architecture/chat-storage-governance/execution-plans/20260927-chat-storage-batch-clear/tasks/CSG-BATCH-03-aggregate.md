@@ -21,6 +21,7 @@
     "apps/desktop/src/store/session.test.ts",
     "apps/desktop/src/services/appRuntime.ts",
     "apps/desktop/src-tauri/src/main.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
     "apps/mobile/src/features/social",
     "apps/mobile/src/runtimes",
     "apps/station/app/subserver/conversation",
