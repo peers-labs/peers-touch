@@ -25,6 +25,8 @@
     "apps/station/app/subserver/agent/service/chat_task_recovery_test.go",
     "apps/station/app/subserver/agent/service/provider_service.go",
     "apps/station/app/subserver/agent/service/provider_stream_test.go",
+    "apps/station/app/subserver/agent/service/provider_thinking_mode_test.go",
+    "apps/station/app/subserver/agent/service/provider_tool_test.go",
     "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
     "apps/station/app/subserver/agent/service/tool_dispatch_service_test.go",
     "apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs",

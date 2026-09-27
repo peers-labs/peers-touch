@@ -108,6 +108,12 @@ func TestProviderThinkingControlUsesCatalogModelCapability(t *testing.T) {
 	}
 }
 
+func TestOllamaSupportsExplicitThinkingControl(t *testing.T) {
+	if !supportsExplicitThinkingMode(providerTypeOllama) {
+		t.Fatal("Ollama must support explicit thinking control")
+	}
+}
+
 func TestAgentServicePreservesThinkingModeWhenUpdateOmitsIt(t *testing.T) {
 	db := openRuntimeAuthorityDB(t, "thinking_mode_agent_update")
 	if err := db.AutoMigrate(&persistence.AgentCapabilityBinding{}); err != nil {
