@@ -1626,10 +1626,18 @@ return {
         scope_conversation_ids = set(
             scope_snapshot_after.get("conversationIds", [])
         )
+        scope_reclaimable_bytes = scope_snapshot_after.get(
+            "conversationReclaimableBytes",
+            {},
+        )
         remaining_scope_ids = [
             conversation_id
             for conversation_id in scope_ids
-            if conversation_id in scope_conversation_ids
+            if (
+                conversation_id in scope_conversation_ids
+                and isinstance(scope_reclaimable_bytes, Mapping)
+                and int(scope_reclaimable_bytes.get(conversation_id) or 0) > 0
+            )
         ]
         if (
             scope_ui != {
