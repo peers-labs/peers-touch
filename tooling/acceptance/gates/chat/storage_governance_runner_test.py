@@ -235,12 +235,24 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
             journey_for_gate(BATCH_GATE_ID),
             "storage-batch-clear",
         )
-        self.assertIn("storage_batch_explicit_selection", BATCH_REQUIRED_ASSERTIONS)
-        self.assertIn(
+        for assertion in (
+            "storage_batch_explicit_selection",
+            "storage_batch_confirmation_context",
+            "storage_batch_progress_visible",
             "storage_batch_estimated_reclaimable",
-            BATCH_REQUIRED_ASSERTIONS,
-        )
-        self.assertIn("storage.batch.confirm", BATCH_REQUIRED_STEPS)
+            "storage_batch_partial_failure_retry",
+            "storage_batch_scope_change_isolated",
+            "storage_batch_unselected_preserved",
+        ):
+            self.assertIn(assertion, BATCH_REQUIRED_ASSERTIONS)
+        for step in (
+            "storage.batch.confirm",
+            "storage.batch.partial_failure",
+            "storage.batch.retry",
+            "storage.batch.scope_change",
+            "storage.batch.restart",
+        ):
+            self.assertIn(step, BATCH_REQUIRED_STEPS)
         self.assertIn("data-chat-storage-batch-manage", desktop_ui)
         self.assertIn("data-chat-storage-batch-confirm-apply", desktop_ui)
         runner = (
@@ -253,6 +265,8 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
         self.assertIn("Desktop batch selection controls", runner)
         self.assertIn("self._conversation_selected(", runner)
         self.assertIn("self.restart_client(actor)", runner)
+        self.assertIn('"configureStorageBatchScenario"', runner)
+        self.assertIn('"restoreStorageScope"', runner)
         self.assertNotIn("client.driver.refresh()", runner)
         self.assertNotIn('"createGroup"', runner)
 

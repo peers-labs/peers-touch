@@ -66,6 +66,9 @@
     "Desktop selects two explicit conversations through the Storage UI",
     "The confirmation reports selected count, estimate and current-device scope",
     "Both conversations clear serially through the canonical command",
+    "Progress is visible while the serial batch is running",
+    "A failed item remains selected and succeeds through the retry action",
+    "A scope change clears stale batch UI and stops the remaining queue",
     "The result reports physical bytes and cleared plaintext remains absent after restart"
   ],
   "failureBehavior": [
@@ -73,12 +76,17 @@
     "Do not report partial success as complete",
     "Do not retain an Acceptance fixture command outside acceptance-webdriver builds"
   ],
-  "updatedAt": "2026-09-27T05:00:00.000Z",
+  "updatedAt": "2026-09-27T10:48:00.000Z",
   "durableEvidence": [
     {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "Development Session CSG-BATCH-02A-desktop-R3 / functional run 20260927T104313383183Z-23be45d3b84980e50354e6e1ff5f3368"
+    },
+    {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "result": "PASS",
+      "ref": "acceptance-run 20260927T104542769126Z-927195ed0b4c537c158d6ea5132707a6; gap detector PROVEN"
     }
   ]
 }
@@ -86,8 +94,9 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Dependency: `CSG-BATCH-01-desktop`.
+- State: acceptance-ready; completion is controlled by the current Development
+  Session and independent review.
+- Dependency: `CSG-BATCH-01-desktop` done.
 
 ## Closure
 
