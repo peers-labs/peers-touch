@@ -3238,7 +3238,18 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "const duplicateResult = await duplicate.result;",
             scenario,
         )
-        self.assertGreaterEqual(scenario.count("thinkingMode: 'disabled'"), 2)
+        self.assertIn(
+            "thinkingMode: 'disabled'",
+            scenario[active_start:active_admission],
+        )
+        self.assertIn(
+            "thinkingMode: 'disabled'",
+            scenario[duplicate_start:queue_start],
+        )
+        self.assertIn(
+            "thinkingMode: 'disabled'",
+            scenario[queue_start:duplicate_first_event],
+        )
 
     def test_group_one_queue_probe_requires_completed_active_turn(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")

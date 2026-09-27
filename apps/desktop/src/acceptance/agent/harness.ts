@@ -31600,6 +31600,7 @@ export function installAcceptanceHarness(): void {
           idempotencyKey: sharedIdempotencyKey,
           provider: agent.provider || undefined,
           model: agent.model || undefined,
+          thinkingMode: 'disabled',
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
