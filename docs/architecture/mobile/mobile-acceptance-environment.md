@@ -67,15 +67,15 @@ W9-B uses the narrower
 `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml` contract.
 It extends the base simulator build and Appium pins but provisions only:
 
-- iOS 17.4 `iPhone SE (3rd generation)` as the compact viewport;
-- iOS 17.4 `iPhone 15 Pro Max` as the large viewport;
-- isolated Appium ports and storage for each cell.
+- one iOS 26.5 `iPhone 17` as the current-device viewport;
+- isolated Appium ports and storage for that cell.
 
 The Gate captures portrait/landscape, keyboard open/closed, English/Chinese,
 native accessibility-tree, WebView DOM, screenshot, source-identity, and
 cleanup evidence. The environment has no Station, actor Fixture, provider
 credential, Android runtime, or physical-device lease. A pass therefore proves
-only the declared unauthenticated iOS Simulator launch surface.
+only the declared unauthenticated iPhone 17 Simulator launch surface; older
+generations and alternate viewport sizes remain outside this Gate.
 
 ### 3.3 Station Lifecycle Simulator Tier
 
@@ -243,7 +243,7 @@ Alice and Bob to separate Stations and adds Relay, but is not current proof.
 | File | Tier | Content |
 |---|---|---|
 | `tooling/acceptance/environments/mobile-simulator.yaml` | Simulator | Build commands, Appium config, client definitions, harness contract, cleanup order |
-| `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml` | iOS Simulator layout matrix | Compact/large iOS cells, layout Harness requirements, exact W9-B proof and non-proof scope |
+| `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml` | Current iOS Simulator layout cell | iPhone 17 cell, layout Harness requirements, exact W9-B proof and non-proof scope |
 | `tooling/acceptance/environments/mobile-station-lifecycle-simulator.yaml` | Station-bound simulator lifecycle and Settings | Base simulator resources plus two typed Station services, same-actor Fixture, lifecycle/Settings Harness actions, and reverse cleanup |
 | `tooling/acceptance/environments/mobile-direct-simulator.yaml` | Required two-actor Station-backed evidence | Reuses the simulator build/runtime base and binds Alice and Bob to one source-attested disposable Station without Relay |
 | `tooling/acceptance/environments/mobile-social-simulator.yaml` | Deferred cross-Station evidence | Retains two remote Station bindings plus Relay for a future Desktop/Mobile cross-Station plan |
