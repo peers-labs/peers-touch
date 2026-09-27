@@ -37,7 +37,7 @@ from tooling.acceptance.core.launch_context import (
     EphemeralGateLaunchContext,
 )
 from tooling.acceptance.core.provisioner import load_env_file
-from tooling.acceptance.core.redaction import redact_text
+from tooling.acceptance.core.redaction import redact_text, redact_text_with_values
 from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureBinding,
     W7FixtureOwner,
@@ -115,6 +115,12 @@ W8_REMOTE_CLIENT = (
     "remote_recipient",
     "remote_recipient",
 )
+_BIP39_ENGLISH_WORDLIST = Path(__file__).with_name("bip39_english.txt")
+_BIP39_ENGLISH_WORDLIST_SHA256 = (
+    "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+)
+_BIP39_ENTROPY_BYTES = 32
+_BIP39_CHECKSUM_BITS = 8
 
 
 @dataclass(frozen=True)
@@ -1152,14 +1158,17 @@ def _mobile_call(
     session: Any,
     action: str,
     payload: Mapping[str, Any] | None = None,
+    *,
+    sensitive_values: tuple[str, ...] = (),
 ) -> Any:
     try:
         return session.call_action(action, dict(payload or {}))
     except Exception as error:
         raise RuntimeOwnerBlocked(
             "CLIENT_RUNTIME_UNAVAILABLE",
-            redact_text(
-                f"Mobile production action {action!r} failed: {error}"
+            redact_text_with_values(
+                f"Mobile production action {action!r} failed: {error}",
+                sensitive_values,
             ),
             resource=f"client:{getattr(session, 'client_id', 'mobile')}",
         ) from error
@@ -1178,6 +1187,109 @@ def _mobile_mapping(
             resource=f"client:{client_id}",
         )
     return value
+
+
+def _generate_mobile_recovery_phrase(
+    entropy: bytes | None = None,
+) -> str:
+    phrase_entropy = (
+        entropy
+        if entropy is not None
+        else secrets.token_bytes(_BIP39_ENTROPY_BYTES)
+    )
+    if len(phrase_entropy) != _BIP39_ENTROPY_BYTES:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Mobile recovery phrase entropy is invalid",
+            resource="mobile-recovery-phrase",
+        )
+    try:
+        wordlist_bytes = _BIP39_ENGLISH_WORDLIST.read_bytes()
+        words = tuple(wordlist_bytes.decode("ascii").splitlines())
+    except (OSError, UnicodeDecodeError) as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Mobile recovery phrase wordlist is unavailable",
+            resource="mobile-recovery-phrase",
+        ) from error
+    if (
+        _sha256(wordlist_bytes) != _BIP39_ENGLISH_WORDLIST_SHA256
+        or len(words) != 2048
+        or len(set(words)) != len(words)
+        or any(not word.isalpha() or not word.isascii() for word in words)
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Mobile recovery phrase wordlist is invalid",
+            resource="mobile-recovery-phrase",
+        )
+    checksum = hashlib.sha256(phrase_entropy).digest()[0]
+    phrase_bits = (
+        int.from_bytes(phrase_entropy, "big") << _BIP39_CHECKSUM_BITS
+    ) | checksum
+    return " ".join(
+        words[(phrase_bits >> shift) & 0x7FF]
+        for shift in range(253, -1, -11)
+    )
+
+
+def _prepare_mobile_private_content_keys(
+    session: Any,
+    *,
+    client_id: str,
+    recovery_phrase: str,
+) -> Mapping[str, Any]:
+    stored = _mobile_mapping(
+        _mobile_call(
+            session,
+            "moments.private.storeRecoveryPhrase",
+            {
+                "recoveryPhrase": recovery_phrase,
+                "recoveryEpoch": 1,
+            },
+            sensitive_values=(recovery_phrase,),
+        ),
+        "Private Social recovery phrase acknowledgement",
+        client_id=client_id,
+    )
+    if stored != {"stored": True, "recoveryEpoch": 1}:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            (
+                f"Mobile client {client_id!r} did not acknowledge its "
+                "recovery epoch"
+            ),
+            resource=f"client:{client_id}",
+        )
+    reconciled = _mobile_mapping(
+        _mobile_call(session, "moments.private.reconcile"),
+        "Private Social reconciliation",
+        client_id=client_id,
+    )
+    report = _mobile_mapping(
+        reconciled.get("report"),
+        "Private Social PreKey report",
+        client_id=client_id,
+    )
+    for field in (
+        "endpointPrekeysAvailable",
+        "recoveryPrekeysAvailable",
+    ):
+        available = report.get(field)
+        if (
+            not isinstance(available, int)
+            or isinstance(available, bool)
+            or available < 1
+        ):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                (
+                    f"Mobile client {client_id!r} has no available "
+                    f"{field}"
+                ),
+                resource=f"client:{client_id}",
+            )
+    return report
 
 
 def _require_mobile_private_runtime(
@@ -1540,6 +1652,15 @@ def _start_mobile_client(
         station_runtime_identity=station_runtime_identity,
         actor_ptid=actor_ptid,
     )
+    recovery_phrase = _generate_mobile_recovery_phrase()
+    try:
+        _prepare_mobile_private_content_keys(
+            session,
+            client_id=client_id,
+            recovery_phrase=recovery_phrase,
+        )
+    finally:
+        recovery_phrase = ""
     build = _mobile_mapping(
         _mobile_call(session, "build.identity"),
         "build identity",
