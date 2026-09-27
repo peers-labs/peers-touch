@@ -1,5 +1,4 @@
 use std::io::Read;
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -21,6 +20,7 @@ use crate::secure_content::proto::{
     federation::v1 as federation, secure_content::v1 as wire, social::v1 as social,
 };
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope, TrustedStationSigningKey};
+use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
 const MAX_PROTO_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CLIENT_SIGNING_DOMAIN: &[u8] = b"peers-touch:secure-content:client-command:v1\0";
@@ -890,20 +890,24 @@ fn base32_no_pad(bytes: &[u8]) -> String {
 }
 
 fn require_authenticated_transport(station_origin: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(station_origin)
-        .map_err(|_| "private Social Station origin is invalid".to_string())?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| "private Social Station origin has no host".to_string())?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .map(|address| address.is_loopback())
-            .unwrap_or(false);
-    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err("private Social first-use trust requires HTTPS or loopback HTTP".to_string());
-    }
-    Ok(())
+    require_authenticated_transport_with_policy(
+        station_origin,
+        StationOriginPolicy::current_build(),
+    )
+}
+
+fn require_authenticated_transport_with_policy(
+    station_origin: &str,
+    policy: StationOriginPolicy,
+) -> Result<(), String> {
+    normalize_station_origin(station_origin, policy)
+        .map(|_| ())
+        .map_err(|error| match error {
+            StationOriginError::Insecure => {
+                "private Social first-use trust requires HTTPS".to_string()
+            }
+            _ => "private Social Station origin is not canonical".to_string(),
+        })
 }
 
 fn http_client() -> Result<Client, String> {
@@ -1175,10 +1179,27 @@ mod tests {
     }
 
     #[test]
-    fn remote_plaintext_transport_is_rejected() {
-        assert!(require_authenticated_transport("https://station.test").is_ok());
-        assert!(require_authenticated_transport("http://127.0.0.1:18080").is_ok());
-        assert!(require_authenticated_transport("http://station.test").is_err());
+    fn private_social_uses_the_shared_station_origin_policy() {
+        assert!(require_authenticated_transport_with_policy(
+            "https://station.test",
+            StationOriginPolicy::HttpsOnly,
+        )
+        .is_ok());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test:18080",
+            StationOriginPolicy::Development,
+        )
+        .is_ok());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test:18080",
+            StationOriginPolicy::HttpsOnly,
+        )
+        .is_err());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test/path",
+            StationOriginPolicy::Development,
+        )
+        .is_err());
     }
 
     #[test]

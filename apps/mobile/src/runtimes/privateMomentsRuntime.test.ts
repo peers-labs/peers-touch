@@ -350,6 +350,41 @@ describe('privateMomentsRuntime projection', () => {
     ]);
   });
 
+  it('publishes activation failure through lifecycle readiness', async () => {
+    const activationError = new Error(
+      'private Social first-use trust requires HTTPS',
+    );
+    const fail = vi.fn();
+    const ready = vi.fn();
+    commandMocks.activate.mockRejectedValue(activationError);
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+
+    await expect(activeDescriptor.bootstrap({
+      generation: 1,
+      beginReadinessUpdate: () => ({
+        isCurrent: () => true,
+        waitForDependencies: async () => true,
+        ready,
+        fail,
+      }),
+    })).rejects.toThrow('private Social first-use trust requires HTTPS');
+
+    expect(fail).toHaveBeenCalledWith(activationError);
+    expect(ready).not.toHaveBeenCalled();
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: false,
+      errorMessage: 'private Social first-use trust requires HTTPS',
+    }));
+  });
+
   it('tears down the exact native generation when post-activation bootstrap fails', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(11));
     commandMocks.snapshot.mockRejectedValueOnce(new Error('snapshot failed'));
@@ -363,7 +398,8 @@ describe('privateMomentsRuntime projection', () => {
     });
     activeDescriptor = createPrivateMomentsRuntimeDescriptor();
 
-    await activeDescriptor.bootstrap(runtimeContext);
+    await expect(activeDescriptor.bootstrap(runtimeContext))
+      .rejects.toThrow('snapshot failed');
 
     expect(commandMocks.teardown).toHaveBeenCalledWith({
       stationPeerId: 'station-1',
@@ -393,7 +429,8 @@ describe('privateMomentsRuntime projection', () => {
     });
     activeDescriptor = createPrivateMomentsRuntimeDescriptor();
 
-    await activeDescriptor.bootstrap(runtimeContext);
+    await expect(activeDescriptor.bootstrap(runtimeContext))
+      .rejects.toThrow('mobile.privateSocial.activationIdentityMismatch');
 
     expect(commandMocks.snapshot).not.toHaveBeenCalled();
     expect(commandMocks.teardown).toHaveBeenCalledWith({
