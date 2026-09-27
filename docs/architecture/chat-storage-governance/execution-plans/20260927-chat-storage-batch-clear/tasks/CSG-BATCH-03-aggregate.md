@@ -17,6 +17,7 @@
   "runtimeClass": "source-only",
   "writeSet": [
     "docs/architecture/chat-storage-governance",
+    "apps/mobile/src/features/social",
     "tooling/acceptance"
   ],
   "readSet": [
