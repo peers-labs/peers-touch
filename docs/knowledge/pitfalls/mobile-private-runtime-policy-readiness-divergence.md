@@ -62,6 +62,14 @@ submit had committed remotely, but the Mobile worker retried submit before
 checking the authoritative resource readback, so it never consumed the
 already-committed result and the Fixture handler could not quiesce cleanly.
 
+A later exact-source iOS replay repeated the same timeout after readback-first
+reconciliation landed. Mobile sent `Accept: application/protobuf` on typed GET
+requests but omitted `Content-Type: application/protobuf`. Station's typed
+handler selects its response serializer from the request Content-Type, so it
+returned protobuf JSON. Mobile decoded the body as binary protobuf, treated the
+readback as unavailable, and kept the committed submission in
+`UNKNOWN_OUTCOME`.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -106,6 +114,12 @@ resource only after another successful response. That inverted the accepted
 recovery order: authoritative readback must be checked before retrying a
 may-commit command.
 
+Mobile's private Social transport also diverged from Desktop's protobuf
+content-negotiation helper. Its POST requests carried both request and response
+media types, while GET requests carried only `Accept`. This is insufficient for
+the current Station typed-handler contract, which uses request Content-Type to
+select binary protobuf responses.
+
 ## Mitigation
 
 ### What was done in code
@@ -138,6 +152,9 @@ may-commit command.
 - A private Moment submission in `UNKNOWN_OUTCOME` now queries the exact
   content resource first. A valid signed readback commits the local projection;
   only an unavailable readback falls through to exact command resubmission.
+- Every private Social protobuf request, including bodyless GET requests, now
+  sets both `Content-Type: application/protobuf` and
+  `Accept: application/protobuf`.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -164,6 +181,9 @@ may-commit command.
   Mobile wire bytes and command ID against the shared cross-platform vector.
 - `unknown_submission_reads_authoritative_resource_before_retry` verifies that
   reconciliation probes the exact content identity before resubmission.
+- `private_social_proto_requests_declare_request_and_response_media_types`
+  verifies the shared Mobile request helper used by point readback and trust
+  lookups.
 
 ## How to detect a recurrence
 
@@ -197,6 +217,9 @@ Mobile must not derive Content PreKey publication identities from ordinary
 protobuf encoding or introduce a client-specific command prefix.
 An `UNKNOWN_OUTCOME` private Moment must never be blindly resubmitted before
 the exact content resource has been queried and cryptographically verified.
+The readback request must negotiate binary protobuf with both request
+Content-Type and response Accept headers; `Accept` alone does not satisfy the
+Station typed-handler contract.
 
 ## Crosswalks
 
