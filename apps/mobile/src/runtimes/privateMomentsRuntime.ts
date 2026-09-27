@@ -1,6 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
-import type { MobileRuntimeDescriptor, RuntimeOperationResult } from '../app/lifecycle/types';
+import type {
+  MobileRuntimeContext,
+  MobileRuntimeDescriptor,
+  RuntimeOperationResult,
+} from '../app/lifecycle/types';
 import {
   isAccessGranted,
   type MobileAuthSession,
@@ -33,6 +37,7 @@ import {
   type PrivateSocialWorkerReport,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import { runRuntimeSessionTransition } from './runtimeSessionTransition';
 
 export type PrivateSocialVisiblePublishState =
   | 'AUDIENCE_REQUIRED'
@@ -95,6 +100,7 @@ export function readPrivateMomentsSnapshot(): PrivateMomentsRuntimeSnapshot {
 export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribe: (() => void) | null = null;
   let suspended = false;
+  let runtimeContext: MobileRuntimeContext | null = null;
 
   return {
     id: 'private-social',
@@ -103,15 +109,23 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
       'Owns the mobile-web projection of Native private Social durability and typed actions; cryptographic and replay authority remain in Mobile Rust.',
     dependsOn: ['messaging', 'social', 'secure-storage'],
 
-    async bootstrap(): Promise<void> {
+    async bootstrap(context): Promise<void> {
+      runtimeContext = context;
       suspended = false;
       unsubscribe = useAuthStore.subscribe((state, previous) => {
         const session = admittedSession(state);
         const previousSession = admittedSession(previous);
         if (sessionKey(session) === sessionKey(previousSession)) return;
-        enqueueSessionTransition(session, suspended);
+        if (runtimeContext) {
+          void enqueueSessionTransition(session, suspended, runtimeContext)
+            .catch(() => undefined);
+        }
       });
-      await enqueueSessionTransition(admittedSession(useAuthStore.getState()), suspended);
+      await enqueueSessionTransition(
+        admittedSession(useAuthStore.getState()),
+        suspended,
+        context,
+      );
     },
 
     async suspend(): Promise<void> {
@@ -119,9 +133,14 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
       await transition;
     },
 
-    async resume(): Promise<void> {
+    async resume(context): Promise<void> {
+      runtimeContext = context;
       suspended = false;
-      await enqueueSessionTransition(admittedSession(useAuthStore.getState()), suspended);
+      await enqueueSessionTransition(
+        admittedSession(useAuthStore.getState()),
+        suspended,
+        context,
+      );
       await reconcilePrivateMoments();
     },
 
@@ -129,6 +148,7 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
       const start = performance.now();
       unsubscribe?.();
       unsubscribe = null;
+      runtimeContext = null;
       await transition;
       const scope = activeScope;
       activeScope = null;
@@ -507,11 +527,17 @@ function mergeCommentLists(
 function enqueueSessionTransition(
   session: MobileAuthSession | null,
   suspended: boolean,
+  context: MobileRuntimeContext,
 ): Promise<void> {
   const requestedSessionKey = sessionKey(session);
-  transition = transition
-    .then(() => synchronizeSession(session, suspended))
-    .catch((error) => {
+  const task = runRuntimeSessionTransition({
+    previous: transition,
+    context,
+    isScopeCurrent: () => (
+      sessionKey(admittedSession(useAuthStore.getState())) === requestedSessionKey
+    ),
+    run: () => synchronizeSession(session, suspended),
+    onError: (error) => {
       const currentSession = admittedSession(useAuthStore.getState());
       if (
         sessionKey(currentSession) !== requestedSessionKey
@@ -525,8 +551,10 @@ function enqueueSessionTransition(
         reconciling: false,
         errorMessage: readableErrorMessage(error),
       });
-    });
-  return transition;
+    },
+  });
+  transition = task.catch(() => undefined);
+  return task;
 }
 
 async function synchronizeSession(
