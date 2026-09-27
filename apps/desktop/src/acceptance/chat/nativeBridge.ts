@@ -48,6 +48,12 @@ export interface NativeAcceptanceRestorableCommandInput
   plaintext: string;
 }
 
+export interface NativeAcceptanceStorageSeedInput
+  extends NativeAcceptanceActorInput {
+  stationPeerId: string;
+  plaintextBytes: number;
+}
+
 export interface NativeAcceptanceAttachmentInput
   extends NativeAcceptanceActorInput {
   attachmentId: string;
@@ -79,6 +85,13 @@ interface NativeAcceptanceBridgeDependencies {
   createRestorableCommand(
     input: NativeAcceptanceRestorableCommandInput,
   ): Promise<MessagingAcceptanceRestorableCommand>;
+  seedConversationClear?(
+    input: NativeAcceptanceStorageSeedInput,
+  ): Promise<{
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+  }>;
   resumeMessagingLifecycle(actorPtid: string): Promise<{
     actorPtid: string;
     activated: boolean;
@@ -103,6 +116,13 @@ export interface NativeAcceptanceBridge {
   createRestorableCommand(
     input: NativeAcceptanceRestorableCommandInput,
   ): Promise<MessagingAcceptanceRestorableCommand>;
+  seedConversationClear(
+    input: NativeAcceptanceStorageSeedInput,
+  ): Promise<{
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+  }>;
   resumeMessagingLifecycle(
     input: NativeAcceptanceActorInput,
   ): Promise<{ actorPtid: string; activated: boolean }>;
@@ -221,6 +241,32 @@ export function createNativeAcceptanceBridge(
       });
     },
 
+    async seedConversationClear(input) {
+      const actorPtid = requireMatchingActor(
+        input.actorPtid,
+        dependencies.activeActorPtid(),
+      );
+      const stationPeerId = requireEvidenceIdentity(
+        input.stationPeerId,
+        'acceptance.chat.stationPeerIdRequired',
+      );
+      if (
+        !Number.isSafeInteger(input.plaintextBytes)
+        || input.plaintextBytes < 64 * 1024
+        || input.plaintextBytes > 8 * 1024 * 1024
+      ) {
+        throw new Error('acceptance.chat.plaintextBytesInvalid');
+      }
+      if (!dependencies.seedConversationClear) {
+        throw new Error('acceptance.chat.storageFixtureUnavailable');
+      }
+      return dependencies.seedConversationClear({
+        actorPtid,
+        stationPeerId,
+        plaintextBytes: input.plaintextBytes,
+      });
+    },
+
     async resumeMessagingLifecycle(input) {
       const actorPtid = requireMatchingActor(
         input.actorPtid,
@@ -306,6 +352,8 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
     api.messagingAcceptancePrepareSubmittedCommand(input),
   createRestorableCommand: (input) =>
     api.messagingAcceptanceCreateRestorableCommand(input),
+  seedConversationClear: (input) =>
+    api.chatStorageAcceptanceSeedConversationClear(input),
   resumeMessagingLifecycle: (actorPtid) =>
     api.messagingAcceptanceResumeLifecycle(actorPtid),
   readMessages: (conversationId) =>

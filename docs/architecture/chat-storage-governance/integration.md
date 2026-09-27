@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 集成与硬切
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -38,6 +38,7 @@ Storage Governance 只作为 Device Messaging Engine 的子模块。
 - Rust 注册 canonical `chat_storage_*` commands。
 - Settings 增加 Storage section。
 - Conversation Detail 复用同一 snapshot/clear contract。
+- Storage 会话列表增加管理模式、筛选结果全选、批量确认和部分失败重试。
 - 删除固定零值 `statistics_get`；非 Chat 统计若需要，必须由独立 owner 重建。
 - 删除 `deletedMessageUlids` 与本地终态。
 
@@ -45,10 +46,19 @@ Storage Governance 只作为 Device Messaging Engine 的子模块。
 
 - Rust 注册同名、同 Proto contract 的 `chat_storage_*` commands。
 - Settings 与 Chat Overlay 增加相同语义入口。
+- Storage 会话列表使用 Mobile 原生密度的选择与底部操作，不复制 Desktop 布局。
 - `clearMobileCache` 继续只管理非 Chat Web cache。
 - Chat media cache 只由 Storage Governance 清理。
 
-## 6. 语义替换
+## 6. 批量清理集成
+
+- 双端复用同一纯 TypeScript 批量编排 helper，输入为冻结的会话 ID 列表和
+  canonical `clearConversation` callback。
+- helper 串行执行、汇总实际释放字节、保留失败项，并在 scope 失效后停止队列。
+- 页面只维护选择与展示状态；Rust adapter、shared Core、schema 和 Proto 不变。
+- Storage 列表的“全选”只覆盖当前搜索结果，不隐式包含过滤外会话。
+
+## 7. 语义替换
 
 | 旧行为 | 新行为 | 删除义务 |
 |---|---|---|
@@ -59,7 +69,7 @@ Storage Governance 只作为 Device Messaging Engine 的子模块。
 | disappear timer 骨架 | 无能力 | Proto、generated、Station、adapter |
 | 固定零统计 | 真实 Chat snapshot | command/wrapper/test |
 
-## 7. Baseline Schema
+## 8. Baseline Schema
 
 1. 更新 canonical CREATE schema。
 2. 删除受影响的 `ALTER`、backfill、compat reader 和旧 archive reader。
@@ -70,13 +80,13 @@ Storage Governance 只作为 Device Messaging Engine 的子模块。
 
 不编写旧数据迁移，不保留 legacy version marker。
 
-## 8. 删除证明
+## 9. 删除证明
 
 `legacy-inventory.json` 是完整 baseline matcher，不是 seed allowlist。实现 Task 先对
 全 scanRoots 执行 matcher；新增命中扩展证据。命中只能删除，或证明为 canonical
 retained capability 后从 inventory 修订；不得 allowlist 隐藏。
 
-## 9. 文档同步
+## 10. 文档同步
 
 接受后同步：
 
