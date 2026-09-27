@@ -539,8 +539,12 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     {
                         "physicalTotalBytes": 4_000_000,
                         "messageBytes": 2_100_000,
-                        "conversationIds": ["conversation-clear-f"],
+                        "conversationIds": [
+                            "conversation-clear-e",
+                            "conversation-clear-f",
+                        ],
                         "conversationReclaimableBytes": {
+                            "conversation-clear-e": 0,
                             "conversation-clear-f": 2_100_000,
                         },
                     },
@@ -651,6 +655,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(result["partialFailure"]["failed"], 1)
         self.assertEqual(result["partialRetry"]["succeeded"], 1)
         self.assertEqual(result["scopeChange"]["completed"], 1)
+        self.assertEqual(
+            result["scopeChange"]["remainingConversationIds"],
+            ["conversation-clear-f"],
+        )
         self.assertTrue(result["restartStable"])
         self.assertTrue(result["messagingIdentityPreserved"])
 
