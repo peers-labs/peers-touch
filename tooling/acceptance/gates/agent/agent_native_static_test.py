@@ -3207,6 +3207,10 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "const residualTurnIds = Array.from(new Set(",
             post_stream_queue_cleanup,
         )
+        residual_terminal_readback = scenario.index(
+            "await waitForFoundationDiagnosticReplay(",
+            residual_turn_settlement,
+        )
         later_conversation_readback = scenario.index(
             "const afterQueue = await api.getAgentConversation(",
             residual_turn_settlement,
@@ -3232,8 +3236,14 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertLess(remaining_queue_cleanup, stream_completion)
         self.assertLess(stream_completion, post_stream_queue_cleanup)
         self.assertLess(post_stream_queue_cleanup, residual_turn_settlement)
-        self.assertLess(residual_turn_settlement, later_conversation_readback)
+        self.assertLess(residual_turn_settlement, residual_terminal_readback)
+        self.assertLess(residual_terminal_readback, later_conversation_readback)
         self.assertLess(later_conversation_readback, fixture_restore)
+        self.assertIn("diagnosticReplayTerminal", scenario)
+        self.assertIn(
+            "['cancelled', 'completed', 'failed', 'interrupted']",
+            scenario,
+        )
         self.assertNotIn(
             "const duplicateResult = await duplicate.result;",
             scenario,
