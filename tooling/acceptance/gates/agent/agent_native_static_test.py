@@ -979,7 +979,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         scenario = self.source[start:end]
 
         self.assertIn("await api.addModel(agent.provider", scenario)
-        self.assertIn("streaming: true", scenario)
+        self.assertIn("const originalModelConfig =", scenario)
+        self.assertIn(
+            "streaming: originalModelConfig.streaming",
+            scenario,
+        )
+        self.assertIn(
+            "function_call: originalModelConfig.function_call",
+            scenario,
+        )
+        self.assertIn(
+            "vision: originalModelConfig.vision",
+            scenario,
+        )
+        self.assertIn(
+            "reasoning: originalModelConfig.reasoning",
+            scenario,
+        )
         self.assertIn("updateAgentProfile(agentId", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("=== 'PROVIDER_MODEL_UNAVAILABLE'", scenario)
