@@ -28,18 +28,24 @@
       "docs/architecture/chat-storage-governance/design.md",
       "docs/architecture/chat-storage-governance/decisions.md",
       "docs/architecture/chat-storage-governance/data-model.md",
-      "docs/architecture/chat-storage-governance/integration.md"
+      "docs/architecture/chat-storage-governance/integration.md",
+      "docs/architecture/local-dev-control-plane/decisions.md"
     ],
     "decisions": [
       "CSG-D01",
       "CSG-D04",
       "CSG-D07",
       "CSG-D08",
-      "CSG-D09"
+      "CSG-D09",
+      "LDCP-D15"
     ]
   },
   "scope": {
     "sourceClaims": [
+      {
+        "pathPrefix": "apps/dev",
+        "mode": "exclusive-write"
+      },
       {
         "pathPrefix": "docs/README.md",
         "mode": "exclusive-write"
@@ -115,6 +121,18 @@
       {
         "pathPrefix": "tooling/acceptance",
         "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/local-dev",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/skills/pt-local-dev-env",
+        "mode": "exclusive-write"
       }
     ],
     "nonGoals": [
@@ -123,7 +141,7 @@
       "Add a cross-conversation database transaction or new storage protocol",
       "Add restore, undo, custom retention periods or disappearing messages",
       "Claim Browser parity",
-      "Change Local Dev Control Plane behavior beyond restoring its bound completed Plan documents"
+      "Change Local Dev Control Plane behavior beyond restoring accepted LDCP-D15 Profile-ID reset policy"
     ]
   },
   "tasks": [
@@ -132,7 +150,7 @@
       "workstreamId": "CSG-BATCH-SOURCE",
       "path": "tasks/CSG-BATCH-01-desktop.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -142,7 +160,7 @@
       "dependsOn": [
         "CSG-BATCH-01-desktop"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
@@ -152,8 +170,12 @@
       "dependsOn": [
         "CSG-BATCH-01-desktop"
       ],
-      "status": "pending",
-      "blocker": null
+      "status": "blocked",
+      "blocker": {
+        "code": "PROFILE_UNAVAILABLE",
+        "owner": "local-dev-control-plane",
+        "evidenceRef": "make env-register PROFILE=chat-native-five SLOT=4 CAPABILITIES=station.connect,station.deploy,station.reset"
+      }
     },
     {
       "id": "CSG-BATCH-03-aggregate",
