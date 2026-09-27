@@ -129,10 +129,20 @@
   "tasks": [
     {
       "id": "CSG-BATCH-01-desktop",
-      "workstreamId": "CSG-BATCH-DESKTOP",
+      "workstreamId": "CSG-BATCH-SOURCE",
       "path": "tasks/CSG-BATCH-01-desktop.md",
       "dependsOn": [],
       "status": "in_progress",
+      "blocker": null
+    },
+    {
+      "id": "CSG-BATCH-02A-desktop",
+      "workstreamId": "CSG-BATCH-SOURCE",
+      "path": "tasks/CSG-BATCH-02A-desktop.md",
+      "dependsOn": [
+        "CSG-BATCH-01-desktop"
+      ],
+      "status": "pending",
       "blocker": null
     },
     {
@@ -150,7 +160,7 @@
       "workstreamId": "CSG-BATCH-ACCEPTANCE",
       "path": "tasks/CSG-BATCH-03-aggregate.md",
       "dependsOn": [
-        "CSG-BATCH-01-desktop",
+        "CSG-BATCH-02A-desktop",
         "CSG-BATCH-02-mobile"
       ],
       "status": "pending",
@@ -188,6 +198,7 @@
 ```json
 {
   "closures": {
+    "csg-batch-source": [],
     "csg-batch-desktop": [
       "chat-storage-desktop-batch-clear-e2e"
     ],
@@ -232,8 +243,8 @@
 
 ```text
 CSG-BATCH-01-desktop
-  -> CSG-BATCH-02-mobile
-      -> CSG-BATCH-03-aggregate
+  ├─> CSG-BATCH-02A-desktop ─┐
+  └─> CSG-BATCH-02-mobile ───┴─> CSG-BATCH-03-aggregate
 ```
 
 ## Atomic Boundary
@@ -241,7 +252,7 @@ CSG-BATCH-01-desktop
 - 批量入口只组合现有 `chat_storage_clear_conversation`，不增加第二个删除 owner。
 - 每个会话独立提交；已成功项不回滚，失败项保留用于重试。
 - scope 变化停止未开始项并清除旧 scope UI 状态。
-- 先完成 Desktop 共享 helper 与交互，再由 Mobile 复用同一 helper。
+- 先冻结共享 helper 与双端源码，再分别执行 Desktop/Mobile 原生 Journey。
 
 ## Completion
 
