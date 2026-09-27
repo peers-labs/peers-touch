@@ -1491,7 +1491,10 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn("len({", runner)
         self.assertIn("remoteProfileHandle", profile_projection)
         self.assertIn("accountProfileFromFederationResolve", profile_projection)
-        self.assertIn("await api.federationResolve(federatedHandle)", social_chat)
+        self.assertIn(
+            "await api.federationResolve(federationId, federatedHandle)",
+            social_chat,
+        )
         self.assertIn("merge_message_projection_rows", message_store)
         self.assertNotIn("CacheVerifiedRemoteDeviceSigningKeys", federation_resolver)
         self.assertNotIn("migrateLegacyPresetAvatarRows", actor_seed)
