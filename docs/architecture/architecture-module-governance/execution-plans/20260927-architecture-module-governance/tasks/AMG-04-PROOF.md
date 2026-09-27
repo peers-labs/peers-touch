@@ -67,12 +67,31 @@
     "Do not claim product runtime behavior from this source-only Plan",
     "Do not push or open a pull request"
   ],
-  "updatedAt": "2026-09-27T02:00:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-27T06:54:00.000Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "184/184 governance and workflow source tests passed at ce11ecff9a9247f970cbdf2b236edb39920b1764"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "completion run 20260927T055822621030Z-b92567c58a68261661bf9c802012e45f is 7/7 DONE/PROVEN at ce11ecff9a9247f970cbdf2b236edb39920b1764"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "completion gap detector reports PROVEN with zero gaps for 4b96c50cd5177a61fb01d2a901a2541fb727b383..ce11ecff9a9247f970cbdf2b236edb39920b1764"
+    }
+  ]
 }
 ```
 
 ## Current Snapshot
 
-- State: pending after AMG-03.
+- State: completion evidence recorded; lifecycle status is owned by the Plan
+  Package.
 - Proof boundary: source-only governance E2E and existing workflow contracts.
+- Proof: all 7 completion Gates are `DONE/PROVEN`; no product runtime behavior
+  is claimed.

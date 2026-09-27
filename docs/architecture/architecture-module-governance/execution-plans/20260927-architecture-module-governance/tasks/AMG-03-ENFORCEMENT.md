@@ -69,12 +69,25 @@
     "Do not duplicate registry parsing in Hook, Plan or Review callers",
     "Do not persist pre-edit receipts as workflow authority"
   ],
-  "updatedAt": "2026-09-27T02:00:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-09-27T06:54:00.000Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "184 governance, Plan, Hook and host-adapter tests passed in architecture-module-governance run 20260927T055822742825Z-99d703b4680fb411dcc3dd9b830df1ce"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "architecture-module-governance is DONE/PROVEN at ce11ecff9a9247f970cbdf2b236edb39920b1764"
+    }
+  ]
 }
 ```
 
 ## Current Snapshot
 
-- State: pending after AMG-02.
+- State: done.
 - Scope: one parser consumed by three enforcement boundaries.
+- Proof: Hook, Plan, Review/CI and integration audit passed against the same
+  current-source governance contract.
