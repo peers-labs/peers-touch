@@ -154,6 +154,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "recovery-ui": "mobile-simulator-recovery-ui-e2e",
                 "moments": "mobile-simulator-moments-e2e",
                 "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+                "storage-batch-clear": (
+                    "chat-storage-mobile-batch-clear-e2e"
+                ),
                 "storage-conversation-clear": (
                     "chat-storage-delete-reclaim-e2e"
                 ),
@@ -470,6 +473,101 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(result["releasedBytes"], 2_500_000)
         self.assertTrue(result["plaintextAbsent"])
         self.assertTrue(result["searchEntryAbsent"])
+        self.assertTrue(result["restartStable"])
+        self.assertTrue(result["messagingIdentityPreserved"])
+
+    def test_storage_batch_clear_requires_two_selected_restart_stable_items(
+        self,
+    ) -> None:
+        fixtures = [
+            {
+                "conversationId": "conversation-clear-a",
+                "messageId": "message-clear-a",
+            },
+            {
+                "conversationId": "conversation-clear-b",
+                "messageId": "message-clear-b",
+            },
+        ]
+
+        class Session:
+            def __init__(self) -> None:
+                self.seed_index = 0
+                self.snapshots = [
+                    {
+                        "physicalTotalBytes": 8_000_000,
+                        "messageBytes": 4_200_000,
+                        "conversationIds": [
+                            "conversation-clear-a",
+                            "conversation-clear-b",
+                        ],
+                    },
+                    {
+                        "physicalTotalBytes": 2_000_000,
+                        "messageBytes": 0,
+                        "conversationIds": [],
+                    },
+                ]
+
+            def call_action(self, action: str, payload: object = None) -> object:
+                if action == "storage.conversation-clear.seed":
+                    fixture = fixtures[self.seed_index]
+                    self.seed_index += 1
+                    return fixture
+                if action == "getRealtimeDevice":
+                    return {
+                        "actorPtid": "ptid:alice",
+                        "deviceId": "device-one",
+                        "active": True,
+                    }
+                if action in {
+                    "navigation.apply",
+                    "messaging.reconcile",
+                }:
+                    return {}
+                if action == "messaging.projection.read":
+                    conversation_id = payload["conversationId"]
+                    return {"messages": {conversation_id: []}}
+                if action == "messaging.search":
+                    return []
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                raise AssertionError((action, payload))
+
+            def execute_script(self, script: str, *_args: object) -> object:
+                if "data-chat-storage-summary" in script:
+                    return self.snapshots.pop(0)
+                if "data-chat-storage-selected" in script:
+                    return [
+                        "conversation-clear-a",
+                        "conversation-clear-b",
+                    ]
+                if "data-chat-storage-batch-result" in script:
+                    return {
+                        "succeeded": 2,
+                        "failed": 0,
+                        "releasedBytes": 6_000_000,
+                    }
+                return True
+
+        session = Session()
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep",
+        ):
+            result = SimulatorSocialGate(
+                "storage-batch-clear"
+            )._run_storage_batch_clear_journey(
+                session=session,
+                journey_id="run",
+            )
+
+        self.assertEqual(result["conversationIds"], [
+            "conversation-clear-a",
+            "conversation-clear-b",
+        ])
+        self.assertEqual(result["succeeded"], 2)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(result["releasedBytes"], 6_000_000)
         self.assertTrue(result["restartStable"])
         self.assertTrue(result["messagingIdentityPreserved"])
 

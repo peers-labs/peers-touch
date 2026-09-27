@@ -1,4 +1,5 @@
 import { create } from '@bufbuild/protobuf';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -38,6 +39,8 @@ import {
   StationSection,
   StorageSection,
 } from './SettingsSections';
+
+const source = readFileSync(new URL('./SettingsSections.tsx', import.meta.url), 'utf8');
 
 describe('Settings truthful unavailable and permission states', () => {
   const unavailableNotificationController = {
@@ -123,6 +126,23 @@ describe('Settings truthful unavailable and permission states', () => {
     expect(markup).toContain('data-privacy-setting="manuallyApprovesFollowers"');
     expect(markup).toContain('data-privacy-setting="messagePermission"');
     expect(markup).toContain('data-privacy-setting="autoExpireDays"');
+  });
+
+  it('exposes batch selection, confirmation, progress, result, and retry controls', () => {
+    for (const selector of [
+      'data-chat-storage-batch-manage',
+      'data-chat-storage-batch-select-all',
+      'data-chat-storage-conversation-select',
+      'data-chat-storage-batch-clear',
+      'data-chat-storage-batch-confirm',
+      'data-chat-storage-batch-confirm-apply',
+      'data-chat-storage-batch-progress',
+      'data-chat-storage-batch-result',
+      'data-chat-storage-batch-retry',
+    ]) {
+      expect(source).toContain(selector);
+    }
+    expect(source).toContain('mobileChatStorageProjectionRuntime.clearConversations(');
   });
 
   it('distinguishes unavailable, empty, and owner-backed blocked-user states', () => {

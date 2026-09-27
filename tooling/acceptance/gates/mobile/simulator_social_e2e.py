@@ -46,6 +46,7 @@ SCENARIO_GATES = {
     "recovery-ui": "mobile-simulator-recovery-ui-e2e",
     "moments": "mobile-simulator-moments-e2e",
     "storage-cache-cleanup": "chat-storage-cache-clear-e2e",
+    "storage-batch-clear": "chat-storage-mobile-batch-clear-e2e",
     "storage-conversation-clear": "chat-storage-delete-reclaim-e2e",
     "storage-retention": "chat-storage-retention-e2e",
 }
@@ -83,6 +84,11 @@ SCENARIO_METADATA = {
         "phase": "CSG-02 Mobile Cache Cleanup",
         "bom": ["CSG-G02"],
         "spec": ["chat-storage-cache-cleanup"],
+    },
+    "storage-batch-clear": {
+        "phase": "CSG-BATCH Mobile Batch Clear",
+        "bom": ["CSG-G07"],
+        "spec": ["chat-storage-batch-clear"],
     },
     "storage-conversation-clear": {
         "phase": "CSG-05 Mobile Conversation Clear",
@@ -318,6 +324,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
         elif self.scenario == "storage-cache-cleanup":
             journey_result = self._run_storage_cache_cleanup_journey(
+                session=sessions["sim-ios"],
+                journey_id=artifacts.run_id[-12:],
+            )
+        elif self.scenario == "storage-batch-clear":
+            journey_result = self._run_storage_batch_clear_journey(
                 session=sessions["sim-ios"],
                 journey_id=artifacts.run_id[-12:],
             )
@@ -1056,6 +1067,301 @@ return true;
             "physicalBytesBefore": int(before["physicalTotalBytes"]),
             "physicalBytesAfter": int(after["physicalTotalBytes"]),
             "releasedBytes": released_bytes,
+            "plaintextAbsent": True,
+            "searchEntryAbsent": True,
+            "restartStable": True,
+            "messagingIdentityPreserved": True,
+        }
+
+    def _run_storage_batch_clear_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        fixture_size = 2 * 1024 * 1024
+        fixtures = [
+            self._mapping(
+                session.call_action(
+                    "storage.conversation-clear.seed",
+                    {"plaintextBytes": fixture_size},
+                ),
+                "storage batch clear fixture",
+            )
+            for _ in range(2)
+        ]
+        conversation_ids = [
+            self._required_text(
+                fixture,
+                "conversationId",
+                "storage batch clear fixture",
+            )
+            for fixture in fixtures
+        ]
+        message_ids = [
+            self._required_text(
+                fixture,
+                "messageId",
+                "storage batch clear fixture",
+            )
+            for fixture in fixtures
+        ]
+        if len(set(conversation_ids)) != 2:
+            raise GateError("storage batch fixtures are not distinct")
+
+        identity_before = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity before storage batch clear",
+        )
+        if not identity_before.get("active"):
+            raise GateError(
+                "messaging runtime is inactive before storage batch clear"
+            )
+        session.call_action("messaging.reconcile")
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "storage refresh before batch clear",
+        )
+        before = self._wait_for_storage_snapshot(
+            session,
+            lambda value: set(conversation_ids).issubset(
+                set(value.get("conversationIds", []))
+            )
+            and int(value.get("messageBytes") or 0) >= fixture_size * 2,
+            "two seeded Mobile storage conversations",
+        )
+
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-manage]');
+if (!button) throw new Error('batch manage action missing');
+button.click();
+"""
+        )
+        for conversation_id in conversation_ids:
+            selected = session.execute_script(
+                """
+const row = Array.from(document.querySelectorAll(
+  '[data-chat-storage-conversation]'
+)).find((candidate) => (
+  candidate.getAttribute('data-chat-storage-conversation') === arguments[0]
+));
+const checkbox = row?.querySelector(
+  '[data-chat-storage-conversation-select] input'
+);
+if (!checkbox) return false;
+checkbox.click();
+return true;
+""",
+                conversation_id,
+            )
+            if selected is not True:
+                raise GateError(
+                    f"storage batch row is not selectable: {conversation_id}"
+                )
+        self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    isinstance(
+                        value := session.execute_script(
+                            """
+return Array.from(document.querySelectorAll(
+  '[data-chat-storage-selected="true"]'
+)).map((row) => (
+  row.getAttribute('data-chat-storage-conversation') || ''
+));
+"""
+                        ),
+                        list,
+                    )
+                    and set(value) == set(conversation_ids)
+                )
+                else None
+            ),
+            "two selected Mobile storage rows",
+        )
+
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-clear]');
+if (!button || button.disabled) {
+  throw new Error('batch clear action unavailable');
+}
+button.click();
+"""
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+);
+return Boolean(button && !button.disabled);
+"""
+            )
+            or None,
+            "Mobile batch confirmation",
+        )
+        session.execute_script(
+            """
+document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+)?.click();
+"""
+        )
+        batch_result = self._mapping(
+            self._wait_for_value(
+                lambda: session.execute_script(
+                    """
+const result = document.querySelector(
+  '[data-chat-storage-batch-result="succeeded"]'
+);
+if (!result) return null;
+return {
+  succeeded: Number(
+    result.getAttribute('data-chat-storage-batch-succeeded') || '0'
+  ),
+  failed: Number(
+    result.getAttribute('data-chat-storage-batch-failed') || '0'
+  ),
+  releasedBytes: Number(
+    result.getAttribute('data-chat-storage-released-bytes') || '0'
+  ),
+};
+"""
+                ),
+                "Mobile batch clear result",
+                timeout_seconds=120,
+            ),
+            "Mobile batch clear result",
+        )
+        if (
+            batch_result.get("succeeded") != 2
+            or batch_result.get("failed") != 0
+            or int(batch_result.get("releasedBytes") or 0) <= 0
+        ):
+            raise GateError("Mobile batch clear result is incomplete")
+
+        for conversation_id in conversation_ids:
+            projection = self._mapping(
+                session.call_action(
+                    "messaging.projection.read",
+                    {"conversationId": conversation_id},
+                ),
+                "conversation projection after storage batch clear",
+            )
+            messages = self._mapping(
+                projection.get("messages"),
+                "conversation messages after storage batch clear",
+            ).get(conversation_id)
+            if not isinstance(messages, list) or messages:
+                raise GateError("storage batch clear left plaintext projections")
+            search = session.call_action(
+                "messaging.search",
+                {
+                    "conversationId": conversation_id,
+                    "query": "cccccccc",
+                    "limit": 20,
+                },
+            )
+            if not isinstance(search, list) or search:
+                raise GateError("storage batch clear left searchable plaintext")
+
+        restart = session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError("storage batch clear restart was not acknowledged")
+        session.call_action("messaging.reconcile")
+        for conversation_id in conversation_ids:
+            projection = self._mapping(
+                session.call_action(
+                    "messaging.projection.read",
+                    {"conversationId": conversation_id},
+                ),
+                "conversation projection after storage batch restart",
+            )
+            messages = self._mapping(
+                projection.get("messages"),
+                "conversation messages after storage batch restart",
+            ).get(conversation_id)
+            if not isinstance(messages, list) or messages:
+                raise GateError(
+                    "storage batch-cleared plaintext returned after restart"
+                )
+
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "storage refresh after batch clear",
+        )
+        after = self._wait_for_storage_snapshot(
+            session,
+            lambda value: int(value.get("physicalTotalBytes") or 0)
+            < int(before.get("physicalTotalBytes") or 0),
+            "Mobile batch clear physical reclamation",
+        )
+        identity_after = self._mapping(
+            session.call_action("getRealtimeDevice"),
+            "messaging identity after storage batch clear",
+        )
+        if identity_after != identity_before:
+            raise GateError(
+                "storage batch clear changed the active messaging identity"
+            )
+        return {
+            "scenario": "storage-batch-clear",
+            "journeyId": journey_id,
+            "conversationIds": conversation_ids,
+            "messageIds": message_ids,
+            "fixtureBytes": fixture_size * 2,
+            "physicalBytesBefore": int(before["physicalTotalBytes"]),
+            "physicalBytesAfter": int(after["physicalTotalBytes"]),
+            "releasedBytes": int(batch_result["releasedBytes"]),
+            "succeeded": int(batch_result["succeeded"]),
+            "failed": int(batch_result["failed"]),
             "plaintextAbsent": True,
             "searchEntryAbsent": True,
             "restartStable": True,

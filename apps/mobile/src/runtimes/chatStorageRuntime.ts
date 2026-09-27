@@ -1,4 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import {
+  runConversationClearBatch,
+  type ConversationClearBatchProgress,
+  type ConversationClearBatchResult,
+} from '@peers-touch/client-chat-core';
 
 import {
   ChatRetentionPreset,
@@ -385,6 +390,36 @@ class MobileChatStorageRuntime {
       });
     this.conversationClearInFlight = { revision, conversationId, promise: operation };
     return operation;
+  }
+
+  clearConversations(
+    conversationIds: readonly string[],
+    onProgress?: (progress: ConversationClearBatchProgress) => void,
+  ): Promise<ConversationClearBatchResult> {
+    const scope = currentMessagingProjectionScope();
+    return runConversationClearBatch({
+      conversationIds,
+      onProgress,
+      clearConversation: async (conversationId) => {
+        if (!scope || !sameScope(scope, currentMessagingProjectionScope())) {
+          return { state: 'scope_changed' };
+        }
+        const result = await this.clearConversation(conversationId);
+        if (!sameScope(scope, currentMessagingProjectionScope()) || result === null) {
+          return { state: 'scope_changed' };
+        }
+        if (
+          result.error
+          || result.operation?.state !== ChatStorageOperationState.SUCCEEDED
+        ) {
+          return { state: 'failed' };
+        }
+        return {
+          state: 'succeeded',
+          releasedBytes: chatStorageReleasedBytes(result) ?? 0n,
+        };
+      },
+    });
   }
 
   getSnapshot = (): MobileChatStorageProjection => this.projection;

@@ -425,6 +425,9 @@ class StorageGovernanceContractTest(unittest.TestCase):
         desktop = (
             ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
         ).read_text(encoding="utf-8")
+        mobile = (
+            ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
+        ).read_text(encoding="utf-8")
         desktop_command = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -457,13 +460,14 @@ class StorageGovernanceContractTest(unittest.TestCase):
             desktop_main,
         )
         self.assertIn("seedConversationClear:", desktop_harness)
-        for selector in (
-            "data-chat-storage-batch-manage",
-            "data-chat-storage-batch-select-all",
-            "data-chat-storage-batch-confirm-apply",
-            "data-chat-storage-batch-result",
-        ):
-            self.assertIn(selector, desktop)
+        for source in (desktop, mobile):
+            for selector in (
+                "data-chat-storage-batch-manage",
+                "data-chat-storage-batch-select-all",
+                "data-chat-storage-batch-confirm-apply",
+                "data-chat-storage-batch-result",
+            ):
+                self.assertIn(selector, source)
 
     def test_redaction_recovery_gate_is_connected_to_chat_domain(self) -> None:
         gates = json.loads(
