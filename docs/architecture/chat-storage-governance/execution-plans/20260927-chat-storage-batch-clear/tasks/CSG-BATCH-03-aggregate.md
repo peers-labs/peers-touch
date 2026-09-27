@@ -18,6 +18,7 @@
   "writeSet": [
     "docs/architecture/chat-storage-governance",
     "apps/mobile/src/features/social",
+    "apps/mobile/src/runtimes",
     "tooling/acceptance"
   ],
   "readSet": [
@@ -25,7 +26,6 @@
     "apps/desktop/src/runtimes",
     "apps/desktop/src-tauri/src/messaging",
     "apps/mobile/src/pages/settings",
-    "apps/mobile/src/runtimes",
     "apps/mobile/src-tauri/src/messaging",
     "packages/client-chat-core",
     "packages/locales",
@@ -76,12 +76,17 @@
     "Do not mark partial batch success as complete",
     "Do not run a Tauri release build with less than 20 GiB free disk"
   ],
-  "updatedAt": "2026-09-27T04:30:00.000Z",
+  "updatedAt": "2026-09-27T18:00:00.000Z",
   "durableEvidence": [
     {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "39 Python tests, 66 focused Mobile Vitest cases, Mobile check, Chat domain validation, and forbidden-path contract checks"
+    },
+    {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "result": "PASS",
+      "ref": "acceptance://acceptance-run/latest/reports/run.json and acceptance://acceptance-gap-detect/latest/reports/gap-report.json; exact-source closure and zero-gap proof"
     }
   ]
 }
@@ -89,8 +94,10 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Dependencies: `CSG-BATCH-01-desktop`, `CSG-BATCH-02-mobile`.
+- State: delivery-ready; formal closure is `PASS/DONE/PROVEN` and the latest
+  exact-source Gap Detector report is `PROVEN` with zero gaps.
+- Dependencies: `CSG-BATCH-01-desktop`, `CSG-BATCH-02-mobile` are done.
+- Review: independent plan-scope completion review is the remaining close gate.
 
 ## Closure
 
