@@ -72,17 +72,17 @@
     "Do not clear filtered-out or unselected conversations",
     "Do not carry selection or result across a scope change"
   ],
-  "updatedAt": "2026-09-27T14:16:00.000Z",
+  "updatedAt": "2026-09-27T16:16:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "PASS",
-      "ref": "Development Session CSG-BATCH-02-mobile-R2 / functional run 20260927T130706556822Z-fcc4998b02a04ba29783b6a47362cebd"
+      "ref": "Development Session CSG-BATCH-02-mobile-R8 / functional run 20260927T160103560863Z-38dfe29d35cbcb8757758a091ec03fa0 at 0b5a5d4c8"
     },
     {
       "verificationClass": "ACCEPTANCE_PROOF",
       "result": "PASS",
-      "ref": "acceptance-run 20260927T131219875885Z-7b8c0ef01f3a195b0ce49ce6274faf9b; gap detector PROVEN"
+      "ref": "acceptance-run 20260927T160339708176Z-e25c9c01d44696e66e03619699de4879; gate 20260927T160339938886Z-e766626e9dd2f09a23471d684d684a51; gap detector PROVEN/0; review cc30ff5bc2df1a8f70f21fd16e4e7521f1d547fb43df7bc71063b4a9628b88fc"
     }
   ]
 }
@@ -90,10 +90,11 @@
 
 ## Current Snapshot
 
-- State: acceptance-ready; completion is controlled by the current Development
-  Session and independent review.
+- State: done; final source `0b5a5d4c8` is `PASS/DONE/PROVEN`.
 - Dependency: `CSG-BATCH-01-desktop` done.
-- Foundation: Mobile Storage list and canonical single-conversation clear already exist.
+- Evidence: filtered current-result select-all, explicit second selection,
+  unselected control preservation, partial retry, scope reset, physical
+  reclamation and restart stability passed on iPhone 17 / 17 Pro Max.
 
 ## Closure
 
