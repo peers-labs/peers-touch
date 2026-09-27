@@ -951,6 +951,433 @@ class FoundationInvalidResourceReferenceCoordinator:
                     raise
 
 
+class FoundationPermissionDeniedCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-PERMISSION_DENIED has no receiver for {platform}"
+        )
+
+    @staticmethod
+    def _required_string(
+        value: Mapping[str, Any],
+        key: str,
+    ) -> str:
+        candidate = value.get(key)
+        if not isinstance(candidate, str) or not candidate:
+            raise ScenarioRunnerError(
+                f"BASE-PERMISSION_DENIED {key} is invalid"
+            )
+        return candidate
+
+    @staticmethod
+    def _counter(value: Mapping[str, Any], key: str) -> int:
+        candidate = value.get(key)
+        if isinstance(candidate, bool) or not isinstance(candidate, int):
+            raise ScenarioRunnerError(
+                f"BASE-PERMISSION_DENIED {key} is invalid"
+            )
+        if candidate < 0:
+            raise ScenarioRunnerError(
+                f"BASE-PERMISSION_DENIED {key} is negative"
+            )
+        return candidate
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        denied_session_hash = ""
+        permission_restored = False
+        scenario_cleaned = False
+        scenario: dict[str, Any] | None = None
+        result: Mapping[str, Any] | None = None
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            locale = receiver.harness(
+                "setFoundationLocale",
+                {"locale": probe_input.locale},
+                timeout=30,
+            )
+            if (
+                not isinstance(locale, Mapping)
+                or locale.get("locale") != probe_input.locale
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED locale did not converge"
+                )
+            source_target = executor.harness(
+                "resolveFoundationInvalidResourceExecutorTarget",
+                timeout=60,
+            )
+            if not isinstance(source_target, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED source target is invalid"
+                )
+            capability_id = self._required_string(
+                source_target,
+                "targetCapabilityId",
+            )
+            if capability_id != "filesystem.read":
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED capability target changed"
+                )
+            permission_kind = "filesystem"
+            source_session_id = self._required_string(
+                source_target,
+                "capabilitySessionId",
+            )
+            source_session_hash = hashlib.sha256(
+                source_session_id.encode("utf-8")
+            ).hexdigest()
+            target_input = {
+                "targetCapabilitySessionId": source_session_id,
+                "targetDeviceId": self._required_string(
+                    source_target,
+                    "targetDeviceId",
+                ),
+                "targetCapabilityId": capability_id,
+            }
+            before = executor.harness(
+                "getFoundationClientExecutorCounters",
+                target_input,
+                timeout=60,
+            )
+            if not isinstance(before, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED baseline counters are invalid"
+                )
+
+            denied_control = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "permissionDenied",
+                    "capabilitySessionIdHash": source_session_hash,
+                    "capabilityId": capability_id,
+                    "permissionKind": permission_kind,
+                },
+                timeout=60,
+            )
+            if not isinstance(denied_control, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED denial control is invalid"
+                )
+            denied_transition = denied_control.get("leaseTransition")
+            if (
+                denied_control.get("control") != "permissionDenied"
+                or denied_control.get("availability") != "available"
+                or denied_control.get("capabilitySessionIdHash")
+                != source_session_hash
+                or not isinstance(denied_transition, Mapping)
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED denial transition is invalid"
+                )
+            denied_session_hash = self._required_string(
+                denied_transition,
+                "currentCapabilitySessionIdHash",
+            )
+            denied_target = executor.harness(
+                "resolveFoundationInvalidResourceExecutorTarget",
+                timeout=60,
+            )
+            if not isinstance(denied_target, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED denied target is invalid"
+                )
+            denied_session_id = self._required_string(
+                denied_target,
+                "capabilitySessionId",
+            )
+            if (
+                hashlib.sha256(
+                    denied_session_id.encode("utf-8")
+                ).hexdigest()
+                != denied_session_hash
+                or denied_target.get("targetPermission")
+                != "CAPABILITY_PERMISSION_STATE_DENIED"
+                or denied_target.get("targetPermissionKind")
+                != "CAPABILITY_PERMISSION_KIND_FILESYSTEM"
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED denied lease readback is invalid"
+                )
+
+            candidate = receiver.harness(
+                "runDevelopmentClientPermissionDenied",
+                {
+                    "sampleId": probe_input.sample_id,
+                    "capabilitySessionId": denied_session_id,
+                    "deferConversationCleanup": True,
+                    "externalExecutorEvidence": True,
+                    "scenarioKey": scenario_key,
+                    "receiverPlatform": probe_input.platform,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED Journey result is invalid"
+                )
+            scenario = dict(candidate)
+            after = executor.harness(
+                "getFoundationClientExecutorCounters",
+                {
+                    "targetCapabilitySessionId": denied_session_id,
+                    "targetDeviceId": self._required_string(
+                        denied_target,
+                        "targetDeviceId",
+                    ),
+                    "targetCapabilityId": capability_id,
+                },
+                timeout=60,
+            )
+            if not isinstance(after, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED final counters are invalid"
+                )
+
+            restored_control = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "permissionGranted",
+                    "capabilitySessionIdHash": denied_session_hash,
+                    "capabilityId": capability_id,
+                    "permissionKind": permission_kind,
+                },
+                timeout=60,
+            )
+            if not isinstance(restored_control, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED restore control is invalid"
+                )
+            restored_transition = restored_control.get("leaseTransition")
+            if (
+                restored_control.get("control") != "permissionGranted"
+                or restored_control.get("availability") != "available"
+                or restored_control.get("capabilitySessionIdHash")
+                != denied_session_hash
+                or not isinstance(restored_transition, Mapping)
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED restore transition is invalid"
+                )
+            restored_session_hash = self._required_string(
+                restored_transition,
+                "currentCapabilitySessionIdHash",
+            )
+            restored_target = executor.harness(
+                "resolveFoundationInvalidResourceExecutorTarget",
+                timeout=60,
+            )
+            if not isinstance(restored_target, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED restored target is invalid"
+                )
+            restored_session_id = self._required_string(
+                restored_target,
+                "capabilitySessionId",
+            )
+            if (
+                hashlib.sha256(
+                    restored_session_id.encode("utf-8")
+                ).hexdigest()
+                != restored_session_hash
+                or restored_target.get("targetPermission")
+                != "CAPABILITY_PERMISSION_STATE_GRANTED"
+                or restored_target.get("targetPermissionKind")
+                != "CAPABILITY_PERMISSION_KIND_FILESYSTEM"
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED restored lease readback is invalid"
+                )
+            permission_restored = True
+
+            scenario_cleanup = receiver.harness(
+                "abortFoundationClientPermissionDenied",
+                {
+                    "scenarioKey": scenario_key,
+                    "conversationId": self._required_string(
+                        scenario,
+                        "conversationId",
+                    ),
+                    "turnId": self._required_string(
+                        scenario,
+                        "turnId",
+                    ),
+                },
+                timeout=120,
+            )
+            if (
+                not isinstance(scenario_cleanup, Mapping)
+                or scenario_cleanup.get("conversationDeleted") is not True
+                or scenario_cleanup.get("localProjectionCleared") is not True
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED scenario cleanup is invalid"
+                )
+            scenario_cleaned = True
+
+            facts = scenario.get("facts")
+            if not isinstance(facts, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED Journey facts are missing"
+                )
+            cleanup = facts.get("cleanup")
+            if not isinstance(cleanup, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED cleanup facts are missing"
+                )
+            scenario["facts"] = {
+                **dict(facts),
+                "executor": {
+                    "evidenceSource": "native-executor-coordinator",
+                    "capabilitySessionIdHash": denied_session_hash,
+                    "targetDeviceIdHash": hashlib.sha256(
+                        self._required_string(
+                            denied_target,
+                            "targetDeviceId",
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    "targetCapabilityId": capability_id,
+                    "targetPlatform": denied_target.get("targetPlatform"),
+                    "before": {
+                        "executionAttemptCount": self._counter(
+                            before,
+                            "executionAttemptCount",
+                        ),
+                        "sideEffectCount": self._counter(
+                            before,
+                            "sideEffectCount",
+                        ),
+                    },
+                    "after": {
+                        "executionAttemptCount": self._counter(
+                            after,
+                            "executionAttemptCount",
+                        ),
+                        "sideEffectCount": self._counter(
+                            after,
+                            "sideEffectCount",
+                        ),
+                    },
+                },
+                "lease": {
+                    "denied": {
+                        **dict(denied_transition),
+                        "capabilitySessionIdHash": denied_session_hash,
+                        "permission": denied_target.get(
+                            "targetPermission"
+                        ),
+                        "permissionKind": denied_target.get(
+                            "targetPermissionKind"
+                        ),
+                    },
+                    "restored": {
+                        **dict(restored_transition),
+                        "capabilitySessionIdHash": restored_session_hash,
+                        "permission": restored_target.get(
+                            "targetPermission"
+                        ),
+                        "permissionKind": restored_target.get(
+                            "targetPermissionKind"
+                        ),
+                    },
+                },
+                "cleanup": {
+                    **dict(cleanup),
+                    **dict(scenario_cleanup),
+                    "permissionRestored": True,
+                },
+            }
+            captured = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "preparedScenario": scenario,
+                },
+                timeout=300,
+            )
+            if not isinstance(captured, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED direct capture is invalid"
+                )
+            result = captured
+            assert_group_one_capture(probe_input, captured)
+            return captured
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if denied_session_hash and not permission_restored:
+                try:
+                    executor.harness(
+                        "runFoundationCapabilityNegativeControl",
+                        {
+                            "control": "permissionGranted",
+                            "capabilitySessionIdHash": denied_session_hash,
+                            "capabilityId": "filesystem.read",
+                            "permissionKind": "filesystem",
+                        },
+                        timeout=60,
+                    )
+                except BaseException as error:
+                    cleanup_errors.append(
+                        f"permission restore: {error}"
+                    )
+            if not scenario_cleaned:
+                try:
+                    cleanup_request: dict[str, Any] = {
+                        "scenarioKey": scenario_key,
+                    }
+                    if scenario is not None:
+                        conversation_id = str(
+                            scenario.get("conversationId") or ""
+                        )
+                        turn_id = str(scenario.get("turnId") or "")
+                        if conversation_id:
+                            cleanup_request["conversationId"] = conversation_id
+                        if turn_id:
+                            cleanup_request["turnId"] = turn_id
+                    receiver.harness(
+                        "abortFoundationClientPermissionDenied",
+                        cleanup_request,
+                        timeout=120,
+                    )
+                except BaseException as error:
+                    cleanup_errors.append(f"scenario cleanup: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
 class FoundationForbiddenActorCoordinator:
     def __init__(
         self,
